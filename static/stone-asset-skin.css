@@ -775,3 +775,173 @@ body .stone-chart-expand-trigger:focus-visible {
   body .stone-chart-expanded .stone-chart-stage { grid-template-columns: minmax(0,1fr) !important; }
   body .stone-chart-expanded .stone-side-volume { display: none !important; }
 }
+
+
+/* === STONE V4 — exact EMA rendering, chromatic volume, individual target plates === */
+/* Native line-series now provide the EMA halos; the canvas is only for candle glints. */
+body.theme-stone #tv-chart .stone-chart-fx { mix-blend-mode: screen; }
+
+/* Every real histogram volume bin is colored. VA classification is retained as
+   metadata but NEVER changes the palette to gray. The empty rail is transparent
+   dark stone rather than a gray, unfilled bar. No artificial volume extension. */
+body.theme-stone #vp-histogram-container .vp-bar[data-tone="cyan"],
+body.theme-stone #stone-mini-volume .stone-mini-fill[data-tone="cyan"],
+body.theme-stone #vp-histogram-container .vp-bar[data-kind="off"][data-tone="cyan"],
+body.theme-stone #stone-mini-volume .stone-mini-fill[data-kind="off"][data-tone="cyan"] {
+  background: url("stone-assets/ready/42_volume_bar_cyan.png") left center / 100% 100% no-repeat !important;
+  box-shadow: 0 0 7px rgba(72,231,255,.98), 0 0 19px rgba(26,212,255,.58) !important;
+  filter: brightness(1.37) saturate(1.5) drop-shadow(0 0 9px rgba(0,220,255,.92)) !important;
+}
+body.theme-stone #vp-histogram-container .vp-bar[data-tone="amber"],
+body.theme-stone #stone-mini-volume .stone-mini-fill[data-tone="amber"],
+body.theme-stone #vp-histogram-container .vp-bar[data-kind="off"][data-tone="amber"],
+body.theme-stone #stone-mini-volume .stone-mini-fill[data-kind="off"][data-tone="amber"] {
+  background: url("stone-assets/ready/43_volume_bar_gold.png") left center / 100% 100% no-repeat !important;
+  box-shadow: 0 0 7px rgba(255,181,74,.96), 0 0 19px rgba(255,143,30,.59) !important;
+  filter: brightness(1.33) saturate(1.47) drop-shadow(0 0 9px rgba(255,158,44,.87)) !important;
+}
+body.theme-stone #vp-histogram-container .vp-bar[data-kind="poc"],
+body.theme-stone #stone-mini-volume .stone-mini-fill[data-kind="poc"] {
+  background: url("stone-assets/ready/43_volume_bar_gold.png") left center / 100% 100% no-repeat !important;
+  box-shadow: 0 0 12px #ffdb7b, 0 0 29px rgba(255,159,34,.9) !important;
+  filter: brightness(1.5) saturate(1.7) drop-shadow(0 0 12px rgba(255,190,56,.98)) !important;
+}
+body.theme-stone #stone-mini-volume .stone-mini-track,
+body.theme-stone #vp-histogram-container .stone-vp-track {
+  background: rgba(4,17,23,.78) !important;
+  border: 1px solid rgba(43,183,212,.48) !important;
+  box-shadow: inset 0 1px 4px #000 !important;
+}
+body.theme-stone #stone-mini-volume .stone-mini-row:nth-child(even) .stone-mini-track {
+  border-color: rgba(235,151,58,.48) !important;
+}
+body.theme-stone #stone-mini-volume .stone-mini-price,
+body.theme-stone .stone-side-volume .stone-volume-title {
+  color: #d7f3fb !important;
+  text-shadow: 0 0 6px rgba(57,225,255,.26);
+}
+body.theme-stone #stone-mini-volume .stone-mini-price {
+  display: inline-block;
+  flex: 0 0 67px;
+  min-width: 67px;
+  overflow: visible;
+  font-size: 10px !important;
+  white-space: nowrap;
+  letter-spacing: 0;
+  text-align: right;
+  padding-right: 3px;
+}
+body.theme-stone #stone-mini-volume .stone-mini-row { gap: 5px; }
+body.theme-stone #stone-mini-volume .stone-mini-track {min-width: 0; flex: 1 1 0;}
+
+/* Target matrix: use five ALREADY CREATED plates from stone-assets/ready.
+   Dark center mask protects live rule names, status chips and values;
+   illuminated artwork remains visible at the borders and alternating rows. */
+body.theme-stone .stone-asset-panel--matrix table {
+  width: 100% !important;
+  min-width: 0 !important;
+  table-layout: fixed !important;
+  border-collapse: separate !important;
+  border-spacing: 0 5px !important;
+  background: rgba(4,11,17,.64) !important;
+}
+body.theme-stone .stone-asset-panel--matrix .w-full.overflow-hidden:has(table) {
+  overflow: visible !important;
+  min-width: 0 !important;
+}
+body.theme-stone .stone-asset-panel--matrix table th:nth-child(1) {width: 32%;}
+body.theme-stone .stone-asset-panel--matrix table th:nth-child(2) {width: 18%;}
+body.theme-stone .stone-asset-panel--matrix table th:nth-child(3) {width: 18%;}
+body.theme-stone .stone-asset-panel--matrix table th:nth-child(4) {width: 32%; text-align: right;}
+body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row {
+  background-color: #07141b !important;
+  background-repeat: no-repeat !important;
+  background-position: center center !important;
+  background-size: 100% 100%, 100% 100% !important;
+  border: 1px solid rgba(95,165,185,.37) !important;
+  box-shadow: inset 0 0 13px rgba(0,0,0,.62), 0 2px 8px rgba(0,0,0,.5) !important;
+}
+body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row--0 {
+  background-image: linear-gradient(90deg,rgba(2,10,17,.53),rgba(3,11,18,.85) 17%,rgba(3,11,18,.88) 79%,rgba(2,10,17,.56)), url("stone-assets/ready/47_table_row_metal.png") !important;
+}
+body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row--1 {
+  background-image: linear-gradient(90deg,rgba(2,10,17,.53),rgba(3,11,18,.87) 17%,rgba(3,11,18,.90) 79%,rgba(2,10,17,.54)), url("stone-assets/ready/48_tooltip_engraved_plate.png") !important;
+}
+body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row--2 {
+  background-image: linear-gradient(90deg,rgba(2,10,17,.57),rgba(3,11,18,.89) 17%,rgba(3,11,18,.89) 79%,rgba(2,10,17,.57)), url("stone-assets/ready/17_trade_ticket_cartridge.png") !important;
+}
+body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row--3 {
+  background-image: linear-gradient(90deg,rgba(2,10,17,.52),rgba(3,11,18,.87) 17%,rgba(3,11,18,.89) 79%,rgba(2,10,17,.55)), url("stone-assets/ready/14_long_volume_plate.png") !important;
+}
+body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row--4 {
+  background-image: linear-gradient(90deg,rgba(2,10,17,.53),rgba(3,11,18,.87) 17%,rgba(3,11,18,.9) 79%,rgba(2,10,17,.57)), url("stone-assets/ready/20_guard_warning_plaque.png") !important;
+}
+body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row:hover {
+  filter: brightness(1.15);
+  box-shadow: inset 0 0 13px rgba(20,162,191,.26),0 0 12px rgba(58,216,241,.17) !important;
+}
+body.theme-stone .stone-asset-panel--matrix #matrix-tbody td {
+  height: auto !important;
+  min-width: 0 !important;
+  padding: 13px 7px !important;
+  line-height: 1.55 !important;
+  background: transparent !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  overflow: visible;
+  vertical-align: middle;
+  font-size: 10px !important;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px #000;
+}
+body.theme-stone .stone-asset-panel--matrix #matrix-tbody td:first-child {
+  min-width: 0 !important;
+  border-left: 3px solid rgba(81,211,240,.72) !important;
+  padding-left: 12px !important;
+}
+body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr:nth-child(even) td:first-child {
+  border-left-color: rgba(255,174,69,.79) !important;
+}
+body.theme-stone .stone-asset-panel--matrix #matrix-tbody td:nth-child(2),
+body.theme-stone .stone-asset-panel--matrix #matrix-tbody td:nth-child(3) {
+  text-align: center !important;
+  overflow-wrap: break-word;
+}
+body.theme-stone .stone-asset-panel--matrix #matrix-tbody td:nth-child(2) > span,
+body.theme-stone .stone-asset-panel--matrix #matrix-tbody td:nth-child(3) > span {
+  white-space: nowrap !important;
+  max-width: 100%;
+  padding: 3px 5px !important;
+}
+body.theme-stone .stone-asset-panel--matrix #matrix-tbody td.stone-target-live {
+  width: 32%;
+  min-width: 0 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  text-align: right !important;
+  line-height: 1.7 !important;
+  color: #e5f9ff !important;
+  font-size: 10px !important;
+  padding-right: 12px !important;
+}
+body.theme-stone .stone-asset-panel--matrix #matrix-tbody td .text-sub {
+  color: #bacbd4 !important;
+  opacity: 1 !important;
+}
+body.theme-stone .stone-asset-panel--matrix table thead th {
+  padding: 5px !important;
+  white-space: normal !important;
+  font-size: 10px !important;
+  color: #9deaf8 !important;
+}
+@media (max-width: 1280px) {
+  body.theme-stone .stone-asset-panel--matrix table th:nth-child(1){width:30%;}
+  body.theme-stone .stone-asset-panel--matrix table th:nth-child(2){width:19%;}
+  body.theme-stone .stone-asset-panel--matrix table th:nth-child(3){width:19%;}
+  body.theme-stone .stone-asset-panel--matrix table th:nth-child(4){width:32%;}
+  body.theme-stone .stone-asset-panel--matrix #matrix-tbody td {padding:10px 4px !important;}
+}
+@media (max-width: 650px) {
+  body.theme-stone .stone-asset-panel--matrix .w-full.overflow-hidden:has(table){overflow-x:auto !important;}
+  body.theme-stone .stone-asset-panel--matrix table{min-width:530px !important;}
+}

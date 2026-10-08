@@ -1331,6 +1331,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <!-- 4. JAVASCRIPT ENGINE -->
   <script>
     let chart, candleSeries, ema20Series, ema50Series, ema200Series;
+    let emaGlowSeries = [[], [], []];
     let srLines = {};
     let isInitialLoad = true;
     let lastCandleTime = 0;
@@ -1435,7 +1436,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         candleSeries.setMarkers([]);
         Object.values(srLines).forEach(line => candleSeries.removePriceLine(line));
         srLines = {};
-        for (const series of [candleSeries,ema20Series,ema50Series,ema200Series]) series.setData([]);
+        for (const series of [candleSeries,ema20Series,ema50Series,ema200Series,...emaGlowSeries.flat()]) series.setData([]);
       }
       isInitialLoad = true;
       lastCandleTime = 0;
@@ -1598,12 +1599,16 @@ HTML_CONTENT = """<!DOCTYPE html>
         wickDownColor: '#f43f5e', wickUpColor: '#10b981',
       });
 
+      // Native glow series: same plot / price scale / timestamps as the EMAs.
+      // Draw under the actual 2px EMA cores; no independently traced EMA canvas.
+      const glowOpts = {color:'rgba(0,0,0,0)',lineWidth:4,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false};
+      emaGlowSeries = Array.from({length:3},()=>[
+        chart.addLineSeries({...glowOpts}), chart.addLineSeries({...glowOpts,lineWidth:3})
+      ]);
       ema20Series  = chart.addLineSeries({ color: '#00d2ff', lineWidth: 2, title: 'EMA20' });
       ema50Series  = chart.addLineSeries({ color: '#ff9f43', lineWidth: 2, title: 'EMA50' });
       ema200Series = chart.addLineSeries({ color: '#a55eea', lineWidth: 2, title: 'EMA200' });
-
-      // Decorative, non-interactive chart halo; never alters live series or candles.
-      try { window.StoneChartFX?.attach({chart, host:container, candleSeries, emaSeries:[ema20Series,ema50Series,ema200Series]}); } catch (_) {}
+      try { window.StoneChartFX?.attach({chart, host:container, candleSeries, emaSeries:[ema20Series,ema50Series,ema200Series], glowSeries:emaGlowSeries}); } catch (_) {}
 
       // Robust ResizeObserver
       let chartInitiallySized = false;
@@ -1721,6 +1726,16 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
     }
 
+    function syncEmaGlows(sets, incremental = false) {
+      for (let i=0;i<emaGlowSeries.length;i++) {
+        const points=sets[i];
+        if (!Array.isArray(points) || !points.length) continue;
+        for (const series of emaGlowSeries[i]) {
+          if (incremental) series.update(points[points.length-1]);
+          else series.setData(points);
+        }
+      }
+    }
     // --- SMOOTH CANDLES LOAD (NO JUMPING & PRESERVES ZOOM) ---
     async function loadCandles() {
       const generation = accountGeneration;
@@ -1743,6 +1758,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           ema20Series.setData(data.ema20);
           ema50Series.setData(data.ema50);
           ema200Series.setData(data.ema200);
+          syncEmaGlows([data.ema20, data.ema50, data.ema200]);
           updateChartSRLines(data.sr_levels, curPrice);
           applyOptimalChartView(data.candles.length);
           isInitialLoad = false;
@@ -1753,6 +1769,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             ema20Series.update(data.ema20[data.ema20.length - 1]);
             ema50Series.update(data.ema50[data.ema50.length - 1]);
             ema200Series.update(data.ema200[data.ema200.length - 1]);
+            syncEmaGlows([data.ema20, data.ema50, data.ema200], true);
           } else {
             // New bar: keep exact user zoom & position with 12-bar right offset
             const curRange = chart.timeScale().getVisibleLogicalRange();
@@ -1763,6 +1780,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             ema20Series.setData(data.ema20);
             ema50Series.setData(data.ema50);
             ema200Series.setData(data.ema200);
+          syncEmaGlows([data.ema20, data.ema50, data.ema200]);
 
             if (curRange) {
               if (wasAtEnd) {
@@ -1941,8 +1959,8 @@ HTML_CONTENT = """<!DOCTYPE html>
 
     function renderMatrix(rules) {
       const tbody = document.getElementById('matrix-tbody');
-      tbody.innerHTML = rules.map(r => `
-        <tr class="hover-row transition-colors">
+      tbody.innerHTML = rules.map((r,index) => `
+        <tr class="hover-row transition-colors stone-target-row stone-target-row--${index % 5}">
           <td class="py-2 pr-2">
             <div class="font-sans font-bold text-xs">${r.name}</div>
           </td>
@@ -1960,7 +1978,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             </span>
             <div class="text-[9px] text-sub mt-1 whitespace-normal">${r.long_note}</div>
           </td>
-          <td class="py-2 pl-2 text-right font-mono text-[10px] opacity-90 font-bold whitespace-nowrap">
+          <td class="py-2 pl-2 text-right font-mono text-[10px] opacity-90 font-bold stone-target-live">
             ${r.current_val}
           </td>
         </tr>
@@ -2002,17 +2020,16 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
       
       container.innerHTML = sorted.map((b, index) => {
-        let barColor = 'bg-slate-700/50';
+        let barColor = index % 2 === 0 ? 'bg-cyan-500/75' : 'bg-amber-500/75';
         let label = '';
         // Palette is decorative: cyan/amber alternation is NOT buy/sell volume.
         const stoneKind = b.is_poc ? 'poc' : b.in_va ? 'va' : 'off';
-        const stoneTone = b.is_poc ? 'gold' : !b.in_va ? 'neutral' : index % 2 === 0 ? 'cyan' : 'amber';
+        const stoneTone = b.is_poc ? 'gold' : index % 2 === 0 ? 'cyan' : 'amber';
         if (b.is_poc) {
           barColor = 'bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.6)]';
           label = '⭐ POC (Max Vol)';
-        } else if (b.in_va) {
-          barColor = 'bg-blue-500/70';
-          label = 'VA (70%)';
+        } else {
+          label = b.in_va ? 'VA (70%)' : 'Außerhalb VA';
         }
         return `
           <div class="flex items-center gap-2">

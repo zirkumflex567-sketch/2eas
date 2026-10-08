@@ -46,49 +46,25 @@
     try { return series.priceToCoordinate(value); }
     catch (_) { return null; }
   }
-  function drawEma(state, index, now) {
-    const data = state.emaData[index] || [];
-    const series = state.emaSeries[index];
-    if (!series || data.length < 2) return;
-    const color = PALETTE[index];
-    const ctx = state.ctx;
-    const period = 5700;
-    const phase = (now % period) / period * Math.PI * 2 - index * (2 * Math.PI / 3);
-    const intensity = 0.52 + 0.48 * Math.pow(Math.max(0, Math.cos(phase)), 5);
-    let started = false, seen = 0;
-    ctx.beginPath();
-    // Thin, translucent line matches the original EMA path; halo rotates between colors.
-    for (const point of data) {
-      if (!point || !Number.isFinite(point.value)) { started = false; continue; }
-      const x = getX(state, point.time), y = getY(series, point.value);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) { started = false; continue; }
-      if (x < -25 || x > state.width + 25 || y < -25 || y > state.height + 25) {
-        started = false; continue;
-      }
-      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
-      seen++;
+  function updateNativeGlow(state, now) {
+    // Glow is rendered by the SAME chart engine as the EMA. Absolutely no
+    // independent X/Y plotting, and thus no offset during zoom/resize/pan.
+    if (!state.glowSeries || !state.glowSeries.length) return;
+    const active = enabled();
+    if (state.lastGlowMode === active && now - state.lastGlowTick < 260) return;
+    state.lastGlowTick = now;
+    state.lastGlowMode = active;
+    for (let i=0; i<state.glowSeries.length; i++) {
+      const tone=PALETTE[i];
+      const phase=now/5700*Math.PI*2-i*2*Math.PI/3;
+      const strength=.36+.64*Math.pow(Math.max(0,Math.cos(phase)),4);
+      const opacities=active ? [.22+.25*strength,.30+.40*strength] : [0,0];
+      state.glowSeries[i].forEach((series,j)=>{
+        if (!series) return;
+        try { series.applyOptions({color:rgba(tone,opacities[j]||0)}); }
+        catch (_) { /* Visual effects must not affect live chart updates. */ }
+      });
     }
-    if (seen < 2) return;
-    ctx.save();
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    ctx.globalCompositeOperation = "lighter";
-    // A genuinely luminous layered phosphor look, not a thick replacement EMA.
-    // All three strokes follow the original EMA coordinates exactly.
-    ctx.strokeStyle = rgba(color, .085 + .15 * intensity);
-    ctx.lineWidth = 9 + 6 * intensity;
-    ctx.shadowColor = rgba(color, .9);
-    ctx.shadowBlur = 22 + 23 * intensity;
-    ctx.stroke();
-    ctx.strokeStyle = rgba(color, .20 + .26 * intensity);
-    ctx.lineWidth = 3.8 + 1.9 * intensity;
-    ctx.shadowBlur = 12 + 18 * intensity;
-    ctx.stroke();
-    ctx.strokeStyle = rgba(color, .46 + .47 * intensity);
-    ctx.lineWidth = 1.45;
-    ctx.shadowBlur = 4 + 9 * intensity;
-    ctx.stroke();
-    ctx.restore();
   }
   function drawCandleHalo(state, candle, strength, kind) {
     if (!candle || !state.candleSeries) return;
@@ -139,12 +115,13 @@
   function render() {
     const state = instance;
     if (!state) return;
-    const active = enabled();
+    const active = enabled(), now = performance.now();
+    // Native EMA glow must also turn off when switching to DARK/LIGHT.
+    updateNativeGlow(state, now);
     state.canvas.hidden = !active;
     if (!active || !prepareSize(state)) return;
-    const now = performance.now(), ctx = state.ctx;
+    const ctx = state.ctx;
     ctx.clearRect(0, 0, state.width, state.height);
-    PALETTE.forEach((_, i) => drawEma(state, i, now));
     if (state.flash && now < state.flash.until) {
       const fade = Math.max(0, (state.flash.until - now) / 1950);
       drawCandleHalo(state, state.flash.candle, Math.min(1, fade * 1.2), state.flash.kind);
@@ -169,10 +146,13 @@
     if (state.rangeHandler) {
       try { state.chart.timeScale().unsubscribeVisibleLogicalRangeChange(state.rangeHandler); } catch (_) {}
     }
+    for (const group of (state.glowSeries || [])) for (const line of group) {
+      try { line.applyOptions({color:'rgba(0,0,0,0)'}); } catch (_) {}
+    }
     if (state.canvas) state.canvas.remove();
     instance = null;
   }
-  function attach({chart, host, candleSeries, emaSeries}) {
+  function attach({chart, host, candleSeries, emaSeries, glowSeries = []}) {
     if (!chart || !host || !candleSeries || !Array.isArray(emaSeries)) return;
     if (instance && instance.chart === chart && instance.host === host) return;
     stop();
@@ -184,7 +164,7 @@
     const ctx = canvas.getContext("2d");
     if (!ctx) { canvas.remove(); return; }
     instance = {
-      chart, host, candleSeries, emaSeries, canvas, ctx,
+      chart, host, candleSeries, emaSeries, glowSeries, lastGlowTick:-Infinity, lastGlowMode:null, canvas, ctx,
       width:0, height:0, emaData:[[],[],[]], candles:[],
       context:null, seeded:false, knownSignals:new Set(), flash:null,
       observer:null, rangeHandler:null
