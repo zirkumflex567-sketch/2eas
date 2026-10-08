@@ -1042,6 +1042,9 @@ HTML_CONTENT = """<!DOCTYPE html>
         <div class="flex flex-wrap items-center justify-between mb-2 gap-2">
           <div class="flex flex-wrap items-center gap-2">
             <span id="chart-title-text" class="font-black text-sm">XAUUSD M15 Chart</span>
+            <button type="button" id="stone-chart-expand-btn" aria-controls="tv-chart" aria-pressed="false"
+              aria-label="Chart vergrößern" class="stone-chart-expand-trigger stone-chart-expand-primary"
+              title="Chart bildschirmfüllend vergrößern · Esc zum Schließen">⛶ CHART GROSS</button>
             <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-sans" title="Zeiteinheit dient nur der Ansicht - der EA rechnet weiter strikt auf M15">Ansicht</span>
             
             <!-- Timeframe Selector Pills -->
@@ -1083,9 +1086,6 @@ HTML_CONTENT = """<!DOCTYPE html>
             </button>
             <button onclick="resetChartZoom()" class="px-2 py-1 rounded ticker-bg border hover:bg-blue-600 hover:text-white font-bold cursor-pointer" title="Chart-Zoom & Preis zentrieren">
               🔍 Auto
-            </button>
-            <button type="button" id="stone-chart-expand-btn" aria-controls="tv-chart" aria-pressed="false" aria-label="Chart vergrößern" class="stone-chart-expand-trigger px-3 py-1 rounded ticker-bg border font-bold cursor-pointer whitespace-nowrap" title="Chart bildschirmfüllend vergrößern (Esc = zurück)">
-              ⛶ Vergrößern
             </button>
           </div>
         </div>
