@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="700" viewBox="0 0 1100 700">
+<defs>
+<linearGradient id="slab" x1="0" x2="1" y1="0" y2="1">
+  <stop stop-color="#728087" stop-opacity=".45"/><stop offset=".32" stop-color="#19242a"/>
+  <stop offset=".66" stop-color="#323e43"/><stop offset="1" stop-color="#10181d"/>
+</linearGradient>
+<radialGradient id="wear"><stop stop-color="#a4a9a7" stop-opacity=".4"/><stop offset="1" stop-color="#9aa1a6" stop-opacity="0"/></radialGradient>
+<filter id="granite" x="-10%" y="-10%" width="120%" height="120%">
+  <feTurbulence baseFrequency=".019 .032" numOctaves="5" seed="17" type="fractalNoise" result="f"/>
+  <feColorMatrix in="f" type="saturate" values="0" result="gray"/>
+  <feComponentTransfer in="gray" result="steep">
+     <feFuncR type="gamma" amplitude="1" exponent="1.4" offset="0"/>
+     <feFuncG type="gamma" amplitude="1" exponent="1.4" offset="0"/>
+     <feFuncB type="gamma" amplitude="1" exponent="1.4" offset="0"/>
+     <feFuncA type="linear" slope=".18"/>
+  </feComponentTransfer>
+  <feBlend in="SourceGraphic" in2="steep" mode="screen"/>
+</filter>
+<filter id="rockRelief">
+   <feTurbulence type="fractalNoise" baseFrequency=".005 .016" numOctaves="4" seed="9" result="noise"/>
+   <feDiffuseLighting in="noise" surfaceScale="3" lighting-color="#c2ced0" result="light">
+     <feDistantLight azimuth="307" elevation="57"/>
+   </feDiffuseLighting>
+   <feBlend in="SourceGraphic" in2="light" mode="multiply"/>
+</filter>
+<filter id="glow"><feGaussianBlur stdDeviation="2.6"/></filter>
+</defs>
+<rect width="1100" height="700" fill="#10171b"/>
+<rect width="1100" height="700" fill="url(#slab)" filter="url(#rockRelief)" opacity=".67"/>
+<g fill="#000d13" opacity=".26">
+ <path d="M0 55 102 6 300 44 410 23 522 44 671 0 815 52 968 24 1100 41 1100 0 0 0Z"/>
+ <path d="M0 450 114 385 230 425 289 405 381 490 493 451 608 503 693 468 801 511 949 466 1100 502 1100 700 0 700Z"/>
+ <path d="M690 0 735 117 682 167 754 225 704 276 731 345 698 418 764 523 720 624 755 700 860 700 815 594 834 504 783 431 828 352 807 280 862 224 782 160 809 89 777 0Z"/>
+</g>
+<g stroke="#060c10" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" fill="none" opacity=".64">
+ <path d="M-14 101 99 149 143 147 205 202 255 194 307 271 347 267 384 328 443 336 509 403 566 412 609 481"/>
+ <path d="M312 -10 340 83 387 111 366 170 419 205 411 267 463 296"/>
+ <path d="M1107 84 1018 103 960 165 897 172 839 252 794 261 725 336"/>
+ <path d="M952 706 917 633 927 567 869 523 872 462 813 425"/>
+ <path d="M-10 554 92 533 130 481 205 468 259 418 335 412"/>
+</g>
+<g stroke="#bdc8c8" stroke-width="1.6" fill="none" opacity=".34">
+ <path d="M-14 98 99 144 142 143 202 198 257 189 310 267 346 263 387 324 442 330 510 399 568 406 609 476"/>
+ <path d="M308 -9 336 80 382 106 361 165 415 200 405 261 457 290"/>
+ <path d="M1107 80 1015 99 958 162 893 169 834 246 790 257 720 333"/>
+ <path d="M948 705 912 630 921 564 866 520 867 460 809 420"/>
+ <path d="M-11 550 89 530 124 478 200 465 255 415 329 409"/>
+</g>
+<g stroke="#060d12" stroke-width="2" fill="none" opacity=".5">
+ <path d="M207 203 199 263 233 304 222 338"/>
+ <path d="M418 207 487 185 508 138"/>
+ <path d="M510 398 506 473 476 519"/>
+ <path d="M833 251 885 282 916 352"/>
+ <path d="M132 484 145 554 177 585"/>
+ <path d="M925 566 1013 539 1058 584"/>
+</g>
+<g fill="url(#wear)">
+ <ellipse cx="111" cy="99" rx="210" ry="110"/><ellipse cx="985" cy="580" rx="168" ry="180"/>
+ <ellipse cx="640" cy="144" rx="139" ry="101"/>
+</g>
+<rect width="1100" height="700" fill="#fff" opacity=".18" filter="url(#granite)"/>
+<g fill="#cad5d6" opacity=".12">
+ <circle cx="114" cy="309" r="2"/><circle cx="302" cy="554" r="1.5"/><circle cx="510" cy="63" r="3"/>
+ <circle cx="822" cy="137" r="2.1"/><circle cx="991" cy="397" r="1.3"/><circle cx="672" cy="555" r="2.4"/>
+ <circle cx="57" cy="622" r="1.1"/><circle cx="720" cy="377" r="1.2"/>
+</g>
+</svg>
