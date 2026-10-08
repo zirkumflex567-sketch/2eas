@@ -21,7 +21,7 @@ body.theme-stone {
 }
 body.theme-stone::before {
   content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
-  opacity: .37; background: url("/static/stone-texture.svg") center / 820px auto repeat;
+  opacity: .37; background: url("stone-texture.svg") center / 820px auto repeat;
   filter: brightness(.60) contrast(1.2);
 }
 body.theme-stone::after {
@@ -49,7 +49,7 @@ body.theme-stone .glass-card {
 body.theme-stone .glass-card::before {
   content: ""; position: absolute; inset: 0; pointer-events: none; z-index: -1;
   border-radius: inherit; opacity: .55;
-  background: url("/static/stone-texture.svg") center center / 960px 570px repeat,
+  background: url("stone-texture.svg") center center / 960px 570px repeat,
     radial-gradient(ellipse at 0 0, rgba(152,171,169,.23), transparent 48%);
   mix-blend-mode: screen;
 }
@@ -269,4 +269,73 @@ body.theme-stone .stone-crest-line {
   body.theme-stone *::before,
   body.theme-stone *::after,
   #stone-rails * { animation-duration:0.01ms !important;animation-iteration-count:1 !important; transition-duration:0.01ms !important; }
+}
+
+/* Real mirrored volume ladder beside the live candlestick chart */
+.stone-chart-stage { display:block;min-width:0; }
+.stone-side-volume { display:none; }
+body.theme-stone .stone-chart-stage {
+  display:grid;grid-template-columns:minmax(0, 1fr) 190px;gap:12px;
+  align-items:stretch;min-width:0;
+}
+body.theme-stone .stone-chart-stage > div:first-child { min-width:0; }
+body.theme-stone .stone-side-volume {
+  display:flex;flex-direction:column;min-width:0;min-height:520px;padding:12px 10px;
+  border:2px solid rgba(132,151,161,.49);border-radius:15px 9px 19px 8px;
+  background:
+    linear-gradient(175deg,rgba(104,132,138,.18), transparent 41%),
+    url("stone-texture.svg") center / 570px auto,
+    linear-gradient(#29333b,#0b1117);
+  box-shadow:inset 0 2px rgba(217,230,235,.18),inset 0 0 18px #070a0c,
+    0 4px 0 rgba(0,0,0,.7),0 0 9px rgba(31,153,205,.12);
+}
+.stone-volume-title {
+  text-align:center;font-weight:900;font-size:11px;
+  letter-spacing:.07em;color:#dee8ec;text-shadow:0 1px #000,0 0 9px #22c6ee;
+  margin:5px 0 16px; padding-bottom:9px; border-bottom:1px solid rgba(122,146,158,.43);
+}
+.stone-mini-volume {
+  display:flex;flex-direction:column;justify-content:space-evenly;flex:1;
+  gap:9px; padding:5px 0;
+}
+.stone-mini-row { display:flex;flex-direction:column;gap:5px; }
+.stone-mini-price {
+  font:600 10px ui-monospace,Consolas,monospace;
+  color:rgba(207,217,220,.84);
+  text-shadow:0 1px #040b0d;
+}
+.stone-mini-track {
+  display:block;height:14px;width:100%;
+  border:1px solid rgba(143,163,172,.22);
+  background:linear-gradient(#04090c,#1a252a);
+  border-radius:2px 5px 5px 2px;
+  box-shadow:inset 0 2px 3px #060a0d;
+}
+.stone-mini-fill {
+  display:block;height:100%;min-width:1px;border-radius:2px 4px 4px 2px;
+  transition:width .45s ease;
+  background:linear-gradient(180deg,#64c8ea,#0e709a 54%,#1a4663);
+  border-top:1px solid #99dcf5;
+  box-shadow:inset 0 1px rgba(255,255,255,.28),0 0 9px rgba(42,184,245,.35);
+}
+.stone-mini-fill[data-kind="poc"] {
+  background:linear-gradient(#ffd49a,#b66b24 55%,#814417);
+  border-top-color:#ffe0a4;box-shadow:0 0 8px rgba(255,167,71,.55);
+}
+.stone-mini-fill[data-kind="off"] {
+  background:linear-gradient(#78858b,#35424c);border-top-color:#a1aab0;box-shadow:none;
+}
+.stone-mini-wait {color:#899da5;text-align:center;font-size:11px;font-style:italic;padding:20px 5px;}
+#stone-rails .left,#stone-rails .right {position:absolute;top:0;bottom:0;width:28px;}
+#stone-rails svg {left:0;}
+@media(max-width:1360px) {
+  body.theme-stone .stone-chart-stage {grid-template-columns:minmax(0,1fr) 140px;gap:8px;}
+  body.theme-stone .stone-side-volume {padding:10px 6px;}
+}
+@media(max-width:1120px) {
+  body.theme-stone .stone-chart-stage {display:block;}
+  body.theme-stone .stone-side-volume {display:none;}
+}
+@media(prefers-reduced-motion:reduce) {
+  body.theme-stone .stone-mini-fill {transition:none;}
 }
