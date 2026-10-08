@@ -1092,11 +1092,8 @@ HTML_CONTENT = """<!DOCTYPE html>
 
         <!-- TV CHART CONTAINER (520px high) -->
         <div class="w-full relative rounded-lg overflow-hidden border table-border" style="height: 520px;">
-          <!-- Floating EA Status Overlay Box -->
-          <div id="chart-ea-status-box" class="absolute top-2.5 left-2.5 z-10 pointer-events-none px-2.5 py-1.5 rounded-lg bg-black/80 backdrop-blur border border-white/10 text-[11px] font-mono shadow-xl max-w-[85%] flex items-center gap-2">
-            <span id="chart-ea-status-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
-            <span id="chart-ea-status-text" class="text-white font-bold truncate">EA-Status wird geladen …</span>
-          </div>
+          <!-- Complete names of chart price levels; native axis shows only numbers. -->
+          <div id="chart-level-legend" class="stone-chart-level-legend" role="group" aria-label="Aktuelle Daily- und Weekly-Level" hidden></div>
           <div id="tv-chart" class="w-full h-full"></div>
         </div>
       </div>
@@ -1352,7 +1349,6 @@ HTML_CONTENT = """<!DOCTYPE html>
     function updateEAStatusButtonUI() {
       const btn = document.getElementById('toggle-ea-status-btn');
       const lbl = document.getElementById('toggle-ea-status-label');
-      const box = document.getElementById('chart-ea-status-box');
       if (lbl) lbl.textContent = showEAStatusText ? 'EA-Text: AN' : 'EA-Text: AUS';
       if (btn) {
         if (showEAStatusText) {
@@ -1360,9 +1356,6 @@ HTML_CONTENT = """<!DOCTYPE html>
         } else {
           btn.className = 'px-2 py-1 rounded ticker-bg border font-bold cursor-pointer transition flex items-center gap-1 text-sub hover:text-white opacity-60';
         }
-      }
-      if (box) {
-        box.classList.toggle('hidden', !showEAStatusText);
       }
     }
 
@@ -1436,6 +1429,8 @@ HTML_CONTENT = """<!DOCTYPE html>
         candleSeries.setMarkers([]);
         Object.values(srLines).forEach(line => candleSeries.removePriceLine(line));
         srLines = {};
+        const levelLegend = document.getElementById('chart-level-legend');
+        if (levelLegend) { levelLegend.replaceChildren(); levelLegend.hidden = true; }
         for (const series of [candleSeries,ema20Series,ema50Series,ema200Series,...emaGlowSeries.flat()]) series.setData([]);
       }
       isInitialLoad = true;
@@ -1680,20 +1675,21 @@ HTML_CONTENT = """<!DOCTYPE html>
 
     // --- SUPPORT & RESISTANCE / VOLUME PROFILE LINES ON CHART ---
     function updateChartSRLines(sr, curPrice) {
-      if (!sr || !candleSeries) return;
+      if (!sr || !candleSeries) { renderChartLevelLegend([]); return; }
+      const visibleLevels = [];
 
       function setLine(key, price, color, title, style = 2) {
-        if (!price || price <= 0) return;
+        const p = Number(price);
+        if (!Number.isFinite(p) || p <= 0) { removeLine(key); return; }
+        visibleLevels.push({key, price:p, color, title});
+        // Long native price-line titles are clipped by the narrow right axis.
+        // Keep their numeric scale labels and show complete names in our legend.
         if (srLines[key]) {
-          srLines[key].applyOptions({ price: price, color: color, title: title });
+          srLines[key].applyOptions({price:p, color, title:''});
         } else {
           srLines[key] = candleSeries.createPriceLine({
-            price: price,
-            color: color,
-            lineWidth: 1,
-            lineStyle: style,
-            axisLabelVisible: true,
-            title: title,
+            price:p, color, lineWidth:1, lineStyle:style,
+            axisLabelVisible:true, title:'',
           });
         }
       }
@@ -1723,6 +1719,32 @@ HTML_CONTENT = """<!DOCTYPE html>
         setLine('w_low', sr.weekly_low, '#059669', 'Weekly Low (Sup)', 1);
       } else {
         removeLine('w_low');
+      }
+      renderChartLevelLegend(visibleLevels);
+    }
+
+    function renderChartLevelLegend(levels) {
+      const box = document.getElementById('chart-level-legend');
+      if (!box) return;
+      box.replaceChildren();
+      box.hidden = !levels.length;
+      if (!levels.length) return;
+      const heading = document.createElement('div');
+      heading.className = 'stone-chart-level-heading';
+      heading.textContent = 'PREISLEVEL';
+      box.append(heading);
+      for (const level of levels) {
+        const row = document.createElement('div');
+        row.className = 'stone-chart-level';
+        row.style.setProperty('--level-color',level.color);
+        const label = document.createElement('span');
+        label.className = 'stone-chart-level-name';
+        label.textContent = level.title;
+        const value = document.createElement('strong');
+        value.className = 'stone-chart-level-price';
+        value.textContent = level.price.toFixed(2);
+        row.append(label,value);
+        box.append(row);
       }
     }
 
@@ -1938,18 +1960,6 @@ HTML_CONTENT = """<!DOCTYPE html>
         // Render Trade Journal (strictly for active account)
         renderJournal(data.journal);
 
-        // Update floating EA status badge on chart
-        const statusBoxText = document.getElementById('chart-ea-status-text');
-        const statusBoxDot = document.getElementById('chart-ea-status-dot');
-        if (statusBoxText) {
-          const strat = data.account.id === 'goldm15' ? 'GoldM15' : 'Titan Pro';
-          const diag = data.trend_diagnosis || data.short_missing || '';
-          statusBoxText.innerHTML = `<span class="${data.account.id==='goldm15' ? 'text-amber-400':'text-cyan-400'} font-bold">[${strat}]</span> ${diag}`;
-        }
-        if (statusBoxDot) {
-          const isBull = data.trend_direction === 'BULLISH';
-          statusBoxDot.className = `w-2 h-2 rounded-full ${isBull ? 'bg-emerald-400' : 'bg-rose-400'} animate-pulse shrink-0`;
-        }
         if (needsCharts) void loadCandles();
 
       } catch (err) {

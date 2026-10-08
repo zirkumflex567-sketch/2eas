@@ -1043,3 +1043,90 @@ body.theme-stone .stone-asset-panel button.stone-chart-expand-primary:hover:not(
   background: linear-gradient(180deg,#299ac6,#0b5674) !important;
   box-shadow: 0 0 19px rgba(36,220,255,.89) !important;
 }
+
+
+/* V6 chart hotfix: full level names are rendered in a dedicated, unclipped
+   overlay INSIDE the plot area; the original TradingView axis stays numeric. */
+#chart-level-legend.stone-chart-level-legend {
+  position: absolute !important;
+  right: 82px !important;
+  bottom: 28px !important;
+  z-index: 18 !important;
+  width: min(228px, calc(100% - 95px)) !important;
+  max-height: min(240px, 52%) !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  padding: 7px 10px 9px !important;
+  color: #ecfaff !important;
+  background: linear-gradient(155deg, rgba(2,12,20,.96), rgba(7,22,31,.95)) !important;
+  border: 1px solid rgba(96,198,218,.66) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 4px 18px rgba(0,0,0,.70), inset 0 1px rgba(188,236,251,.18) !important;
+  pointer-events: none !important;
+  font-family: ui-monospace, Consolas, monospace !important;
+}
+#chart-level-legend.stone-chart-level-legend[hidden] { display:none !important; }
+#chart-level-legend .stone-chart-level-heading {
+  font-size: 9px !important;
+  font-weight: 800;
+  color: #7bdbef !important;
+  letter-spacing: .14em;
+  padding-bottom: 5px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(114,197,219,.36);
+}
+#chart-level-legend .stone-chart-level {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  min-height: 22px;
+  border-left: 3px solid var(--level-color, #4ee7f7);
+  padding: 2px 0 2px 7px;
+  margin: 1px 0;
+  line-height: 1.4;
+}
+#chart-level-legend .stone-chart-level-name {
+  display: block;
+  font-size: 10px;
+  font-weight: 750;
+  white-space: normal;
+  overflow-wrap: break-word;
+  color: #e7f4fc;
+}
+#chart-level-legend .stone-chart-level-price {
+  font-size: 10px;
+  font-weight: 850;
+  color: var(--level-color, #8febfa);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-shadow: 0 0 6px rgba(8,15,20,.7);
+}
+/* A native-scale anchored overlay needs the pane's own measured dimensions,
+   never the root including the right price axis and bottom time scale. */
+#tv-chart canvas.stone-chart-fx {
+  right: auto !important;
+  bottom: auto !important;
+  overflow: hidden;
+  pointer-events: none !important;
+}
+/* Chart status banners must not reappear via stale HTML or cached JS. The
+   real Anti-Trap diagnostic in the dashboard is intentionally untouched. */
+#chart-ea-status-box { display:none !important; }
+@media (max-width: 900px) {
+  #chart-level-legend.stone-chart-level-legend {
+    right: 66px !important;
+    width: min(188px, calc(100% - 75px)) !important;
+    bottom: 25px !important;
+    padding: 6px !important;
+  }
+  #chart-level-legend .stone-chart-level-name,
+  #chart-level-legend .stone-chart-level-price { font-size: 9px; }
+}
+@media (max-width: 520px) {
+  #chart-level-legend.stone-chart-level-legend {
+    width: min(158px, calc(100% - 60px)) !important;
+    right: 52px !important;
+    bottom: 23px !important;
+  }
+}

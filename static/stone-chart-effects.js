@@ -22,10 +22,24 @@
     return "rgba(" + color.r + "," + color.g + "," + color.b + "," + opacity.toFixed(3) + ")";
   }
   function prepareSize(state) {
-    const rect = state.host.getBoundingClientRect();
-    const width = Math.round(rect.width);
-    const height = Math.round(rect.height);
+    // The chart root includes its RIGHT PRICE AXIS and BOTTOM TIME AXIS.
+    // Render the glow only over the actual price pane; priceToCoordinate and
+    // timeToCoordinate are both measured relative to that pane's top-left.
+    const hostRect = state.host.getBoundingClientRect();
+    const cell = state.host.querySelector("table tbody tr:first-child td:first-child");
+    const pane = cell ? cell.getBoundingClientRect() : hostRect;
+    let plotWidth = 0;
+    try { plotWidth = state.chart.timeScale().width(); } catch (_) {}
+    const width = Math.max(0, Math.round(plotWidth || pane.width));
+    const height = Math.max(0, Math.round(pane.height));
     if (width < 20 || height < 20) return false;
+    const left = Math.max(0, Math.round(pane.left - hostRect.left));
+    const top = Math.max(0, Math.round(pane.top - hostRect.top));
+    // Override the legacy full-container CSS width/height at inline priority.
+    state.canvas.style.setProperty("left", left + "px", "important");
+    state.canvas.style.setProperty("top", top + "px", "important");
+    state.canvas.style.setProperty("width", width + "px", "important");
+    state.canvas.style.setProperty("height", height + "px", "important");
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const pw = Math.max(1, Math.round(width * dpr));
     const ph = Math.max(1, Math.round(height * dpr));
@@ -45,6 +59,45 @@
   function getY(series, value) {
     try { return series.priceToCoordinate(value); }
     catch (_) { return null; }
+  }
+  function drawEmaHalo(state, index, now) {
+    const points = state.emaData[index] || [];
+    const series = state.emaSeries[index];
+    if (!series || points.length < 2) return;
+    const ctx = state.ctx, tint = PALETTE[index];
+    const phase = now / 5700 * Math.PI * 2 - index * Math.PI * 2 / 3;
+    const pulse = .58 + .42 * Math.pow(Math.max(0,Math.cos(phase)),4);
+    let segments = 0, started = false;
+    ctx.beginPath();
+    for (const point of points) {
+      if (!point || !Number.isFinite(point.value)) { started = false; continue; }
+      const x = getX(state,point.time), y = getY(series,point.value);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) { started = false; continue; }
+      if (x < -24 || x > state.width+24 || y < -35 || y > state.height+35) {
+        started = false; continue;
+      }
+      if (!started) { ctx.moveTo(x,y); started = true; }
+      else { ctx.lineTo(x,y); segments++; }
+    }
+    if (!segments) return;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.strokeStyle = rgba(tint,.15 + .13*pulse);
+    ctx.lineWidth = 13 + 4*pulse;
+    ctx.shadowColor = rgba(tint,1);
+    ctx.shadowBlur = 21 + 23*pulse;
+    ctx.stroke();
+    ctx.strokeStyle = rgba(tint,.25 + .26*pulse);
+    ctx.lineWidth = 5.3 + 2*pulse;
+    ctx.shadowBlur = 9 + 13*pulse;
+    ctx.stroke();
+    ctx.strokeStyle = rgba(tint,.32 + .28*pulse);
+    ctx.lineWidth = 2;
+    ctx.shadowBlur = 3 + 6*pulse;
+    ctx.stroke();
+    ctx.restore();
   }
   function updateNativeGlow(state, now) {
     // Glow is rendered by the SAME chart engine as the EMA. Absolutely no
@@ -122,6 +175,7 @@
     if (!active || !prepareSize(state)) return;
     const ctx = state.ctx;
     ctx.clearRect(0, 0, state.width, state.height);
+    PALETTE.forEach((_,i)=>drawEmaHalo(state,i,now));
     if (state.flash && now < state.flash.until) {
       const fade = Math.max(0, (state.flash.until - now) / 1950);
       drawCandleHalo(state, state.flash.candle, Math.min(1, fade * 1.2), state.flash.kind);

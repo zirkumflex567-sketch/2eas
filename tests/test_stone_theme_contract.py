@@ -54,5 +54,23 @@ class StoneThemeContractTests(unittest.TestCase):
         self.assertIn('src="lightweight-charts.js"', demo)
 
 
+    def test_live_chart_labels_and_glow_regression(self):
+        app = (ROOT / "app.py").read_text(encoding="utf-8")
+        fx = (STATIC / "stone-chart-effects.js").read_text(encoding="utf-8")
+        skin = (STATIC / "stone-asset-skin.css").read_text(encoding="utf-8")
+        self.assertNotIn('id="chart-ea-status-box"', app)
+        self.assertNotIn("chart-ea-status-text", app)
+        self.assertIn('id="chart-level-legend"', app)
+        self.assertIn("renderChartLevelLegend(visibleLevels);", app)
+        self.assertIn("level.title", app)
+        self.assertIn("title:''", app)
+        self.assertIn("drawEmaHalo(state,i,now)", fx)
+        self.assertIn("state.chart.timeScale().width()", fx)
+        self.assertIn('cell.getBoundingClientRect()', fx)
+        self.assertIn('state.canvas.style.setProperty("width"', fx)
+        self.assertIn("!reducedMotion.matches", fx)
+        self.assertIn("#chart-level-legend.stone-chart-level-legend", skin)
+
+
 if __name__ == "__main__":
     unittest.main()
