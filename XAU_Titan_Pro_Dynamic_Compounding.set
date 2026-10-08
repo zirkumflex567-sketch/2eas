@@ -1,0 +1,50 @@
+; XAU Titan Pro v6.0 - Dynamic Compounding Set (Full Backtest & Multi-Month Run)
+; Kein kuenstlicher 8%-Ziel-Stop - tradet das gesamte Jahr durch!
+; Dynamisches Lot: 1.0% Risiko pro Trade mit Zinseszins-Wachstum
+
+InpFixedLot=0.0
+InpRiskPercent=1.0
+InpMaxOpenPositions=3
+InpMinBarsBetweenEntries=6
+InpMagicNumber=881122
+InpTradeComment=XAU_Titan_v6_Dyn
+
+InpUseSwingSL=true
+InpSwingBarsLookback=80
+InpMinSLPoints=1500
+InpMaxSLPoints=5000
+InpSLBufferPoints=150
+InpUseDynamicExit=true
+InpMinProfitUSDForExit=25.0
+InpCloseInProfitAtSessionEnd=true
+InpSessionEndMinProfitUSD=5.0
+InpUseTakeProfit=false
+InpTPRatio=0.0
+InpUseTrailingBE=false
+InpBETriggerRatio=1.5
+
+InpFilterEliteHours=true
+InpTradeStartHour=1
+InpTradeStartMinute=0
+InpTradeEndHour=21
+InpTradeEndMinute=0
+
+InpEnablePropProtection=true
+InpMaxDailyDrawdownPercent=3.0
+InpMaxTotalDrawdownPercent=8.0
+InpPhaseProfitTargetPct=0.0
+
+InpTrendEMAPeriod=200
+InpFastEMAPeriod=20
+InpSlowEMAPeriod=50
+InpRSIPeriod=14
+InpRSIMinMomentum=50.0
+
+; --- Anti-Trap & Überdehnungs-Filter ---
+InpUseOverextensionFilter=true
+InpMaxATRExtension=1.8
+InpUseConsecutiveRunFilter=true
+InpMaxConsecutiveBars=3
+InpUseSRDistanceFilter=true
+InpMinSRRoomPoints=300
+InpATRPeriod=14

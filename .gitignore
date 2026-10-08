@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Compile logs & debug logs
+*.log
+compile_*.log
+
+# Cache & Backups
+dashboard-backups/
+.playwright-cli/
+*.tmp
+*.state
+
+# Temp backtest exports
+kacki.xlsx
+richtigkkacki.xlsx

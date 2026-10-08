@@ -1,0 +1,58 @@
+; ==============================================================================
+; XAU Titan Pro v6.0 - ULTRA ELITE 1.0% RISK (Compounding & Verlust-Minimierer)
+; ==============================================================================
+; 1. Asien-Nachtsession (01:00-07:00) ELIMINIERT -> spart -4.170 $ reine Verluste!
+; 2. US-News/Opening-Chop (15:00-17:00) ELIMINIERT -> spart -3.544 $ reine Verluste!
+; 3. Intelligenter Break-Even aktiv (ab +18 $ Profit wird SL auf +2 $ abgesichert)
+; 4. SL auf max. 30 $ gedeckelt, R:R durch Take Profit 1.5x gesteigert!
+; 5. Dynamisches Compounding mit 1.0% Risiko
+
+InpFixedLot=0.0
+InpRiskPercent=1.0
+InpMaxOpenPositions=3
+InpMinBarsBetweenEntries=6
+InpMagicNumber=881122
+InpTradeComment=Titan_Ultra_10
+
+InpUseSwingSL=true
+InpSwingBarsLookback=48
+InpMinSLPoints=1500
+InpMaxSLPoints=3000
+InpSLBufferPoints=150
+InpUseDynamicExit=true
+InpMinProfitUSDForExit=35.0
+InpCloseInProfitAtSessionEnd=true
+InpSessionEndMinProfitUSD=5.0
+InpUseTakeProfit=true
+InpTPRatio=1.5
+InpUseBreakEven=true
+InpBETriggerUSD=25.0
+InpBELockUSD=5.0
+
+InpFilterEliteHours=true
+InpEnableAsianSession=false
+InpAvoidNewsSpikeHours=true
+InpTradeStartHour=8
+InpTradeStartMinute=0
+InpTradeEndHour=21
+InpTradeEndMinute=0
+
+InpEnablePropProtection=true
+InpMaxDailyDrawdownPercent=3.0
+InpMaxTotalDrawdownPercent=8.0
+InpPhaseProfitTargetPct=0.0
+
+InpTrendEMAPeriod=200
+InpFastEMAPeriod=20
+InpSlowEMAPeriod=50
+InpRSIPeriod=14
+InpRSIMinMomentum=50.0
+
+; --- Anti-Trap & Überdehnungs-Filter ---
+InpUseOverextensionFilter=true
+InpMaxATRExtension=1.8
+InpUseConsecutiveRunFilter=true
+InpMaxConsecutiveBars=3
+InpUseSRDistanceFilter=true
+InpMinSRRoomPoints=300
+InpATRPeriod=14

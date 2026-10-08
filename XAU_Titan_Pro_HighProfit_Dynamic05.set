@@ -1,0 +1,58 @@
+; ==============================================================================
+; XAU Titan Pro v6.0 - HIGH PROFIT DYNAMIC 0.5% (Compounding Runner)
+; ==============================================================================
+; Ziel: 9.000+ $ Net Profit mit 0.5% dynamischem Risiko
+; 1. Keine verfrühte 2$-Break-Even-Knebelung -> Gewinner laufen voll durch!
+; 2. Fester Take Profit aus -> Unlimitierte M15-Trend-Runner an EMA20
+; 3. Stop-Loss auf max. 30 $ gedeckelt
+; 4. Asien-Nacht (01-07) & US-News-Chop (15-17) geblockt -> Winrate ~76%, PF ~2.94!
+
+InpFixedLot=0.0
+InpRiskPercent=0.5
+InpMaxOpenPositions=3
+InpMinBarsBetweenEntries=6
+InpMagicNumber=881122
+InpTradeComment=Titan_HP_Dyn05
+
+InpUseSwingSL=true
+InpSwingBarsLookback=48
+InpMinSLPoints=1500
+InpMaxSLPoints=3000
+InpSLBufferPoints=150
+InpUseDynamicExit=true
+InpMinProfitUSDForExit=35.0
+InpCloseInProfitAtSessionEnd=true
+InpSessionEndMinProfitUSD=5.0
+InpUseTakeProfit=false
+InpTPRatio=0.0
+InpUseBreakEven=false
+InpBETriggerUSD=40.0
+InpBELockUSD=15.0
+
+InpFilterEliteHours=true
+InpEnableAsianSession=false
+InpAvoidNewsSpikeHours=true
+InpTradeStartHour=8
+InpTradeStartMinute=0
+InpTradeEndHour=21
+InpTradeEndMinute=0
+
+InpEnablePropProtection=true
+InpMaxDailyDrawdownPercent=3.0
+InpMaxTotalDrawdownPercent=8.0
+InpPhaseProfitTargetPct=0.0
+
+InpTrendEMAPeriod=200
+InpFastEMAPeriod=20
+InpSlowEMAPeriod=50
+InpRSIPeriod=14
+InpRSIMinMomentum=50.0
+
+; --- Anti-Trap & Überdehnungs-Filter ---
+InpUseOverextensionFilter=true
+InpMaxATRExtension=1.8
+InpUseConsecutiveRunFilter=true
+InpMaxConsecutiveBars=3
+InpUseSRDistanceFilter=true
+InpMinSRRoomPoints=300
+InpATRPeriod=14

@@ -1,0 +1,55 @@
+; ==============================================================================
+; XAU Titan Pro v7.0 - Dynamic 0.5% (Full 9-Month Run / No Prop Lockout)
+; Identisch zu Test 3 (der in 28 Tagen +2.135$ mit PF 2.80 gemacht hat!),
+; jedoch mit InpEnablePropProtection=true, damit er nicht nach 4 Wochen stoppt.
+; ==============================================================================
+
+InpFixedLot=0.0
+InpRiskPercent=0.5
+InpMaxOpenPositions=3
+InpMinBarsBetweenEntries=2
+InpMagicNumber=881122
+InpTradeComment=Titan_v7_Dyn05
+
+InpUseSwingSL=true
+InpSwingBarsLookback=48
+InpMinSLPoints=1500
+InpMaxSLPoints=15000
+InpSLBufferPoints=250
+InpUseDynamicExit=true
+InpMinProfitUSDForExit=28.0
+InpCloseInProfitAtSessionEnd=false
+InpSessionEndMinProfitUSD=5.0
+InpUseTakeProfit=false
+InpTPRatio=0.0
+InpUseBreakEven=false
+InpBETriggerUSD=40.0
+InpBELockUSD=15.0
+
+InpFilterEliteHours=true
+InpEnableAsianSession=true
+InpAvoidNewsSpikeHours=false
+InpTradeStartHour=1
+InpTradeStartMinute=0
+InpTradeEndHour=23
+InpTradeEndMinute=45
+
+InpEnablePropProtection=true
+InpMaxDailyDrawdownPercent=4.0
+InpMaxTotalDrawdownPercent=10.0
+InpPhaseProfitTargetPct=0.0
+
+InpTrendEMAPeriod=50
+InpFastEMAPeriod=9
+InpSlowEMAPeriod=21
+InpRSIPeriod=14
+InpRSIMinMomentum=50.0
+
+; --- Anti-Trap & Überdehnungs-Filter ---
+InpUseOverextensionFilter=true
+InpMaxATRExtension=1.8
+InpUseConsecutiveRunFilter=true
+InpMaxConsecutiveBars=3
+InpUseSRDistanceFilter=true
+InpMinSRRoomPoints=300
+InpATRPeriod=14

@@ -1,0 +1,10 @@
+Strategy,Symbol,TF,trades,win_rate,net_profit,return_pct,profit_factor,max_dd_pct,avg_win,avg_loss,rrr,sharpe
+Trend-Pullback (RSI+EMA),EURUSD,H1,773,46.31,-9541.4,-95.41,0.41,95.88,18.55,39.0,0.48,-5.55
+Donchian Breakout + ATR Filter,EURUSD,H1,562,42.35,-9076.99,-90.77,0.4,90.77,25.57,46.94,0.54,-5.63
+Session Momentum Impulse,EURUSD,H1,429,53.61,-8299.14,-82.99,0.43,83.16,26.69,72.55,0.37,-4.84
+Trend-Pullback (RSI+EMA),EURUSD,M15,913,45.56,-9633.37,-96.33,0.52,96.46,25.31,40.57,0.62,-4.65
+Donchian Breakout + ATR Filter,EURUSD,M15,844,47.27,-9698.54,-96.99,0.43,97.12,18.16,38.07,0.48,-5.31
+Session Momentum Impulse,EURUSD,M15,503,48.31,-9276.23,-92.76,0.39,92.96,24.3,58.39,0.42,-6.54
+Trend-Pullback (RSI+EMA),XAUUSD,H1,706,46.88,-9521.13,-95.21,0.52,95.61,30.97,52.73,0.59,-3.22
+Donchian Breakout + ATR Filter,XAUUSD,H1,581,54.73,-6966.51,-69.67,0.66,69.67,41.82,77.05,0.54,-2.35
+Session Momentum Impulse,XAUUSD,H1,311,50.16,-7857.48,-78.57,0.33,79.16,25.09,75.95,0.33,-6.54

@@ -1,0 +1,54 @@
+; ==============================================================================
+; XAU Titan Pro v6.0 - HIGH PROFIT DYNAMIC 1.0% (Aggressive Compounding)
+; ==============================================================================
+; Ziel: 15.000+ $ Net Profit mit 1.0% dynamischem Risiko
+
+InpFixedLot=0.0
+InpRiskPercent=1.0
+InpMaxOpenPositions=3
+InpMinBarsBetweenEntries=6
+InpMagicNumber=881122
+InpTradeComment=Titan_HP_Dyn10
+
+InpUseSwingSL=true
+InpSwingBarsLookback=48
+InpMinSLPoints=1500
+InpMaxSLPoints=3000
+InpSLBufferPoints=150
+InpUseDynamicExit=true
+InpMinProfitUSDForExit=35.0
+InpCloseInProfitAtSessionEnd=true
+InpSessionEndMinProfitUSD=5.0
+InpUseTakeProfit=false
+InpTPRatio=0.0
+InpUseBreakEven=false
+InpBETriggerUSD=40.0
+InpBELockUSD=15.0
+
+InpFilterEliteHours=true
+InpEnableAsianSession=false
+InpAvoidNewsSpikeHours=true
+InpTradeStartHour=8
+InpTradeStartMinute=0
+InpTradeEndHour=21
+InpTradeEndMinute=0
+
+InpEnablePropProtection=true
+InpMaxDailyDrawdownPercent=3.0
+InpMaxTotalDrawdownPercent=8.0
+InpPhaseProfitTargetPct=0.0
+
+InpTrendEMAPeriod=200
+InpFastEMAPeriod=20
+InpSlowEMAPeriod=50
+InpRSIPeriod=14
+InpRSIMinMomentum=50.0
+
+; --- Anti-Trap & Überdehnungs-Filter ---
+InpUseOverextensionFilter=true
+InpMaxATRExtension=1.8
+InpUseConsecutiveRunFilter=true
+InpMaxConsecutiveBars=3
+InpUseSRDistanceFilter=true
+InpMinSRRoomPoints=300
+InpATRPeriod=14
