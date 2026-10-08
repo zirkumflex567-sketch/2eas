@@ -958,6 +958,8 @@ HTML_CONTENT = """<!DOCTYPE html>
     #account-content { transition:opacity .15s; }
     @media(max-width:700px) { .account-tab { flex:1; min-width:0; padding:10px; } }
   </style>
+  <!-- Optional runic stone material; selectors scoped to body.theme-stone -->
+  <link rel="stylesheet" href="static/stone-cockpit.css">
 </head>
 <body class="theme-dark flex flex-col p-3 min-h-screen text-xs select-none">
 
@@ -2386,6 +2388,8 @@ HTML_CONTENT = """<!DOCTYPE html>
       setInterval(loadCandles, 5000);   // 5s smooth candle update (no reset)
     };
   </script>
+  <!-- Visual-only extension: live MT5 and TradingView handlers remain untouched -->
+  <script src="static/stone-cockpit.js"></script>
 </body>
 </html>
 """

@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="de" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STONE // RUNE · 2EAs Design Preview (Demo)</title>
+<link rel="stylesheet" href="stone-cockpit.css">
+<style>
+*{box-sizing:border-box}
+html{color-scheme:dark}
+body{margin:0;font-family:"Trebuchet MS",Segoe UI,sans-serif}
+button{cursor:pointer;color:inherit}
+button:focus-visible{outline:2px solid #66dfff;outline-offset:3px}
+.preview-container{max-width:1660px;margin:auto}
+.demo-tag{position:sticky;z-index:22;top:0;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:9px 19px;margin:-18px -28px 16px;background:linear-gradient(90deg,#602f1d,#101b22 75%);border-bottom:1px solid #e49756;color:#ffd2a0;font:700 11px ui-monospace,Consolas,monospace;letter-spacing:.08em}
+.preview-account,.hero,.panel{margin-bottom:14px;padding:15px 18px}
+.preview-title{display:flex;align-items:center;gap:13px;flex-wrap:wrap}
+.preview-title strong{font-size:23px;letter-spacing:.025em;text-shadow:0 2px #000,0 0 10px #1796af}
+.neon{color:#57eaf5;text-shadow:0 0 8px rgba(61,235,252,.42)}
+.gold{color:#f3ab5c}
+.green{color:#54e7b1}
+.red{color:#ff6c64}
+.muted{color:#9eafb7}
+.rune{font-size:26px;color:#55e3f8;text-shadow:0 0 12px #31cbe9}
+.tag{border:1px solid #389eb3;border-radius:7px;padding:6px 9px;background:#0b2934;color:#6ce4f2;font:bold 11px Consolas,monospace}
+.hero{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.hero-data{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ticker{border:1px solid #465963;background:linear-gradient(#111e27,#0a1117);box-shadow:inset 0 2px 5px #000;padding:10px 13px;border-radius:10px;font:700 12px Consolas,monospace;white-space:nowrap}
+.ticker strong{font-size:16px}
+.app-grid{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(340px,1fr);gap:14px;margin-bottom:14px}
+.right-stack{display:flex;flex-direction:column;gap:14px}
+.right-stack .glass-card{padding:18px}
+.chart-panel{padding:18px 17px}
+.panel-heading{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:13px}
+.panel-heading strong{font-size:16px;color:#d9e5e8}
+.pill-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.pill{font:bold 11px Consolas,monospace;border:1px solid #64747b;background:linear-gradient(#33414c,#111a22);border-radius:5px;padding:5px 9px;box-shadow:inset 0 1px 1px #87919755,0 2px #05090b}
+.pill.active{color:#74e7ff;border-color:#32a3d1;background:linear-gradient(#19506a,#0b273b);box-shadow:0 0 10px #1396bd66}
+.chart-slot{height:520px;overflow:hidden;border:1px solid #596870;border-radius:10px;background:#111b22}
+#tv-chart{height:100%;width:100%}
+.chart-legend{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font:700 10px Consolas,monospace}
+.chart-legend span:nth-child(1){color:#51deec}.chart-legend span:nth-child(2){color:#ffa554}.chart-legend span:nth-child(3){color:#d17af0}
+h2{font-size:13px;letter-spacing:.045em;color:#67d4f6;margin:0 0 9px}
+.rules{width:100%;border-collapse:collapse;font:12px Consolas,monospace}
+.rules th,.rules td{padding:11px 6px;text-align:center;border-bottom:1px solid #53657066}
+.rules th:first-child,.rules td:first-child{text-align:left}
+.rules th{color:#a1b4c0;text-transform:uppercase}
+.ok{color:#46f3ad;text-shadow:0 0 6px #1c9970}.fail{color:#fa6d6d;text-shadow:0 0 6px #ac3833}
+.meter-title{display:flex;justify-content:space-between;margin:12px 0 7px;font:bold 12px Consolas,monospace}
+.meter{height:12px;background:#091115;border:1px solid #53616b;box-shadow:inset 0 2px 4px #000;border-radius:8px;padding:2px}
+.meter span{display:block;height:100%;border-radius:6px}
+.meter.red-meter span{width:100%;background:linear-gradient(90deg,#591119,#d94830,#ffb44e);box-shadow:0 0 10px #ff5b37;animation:stone-bar-ember 2s infinite alternate}
+.meter.green-meter span{width:40%;background:linear-gradient(90deg,#14665b,#35eaae,#90ffdf);box-shadow:0 0 11px #20e39d}
+.volume-panel{padding:16px 18px}
+#vp-histogram-container{display:flex;flex-direction:column;gap:7px}
+.vrow{display:grid;grid-template-columns:88px 1fr 61px;gap:9px;align-items:center;font:11px Consolas,monospace}
+.vprice{text-align:right;color:#c6d3d7}
+.vtrack{display:block;height:15px;border-radius:4px;background:linear-gradient(#080f14,#253039);border:1px solid #4c5c62;box-shadow:inset 0 2px 3px #03070a}
+.vp-bar{height:100%;border-radius:3px;display:block;background:linear-gradient(#4be2ff,#115e88);box-shadow:0 0 8px #20c4ff77}
+.vp-bar.poc{background:linear-gradient(#ffe0a0,#c57531);box-shadow:0 0 9px #e9924e}
+.vlabel{color:#9cadb5}
+.vlabel.poc{color:#ffb95e}
+.full-panel{padding:16px 18px;margin-bottom:14px}
+.position-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 8px;border-top:1px solid #52636d55;font:12px Consolas,monospace}
+.position-row input{width:68px;color:#e1e8ed;border:1px solid #637783;background:#0e1920;border-radius:5px;text-align:center;padding:6px}
+.position-row button{padding:7px 9px;border:1px solid #455a64;background:#293841;border-radius:5px}
+.position-row button:disabled{cursor:not-allowed;opacity:.45}
+.trade-badge{color:#ffd8d4;background:#802d2b;padding:7px 10px;border-radius:6px;font-weight:800}
+.journal-note{padding:13px;border-top:1px solid #50637166;font-size:12px;line-height:1.6}
+.crest{margin-right:5px}
+.warning{font:11px Consolas,monospace;color:#f4bd7d}
+.demo-footer{text-align:center;color:#748e9c;font:11px Consolas,monospace;padding:20px}
+.stone-demo-small{font:11px Consolas,monospace;color:#89a1ab}
+@media(max-width:1100px){.app-grid{grid-template-columns:1fr}.chart-panel{min-width:0}}
+@media(max-width:600px){.demo-tag{margin:-9px -10px 13px;font-size:9px}.hero-data{width:100%}.ticker{white-space:normal}.preview-title strong{font-size:16px}.panel-heading{align-items:flex-start}.position-row{font-size:10px}}
+@media(prefers-reduced-motion:reduce){.meter span{animation:none!important}}
+</style>
+</head>
+<body class="theme-stone theme-dark">
+<div class="demo-tag"><span>⚠ DESIGN-DEMO / SIMULIERTE MARKTDATEN / KEINE ECHTEN ORDERS</span><span>STONE RUNE // VISUAL CONCEPT 01</span></div>
+<div class="preview-container">
+  <nav class="glass-card preview-account">
+    <div class="preview-title">
+      <span class="rune crest">ᚱ</span>
+      <span class="tag">2EAs</span>
+      <span class="pill active">◉ GOLDM15 RECONSTRUCTION</span>
+      <span class="pill">◇ XAU TITAN PRO</span>
+      <span class="muted stone-demo-small">DEMO-KONTO · Verbindung simuliert</span>
+    </div>
+  </nav>
+  <header class="glass-card hero">
+    <div class="preview-title">
+      <span class="rune">ᛟ</span>
+      <strong id="strategy-title">GOLDM15 RECONSTRUCTION</strong>
+      <span class="tag">v1.22 GUARDED</span>
+      <span class="muted">Gold (XAUUSD) · M15 Cockpit</span>
+    </div>
+    <div class="hero-data">
+      <div class="ticker">XAUUSD: <strong class="green" id="demo-bid">4130.57</strong> / <strong class="red">4130.76</strong></div>
+      <div class="ticker"><span class="green">●</span> TAGES-DD: <strong class="green">0.27%</strong> · Puffer: <b class="green">$322.68</b></div>
+      <div class="ticker">M15-SCHLUSS: <strong class="neon" id="countdown">06:58</strong></div>
+    </div>
+  </header>
+
+  <div class="app-grid">
+    <div>
+      <section class="glass-card chart-panel">
+        <div class="panel-heading">
+          <strong>ᛟ XAUUSD M15 Chart</strong>
+          <div class="pill-row" id="frame-buttons">
+            <button class="pill" data-frame="M1">M1</button><button class="pill" data-frame="M5">M5</button>
+            <button class="pill active" data-frame="M15">M15</button><button class="pill" data-frame="M30">M30</button>
+            <button class="pill" data-frame="H1">H1</button><button class="pill" data-frame="H4">H4</button>
+            <button class="pill" data-frame="D1">D1</button>
+          </div>
+          <div class="chart-legend"><span>● EMA20</span><span>● EMA50</span><span>● EMA200</span></div>
+        </div>
+        <div class="chart-slot"><div id="tv-chart"></div></div>
+        <p class="stone-demo-small">Interaktiver TradingView-Chart mit synthetischen Kerzen · Zoomen, bewegen, Timeframes testen</p>
+      </section>
+      <section class="glass-card volume-panel">
+        <div class="panel-heading">
+          <strong>ᛟ Volumenprofile & Institutional Levels</strong>
+          <div class="pill-row">
+            <button class="pill active" id="vp-tab-daily">Daily</button>
+            <button class="pill" id="vp-tab-weekly">Weekly</button>
+          </div>
+          <span class="gold stone-demo-small" id="vp-summary-badge">POC: $4123.84 · VAH: $4132.34 · VAL: $4114.44</span>
+        </div>
+        <div id="vp-histogram-container" aria-label="Demonstrationsvolumenprofil"></div>
+      </section>
+    </div>
+    <div class="right-stack">
+      <section class="glass-card" id="diagnose-card">
+        <h2>✥ LIVE-DIAGNOSE & TREND-STATUS</h2>
+        <p class="stone-demo-small">Design-Demo: M15-Schluss · Short-Signal simuliert · RSI-Pullback und Trendfilter.</p>
+        <div class="meter-title"><span class="red">SHORT · ERFÜLLTE ZIELE</span><span class="red">100% (6/6)</span></div>
+        <div class="meter red-meter"><span></span></div>
+        <div class="meter-title"><span class="green">LONG · ERFÜLLTE ZIELE</span><span class="green">40%</span></div>
+        <div class="meter green-meter"><span></span></div>
+      </section>
+      <section class="glass-card" style="flex:1">
+        <h2>🎯 EINSTIEGSZIELE · SYSTEME 1–3</h2>
+        <table class="rules"><thead><tr><th>Regel / Bedingung</th><th>SHORT</th><th>LONG</th></tr></thead>
+          <tbody>
+            <tr><td>S1 – RSI Trend</td><td class="ok">✓ ERFÜLLT</td><td class="ok">✓ ERFÜLLT</td></tr>
+            <tr><td>S1 – RSI Pullback</td><td class="ok">≥ 70</td><td class="ok">≤ 45</td></tr>
+            <tr><td>S2 – RSI Trend</td><td class="ok">✓ ERFÜLLT</td><td class="fail">✕ FEHLT</td></tr>
+            <tr><td>S2 – RSI Pullback</td><td class="ok">≥ 70</td><td class="fail">✕ FEHLT</td></tr>
+            <tr><td>S3 – RSI Trend</td><td class="ok">✓ ERFÜLLT</td><td class="fail">✕ FEHLT</td></tr>
+            <tr><td>S3 – RSI Pullback</td><td class="ok">≥ 55</td><td class="fail">✕ FEHLT</td></tr>
+          </tbody>
+        </table>
+        <p class="stone-demo-small">Die echte Oberfläche übernimmt diese Tabelle aus dem laufenden EA.</p>
+      </section>
+    </div>
+  </div>
+
+  <section class="glass-card full-panel">
+    <div class="panel-heading"><strong>▣ OFFENE POSITIONEN & SL/TP MANAGER</strong><span class="warning">VORSCHAU: HANDELSSCHALTFLÄCHEN DEAKTIVIERT</span></div>
+    <div class="position-row"><span class="trade-badge">SELL 0.01 Lot</span><span class="muted">#DEMO-001 @ 4130.26</span><b class="red">−$0.36 (Demo)</b><span>SL: <input aria-label="SL Demowert" readonly value="-10.20"></span><span>TP: <input aria-label="TP Demowert" readonly value="0.00"></span><button disabled>Set</button><button disabled>Schließen</button></div>
+    <div class="position-row"><span class="trade-badge">SELL 0.01 Lot</span><span class="muted">#DEMO-002 @ 4130.26</span><b class="red">−$0.35 (Demo)</b><span>SL: <input aria-label="SL Demowert" readonly value="-10.20"></span><span>TP: <input aria-label="TP Demowert" readonly value="0.00"></span><button disabled>Set</button><button disabled>Schließen</button></div>
+  </section>
+  <section class="glass-card full-panel">
+    <div class="panel-heading"><strong>▥ TRADE-JOURNAL & PNL</strong><span class="tag">GOLDM15</span><span class="red">Gesamt: −$3.39 (Demo)</span></div>
+    <div class="journal-note"><strong class="gold">Warum wurde dieser Trade ausgeführt?</strong><p>Simulierter RSI-Pullback: Trendfilter bestätigt, Momentum-Ausschlag und Mean-Reversion-Signal. Die Live-Anwendung zeigt die tatsächlichen Einstiegskriterien.</p><strong class="neon">ᛟ Runenstein-Telemetrie:</strong> <span class="muted">Dieses Design verändert keine Signale, Positionen oder EA-Einstellungen.</span></div>
+  </section>
+  <p class="demo-footer">STONE RUNE COCKPIT · Designstudie auf Basis einer echten, später separat angebundenen MT5-Dashboard-Oberfläche</p>
+</div>
+<script src="lightweight-charts.js"></script>
+<script>
+(function(){
+ "use strict";
+ const rows=document.getElementById('vp-histogram-container');
+ let period='daily';
+ const profile={
+  daily:[23,38,61,75,100,85,61,36],
+  weekly:[40,62,42,81,92,100,69,45]
+ };
+ function drawVolume(){
+   const vals=profile[period];rows.replaceChildren();
+   vals.forEach((v,i)=>{
+     const line=document.createElement('div');line.className='vrow';
+     const price=document.createElement('span');price.className='vprice';price.textContent='$'+(4145.45-i*4.17).toFixed(2);
+     const track=document.createElement('span');track.className='vtrack';
+     const fill=document.createElement('span');fill.className='vp-bar'+(v===100?' poc':'');fill.style.width=v+'%';track.append(fill);
+     const tag=document.createElement('span');tag.className='vlabel'+(v===100?' poc':'');tag.textContent=v===100?'★ POC':v+'%';
+     line.append(price,track,tag);rows.append(line);
+   });
+   document.getElementById('vp-summary-badge').textContent=
+      period==='daily'?'POC: $4123.84 · VAH: $4132.34 · VAL: $4114.44':'POC: $4127.40 · VAH: $4136.10 · VAL: $4117.20';
+ }
+ ['daily','weekly'].forEach(p=>document.getElementById('vp-tab-'+p).onclick=()=>{
+   period=p;drawVolume();document.querySelectorAll('[id^=vp-tab-]').forEach(b=>b.classList.toggle('active',b.id==='vp-tab-'+p));
+ });
+ drawVolume();
+ function candleData(tf){
+   const unit={M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400}[tf];
+   let seed=1711,price=4120,base=1760000000,cs=[];
+   function rand(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;}
+   for(let i=0;i<92;i++){
+     const open=price;
+     const change=(rand()-.49)*8+Math.sin(i/7)*1.0;
+     const close=open+change;
+     const high=Math.max(open,close)+rand()*3.5;
+     const low=Math.min(open,close)-rand()*3.5;
+     cs.push({time:base+i*unit,open,high,low,close});
+     price=close;
+   }
+   return cs;
+ }
+ let chart=null;let candle=null;let emas=[];
+ function sma(cs,n){
+   return cs.map((c,i)=>({time:c.time,value:cs.slice(Math.max(0,i-n+1),i+1).reduce((a,b)=>a+b.close,0)/Math.min(i+1,n)}));
+ }
+ function setFrame(tf){
+   if(!window.LightweightCharts)return;
+   if(!chart){
+     const div=document.getElementById('tv-chart');
+     chart=LightweightCharts.createChart(div,{
+       width:div.clientWidth||750,height:520,
+       layout:{background:{type:'solid',color:'#101920'},textColor:'#a5bac1',fontSize:11},
+       grid:{vertLines:{color:'#23303955'},horzLines:{color:'#23303988'}},
+       rightPriceScale:{borderColor:'#384b54'},timeScale:{borderColor:'#384b54',timeVisible:true,secondsVisible:false,rightOffset:7},
+       handleScale:{mouseWheel:true,pinch:true},handleScroll:{mouseWheel:true,pressedMouseMove:true}
+     });
+     candle=chart.addCandlestickSeries({upColor:'#2cea98',downColor:'#ff6654',borderUpColor:'#3cedaa',borderDownColor:'#f66c57',wickUpColor:'#45eda3',wickDownColor:'#ff6a54'});
+     emas=[chart.addLineSeries({color:'#5edcf1',lineWidth:2}),chart.addLineSeries({color:'#f0a753',lineWidth:2}),chart.addLineSeries({color:'#b277d1',lineWidth:2})];
+     const ro=new ResizeObserver(()=>chart.applyOptions({width:div.clientWidth||700}));ro.observe(div);
+   }
+   const cs=candleData(tf);
+   candle.setData(cs);
+   [20,50,80].forEach((n,i)=>emas[i].setData(sma(cs,n)));
+   chart.timeScale().fitContent();
+   document.querySelectorAll('#frame-buttons button').forEach(b=>b.classList.toggle('active',b.dataset.frame===tf));
+ }
+ document.querySelectorAll('#frame-buttons button').forEach(b=>b.onclick=()=>setFrame(b.dataset.frame));
+ setFrame('M15');
+ const timer=document.getElementById('countdown');
+ let sec=6*60+58;setInterval(()=>{sec=(sec+899)%900;timer.textContent=String(Math.floor(sec/60)).padStart(2,'0')+':'+String(sec%60).padStart(2,'0');},1000);
+})();
+</script>
+<script src="stone-cockpit.js"></script>
+</body>
+</html>
