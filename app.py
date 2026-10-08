@@ -178,6 +178,7 @@ def build_trade_journal(account_id, server_time, local_time):
                 
             entries.append({
                 'ticket': int(p.ticket),
+                'time_ts': int(p.time),
                 'strategy': 'XAU Titan Pro' if account_id == 'titan' else 'GoldM15 Reconstruction',
                 'account': account_id,
                 'status': 'OPEN',
@@ -217,6 +218,7 @@ def build_trade_journal(account_id, server_time, local_time):
             
         entries.append({
             'ticket': int(d.ticket),
+            'time_ts': int(d.time),
             'strategy': 'XAU Titan Pro' if account_id == 'titan' else 'GoldM15 Reconstruction',
             'account': account_id,
             'status': 'CLOSED',
@@ -232,7 +234,7 @@ def build_trade_journal(account_id, server_time, local_time):
             'profit_goal': tp_goal
         })
         
-    entries.sort(key=lambda x: x['time_server'], reverse=True)
+    entries.sort(key=lambda x: x['time_ts'], reverse=True)
     JOURNAL_CACHE[account_id] = entries
     return entries
 
@@ -1247,13 +1249,23 @@ HTML_CONTENT = """<!DOCTYPE html>
         <span id="journal-live-pnl" class="px-2 py-0.5 rounded-md font-mono text-[10px] font-bold border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 hidden">Live: —</span>
         <span id="journal-closed-pnl" class="px-2 py-0.5 rounded-md font-mono text-[10px] font-bold border border-slate-500/20 bg-slate-500/10 text-slate-300 hidden">Hist: —</span>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
+        <label for="journal-strategy-filter" class="text-[11px] font-bold text-sub">Journal-Ansicht:</label>
+        <select id="journal-strategy-filter" onchange="setJournalFilter(this.value)"
+          class="ticker-bg border rounded-lg px-2.5 py-1.5 font-bold font-mono text-[11px] cursor-pointer"
+          aria-label="Strategien im Trade-Journal auswählen">
+          <option value="all">Alle Strategien</option>
+          <option value="titan">XAU Titan Pro</option>
+          <option value="goldm15">GoldM15 Reconstruction</option>
+        </select>
+        <div class="text-[11px] text-sub font-mono">
         <div class="text-[11px] text-sub font-mono">
           Aufnahme aktiv ab: <strong class="text-white">Heute 20:00 Uhr DE (23:00 Server)</strong>
         </div>
       </div>
     </div>
 
+    <div id="journal-sync-status" class="hidden mb-3 rounded-md border border-amber-500/50 bg-amber-500/10 text-amber-300 px-3 py-2 text-[11px]" role="status" aria-live="polite"></div>
     <div id="journal-list" class="space-y-3">
       <div class="py-6 flex items-center justify-center text-sub text-xs">
         Trade-Journal wird geladen …
@@ -1341,6 +1353,13 @@ HTML_CONTENT = """<!DOCTYPE html>
     const AVAILABLE_TFS = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'];
     let accountGeneration = 0;
     let accounts = {};
+    const savedJournalFilter = localStorage.getItem('two_eas_journal_filter');
+    let journalFilter = ['all','titan','goldm15'].includes(savedJournalFilter) ? savedJournalFilter : 'all';
+    let journalEntriesByAccount = { titan: [], goldm15: [] };
+    let journalErrors = [];
+    let journalLoadedMode = null;
+    let journalBusyMode = null;
+    let journalRequestVersion = 0;
     let statusBusy = null;
     let candlesBusy = null;
     let showEAStatusText = localStorage.getItem('chart_show_ea_status') !== 'false';
@@ -1957,8 +1976,8 @@ HTML_CONTENT = """<!DOCTYPE html>
         // Render Positions
         renderPositions(data.positions);
 
-        // Render Trade Journal (strictly for active account)
-        renderJournal(data.journal);
+        // The journal is independently queried for one or BOTH strategies.
+        // Do not replace the merged view with activeAccount-only status data.
 
         if (needsCharts) void loadCandles();
 
@@ -2105,11 +2124,72 @@ HTML_CONTENT = """<!DOCTYPE html>
       `).join('');
     }
 
-    // --- TRADE JOURNAL RENDERER (GETRENNT NACH STRATEGIE) ---
-    function renderJournal(passedJournal) {
-      const itemsToRender = passedJournal || (currentData ? currentData.journal : []) || [];
-      const stratName = activeAccount === 'titan' ? 'XAU TITAN PRO' : 'GOLDM15 RECONSTRUCTION';
-      const stratColor = activeAccount === 'titan' ? 'text-cyan-400' : 'text-amber-400';
+    // Journal selection is independent from the account that controls orders.
+    // Each source is queried under its own verified MT5 session on the server.
+    function setJournalFilter(value) {
+      if (!['all', 'titan', 'goldm15'].includes(value)) return;
+      journalFilter = value;
+      localStorage.setItem('two_eas_journal_filter', value);
+      const selector = document.getElementById('journal-strategy-filter');
+      if (selector) selector.value = value;
+      journalRequestVersion++; // obsolete pending responses must never win
+      journalBusyMode = null;
+      journalLoadedMode = null;
+      journalErrors = [];
+      journalEntriesByAccount = {titan: [], goldm15: []};
+      renderJournal();
+      return refreshJournal();
+    }
+
+    async function refreshJournal() {
+      if (!Object.keys(accounts).length || journalBusyMode === journalFilter) return;
+      const mode = journalFilter;
+      const requestVersion = ++journalRequestVersion;
+      const wanted = mode === 'all' ? Object.keys(accounts) : [mode];
+      journalBusyMode = mode;
+      const results = await Promise.all(wanted.map(async (id) => {
+        try {
+          // Deliberately NOT accountFetch: that helper is tied to the trading
+          // account and would silently replace the selected journal account.
+          const response = await fetch(BASE_PATH + '/api/journal_summary?account=' + encodeURIComponent(id));
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.detail || 'MT5-Journal nicht erreichbar');
+          if (payload.account !== id || !Array.isArray(payload.journal)) {
+            throw new Error('MT5-Antwort gehört nicht zum angefragten Konto.');
+          }
+          if (payload.journal.some(item => item.account !== id)) {
+            throw new Error('Journal enthält Einträge eines anderen Kontos.');
+          }
+          return {id, entries: payload.journal};
+        } catch (error) {
+          return {id, error: error.message || 'Unbekannter Verbindungsfehler'};
+        }
+      }));
+      if (requestVersion !== journalRequestVersion || mode !== journalFilter) return;
+      const fresh = {titan: [], goldm15: []};
+      journalErrors = [];
+      for (const result of results) {
+        if (result.error) {
+          journalErrors.push((accounts[result.id]?.name || result.id) + ': ' + result.error);
+        } else {
+          fresh[result.id] = result.entries;
+        }
+      }
+      journalEntriesByAccount = fresh;
+      journalLoadedMode = mode;
+      journalBusyMode = null;
+      renderJournal();
+    }
+
+    // --- TRADE JOURNAL RENDERER (strategy selection does not change MT5 orders) ---
+    function renderJournal() {
+      const wanted = journalFilter === 'all' ? Object.keys(accounts) : [journalFilter];
+      const itemsToRender = wanted.flatMap(id => journalEntriesByAccount[id] || [])
+        .sort((a,b) => (Number(b.time_ts) || 0) - (Number(a.time_ts) || 0));
+      const stratName = journalFilter === 'all' ? 'ALLE STRATEGIEN'
+        : journalFilter === 'titan' ? 'XAU TITAN PRO' : 'GOLDM15 RECONSTRUCTION';
+      const stratColor = journalFilter === 'all' ? 'text-sky-300'
+        : journalFilter === 'titan' ? 'text-cyan-400' : 'text-amber-400';
 
       const stratEl = document.getElementById('journal-strat-badge');
       if (stratEl) {
@@ -2122,8 +2202,22 @@ HTML_CONTENT = """<!DOCTYPE html>
       const totBadge = document.getElementById('journal-total-pnl');
       const liveBadge = document.getElementById('journal-live-pnl');
       const closedBadge = document.getElementById('journal-closed-pnl');
+      const syncBanner = document.getElementById('journal-sync-status');
+      if (syncBanner) {
+        syncBanner.classList.toggle('hidden', journalErrors.length === 0);
+        syncBanner.textContent = journalErrors.length ? 'Journal unvollständig – ' + journalErrors.join(' · ') : '';
+      }
 
-      if (!itemsToRender || itemsToRender.length === 0) {
+      if (journalLoadedMode !== journalFilter) {
+        if (countBadge) countBadge.textContent = 'Lädt …';
+        if (totBadge) totBadge.textContent = 'PnL: —';
+        if (liveBadge) liveBadge.classList.add('hidden');
+        if (closedBadge) closedBadge.classList.add('hidden');
+        if (list) list.textContent = 'Journal-Einträge werden für die ausgewählten Strategien geladen …';
+        return;
+      }
+
+      if (!itemsToRender.length) {
         if (countBadge) {
           countBadge.innerText = '0 Aufgezeichnet';
           countBadge.className = 'px-2 py-0.5 rounded font-mono text-[10px] ticker-bg border font-bold text-sub';
@@ -2138,7 +2232,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (list) {
           list.innerHTML = `
             <div class="py-6 flex flex-col items-center justify-center text-sub text-xs gap-1">
-              <span>Keine Trades seit 20:00 Uhr DE-Zeit für ${stratName} verzeichnet.</span>
+              <span>${journalErrors.length === wanted.length ? 'Journal derzeit nicht erreichbar.' : 'Keine Trades seit 20:00 Uhr DE-Zeit für ' + stratName + ' verzeichnet.'}</span>
               <span class="text-[10px] opacity-75">Neue Einstiege und Exits werden ab 20:00 Uhr automatisch erfasst und begründet.</span>
             </div>`;
         }
@@ -2440,11 +2534,15 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (!response.ok) throw new Error('Kontoliste nicht verfügbar');
         const data = await response.json();
         accounts = Object.fromEntries(data.accounts.map(a => [a.id,a]));
+        const journalSelect = document.getElementById('journal-strategy-filter');
+        if (journalSelect) journalSelect.value = journalFilter;
+        void refreshJournal();
         const saved = localStorage.getItem('gold_dashboard_account');
         await switchAccount(accounts[saved] ? saved : data.default);
       } catch(error) { reportAccountError(error, accountGeneration); }
       setInterval(updateStatus, 1500); // 1.5s live status update
       setInterval(loadCandles, 5000);   // 5s smooth candle update (no reset)
+      setInterval(() => { void refreshJournal(); }, 30000); // independent, low-rate journal sync
     };
   </script>
   <!-- Visual-only extension: live MT5 and TradingView handlers remain untouched -->
