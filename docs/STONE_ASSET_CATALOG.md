@@ -5,7 +5,10 @@
 **Dateibenennung:** Die JPGs unter `static/stone-assets/source/` sind mit den 50 kanonischen Basenamen umbenannt. Unter `ready/` werden bei ausgeführter Bildaufbereitung geeignete PNGs/WebPs mit Alphakanal generiert. JPGs haben niemals echte Transparenz — helles Schachbrett in JPGs ist in Pixel eingebrannt.
 
 **Auffälligkeiten der Sichtprüfung:**
-- `11_master_dashboard_panel` ist eine fertig eingeteilte Mehrfachkarte; nicht als universelle skalierbare Einzelkarte verwenden.
+- `11_master_dashboard_panel` ist eine fertig eingeteilte Mehrfachkarte; nicht als universelle skalierbare Einzelkarte verwenden. Für einzelne dynamische HTML-Karten besser #16/#18 oder die bereits bestehende CSS-Steinkarte.
+- `19_entry_matrix_frame` zeigt mehrere fest integrierte Kachel-Felder; als Dekoration brauchbar, für die bestehende dynamische Matrix-Tabelle aber **nicht ohne Layoutumbau** geeignet.
+- `14_long_volume_plate` muss **mit opaker Steinmitte** freigestellt werden; der erste automatische Versuch löschte fälschlich Flächen der Steinplatte. Der Prozess wurde um eine Silhouetten-Rekonstruktion für geschlossene Steinelemente ergänzt.
+- `31`–`40` haben teils dunkelsteinerne Innenflächen; die Innenfläche darf bei der Freistellung nicht durchsichtig werden.
 - `12_chart_frame_wide` und `13_volume_frame_tall` besitzen dunkle Mittelflächen, die für echte Chart-/HTML-Inhalte ggf. als transparente Aussparung verarbeitet werden müssen.
 - `26_metal_rivet` hat einen grauen Hintergrund, obwohl der ursprüngliche Prompt transparent verlangte.
 - `35_button_warning_amber` zeigt Schachbrettmuster **als Bildinhalt**; Transparenz nur durch Nachbearbeitung möglich.
@@ -157,3 +160,13 @@
 - Nach jedem automatischen Freistellen Sichtprüfung im Checkerboard-Viewer, besonders bei dunklem Stein und Metall, da dunkle Kanten zu leicht mit verschwinden.
 
 **Nicht Teil der 50 Assets:** `Stone_dashboard_with_glowing_runes_2K_20261008221355.jpg_20261008233527.jpg` ist nur das originalgetreue Designreferenzbild.
+
+## Integration in die Webapp
+
+- **Basismaterialien:** `ready/01`–`10` als wiederholte oder großflächige CSS-Texturen verwenden; Kachelfreiheit im Browser zunächst prüfen, da Bildgeneratoren „seamless“ nicht immer wirklich erfüllen.
+- **Panel-Untergründe:** `ready/16`, `17`, `18`, `20` flexibel als dekorative Hintergrundgrafik oder mit `border-image-slice` für skalierbare Rahmen nutzen. `11` ist eine statische Mehrfachplattenkomposition.
+- **Chart und Volumen:** `ready/12` und `13` sind dekorative Rahmen. Der TradingView-Chart muss weiterhin als Live-Canvas/DOM gerendert werden, nicht als PNG.
+- **Energie:** `ready/21`–`24` als `pointer-events:none` Overlay, Intensität/Position via CSS animieren.
+- **Buttons:** Bei Einsatz von `ready/31`–`40` tatsächliche HTML-`button`/`input`-Elemente mit sichtbaren Fokuszuständen behalten; Grafiken sind nur Skin.
+- **Werte:** Volumen-, RSI- und PnL-Werte niemals als statische Grafik darstellen. `ready/42`–`46` können als gekachelter Fill unter dynamischer CSS-Breite verwendet werden.
+- **Verifizierung:** Die fünf fertigen Kontaktbögen im Ordner `static/stone-assets/ready/previews/` sind die visuelle Abnahmebasis, gerade für feine Ränder und halbtransparente Glows.
