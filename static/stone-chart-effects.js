@@ -54,7 +54,7 @@
     const ctx = state.ctx;
     const period = 5700;
     const phase = (now % period) / period * Math.PI * 2 - index * (2 * Math.PI / 3);
-    const intensity = 0.33 + 0.67 * Math.pow(Math.max(0, Math.cos(phase)), 4);
+    const intensity = 0.52 + 0.48 * Math.pow(Math.max(0, Math.cos(phase)), 5);
     let started = false, seen = 0;
     ctx.beginPath();
     // Thin, translucent line matches the original EMA path; halo rotates between colors.
@@ -72,10 +72,21 @@
     ctx.save();
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
-    ctx.strokeStyle = rgba(color, 0.18 + 0.33 * intensity);
-    ctx.lineWidth = 2.5 + 0.8 * intensity;
-    ctx.shadowColor = rgba(color, .96);
-    ctx.shadowBlur = 5 + 11 * intensity;
+    ctx.globalCompositeOperation = "lighter";
+    // A genuinely luminous layered phosphor look, not a thick replacement EMA.
+    // All three strokes follow the original EMA coordinates exactly.
+    ctx.strokeStyle = rgba(color, .085 + .15 * intensity);
+    ctx.lineWidth = 9 + 6 * intensity;
+    ctx.shadowColor = rgba(color, .9);
+    ctx.shadowBlur = 22 + 23 * intensity;
+    ctx.stroke();
+    ctx.strokeStyle = rgba(color, .20 + .26 * intensity);
+    ctx.lineWidth = 3.8 + 1.9 * intensity;
+    ctx.shadowBlur = 12 + 18 * intensity;
+    ctx.stroke();
+    ctx.strokeStyle = rgba(color, .46 + .47 * intensity);
+    ctx.lineWidth = 1.45;
+    ctx.shadowBlur = 4 + 9 * intensity;
     ctx.stroke();
     ctx.restore();
   }
@@ -94,10 +105,11 @@
     const ctx = state.ctx;
     const yTop = Math.min(yHigh, yLow), h = Math.abs(yLow - yHigh);
     ctx.save();
-    ctx.strokeStyle = rgba(color, .60 * strength);
-    ctx.lineWidth = kind === "ambient" ? 1.3 : 2.2;
-    ctx.shadowColor = rgba(color, .85);
-    ctx.shadowBlur = kind === "ambient" ? 8 : 17;
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = rgba(color, .78 * strength);
+    ctx.lineWidth = kind === "ambient" ? 2.0 : 3.0;
+    ctx.shadowColor = rgba(color, .97);
+    ctx.shadowBlur = kind === "ambient" ? 17 : 30;
     ctx.beginPath();
     ctx.moveTo(x, yTop);
     ctx.lineTo(x, yTop + h);
@@ -106,6 +118,21 @@
     const bodyBottom = getY(state.candleSeries, Math.min(candle.open, candle.close));
     if (Number.isFinite(bodyTop) && Number.isFinite(bodyBottom)) {
       ctx.strokeRect(x - 4.5, Math.min(bodyTop, bodyBottom) - 1, 9, Math.max(3, Math.abs(bodyBottom - bodyTop) + 2));
+    }
+    // Star-shaped glint on the highlighted wick. Its position is derived from
+    // the supplied candle, not a fabricated price or trading signal.
+    const starY = isUp ? yHigh : yLow;
+    if (Number.isFinite(starY) && strength > 0.08) {
+      const radius = (kind === "ambient" ? 5.5 : 11) * strength;
+      ctx.beginPath();
+      ctx.moveTo(x - radius, starY);
+      ctx.lineTo(x + radius, starY);
+      ctx.moveTo(x, starY - radius);
+      ctx.lineTo(x, starY + radius);
+      ctx.lineWidth = 1.3;
+      ctx.strokeStyle = rgba(color, Math.min(.95, strength));
+      ctx.shadowBlur = kind === "ambient" ? 16 : 28;
+      ctx.stroke();
     }
     ctx.restore();
   }
@@ -120,16 +147,16 @@
     PALETTE.forEach((_, i) => drawEma(state, i, now));
     if (state.flash && now < state.flash.until) {
       const fade = Math.max(0, (state.flash.until - now) / 1950);
-      drawCandleHalo(state, state.flash.candle, fade, state.flash.kind);
+      drawCandleHalo(state, state.flash.candle, Math.min(1, fade * 1.2), state.flash.kind);
     }
     // Deliberately decorative, low-frequency accent (NOT a setup/entry marker).
     const candles = state.candles;
     if (candles.length > 15) {
       const slot = Math.floor(now / 9200);
       const within = now % 9200;
-      if (within < 1150) {
+      if (within < 1700) {
         const index = Math.max(0, candles.length - 7 - ((slot * 13) % Math.min(45, candles.length - 9)));
-        const glow = Math.sin(Math.PI * (within / 1150)) * .40;
+        const glow = Math.sin(Math.PI * (within / 1700)) * .9;
         drawCandleHalo(state, candles[index], glow, "ambient");
       }
     }
@@ -169,7 +196,7 @@
     instance.rangeHandler = render;
     try { chart.timeScale().subscribeVisibleLogicalRangeChange(render); }
     catch (_) { instance.rangeHandler = null; }
-    animationTimer = setInterval(render, 120);
+    animationTimer = setInterval(render, 80);
     render();
   }
   function update({candles, emas, markers = [], newBar = false, context = ""}) {

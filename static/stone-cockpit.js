@@ -131,6 +131,43 @@
     }
   }
 
+  // FX is entirely decorative and kept away from the chart/controls.
+  // Static CSS particles cost no background JavaScript rendering interval.
+  function addAmbience() {
+    const names = ["header.stone-asset-header",
+      ".stone-asset-panel--chart", ".stone-asset-panel--volume",
+      ".stone-asset-panel--diagnostic", ".stone-asset-panel--matrix",
+      ".stone-asset-panel--positions", ".stone-asset-panel--journal"];
+    names.forEach((selector, group) => {
+      const host = document.querySelector(selector);
+      if (!host || host.querySelector(".stone-ambience")) return;
+      const layer = document.createElement("div");
+      layer.className = "stone-ambience";
+      layer.setAttribute("aria-hidden", "true");
+      const number = group === 0 ? 9 : group <= 2 ? 12 : 7;
+      for (let i = 0; i < number; i++) {
+        const spark = document.createElement("i");
+        spark.className = "stone-spark" + (i % 3 === 0 ? " stone-spark--amber" : "");
+        // Distinct corners/edges. No particles across the center of text/data.
+        const leftSide = i % 2 === 0;
+        const progression = (i * 31 + group * 17) % 100;
+        spark.style.setProperty("--spark-x", (leftSide ? 2 + (i % 4) * 3.4 : 98 - (i % 4) * 3.4) + "%");
+        spark.style.setProperty("--spark-y", (8 + progression * .79) + "%");
+        spark.style.setProperty("--spark-shift", (leftSide ? 24 + (i % 3) * 17 : -(25 + (i % 3) * 17)) + "px");
+        spark.style.setProperty("--spark-delay", -(i * 1.71 + group * 1.12) + "s");
+        spark.style.setProperty("--spark-duration", (4.4 + (i % 4) * 1.43) + "s");
+        layer.append(spark);
+      }
+      for (let side = 0; side < 2; side++) {
+        const vapor = document.createElement("span");
+        vapor.className = "stone-vapor stone-vapor--" + (side ? "right" : "left");
+        vapor.style.animationDelay = -(group * 1.9 + side * 3.3) + "s";
+        layer.append(vapor);
+      }
+      host.append(layer);
+    });
+  }
+
   function setMode(mode) {
     if (!choices.includes(mode)) mode = "stone";
     selected = mode;
@@ -185,8 +222,39 @@
     }
   }
 
+  // Resizable full-screen chart container; chart instance, time range and MT5
+  // handlers stay unchanged. ResizeObserver in app/preview recalculates pixels.
+  function initChartExpand() {
+    const button = byId("stone-chart-expand-btn");
+    const panel = byId("tv-chart")?.closest(".glass-card");
+    if (!button || !panel || button.dataset.expandReady === "true") return;
+    button.dataset.expandReady = "true";
+    let expanded = false;
+    const setExpanded = value => {
+      expanded = Boolean(value);
+      panel.classList.toggle("stone-chart-expanded", expanded);
+      document.body.classList.toggle("stone-chart-is-expanded", expanded);
+      button.setAttribute("aria-pressed", String(expanded));
+      button.setAttribute("aria-label", expanded ? "Chart verkleinern" : "Chart vergrößern");
+      button.textContent = expanded ? "⤢ Verkleinern" : "⛶ Vergrößern";
+      button.title = expanded ? "Chart in ursprüngliche Größe zurücksetzen (Esc)" : "Chart bildschirmfüllend vergrößern";
+      // No series reinitialization: existing chart + zoom state are preserved.
+      requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+    };
+    button.addEventListener("click", () => setExpanded(!expanded));
+    document.addEventListener("keydown", event => {
+      if (expanded && event.key === "Escape") {
+        event.preventDefault();
+        setExpanded(false);
+        button.focus();
+      }
+    });
+  }
+
   function boot() {
+    initChartExpand();
     markAssetPanels();
+    addAmbience();
     rails();
     decor();
     constructChartLadder();

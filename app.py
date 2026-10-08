@@ -1084,6 +1084,9 @@ HTML_CONTENT = """<!DOCTYPE html>
             <button onclick="resetChartZoom()" class="px-2 py-1 rounded ticker-bg border hover:bg-blue-600 hover:text-white font-bold cursor-pointer" title="Chart-Zoom & Preis zentrieren">
               🔍 Auto
             </button>
+            <button type="button" id="stone-chart-expand-btn" aria-controls="tv-chart" aria-pressed="false" aria-label="Chart vergrößern" class="stone-chart-expand-trigger px-3 py-1 rounded ticker-bg border font-bold cursor-pointer whitespace-nowrap" title="Chart bildschirmfüllend vergrößern (Esc = zurück)">
+              ⛶ Vergrößern
+            </button>
           </div>
         </div>
 

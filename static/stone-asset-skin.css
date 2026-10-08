@@ -422,11 +422,10 @@ body.theme-stone #vp-histogram-container > * {
   border-bottom: 1px solid rgba(130,159,166,.12);
 }
 body.theme-stone .stone-asset-panel--matrix table tbody tr {
-  background-image: url("stone-assets/ready/47_table_row_metal.png");
-  background-position: center;
-  background-repeat: repeat-x;
-  background-size: auto 100%;
-  border-bottom: 1px solid rgba(163,202,212,.17);
+  /* #47 repeated behind each row destroyed legibility (see screenshot).
+     Keep ornamental metal only on the outer frame; data rows stay readable. */
+  background: rgba(5, 13, 20, .77) !important;
+  border-bottom: 1px solid rgba(124, 187, 203, .27);
 }
 body.theme-stone .stone-asset-panel--matrix table thead {
   color: #abd5de;
@@ -462,4 +461,317 @@ body.theme-stone .stone-asset-panel--volume {
   body.theme-stone .stone-asset-panel--chart .text-amber-400,
   body.theme-stone .stone-asset-panel--chart .text-purple-400,
   body.theme-stone .chart-legend span { animation: none !important; }
+}
+
+
+/* STONE V3 — bright energy, sparks, vapor and readable matrix ----------------
+   This section is scoped to the optional stone skin; charts/orders stay live. */
+/* The live target matrix is data, NEVER a stretched full-color image. */
+body.theme-stone #matrix-tbody tr,
+body.theme-stone #matrix-tbody tr:nth-child(odd),
+body.theme-stone #matrix-tbody tr:nth-child(even) {
+  background-image: none !important;
+  background-color: rgba(5, 15, 22, .86) !important;
+  border-bottom: 1px solid rgba(104, 171, 189, .23) !important;
+  transition: background-color .2s ease, box-shadow .2s ease;
+}
+body.theme-stone #matrix-tbody tr:nth-child(even) {
+  background-color: rgba(19, 34, 42, .76) !important;
+}
+body.theme-stone #matrix-tbody tr:hover {
+  background-color: rgba(30, 80, 99, .54) !important;
+  box-shadow: inset 3px 0 0 rgba(66, 216, 252, .76) !important;
+}
+body.theme-stone .stone-asset-panel--matrix table {
+  background: rgba(3, 10, 17, .80) !important;
+  min-width: 560px;
+  border-collapse: collapse;
+}
+body.theme-stone .stone-asset-panel--matrix table td {
+  padding: 11px 8px !important;
+  color: #d8eaf2;
+  vertical-align: middle;
+  background-image: none !important;
+  text-shadow: 0 1px #000;
+}
+body.theme-stone .stone-asset-panel--matrix table td:first-child {
+  min-width: 165px;
+  color: #f0f5f5;
+  font-weight: 650;
+}
+body.theme-stone .stone-asset-panel--matrix table td:last-child {
+  min-width: 118px;
+}
+body.theme-stone .stone-asset-panel--matrix .w-full.overflow-hidden:has(table) {
+  overflow-x: auto !important;
+  overflow-y: hidden;
+  scrollbar-color: #2d7b92 #071116;
+}
+body.theme-stone .stone-asset-panel--matrix table td span[class*="emerald"] {
+  text-shadow: 0 0 8px rgba(52, 242, 162, .37);
+}
+body.theme-stone .stone-asset-panel--matrix table td span[class*="rose"] {
+  text-shadow: 0 0 7px rgba(255, 76, 92, .27);
+}
+/* Actual volume rows get an obvious chromatic outer bloom and tiny light sweep. */
+body.theme-stone #vp-histogram-container .vp-bar[data-tone="cyan"],
+body.theme-stone #stone-mini-volume .stone-mini-fill[data-tone="cyan"] {
+  background-image: url("stone-assets/ready/42_volume_bar_cyan.png") !important;
+  box-shadow: 0 0 6px #00d3ff, 0 0 17px rgba(26, 207, 255, .48) !important;
+  filter: brightness(1.25) saturate(1.4) drop-shadow(0 0 10px rgba(9,211,255,.83)) !important;
+}
+body.theme-stone #vp-histogram-container .vp-bar[data-tone="amber"],
+body.theme-stone #stone-mini-volume .stone-mini-fill[data-tone="amber"] {
+  background-image: url("stone-assets/ready/43_volume_bar_gold.png") !important;
+  box-shadow: 0 0 7px #f79b36, 0 0 17px rgba(255,149,41,.5) !important;
+  filter: brightness(1.3) saturate(1.45) drop-shadow(0 0 10px rgba(255,155,46,.88)) !important;
+}
+body.theme-stone #vp-histogram-container .vp-bar[data-kind="poc"],
+body.theme-stone #stone-mini-volume .stone-mini-fill[data-kind="poc"] {
+  background-image: url("stone-assets/ready/43_volume_bar_gold.png") !important;
+  box-shadow: 0 0 7px rgba(255,218,117,1), 0 0 23px rgba(255,169,36,.85), 0 0 38px rgba(247,141,30,.36) !important;
+  filter: brightness(1.43) saturate(1.55) drop-shadow(0 0 12px rgba(255,183,54,.95)) !important;
+}
+body.theme-stone #vp-histogram-container .vp-bar[data-kind="off"],
+body.theme-stone #stone-mini-volume .stone-mini-fill[data-kind="off"] {
+  box-shadow: none !important;
+  filter: brightness(.8) saturate(.5) !important;
+}
+/* More visible energy sweep at staggered intervals, clipped inside each bar. */
+body.theme-stone #vp-histogram-container .vp-bar::after,
+body.theme-stone #stone-mini-volume .stone-mini-fill::after {
+  background: linear-gradient(105deg,
+    transparent 6%, rgba(255,255,255,0) 29%,
+    rgba(255,255,255,.30) 43%, rgba(255,255,255,.98) 49%,
+    rgba(225,255,255,.35) 55%, transparent 72%) !important;
+  animation-duration: 6.8s !important;
+}
+/* Stronger illuminated panel edge. Important data remains above the effect. */
+body.theme-stone .stone-asset-panel--chart,
+body.theme-stone .stone-asset-panel--volume,
+body.theme-stone .stone-asset-panel--diagnostic,
+body.theme-stone .stone-asset-panel--matrix {
+  box-shadow:
+    inset 0 0 24px rgba(33,179,208,.15),
+    0 0 14px rgba(44,205,248,.24),
+    0 0 34px rgba(16,128,165,.15),
+    0 14px 23px rgba(0,0,0,.75) !important;
+}
+body.theme-stone .stone-asset-panel--matrix { box-shadow: inset 0 0 20px rgba(15,167,199,.11), 0 0 20px rgba(232,156,53,.12), 0 13px 26px #000 !important; }
+body.theme-stone .stone-asset-panel--diagnostic { box-shadow: inset 0 0 18px rgba(21,183,223,.14), 0 0 23px rgba(43,223,250,.26),0 12px 20px #000 !important; }
+body.theme-stone #sell-bar {
+  box-shadow: 0 0 8px rgba(255,74,49,.92), 0 0 19px rgba(255,61,35,.58) !important;
+  filter: brightness(1.35);
+}
+body.theme-stone #buy-bar {
+  box-shadow: 0 0 8px rgba(36,255,171,.91), 0 0 19px rgba(22,239,166,.58) !important;
+  filter: brightness(1.34);
+}
+/* Ambient FX: independent, decorative and pointer-transparent. */
+.stone-ambience { display: none; }
+body.theme-stone .stone-ambience {
+  display: block;
+  pointer-events: none !important;
+  position: absolute !important;
+  z-index: 0 !important;
+  inset: 1px;
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: 4px;
+}
+body.theme-stone .stone-ambience::before,
+body.theme-stone .stone-ambience::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 150px 38px at 0% 17%, rgba(53,225,255,.50),transparent 90%),
+    radial-gradient(ellipse 130px 55px at 100% 87%,rgba(255,154,40,.36), transparent 88%);
+  opacity: .75;
+  mix-blend-mode: screen;
+  animation: stone-power-flicker 5.8s ease-in-out infinite alternate;
+}
+body.theme-stone .stone-ambience::after {
+  transform: scaleX(-1);
+  opacity: .32;
+  animation-delay: -2.2s;
+}
+body.theme-stone .stone-spark {
+  position: absolute;
+  left: var(--spark-x);
+  top: var(--spark-y);
+  display: block;
+  width: 3px;
+  height: 3px;
+  background: #d8fbff;
+  border-radius: 50%;
+  opacity: 0;
+  color: #53ddff;
+  box-shadow: 0 0 4px 2px currentColor, 0 0 13px 4px rgba(28,211,255,.8);
+  filter: drop-shadow(0 0 7px currentColor);
+  animation: stone-spark-arc var(--spark-duration,6s) ease-out var(--spark-delay,0s) infinite;
+  will-change: transform,opacity;
+}
+body.theme-stone .stone-spark::before,
+body.theme-stone .stone-spark::after {
+  content:"";
+  position:absolute;
+  top: 1px; left: -4px;
+  width: 11px; height: 1px;
+  background: currentColor;
+  box-shadow: 0 0 7px currentColor;
+  transform: rotate(-38deg);
+}
+body.theme-stone .stone-spark::after { transform: rotate(51deg); }
+body.theme-stone .stone-spark--amber {
+  background: #fff0ba;
+  color: #ffb14d;
+  box-shadow: 0 0 6px 2px currentColor,0 0 18px 4px rgba(255,130,23,.82);
+}
+body.theme-stone .stone-vapor {
+  position:absolute;
+  bottom: -65px;
+  left: -65px;
+  width: 220px; height: 135px;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 38% 60%,rgba(197,240,250,.29),rgba(32,133,164,.19) 48%,transparent 73%),
+    radial-gradient(ellipse at 70% 25%,rgba(121,194,211,.17),transparent 69%);
+  filter: blur(14px);
+  opacity: 0;
+  mix-blend-mode: screen;
+  animation: stone-vapor-rise 8.7s ease-in-out infinite;
+  will-change: transform,opacity;
+}
+body.theme-stone .stone-vapor--right { left:auto;right:-60px;animation-duration:11s;filter:blur(17px); }
+body.theme-stone .stone-asset-panel--matrix .stone-ambience,
+body.theme-stone .stone-asset-panel--diagnostic .stone-ambience { opacity: .74; }
+/* Glass behind the actual chart remains free of smoke or particle overlays.
+   The sparks live only along the outer stone panel edges. */
+body.theme-stone #tv-chart .stone-chart-fx { mix-blend-mode: screen; }
+@keyframes stone-spark-arc {
+  0%, 58%,100% { opacity:0; transform: translate3d(0,0,0) scale(.4); }
+  65% { opacity:.95; transform:translate3d(0,-18px,0) scale(1.45); }
+  72% { opacity:.85; transform:translate3d(var(--spark-shift),-42px,0) scale(.9); }
+  83% { opacity:0; transform:translate3d(var(--spark-shift),-78px,0) scale(.25); }
+}
+@keyframes stone-vapor-rise {
+  0%,9%,100% { opacity:0; transform:translate3d(0,18px,0) scale(.72); }
+  25% { opacity:.29; }
+  48% { opacity:.45; transform:translate3d(28px,-31px,0) scale(1.25); }
+  77% { opacity:.12; transform:translate3d(51px,-85px,0) scale(1.7); }
+}
+@keyframes stone-power-flicker {
+  0%, 29%,58%,100% { filter: brightness(.8);opacity:.42; }
+  12%,54%,77% { filter: brightness(1.85);opacity: .95; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.theme-stone .stone-ambience {display:none !important;}
+  body.theme-stone .stone-spark,
+  body.theme-stone .stone-vapor,
+  body.theme-stone .stone-ambience::before,
+  body.theme-stone .stone-ambience::after {animation: none !important;}
+}
+/* Prevent decorative chrome over narrow screens from obscuring data/controls. */
+@media (max-width: 720px) {
+  body.theme-stone .stone-ambience {opacity:.42;}
+  body.theme-stone .stone-asset-panel--matrix table { min-width: 560px; }
+}
+
+
+/* ---- Fullscreen chart (works in STONE, DARK and LIGHT) ----
+   The existing Lightweight Charts instance stays mounted, keeping zoom and
+   crosshair. All MT5 controls/handlers remain active. */
+body.stone-chart-is-expanded {
+  overflow: hidden !important;
+}
+body .stone-chart-expanded {
+  position: fixed !important;
+  inset: max(7px, env(safe-area-inset-top)) 10px max(7px, env(safe-area-inset-bottom)) !important;
+  z-index: 100100 !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 16px 20px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  background: #071218 !important;
+  border: 2px solid rgba(87,216,239,.82) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 0 0 200vmax rgba(1,4,8,.90), 0 0 35px rgba(55,219,249,.38) !important;
+  isolation: isolate;
+}
+body .stone-chart-expanded > .flex:first-child,
+body .stone-chart-expanded > .panel-heading {
+  flex: 0 0 auto !important;
+  margin-bottom: 12px !important;
+  position: relative;
+  z-index: 5;
+}
+body .stone-chart-expanded .stone-chart-stage {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 190px) !important;
+  flex: 1 1 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: hidden;
+}
+body .stone-chart-expanded .stone-chart-stage > div:first-child,
+body .stone-chart-expanded .chart-slot {
+  position: relative !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+  overflow: hidden !important;
+}
+body .stone-chart-expanded #tv-chart,
+body.theme-stone .stone-chart-expanded #tv-chart {
+  position: absolute !important;
+  inset: 0 !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  width: 100% !important;
+}
+body .stone-chart-expanded .stone-side-volume {
+  display: flex !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+body .stone-chart-expanded .stone-chart-expand-trigger {
+  border-color: #5ce0f2 !important;
+  background: linear-gradient(#24627a, #0b2a36) !important;
+  color: #f2fcff !important;
+  box-shadow: 0 0 10px rgba(42,216,251,.46);
+}
+body .stone-chart-expand-trigger {
+  cursor: pointer;
+  border: 1px solid rgba(58,185,225,.5);
+  transition: box-shadow .2s, filter .2s;
+}
+body .stone-chart-expand-trigger:hover {
+  filter: brightness(1.24);
+  box-shadow: 0 0 12px rgba(49,220,253,.4);
+}
+body .stone-chart-expand-trigger:focus-visible {
+  outline: 2px solid #66eeff !important;
+  outline-offset: 3px;
+}
+@media (max-width: 750px) {
+  body .stone-chart-expanded {padding: 10px !important; inset: 5px !important;}
+  body .stone-chart-expanded .stone-chart-stage {
+    grid-template-columns: minmax(0, 1fr) 105px !important;
+  }
+  body .stone-chart-expanded .stone-side-volume {
+    padding: 6px !important;
+    font-size: 9px;
+  }
+}
+@media (max-width: 520px) {
+  body .stone-chart-expanded .stone-chart-stage { grid-template-columns: minmax(0,1fr) !important; }
+  body .stone-chart-expanded .stone-side-volume { display: none !important; }
 }
