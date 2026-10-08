@@ -170,3 +170,16 @@
 - **Buttons:** Bei Einsatz von `ready/31`–`40` tatsächliche HTML-`button`/`input`-Elemente mit sichtbaren Fokuszuständen behalten; Grafiken sind nur Skin.
 - **Werte:** Volumen-, RSI- und PnL-Werte niemals als statische Grafik darstellen. `ready/42`–`46` können als gekachelter Fill unter dynamischer CSS-Breite verwendet werden.
 - **Verifizierung:** Die fünf fertigen Kontaktbögen im Ordner `static/stone-assets/ready/previews/` sind die visuelle Abnahmebasis, gerade für feine Ränder und halbtransparente Glows.
+
+## Abnahme nach zweitem GitHub-Verarbeitungslauf
+
+- **GitHub Action:** erfolgreich; Bildaufbereitung für alle **50** Assets ausgeführt.
+- **11 opake WebP-Dateien** (Materialien #01–#10, Chartoberfläche #41).
+- **39 PNG-Dateien mit echtem Alphakanal** (Frames, Ornamente, Leiterbahnen, Buttons, Balken).
+- **5 grafische Vergleichstafeln** unter `static/stone-assets/ready/previews/pack_01.jpg` bis `pack_05.jpg` erzeugt und visuell eingesehen.
+- **Keine automatischen Verarbeitungshinweise** laut `ready/processing-report.json` (das ersetzt jedoch keine Pixel-Feinabnahme im Produkt).
+- Die gezielt korrigierten Grafiken **#14, #26, #36 und #37** behalten jetzt die ursprünglich versehentlich entfernten dunklen Stein-/Metallinnenflächen.
+- **Einsatzbeurteilung:** #12 und #13 eignen sich als transparente Chart- bzw. Volumenrahmen; #21–#23 als Licht-/Leiterbahnoverlays; #31–#40 als visuelle Bedienelemente, solange die echten HTML-Buttons darüber liegen. #19 ist eine statische Mehrfeld-Kacheltafel und kein universeller Matrix-/Tabellenrahmen. #24 zeigt weiterhin einen breiten Steinrissstreifen und ist nicht einfach ein isolierter Blitz.
+- **Noch zu testen:** perfekte Kachelfreiheit aller 10 generierten Texturen, saubere 9-Slice-Skalierung und Lesbarkeit mit Live-Daten bei 390/768/1440/1920 px. Einige Ausgangsgrafiken sind **1024px bzw. 1376px** statt der ursprünglich geforderten 2048px breit und daher nicht für jede 4K-Vergrößerung geeignet.
+
+**Aufbereitete Dateien:** [ready/](../static/stone-assets/ready/) · [Pack 1 Vorschau](../static/stone-assets/ready/previews/pack_01.jpg) · [Pack 2 Vorschau](../static/stone-assets/ready/previews/pack_02.jpg) · [Pack 3 Vorschau](../static/stone-assets/ready/previews/pack_03.jpg) · [Pack 4 Vorschau](../static/stone-assets/ready/previews/pack_04.jpg) · [Pack 5 Vorschau](../static/stone-assets/ready/previews/pack_05.jpg)
