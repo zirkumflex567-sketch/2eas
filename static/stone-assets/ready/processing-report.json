@@ -121,10 +121,10 @@
       "basename": "11_master_dashboard_panel",
       "source": "static/stone-assets/source/11_master_dashboard_panel.jpg",
       "output": "static/stone-assets/ready/11_master_dashboard_panel.png",
-      "mode": "dark-matte",
-      "transparent_pct": 19.1,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 14.15,
       "size": "1376x768",
-      "output_bytes": 1785549,
+      "output_bytes": 1711705,
       "manual_review": true
     },
     {
@@ -154,10 +154,10 @@
       "basename": "14_long_volume_plate",
       "source": "static/stone-assets/source/14_long_volume_plate.jpg",
       "output": "static/stone-assets/ready/14_long_volume_plate.png",
-      "mode": "dark-matte",
-      "transparent_pct": 77.73,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 55.72,
       "size": "1376x768",
-      "output_bytes": 1081065,
+      "output_bytes": 896120,
       "manual_review": false
     },
     {
@@ -165,10 +165,10 @@
       "basename": "15_header_command_slab",
       "source": "static/stone-assets/source/15_header_command_slab.jpg",
       "output": "static/stone-assets/ready/15_header_command_slab.png",
-      "mode": "dark-matte",
-      "transparent_pct": 69.96,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 57.07,
       "size": "1376x768",
-      "output_bytes": 1142333,
+      "output_bytes": 964383,
       "manual_review": false
     },
     {
@@ -176,10 +176,10 @@
       "basename": "16_diagnostic_core_panel",
       "source": "static/stone-assets/source/16_diagnostic_core_panel.jpg",
       "output": "static/stone-assets/ready/16_diagnostic_core_panel.png",
-      "mode": "baked-checkerboard",
-      "transparent_pct": 36.78,
+      "mode": "baked-checkerboard+solid-surface",
+      "transparent_pct": 33.5,
       "size": "1024x1024",
-      "output_bytes": 1375068,
+      "output_bytes": 1357394,
       "manual_review": false
     },
     {
@@ -187,10 +187,10 @@
       "basename": "17_trade_ticket_cartridge",
       "source": "static/stone-assets/source/17_trade_ticket_cartridge.jpg",
       "output": "static/stone-assets/ready/17_trade_ticket_cartridge.png",
-      "mode": "dark-matte",
-      "transparent_pct": 38.87,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 35.63,
       "size": "1376x768",
-      "output_bytes": 1342148,
+      "output_bytes": 1301290,
       "manual_review": true
     },
     {
@@ -198,10 +198,10 @@
       "basename": "18_journal_stone_plate",
       "source": "static/stone-assets/source/18_journal_stone_plate.jpg",
       "output": "static/stone-assets/ready/18_journal_stone_plate.png",
-      "mode": "solid-matte",
-      "transparent_pct": 30.09,
+      "mode": "solid-matte+solid-surface",
+      "transparent_pct": 27.15,
       "size": "1376x768",
-      "output_bytes": 1470367,
+      "output_bytes": 1413370,
       "manual_review": true
     },
     {
@@ -220,10 +220,10 @@
       "basename": "20_guard_warning_plaque",
       "source": "static/stone-assets/source/20_guard_warning_plaque.jpg",
       "output": "static/stone-assets/ready/20_guard_warning_plaque.png",
-      "mode": "dark-matte",
-      "transparent_pct": 39.86,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 30.98,
       "size": "1376x768",
-      "output_bytes": 1546557,
+      "output_bytes": 1482719,
       "manual_review": false
     },
     {
@@ -286,10 +286,10 @@
       "basename": "26_metal_rivet",
       "source": "static/stone-assets/source/26_metal_rivet.jpg",
       "output": "static/stone-assets/ready/26_metal_rivet.png",
-      "mode": "dark-matte",
-      "transparent_pct": 64.76,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 52.51,
       "size": "1024x1024",
-      "output_bytes": 1364671,
+      "output_bytes": 1179706,
       "manual_review": true
     },
     {
@@ -341,10 +341,10 @@
       "basename": "31_button_idle_blue",
       "source": "static/stone-assets/source/31_button_idle_blue.jpg",
       "output": "static/stone-assets/ready/31_button_idle_blue.png",
-      "mode": "dark-matte",
-      "transparent_pct": 46.0,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 41.0,
       "size": "1376x768",
-      "output_bytes": 1315293,
+      "output_bytes": 1202922,
       "manual_review": false
     },
     {
@@ -352,10 +352,10 @@
       "basename": "32_button_active_blue",
       "source": "static/stone-assets/source/32_button_active_blue.jpg",
       "output": "static/stone-assets/ready/32_button_active_blue.png",
-      "mode": "dark-matte",
-      "transparent_pct": 47.16,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 39.99,
       "size": "1376x768",
-      "output_bytes": 1446867,
+      "output_bytes": 1342824,
       "manual_review": false
     },
     {
@@ -363,10 +363,10 @@
       "basename": "33_button_confirm_green",
       "source": "static/stone-assets/source/33_button_confirm_green.jpg",
       "output": "static/stone-assets/ready/33_button_confirm_green.png",
-      "mode": "dark-matte",
-      "transparent_pct": 59.38,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 56.37,
       "size": "1376x768",
-      "output_bytes": 1000589,
+      "output_bytes": 950081,
       "manual_review": false
     },
     {
@@ -374,10 +374,10 @@
       "basename": "34_button_danger_red",
       "source": "static/stone-assets/source/34_button_danger_red.jpg",
       "output": "static/stone-assets/ready/34_button_danger_red.png",
-      "mode": "baked-checkerboard",
-      "transparent_pct": 37.26,
+      "mode": "baked-checkerboard+solid-surface",
+      "transparent_pct": 35.15,
       "size": "1376x768",
-      "output_bytes": 1572732,
+      "output_bytes": 1405995,
       "manual_review": false
     },
     {
@@ -385,10 +385,10 @@
       "basename": "35_button_warning_amber",
       "source": "static/stone-assets/source/35_button_warning_amber.jpg",
       "output": "static/stone-assets/ready/35_button_warning_amber.png",
-      "mode": "baked-checkerboard",
-      "transparent_pct": 48.68,
+      "mode": "baked-checkerboard+solid-surface",
+      "transparent_pct": 47.18,
       "size": "1376x768",
-      "output_bytes": 1162101,
+      "output_bytes": 1139560,
       "manual_review": true
     },
     {
@@ -396,10 +396,10 @@
       "basename": "36_input_recessed_field",
       "source": "static/stone-assets/source/36_input_recessed_field.jpg",
       "output": "static/stone-assets/ready/36_input_recessed_field.png",
-      "mode": "dark-matte",
-      "transparent_pct": 87.47,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 73.46,
       "size": "1200x896",
-      "output_bytes": 644889,
+      "output_bytes": 548692,
       "manual_review": false
     },
     {
@@ -407,10 +407,10 @@
       "basename": "37_tab_idle_stone",
       "source": "static/stone-assets/source/37_tab_idle_stone.jpg",
       "output": "static/stone-assets/ready/37_tab_idle_stone.png",
-      "mode": "dark-matte",
-      "transparent_pct": 55.77,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 37.6,
       "size": "1376x768",
-      "output_bytes": 1572942,
+      "output_bytes": 1336500,
       "manual_review": false
     },
     {
@@ -418,10 +418,10 @@
       "basename": "38_tab_selected_cyan",
       "source": "static/stone-assets/source/38_tab_selected_cyan.jpg",
       "output": "static/stone-assets/ready/38_tab_selected_cyan.png",
-      "mode": "dark-matte",
-      "transparent_pct": 50.75,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 49.68,
       "size": "1376x768",
-      "output_bytes": 1160336,
+      "output_bytes": 1138802,
       "manual_review": false
     },
     {
@@ -429,10 +429,10 @@
       "basename": "39_slider_metal_track",
       "source": "static/stone-assets/source/39_slider_metal_track.jpg",
       "output": "static/stone-assets/ready/39_slider_metal_track.png",
-      "mode": "dark-matte",
-      "transparent_pct": 65.09,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 61.49,
       "size": "1376x768",
-      "output_bytes": 879168,
+      "output_bytes": 780948,
       "manual_review": false
     },
     {
@@ -440,10 +440,10 @@
       "basename": "40_slider_power_knob",
       "source": "static/stone-assets/source/40_slider_power_knob.jpg",
       "output": "static/stone-assets/ready/40_slider_power_knob.png",
-      "mode": "dark-matte",
-      "transparent_pct": 49.79,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 43.04,
       "size": "1024x1024",
-      "output_bytes": 1529167,
+      "output_bytes": 1380714,
       "manual_review": false
     },
     {
@@ -484,10 +484,10 @@
       "basename": "44_volume_bar_inactive",
       "source": "static/stone-assets/source/44_volume_bar_inactive.jpg",
       "output": "static/stone-assets/ready/44_volume_bar_inactive.png",
-      "mode": "dark-matte",
-      "transparent_pct": 82.17,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 82.62,
       "size": "1376x768",
-      "output_bytes": 371894,
+      "output_bytes": 359786,
       "manual_review": false
     },
     {
@@ -517,10 +517,10 @@
       "basename": "47_table_row_metal",
       "source": "static/stone-assets/source/47_table_row_metal.jpg",
       "output": "static/stone-assets/ready/47_table_row_metal.png",
-      "mode": "dark-matte",
-      "transparent_pct": 77.41,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 76.22,
       "size": "1376x768",
-      "output_bytes": 825795,
+      "output_bytes": 512467,
       "manual_review": false
     },
     {
@@ -528,10 +528,10 @@
       "basename": "48_tooltip_engraved_plate",
       "source": "static/stone-assets/source/48_tooltip_engraved_plate.jpg",
       "output": "static/stone-assets/ready/48_tooltip_engraved_plate.png",
-      "mode": "dark-matte",
-      "transparent_pct": 59.04,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 54.85,
       "size": "1200x896",
-      "output_bytes": 1090184,
+      "output_bytes": 1032786,
       "manual_review": false
     },
     {
@@ -539,10 +539,10 @@
       "basename": "49_modal_warning_frame",
       "source": "static/stone-assets/source/49_modal_warning_frame.jpg",
       "output": "static/stone-assets/ready/49_modal_warning_frame.png",
-      "mode": "dark-matte",
-      "transparent_pct": 16.34,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 11.77,
       "size": "1200x896",
-      "output_bytes": 1634177,
+      "output_bytes": 1591042,
       "manual_review": false
     },
     {
@@ -550,10 +550,10 @@
       "basename": "50_scroll_track_etched",
       "source": "static/stone-assets/source/50_scroll_track_etched.jpg",
       "output": "static/stone-assets/ready/50_scroll_track_etched.png",
-      "mode": "dark-matte",
-      "transparent_pct": 91.03,
+      "mode": "dark-matte+solid-surface",
+      "transparent_pct": 87.61,
       "size": "768x1376",
-      "output_bytes": 337979,
+      "output_bytes": 270422,
       "manual_review": false
     }
   ]
