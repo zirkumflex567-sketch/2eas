@@ -41,5 +41,8 @@ jobs:
           git add static/stone-assets/ready/
           if ! git diff --cached --quiet; then
             git commit -m "assets: generate cutout PNGs, WebP textures and 5 contact sheets"
-            git push
+            # Preserve concurrent catalog/documentation changes on the PR branch.
+            git fetch origin feature/stone-assets-catalog
+            git rebase origin/feature/stone-assets-catalog
+            git push origin HEAD:feature/stone-assets-catalog
           fi
