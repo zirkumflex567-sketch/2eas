@@ -31,6 +31,13 @@ PREVIEWS = READY / "previews"
 MANIFEST = STONES / "asset-manifest.json"
 REVIEW_ALL = {11, 12, 13, 17, 18, 19, 26, 35}
 HOLE_IDS = {12, 13, 19}
+# Solid surfaces with dark relief must NEVER become a field of accidental holes.
+# Preserve their outer shape as one painted object; 12/13 are true frames.
+SOLID_SURFACE_IDS = {
+    11, 14, 15, 16, 17, 18, 20, 26,
+    31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+    44, 47, 48, 49, 50
+}
 GLOW_IDS = {21, 22, 23, 24, 29, 42, 43, 45, 46}
 FLAGGED = []
 
@@ -119,6 +126,20 @@ def cutout(img: np.ndarray, asset_id: int):
         alpha = np.where(background,0,255).astype(np.uint8)
         # Mild 1.1 px antialias to avoid harsh JPG keying on diagonal edges.
         alpha = cv2.GaussianBlur(alpha,(0,0),1.1)
+
+    if asset_id in SOLID_SURFACE_IDS:
+        # Generated JPEGs have dark *painted stone* close to the matte color.
+        # A naive flood-fill can erase whole internal panels or dark metal areas.
+        # For these deliberately SOLID slabs, reconstruct the outer silhouette
+        # from foreground edge pixels and fill its convex enclosure.
+        ys, xs = np.where(alpha > 180)
+        if len(xs) > 60:
+            points = np.column_stack((xs[::3],ys[::3])).astype(np.int32)
+            hull = cv2.convexHull(points)
+            solid = np.zeros_like(alpha)
+            cv2.fillConvexPoly(solid,hull,255)
+            alpha = cv2.GaussianBlur(solid,(0,0),0.65)
+            mode += "+solid-surface"
 
     return alpha,mode
 
