@@ -1,228 +1,353 @@
 /*
- * STONE CHART FX (presentation only).
- * Light halo overlay drawn from the exact Lightweight Charts series coordinates.
- * Does not create prices, signals, series, orders or intercept chart interaction.
+ * STONE CHART FX · Mythic Occasional Accents
+ *
+ * Decoration only: never changes EMA/candle data, broker state, chart markers,
+ * scale options, trading signals, or orders. All effects use live series coords.
+ *
+ * Mostly dormant, with occasional short EMA sparks, candle flickers and rare
+ * left-to-right energy sweeps. There is deliberately NO always-on EMA halo.
  */
 (() => {
   "use strict";
+
   let instance = null;
-  const reducedMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : {matches:false};
-  const PALETTE = [
-    {r:74,g:227,b:255}, // EMA20 cyan
-    {r:255,g:176,b:85}, // EMA50 amber
-    {r:190,g:133,b:255} // EMA200 violet
-  ];
   let animationTimer = null;
+  const motionPreference = window.matchMedia
+    ? window.matchMedia("(prefers-reduced-motion: reduce)")
+    : { matches: false };
+
+  const PALETTE = [
+    { r: 74, g: 227, b: 255 },  // EMA20
+    { r: 255, g: 176, b: 85 },  // EMA50
+    { r: 190, g: 133, b: 255 }  // EMA200
+  ];
+
+  const clamp = (v, low, high) => Math.max(low, Math.min(high, v));
+  const random = (low, high) => low + Math.random() * (high - low);
+  const rgba = (c, a) =>
+    "rgba(" + c.r + "," + c.g + "," + c.b + "," + clamp(a, 0, 1).toFixed(3) + ")";
 
   function enabled() {
     return !!instance && document.body.classList.contains("theme-stone")
-      && !document.hidden && !reducedMotion.matches;
+      && !document.hidden && !motionPreference.matches;
   }
-  function rgba(color, opacity) {
-    return "rgba(" + color.r + "," + color.g + "," + color.b + "," + opacity.toFixed(3) + ")";
+
+  function hideNativeGlow(state) {
+    // Existing paired native glow series from V4 remain in the live chart, but
+    // must NEVER keep illuminating the full-length EMAs between events.
+    for (const group of (state.glowSeries || [])) {
+      for (const series of (group || [])) {
+        try { series.applyOptions({ color: "rgba(0,0,0,0)" }); }
+        catch (_) { /* Overlay FX must not break chart operations. */ }
+      }
+    }
   }
+
   function prepareSize(state) {
-    // The chart root includes its RIGHT PRICE AXIS and BOTTOM TIME AXIS.
-    // Render the glow only over the actual price pane; priceToCoordinate and
-    // timeToCoordinate are both measured relative to that pane's top-left.
-    const hostRect = state.host.getBoundingClientRect();
-    const cell = state.host.querySelector("table tbody tr:first-child td:first-child");
-    const pane = cell ? cell.getBoundingClientRect() : hostRect;
+    const host = state.host.getBoundingClientRect();
+    const plotCell = state.host.querySelector("table tbody tr:first-child td:first-child");
+    const pane = plotCell ? plotCell.getBoundingClientRect() : host;
     let plotWidth = 0;
     try { plotWidth = state.chart.timeScale().width(); } catch (_) {}
     const width = Math.max(0, Math.round(plotWidth || pane.width));
     const height = Math.max(0, Math.round(pane.height));
     if (width < 20 || height < 20) return false;
-    const left = Math.max(0, Math.round(pane.left - hostRect.left));
-    const top = Math.max(0, Math.round(pane.top - hostRect.top));
-    // Override the legacy full-container CSS width/height at inline priority.
-    state.canvas.style.setProperty("left", left + "px", "important");
-    state.canvas.style.setProperty("top", top + "px", "important");
-    state.canvas.style.setProperty("width", width + "px", "important");
-    state.canvas.style.setProperty("height", height + "px", "important");
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const pw = Math.max(1, Math.round(width * dpr));
-    const ph = Math.max(1, Math.round(height * dpr));
-    if (state.canvas.width !== pw || state.canvas.height !== ph) {
-      state.canvas.width = pw;
-      state.canvas.height = ph;
+
+    const left = Math.max(0, Math.round(pane.left - host.left));
+    const top = Math.max(0, Math.round(pane.top - host.top));
+    const cv = state.canvas;
+    cv.style.setProperty("left", left + "px", "important");
+    cv.style.setProperty("top", top + "px", "important");
+    cv.style.setProperty("width", width + "px", "important");
+    cv.style.setProperty("height", height + "px", "important");
+
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    const pixelWidth = Math.round(width * pixelRatio);
+    const pixelHeight = Math.round(height * pixelRatio);
+    if (cv.width !== pixelWidth || cv.height !== pixelHeight) {
+      cv.width = pixelWidth; cv.height = pixelHeight;
     }
-    state.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    state.ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     state.width = width;
     state.height = height;
     return true;
   }
+
   function getX(state, time) {
     try { return state.chart.timeScale().timeToCoordinate(time); }
     catch (_) { return null; }
   }
-  function getY(series, value) {
-    try { return series.priceToCoordinate(value); }
+  function getY(series, price) {
+    try { return series.priceToCoordinate(price); }
     catch (_) { return null; }
   }
-  function drawEmaHalo(state, index, now) {
-    const points = state.emaData[index] || [];
+
+  function visibleEmaPoints(state, index) {
     const series = state.emaSeries[index];
-    if (!series || points.length < 2) return;
-    const ctx = state.ctx, tint = PALETTE[index];
-    const phase = now / 5700 * Math.PI * 2 - index * Math.PI * 2 / 3;
-    const pulse = .58 + .42 * Math.pow(Math.max(0,Math.cos(phase)),4);
-    let segments = 0, started = false;
-    ctx.beginPath();
+    if (!series) return [];
+    const points = state.emaData[index] || [];
+    const visible = [];
     for (const point of points) {
-      if (!point || !Number.isFinite(point.value)) { started = false; continue; }
-      const x = getX(state,point.time), y = getY(series,point.value);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) { started = false; continue; }
-      if (x < -24 || x > state.width+24 || y < -35 || y > state.height+35) {
-        started = false; continue;
+      if (!point || !Number.isFinite(point.value)) continue;
+      const x = getX(state, point.time);
+      const y = getY(series, point.value);
+      if (Number.isFinite(x) && Number.isFinite(y) &&
+          x >= -30 && x <= state.width + 30 &&
+          y >= -35 && y <= state.height + 35) {
+        visible.push({ x, y });
       }
-      if (!started) { ctx.moveTo(x,y); started = true; }
-      else { ctx.lineTo(x,y); segments++; }
     }
-    if (!segments) return;
+    return visible;
+  }
+
+  function visibleCandles(state) {
+    return state.candles.filter(candle => {
+      const x = getX(state, candle.time);
+      return Number.isFinite(x) && x >= 6 && x <= state.width - 6;
+    });
+  }
+
+  function scheduleNext(state, now, initial = false) {
+    // Quiet intervals are essential. No periodic "breathing" glow.
+    state.nextEffectAt = now + (initial ? random(2400, 6200) : random(4700, 12000));
+  }
+
+  function spawnEffect(state, now) {
+    const candles = visibleCandles(state);
+    const eligible = [0, 1, 2].map(i => ({index: i, pts: visibleEmaPoints(state, i)}))
+      .filter(item => item.pts.length >= 8);
+    if (!candles.length && !eligible.length) return;
+
+    const roll = Math.random();
+    let effect;
+    if (roll < 0.38 && candles.length) {
+      const candidates = candles.slice(-Math.min(candles.length, 65));
+      const candle = candidates[Math.floor(Math.random() * candidates.length)];
+      effect = {
+        kind: "candle", candle, at: now, until: now + random(650, 1350),
+        power: random(.64, 1.0)
+      };
+    } else if (eligible.length) {
+      const picked = eligible[Math.floor(Math.random() * eligible.length)];
+      if (roll < .83) {
+        const p = picked.pts[Math.floor(random(0, picked.pts.length))];
+        effect = {
+          kind: "ema-pulse", emaIndex: picked.index, timeX: p.x,
+          radiusPx: random(42, 120), at: now, until: now + random(700, 1600),
+          power: random(.64, 1.0)
+        };
+      } else if (picked.pts.length >= 16) {
+        effect = {
+          kind: "ema-sweep", emaIndex: picked.index,
+          at: now, until: now + random(2300, 3300), power: random(.60, .90),
+          widthPx: random(85, 165)
+        };
+      }
+    }
+    if (effect) state.effects = [effect]; // never stack ambient effects
+  }
+
+  function drawEmaPath(ctx, points, left, right) {
+    // Clip each segment to the traveling window, so sweeps move smoothly even
+    // at wide candle spacing and still line up with the real EMA.
+    let drawn = false;
+    ctx.beginPath();
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i-1], b = points[i];
+      const dx = b.x - a.x;
+      if (!Number.isFinite(dx) || dx <= 0 || b.x < left || a.x > right) continue;
+      const t0 = clamp((left - a.x) / dx, 0, 1);
+      const t1 = clamp((right - a.x) / dx, 0, 1);
+      if (t1 <= t0) continue;
+      const x0 = a.x + dx*t0, y0 = a.y + (b.y-a.y)*t0;
+      const x1 = a.x + dx*t1, y1 = a.y + (b.y-a.y)*t1;
+      ctx.moveTo(x0,y0);
+      ctx.lineTo(x1,y1);
+      drawn = true;
+    }
+    return drawn;
+  }
+
+  function drawEmaEffect(state, effect, now) {
+    const pts = visibleEmaPoints(state, effect.emaIndex);
+    if (pts.length < 2) return;
+    const duration = effect.until - effect.at;
+    const progress = clamp((now - effect.at) / duration, 0, 1);
+    const fade = Math.pow(Math.sin(Math.PI * progress), .8);
+    // Small irregular flicker within a single event. No rapid strobes.
+    const flicker = .83 + .17 * Math.sin(progress * 6 * Math.PI + effect.emaIndex);
+    const strength = effect.power * fade * flicker;
+    if (strength < .03) return;
+
+    let center, radius;
+    if (effect.kind === "ema-sweep") {
+      // A small illuminated segment literally travels left → right.
+      center = -effect.widthPx + (state.width + 2*effect.widthPx) * progress;
+      radius = effect.widthPx / 2;
+    } else {
+      // Anchor the pulse to a candle-era point; reproject on resize/zoom.
+      const anchor = pts.reduce((nearest, p) =>
+        Math.abs(p.x - effect.timeX) < Math.abs(nearest.x - effect.timeX) ? p : nearest, pts[0]);
+      center = anchor.x;
+      radius = effect.radiusPx * (.85 + .15*fade);
+    }
+
+    const ctx = state.ctx, tone = PALETTE[effect.emaIndex];
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
-    ctx.strokeStyle = rgba(tint,.15 + .13*pulse);
-    ctx.lineWidth = 13 + 4*pulse;
-    ctx.shadowColor = rgba(tint,1);
-    ctx.shadowBlur = 21 + 23*pulse;
-    ctx.stroke();
-    ctx.strokeStyle = rgba(tint,.25 + .26*pulse);
-    ctx.lineWidth = 5.3 + 2*pulse;
-    ctx.shadowBlur = 9 + 13*pulse;
-    ctx.stroke();
-    ctx.strokeStyle = rgba(tint,.32 + .28*pulse);
-    ctx.lineWidth = 2;
-    ctx.shadowBlur = 3 + 6*pulse;
-    ctx.stroke();
+    ctx.shadowColor = rgba(tone, .95);
+
+    const passes = [
+      { width: 17, alpha: .12*strength, blur: 32 },
+      { width: 8, alpha: .32*strength, blur: 19 },
+      { width: 2.4, alpha: .70*strength, blur: 7 }
+    ];
+    for (const pass of passes) {
+      if (!drawEmaPath(ctx, pts, center-radius, center+radius)) continue;
+      ctx.lineWidth = pass.width;
+      ctx.strokeStyle = rgba(tone, pass.alpha);
+      ctx.shadowBlur = pass.blur;
+      ctx.stroke();
+    }
+
+    // Tiny, brief star at the sweep tip (pure decoration; not an entry point).
+    if (effect.kind === "ema-sweep" && strength > .25) {
+      const tipX = center + radius;
+      const last = pts.reduce((a,p) => Math.abs(p.x-tipX)<Math.abs(a.x-tipX)?p:a,pts[0]);
+      if (Math.abs(last.x-tipX) < 28) {
+        const r = 2 + 4*strength;
+        ctx.beginPath();
+        ctx.moveTo(last.x-r, last.y); ctx.lineTo(last.x+r,last.y);
+        ctx.moveTo(last.x,last.y-r); ctx.lineTo(last.x,last.y+r);
+        ctx.strokeStyle = rgba(tone,.75*strength);
+        ctx.lineWidth = 1;
+        ctx.shadowBlur = 13;
+        ctx.stroke();
+      }
+    }
     ctx.restore();
   }
-  function updateNativeGlow(state, now) {
-    // Glow is rendered by the SAME chart engine as the EMA. Absolutely no
-    // independent X/Y plotting, and thus no offset during zoom/resize/pan.
-    if (!state.glowSeries || !state.glowSeries.length) return;
-    const active = enabled();
-    if (state.lastGlowMode === active && now - state.lastGlowTick < 260) return;
-    state.lastGlowTick = now;
-    state.lastGlowMode = active;
-    for (let i=0; i<state.glowSeries.length; i++) {
-      const tone=PALETTE[i];
-      const phase=now/5700*Math.PI*2-i*2*Math.PI/3;
-      const strength=.36+.64*Math.pow(Math.max(0,Math.cos(phase)),4);
-      const opacities=active ? [.22+.25*strength,.30+.40*strength] : [0,0];
-      state.glowSeries[i].forEach((series,j)=>{
-        if (!series) return;
-        try { series.applyOptions({color:rgba(tone,opacities[j]||0)}); }
-        catch (_) { /* Visual effects must not affect live chart updates. */ }
-      });
-    }
-  }
-  function drawCandleHalo(state, candle, strength, kind) {
-    if (!candle || !state.candleSeries) return;
-    const x = getX(state, candle.time);
-    const yHigh = getY(state.candleSeries, candle.high);
-    const yLow = getY(state.candleSeries, candle.low);
-    if (![x, yHigh, yLow].every(Number.isFinite) || x < -20 || x > state.width + 20) return;
-    const isUp = candle.close >= candle.open;
-    const color = kind === "ambient"
-      ? (isUp ? {r:63,g:255,b:195} : {r:255,g:177,b:89})
-      : kind === "signal-up" ? {r:49,g:255,b:182}
-      : kind === "signal-down" ? {r:255,g:99,b:91}
-      : {r:108,g:225,b:255};
+
+  function drawCandleEffect(state, effect, now) {
+    const c = effect.candle;
+    if (!c || !state.candleSeries) return;
+    const x = getX(state, c.time);
+    const top = getY(state.candleSeries, c.high);
+    const bottom = getY(state.candleSeries, c.low);
+    const bodyTop = getY(state.candleSeries, Math.max(c.open, c.close));
+    const bodyBottom = getY(state.candleSeries, Math.min(c.open, c.close));
+    if (![x,top,bottom,bodyTop,bodyBottom].every(Number.isFinite) ||
+        x < 0 || x > state.width) return;
+    const t = clamp((now-effect.at)/(effect.until-effect.at),0,1);
+    const alpha = Math.sin(Math.PI*t)*effect.power*(.82+.18*Math.sin(6*Math.PI*t));
+    if (alpha < .02) return;
+    const tint = c.close >= c.open
+      ? {r:67,g:255,b:194} : {r:255,g:161,b:100};
     const ctx = state.ctx;
-    const yTop = Math.min(yHigh, yLow), h = Math.abs(yLow - yHigh);
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
-    ctx.strokeStyle = rgba(color, .78 * strength);
-    ctx.lineWidth = kind === "ambient" ? 2.0 : 3.0;
-    ctx.shadowColor = rgba(color, .97);
-    ctx.shadowBlur = kind === "ambient" ? 17 : 30;
-    ctx.beginPath();
-    ctx.moveTo(x, yTop);
-    ctx.lineTo(x, yTop + h);
-    ctx.stroke();
-    const bodyTop = getY(state.candleSeries, Math.max(candle.open, candle.close));
-    const bodyBottom = getY(state.candleSeries, Math.min(candle.open, candle.close));
-    if (Number.isFinite(bodyTop) && Number.isFinite(bodyBottom)) {
-      ctx.strokeRect(x - 4.5, Math.min(bodyTop, bodyBottom) - 1, 9, Math.max(3, Math.abs(bodyBottom - bodyTop) + 2));
-    }
-    // Star-shaped glint on the highlighted wick. Its position is derived from
-    // the supplied candle, not a fabricated price or trading signal.
-    const starY = isUp ? yHigh : yLow;
-    if (Number.isFinite(starY) && strength > 0.08) {
-      const radius = (kind === "ambient" ? 5.5 : 11) * strength;
+    ctx.strokeStyle = rgba(tint,.53*alpha);
+    ctx.shadowColor = rgba(tint,.98);
+    ctx.shadowBlur = 12 + 21*alpha;
+    ctx.lineWidth = 2.3;
+    ctx.beginPath(); ctx.moveTo(x,top); ctx.lineTo(x,bottom); ctx.stroke();
+    // Candle bodies change width with zoom; the glow hugs the position without
+    // changing the underlying OHLC rectangle.
+    let barSpacing = 7;
+    try {
+      const options = state.chart.timeScale().options();
+      if (Number.isFinite(options?.barSpacing)) barSpacing = options.barSpacing;
+    } catch (_) {}
+    const halfWidth = clamp(barSpacing, 4, 14)*.34;
+    ctx.strokeStyle = rgba(tint,.42*alpha);
+    ctx.lineWidth = 3 + 4*alpha;
+    ctx.strokeRect(x-halfWidth, bodyTop, halfWidth*2, Math.max(2,bodyBottom-bodyTop));
+    if (alpha > .3) {
+      const starY = c.close >= c.open ? top : bottom;
+      const size = 3 + 6*alpha;
       ctx.beginPath();
-      ctx.moveTo(x - radius, starY);
-      ctx.lineTo(x + radius, starY);
-      ctx.moveTo(x, starY - radius);
-      ctx.lineTo(x, starY + radius);
-      ctx.lineWidth = 1.3;
-      ctx.strokeStyle = rgba(color, Math.min(.95, strength));
-      ctx.shadowBlur = kind === "ambient" ? 16 : 28;
+      ctx.moveTo(x-size,starY);ctx.lineTo(x+size,starY);
+      ctx.moveTo(x,starY-size);ctx.lineTo(x,starY+size);
+      ctx.strokeStyle=rgba(tint,.75*alpha);
+      ctx.lineWidth=1.2;
+      ctx.shadowBlur=17;
       ctx.stroke();
     }
     ctx.restore();
   }
+
   function render() {
     const state = instance;
     if (!state) return;
-    const active = enabled(), now = performance.now();
-    // Native EMA glow must also turn off when switching to DARK/LIGHT.
-    updateNativeGlow(state, now);
+    const active = enabled();
     state.canvas.hidden = !active;
-    if (!active || !prepareSize(state)) return;
-    const ctx = state.ctx;
-    ctx.clearRect(0, 0, state.width, state.height);
-    PALETTE.forEach((_,i)=>drawEmaHalo(state,i,now));
-    if (state.flash && now < state.flash.until) {
-      const fade = Math.max(0, (state.flash.until - now) / 1950);
-      drawCandleHalo(state, state.flash.candle, Math.min(1, fade * 1.2), state.flash.kind);
-    }
-    // Deliberately decorative, low-frequency accent (NOT a setup/entry marker).
-    const candles = state.candles;
-    if (candles.length > 15) {
-      const slot = Math.floor(now / 9200);
-      const within = now % 9200;
-      if (within < 1700) {
-        const index = Math.max(0, candles.length - 7 - ((slot * 13) % Math.min(45, candles.length - 9)));
-        const glow = Math.sin(Math.PI * (within / 1700)) * .9;
-        drawCandleHalo(state, candles[index], glow, "ambient");
+    if (!active) {
+      if (!state.wasInactive) {
+        state.wasInactive = true;
+        state.effects = [];
+        state.nextEffectAt = 0;
+        state.ctx.clearRect(0,0,state.width,state.height);
       }
+      return;
+    }
+    if (!prepareSize(state)) return;
+    const now = performance.now();
+    if (state.wasInactive) {
+      state.wasInactive = false;
+      scheduleNext(state, now, true);
+    }
+    const ctx = state.ctx;
+    ctx.clearRect(0,0,state.width,state.height);
+
+    state.effects = state.effects.filter(effect => now < effect.until);
+    if (!state.effects.length && now >= state.nextEffectAt) {
+      spawnEffect(state,now);
+      scheduleNext(state,now);
+    }
+    for (const effect of state.effects) {
+      if (effect.kind === "candle") drawCandleEffect(state,effect,now);
+      else drawEmaEffect(state,effect,now);
     }
   }
+
   function stop() {
-    if (animationTimer !== null) { clearInterval(animationTimer); animationTimer = null; }
+    if (animationTimer !== null) {
+      clearInterval(animationTimer);
+      animationTimer = null;
+    }
     if (!instance) return;
     const state = instance;
     if (state.observer) state.observer.disconnect();
     if (state.rangeHandler) {
-      try { state.chart.timeScale().unsubscribeVisibleLogicalRangeChange(state.rangeHandler); } catch (_) {}
+      try { state.chart.timeScale().unsubscribeVisibleLogicalRangeChange(state.rangeHandler); }
+      catch (_) {}
     }
-    for (const group of (state.glowSeries || [])) for (const line of group) {
-      try { line.applyOptions({color:'rgba(0,0,0,0)'}); } catch (_) {}
-    }
-    if (state.canvas) state.canvas.remove();
+    hideNativeGlow(state);
+    state.canvas.remove();
     instance = null;
   }
-  function attach({chart, host, candleSeries, emaSeries, glowSeries = []}) {
+
+  function attach({ chart, host, candleSeries, emaSeries, glowSeries = [] }) {
     if (!chart || !host || !candleSeries || !Array.isArray(emaSeries)) return;
     if (instance && instance.chart === chart && instance.host === host) return;
     stop();
     const canvas = document.createElement("canvas");
     canvas.className = "stone-chart-fx";
-    canvas.setAttribute("aria-hidden", "true");
+    canvas.setAttribute("aria-hidden","true");
     canvas.style.pointerEvents = "none";
     host.append(canvas);
     const ctx = canvas.getContext("2d");
     if (!ctx) { canvas.remove(); return; }
+
     instance = {
-      chart, host, candleSeries, emaSeries, glowSeries, lastGlowTick:-Infinity, lastGlowMode:null, canvas, ctx,
-      width:0, height:0, emaData:[[],[],[]], candles:[],
-      context:null, seeded:false, knownSignals:new Set(), flash:null,
-      observer:null, rangeHandler:null
+      chart,host,candleSeries,emaSeries,glowSeries,canvas,ctx,
+      width:0,height:0,candles:[],emaData:[[],[],[]],
+      context:null,effects:[],nextEffectAt:0,wasInactive:true,
+      observer:null,rangeHandler:null
     };
+    hideNativeGlow(instance); // no persistent glow from old paired native lines
     if (typeof ResizeObserver !== "undefined") {
       instance.observer = new ResizeObserver(render);
       instance.observer.observe(host);
@@ -230,41 +355,26 @@
     instance.rangeHandler = render;
     try { chart.timeScale().subscribeVisibleLogicalRangeChange(render); }
     catch (_) { instance.rangeHandler = null; }
-    animationTimer = setInterval(render, 80);
+    animationTimer = setInterval(render, 100);
     render();
   }
-  function update({candles, emas, markers = [], newBar = false, context = ""}) {
+
+  function update({ candles, emas, context = "" }) {
     const state = instance;
     if (!state || !Array.isArray(candles) || !candles.length) return;
-    const changed = context !== state.context;
-    if (changed) {
-      state.context = context; state.seeded = false; state.knownSignals.clear(); state.flash = null;
+    if (context !== state.context) {
+      state.context = context;
+      state.effects = [];
+      state.nextEffectAt = 0;
+      state.wasInactive = true;
+      // The next event must be newly chosen for the switched account/period.
     }
     state.candles = candles.slice(-550);
-    if (Array.isArray(emas)) state.emaData = emas.map(data => Array.isArray(data) ? data.slice(-550) : []);
-    const recent = new Set(state.candles.slice(-3).map(c => String(c.time)));
-    const currentKeys = new Set();
-    let fresh = null;
-    for (const m of (Array.isArray(markers) ? markers : [])) {
-      if (!m || !recent.has(String(m.time))) continue;
-      const key = String(m.time) + "|" + String(m.position) + "|" + String(m.text) + "|" + String(m.shape);
-      currentKeys.add(key);
-      if (state.seeded && !state.knownSignals.has(key)) fresh = m;
+    if (Array.isArray(emas)) {
+      state.emaData = emas.map(points => Array.isArray(points) ? points.slice(-550) : []);
     }
-    state.knownSignals = currentKeys;
-    if (state.seeded && fresh) {
-      const candle = state.candles.find(c => String(c.time) === String(fresh.time));
-      const lower = String(fresh.position || "").toLowerCase();
-      state.flash = {
-        candle: candle || state.candles[state.candles.length - 1],
-        kind: lower === "belowbar" ? "signal-up" : lower === "abovebar" ? "signal-down" : "new",
-        until: performance.now() + 1950
-      };
-    } else if (state.seeded && newBar) {
-      state.flash = {candle: state.candles[state.candles.length - 1], kind:"new", until:performance.now() + 1550};
-    }
-    state.seeded = true;
     render();
   }
-  window.StoneChartFX = Object.freeze({attach, update, reset: stop});
+
+  window.StoneChartFX = Object.freeze({ attach, update, reset: stop });
 })();

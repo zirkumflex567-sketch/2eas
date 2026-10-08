@@ -64,12 +64,38 @@ class StoneThemeContractTests(unittest.TestCase):
         self.assertIn("renderChartLevelLegend(visibleLevels);", app)
         self.assertIn("level.title", app)
         self.assertIn("title:''", app)
-        self.assertIn("drawEmaHalo(state,i,now)", fx)
+        self.assertIn("drawEmaEffect(state,effect,now)", fx)
         self.assertIn("state.chart.timeScale().width()", fx)
-        self.assertIn('cell.getBoundingClientRect()', fx)
-        self.assertIn('state.canvas.style.setProperty("width"', fx)
-        self.assertIn("!reducedMotion.matches", fx)
+        self.assertIn('plotCell.getBoundingClientRect()', fx)
+        self.assertIn('cv.style.setProperty("width"', fx)
+        self.assertIn("!motionPreference.matches", fx)
         self.assertIn("#chart-level-legend.stone-chart-level-legend", skin)
+
+
+    def test_mythic_chart_effects_are_sparse_and_visual_only(self):
+        fx = (STATIC / "stone-chart-effects.js").read_text(encoding="utf-8")
+        skin = (STATIC / "stone-asset-skin.css").read_text(encoding="utf-8")
+        live = (ROOT / "app.py").read_text(encoding="utf-8")
+        demo = (STATIC / "stone-preview.html").read_text(encoding="utf-8")
+        # No continuously glowing EMA lines in the live or demo chart.
+        self.assertIn("hideNativeGlow(instance)", fx)
+        self.assertNotIn("function updateNativeGlow", fx)
+        self.assertNotIn("function drawEmaHalo", fx)
+        self.assertIn("scheduleNext(state, now)", fx)
+        self.assertIn("random(4700, 12000)", fx)
+        self.assertIn('kind: "ema-sweep"', fx)
+        self.assertIn('kind: "ema-pulse"', fx)
+        self.assertIn('kind: "candle"', fx)
+        self.assertIn('state.effects = [effect]', fx)
+        self.assertIn('canvas.style.pointerEvents = "none"', fx)
+        self.assertIn('prefers-reduced-motion: reduce', fx)
+        self.assertIn('ctx.clearRect(0,0,state.width,state.height)', fx)
+        self.assertNotIn("fetch(", fx)
+        self.assertNotIn("order_send", fx)
+        self.assertIn('src="static/stone-chart-effects.js"', live)
+        self.assertIn('src="stone-chart-effects.js"', demo)
+        self.assertIn("animation: none !important;", skin)
+        self.assertIn("stone-asset-panel--chart::after", skin)
 
 
 if __name__ == "__main__":

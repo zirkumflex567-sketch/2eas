@@ -1130,3 +1130,22 @@ body.theme-stone .stone-asset-panel button.stone-chart-expand-primary:hover:not(
     bottom: 23px !important;
   }
 }
+
+
+/* Mythic occasional FX (V7): no repetitive permanent EMA/title glow.
+   All actual colored accents are generated randomly in stone-chart-effects.js.
+   Decorative sparks on the metal outer frame remain unchanged. */
+body.theme-stone .stone-asset-panel--chart .text-sky-400,
+body.theme-stone .stone-asset-panel--chart .text-amber-400,
+body.theme-stone .stone-asset-panel--chart .text-purple-400,
+body.theme-stone .chart-legend span:nth-child(1),
+body.theme-stone .chart-legend span:nth-child(2),
+body.theme-stone .chart-legend span:nth-child(3) {
+  animation: none !important;
+}
+/* The old constant scan across the chart frame would conflict with the
+   intentionally unpredictable, sparse glow pulses. */
+body.theme-stone .stone-asset-panel--chart::after {
+  animation: none !important;
+  background-image: none !important;
+}
