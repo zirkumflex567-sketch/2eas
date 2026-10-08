@@ -960,6 +960,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   </style>
   <!-- Optional runic stone material; selectors scoped to body.theme-stone -->
   <link rel="stylesheet" href="static/stone-cockpit.css">
+  <link rel="stylesheet" href="static/stone-asset-skin.css">
 </head>
 <body class="theme-dark flex flex-col p-3 min-h-screen text-xs select-none">
 

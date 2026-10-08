@@ -111,6 +111,26 @@
     }
   }
 
+  // Attach only presentation classes to existing cards. Never replace chart, inputs,
+  // account controls, MT5 state, journal rows, or live event handlers.
+  function markAssetPanels() {
+    document.querySelector("nav.glass-card")?.classList.add("stone-asset-nav");
+    document.querySelector("header.glass-card")?.classList.add("stone-asset-header");
+    const landmarks = [
+      ["tv-chart", "chart"],
+      ["vp-histogram-container", "volume"],
+      ["diagnose-card", "diagnostic"],
+      ["gold-details", "guard"],
+      ["matrix-title", "matrix"],
+      ["positions-list", "positions"],
+      ["journal-list", "journal"]
+    ];
+    for (const [id, name] of landmarks) {
+      const card = byId(id)?.closest(".glass-card");
+      if (card) card.classList.add("stone-asset-panel", "stone-asset-panel--" + name);
+    }
+  }
+
   function setMode(mode) {
     if (!choices.includes(mode)) mode = "stone";
     selected = mode;
@@ -166,6 +186,7 @@
   }
 
   function boot() {
+    markAssetPanels();
     rails();
     decor();
     constructChartLadder();
