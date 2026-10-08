@@ -1,0 +1,48 @@
+name: Prepare Stone UI assets
+
+on:
+  push:
+    branches:
+      - feature/stone-assets-catalog
+    paths:
+      - ".github/workflows/prepare-stone-assets.yml"
+      - "scripts/process_stone_assets.py"
+      - "static/stone-assets/source/**"
+      - "static/stone-assets/asset-manifest.json"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-assets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out 2EAs branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Configure Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install graphics dependencies
+        run: pip install pillow numpy opencv-python-headless
+
+      - name: Generate ready-to-use transparent and opaque assets
+        run: python scripts/process_stone_assets.py
+
+      - name: Commit generated assets and QA contact sheets
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add static/stone-assets/ready/
+          if ! git diff --cached --quiet; then
+            git commit -m "assets: generate cutout PNGs, WebP textures and 5 contact sheets"
+            # Preserve concurrent catalog/documentation changes on the PR branch.
+            git fetch origin feature/stone-assets-catalog
+            git rebase origin/feature/stone-assets-catalog
+            git push origin HEAD:feature/stone-assets-catalog
+          fi
