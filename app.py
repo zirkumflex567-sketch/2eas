@@ -880,6 +880,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="static/lightweight-charts.js"></script>
+  <script src="static/stone-chart-effects.js"></script>
   <style>
     html, body {
       min-height: 100vh;
@@ -1598,6 +1599,9 @@ HTML_CONTENT = """<!DOCTYPE html>
       ema50Series  = chart.addLineSeries({ color: '#ff9f43', lineWidth: 2, title: 'EMA50' });
       ema200Series = chart.addLineSeries({ color: '#a55eea', lineWidth: 2, title: 'EMA200' });
 
+      // Decorative, non-interactive chart halo; never alters live series or candles.
+      try { window.StoneChartFX?.attach({chart, host:container, candleSeries, emaSeries:[ema20Series,ema50Series,ema200Series]}); } catch (_) {}
+
       // Robust ResizeObserver
       let chartInitiallySized = false;
       const ro = new ResizeObserver(entries => {
@@ -1729,6 +1733,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         currentCandlesCount = data.candles.length;
         const latest = data.candles[data.candles.length - 1];
         const curPrice = latest ? latest.close : 0;
+        const stoneNewBar = !isInitialLoad && lastCandleTime !== 0 && latest.time !== lastCandleTime;
 
         if (isInitialLoad) {
           candleSeries.setData(data.candles);
@@ -1774,6 +1779,15 @@ HTML_CONTENT = """<!DOCTYPE html>
 
         currentChartMarkers = data.markers || [];
         candleSeries.setMarkers(showEAStatusText ? currentChartMarkers : []);
+        try {
+          window.StoneChartFX?.update({
+            candles: data.candles,
+            emas: [data.ema20, data.ema50, data.ema200],
+            markers: showEAStatusText ? currentChartMarkers : [],
+            newBar: stoneNewBar,
+            context: activeAccount + '/' + activeTimeframe + '/' + accountGeneration
+          });
+        } catch (_) { /* Never let decorative effects interfere with MT5 polling. */ }
       } catch (err) {
         reportAccountError(err, generation);
       } finally { if (candlesBusy === generation) candlesBusy = null; }
@@ -1971,11 +1985,25 @@ HTML_CONTENT = """<!DOCTYPE html>
       `;
 
       const container = document.getElementById('vp-histogram-container');
-      const sorted = [...vp.histogram].reverse().filter((_, i) => i % 2 === 0).slice(0, 8);
+      const histogram = [...vp.histogram].reverse();
+      const sorted = histogram.filter((_, i) => i % 2 === 0).slice(0, 8);
+      // Always preserve the genuine POC row when decimating the histogram to 8 bars.
+      const pocRow = histogram.find(b => b.is_poc);
+      if (pocRow && !sorted.includes(pocRow)) {
+        const closest = sorted.reduce((best, row, i) => (
+          !best || Math.abs(row.price - pocRow.price) < best.distance
+            ? {index:i, distance:Math.abs(row.price - pocRow.price)} : best
+        ), null);
+        if (closest) sorted[closest.index] = pocRow;
+        sorted.sort((a,b) => b.price - a.price);
+      }
       
-      container.innerHTML = sorted.map(b => {
+      container.innerHTML = sorted.map((b, index) => {
         let barColor = 'bg-slate-700/50';
         let label = '';
+        // Palette is decorative: cyan/amber alternation is NOT buy/sell volume.
+        const stoneKind = b.is_poc ? 'poc' : b.in_va ? 'va' : 'off';
+        const stoneTone = b.is_poc ? 'gold' : !b.in_va ? 'neutral' : index % 2 === 0 ? 'cyan' : 'amber';
         if (b.is_poc) {
           barColor = 'bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.6)]';
           label = '⭐ POC (Max Vol)';
@@ -1987,7 +2015,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           <div class="flex items-center gap-2">
             <span class="w-16 font-mono text-[10px] opacity-80 text-right">$${b.price.toFixed(2)}</span>
             <div class="flex-1 bg-black/20 rounded-full h-3 overflow-hidden flex items-center">
-              <div class="h-full rounded-full vp-bar ${barColor}" style="width: ${b.vol_pct}%"></div>
+              <div class="h-full rounded-full vp-bar ${barColor}" data-kind="${stoneKind}" data-tone="${stoneTone}" style="width: ${Math.max(0, Math.min(100, Number(b.vol_pct) || 0))}%"></div>
             </div>
             <span class="w-24 text-[9px] font-mono opacity-80 ${b.is_poc ? 'text-amber-500 font-bold' : ''}">${label || b.vol_pct + '%'}</span>
           </div>

@@ -73,8 +73,8 @@
         const fill = document.createElement("span");
         fill.className = "stone-mini-fill";
         fill.style.width = originalBar.style.width || "0%";
-        fill.dataset.kind = originalBar.className.includes("amber") ? "poc"
-          : originalBar.className.includes("blue") ? "va" : "off";
+        fill.dataset.kind = originalBar.dataset.kind || (originalBar.classList.contains("poc") ? "poc" : "va");
+        fill.dataset.tone = originalBar.dataset.tone || (fill.dataset.kind === "poc" ? "gold" : "cyan");
         track.append(fill);
         row.append(priceLabel, track);
         bars.append(row);

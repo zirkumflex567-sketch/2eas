@@ -169,6 +169,7 @@ h2{font-size:13px;letter-spacing:.045em;color:#67d4f6;margin:0 0 9px}
   <p class="demo-footer">STONE RUNE COCKPIT · Designstudie auf Basis einer echten, später separat angebundenen MT5-Dashboard-Oberfläche</p>
 </div>
 <script src="lightweight-charts.js"></script>
+<script src="stone-chart-effects.js"></script>
 <script>
 (function(){
  "use strict";
@@ -184,7 +185,10 @@ h2{font-size:13px;letter-spacing:.045em;color:#67d4f6;margin:0 0 9px}
      const line=document.createElement('div');line.className='vrow';
      const price=document.createElement('span');price.className='vprice';price.textContent='$'+(4145.45-i*4.17).toFixed(2);
      const track=document.createElement('span');track.className='vtrack';
-     const fill=document.createElement('span');fill.className='vp-bar'+(v===100?' poc':'');fill.style.width=v+'%';track.append(fill);
+     const fill=document.createElement('span');fill.className='vp-bar'+(v===100?' poc':'');fill.style.width=v+'%';
+     fill.dataset.kind=v===100?'poc':v<40?'off':'va';
+     fill.dataset.tone=v===100?'gold':v<40?'neutral':i%2?'amber':'cyan';
+     track.append(fill);
      const tag=document.createElement('span');tag.className='vlabel'+(v===100?' poc':'');tag.textContent=v===100?'★ POC':v+'%';
      line.append(price,track,tag);rows.append(line);
    });
@@ -231,7 +235,12 @@ h2{font-size:13px;letter-spacing:.045em;color:#67d4f6;margin:0 0 9px}
    }
    const cs=candleData(tf);
    candle.setData(cs);
-   [20,50,80].forEach((n,i)=>emas[i].setData(sma(cs,n)));
+   const demoEmas=[20,50,80].map(n=>sma(cs,n));
+   demoEmas.forEach((points,i)=>emas[i].setData(points));
+   try {
+     window.StoneChartFX?.attach({chart,host:document.getElementById('tv-chart'),candleSeries:candle,emaSeries:emas});
+     window.StoneChartFX?.update({candles:cs,emas:demoEmas,markers:[],context:'demo/'+tf,newBar:false});
+   } catch (_) { /* Demo chart remains usable even if decoration fails. */ }
    chart.timeScale().fitContent();
    document.querySelectorAll('#frame-buttons button').forEach(b=>b.classList.toggle('active',b.dataset.frame===tf));
  }

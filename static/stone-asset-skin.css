@@ -328,3 +328,138 @@ body.theme-stone *:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   body.theme-stone .stone-cockpit-crest { animation: none !important; }
 }
+
+
+/* ---- V2: chromatic order-free volume, breathing EMAs and chart glints ---- */
+/* Amber/cyan alternating volume rows describe no market direction or side. */
+body.theme-stone #vp-histogram-container .vp-bar,
+body.theme-stone #stone-mini-volume .stone-mini-fill {
+  position: relative;
+  overflow: hidden;
+  border-radius: 2px 5px 5px 2px !important;
+  transition: filter .28s ease, width .35s ease;
+  background: url("stone-assets/ready/42_volume_bar_cyan.png") left center / 100% 100% no-repeat !important;
+  filter: drop-shadow(0 0 4px rgba(67,214,255,.64));
+}
+body.theme-stone #vp-histogram-container .vp-bar[data-tone="amber"],
+body.theme-stone #stone-mini-volume .stone-mini-fill[data-tone="amber"] {
+  background-image: url("stone-assets/ready/43_volume_bar_gold.png") !important;
+  filter: hue-rotate(-7deg) drop-shadow(0 0 6px rgba(245,161,70,.68));
+}
+body.theme-stone #vp-histogram-container .vp-bar[data-kind="poc"],
+body.theme-stone #stone-mini-volume .stone-mini-fill[data-kind="poc"] {
+  background-image: url("stone-assets/ready/43_volume_bar_gold.png") !important;
+  box-shadow: inset 0 1px rgba(255,240,194,.8), 0 0 8px rgba(252,166,59,.57) !important;
+  filter: brightness(1.18) drop-shadow(0 0 9px rgba(252,186,73,.78)) !important;
+}
+body.theme-stone #vp-histogram-container .vp-bar[data-kind="off"],
+body.theme-stone #stone-mini-volume .stone-mini-fill[data-kind="off"] {
+  background-image: url("stone-assets/ready/44_volume_bar_inactive.png") !important;
+  filter: brightness(.84) saturate(.45) !important;
+  box-shadow: none !important;
+}
+body.theme-stone #vp-histogram-container .vp-bar::after,
+body.theme-stone #stone-mini-volume .stone-mini-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg,transparent 10%,rgba(227,255,255,.05) 35%,rgba(232,255,255,.55) 48%,rgba(227,255,255,.03) 58%,transparent 77%);
+  transform: translateX(-140%);
+  animation: stone-volume-surge 12s ease-in-out infinite;
+  pointer-events: none;
+}
+body.theme-stone #vp-histogram-container > :nth-child(3n + 1) .vp-bar::after,
+body.theme-stone #stone-mini-volume > :nth-child(3n + 1) .stone-mini-fill::after {
+  animation-delay: -3.7s;
+}
+body.theme-stone #vp-histogram-container > :nth-child(3n + 2) .vp-bar::after,
+body.theme-stone #stone-mini-volume > :nth-child(3n + 2) .stone-mini-fill::after {
+  animation-delay: -7.1s;
+}
+body.theme-stone #vp-histogram-container .vp-bar:hover,
+body.theme-stone #stone-mini-volume .stone-mini-fill:hover { filter: brightness(1.24) drop-shadow(0 0 7px rgba(69,226,255,.70)); }
+body.theme-stone #vp-histogram-container .vp-bar[data-kind="poc"]:hover { filter: brightness(1.28) drop-shadow(0 0 12px rgba(255,175,84,.9)) !important; }
+
+/* Overlay follows the real canvas coordinates, without altering its data or pointer input. */
+body.theme-stone #tv-chart { position: relative; isolation: isolate; }
+#tv-chart .stone-chart-fx {
+  display: block;
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none !important;
+  user-select: none;
+  touch-action: none;
+}
+#tv-chart .stone-chart-fx[hidden] { display: none !important; }
+body.theme-stone #chart-title-text,
+body.theme-stone .chart-panel .panel-heading strong {
+  color: #dbeef2;
+  text-shadow: 0 0 8px rgba(80,214,244,.18), 1px 2px #000;
+}
+body.theme-stone .stone-asset-panel--chart .text-sky-400,
+body.theme-stone .chart-legend span:nth-child(1) {
+  animation: stone-ema-cyan 5.7s ease-in-out infinite;
+}
+body.theme-stone .stone-asset-panel--chart .text-amber-400,
+body.theme-stone .chart-legend span:nth-child(2) {
+  animation: stone-ema-amber 5.7s ease-in-out -1.9s infinite;
+}
+body.theme-stone .stone-asset-panel--chart .text-purple-400,
+body.theme-stone .chart-legend span:nth-child(3) {
+  animation: stone-ema-violet 5.7s ease-in-out -3.8s infinite;
+}
+body.theme-stone .stone-asset-panel--diagnostic,
+body.theme-stone .stone-asset-panel--volume,
+body.theme-stone .stone-asset-panel--matrix { position: relative; }
+body.theme-stone .stone-asset-panel--diagnostic {
+  box-shadow: inset 0 0 16px rgba(14,148,188,.09),0 0 16px rgba(24,130,166,.15),0 12px 20px rgba(0,0,0,.7) !important;
+}
+body.theme-stone #vp-histogram-container > * {
+  padding-block: 2px;
+  border-bottom: 1px solid rgba(130,159,166,.12);
+}
+body.theme-stone .stone-asset-panel--matrix table tbody tr {
+  background-image: url("stone-assets/ready/47_table_row_metal.png");
+  background-position: center;
+  background-repeat: repeat-x;
+  background-size: auto 100%;
+  border-bottom: 1px solid rgba(163,202,212,.17);
+}
+body.theme-stone .stone-asset-panel--matrix table thead {
+  color: #abd5de;
+  background: linear-gradient(#28374055,#0a151a88);
+}
+body.theme-stone .stone-asset-panel--chart .ticker-bg button,
+body.theme-stone .stone-asset-panel--volume button { box-shadow: inset 0 1px rgba(196,240,250,.11), 0 1px 3px rgba(0,0,0,.65); }
+body.theme-stone .stone-asset-panel--matrix,
+body.theme-stone .stone-asset-panel--volume {
+  background-blend-mode: normal, multiply !important;
+}
+@keyframes stone-volume-surge {
+  0%, 12%, 100% { transform: translateX(-140%); opacity: 0; }
+  21% { opacity: .9; }
+  33%, 96% { transform: translateX(140%); opacity: 0; }
+}
+@keyframes stone-ema-cyan {
+  0%, 45%, 100% { text-shadow: none; }
+  20% { text-shadow: 0 0 8px rgba(58,219,255,.9),0 0 15px rgba(58,219,255,.45); }
+}
+@keyframes stone-ema-amber {
+  0%, 45%, 100% { text-shadow: none; }
+  20% { text-shadow: 0 0 8px rgba(255,165,55,.95),0 0 15px rgba(255,165,55,.46); }
+}
+@keyframes stone-ema-violet {
+  0%, 45%, 100% { text-shadow: none; }
+  20% { text-shadow: 0 0 8px rgba(200,142,255,.85),0 0 15px rgba(200,142,255,.42); }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.theme-stone #vp-histogram-container .vp-bar::after,
+  body.theme-stone #stone-mini-volume .stone-mini-fill::after,
+  body.theme-stone .stone-asset-panel--chart .text-sky-400,
+  body.theme-stone .stone-asset-panel--chart .text-amber-400,
+  body.theme-stone .stone-asset-panel--chart .text-purple-400,
+  body.theme-stone .chart-legend span { animation: none !important; }
+}
