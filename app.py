@@ -1009,6 +1009,7 @@ def api_chart_capabilities():
             "scenarioPreview": True,
             "brokerSymbolSearch": True, "brokerSymbolInfo": True,
             "brokerPositionOrderReads": True,
+            "brokerTradeHistoryReads": True,
             "persistentServerDrawings": os.getenv("CHART_STUDIO_STORAGE_ENABLED") == "1"
             and len(os.getenv("CHART_STUDIO_STORAGE_TOKEN", "")) >= 32,
             "realStopDragging": False, "brokerMutations": False,

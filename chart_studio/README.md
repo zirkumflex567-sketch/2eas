@@ -72,7 +72,62 @@ fail closed. The legacy XAUUSD quote endpoint keeps numeric `bid`, `ask`, and
 `tickSize` for the existing UI while using the same clock and quote validation.
 Returned legacy symbol metadata must name the requested symbol exactly.
 
-These endpoints supply backend read contracts. Native symbol UI, broker history,
+`GET /api/chart/v1/trades?account=titan&symbol=XAUUSD&fromUtc=2026-10-09T09:00:00Z&toUtc=2026-10-09T13:00:00Z&limit=100`
+reads actual MT5 `HISTORY_DEAL` records exclusively through
+`history_deals_get(date_from, date_to)`, under the same verified account session
+and shared lock. Both UTC endpoints are required ISO datetimes with `Z` or
+`+00:00` and at most six fractional digits; the range must be positive and no
+longer than 31 days. Missing/invalid ranges return 422 before connecting.
+`limit` is 1–500 (default 100). Optional `ticket`, `magic` and `manual` filters
+apply after raw history validation. Here **ticket means the DEAL ticket**, not
+the ORDER ticket accepted by MT5's own `ticket` fetch argument. History is
+fetched by range without the MT5 ticket argument; returned `orderTicket` and
+`positionIdentifier` preserve the separate broker identifiers.
+
+The `trades` array preserves executed BUY/SELL deals, each real `entry`
+(`IN`, `OUT`, `INOUT`, `OUT_BY`, or explicit `UNKNOWN`), `rawType`/`rawEntry`,
+`status: EXECUTED`, fill `price`/`volume`, signed `commission`/`swap`/`profit`/
+`fee`, account currency, magic/ownership and comment. Financial values and
+identifiers are canonical decimal strings. No positions, pending orders,
+signals, inferred EA ownership or USD conversions become history fills.
+`fillTime` retains raw milliseconds, normalized UTC milliseconds and the
+explicit account offset provenance; `rawBrokerTime` retains the paired seconds.
+The pair must agree on its second. Request UTC datetimes are shifted by the
+configured account offset (the demos use UTC+3), retaining explicit UTC tzinfo
+for MT5 queries so the machine timezone never changes the query range.
+
+Non-trade balance/credit/commission/other deals and BUY_CANCELED (13)/
+SELL_CANCELED (14) are excluded from `trades`. `omittedCategories` reports each
+category's `type`, `rawType` and unique-deal `count` across the account's pinned
+UTC range, before the fill-only symbol/ticket/magic/manual filters. Unknown
+deal types are reported as `OTHER_UNKNOWN`, never assigned a guessed side.
+All raw rows, even omitted or filtered rows, must contain valid finite fields.
+`None` or malformed broker data returns 503; an actual empty tuple succeeds
+with empty arrays. More than 50,000 raw rows returns explicit 503 `HISTORY_LIMIT`
+and requires a narrower range; history is never silently truncated.
+
+The first page pins `asOfUtc` to the earlier of requested `toUtc` and observed
+UTC now. Inclusive range filtering uses actual milliseconds, excludes future
+deals and persists that first boundary on later pages. Request `fromUtc`/
+`toUtc` and response times are canonicalized to six fractional UTC digits.
+Rows sort ascending by `(rawBrokerEpochMs, numeric DEAL ticket)`. Identical
+duplicate tickets collapse; conflicting duplicates fail closed with 503.
+
+Pass `nextCursor` as the optional `cursor` on the next request, retaining the
+same account, symbol, UTC range and filters. Page size may change. Cursors are
+opaque, HMAC-authenticated tokens with a random process-local key, constant-time
+signature verification and bounded encoding. They bind exact account/login/
+server/terminal/clock identity and all filters through a scope digest; tokens
+contain no credentials, terminal paths or raw account identity. There is no
+cursor persistence. Tampering, scope changes, process restarts or corrected/
+late-arriving history inside the pinned range return explicit 410
+`CURSOR_INVALID_OR_EXPIRED`; start again without a cursor. A history fingerprint
+prevents silent duplicates or skipped inserted deals across pages. New deals
+after the pinned boundary cannot enter subsequent pages. `nextCursor: null`
+marks the final page. These reads send `Cache-Control: no-store` and cannot
+execute broker mutations.
+
+These endpoints supply backend read contracts. Native symbol/history UI,
 FX normalization and chart trading remain later work.
 
 ## Opt-in serverseitige Chart-Workspaces (SQLite)
