@@ -473,7 +473,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  panel.innerHTML=
   '<div class="cs-beta-head"><strong>CHART STUDIO · EXPERIMENTELL</strong><span>Keine Handelsausführung</span></div>'+
   '<div class="cs-beta-buttons">'+toolLabels.map(([id,label])=>'<button type="button" data-tool="'+id+'">'+label+'</button>').join("")+
-  ["undo","redo","delete-selected","export","clear"].map(id=>'<button type="button" data-cmd="'+id+'">'+({undo:"↶ Undo",redo:"↷ Redo","delete-selected":"Ausgewählte löschen",export:"JSON kopieren",clear:"Alle Zeichnungen löschen"}[id])+'</button>').join("")+'</div>'+
+  ["undo","redo","delete-selected","export","save-png","clear"].map(id=>'<button type="button" data-cmd="'+id+'">'+({undo:"↶ Undo",redo:"↷ Redo","delete-selected":"Ausgewählte löschen",export:"JSON kopieren","save-png":"Bild (PNG) speichern",clear:"Alle Zeichnungen löschen"}[id])+'</button>').join("")+'</div>'+
   '<p class="cs-beta-keyboard-hint">Kürzel: V Navigation · E Bearbeiten · H Linie · T Trend · R Zone · F Fibonacci · C Kanal · M Messen · Strg+Z Rückgängig · Entf Löschen</p>'+
   '<div class="cs-beta-buttons cs-fib-settings"><label>Fibonacci-Level (%) <input type="text" id="cs-fib-levels" aria-label="Fibonacci-Level in Prozent" placeholder="0; 23,6; 38,2; 50; 61,8; 78,6; 100" maxlength="240"></label><button type="button" data-cmd="fib-default">Fibo-Vorlage speichern</button><button type="button" data-cmd="fib-selected">Ausgewählte Fibo ändern</button></div>'+
   '<div class="cs-beta-buttons"><button type="button" data-cmd="magnet" aria-pressed="false">Magnet: AUS · Kerzen-OHLC</button></div>'+
@@ -567,6 +567,15 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
    setTool(s.tool==="plan"?"cursor":"plan");return;
   }
   if(b.dataset.cmd==="clear-plan"){cancelPlanPreview();s.scenario=null;s.validatedScenario=null;s.planTickSize=null;if(s.tool==="plan")setTool("cursor");requestDraw();const out=panel.querySelector("#cs-scenario-result");if(out)out.textContent="Plan entfernt (keine Brokeraktion).";return}
+  if(b.dataset.cmd==="save-png"){
+   if(!window.ChartStudioExport){updateMessage("PNG-Export nicht geladen.");return}
+   // Ensure pending renderer frames are painted before snapshotting.
+   render();
+   window.ChartStudioExport.download({chart:s.chart,host:s.host,overlay:s.canvas,account:s.account,timeframe:s.tf})
+    .then(()=>updateMessage("Chart-Screenshot lokal als PNG gespeichert."))
+    .catch(err=>updateMessage("PNG-Export nicht verfügbar: "+err.message));
+   return;
+  }
   if(b.dataset.cmd==="save-profile")saveProfile();
   if(b.dataset.cmd==="load-profile")loadProfile();
   if(b.dataset.cmd==="delete-profile")deleteProfile();
