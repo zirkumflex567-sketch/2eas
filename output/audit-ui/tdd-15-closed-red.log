@@ -1,0 +1,22 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ DashboardFrontendTests.test_empty_position_list_announces_lost_unsent_draft _
+
+self = <test_dashboard_frontend.DashboardFrontendTests testMethod=test_empty_position_list_announces_lost_unsent_draft>
+
+    def test_empty_position_list_announces_lost_unsent_draft(self):
+        self.load(); self.page.locator('#sl-input-101').fill('-37.00')
+        self.page.evaluate('renderPositions([])')
+>       expect(self.page.locator('#position-edit-status')).to_contain_text('Entwurf')
+E       AssertionError: Locator expected to contain text 'Entwurf'
+E       Actual value:  
+E       Call log:
+E         - Expect "to_contain_text" with timeout 5000ms
+E         - waiting for locator("#position-edit-status")
+E           8 × locator resolved to <p role="status" aria-live="polite" class="text-amber-500" id="position-edit-status"></p>
+E             - unexpected value ""
+
+tests\test_dashboard_frontend.py:296: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_dashboard_frontend.py::DashboardFrontendTests::test_empty_position_list_announces_lost_unsent_draft
+1 failed, 19 deselected in 9.97s

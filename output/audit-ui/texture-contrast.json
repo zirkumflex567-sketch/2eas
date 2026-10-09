@@ -1,0 +1,200 @@
+[
+  {
+    "theme": "dark",
+    "selector": "#live-bid",
+    "index": 0,
+    "minimum": 10.46377886106959
+  },
+  {
+    "theme": "dark",
+    "selector": "#live-ask",
+    "index": 0,
+    "minimum": 8.43484160031526
+  },
+  {
+    "theme": "dark",
+    "selector": "#dd-pct",
+    "index": 0,
+    "minimum": 10.46377886106959
+  },
+  {
+    "theme": "dark",
+    "selector": "#dd-buffer",
+    "index": 0,
+    "minimum": 10.46377886106959
+  },
+  {
+    "theme": "dark",
+    "selector": "#bar-countdown",
+    "index": 0,
+    "minimum": 14.841246472881172
+  },
+  {
+    "theme": "dark",
+    "selector": "#time-server",
+    "index": 0,
+    "minimum": 14.558929379766296
+  },
+  {
+    "theme": "dark",
+    "selector": "#time-german",
+    "index": 0,
+    "minimum": 10.46377886106959
+  },
+  {
+    "theme": "dark",
+    "selector": "#journal-list strong.text-white",
+    "index": 0,
+    "minimum": 14.558929379766296
+  },
+  {
+    "theme": "dark",
+    "selector": "#journal-list strong.text-white",
+    "index": 1,
+    "minimum": 14.558929379766296
+  },
+  {
+    "theme": "dark",
+    "selector": "#journal-list strong.text-white",
+    "index": 2,
+    "minimum": 14.558929379766296
+  },
+  {
+    "theme": "dark",
+    "selector": "#journal-list strong.text-white",
+    "index": 3,
+    "minimum": 14.558929379766296
+  },
+  {
+    "theme": "light",
+    "selector": "#live-bid",
+    "index": 0,
+    "minimum": 7.013743864895189
+  },
+  {
+    "theme": "light",
+    "selector": "#live-ask",
+    "index": 0,
+    "minimum": 7.3170102888101
+  },
+  {
+    "theme": "light",
+    "selector": "#dd-pct",
+    "index": 0,
+    "minimum": 7.013743864895189
+  },
+  {
+    "theme": "light",
+    "selector": "#dd-buffer",
+    "index": 0,
+    "minimum": 7.013743864895189
+  },
+  {
+    "theme": "light",
+    "selector": "#bar-countdown",
+    "index": 0,
+    "minimum": 14.525073359988957
+  },
+  {
+    "theme": "light",
+    "selector": "#time-server",
+    "index": 0,
+    "minimum": 16.295987899750777
+  },
+  {
+    "theme": "light",
+    "selector": "#time-german",
+    "index": 0,
+    "minimum": 7.013743864895189
+  },
+  {
+    "theme": "light",
+    "selector": "#journal-list strong.text-white",
+    "index": 0,
+    "minimum": 16.295987899750777
+  },
+  {
+    "theme": "light",
+    "selector": "#journal-list strong.text-white",
+    "index": 1,
+    "minimum": 16.295987899750777
+  },
+  {
+    "theme": "light",
+    "selector": "#journal-list strong.text-white",
+    "index": 2,
+    "minimum": 16.295987899750777
+  },
+  {
+    "theme": "light",
+    "selector": "#journal-list strong.text-white",
+    "index": 3,
+    "minimum": 16.295987899750777
+  },
+  {
+    "theme": "stone",
+    "selector": "#live-bid",
+    "index": 0,
+    "minimum": 11.131529770335314
+  },
+  {
+    "theme": "stone",
+    "selector": "#live-ask",
+    "index": 0,
+    "minimum": 9.054573550498027
+  },
+  {
+    "theme": "stone",
+    "selector": "#dd-pct",
+    "index": 0,
+    "minimum": 11.48418927414739
+  },
+  {
+    "theme": "stone",
+    "selector": "#dd-buffer",
+    "index": 0,
+    "minimum": 11.466961844767626
+  },
+  {
+    "theme": "stone",
+    "selector": "#bar-countdown",
+    "index": 0,
+    "minimum": 12.864715873479557
+  },
+  {
+    "theme": "stone",
+    "selector": "#time-server",
+    "index": 0,
+    "minimum": 15.61370623869866
+  },
+  {
+    "theme": "stone",
+    "selector": "#time-german",
+    "index": 0,
+    "minimum": 11.339961623249579
+  },
+  {
+    "theme": "stone",
+    "selector": "#journal-list strong.text-white",
+    "index": 0,
+    "minimum": 15.420712993469673
+  },
+  {
+    "theme": "stone",
+    "selector": "#journal-list strong.text-white",
+    "index": 1,
+    "minimum": 16.42494996080893
+  },
+  {
+    "theme": "stone",
+    "selector": "#journal-list strong.text-white",
+    "index": 2,
+    "minimum": 15.767218347958554
+  },
+  {
+    "theme": "stone",
+    "selector": "#journal-list strong.text-white",
+    "index": 3,
+    "minimum": 15.725921277353942
+  }
+]

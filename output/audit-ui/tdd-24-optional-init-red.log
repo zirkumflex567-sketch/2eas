@@ -1,0 +1,30 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ DashboardFrontendTests.test_optional_initialization_failure_keeps_nonchart_features_alive _
+
+self = <test_dashboard_frontend.DashboardFrontendTests testMethod=test_optional_initialization_failure_keeps_nonchart_features_alive>
+
+    def test_optional_initialization_failure_keeps_nonchart_features_alive(self):
+        self.context.add_init_script("window.addEventListener('DOMContentLoaded',()=>{window.initChart=()=>{throw new Error('fixture chart initialization failure')}})")
+>       self.load()
+
+tests\test_dashboard_frontend.py:461: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <test_dashboard_frontend.DashboardFrontendTests testMethod=test_optional_initialization_failure_keeps_nonchart_features_alive>
+
+    def load(self):
+        self.page.goto(self.url)
+>       expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=10000)
+E       AssertionError: Locator expected to contain text 'LIVE'
+E       Actual value: Verbindung wird geprüft … 
+E       Call log:
+E         - Expect "to_contain_text" with timeout 10000ms
+E         - waiting for locator("#account-connection")
+E           13 × locator resolved to <span role="status" aria-live="polite" id="account-connection" class="text-amber-500 font-bold">Verbindung wird geprüft …</span>
+E              - unexpected value "Verbindung wird geprüft …"
+
+tests\test_dashboard_frontend.py:114: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_dashboard_frontend.py::DashboardFrontendTests::test_optional_initialization_failure_keeps_nonchart_features_alive
+1 failed, 38 deselected in 12.54s

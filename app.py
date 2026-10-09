@@ -1126,6 +1126,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <!-- Optional runic stone material; selectors scoped to body.theme-stone -->
   <link rel="stylesheet" href="static/stone-cockpit.css">
   <link rel="stylesheet" href="static/stone-asset-skin.css">
+  <link rel="stylesheet" href="static/dashboard-accessibility.css">
 </head>
 <body class="theme-dark flex flex-col p-3 min-h-screen text-xs select-none">
 
@@ -1188,6 +1189,10 @@ HTML_CONTENT = """<!DOCTYPE html>
       </div>
 
       <!-- THEME TOGGLE BUTTON -->
+      <label class="text-sub" for="ui-motion">UI-Deko:</label>
+      <select id="ui-motion" aria-label="Nicht-Chart-Dekoration" class="ticker-bg border rounded-lg px-2 py-1">
+        <option value="off">Aus</option><option value="low">Wenig</option><option value="full">Voll</option>
+      </select>
       <button onclick="toggleTheme()" class="px-3 py-1 rounded-lg ticker-bg border font-sans font-bold hover:opacity-80 flex items-center gap-1.5 text-[11px] cursor-pointer">
         <span id="theme-icon">☀️</span> <span id="theme-label">Hell</span>
       </button>
@@ -1339,7 +1344,8 @@ HTML_CONTENT = """<!DOCTYPE html>
           <span id="matrix-time" class="text-[10px] text-sub font-mono">M15 Kerzenschluss</span>
         </div>
 
-        <div class="w-full overflow-hidden">
+        <p id="matrix-scroll-hint" class="text-sub">Alle Spalten: horizontal wischen oder fokussieren und Pfeiltasten / Ende verwenden.</p>
+        <div id="matrix-scroll" class="w-full" role="region" aria-label="Target-Matrix · alle Regelspalten" aria-describedby="matrix-scroll-hint" tabindex="0">
           <table class="w-full text-left border-collapse text-[11px]">
             <thead>
               <tr class="border-b table-border text-sub text-[10px] uppercase font-mono">
@@ -1389,9 +1395,10 @@ HTML_CONTENT = """<!DOCTYPE html>
         <span class="font-black text-sm">📊 Offene Positionen & SL/TP Manager (MT5 Live-Sync)</span>
         <span id="pos-count-badge" class="px-2 py-0.5 rounded font-mono text-[10px] ticker-bg border font-bold">0 Aktiv</span>
       </div>
-      <span class="text-[11px] text-sub">Passe Stop-Loss und Take-Profit direkt in Dollar an. Klicke auf 'Set' zum sofortigen MT5-Sync.</span>
+      <span class="text-[11px] text-sub">Ziel-P/L in USD, kein Stoppreis. Senden aktualisiert beide Felder sofort in MT5. TP = 0: kein fixer TP.</span>
     </div>
 
+    <p id="position-edit-status" role="status" aria-live="polite" class="text-amber-500"></p>
     <div id="positions-list" class="min-h-[100px]">
       <div class="py-6 flex items-center justify-center text-sub text-xs">
         Aktuell keine offenen Positionen auf XAUUSD. Der EA scannt den Markt bei jedem M15-Kerzenschluss.
@@ -1438,17 +1445,17 @@ HTML_CONTENT = """<!DOCTYPE html>
   </main>
 
   <!-- MODAL: DAILY DRAWDOWN RESET -->
-  <div id="dd-reset-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+  <div id="dd-reset-modal" role="dialog" aria-modal="true" aria-labelledby="dd-reset-title" aria-describedby="reset-description" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
     <div class="glass-card rounded-2xl max-w-md w-full p-5 border border-white/10 shadow-2xl relative animate-in fade-in zoom-in duration-200">
       <div class="flex items-center justify-between pb-3 mb-3 border-b table-border">
         <div class="flex items-center gap-2">
           <span class="text-xl">🔄</span>
           <div>
-            <h3 class="font-black text-sm tracking-wide">Tages-Drawdown Reset</h3>
+            <h3 id="dd-reset-title" class="font-black text-sm tracking-wide">Tages-Drawdown Reset</h3>
             <p class="text-[10px] text-sub">Konto-Reset auf 0.00% Drawdown (Blueberry Funded)</p>
           </div>
         </div>
-        <button onclick="closeDrawdownResetModal()" class="text-sub hover:text-white text-lg font-bold px-2 py-0.5 rounded cursor-pointer">&times;</button>
+        <button aria-label="Reset-Dialog schließen" onclick="closeDrawdownResetModal()" class="text-sub hover:text-white text-lg font-bold px-2 py-0.5 rounded cursor-pointer">&times;</button>
       </div>
 
       <div class="flex flex-col gap-3 text-xs mb-4">
@@ -1471,15 +1478,16 @@ HTML_CONTENT = """<!DOCTYPE html>
         </div>
 
         <div>
-          <label class="block text-[11px] font-bold text-sub mb-1">
+          <label for="dd-reset-input" class="block text-[11px] font-bold text-sub mb-1">
             Start-Referenzkapital ($):
           </label>
           <div class="flex items-center gap-2">
-            <input type="number" id="dd-reset-input" step="100" class="w-full rounded-lg px-3 py-2 ticker-bg border font-mono font-bold text-sm text-emerald-400 focus:outline-none focus:border-blue-500" placeholder="10000.00">
+            <input type="number" id="dd-reset-input" min="0.01" required aria-describedby="reset-help dd-reset-error" step="0.01" class="w-full rounded-lg px-3 py-2 ticker-bg border font-mono font-bold text-sm text-emerald-400 focus:outline-none focus:border-blue-500" placeholder="10000.00">
             <button onclick="setModalInputBal(10000)" class="px-2.5 py-2 rounded-lg ticker-bg border hover:bg-slate-700 text-[10px] font-mono font-bold cursor-pointer whitespace-nowrap">$10k</button>
             <button onclick="setModalInputBalCurrent()" class="px-2.5 py-2 rounded-lg ticker-bg border hover:bg-slate-700 text-[10px] font-mono font-bold cursor-pointer whitespace-nowrap">Aktuell</button>
           </div>
           <span id="reset-help" class="text-[10px] text-sub mt-1 block">Die Baseline, ab der die 3.5% EA- und 4.0% Broker-Notbremse gerechnet wird.</span>
+          <p id="dd-reset-error" role="alert" class="text-rose-500 mt-2"></p>
         </div>
       </div>
 
@@ -1500,7 +1508,9 @@ HTML_CONTENT = """<!DOCTYPE html>
   </div>
 
   <!-- 4. JAVASCRIPT ENGINE -->
+  <script src="static/dashboard-runtime.js"></script>
   <script>
+    const localStorage = DashboardRuntime.storage; // Optional preferences must never stop the dashboard.
     let chart, candleSeries, ema20Series, ema50Series, ema200Series;
     // Sparse overlay FX no longer allocates six transparent chart series.
     let srLines = {};
@@ -1523,6 +1533,31 @@ HTML_CONTENT = """<!DOCTYPE html>
     let journalBusyMode = null;
     let journalRequestVersion = 0;
     let statusBusy = null;
+    const STATUS_MAX_AGE = 6000;
+    let lastStatusSuccess = 0;
+    let statusConfirmed = false;
+    function accountIsFresh() {
+      return statusConfirmed && currentData?.account?.id === activeAccount && lastStatusSuccess > 0 && Date.now()-lastStatusSuccess < STATUS_MAX_AGE;
+    }
+    function gateAccountActions(enabled) {
+      const dd = currentData?.daily_drawdown;
+      const riskKnown = dd && ['pct','loss_usd','buffer_usd','balance','equity'].every(key => Number.isFinite(dd[key]));
+      enabled = enabled && !!riskKnown;
+      document.querySelectorAll('#positions-list button,[onclick="openDrawdownResetModal()"],[onclick="executeDrawdownReset()"],[onclick="revertAutoDrawdown()"]').forEach(button => button.disabled = !enabled);
+    }
+    function accountActionsReady() {
+      const dd = currentData?.daily_drawdown;
+      return accountIsFresh() && dd && ['pct','loss_usd','buffer_usd','balance','equity'].every(key => Number.isFinite(dd[key]));
+    }
+    function markStatusStale(error) {
+      statusConfirmed = false;
+      gateAccountActions(false);
+      document.getElementById('account-content').dataset.connected = currentData ? 'stale' : 'false';
+      const age = lastStatusSuccess ? Math.floor((Date.now()-lastStatusSuccess)/1000)+' s alt' : 'noch nicht bestätigt';
+      const status = document.getElementById('account-connection');
+      status.textContent = (currentData ? 'STALE' : 'OFFLINE')+' · '+age+(error ? ' · '+error.message : '');
+      status.className = 'text-amber-500 font-bold';
+    }
     let candlesBusy = null;
     let showEAStatusText = localStorage.getItem('chart_show_ea_status') !== 'false';
     let currentChartMarkers = [];
@@ -1577,20 +1612,45 @@ HTML_CONTENT = """<!DOCTYPE html>
     }
 
     function staleRequest() { return new DOMException('Account wurde gewechselt', 'AbortError'); }
+    let controlSessionPromise = null;
+    function getControlSession() {
+      if (!controlSessionPromise) controlSessionPromise = (async () => {
+        const response = await DashboardRuntime.request(BASE_PATH + '/api/control_session');
+        const session = await response.json();
+        if (!response.ok || !session.control_enabled || typeof session.csrf_token !== 'string' || !session.csrf_token) {
+          throw new Error('Dashboard-Steuerung gesperrt. Kontrollsitzung nicht verfügbar.');
+        }
+        return session;
+      })().catch(error => { controlSessionPromise = null; throw error; });
+      return controlSessionPromise;
+    }
     async function accountFetch(url, options = {}) {
       const account = activeAccount, generation = accountGeneration;
-      if (options.method === 'POST' && (!currentData || currentData.account.id !== account)) throw new Error('Bitte zuerst auf bestätigte Kontodaten warten.');
+      if (options.method === 'POST' && !accountActionsReady()) throw new Error('Bitte zuerst auf frische, bestätigte Konto- und Risikodaten warten.');
+      const controlled = options.method === 'POST' && ['/api/modify_position','/api/close_position','/api/reset_drawdown'].includes(url.split('?')[0]);
+      if (controlled) {
+        const session = await getControlSession();
+        if (generation !== accountGeneration || account !== activeAccount) throw staleRequest();
+        if (!accountActionsReady()) throw new Error('Konto- oder Risikodaten inzwischen unbestätigt. Bitte erneut prüfen.');
+        options = {...options, credentials:'same-origin', headers:{...options.headers, 'X-Dashboard-CSRF':session.csrf_token}};
+      }
       const targetUrl = url.startsWith('/') ? (BASE_PATH + url) : url;
-      const response = await fetch(targetUrl + (targetUrl.includes('?') ? '&' : '?') + 'account=' + encodeURIComponent(account), options);
+      const requestUrl = targetUrl + (targetUrl.includes('?') ? '&' : '?') + 'account=' + encodeURIComponent(account);
+      const response = await DashboardRuntime.request(requestUrl, options, 4500, true);
       const body = await response.json();
       if (generation !== accountGeneration || account !== activeAccount) throw staleRequest();
-      if (!response.ok) throw new Error(body.detail || 'MT5-Anfrage fehlgeschlagen');
+      if (!response.ok) {
+        if (controlled && response.status === 403) controlSessionPromise = null;
+        throw new Error(body.detail || (response.status === 403 ? 'Dashboard-Steuerung nicht autorisiert.' : 'MT5-Anfrage fehlgeschlagen'));
+      }
       if (body.account && body.account.id !== account) throw new Error('Antwort gehört zu einem anderen Konto.');
       return {json: async () => body};
     }
 
     function clearAccountView() {
       currentData = null;
+      lastStatusSuccess = 0;
+      gateAccountActions(false);
       try {window.StoneCelebration?.clearEMAs();}catch(_){};
       document.getElementById('account-content').dataset.connected = 'false';
       document.getElementById('dd-reset-button').disabled = true;
@@ -1626,10 +1686,9 @@ HTML_CONTENT = """<!DOCTYPE html>
 
     function reportAccountError(error, generation) {
       if (error.name === 'AbortError' || generation !== accountGeneration) return;
-      clearAccountView();
-      const status = document.getElementById('account-connection');
-      status.textContent = error.message;
-      status.className = 'text-rose-500 font-bold';
+      // Optional candle failures must not erase verified account/risk data.
+      if (accountIsFresh()) return;
+      markStatusStale(error);
     }
 
     async function switchAccount(account) {
@@ -1637,6 +1696,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       activeAccount = account;
       try { window.ChartStudioBeta?.account(account); } catch (_) {}
       accountGeneration++;
+      DashboardRuntime.abortAccount();
       localStorage.setItem('gold_dashboard_account', account);
       document.querySelectorAll('.account-tab').forEach(tab => tab.setAttribute('aria-pressed', String(tab.dataset.account===account)));
       const meta = accounts[account];
@@ -2018,6 +2078,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
     // --- LIVE STATUS & TARGET MATRIX ---
     async function updateStatus() {
+      if (document.hidden || !accounts[activeAccount]) return;
       const generation = accountGeneration;
       if (statusBusy === generation) return;
       statusBusy = generation;
@@ -2027,6 +2088,8 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (generation !== accountGeneration) throw staleRequest();
         const needsCharts = currentData === null;
         currentData = data;
+        lastStatusSuccess = Date.now();
+        statusConfirmed = true;
         try { window.ChartStudioBeta?.updatePositions(data.account.id, data.positions); } catch (_) {}
         try { window.StoneCelebration?.observeTrades(data.account.id,data.journal,data.positions); }
         catch (_) { /* Visual event detection must not affect trading. */ }
@@ -2047,7 +2110,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         document.getElementById('bar-countdown').innerText = data.times.bar_remaining_fmt;
 
         // Daily Drawdown & Account Update
-        if (data.daily_drawdown) {
+        if (data.daily_drawdown && ['pct','loss_usd','buffer_usd','balance','equity'].every(key => Number.isFinite(data.daily_drawdown[key]))) {
           const dd = data.daily_drawdown;
           const ddPctElem = document.getElementById('dd-pct');
           const ddUsdElem = document.getElementById('dd-usd');
@@ -2105,6 +2168,12 @@ HTML_CONTENT = """<!DOCTYPE html>
         }
 
         const posCountElem = document.getElementById('pos-matrix-count');
+        if (!data.daily_drawdown || !['pct','loss_usd','buffer_usd','balance','equity'].every(key => Number.isFinite(data.daily_drawdown[key]))) {
+          for (const id of ['dd-pct','dd-buffer','dd-matrix-detail']) document.getElementById(id).textContent = 'unbekannt';
+          document.getElementById('dd-usd').textContent = '(Historie / Risiko nicht bestätigt)';
+          document.getElementById('acc-matrix-bal').textContent = '—';
+          document.getElementById('dd-reset-tag').classList.add('hidden');
+        }
         if (posCountElem && data.positions) {
           posCountElem.innerText = `${data.positions.length} / ${data.account.capacity} Aktiv`;
         }
@@ -2118,7 +2187,9 @@ HTML_CONTENT = """<!DOCTYPE html>
 
         const cardElem = document.getElementById('diagnose-card');
         if (cardElem && data.trend_direction) {
-          cardElem.className = `glass-card rounded-xl p-3.5 border-l-4 ${data.trend_direction === 'BULLISH' ? 'border-l-emerald-500' : 'border-l-rose-500'}`;
+          cardElem.classList.remove('border-l-blue-500');
+          cardElem.classList.toggle('border-l-emerald-500', data.trend_direction === 'BULLISH');
+          cardElem.classList.toggle('border-l-rose-500', data.trend_direction !== 'BULLISH');
         }
 
         const statusPrefix = data.account.id==='goldm15' ? '<span class="text-blue-400 font-black">RSI-Setup:</span>' : (data.trend_direction === 'BULLISH') 
@@ -2139,6 +2210,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
         // Render Positions
         renderPositions(data.positions);
+        gateAccountActions(true);
 
         // The journal is independently queried for one or BOTH strategies.
         // Do not replace the merged view with activeAccount-only status data.
@@ -2146,7 +2218,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (needsCharts) void loadCandles();
 
       } catch (err) {
-        reportAccountError(err, generation);
+        if (generation === accountGeneration && err.name !== 'AbortError') markStatusStale(err);
       } finally { if (statusBusy === generation) statusBusy = null; }
     }
 
@@ -2244,6 +2316,14 @@ HTML_CONTENT = """<!DOCTYPE html>
     }
 
     // --- POSITIONS & SL/TP MANAGER ---
+    const positionDrafts = new Map();
+    document.getElementById('matrix-scroll').addEventListener('keydown', event => {
+      const area = event.currentTarget;
+      const next = event.key === 'End' ? area.scrollWidth : event.key === 'Home' ? 0 : event.key === 'ArrowRight' ? area.scrollLeft+100 : event.key === 'ArrowLeft' ? area.scrollLeft-100 : null;
+      if (next !== null) { event.preventDefault(); area.scrollLeft = next; }
+    });
+    for (const id of ['vp-histogram-container','diagnose-card','gold-details','matrix-title','positions-list','journal-list']) document.getElementById(id).closest('.glass-card').classList.add('dashboard-panel');
+    DashboardRuntime.initPresentation();
     function renderPositions(positions) {
       const list = document.getElementById('positions-list');
       const badge = document.getElementById('pos-count-badge');
@@ -2252,6 +2332,8 @@ HTML_CONTENT = """<!DOCTYPE html>
         list.addEventListener('input', event => {
           if (event.target.matches('input[id^="sl-input-"], input[id^="tp-input-"]')) {
             event.target.dataset.dirty = 'true';
+            positionDrafts.set(activeAccount+':'+event.target.id, event.target.value);
+            event.target.closest('[data-position-ticket]')?.querySelector('[data-draft-note]')?.classList.remove('hidden');
           }
         });
         list.dataset.dirtyBound = '1';
@@ -2259,6 +2341,8 @@ HTML_CONTENT = """<!DOCTYPE html>
       const structure = positions.map(pos => [pos.ticket,pos.type,pos.volume,pos.open_price].join(':')).join('|');
 
       if (positions.length === 0) {
+        if (list.querySelector('[data-dirty="true"]')) document.getElementById('position-edit-status').textContent = 'Position geschlossen: der zugehörige ungesendete Entwurf wurde verworfen.';
+        for (const key of positionDrafts.keys()) if (key.startsWith(activeAccount+':')) positionDrafts.delete(key);
         if (list.dataset.structure !== '') {
           list.innerHTML = `<div class="py-6 flex items-center justify-center text-sub text-xs">Aktuell keine offenen Positionen auf XAUUSD. Der EA scannt den Markt bei jedem M15-Kerzenschluss (:00, :15, :30, :45).</div>`;
           list.dataset.structure = '';
@@ -2267,10 +2351,14 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
 
       if (list.dataset.structure !== structure) {
-        list.innerHTML = positions.map(p => `
+        const oldRows = new Map([...list.querySelectorAll('[data-position-ticket]')].map(row => [row.dataset.positionTicket,row]));
+        const focused = document.activeElement;
+        const removedDraft = [...oldRows].some(([ticket,row]) => !positions.some(p => String(p.ticket) === ticket) && row.querySelector('[data-dirty="true"]'));
+        const template = document.createElement('template');
+        template.innerHTML = positions.map(p => `
         <div data-position-ticket="${p.ticket}" class="p-3 rounded-xl ticker-bg border flex flex-wrap items-center justify-between gap-3 text-xs mb-2">
           <div class="flex items-center gap-2.5">
-            <span class="px-2 py-1 rounded-md font-bold font-mono text-[11px] text-white ${p.type === 'BUY' ? 'bg-emerald-600' : 'bg-rose-600'}">
+            <span data-position-type class="px-2 py-1 rounded-md font-bold font-mono text-[11px] text-white ${p.type === 'BUY' ? 'bg-emerald-600' : 'bg-rose-600'}">
               ${p.type} ${p.volume} Lot
             </span>
             <span class="font-mono font-bold text-xs">#${p.ticket} @ $${p.open_price.toFixed(2)}</span>
@@ -2285,32 +2373,44 @@ HTML_CONTENT = """<!DOCTYPE html>
 
           <!-- SL in USD -->
           <div class="flex items-center gap-1.5 font-mono text-xs">
-            <span class="text-sub font-bold">SL:</span>
-            <input type="number" id="sl-input-${p.ticket}" step="5" value="${p.sl_usd.toFixed(2)}" class="w-16 rounded px-1.5 py-0.5 text-center text-xs ticker-bg border text-rose-500 font-bold">
-            <button onclick="applySLTP(${p.ticket})" class="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded text-[10px] cursor-pointer">Set</button>
-            <button onclick="quickBE(${p.ticket})" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-amber-500 border rounded text-[10px] font-bold cursor-pointer" title="Break-Even +$5">BE +$5</button>
-            <button onclick="quickSL(${p.ticket}, -50)" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-rose-500 border rounded text-[10px] cursor-pointer">-$50</button>
+            <label for="sl-input-${p.ticket}" class="text-sub font-bold">SL · USD:</label>
+            <input type="number" aria-label="SL Ziel-P/L in USD · ${accounts[activeAccount].name} · Ticket ${p.ticket}" id="sl-input-${p.ticket}" step="0.01" value="${p.sl_usd.toFixed(2)}" class="rounded px-1.5 py-0.5 text-center text-xs ticker-bg border text-rose-500 font-bold">
+            <button onclick="quickBE(${p.ticket})" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-amber-500 border rounded text-[10px] font-bold cursor-pointer" title="SL sofort +5 USD; TP-Feld wird ebenfalls gesendet">SL sofort +5 USD</button>
+            <button onclick="quickSL(${p.ticket}, -50)" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-rose-500 border rounded text-[10px] cursor-pointer" title="TP-Feld wird ebenfalls gesendet">SL sofort −50 USD</button>
           </div>
 
           <!-- TP in USD -->
           <div class="flex items-center gap-1.5 font-mono text-xs">
-            <span class="text-sub font-bold">TP:</span>
-            <input type="number" id="tp-input-${p.ticket}" step="10" value="${p.tp_usd.toFixed(2)}" class="w-16 rounded px-1.5 py-0.5 text-center text-xs ticker-bg border text-emerald-500 font-bold">
-            <button onclick="applySLTP(${p.ticket})" class="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded text-[10px] cursor-pointer">Set</button>
-            <button onclick="quickTP(${p.ticket}, 50)" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-emerald-500 border rounded text-[10px] font-bold cursor-pointer">+$50</button>
-            <button onclick="quickTP(${p.ticket}, 100)" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-emerald-500 border rounded text-[10px] font-bold cursor-pointer">+$100</button>
+            <label for="tp-input-${p.ticket}" class="text-sub font-bold">TP · USD:</label>
+            <input type="number" aria-label="TP Ziel-P/L in USD · ${accounts[activeAccount].name} · Ticket ${p.ticket}" aria-describedby="tp-help-${p.ticket}" id="tp-input-${p.ticket}" min="0" step="0.01" value="${p.tp_usd.toFixed(2)}" class="rounded px-1.5 py-0.5 text-center text-xs ticker-bg border text-emerald-500 font-bold">
+            <button onclick="quickTP(${p.ticket}, 50)" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-emerald-500 border rounded text-[10px] font-bold cursor-pointer" title="SL-Feld wird ebenfalls gesendet">TP sofort +50 USD</button>
+            <button onclick="quickTP(${p.ticket}, 100)" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-emerald-500 border rounded text-[10px] font-bold cursor-pointer" title="SL-Feld wird ebenfalls gesendet">TP sofort +100 USD</button>
+            <span id="tp-help-${p.ticket}" data-tp-help class="text-sub">0 USD = Kein fixer TP</span>
           </div>
+          <button aria-label="SL und TP an MT5 senden · Ticket ${p.ticket}" onclick="applySLTP(${p.ticket})" class="px-3 py-2 bg-blue-600 text-white font-bold rounded">SL + TP an MT5 senden</button>
 
           <button onclick="closePos(${p.ticket})" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs cursor-pointer shadow-sm">
             Position Schließen
           </button>
+          <span data-draft-note class="text-amber-500 hidden">Entwurf · noch nicht an MT5 gesendet</span>
         </div>
       `).join('');
+        const incoming = [...template.content.children];
+        if (!oldRows.size) list.replaceChildren();
+        for (const newRow of incoming) list.append(oldRows.get(newRow.dataset.positionTicket) || newRow);
+        for (const [ticket,row] of oldRows) if (!positions.some(p => String(p.ticket) === ticket)) {
+          row.remove();
+          for (const side of ['sl','tp']) positionDrafts.delete(activeAccount+':'+side+'-input-'+ticket);
+        }
+        if (focused?.isConnected) focused.focus({preventScroll:true});
+        if (removedDraft) document.getElementById('position-edit-status').textContent = 'Position geschlossen: der zugehörige ungesendete Entwurf wurde verworfen.';
         list.dataset.structure = structure;
       }
       for (const pos of positions) {
         const row = list.querySelector('[data-position-ticket="' + pos.ticket + '"]');
         if (!row) continue;
+        const type = row.querySelector('[data-position-type]');
+        if (type) type.textContent = pos.type+' '+pos.volume+' Lot';
         const price = row.querySelector('[data-position-current]');
         if (price) price.textContent = 'Aktuell: ' + String.fromCharCode(36) + pos.current_price.toFixed(2);
         const pnl = row.querySelector('[data-position-pnl]');
@@ -2323,6 +2423,11 @@ HTML_CONTENT = """<!DOCTYPE html>
         for (const [id, value] of [['sl-input-' + pos.ticket,pos.sl_usd],
                                   ['tp-input-' + pos.ticket,pos.tp_usd]]) {
           const input = document.getElementById(id);
+          if (input && positionDrafts.has(activeAccount+':'+id)) {
+            input.value = positionDrafts.get(activeAccount+':'+id);
+            input.dataset.dirty = 'true';
+            row.querySelector('[data-draft-note]')?.classList.remove('hidden');
+          }
           if (input && document.activeElement !== input && input.dataset.dirty !== 'true') {
             input.value = value.toFixed(2);
           }
@@ -2342,12 +2447,12 @@ HTML_CONTENT = """<!DOCTYPE html>
       journalBusyMode = null;
       journalLoadedMode = null;
       journalErrors = [];
-      journalEntriesByAccount = {titan: [], goldm15: []};
       renderJournal();
       return refreshJournal();
     }
 
     async function refreshJournal() {
+      if (document.hidden) return;
       if (!Object.keys(accounts).length || journalBusyMode === journalFilter) return;
       const mode = journalFilter;
       const requestVersion = ++journalRequestVersion;
@@ -2357,7 +2462,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         try {
           // Deliberately NOT accountFetch: that helper is tied to the trading
           // account and would silently replace the selected journal account.
-          const response = await fetch(BASE_PATH + '/api/journal_summary?account=' + encodeURIComponent(id));
+          const response = await DashboardRuntime.request(BASE_PATH + '/api/journal_summary?account=' + encodeURIComponent(id));
           const payload = await response.json();
           if (!response.ok) throw new Error(payload.detail || 'MT5-Journal nicht erreichbar');
           if (payload.account !== id || !Array.isArray(payload.journal)) {
@@ -2376,6 +2481,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       journalErrors = [];
       for (const result of results) {
         if (result.error) {
+          fresh[result.id] = journalEntriesByAccount[result.id] || [];
           journalErrors.push((accounts[result.id]?.name || result.id) + ': ' + result.error);
         } else {
           fresh[result.id] = result.entries;
@@ -2427,11 +2533,11 @@ HTML_CONTENT = """<!DOCTYPE html>
 
       if (!itemsToRender.length) {
         if (countBadge) {
-          countBadge.innerText = '0 Aufgezeichnet';
+          countBadge.innerText = journalErrors.length ? '— Aufgezeichnet (unvollständig)' : '0 Aufgezeichnet';
           countBadge.className = 'px-2 py-0.5 rounded font-mono text-[10px] ticker-bg border font-bold text-sub';
         }
         if (totBadge) {
-          totBadge.textContent = 'PnL: $0.00';
+          totBadge.textContent = journalErrors.length ? 'Gesamt: — (unvollständig)' : 'PnL: $0.00';
           totBadge.className = 'px-2.5 py-0.5 rounded-md font-mono text-[11px] font-black border bg-black/30 text-sub';
         }
         if (liveBadge) liveBadge.classList.add('hidden');
@@ -2455,13 +2561,13 @@ HTML_CONTENT = """<!DOCTYPE html>
       const closedPnL = closedItems.reduce((sum, it) => sum + (it.profit_usd || 0), 0);
 
       if (countBadge) {
-        countBadge.innerText = `${itemsToRender.length} Trades (${liveItems.length} Live · ${closedItems.length} Hist)`;
+        countBadge.innerText = journalErrors.length ? `${itemsToRender.length} zuletzt bekannte Trades · unvollständig` : `${itemsToRender.length} Trades (${liveItems.length} Live · ${closedItems.length} Hist)`;
         countBadge.className = 'px-2 py-0.5 rounded font-mono text-[10px] ticker-bg border font-bold text-white';
       }
 
       if (totBadge) {
         const sign = totalPnL >= 0 ? '+' : '-';
-        totBadge.textContent = `Gesamt: ${sign}$${Math.abs(totalPnL).toFixed(2)}`;
+        totBadge.textContent = journalErrors.length ? 'Gesamt: — (unvollständig)' : `Gesamt: ${sign}$${Math.abs(totalPnL).toFixed(2)}`;
         totBadge.className = `px-2.5 py-0.5 rounded-md font-mono text-[11px] font-black border ${
           totalPnL >= 0 
             ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' 
@@ -2473,7 +2579,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (liveItems.length > 0) {
           liveBadge.classList.remove('hidden');
           const sign = livePnL >= 0 ? '+' : '-';
-          liveBadge.textContent = `Live: ${sign}$${Math.abs(livePnL).toFixed(2)}`;
+          liveBadge.textContent = journalErrors.length ? 'Live: — (unvollständig)' : `Live: ${sign}$${Math.abs(livePnL).toFixed(2)}`;
           liveBadge.className = `px-2 py-0.5 rounded-md font-mono text-[10px] font-bold border ${
             livePnL >= 0 ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
           }`;
@@ -2486,7 +2592,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (closedItems.length > 0) {
           closedBadge.classList.remove('hidden');
           const sign = closedPnL >= 0 ? '+' : '-';
-          closedBadge.textContent = `Hist: ${sign}$${Math.abs(closedPnL).toFixed(2)}`;
+          closedBadge.textContent = journalErrors.length ? 'Hist: — (unvollständig)' : `Hist: ${sign}$${Math.abs(closedPnL).toFixed(2)}`;
           closedBadge.className = `px-2 py-0.5 rounded-md font-mono text-[10px] font-bold border ${
             closedPnL >= 0 ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
           }`;
@@ -2497,7 +2603,11 @@ HTML_CONTENT = """<!DOCTYPE html>
 
       if (!list) return;
 
-      list.innerHTML = itemsToRender.map(item => {
+      const signatures = new Map();
+      const template = document.createElement('template');
+      template.innerHTML = itemsToRender.map(item => {
+        const key = item.account+':'+item.ticket+':'+item.status;
+        signatures.set(key, JSON.stringify(item));
         const isOpen = item.status === 'OPEN';
         const isBuy = item.type === 'BUY';
         const isProfit = item.profit_usd >= 0;
@@ -2540,7 +2650,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           : `<span class="text-sub font-mono">Einstieg: <strong class="text-white">$${item.open_price.toFixed(2)}</strong> · Ausstieg: <strong class="text-white">$${item.close_price.toFixed(2)}</strong></span>`;
 
         return `
-          <div class="glass-card rounded-lg p-3 border border-white/5 hover:border-white/15 transition-all">
+          <div data-journal-key="${key}" class="glass-card rounded-lg p-3 border border-white/5 hover:border-white/15 transition-all">
             <!-- HEADER WITH PNL -->
             <div class="flex flex-wrap items-center justify-between gap-2 pb-2 mb-2 border-b table-border">
               <div class="flex flex-wrap items-center gap-2">
@@ -2558,6 +2668,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             </div>
 
             <!-- 2 INFO BOXES -->
+            <details><summary>Begründung und Ausstiegsregel anzeigen</summary>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
               <!-- WHY TRIGGERED -->
               <div class="rounded-md p-2.5 bg-black/20 border border-white/5 flex flex-col justify-between">
@@ -2585,14 +2696,38 @@ HTML_CONTENT = """<!DOCTYPE html>
                 </div>` : ''}
               </div>
             </div>
+            </details>
           </div>
         `;
       }).join('');
+      const old = new Map([...list.querySelectorAll('[data-journal-key]')].map(row => [row.dataset.journalKey,row]));
+      const wantedKeys = new Set(signatures.keys());
+      for (const row of [...list.childNodes]) if (row.nodeType !== Node.ELEMENT_NODE || !wantedKeys.has(row.dataset.journalKey)) row.remove();
+      let index = 0;
+      for (const newRow of [...template.content.children]) {
+        const key = newRow.dataset.journalKey, signature = signatures.get(key);
+        const row = old.get(key) || newRow;
+        if (row !== newRow && row.dataset.signature !== signature) {
+          // Preserve the outer keyed node and focused details disclosure.
+          const details = row.querySelector('details'), replacement = newRow.querySelector('details');
+          row.firstElementChild.replaceChildren(...newRow.firstElementChild.childNodes);
+          details.querySelector('div').replaceChildren(...replacement.querySelector('div').childNodes);
+        }
+        row.dataset.signature = signature;
+        if (list.children[index] !== row) list.insertBefore(row, list.children[index] || null);
+        index++;
+      }
     }
 
     async function applySLTP(ticket) {
+      const draftAccount = activeAccount;
+      const submitted = new Map([['sl-input-'+ticket,document.getElementById('sl-input-'+ticket).value],['tp-input-'+ticket,document.getElementById('tp-input-'+ticket).value]]);
       const sl_usd = parseFloat(document.getElementById(`sl-input-${ticket}`).value);
       const tp_usd = parseFloat(document.getElementById(`tp-input-${ticket}`).value);
+      if (!Number.isFinite(sl_usd) || !Number.isFinite(tp_usd) || tp_usd < 0) {
+        document.getElementById('position-edit-status').textContent = 'Bitte eine endliche Zahl für SL und TP eingeben. TP muss mindestens 0 USD sein.';
+        return;
+      }
       try {
         const res = await accountFetch('/api/modify_position', {
           method: 'POST',
@@ -2603,8 +2738,12 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (result.success) {
           for (const id of [`sl-input-${ticket}`,`tp-input-${ticket}`]) {
             const input = document.getElementById(id);
-            if (input) delete input.dataset.dirty;
+            if (input && activeAccount === draftAccount && input.value === submitted.get(id)) {
+              delete input.dataset.dirty; positionDrafts.delete(draftAccount+':'+id);
+            }
           }
+          const row = document.querySelector('[data-position-ticket="'+ticket+'"]');
+          if (row) row.querySelector('[data-draft-note]')?.classList.toggle('hidden', !row.querySelector('[data-dirty="true"]'));
           alert(`Position #${ticket} in MT5 erfolgreich aktualisiert!`);
           updateStatus();
         } else {
@@ -2653,8 +2792,22 @@ HTML_CONTENT = """<!DOCTYPE html>
     }
 
     // --- DAILY DRAWDOWN RESET MODAL CONTROLS ---
+    let resetReturnFocus = null;
+    document.addEventListener('keydown', event => {
+      const modal = document.getElementById('dd-reset-modal');
+      if (modal.classList.contains('hidden')) return;
+      if (event.key === 'Escape') {
+        event.preventDefault(); event.stopImmediatePropagation(); closeDrawdownResetModal();
+      } else if (event.key === 'Tab') {
+        const controls = [...modal.querySelectorAll('button:not(:disabled),input:not(:disabled)')].filter(el => el.getClientRects().length);
+        const first = controls[0], last = controls[controls.length - 1];
+        if (!modal.contains(document.activeElement) || (event.shiftKey && document.activeElement === first)) {
+          event.preventDefault(); (event.shiftKey ? last : first)?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    }, true);
     function openDrawdownResetModal() {
-      if (!currentData || currentData.account.id !== activeAccount) return;
+      if (!accountActionsReady()) return;
       document.getElementById('reset-description').textContent = activeAccount==='goldm15' ? 'Konto '+accounts[activeAccount].login+': Dieser Reset betrifft ausschließlich die Dashboard-Anzeige. Er verändert weder die feste $350-Tagesgrenze noch die EA-Baseline oder bestehende Handelssperren.' : 'Setzt den Tagesverlust und die High-Water-Mark auf 0.00% zurück. Trades vor dem Reset werden für die heutige Drawdown-Berechnung ignoriert.';
       document.getElementById('reset-help').textContent = activeAccount==='goldm15' ? 'Referenzwert nur für die Anzeige; der tatsächliche EA-Schutzstatus steht separat im Dashboard.' : 'Die Baseline, ab der die 3.5% EA- und 4.0% Broker-Notbremse gerechnet wird.';
       const modal = document.getElementById('dd-reset-modal');
@@ -2676,11 +2829,17 @@ HTML_CONTENT = """<!DOCTYPE html>
       if (!input.value || parseFloat(input.value) <= 0) {
         input.value = currentBal.toFixed(2);
       }
+      resetReturnFocus = document.activeElement;
       modal.classList.remove('hidden');
+      for (const region of document.querySelectorAll('body > nav,body > header,#account-content')) region.inert = true;
+      input.focus();
     }
 
     function closeDrawdownResetModal() {
       document.getElementById('dd-reset-modal').classList.add('hidden');
+      for (const region of document.querySelectorAll('body > nav,body > header,#account-content')) region.inert = false;
+      if (resetReturnFocus?.isConnected) resetReturnFocus.focus();
+      resetReturnFocus = null;
     }
 
     function setModalInputBal(val) {
@@ -2693,7 +2852,12 @@ HTML_CONTENT = """<!DOCTYPE html>
     }
 
     async function executeDrawdownReset() {
-      const val = parseFloat(document.getElementById('dd-reset-input').value) || 10000.0;
+      const input = document.getElementById('dd-reset-input');
+      const val = Number(input.value);
+      const invalid = !input.value.trim() || !Number.isFinite(val) || val <= 0;
+      input.setAttribute('aria-invalid', String(invalid));
+      document.getElementById('dd-reset-error').textContent = invalid ? 'Bitte einen endlichen, positiven Referenzwert in USD eingeben.' : '';
+      if (invalid) { input.focus(); return; }
       try {
         const res = await accountFetch('/api/reset_drawdown', {
           method: 'POST',
@@ -2736,23 +2900,44 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
     }
 
-    window.onload = async () => {
-      initTheme();
-      initChart();
-      // Apply theme to freshly created chart instance
-      applyTheme(localStorage.getItem('titan_theme') || 'dark');
+    let bootstrapBusy = false, bootstrapAttempt = 0;
+    async function bootstrapAccounts() {
+      if (bootstrapBusy || document.hidden) return;
+      bootstrapBusy = true;
       try {
-        const response = await fetch(BASE_PATH + '/api/accounts');
+        const response = await DashboardRuntime.request(BASE_PATH + '/api/accounts');
         if (!response.ok) throw new Error('Kontoliste nicht verfügbar');
         const data = await response.json();
+        if (!Array.isArray(data.accounts) || !data.accounts.length || !data.accounts.some(a => a.id === data.default)) throw new Error('Kontoliste ungültig');
         accounts = Object.fromEntries(data.accounts.map(a => [a.id,a]));
         const journalSelect = document.getElementById('journal-strategy-filter');
         if (journalSelect) journalSelect.value = journalFilter;
         void refreshJournal();
         const saved = localStorage.getItem('gold_dashboard_account');
         await switchAccount(accounts[saved] ? saved : data.default);
-      } catch(error) { reportAccountError(error, accountGeneration); }
-      setInterval(updateStatus, 1500); // 1.5s live status update
+        bootstrapAttempt = 0;
+      } catch(error) {
+        reportAccountError(error, accountGeneration);
+        setTimeout(() => { void bootstrapAccounts(); }, Math.min(15000, 1000 * 2 ** Math.min(bootstrapAttempt++, 4)));
+      } finally { bootstrapBusy = false; }
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        if (!Object.keys(accounts).length) void bootstrapAccounts();
+        else { if (!accountIsFresh()) markStatusStale(); void updateStatus(); void refreshJournal(); }
+      }
+    });
+    window.onload = async () => {
+      initTheme();
+      try { initChart(); }
+      catch (error) { console.warn('Optionale Chartinitialisierung fehlgeschlagen:', error); }
+      // Apply theme to freshly created chart instance
+      applyTheme(localStorage.getItem('titan_theme') || 'dark');
+      await bootstrapAccounts();
+      setInterval(() => {
+        if (lastStatusSuccess && !accountIsFresh()) markStatusStale();
+        if (!document.hidden) void updateStatus();
+      }, 1500); // freshness watchdog also expires a suspended poll
       setInterval(loadCandles, 5000);   // 5s smooth candle update (no reset)
       setInterval(() => { void refreshJournal(); }, 30000); // independent, low-rate journal sync
     };

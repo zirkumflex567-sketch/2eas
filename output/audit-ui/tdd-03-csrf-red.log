@@ -1,0 +1,17 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+__ DashboardFrontendTests.test_mutation_obtains_same_origin_control_session ___
+
+self = <test_dashboard_frontend.DashboardFrontendTests testMethod=test_mutation_obtains_same_origin_control_session>
+
+    def test_mutation_obtains_same_origin_control_session(self):
+        self.load()
+        self.page.evaluate("accountFetch('/api/modify_position', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket:101,sl_usd:-30,tp_usd:0})})")
+        self.assertEqual(len(self.mutations), 1)
+>       self.assertEqual(self.mutations[0]['headers'].get('x-dashboard-csrf'), 'fixture-control-csrf')
+E       AssertionError: None != 'fixture-control-csrf'
+
+tests\test_dashboard_frontend.py:128: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_dashboard_frontend.py::DashboardFrontendTests::test_mutation_obtains_same_origin_control_session
+1 failed, 2 deselected in 9.49s

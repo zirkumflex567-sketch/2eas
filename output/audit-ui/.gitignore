@@ -1,0 +1,4 @@
+# Playwright traces include original large decorative assets; local evidence only.
+*.zip
+# Legacy download; regression suite uses tests/vendor/axe.min.js.
+axe.min.js

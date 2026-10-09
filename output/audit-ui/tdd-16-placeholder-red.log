@@ -1,0 +1,241 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+____ DashboardFrontendTests.test_loaded_journal_has_no_loading_text_nodes _____
+
+self = <test_dashboard_frontend.DashboardFrontendTests testMethod=test_loaded_journal_has_no_loading_text_nodes>
+
+    def test_loaded_journal_has_no_loading_text_nodes(self):
+        self.load(); expect(self.page.locator('#journal-count-badge')).to_contain_text('2 Trades')
+>       expect(self.page.locator('#journal-list')).not_to_contain_text('werden für')
+E       AssertionError: Locator expected not to contain text 'werden für'
+E       Actual value: Journal-Einträge werden für die ausgewählten Strategien geladen …
+E                   
+E                   
+E                     
+E                       XAU TITAN PRO
+E                       BUY
+E                       0.1 Lot
+E                       Einstieg: $4000.00 · Ausstieg: $4010.00
+E                       #201
+E                     
+E                     
+E                       ⏰ DE 11:00 (Server 12:00)
+E                       
+E                      🏁 HISTORIE (GESCHLOSSEN)
+E                    
+E                       
+E                 
+E                   Realisiert:
+E                   +$100.00
+E                   (+10.00 Pkt)
+E                 
+E               
+E                     
+E                   
+E       
+E                   
+E                   Begründung und Ausstiegsregel anzeigen
+E                   
+E                     
+E                     
+E                       
+E                         
+E                           🎯
+E                           Warum wurde der Trade ausgelöst? (Einstiegs-Begründung)
+E                         
+E                         Fixture-Begründung
+E                       
+E                     
+E       
+E                     
+E                     
+E                       
+E                         
+E                           🏁
+E                           Was ist das Profitziel / die Ausstiegsregel?
+E                         
+E                         Fixture-Ziel
+E                       
+E                       
+E                         SL: $3990.00
+E                         TP: Dynamic Runner
+E                       
+E                     
+E                   
+E                   
+E                 
+E                   
+E                   
+E                     
+E                       GOLDM15 RECONSTRUCTION
+E                       BUY
+E                       0.1 Lot
+E                       Einstieg: $4000.00 · Ausstieg: $4010.00
+E                       #202
+E                     
+E                     
+E                       ⏰ DE 11:00 (Server 12:00)
+E                       
+E                      🏁 HISTORIE (GESCHLOSSEN)
+E                    
+E                       
+E                 
+E                   Realisiert:
+E                   +$100.00
+E                   (+10.00 Pkt)
+E                 
+E               
+E                     
+E                   
+E       
+E                   
+E                   Begründung und Ausstiegsregel anzeigen
+E                   
+E                     
+E                     
+E                       
+E                         
+E                           🎯
+E                           Warum wurde der Trade ausgelöst? (Einstiegs-Begründung)
+E                         
+E                         Fixture-Begründung
+E                       
+E                     
+E       
+E                     
+E                     
+E                       
+E                         
+E                           🏁
+E                           Was ist das Profitziel / die Ausstiegsregel?
+E                         
+E                         Fixture-Ziel
+E                       
+E                       
+E                         SL: $3990.00
+E                         TP: Dynamic Runner
+E                       
+E                     
+E                   
+E                   
+E                  
+E       Call log:
+E         - Expect "to_contain_text" with timeout 5000ms
+E         - waiting for locator("#journal-list")
+E           8 × locator resolved to <div id="journal-list" class="space-y-3">…</div>
+E             - unexpected value "Journal-Einträge werden für die ausgewählten Strategien geladen …
+E                   
+E                   
+E                     
+E                       XAU TITAN PRO
+E                       BUY
+E                       0.1 Lot
+E                       Einstieg: $4000.00 · Ausstieg: $4010.00
+E                       #201
+E                     
+E                     
+E                       ⏰ DE 11:00 (Server 12:00)
+E                       
+E                      🏁 HISTORIE (GESCHLOSSEN)
+E                    
+E                       
+E                 
+E                   Realisiert:
+E                   +$100.00
+E                   (+10.00 Pkt)
+E                 
+E               
+E                     
+E                   
+E       
+E                   
+E                   Begründung und Ausstiegsregel anzeigen
+E                   
+E                     
+E                     
+E                       
+E                         
+E                           🎯
+E                           Warum wurde der Trade ausgelöst? (Einstiegs-Begründung)
+E                         
+E                         Fixture-Begründung
+E                       
+E                     
+E       
+E                     
+E                     
+E                       
+E                         
+E                           🏁
+E                           Was ist das Profitziel / die Ausstiegsregel?
+E                         
+E                         Fixture-Ziel
+E                       
+E                       
+E                         SL: $3990.00
+E                         TP: Dynamic Runner
+E                       
+E                     
+E                   
+E                   
+E                 
+E                   
+E                   
+E                     
+E                       GOLDM15 RECONSTRUCTION
+E                       BUY
+E                       0.1 Lot
+E                       Einstieg: $4000.00 · Ausstieg: $4010.00
+E                       #202
+E                     
+E                     
+E                       ⏰ DE 11:00 (Server 12:00)
+E                       
+E                      🏁 HISTORIE (GESCHLOSSEN)
+E                    
+E                       
+E                 
+E                   Realisiert:
+E                   +$100.00
+E                   (+10.00 Pkt)
+E                 
+E               
+E                     
+E                   
+E       
+E                   
+E                   Begründung und Ausstiegsregel anzeigen
+E                   
+E                     
+E                     
+E                       
+E                         
+E                           🎯
+E                           Warum wurde der Trade ausgelöst? (Einstiegs-Begründung)
+E                         
+E                         Fixture-Begründung
+E                       
+E                     
+E       
+E                     
+E                     
+E                       
+E                         
+E                           🏁
+E                           Was ist das Profitziel / die Ausstiegsregel?
+E                         
+E                         Fixture-Ziel
+E                       
+E                       
+E                         SL: $3990.00
+E                         TP: Dynamic Runner
+E                       
+E                     
+E                   
+E                   
+E                 "
+
+tests\test_dashboard_frontend.py:300: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_dashboard_frontend.py::DashboardFrontendTests::test_loaded_journal_has_no_loading_text_nodes
+1 failed, 20 deselected in 10.41s

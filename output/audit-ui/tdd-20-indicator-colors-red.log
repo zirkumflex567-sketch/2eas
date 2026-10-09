@@ -1,0 +1,15 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ DashboardFrontendTests.test_nonchart_progress_and_status_indicators_keep_semantic_colors _
+
+self = <test_dashboard_frontend.DashboardFrontendTests testMethod=test_nonchart_progress_and_status_indicators_keep_semantic_colors>
+
+    def test_nonchart_progress_and_status_indicators_keep_semantic_colors(self):
+        self.load()
+>       self.assertNotEqual(self.page.locator('#buy-bar').evaluate('el=>getComputedStyle(el).backgroundColor'), self.page.locator('#sell-bar').evaluate('el=>getComputedStyle(el).backgroundColor'))
+E       AssertionError: 'rgb(23, 34, 53)' == 'rgb(23, 34, 53)'
+
+tests\test_dashboard_frontend.py:354: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_dashboard_frontend.py::DashboardFrontendTests::test_nonchart_progress_and_status_indicators_keep_semantic_colors
+1 failed, 25 deselected in 3.03s

@@ -1,0 +1,63 @@
+.                                                                     [100%]
+================================== FAILURES ===================================
+___ DashboardFrontendTests.test_nonchart_contrast_all_themes (theme='dark') ___
+
+self = <test_dashboard_frontend.DashboardFrontendTests testMethod=test_nonchart_contrast_all_themes>
+
+    def test_nonchart_contrast_all_themes(self):
+        self.load(); expect(self.page.locator('#journal-count-badge')).to_contain_text('2 Trades')
+        self.page.add_script_tag(path=str(OUTPUT/'axe.min.js'))
+        reports = {}
+        for theme in ['dark', 'light', 'stone']:
+            self.page.locator('.stone-theme-dock [data-mode="'+theme+'"]').click()
+            reports[theme] = self.page.evaluate('''async () => {
+              const result = await axe.run({include:[['nav[aria-label="Konto und Strategie"]'],['header'],['.dashboard-panel']]}, {runOnly:['color-contrast']});
+              return {violations:result.violations,incomplete:result.incomplete};
+            }''')
+            self.page.locator('#journal-list').screenshot(path=str(OUTPUT/f'{theme}-journal.png'))
+        (OUTPUT/'contrast.json').write_text(json.dumps(reports, ensure_ascii=False, indent=2), encoding='utf-8')
+        for theme, report in reports.items():
+            with self.subTest(theme=theme):
+>               self.assertEqual([n['target'] for v in report['violations'] for n in v['nodes']], [])
+E               AssertionError: Lists differ: [['.bg-blue-600\\/15 > .font-bold:nth-child(1)'], ['.bg-emerald-600']] != []
+E               
+E               First list contains 2 additional elements.
+E               First extra element 0:
+E               ['.bg-blue-600\\/15 > .font-bold:nth-child(1)']
+E               
+E               - [['.bg-blue-600\\/15 > .font-bold:nth-child(1)'], ['.bg-emerald-600']]
+E               + []
+
+tests\test_dashboard_frontend.py:226: AssertionError
+__ DashboardFrontendTests.test_nonchart_contrast_all_themes (theme='light') ___
+
+self = <test_dashboard_frontend.DashboardFrontendTests testMethod=test_nonchart_contrast_all_themes>
+
+    def test_nonchart_contrast_all_themes(self):
+        self.load(); expect(self.page.locator('#journal-count-badge')).to_contain_text('2 Trades')
+        self.page.add_script_tag(path=str(OUTPUT/'axe.min.js'))
+        reports = {}
+        for theme in ['dark', 'light', 'stone']:
+            self.page.locator('.stone-theme-dock [data-mode="'+theme+'"]').click()
+            reports[theme] = self.page.evaluate('''async () => {
+              const result = await axe.run({include:[['nav[aria-label="Konto und Strategie"]'],['header'],['.dashboard-panel']]}, {runOnly:['color-contrast']});
+              return {violations:result.violations,incomplete:result.incomplete};
+            }''')
+            self.page.locator('#journal-list').screenshot(path=str(OUTPUT/f'{theme}-journal.png'))
+        (OUTPUT/'contrast.json').write_text(json.dumps(reports, ensure_ascii=False, indent=2), encoding='utf-8')
+        for theme, report in reports.items():
+            with self.subTest(theme=theme):
+>               self.assertEqual([n['target'] for v in report['violations'] for n in v['nodes']], [])
+E               AssertionError: Lists differ: [['button[data-account="titan"] > strong'][3407 chars]2)']] != []
+E               
+E               First list contains 41 additional elements.
+E               First extra element 0:
+E               ['button[data-account="titan"] > strong']
+E               
+E               Diff is 3841 characters long. Set self.maxDiff to None to see it.
+
+tests\test_dashboard_frontend.py:226: AssertionError
+=========================== short test summary info ===========================
+SUBFAILED(theme='dark') tests/test_dashboard_frontend.py::DashboardFrontendTests::test_nonchart_contrast_all_themes
+SUBFAILED(theme='light') tests/test_dashboard_frontend.py::DashboardFrontendTests::test_nonchart_contrast_all_themes
+2 failed, 1 passed, 10 deselected, 1 subtests passed in 11.23s

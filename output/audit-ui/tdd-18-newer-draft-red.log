@@ -1,0 +1,26 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+____ DashboardFrontendTests.test_position_send_does_not_clear_newer_draft _____
+
+self = <test_dashboard_frontend.DashboardFrontendTests testMethod=test_position_send_does_not_clear_newer_draft>
+
+    def test_position_send_does_not_clear_newer_draft(self):
+        self.load()
+        self.page.locator('#sl-input-101').fill('-37.00')
+        self.page.evaluate('''() => {
+          const original = window.fetch;
+          window.fetch = (url, options) => String(url).includes('/api/modify_position')
+            ? new Promise(resolve=>{window.finishSend=()=>resolve({ok:true,status:200,json:async()=>({success:true})})}) : original(url,options);
+          void applySLTP(101);
+        }''')
+        self.page.wait_for_function('typeof window.finishSend === "function"')
+        self.page.locator('#sl-input-101').fill('-42.00')
+        self.page.evaluate('finishSend()'); self.page.wait_for_timeout(150)
+        expect(self.page.locator('#sl-input-101')).to_have_value('-42.00')
+>       self.assertTrue(self.page.evaluate("positionDrafts.get('titan:sl-input-101') === '-42.00'"))
+E       AssertionError: False is not true
+
+tests\test_dashboard_frontend.py:345: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_dashboard_frontend.py::DashboardFrontendTests::test_position_send_does_not_clear_newer_draft
+1 failed, 23 deselected in 4.78s

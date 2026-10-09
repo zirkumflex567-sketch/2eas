@@ -1,0 +1,24 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ DashboardFrontendTests.test_position_ticket_draft_focus_survives_structure_and_account_switch _
+
+self = <test_dashboard_frontend.DashboardFrontendTests testMethod=test_position_ticket_draft_focus_survives_structure_and_account_switch>
+
+    def test_position_ticket_draft_focus_survives_structure_and_account_switch(self):
+        self.load(); field = self.page.locator('#sl-input-101'); field.fill('-37.00')
+        self.page.evaluate("window.originalInput = document.getElementById('sl-input-101')")
+        self.page.evaluate("renderPositions([...currentData.positions,{...currentData.positions[0],ticket:102}])")
+>       expect(field).to_have_value('-37.00'); expect(field).to_be_focused()
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Locator expected to have Value '-37.00'
+E       Actual value: -30.00 
+E       Call log:
+E         - Expect "to_have_value" with timeout 5000ms
+E         - waiting for locator("#sl-input-101")
+E           9 × locator resolved to <input step="5" type="number" value="-30.00" id="sl-input-101" class="w-16 rounded px-1.5 py-0.5 text-center text-xs ticker-bg border text-rose-500 font-bold"/>
+E             - unexpected value "-30.00"
+
+tests\test_dashboard_frontend.py:163: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_dashboard_frontend.py::DashboardFrontendTests::test_position_ticket_draft_focus_survives_structure_and_account_switch
+1 failed, 6 deselected in 8.73s

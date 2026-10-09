@@ -1,0 +1,15 @@
+{
+  "requests": [
+    "http://127.0.0.1:49979/api/accounts",
+    "http://127.0.0.1:49979/api/journal_summary?account=titan",
+    "http://127.0.0.1:49979/api/journal_summary?account=goldm15",
+    "http://127.0.0.1:49979/api/status?account=titan",
+    "http://127.0.0.1:49979/api/candles?tf=M15&account=titan",
+    "http://127.0.0.1:49979/api/journal_summary?account=titan",
+    "http://127.0.0.1:49979/api/journal_summary?account=goldm15",
+    "http://127.0.0.1:49979/api/journal_summary?account=titan",
+    "http://127.0.0.1:49979/api/journal_summary?account=goldm15"
+  ],
+  "mutations": [],
+  "errors": []
+}

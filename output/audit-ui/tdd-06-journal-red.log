@@ -1,0 +1,22 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ DashboardFrontendTests.test_journal_failure_keeps_last_good_but_total_unknown _
+
+self = <test_dashboard_frontend.DashboardFrontendTests testMethod=test_journal_failure_keeps_last_good_but_total_unknown>
+
+    def test_journal_failure_keeps_last_good_but_total_unknown(self):
+        self.load(); expect(self.page.locator('#journal-count-badge')).to_contain_text('2 Trades')
+        self.journal_fail = True; self.page.evaluate('refreshJournal()')
+>       expect(self.page.locator('#journal-total-pnl')).to_have_text('Gesamt: — (unvollständig)')
+E       AssertionError: Locator expected to have text 'Gesamt: — (unvollständig)'
+E       Actual value: PnL: $0.00 
+E       Call log:
+E         - Expect "to_have_text" with timeout 5000ms
+E         - waiting for locator("#journal-total-pnl")
+E           9 × locator resolved to <span id="journal-total-pnl" class="px-2.5 py-0.5 rounded-md font-mono text-[11px] font-black border bg-black/30 text-sub">PnL: $0.00</span>
+E             - unexpected value "PnL: $0.00"
+
+tests\test_dashboard_frontend.py:154: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_dashboard_frontend.py::DashboardFrontendTests::test_journal_failure_keeps_last_good_but_total_unknown
+1 failed, 5 deselected in 9.12s

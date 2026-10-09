@@ -1,0 +1,22 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ DashboardFrontendTests.test_successful_send_clears_only_sent_draft_indicator _
+
+self = <test_dashboard_frontend.DashboardFrontendTests testMethod=test_successful_send_clears_only_sent_draft_indicator>
+
+    def test_successful_send_clears_only_sent_draft_indicator(self):
+        self.load(); self.page.locator('#sl-input-101').fill('-37.00')
+        self.page.evaluate('applySLTP(101)')
+>       expect(self.page.locator('[data-position-ticket="101"] [data-draft-note]')).to_be_hidden()
+E       AssertionError: Locator expected to be hidden
+E       Actual value: visible 
+E       Call log:
+E         - Expect "to_be_hidden" with timeout 5000ms
+E         - waiting for locator("[data-position-ticket=\"101\"] [data-draft-note]")
+E           8 × locator resolved to <span data-draft-note="" class="text-amber-500">Entwurf · noch nicht an MT5 gesendet</span>
+E             - unexpected value "visible"
+
+tests\test_dashboard_frontend.py:350: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_dashboard_frontend.py::DashboardFrontendTests::test_successful_send_clears_only_sent_draft_indicator
+1 failed, 24 deselected in 9.19s

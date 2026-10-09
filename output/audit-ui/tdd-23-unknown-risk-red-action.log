@@ -1,0 +1,19 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+___ DashboardFrontendTests.test_unknown_risk_values_render_unknown_not_zero ___
+
+self = <test_dashboard_frontend.DashboardFrontendTests testMethod=test_unknown_risk_values_render_unknown_not_zero>
+
+    def test_unknown_risk_values_render_unknown_not_zero(self):
+        self.load()
+        self.page.route('**/api/status*', lambda route: route.fulfill(json={**status('titan'),'daily_drawdown':dict(pct=None,loss_usd=None,buffer_usd=None,balance=10000.,equity=9900.,manual_active=False)}))
+        self.page.evaluate('updateStatus()')
+        expect(self.page.locator('#dd-pct')).to_have_text('unbekannt')
+        expect(self.page.locator('#dd-buffer')).to_have_text('unbekannt')
+>       self.assertTrue(self.page.evaluate("accountFetch('/api/close_position',{method:'POST'}).then(()=>false,()=>true)"))
+E       AssertionError: False is not true
+
+tests\test_dashboard_frontend.py:426: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_dashboard_frontend.py::DashboardFrontendTests::test_unknown_risk_values_render_unknown_not_zero
+1 failed, 33 deselected in 5.08s
