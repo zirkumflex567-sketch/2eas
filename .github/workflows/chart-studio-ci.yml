@@ -24,12 +24,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
       - name: Install dashboard dependencies
-        run: python -m pip install numpy pandas MetaTrader5 fastapi uvicorn httpx pydantic
+        run: |
+          python -m pip install -r requirements-dashboard-test.txt
+          python -m playwright install chromium
       - name: Compile Python
         run: python -m compileall -q app.py chart_studio tests
       - name: Check browser scripts and chart math
@@ -55,7 +57,7 @@ jobs:
       - name: Run tests
         env:
           GOLDM15_PRESET: goldm15/GoldM15_Reconstruction.set
-        run: python -m unittest discover -s tests -v
+        run: python -m pytest -q --junitxml=output/chart-dashboard-junit.xml
       - name: Install browser smoke dependencies
         run: |
           npm install --no-save playwright@1.56.0
