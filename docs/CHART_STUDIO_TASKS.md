@@ -31,7 +31,7 @@
 - [ ] 2.1 V5 plugin/primitives and own drawing registry, drag states, snapping and hit-test priorities.
 - [~] 2.2 Full indicator catalog and configurable instances/parameters, RSI/MACD/ATR/ADX/VWAP panes. **Phase-2 work:** independent RSI(Wilder)/MACD/ATR/Volume panes with chart-time alignment and configurable periods/fast/slow/signal; ADX, VWAP, full registry/instance creation and v5 migration remain open.
 - [ ] 2.3 Full drawing tool catalog incl. advanced fibos, channels, labels, multiple handles and responsive touch.
-- [ ] 2.4 Drawing SQLite store, schema migration, revision conflicts, server layout/indicator profiles, import/export.
+- [~] 2.4 Drawing SQLite store, schema migration, revision conflicts, server layout/indicator profiles, import/export. **Implemented on branch:** private schema-v1 SQLite workspace store, optimistic revisions, account-scoped layout JSON, authenticated opt-in REST plus existing browser toolbar server save/load/delete; multi-user ACL, full v5 profile migration and remote conflict merge remain open.
 - [ ] 2.5 Symbol watchlist, timeframe, panes, chart type, multichart and per-layout configuration.
 - [ ] 2.6 Optimized paging, streaming and incremental calculations; performance budgets AT-025/031.
 
@@ -82,3 +82,12 @@
 ### Next test package — virtual stop/target grip
 
 Branch `test/chart-studio-drag-preview` from merged main `8bbbb74`. New What-if PLAN mode visually drags its SL or TP with read-only broker preview at most once after a 260 ms debounce, plus final drop. Attempts to use a real order/position mutation route are forbidden and asserted by Chromium tests. Preserving last validated scenario, canceling on account/timeframe switch, Broker rejection fallback, and returning tickSize from real symbol_info are part of this gate. This is **not** the actual broker stop/target editor in FR-006/FR-007, which remains blocked pending security/MT5 conflict tests.
+
+### Phase 2.4: SQLite server workspaces (branch `test/chart-studio-sqlite-workspaces`)
+
+- Separate fail-closed Bearer authorization for new layout API; disabled unless `CHART_STUDIO_STORAGE_ENABLED=1` and a 32+ character `CHART_STUDIO_STORAGE_TOKEN` exists. Token is memory-only in browser, never LocalStorage or URL.
+- Private SQLite DB under `state/` (or operator-configured private path), migration v1, WAL, optimistic `expectedRevision`, strict 131072-byte/500-drawing caps, owner/account/symbol/layout scope. DB under `/static` disallowed.
+- GET list/read, PUT save, DELETE with stale-write conflict handling and private HTTP cache policy; current v4/beta LocalStorage profiles untouched.
+- Security prerequisite **still open**: legacy MT5 POST endpoints `/api/modify_position`, `/api/close_position`, `/api/reset_drawdown` are not independently authenticated. Do not activate additional MT5 mutations before holistic auth/CSRF/tunnel audit (Tasks 0.7/4.1).
+- Frontend loads drawings/visible indicators but intentionally leaves the active timeframe unchanged; full versioned v5 multi-view restoration is still open.
+- Python SQLite tests, auth API integration tests and Chromium version/cross-account tests must pass before merging.

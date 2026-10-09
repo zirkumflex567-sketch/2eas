@@ -5,6 +5,7 @@ on:
       - test/chart-studio-implementation
       - test/chart-studio-phase2
       - test/chart-studio-drag-preview
+      - test/chart-studio-sqlite-workspaces
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,6 +28,7 @@ jobs:
       - name: Check browser scripts and chart math
         run: |
           node --check static/chart-studio-beta.js
+          node --check static/chart-studio-server-sync.js
           node --check static/chart-studio-indicators.js
           node scripts/test_chart_studio_indicators.cjs
           node --check static/stone-chart-effects.js

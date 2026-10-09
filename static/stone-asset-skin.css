@@ -1376,3 +1376,18 @@ body.theme-stone #stone-fx-panel button:focus-visible {
  background:linear-gradient(140deg,#4b351e,#142e39);color:#fff4c3;
  border-color:#ffbd63;box-shadow:0 0 14px rgba(242,177,59,.25);
 }
+
+/* Authenticated Chart Studio SQLite layouts, opt-in and separate from trade UI. */
+.cs-server-sync{margin-top:11px;padding:10px;border:1px solid #416878;
+ border-radius:8px;background:linear-gradient(110deg,#132532,#071b28);
+ color:#d4ebf2;font:11px/1.5 ui-monospace,Consolas,monospace}
+.cs-server-sync-head{color:#f9d39e;font-weight:800;margin-bottom:8px;letter-spacing:.06em}
+.cs-server-sync-row{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.cs-server-sync input,.cs-server-sync select{min-width:155px;max-width:240px;flex:1 1 155px;
+ border:1px solid #597c87;border-radius:5px;background:#071924;
+ color:#dff9ff;padding:8px}
+.cs-server-sync button{min-height:34px;padding:7px 11px;cursor:pointer;
+ border:1px solid #5a8595;border-radius:5px;background:#214151;color:#e7f7fc}
+.cs-server-sync button:hover{filter:brightness(1.17)}
+.cs-server-sync p{margin:9px 0 0;color:#b7cbd4;overflow-wrap:anywhere}
+@media(max-width:650px){.cs-server-sync-row>*{flex:1 1 110px}}

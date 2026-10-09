@@ -62,3 +62,7 @@ A **working progressive prototype**, *not* full 35-feature implementation: beta 
 `test/chart-studio-phase2` adds RSI, MACD, ATR and real/tick volume pane controls while retaining the v4 fallback adapter. Chart timelines are aligned using whitespace points for indicator warm-up periods. It adds the original MT5 volume fields to `/api/candles` without changing existing price fields. Account-local named profiles include pane preferences and input periods.
 
 These are **not** the full configurable indicator framework, and are not the planned v5 migration. Must pass expanded Node math tests and Windows Chromium integration before any subsequent PR. Real broker writes remain disabled.
+
+## Phase 2.4: persistent private SQLite chart layouts (isolated rollout)
+
+New layout store is an account-aware SQLite WAL database, independently authenticated by an opt-in server token. Transactions use optimistic revision checks (409 conflict), strict drawing/indicator schema and size limits. This phase **does not** expose or modify MT5-trading routes. A browser can use local layouts without connecting; server layouts require explicit configuration and a memory-only token. Saved timeframe remains metadata until a future v5 chart view manager restores it safely. Version 1 tested via pure SQLite, FastAPI TestClient and Chromium fixture; add exact CI link after passing. Do not claim it is a multi-user accounts/auth implementation; legacy trading POST hardening remains a security blocker for real SL/TP commits.
