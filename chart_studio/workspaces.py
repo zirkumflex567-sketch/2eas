@@ -19,7 +19,7 @@ SYMBOL_RE = re.compile(r"^[A-Z0-9._-]{1,32}$")
 DRAWING_TYPES = frozenset({"horizontal", "trend", "rect", "fib"})
 UI_FLAGS = frozenset({"ema20", "ema50", "ema200", "sma20", "sma50",
                       "bb", "positions"})
-INDICATORS = frozenset({"rsi", "atr", "macd", "volume"})
+INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap"})
 PERIOD_FIELDS = frozenset({"period", "fast", "slow", "signal"})
 TIMEFRAMES = frozenset({"M1", "M5", "M15", "M30", "H1", "H4", "D1"})
 MAX_DOCUMENT_BYTES = 131072

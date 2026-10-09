@@ -30,4 +30,37 @@ assert.equal(math.atr(ascending.slice(0,5),14).length,0);
 assert.equal(math.macd(ascending,30,20,9).macd.length,0);
 assert.ok(src.includes("state.bars.map(bar=>byTime.get(bar.time)||{time:bar.time})"));
 assert.ok(!src.includes("order_send(")&&!src.includes("/api/modify_position"));
-console.log("PASS Chart Studio RSI/ATR/MACD/volume math, warmup, time alignment, read-only checks");
+
+// Wilder ADX: monotonic rising market gives +DI > 0, -DI = 0,
+// initial ADX at index 2*period-1; no future bars read.
+const adx=math.adx(ascending,14);
+assert.equal(adx.plusDi.length,86);
+assert.equal(adx.minusDi.length,86);
+assert.equal(adx.adx.length,73);
+near(adx.adx[0].value,100,1e-6);
+assert.ok(adx.plusDi[0].value>0);
+near(adx.minusDi[0].value,0);
+const flatAdx=math.adx(Array.from({length:70},(_,i)=>({
+ time:1700000000+i*900,open:100,high:100,low:100,close:100,
+ tick_volume:3,real_volume:0})),14);
+near(flatAdx.adx[0].value,0);
+assert.equal(math.adx(ascending.slice(0,13),14).adx.length,0);
+// VWAP uses typical price weighted by real volume where available,
+// otherwise tick volume, resets at UTC day boundary, and ignores empty volume.
+const midnight=1700000000-(1700000000%86400);
+const weighted=[
+ {time:midnight+1,open:10,high:12,low:8,close:10,tick_volume:1,real_volume:0},
+ {time:midnight+2,open:20,high:22,low:18,close:20,tick_volume:3,real_volume:0},
+ {time:midnight+3,open:30,high:32,low:28,close:30,tick_volume:1,real_volume:5},
+ {time:midnight+4,open:40,high:42,low:38,close:40,tick_volume:0,real_volume:0},
+ {time:midnight+86400+1,open:50,high:52,low:48,close:50,tick_volume:2,real_volume:0}
+];
+const vw=math.vwap(weighted);
+assert.equal(vw.length,4);
+near(vw[0].value,10);
+near(vw[1].value,17.5);
+near(vw[2].value,(10+20*3+30*5)/9);
+near(vw[3].value,50);
+assert.ok(src.includes("Tick-/Realvolumenproxy"));
+
+console.log("PASS Chart Studio RSI/ATR/MACD/ADX/VWAP and broker volume math, warm-up, time alignment, read-only checks");
