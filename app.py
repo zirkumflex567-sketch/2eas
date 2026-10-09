@@ -1160,6 +1160,8 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="static/chart-studio-drawing-geometry.js"></script>
   <script src="static/chart-studio-averages.js"></script>
   <script src="static/chart-studio-appearance.js"></script>
+  <script src="static/chart-studio-oscillators.js"></script>
+  <script src="static/chart-studio-chart-types.js"></script>
   <script src="static/chart-studio-beta.js"></script>
   <script src="static/stone-celebrations.js"></script>
   <style>

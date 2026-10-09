@@ -67,7 +67,7 @@ def _number(value: Any, label: str, *, integer: bool = False) -> float | int:
 def validate_document(raw: Any) -> dict:
     """Strict version-1 JSON input; never store executable markup or arbitrary keys."""
     required = {"schemaVersion", "drawings", "options", "indicators", "timeframe"}
-    allowed = required | {"movingAverages", "chartAppearance"}
+    allowed = required | {"movingAverages", "chartAppearance", "oscillatorInstances", "chartType"}
     if not isinstance(raw, dict) or not required.issubset(raw) or not set(raw).issubset(allowed) or type(raw["schemaVersion"]) is not int or raw["schemaVersion"] != 1:
         raise StoreError("Nicht unterstütztes Workspace-Schema.")
     drawings = raw["drawings"]
@@ -187,6 +187,51 @@ def validate_document(raw: Any) -> dict:
             ):
                 raise StoreError("Ungültige Kerzenfarbe.")
         safe["chartAppearance"] = appearance.copy()
+    if "oscillatorInstances" in raw:
+        instances = raw["oscillatorInstances"]
+        if not isinstance(instances, list) or len(instances) > 8:
+            raise StoreError("Maximal acht zusätzliche Oszillatoren erlaubt.")
+        ids = set()
+        clean_osc = []
+        common = {"id", "kind", "visible", "color", "lineWidth", "label"}
+        for inst in instances:
+            if not isinstance(inst, dict):
+                raise StoreError("Ungültige Oszillator-Instanz.")
+            kind = inst.get("kind")
+            if type(kind) is not str or kind not in {"rsi", "macd", "atr", "adx"}:
+                raise StoreError("Unbekannter Oszillator.")
+            params = {"fast", "slow", "signal"} if kind == "macd" else {"period"}
+            if set(inst) != common | params:
+                raise StoreError("Unbekannte Oszillator-Eigenschaften.")
+            ident = inst["id"]
+            if not isinstance(ident, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", ident):
+                raise StoreError("Ungültige Oszillator-Identität.")
+            if ident in ids:
+                raise StoreError("Doppelte Oszillator-Identität.")
+            ids.add(ident)
+            if type(inst["visible"]) is not bool:
+                raise StoreError("Ungültige Oszillator-Sichtbarkeit.")
+            if not isinstance(inst["color"], str) or not re.fullmatch(r"#[0-9A-Fa-f]{6}", inst["color"]):
+                raise StoreError("Ungültige Oszillator-Farbe.")
+            if type(inst["lineWidth"]) is not int or not 1 <= inst["lineWidth"] <= 4:
+                raise StoreError("Ungültige Oszillator-Linienbreite.")
+            label = inst["label"]
+            if not isinstance(label, str) or len(label) > 40 or any(ord(c) < 32 for c in label):
+                raise StoreError("Ungültiger Oszillator-Name.")
+            for param in params:
+                bound = 300 if param == "slow" else 200
+                if type(inst[param]) is not int or not 2 <= inst[param] <= bound:
+                    raise StoreError("Ungültige Oszillator-Periode.")
+            if kind == "macd" and inst["fast"] >= inst["slow"]:
+                raise StoreError("MACD benötigt fast kleiner slow.")
+            clean_osc.append(inst.copy())
+        safe["oscillatorInstances"] = clean_osc
+    if "chartType" in raw:
+        if type(raw["chartType"]) is not str or raw["chartType"] not in {
+            "candles", "bars", "line", "area"
+        }:
+            raise StoreError("Unbekannter Chart-Typ.")
+        safe["chartType"] = raw["chartType"]
     encoded = json.dumps(safe, ensure_ascii=False, allow_nan=False,
                          separators=(",", ":")).encode("utf-8")
     if len(encoded) > MAX_DOCUMENT_BYTES:

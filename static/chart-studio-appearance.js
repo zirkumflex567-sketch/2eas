@@ -87,6 +87,7 @@ function apply(){
   wickVisible:o.wickVisible,borderVisible:o.borderVisible,
   priceLineVisible:o.lastPriceVisible
  });
+ window.ChartStudioChartTypes?.applyAppearance(o);
 }
 function settings(){return state?copy(state.settings):copy(DEFAULTS)}
 function applySettings(next){

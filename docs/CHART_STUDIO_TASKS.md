@@ -29,10 +29,10 @@
 ## Task 2 — Full chart, drawings and storage
 
 - [ ] 2.1 V5 plugin/primitives and own drawing registry, drag states, snapping and hit-test priorities.
-- [~] 2.2 Configurable indicator instances: EMA/SMA/WMA multi-instance price overlays (max 16, period 2–500, 7 price sources, own color/width/label/visibility, duplicate/delete, scoped local+SQLite layouts), alongside earlier RSI/MACD/ATR/ADX +DI/−DI/Volume panes and UTC-day VWAP. Multiple oscillator instances and native v5 plugin migration remain open.
+- [~] 2.2 Configurable indicator instances: EMA/SMA/WMA multi-instance price overlays (up to 16); separate multiple RSI/MACD/ATR/ADX oscillator instances (up to 8), independent periods, panes, color/width/label/visibility, duplicates and deletion, saved in local+SQLite profiles; prior volume + UTC VWAP remain. Native v5 plugin migration and advanced pane manager still open.
 - [~] 2.3 Drawing tool catalog: horizontal, trend, rectangle, Fibonacci, ray, price/time ruler, 3-anchor parallel channel, third-anchor editing, OHLC magnet, selected delete and undo; full advanced Fibos, text annotations, mobile gestures, v5 primitives and snap priority remain open.
 - [~] 2.4 Drawing SQLite store, schema migration, revision conflicts, server layout/indicator profiles, import/export. **Implemented on branch:** private schema-v1 SQLite workspace store, optimistic revisions, account-scoped layout JSON, authenticated opt-in REST plus existing browser toolbar server save/load/delete; multi-user ACL, full v5 profile migration and remote conflict merge remain open.
-- [~] 2.5 Chart appearance controls (dark/light/inherit background, candle colors/wicks/borders, grid, crosshair, log/normal scale, last-price line) with account-scoped local+SQLite profiles. Symbol watchlist, chart type, multi-chart and native pane/layout management remain open.
+- [~] 2.5 Chart appearance plus optional Candle/OHLC Bar/Line/Area chart types with account-scoped local+SQLite layouts. Symbol watchlist, synced multi-chart workspaces, additional chart types and native pane/layout management remain open.
 - [ ] 2.6 Optimized paging, streaming and incremental calculations; performance budgets AT-025/031.
 
 ## Task 3 — Broker read-only lifecycle and transparent risk
@@ -109,3 +109,13 @@ Remaining for professional TradingView-like behavior: native v5 adapter, fully c
 ### Current visual editor branch
 
 `test/chart-studio-chart-appearance` adds an opt-in Chart Settings panel above the existing chart without changing the MT5 signal logic: dark/light/inherited background, price-scale Normal/Logarithmic, grid/crosshair visibility, rising/falling candle colors, wick/border visibility and last-price line. Settings persist per account and in local/SQLite layouts via a strictly whitelisted optional schema-v1 `chartAppearance` key, preserving older documents. Module captures chart appearance defaults before changes. Test gating: 59 Python tests, Node schema validation, existing Chromium plus dedicated appearance browser workflow. This does **not** implement switchable candle/bar/line chart types or LWC5.
+
+### Multi-instance RSI/MACD/ATR/ADX — current iteration
+
+Branch `test/chart-studio-oscillator-instances` adds an **additional**, account-scoped read-only oscillator instance editor (up to 8 simultaneous RSI/MACD/ATR/ADX), each with its own dedicated resizable v4 chart pane, selected period or MACD fast/slow/signal, custom label/color/width, visibility, duplicate, remove and kind switch. Existing native/legacy panes are preserved. The shared indicator math implementation remains one source of truth and remains independent of MT5 execution. Optional `oscillatorInstances` extends existing SQLite schema-v1 documents backward-compatibly (strict server validation and revision conflicts). Browser LocalStorage and named chart profiles persist each instance. No signals or broker order modifications.
+
+CI acceptance requires Python contract tests, standalone JS schema checks and Chromium smoke with actual multiple panes, kind replacement, account change, local+server round trip, no order requests; merge to main only if green. Full TradingView parity, arbitrary indicator scripting, true v5 primitives, mobile pane manager, synchronized multi-chart views, replay and broker-authorized order editing still open.
+
+### Price series display modes (next iteration)
+
+Branch `test/chart-studio-chart-types`, based on merged multi-oscillator main. Adds chart-type switcher (Candles, OHLC Bars, Close Line, Area), keeping the *original candle series* as a permanent but optionally hidden pricing/drawing anchor reference, with non-writing alternative series created and safely disposed on switch. Existing view-only open positions, What-if plan and drawings keep their own price/time coordinates. Link line/area color/price-line to the account's visual theme settings. Type is account-scoped localStorage and preserved in local named/opt-in SQLite layouts with strict optional version-one field `chartType`. No MT5 writes, no trade strategy changes. Acceptance: Python whitelist, Node read-only validation and Chromium switching/anchor/visual/persistence test, plus full preexisting suite. Heikin-Ashi, Renko, Kagi and other derived types remain open; avoid implying that candle transformations are exchange-provided.

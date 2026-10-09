@@ -215,6 +215,54 @@ class SqliteLayoutTests(unittest.TestCase):
             with self.subTest(case=str(invalid)[:55]),self.assertRaises(StoreError):
                 validate_document({**before,"chartAppearance":invalid})
 
+    def test_multiple_oscillators_schema_and_revision_roundtrip(self):
+        original = example()
+        self.assertNotIn("oscillatorInstances", validate_document(original))
+        rsi = {"id":"osc1","kind":"rsi","period":21,"visible":True,
+               "color":"#E8BB72","lineWidth":2,"label":"Swing RSI"}
+        macd = {"id":"osc2","kind":"macd","fast":12,"slow":26,"signal":9,
+                "visible":False,"color":"#54cee9","lineWidth":3,"label":""}
+        atr = {"id":"osc3","kind":"atr","period":14,"visible":True,
+               "color":"#a995ff","lineWidth":2,"label":"Range"}
+        adx = {"id":"osc4","kind":"adx","period":25,"visible":True,
+               "color":"#63dfb6","lineWidth":1,"label":"Trend"}
+        document = {**original,"oscillatorInstances":[rsi,macd,atr,adx]}
+        result = validate_document(document)
+        self.assertEqual(result["oscillatorInstances"],[rsi,macd,atr,adx])
+        saved = self.store.put("local-owner","titan","XAUUSD","Multi-OSC",document,0)
+        self.assertEqual(saved["revision"],1)
+        self.assertEqual(self.store.get("local-owner","titan","XAUUSD","Multi-OSC")["document"],document)
+        with self.assertRaises(WorkspaceMissing):
+            self.store.get("local-owner","goldm15","XAUUSD","Multi-OSC")
+        cases = [
+            [rsi,rsi],[rsi]*9,[{**rsi,"period":1}],[{**rsi,"period":201}],
+            [{**rsi,"visible":"yes"}],[{**rsi,"color":"red"}],
+            [{**rsi,"onclick":"hack"}],[{**rsi,"id":"../bad"}],
+            [{**macd,"fast":28}],[{**macd,"slow":301}],
+            [{**macd,"signal":0}],[{**macd,"period":5}],
+            [{**atr,"kind":"volume"}],[{**adx,"lineWidth":0}],
+            [{**adx,"label":"x"*41}],
+        ]
+        for invalid in cases:
+            with self.subTest(invalid=str(invalid)[:65]),self.assertRaises(StoreError):
+                validate_document({**original,"oscillatorInstances":invalid})
+        with self.assertRaises(StoreError):
+            validate_document({**original,"oscillatorInstances":"not a list"})
+
+    def test_chart_type_compatibility_and_strict_validation(self):
+        original = example()
+        self.assertNotIn("chartType", validate_document(original))
+        for chart_type in ("candles","bars","line","area"):
+            document = {**original,"chartType":chart_type}
+            self.assertEqual(validate_document(document)["chartType"], chart_type)
+        saved = self.store.put("local-owner","titan","XAUUSD","PriceStyle",
+                               {**original,"chartType":"area"},0)
+        self.assertEqual(saved["revision"],1)
+        self.assertEqual(self.store.get("local-owner","titan","XAUUSD","PriceStyle")["document"]["chartType"],"area")
+        for value in (None,[],{},True,4,"heikinashi","javascript:alert(1)","CANDLES"):
+            with self.subTest(value=value),self.assertRaises(StoreError):
+                validate_document({**original,"chartType":value})
+
 
 class ApiAccessTests(unittest.TestCase):
     def setUp(self):
