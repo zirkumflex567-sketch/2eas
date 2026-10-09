@@ -73,6 +73,14 @@ def timestamp(raw_ms, spec):
             'brokerUtcOffsetSeconds': offset, 'offsetSource': 'ACCOUNT_CONFIG'}
 
 
+def paired_timestamp(row, seconds_field, milliseconds_field, spec):
+    seconds = integer(required(row, seconds_field), positive=True)
+    milliseconds = integer(required(row, milliseconds_field), positive=True)
+    if milliseconds//1000 != seconds:
+        raise BrokerReadError('inconsistent broker clock')
+    return timestamp(milliseconds, spec)
+
+
 def provenance(spec):
     return {'account': spec['id'], 'login': str(spec['login']), 'server': spec['server'],
             'source': SOURCE, 'canExecute': False}
@@ -162,8 +170,8 @@ def position_model(row, spec, symbol, currency):
     result.update(identifier=str(integer(required(row, 'identifier'), positive=True)),
                   type='BUY' if kind == 0 else 'SELL', side='BUY' if kind == 0 else 'SELL',
                   volume=decimal(required(row, 'volume'), positive=True),
-                  createdTime=timestamp(required(row, 'time_msc'), spec),
-                  updatedTime=timestamp(required(row, 'time_update_msc'), spec),
+                  createdTime=paired_timestamp(row, 'time', 'time_msc', spec),
+                  updatedTime=paired_timestamp(row, 'time_update', 'time_update_msc', spec),
                   rawBrokerTime=integer(required(row, 'time'), positive=True),
                   rawBrokerUpdateTime=integer(required(row, 'time_update'), positive=True))
     result.update(profit=decimal(required(row, 'profit'), signed=True),
@@ -181,7 +189,7 @@ def order_model(row, spec, symbol):
                   volumeCurrent=decimal(required(row, 'volume_current')),
                   volumeInitial=decimal(required(row, 'volume_initial'), positive=True),
                   priceStoplimit=decimal(required(row, 'price_stoplimit')),
-                  createdTime=timestamp(required(row, 'time_setup_msc'), spec),
+                  createdTime=paired_timestamp(row, 'time_setup', 'time_setup_msc', spec),
                   rawBrokerSetupTime=integer(required(row, 'time_setup'), positive=True),
                   expirationTime=timestamp(expiry*1000, spec) if expiry else None,
                   rawBrokerExpirationTime=expiry,
@@ -245,6 +253,8 @@ def legacy_quote(mt5, spec, info, symbol, *, now=None):
     try:
         quote = quote_model(mt5.symbol_info_tick(symbol), spec, now=now)
         sym = mt5.symbol_info(symbol)
+        if broker_symbol(required(sym, 'name')) != symbol:
+            raise BrokerReadError('symbol mismatch')
         tick_size = decimal(required(sym, 'trade_tick_size'), positive=True)
         return {**quote, 'symbol': symbol, 'currency': text(required(info, 'currency')),
                 'bid': float(quote['bid']), 'ask': float(quote['ask']), 'tickSize': float(tick_size)}

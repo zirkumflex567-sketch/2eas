@@ -62,12 +62,15 @@ Live quotes, current prices, profit and comments do not affect revisions.
 Creation/update/expiration clocks retain raw broker milliseconds alongside
 normalized `utcEpochMs`, the configured `brokerUtcOffsetSeconds` and
 `offsetSource: ACCOUNT_CONFIG`. Zero order expiration stays unset (`null`).
+Paired creation/update/setup seconds and milliseconds must agree on the second;
+inconsistent pairs fail closed while actual millisecond precision is retained.
 Quotes expose `rawBrokerEpoch`/`rawBrokerEpochMs`, corrected `quoteTimeUtc`/
 `quoteTimeUtcMs`, `ageSeconds`, and `freshness` (`FRESH`, `STALE` after 30 seconds,
 or `FUTURE` when more than one second ahead). Valid stale quotes retain the
 broker book and explicitly disable execution. Invalid or absent clock policies
 fail closed. The legacy XAUUSD quote endpoint keeps numeric `bid`, `ask`, and
 `tickSize` for the existing UI while using the same clock and quote validation.
+Returned legacy symbol metadata must name the requested symbol exactly.
 
 These endpoints supply backend read contracts. Native symbol UI, broker history,
 FX normalization and chart trading remain later work.

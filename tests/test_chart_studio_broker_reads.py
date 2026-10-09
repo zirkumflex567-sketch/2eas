@@ -351,6 +351,10 @@ def test_stale_quote_retains_broker_models_with_explicit_freshness(client, fake)
 def test_semantic_mutation_changes_revision(client, fake, kind, field, value):
     before = read(client).json()[kind][0]['revision']
     setattr(getattr(fake, kind)[0], field, value)
+    if field == 'time_update_msc':
+        fake.positions[0].time_update = value//1000
+    if field == 'time_setup_msc':
+        fake.orders[0].time_setup = value//1000
     assert read(client).json()[kind][0]['revision'] != before
 
 
@@ -415,6 +419,35 @@ def test_missing_quote_clock_refused(client, fake):
     assert read(client).status_code == 503
 
 
+@pytest.mark.parametrize('kind,seconds,milliseconds', [
+    ('positions','time','time_msc'),
+    ('positions','time_update','time_update_msc'),
+    ('orders','time_setup','time_setup_msc'),
+])
+@pytest.mark.parametrize('corruption', ['day_ahead','zero_seconds','zero_milliseconds','missing_seconds'])
+def test_paired_broker_clocks_must_agree(client, fake, kind, seconds, milliseconds, corruption):
+    row = getattr(fake, kind)[0]
+    if corruption == 'day_ahead':
+        setattr(row, milliseconds, getattr(row, milliseconds)+86400000)
+    elif corruption == 'zero_seconds':
+        setattr(row, seconds, 0)
+    elif corruption == 'zero_milliseconds':
+        setattr(row, milliseconds, 0)
+    else:
+        delattr(row, seconds)
+    assert read(client).status_code == 503
+
+
+def test_paired_broker_clocks_preserve_real_millisecond_precision(client, fake):
+    fake.positions[0].time_msc += 123
+    fake.positions[0].time_update_msc += 456
+    fake.orders[0].time_setup_msc += 789
+    body = read(client).json()
+    assert body['positions'][0]['createdTime']['utcEpochMs'] == (NOW-60)*1000+123
+    assert body['positions'][0]['updatedTime']['utcEpochMs'] == (NOW-10)*1000+456
+    assert body['orders'][0]['createdTime']['utcEpochMs'] == (NOW-30)*1000+789
+
+
 def legacy_function(fake):
     tree = ast.parse((ROOT/'app.py').read_text(encoding='utf-8'))
     node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'api_chart_quotes')
@@ -441,6 +474,14 @@ def test_legacy_quote_normalizes_broker_clock_and_keeps_numeric_ui(fake):
 @pytest.mark.parametrize('field,value', [('bid',float('nan')),('ask',float('inf')),('bid',5000.),('time',0)])
 def test_legacy_quote_invalid_data_refused(fake, field, value):
     setattr(fake.tick, field, value)
+    with gateway.session(fake, 'titan'), pytest.raises(HTTPException) as error:
+        legacy_function(fake)('titan')
+    assert error.value.status_code == 503
+
+
+@pytest.mark.parametrize('metadata', [symbol('EURUSD', trade_tick_size=.00001), NS(trade_tick_size=.01)])
+def test_legacy_quote_requires_exact_returned_symbol_name(fake, metadata):
+    fake.symbol_info = lambda _: metadata
     with gateway.session(fake, 'titan'), pytest.raises(HTTPException) as error:
         legacy_function(fake)('titan')
     assert error.value.status_code == 503
