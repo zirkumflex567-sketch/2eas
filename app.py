@@ -904,7 +904,8 @@ HTML_CONTENT = """<!DOCTYPE html>
   <meta charset="UTF-8">
   <title>XAU Titan Pro - Live Cockpit & Volume Profile</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Precompiled offline: no Play-CDN runtime compiler -->
+  <link rel="stylesheet" href="static/tailwind.generated.css">
   <script src="static/lightweight-charts.js"></script>
   <script src="static/stone-chart-effects.js"></script>
   <script src="static/stone-celebrations.js"></script>
