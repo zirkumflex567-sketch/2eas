@@ -76,6 +76,17 @@ class ControlSecurityTests(unittest.TestCase):
             self.assertEqual(response.status_code,403,path)
         self.assertEqual(self.writes,[])
 
+    def test_valid_prefixed_browser_session_and_readonly_preview_work(self):
+        client=TestClient(self.app,base_url='http://127.0.0.1:8058',root_path='/stt')
+        token=client.get('/stt/api/control_session').json()['csrf_token']
+        self.assertEqual(client.post('/stt/api/modify_position',headers={'X-Dashboard-CSRF':token,'Origin':'http://127.0.0.1:8058'}).status_code,200)
+        self.assertEqual(client.post('/stt/api/chart/v1/scenarios/preview').status_code,200)
+
+    def test_trailing_and_encoded_paths_cannot_bypass_control_gate(self):
+        for path in ('/api/modify_position/','/api/%6dodify_position'):
+            self.assertEqual(self.client.post(path,follow_redirects=True).status_code,403)
+        self.assertFalse(self.writes)
+
     def test_remote_clients_require_explicit_bearer(self):
         from unittest.mock import patch
         remote = TestClient(self.app, base_url='http://127.0.0.1:8058', client=('203.0.113.2', 9999))
