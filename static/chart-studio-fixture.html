@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chart Studio beta browser smoke fixture (never live MT5)</title>
+<style>body{background:#071521;color:white;margin:12px;font-family:system-ui}.glass-card{background:#142e3b;border:1px solid #66818b;border-radius:10px;padding:12px;width:min(100%,1080px);box-sizing:border-box}#tv-chart{width:100%;height:520px}.frame{width:100%;height:520px;position:relative}button{cursor:pointer}</style>
+<link rel="stylesheet" href="stone-asset-skin.css"></head>
+<body><div class="glass-card"><div><strong>XAUUSD M15 DEMO · READ ONLY</strong> <button id="stone-chart-expand-btn">GROSS</button></div>
+<div class="frame"><div id="tv-chart"></div></div></div>
+<script src="lightweight-charts.js"></script>
+<script src="chart-studio-beta.js"></script>
+<script>
+const host=document.getElementById("tv-chart");
+const chart=LightweightCharts.createChart(host,{width:host.clientWidth,height:host.clientHeight,
+ layout:{background:{color:"#071721"},textColor:"#c3dbe4"},
+ timeScale:{timeVisible:true,rightOffset:7,barSpacing:7}});
+const candleSeries=chart.addCandlestickSeries({upColor:"#1acc92",downColor:"#ef6781"});
+const emas=[
+ chart.addLineSeries({color:"#2dddfb"}),
+ chart.addLineSeries({color:"#ffbd6c"}),
+ chart.addLineSeries({color:"#b89aff"})
+];
+const base=1700000000;
+const candles=Array.from({length:120},(_,i)=>{
+ const price=4100+Math.sin(i/8)*12+i*.11;
+ return {time:base+i*900,open:price-1,high:price+3,low:price-4,close:price+1};
+});
+candleSeries.setData(candles);
+emas.forEach((series,j)=>series.setData(candles.map(c=>({time:c.time,value:c.close-2+j}))));
+chart.timeScale().fitContent();
+ChartStudioBeta.mount({chart,host,candleSeries,emaSeries:emas,account:"titan",timeframe:"M15"});
+ChartStudioBeta.updateCandles(candles);
+ChartStudioBeta.updatePositions("titan",[
+{ticket:101,type:"BUY",open_price:4110,sl_price:4104,tp_price:4122,profit_usd:33,volume:.1}
+]);
+window.__chartSmokeReady=true;
+</script></body></html>
