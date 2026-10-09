@@ -2,7 +2,7 @@
 
 **Master spec:** [CHART_STUDIO_MASTER_SPEC.md](CHART_STUDIO_MASTER_SPEC.md).
 **Execution plan:** [CHART_STUDIO_PLAN.md](CHART_STUDIO_PLAN.md).
-**Branch:** \`test/chart-studio-implementation\`. Tasks are checked only when real code exists in this branch. \`[~]\` = implementation started, awaiting proper CI/live verification; \`[ ]\` = not complete.
+**Source of implemented status:** merged `main` and individually CI-checked test-branch PRs. `[x]` = implementation and stated gate verified; `[~]` = partial/ongoing; `[ ]` = open. Broker-live release gates are always separate.
 
 ## Task 0 — Baseline, safety and branch
 
@@ -13,7 +13,7 @@
 - [x] 0.5 Add initial isolated regression tests + Windows CI config (CI status must still be independently confirmed).
 - [~] 0.6 GitHub Actions Windows test run: 46 Python tests and Chromium desktop beta smoke PASS (run 37881702809). Further responsive/MT5-connected browser verification remains open.
 - [~] 0.7 Static audit of MT5 write handlers identifies unauthenticated legacy `/api/modify_position`, `/api/close_position` and dashboard-only `/api/reset_drawdown`; these DO NOT use the separate token-protected Chart Studio layout API. Reverse-tunnel origin/CSRF analysis, auth architecture and any write-mode enablement remain BLOCKED pending deployment review. See `docs/CHART_STUDIO_SECURITY_GATE.md`.
-- [ ] 0.8 Lock target v5 version, review API/license and publish migration adapter RFC/PoC.
+- [x] 0.8 v5 pinned at Lightweight Charts 5.2.1, TypeScript adapter and public API/license migration RFC/PoC delivered in merged PR #19 (`5658fa92`), Windows typecheck/build and Chromium pane smoke PASS (run 37896791685). **This is not the v5 production cutover in 1.8.**
 
 ## Task 1 — Functional opt-in Chart Studio prototype (CURRENT)
 
@@ -23,7 +23,7 @@
 - [x] 1.4 Account-scoped **temporary localStorage** saving/loading drawings, chart toggles, named local layouts (save/load/delete) and JSON-copy export.
 - [x] 1.5 Toggle genuine account-scoped MT5 open-position Entry/SL/TP overlays (**view-only**).
 - [x] 1.6 Read-only What-if scenario form + optional verified Bid/Ask fill + backend broker PnL/margin preview; distinct PLAN zones, no trade execution.
-- [~] 1.7 Chromium desktop smoke PASSED for initial tools, drawings/Fibo, Undo/Redo, account isolation and What-if; local named layouts being added. Mobile/fullscreen/zoom/reduced-motion remains **not verified**.
+- [~] 1.7 Chromium desktop smoke PASS; responsive 320/390/768/1440 browser matrix, simulated touch, zoom and reduced-motion is in PR #23 pending CI. Real mobile hardware, expanded layout acceptance and broker-connected proof remain open.
 - [ ] 1.8 Replace experimental v4 wrapper with correctly tested v5 TypeScript chart adapter + dedicated panes.
 
 ## Task 2 — Full chart, drawings and storage
@@ -33,7 +33,7 @@
 - [~] 2.3 Drawing tool catalog and **object manager**: horizontal, trend, rectangle, Fibonacci, ray, price/time ruler, 3-anchor parallel channel, handles/OHLC snap, Undo, object tree with names, visibility, lock, stacking, duplicates and deletion. Advanced fibs, mobile gestures, v5 primitives, hit-test priorities and annotation styles remain open.
 - [~] 2.4 Drawing SQLite store, schema migration, revision conflicts, server layout/indicator profiles, import/export. **Implemented on branch:** private schema-v1 SQLite workspace store, optimistic revisions, account-scoped layout JSON, authenticated opt-in REST plus existing browser toolbar server save/load/delete; multi-user ACL, full v5 profile migration and remote conflict merge remain open.
 - [~] 2.5 Chart appearance plus optional Candle/OHLC Bar/Line/Area chart types with account-scoped local+SQLite layouts. Symbol watchlist, synced multi-chart workspaces, additional chart types and native pane/layout management remain open.
-- [~] 2.6 Render performance: whole-history OHLCV fingerprint prevents redundant 5-second indicator updates, including account/timeframe invalidation; SMA/Bollinger update only the last point on in-progress-bar changes, while corrected historical bars trigger full rebuild. MT5 paginated history, incremental RSI/MACD/ATR update, streaming, benchmarks and AT-025/031 budgets remain open.
+- [~] 2.6 Render performance: whole-history OHLCV fingerprints, SMA/Bollinger last-point updates and merged PR #20 (`e87c345d`), which skips multi-MA full-history `setData` on style-only changes and clears account-scoped series. MT5 paginated history, incremental RSI/MACD/ATR, streaming, benchmarks and AT-025/031 remain open.
 
 ## Task 3 — Broker read-only lifecycle and transparent risk
 
@@ -137,9 +137,15 @@ Branch `test/chart-studio-incremental-render`: shared dual-32-bit OHLCV fingerpr
 - **Unchanged gates:** 0.7 and task 4 broker writes blocked until authenticated, demo-tested release gate. Task 0.8, 1.8, 2.1 and subsequent stages are **not completed** by either PR.
 - Keep this file aligned with actual merges and CI evidence; never mark /goal fully complete based on drafts or unit tests alone.
 
-### Replay incremental package (PR #21, CI pending)
+### Replay incremental package (merged PR #21, `9a856632`, Windows/Chromium green)
 
 - New isolated `ChartStudioReplay` module uses only existing broker candle data in a **separate** preview chart; the production `candleSeries` and all broker writes are untouched.
 - Replay snaps an immutable sorted/validated historical series at Start; step/seek/play show only the as-of prefix. Live bar refreshes cannot add future candles while active.
 - Account/timeframe changes forcibly exit replay, clear the old snapshot and data, and require freshly loaded candles; no replay persistence across accounts.
-- Browser smoke checks frozen as-of progression, no POSTs and context isolation. Test proof must be confirmed before merging. Task 5.6 stays **partial** until multi-indicator, provenance, performance and broker-real replay acceptance.
+- Browser smoke checks frozen as-of progression, no POSTs and context isolation. Windows/Chromium proof passed before merge. Task 5.6 stays **partial** until multi-indicator, provenance, performance and broker-real replay acceptance.
+
+### Responsive acceptance package (PR #23; review/CI pending)
+
+- Chart Studio panels, indicator catalog, multi-MA editor, scenario form and replay controls use flex wrapping and bounded widths on 320/390/768/1440 viewports rather than cutting off controls.
+- Browser smoke checks a real EMA add, searchable catalog, chart zoom/resize, absence of document-wide horizontal scroll, touch-capable contexts and CSS `prefers-reduced-motion` at 320 px. Four screenshots are saved by the Chart CI workflow.
+- Responsive viewport emulation is **not** the same as physical mobile/hardware touch and does not satisfy broker-connected two-account release gates. Task 1.7 remains partial pending green CI and complete mobile/fullscreen acceptance.
