@@ -465,6 +465,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   '<div class="cs-beta-head"><strong>CHART STUDIO · EXPERIMENTELL</strong><span>Keine Handelsausführung</span></div>'+
   '<div class="cs-beta-buttons">'+toolLabels.map(([id,label])=>'<button type="button" data-tool="'+id+'">'+label+'</button>').join("")+
   ["undo","redo","delete-selected","export","clear"].map(id=>'<button type="button" data-cmd="'+id+'">'+({undo:"↶ Undo",redo:"↷ Redo","delete-selected":"Ausgewählte löschen",export:"JSON kopieren",clear:"Alle Zeichnungen löschen"}[id])+'</button>').join("")+'</div>'+
+  '<p class="cs-beta-keyboard-hint">Kürzel: V Navigation · E Bearbeiten · H Linie · T Trend · R Zone · F Fibonacci · C Kanal · M Messen · Strg+Z Rückgängig · Entf Löschen</p>'+
   '<div class="cs-beta-buttons"><button type="button" data-cmd="magnet" aria-pressed="false">Magnet: AUS · Kerzen-OHLC</button></div>'+
  '<div class="cs-beta-buttons">'+optLabels.map(([id,label])=>'<button type="button" data-opt="'+id+'">'+label+'</button>').join("")+'</div>'+
   '<div class="cs-beta-profiles"><strong>Lokale Layouts</strong> <select id="cs-beta-profile" aria-label="Gespeichertes Chartlayout"></select>'+
@@ -613,9 +614,31 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  canvas.addEventListener("pointerdown",pointerdown);canvas.addEventListener("pointermove",pointermove);
  canvas.addEventListener("pointerup",pointerup);
  canvas.addEventListener("pointercancel",()=>{cancelPlanPreview();s.drag=null;s.begin=null;s.preview=null;s.pending=[];setTool("cursor")});
- window.addEventListener("keydown",e=>{if(s&&e.key==="Escape"&&s.tool!=="cursor"){
-  cancelPlanPreview();s.begin=null;s.preview=null;s.pending=[];s.drag=null;setTool("cursor")
- }});
+ window.addEventListener("keydown",e=>{
+  if(!s||e.defaultPrevented)return;
+  // Never intercept typing, color/period edits, saved names, or other dashboard inputs.
+  const target=e.target;
+  if(target?.isContentEditable||target?.closest?.("input, textarea, select, [contenteditable]"))return;
+  if(e.key==="Escape"&&s.tool!=="cursor"){
+   cancelPlanPreview();s.begin=null;s.preview=null;s.pending=[];s.drag=null;setTool("cursor");return;
+  }
+  // Drawing shortcuts only apply while the opt-in studio is visible.
+  if(s.panel.hidden||e.altKey)return;
+  const key=e.key.toLowerCase();
+  if((e.ctrlKey||e.metaKey)&&!e.altKey){
+   if(key==="z"){e.preventDefault();if(e.shiftKey)redo();else undo()}
+   else if(key==="y"){e.preventDefault();redo()}
+   return;
+  }
+  if(e.ctrlKey||e.metaKey||e.shiftKey)return;
+  if(e.key==="Delete"||e.key==="Backspace"){
+   if(Number.isInteger(s.selected)){e.preventDefault();removeSelected()}
+   return;
+  }
+  const hotkeys={v:"cursor",e:"edit",h:"horizontal",t:"trend",r:"rect",
+   f:"fib",c:"channel",m:"ruler"};
+  if(hotkeys[key]){e.preventDefault();setTool(hotkeys[key])}
+ });
  chart.timeScale().subscribeVisibleLogicalRangeChange(requestDraw);
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();

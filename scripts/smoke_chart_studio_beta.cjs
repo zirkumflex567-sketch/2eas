@@ -64,6 +64,21 @@ const fs=require("node:fs"),path=require("node:path");
   await page.waitForFunction(()=>window.__chartSmokeReady===true);
   await page.locator("#cs-beta-toggle").click();
   assert.equal(await page.locator("#cs-beta-panel").isVisible(),true);
+  // Keyboard navigation must work in studio, never hijack edit fields.
+  await page.keyboard.press("h");
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().tool),"horizontal");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().tool),"cursor");
+  await page.locator(".cs-ma-quick-period").focus();
+  await page.keyboard.press("f");
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().tool),"cursor");
+  await page.evaluate(()=>document.activeElement.blur());
+  await page.keyboard.press("Control+z"); // harmless even with empty undo stack
+  await page.keyboard.press("c");
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().tool),"channel");
+  await page.keyboard.press("v");
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().tool),"cursor");
+
   await page.locator('.cs-indicator-control input[data-kind="rsi"][type="checkbox"]').check();
   await page.waitForSelector('.cs-indicator-pane[data-indicator="rsi"]',{state:"visible"});
   await page.locator('.cs-indicator-control input[data-kind="macd"][type="checkbox"]').check();
