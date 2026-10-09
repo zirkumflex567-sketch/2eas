@@ -49,4 +49,18 @@ Main `04194ec090f8e727ae594aa469cd55cc846f24ef` is deployed with the reviewed Wi
 - Public Chromium completed another 20 account switches with matching identities (249–558 ms), zero page errors and zero mutation requests. ChartStudio opens, and the protected public trade session remains available.
 - PowerShell 7.6.6 Status refuses this runtime without stopping it: Invoke-RestMethod deserializes startedUtc as a DateTime, while the guard expects a string. Windows PowerShell 5.1 Status and actual Restart succeed. Cross-version parsing needs a tested correction before claiming PowerShell 7 compatibility.
 
+## Package #29: history and PowerShell compatibility release
+
+PR [#29](https://github.com/zirkumflex567-sketch/2eas/pull/29) merged as `043d7b69b7edd6ad71a9dec19ba34ee959ccea68`. Both final PR workflows passed 688 tests plus 245 subtests and the math/native-v5/browser/Stone checks (37956437357, 37956437423). Main includes the intervening volume-profile commits 55dd508/9c03ee7; both combined-main workflows passed (Chart 37982298944, Audit 37982299135).
+
+The history contract received independent spec and quality approval. The separate PowerShell reviewer found no source gaps and verified eight focused cases before its account quota interrupted the review; the parent completed the remaining source/spec/quality review independently of the implementer. Raw timestamp strings, before-stop identity checks, bounded fixture execution and exact app/interpreter cleanup were retained. The complete runtime/proxy/control suite passed 120 tests; older Core behavior was simulated, not tested on an installed old shell.
+
+- PowerShell 7.6.6 guarded Restart succeeded; Windows PowerShell 5.1 Status and PowerShell 7 Status confirmed the same runtime. PID 40556, startedUtc 2026-10-09T19:45:14.616227Z; startup/disk revision match main, digest `9f4b964af00935f11ef34a408f078de668190af0eb258bfaa378bd23c4102b01`, applicationCodeDirty=false and restart_required=false.
+- Authenticated local and public `/stt` HTML both match source SHA256 `af9cdd70b32c85dd51f25b486e028588afe67f2b26e90e7b08d930debc009020`. Both demo feeds are fresh; forged unauthenticated public identity returns 401 and direct false proxy identity 403.
+- Both demos returned real deal history on both surfaces. Two one-deal pages per account/surface had no duplicate tickets, retained the same as-of boundary and rejected another account's cursor with 410. Broker-read account-switch tests also passed.
+- Public Chromium completed 20 account switches in 249–700 ms, with nine chart canvases, no browser errors and zero API mutation requests. These timings are smoke evidence, not a full performance budget.
+- MT5 processes 13940/34812 and reverse SSH 16580 retain their original creation times. nginx/sshd are active and nginx -t passes. No actual broker order, modify, close or reset was sent.
+
+Filtered live evidence remains ignored under `output/integration-live/runtime-20261009/`: live-proof.json, broker-read-proof.json, trade-history-proof.json and browser-after-deployment.json. Credentials, full account responses and cookies are not committed.
+
 Native symbol/order UI, historical fills, FX and the independent chart write gate remain open. Private evidence stays in the ignored directory; package #27 proofs are preserved separately.
