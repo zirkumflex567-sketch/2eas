@@ -100,11 +100,13 @@ def compute_volume_profile(df_subset, num_bins=24):
     bins = np.linspace(min_p, max_p, num_bins + 1)
     bin_vols = np.zeros(num_bins)
     
-    for _, row in df_subset.iterrows():
-        vol = float(row['tick_volume'])
-        mid = (float(row['high']) + float(row['low'])) / 2.0
-        b_idx = int(np.clip((mid - min_p) / (max_p - min_p) * num_bins, 0, num_bins - 1))
-        bin_vols[b_idx] += vol
+    # Vectorized midpoint binning with unchanged clipping semantics.
+    midpoint = (df_subset['high'].to_numpy(dtype=float) +
+                df_subset['low'].to_numpy(dtype=float)) / 2.0
+    indices = np.clip(((midpoint - min_p) / (max_p - min_p) * num_bins).astype(int),
+                      0, num_bins - 1)
+    bin_vols = np.bincount(indices, weights=df_subset['tick_volume'].to_numpy(dtype=float),
+                           minlength=num_bins).astype(float)
         
     poc_idx = int(np.argmax(bin_vols))
     poc_price = float((bins[poc_idx] + bins[poc_idx+1]) / 2.0)
@@ -153,6 +155,19 @@ def compute_volume_profile(df_subset, num_bins=24):
     }
 
 JOURNAL_CACHE = {}
+JOURNAL_CACHE_AT = {}
+JOURNAL_CACHE_TTL_SEC = 3.0
+
+
+def get_cached_trade_journal(account_id, server_time, local_time):
+    # Called inside the account-verified MT5 lock. Never used for trade/risk writes.
+    now = time.monotonic()
+    if (account_id in JOURNAL_CACHE and
+            now - JOURNAL_CACHE_AT.get(account_id, -1e12) < JOURNAL_CACHE_TTL_SEC):
+        return JOURNAL_CACHE[account_id]
+    entries = build_trade_journal(account_id, server_time, local_time)
+    JOURNAL_CACHE_AT[account_id] = now
+    return entries
 
 def build_trade_journal(account_id, server_time, local_time):
     cutoff_server = datetime(2026, 10, 8, 23, 0, 0)
@@ -197,11 +212,19 @@ def build_trade_journal(account_id, server_time, local_time):
             })
             
     # 2. Closed Deals (HISTORIE)
+    # Preserve first-matching-deal semantics without O(exits * all_deals).
+    first_by_order, first_by_position = {}, {}
+    for idx, deal in enumerate(deals):
+        first_by_order.setdefault(deal.order, (idx, deal))
+        first_by_position.setdefault(getattr(deal, 'position_id', None), (idx, deal))
     out_deals = [d for d in deals if d.entry == mt5.DEAL_ENTRY_OUT and datetime.fromtimestamp(d.time) >= cutoff_server]
     for d in out_deals:
         d_time = datetime.fromtimestamp(d.time)
-        in_deals = [x for x in deals if x.order == d.order or getattr(x, 'position_id', None) == getattr(d, 'position_id', None)]
-        in_deal = in_deals[0] if in_deals else None
+        matches = [match for match in (
+            first_by_order.get(d.order),
+            first_by_position.get(getattr(d, 'position_id', None))
+        ) if match is not None]
+        in_deal = min(matches, key=lambda match: match[0])[1] if matches else None
         open_price = round(float(in_deal.price if in_deal else d.price), 2)
         close_price = round(float(d.price), 2)
         orig_type = 'SELL' if d.type == mt5.DEAL_TYPE_BUY else 'BUY'
@@ -260,7 +283,7 @@ def get_live_market_data():
     # Indicators
     df['ema9'] = df['close'].ewm(span=9, adjust=False).mean()
     df['ema21'] = df['close'].ewm(span=21, adjust=False).mean()
-    df['ema20'] = df['ema21']
+    df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()  # UI EMA20; separate from EA ema21
     df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
     df['ema200'] = df['close'].ewm(span=200, adjust=False).mean()
     
@@ -606,7 +629,7 @@ def get_live_market_data():
         "weekly_vp": weekly_vp,
         "positions": positions,
         "daily_drawdown": daily_drawdown,
-        "journal": build_trade_journal(selected()['id'], server_time, local_time),
+        "journal": get_cached_trade_journal(selected()['id'], server_time, local_time),
         "journal_cache": JOURNAL_CACHE
     }
     result.update(account=public_account(selected()), rule_count=len(rules_matrix), exit_goals=[], ea_guard=None)
@@ -633,7 +656,7 @@ def api_journal_summary(account: str = 'titan'):
     sym = mt5.symbol_info(SYMBOL)
     server_time = datetime.fromtimestamp(sym.time) if sym else datetime.now()
     local_time = datetime.now()
-    entries = build_trade_journal(account, server_time, local_time)
+    entries = get_cached_trade_journal(account, server_time, local_time)
     JOURNAL_CACHE[account] = entries
     return {
         'account': account,
