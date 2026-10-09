@@ -14,6 +14,11 @@ from urllib.request import urlopen
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+PWSH = shutil.which('pwsh')
+WINDOWS_SHELLS = [
+    'powershell.exe',
+    pytest.param(PWSH, marks=pytest.mark.skipif(PWSH is None, reason='PowerShell 7 is not installed')),
+]
 
 
 def runtime_module():
@@ -202,7 +207,7 @@ def test_route_is_installed_without_dependency_on_fastapi(checkout):
     assert routes['/api/runtime']()['startupDigest']
 
 
-MOCK_APP = '''import json, os
+MOCK_APP = '''import hashlib, json, os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from dashboard_runtime import RuntimeIdentity
@@ -212,16 +217,20 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
+        if self.path == '/fixture/env-proof':
+            matches = hashlib.sha256(os.environ.get('DASHBOARD_CONTROL_TOKEN', '').encode()).hexdigest() == 'b0a9b0c0a1a43b72218766d72d6e64d8ad0b7a677db3ab8e3a1e0c03539a761a'
+            self.wfile.write(json.dumps({'privateEnvironmentMatches': matches}).encode())
+            return
         self.wfile.write(json.dumps(identity.payload()).encode())
     def log_message(self, *args): pass
 HTTPServer(('127.0.0.1', int(os.environ['DASHBOARD_PORT'])), Handler).serve_forever()
 '''
 
 
-def run_control(repo, port, action, env_file=None):
-    script = ROOT / 'scripts' / 'dashboard_runtime.ps1'
+def run_control(repo, port, action, env_file=None, shell='powershell.exe', script=None):
+    script = script or ROOT / 'scripts' / 'dashboard_runtime.ps1'
     assert script.exists(), 'guarded restart script is required'
-    args = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script),
+    args = [shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script),
             '-Action', action, '-Repo', str(repo), '-Python', sys.executable, '-Port', str(port),
             '-StartupTimeoutSeconds', '8']
     if env_file:
@@ -249,6 +258,142 @@ Where-Object { $_.ExecutablePath -eq $env:DASHBOARD_TEST_FIXTURE_PYTHON -and $_.
 ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }'''
     subprocess.run(['powershell.exe', '-NoProfile', '-Command', command], env=env,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20, check=True)
+
+
+def prepare_mock_checkout(checkout, app=MOCK_APP):
+    (checkout / 'app.py').write_text(app)
+    shutil.copyfile(ROOT / 'dashboard_runtime.py', checkout / 'dashboard_runtime.py')
+    (checkout / '.gitignore').write_text('*.log\n')
+    git(checkout, 'add', 'app.py', 'dashboard_runtime.py', '.gitignore')
+    git(checkout, 'commit', '-qm', 'mock runtime')
+    with socket.socket() as reservation:
+        reservation.bind(('127.0.0.1', 0))
+        return reservation.getsockname()[1]
+
+
+def mock_endpoint(port, path='/api/runtime'):
+    with urlopen(f'http://127.0.0.1:{port}{path}', timeout=3) as response:
+        return json.load(response)
+
+
+@pytest.mark.skipif(os.name != 'nt' or PWSH is None, reason='Windows PowerShell and PowerShell 7 required')
+def test_powershell_cross_shell_runtime_timestamp_and_private_environment(checkout, tmp_path):
+    port = prepare_mock_checkout(checkout)
+    env_file = tmp_path.parent / (tmp_path.name + '-cross-shell-private.json')
+    secret = 'fixture-secret-never-emit'
+    env_file.write_text(json.dumps({'DASHBOARD_CONTROL_TOKEN': secret}))
+    results = []
+    try:
+        started = run_control(checkout, port, 'Start', env_file)
+        results.append(started)
+        assert started.returncode == 0, started.stdout + started.stderr
+        original = mock_endpoint(port)
+        assert mock_endpoint(port, '/fixture/env-proof') == {'privateEnvironmentMatches': True}
+        status = run_control(checkout, port, 'Status', shell=PWSH)
+        results.append(status)
+        assert status.returncode == 0, status.stdout + status.stderr
+        assert json.loads(status.stdout) == original
+        restarted = run_control(checkout, port, 'Restart', env_file, shell=PWSH)
+        results.append(restarted)
+        assert restarted.returncode == 0, restarted.stdout + restarted.stderr
+        replacement = mock_endpoint(port)
+        assert replacement['pid'] != original['pid']
+        assert replacement['startupDigest'] == original['startupDigest'] == replacement['diskDigest']
+        assert replacement['startupRevision'] == original['startupRevision'] == replacement['diskRevision']
+        assert replacement['applicationCodeDirty'] is False
+        assert replacement['restart_required'] is False
+        assert mock_endpoint(port, '/fixture/env-proof') == {'privateEnvironmentMatches': True}
+        for shell in ('powershell.exe', PWSH):
+            status = run_control(checkout, port, 'Status', shell=shell)
+            results.append(status)
+            assert status.returncode == 0, status.stdout + status.stderr
+            assert json.loads(status.stdout) == replacement
+    finally:
+        cleanup_mock_processes(checkout)
+        env_file.unlink(missing_ok=True)
+        for result in results:
+            assert secret not in result.stdout + result.stderr
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Windows PowerShell operational workflow')
+@pytest.mark.parametrize('shell', WINDOWS_SHELLS)
+@pytest.mark.parametrize('invalid_identity', ['non_string', 'invalid_utc', 'invalid_date', 'wrong_pid', 'other_checkout'])
+def test_powershell_raw_identity_guards_refuse_without_stop(checkout, tmp_path, shell, invalid_identity):
+    overrides = {
+        'non_string': 'dict(identity.payload(), startedUtc=123)',
+        'invalid_utc': 'dict(identity.payload(), startedUtc="2026-10-09T12:34:56+00:00")',
+        'invalid_date': 'dict(identity.payload(), startedUtc="2026-02-30T12:34:56Z")',
+        'wrong_pid': 'dict(identity.payload(), pid=os.getpid()+1)',
+    }
+    app = MOCK_APP.replace('json.dumps(identity.payload())',
+                           'json.dumps(' + overrides.get(invalid_identity, 'identity.payload()') + ')')
+    port = prepare_mock_checkout(checkout, app)
+    target = checkout
+    if invalid_identity == 'other_checkout':
+        target = tmp_path / 'other-worktree'
+        git(checkout, 'worktree', 'add', '--detach', str(target), 'HEAD')
+    env_file = tmp_path.parent / (tmp_path.name + '-guard-private.json')
+    secret = 'fixture-secret-never-emit'
+    env_file.write_text(json.dumps({'DASHBOARD_CONTROL_TOKEN': secret}))
+    env = os.environ.copy()
+    env.update(DASHBOARD_PORT=str(port), DASHBOARD_CONTROL_TOKEN=secret)
+    process = None
+    results = []
+    try:
+        process = subprocess.Popen([sys.executable, str(checkout / 'app.py')], env=env,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                original = mock_endpoint(port)
+                break
+            except OSError:
+                time.sleep(.05)
+        else:
+            pytest.fail('disposable HTTP fixture did not start')
+        for action in ('Status', 'Restart'):
+            refused = run_control(target, port, action, env_file, shell=shell)
+            results.append(refused)
+            assert refused.returncode != 0, refused.stdout + refused.stderr
+            expected_message = ('Listener belongs to another checkout; nothing stopped.'
+                                if invalid_identity == 'other_checkout' else
+                                'Listener runtime identity unavailable or malformed; nothing stopped.')
+            assert expected_message in refused.stdout
+            assert process.poll() is None
+            assert mock_endpoint(port) == original
+            assert mock_endpoint(port, '/fixture/env-proof') == {'privateEnvironmentMatches': True}
+    finally:
+        cleanup_mock_processes(checkout)
+        if process is not None:
+            process.wait(timeout=5)
+        env_file.unlink(missing_ok=True)
+        for result in results:
+            assert secret not in result.stdout + result.stderr
+
+
+@pytest.mark.skipif(os.name != 'nt' or PWSH is None, reason='Windows PowerShell and PowerShell 7 required')
+def test_powershell_core_without_string_parser_refuses_before_stop(checkout, tmp_path):
+    port = prepare_mock_checkout(checkout)
+    # Emulate the ConvertFrom-Json parameter metadata of an older Core shell.
+    # The installed shell remains real and all process/HTTP guards still execute.
+    wrapper = tmp_path.parent / (tmp_path.name + '-old-core-parser.ps1')
+    guard = str(ROOT / 'scripts' / 'dashboard_runtime.ps1').replace("'", "''")
+    wrapper.write_text('''function ConvertFrom-Json {
+    [CmdletBinding()] param([Parameter(ValueFromPipeline=$true)][string]$InputObject)
+    process { Microsoft.PowerShell.Utility\\ConvertFrom-Json -InputObject $InputObject }
+}
+''' + "& '" + guard + "' @args\nexit $LASTEXITCODE\n")
+    try:
+        started = run_control(checkout, port, 'Start')
+        assert started.returncode == 0, started.stdout + started.stderr
+        original = mock_endpoint(port)
+        refused = run_control(checkout, port, 'Restart', shell=PWSH, script=wrapper)
+        assert refused.returncode != 0, refused.stdout + refused.stderr
+        assert 'PowerShell JSON parser cannot preserve runtime timestamp strings; nothing stopped.' in refused.stdout
+        assert mock_endpoint(port) == original
+    finally:
+        cleanup_mock_processes(checkout)
+        wrapper.unlink(missing_ok=True)
 
 
 @pytest.mark.skipif(os.name != 'nt', reason='Windows PowerShell operational workflow')

@@ -117,9 +117,17 @@ Inspect expected code without importing the dashboard or MT5:
 & 'C:\Python314\python.exe' 'C:\path\dashboard\dashboard_runtime.py' --inspect-checkout 'C:\path\dashboard'
 ```
 
-Use `scripts/dashboard_runtime.ps1` with Windows PowerShell 5.1 or later and
-explicit absolute repository/Python paths and backend port. These examples are
-operator commands; they are not executed by this change:
+`scripts/dashboard_runtime.ps1` is validated on Windows PowerShell 5.1
+(5.1.26100.9444) and PowerShell 7.6.6 on Windows, using disposable HTTP fixtures.
+It reads raw HTTP JSON and preserves the exact `startedUtc` string: PowerShell
+5.1 preserves strings directly, and supported Core parsers use
+`ConvertFrom-Json -DateKind String` (introduced in 7.5). Core shells without
+that parameter refuse clearly before any stop. Timestamp type/UTC format and
+all process, checkout and source identity checks still apply. Other shell
+versions have not been validated.
+
+Supply explicit absolute repository/Python paths and backend port. These
+examples are operator commands; they are not executed by this change:
 
 ```powershell
 .\scripts\dashboard_runtime.ps1 -Action Status -Repo 'C:\path\dashboard' -Python 'C:\Python314\python.exe' -Port 8050
@@ -196,3 +204,5 @@ The template follows the official nginx documentation for
 [Basic Authentication](https://nginx.org/en/docs/http/ngx_http_auth_basic_module.html),
 [`proxy_set_header` replacement and suppression](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_set_header),
 and the [`$remote_user` and `$remote_addr` variables](https://nginx.org/en/docs/http/ngx_http_core_module.html#variables).
+Runtime timestamp parsing follows the official PowerShell
+[`ConvertFrom-Json` `DateKind` documentation](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/convertfrom-json?view=powershell-7.6).
