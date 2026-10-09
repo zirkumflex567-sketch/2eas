@@ -102,6 +102,9 @@ def read_guard(path, server_timestamp, equity, params=None, balance=None):
     result = dict(baseline_verified=False, baseline=None, daily_buffer_usd=None, daily_protected_buffer_usd=None,
                   daily_limit_usd=limit, hard_floor_usd=minimum, hard_protected_floor_usd=minimum+params['HardReserveUSD'],
                   hard_buffer_usd=value-minimum-params['HardReserveUSD'], hard_lock=None, daily_lock=None,
+                  persisted_hard_lock=None, persisted_daily_lock=None,
+                  protection_status='unknown', heartbeat_verified=False, heartbeat_time_utc=None,
+                  heartbeat_unknown_reason='v1.21-Datei enthält keinen Heartbeat; Datei-mtime ist kein Aktivitätsnachweis.',
                   note='EA-Baseline nicht verfügbar; Schutzstatus unbekannt. Dashboard-Reset verändert keine EA-Sperre.')
     try:
         version, day, base, known, hard, daily, reset_hour = struct.unpack('<iqdiiii', Path(path).read_bytes())
@@ -110,11 +113,11 @@ def read_guard(path, server_timestamp, equity, params=None, balance=None):
         valid = state_valid and known==1 and day==current_day and base>0
         result.update(baseline_verified=valid)
         if state_valid:
-            result.update(hard_lock=bool(hard), daily_lock=bool(daily) if day==current_day else None)
+            result.update(persisted_hard_lock=bool(hard), persisted_daily_lock=bool(daily) if day==current_day else None)
         if valid:
             result.update(baseline=base, daily_buffer_usd=value-(base-limit),
                           daily_protected_buffer_usd=value-(base-limit+params['DailyReserveUSD']),
-                          note='EA-Baseline bestätigt · fixe $350 Tagesgrenze, $75 Tagesreserve, $100 Gesamtreserve. Dashboard-Reset ändert nur die Anzeige.')
+                          note='EA-Tagesbaseline bestätigt; Live-Schutzstatus unbekannt (kein Heartbeat). Persistierte Sperren sind keine aktuelle Freigabe. Dashboard-Reset ändert nur die Anzeige.')
     except (OSError, ValueError, struct.error):
         pass
     return result

@@ -20,7 +20,10 @@ class CelebrationContracts(unittest.TestCase):
         self.assertIn("if(acc.keys.has(k))continue", self.ui)
         self.assertIn('kind==="CLOSED"&&net>0&&settings.profit', self.ui)
         self.assertIn('kind==="OPEN"&&settings.trade', self.ui)
-        self.assertIn("'net_profit_usd': round(float(d.profit + d.swap + d.commission), 2)", self.app)
+        # Realized net now includes allocated entry commission/fees, not exit-only costs.
+        # Numeric accounting is exercised by test_backend_audit partial-close fixtures.
+        self.assertIn("'profit_usd': row['net_profit_usd']", self.app)
+        self.assertIn('journal_accounting.close_accounting(', self.app)
         self.assertIn('Math.abs(Date.now()/1000-ts)>900', self.ui)
 
     def test_toolbar_and_manual_demo_controls(self):

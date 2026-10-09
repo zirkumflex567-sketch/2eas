@@ -201,7 +201,10 @@ class MultiAccountTests(unittest.TestCase):
         fake = self.fake()
         pos = SimpleNamespace(type=0, symbol='XAUUSD', volume=.01, price_open=4000, sl=3990, tp=0)
         fake.positions_get = lambda **kw: [pos] if kw['ticket']==11 else []
-        fake.symbol_info = lambda _: SimpleNamespace(trade_contract_size=100, digits=2)
+        # Stop writes now require broker tick/stop metadata (fail closed if absent).
+        fake.symbol_info = lambda _: SimpleNamespace(trade_contract_size=100, digits=2,
+            trade_tick_size=.01, point=.01, trade_stops_level=0, trade_freeze_level=0)
+        fake.symbol_info_tick = lambda _: SimpleNamespace(bid=4000., ask=4000.05)
         fake.order_send = lambda req: (fake.sent.append((fake.current['login'], req)) or SimpleNamespace(retcode=10009, comment='ok'))
         for key in ('ORDER_TYPE_BUY','TRADE_ACTION_SLTP','TRADE_RETCODE_DONE'):
             setattr(fake, key, getattr(app.mt5, key))

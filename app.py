@@ -5,7 +5,7 @@ import math
 import json
 import webbrowser
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, Literal, Annotated
 
 import pandas as pd
 import numpy as np
@@ -13,8 +13,11 @@ import MetaTrader5 as mt5
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, FiniteFloat, Field, StrictBool, model_validator
 import uvicorn
+import dd_persistence
+import journal_accounting
+from metrics_cache import ClosedBarMetricsCache
 from pathlib import Path
 from account_gateway import ACCOUNTS, config_path, public_account, scoped, selected, verify_identity, writes_titan_reset
 from goldm15_dashboard import GUARD_FILE, metrics as gold_metrics, parameters as gold_parameters, read_guard, wilder_rsi
@@ -45,11 +48,22 @@ def ensure_mt5_init():
     return bool(verify_identity(mt5, selected()))
 
 class ModifyPositionRequest(BaseModel):
-    ticket: int
-    sl_usd: Optional[float] = None
-    tp_usd: Optional[float] = None
-    sl_price: Optional[float] = None
-    tp_price: Optional[float] = None
+    ticket: Annotated[int, Field(gt=0, strict=True)]
+    sl_usd: Optional[FiniteFloat] = None
+    tp_usd: Optional[FiniteFloat] = None
+    sl_price: Optional[Annotated[FiniteFloat, Field(ge=0)]] = None
+    tp_price: Optional[Annotated[FiniteFloat, Field(ge=0)]] = None
+    # Explicit price 0 or remove_* removes; USD 0 sets break-even, never removes.
+    remove_sl: StrictBool = False
+    remove_tp: StrictBool = False
+
+    @model_validator(mode='after')
+    def exclusive_operations(self):
+        for side in ('sl', 'tp'):
+            usd, price = getattr(self, side+'_usd'), getattr(self, side+'_price')
+            if sum((usd is not None, price is not None, getattr(self, 'remove_'+side))) > 1:
+                raise ValueError(f'{side}: USD, Preis und Entfernen schließen sich aus.')
+        return self
 
 class ChartScenarioPreviewRequest(BaseModel):
     account: str
@@ -62,44 +76,31 @@ class ChartScenarioPreviewRequest(BaseModel):
 
 
 class ClosePositionRequest(BaseModel):
-    ticket: int
+    ticket: Annotated[int, Field(gt=0, strict=True)]
 
 class ResetDrawdownRequest(BaseModel):
-    action: str = "reset"  # "reset" or "auto"
-    baseline: Optional[float] = None
+    action: Literal['reset', 'auto'] = 'reset'
+    baseline: Optional[Annotated[FiniteFloat, Field(gt=0)]] = None
 
 # --- DAILY DRAWDOWN CONFIG PERSISTENCE ---
 DD_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "drawdown_config.json")
 COMMON_FILES_DIR = os.path.expanduser(r"~\AppData\Roaming\MetaQuotes\Terminal\Common\Files")
 
 def load_dd_config():
-    filename = config_path(BASE_DIR)
-    if filename.exists():
-        try:
-            with open(filename, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {
-        "manual_reset_active": False,
-        "reset_balance": 10000.0,
-        "reset_timestamp": None,
-        "reset_date": None
-    }
+    try:
+        return dd_persistence.load(config_path(BASE_DIR))
+    except (OSError, ValueError) as exc:
+        raise HTTPException(503, 'Drawdown-Konfiguration ungültig oder nicht lesbar.') from exc
+
 
 def save_dd_config(cfg):
+    targets = [config_path(BASE_DIR)]
+    if writes_titan_reset():
+        targets.append(Path(COMMON_FILES_DIR) / 'titan_dd_reset.json')
     try:
-        with open(config_path(BASE_DIR), "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2)
-    except Exception as e:
-        print(f"Error saving local dd config: {e}")
-    try:
-        if writes_titan_reset() and os.path.exists(COMMON_FILES_DIR):
-            common_file = os.path.join(COMMON_FILES_DIR, "titan_dd_reset.json")
-            with open(common_file, "w", encoding="utf-8") as f:
-                json.dump(cfg, f, indent=2)
-    except Exception as e:
-        print(f"Error saving common dd config: {e}")
+        return dd_persistence.save(cfg, targets)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(503, str(exc)) from exc
 
 # --- VOLUME PROFILE & S/R HELPER ---
 def compute_volume_profile(df_subset, num_bins=24):
@@ -170,6 +171,14 @@ def compute_volume_profile(df_subset, num_bins=24):
 JOURNAL_CACHE = {}
 JOURNAL_CACHE_AT = {}
 JOURNAL_CACHE_TTL_SEC = 3.0
+GOLD_METRICS_CACHE = ClosedBarMetricsCache()
+
+
+def require_mt5_data(data, source):
+    if data is None:
+        error = mt5.last_error() if hasattr(mt5, 'last_error') else None
+        raise HTTPException(503, {'source': source, 'message': 'MT5-Abfrage fehlgeschlagen; Daten unbekannt.', 'mt5_error': error})
+    return data
 
 
 def get_cached_trade_journal(account_id, server_time, local_time):
@@ -183,100 +192,77 @@ def get_cached_trade_journal(account_id, server_time, local_time):
     JOURNAL_CACHE_AT[account_id] = now
     return entries
 
+def journal_metadata(account_id):
+    return {'cutoff_utc': journal_accounting.CUTOFF.isoformat(),
+            'cutoff_label': 'Aufzeichnung seit 08.10.2026 23:00 UTC (09.10.2026 01:00 Europe/Berlin)',
+            'timezone': 'Europe/Berlin', 'timestamp_basis': 'MT5 epoch interpreted as UTC',
+            'snapshot_age_seconds': max(0., time.monotonic()-JOURNAL_CACHE_AT.get(account_id, time.monotonic()))}
+
+
+def journal_magics(account_id):
+    if account_id == 'titan':
+        return {881122}  # XAU_Titan_Pro.mq5 and committed .set reference
+    base = int(gold_parameters()['MagicBase'])
+    return {base+1, base+2, base+3}
+
+
 def build_trade_journal(account_id, server_time, local_time):
-    cutoff_server = datetime(2026, 10, 8, 23, 0, 0)
-    deals = mt5.history_deals_get(datetime(2026, 10, 8, 22, 0, 0), datetime.now() + timedelta(days=2)) or []
-    positions = mt5.positions_get(symbol=SYMBOL) or []
-    
+    if server_time.tzinfo is None:
+        server_time = server_time.replace(tzinfo=timezone.utc)
+    deals = require_mt5_data(mt5.history_deals_get(journal_accounting.CUTOFF, server_time), 'journal_history')
+    positions = require_mt5_data(mt5.positions_get(symbol=SYMBOL), 'journal_positions')
+    magics = journal_magics(account_id)
+    slot_by_magic = {m:i+1 for i,m in enumerate(sorted(magics))} if account_id=='goldm15' else {}
+    strategy = ACCOUNTS[account_id]['name']
     entries = []
-    
-    # 1. Open Positions (LIVE)
     for p in positions:
-        p_time = datetime.fromtimestamp(p.time)
-        if p_time >= cutoff_server:
-            action_str = 'BUY' if p.type == mt5.ORDER_TYPE_BUY else 'SELL'
-            cur_price = round(float(p.price_current), 2)
-            open_price = round(float(p.price_open), 2)
-            points = (cur_price - open_price) if p.type == mt5.ORDER_TYPE_BUY else (open_price - cur_price)
-            if account_id == 'titan':
-                why = 'Ausgelöst bei M15-Kerzenschluss (20:00 DE / 23:00 Server). Alle 5 Champion-Kriterien erfüllt: 1. Bullischer Trend-Fächer (EMA9 > EMA21), 2. Kurs über Trendfilter EMA50 ($4133.09 > $4123.69), 3. Kurs über Basis-EMA9 ($4127.33), 4. RSI14 bei 54.1 (Momentum >= 50.0), 5. Grüne Bestätigungskerze (Close > Open). Keine Cluster-Sperre aktiv.'
-                tp_goal = 'Dynamischer Trend-Runner Modus (Kein fixer TP für maximale Gewinne). Trailing-Ausstieg: Schließt, sobald mindestens +$28.00 Gewinn erreicht sind und eine M15-Kerze unter die Basis-EMA9 schließt. Absicherung: Struktureller Swing-SL bei 4102.68 $ (-30.41 $ Puffer).'
-            else:
-                why = f'Ausgelöst durch Subsystem {p.comment}. RSI-Trendfilter aktiv mit RSI-Pullback Extremwert.'
-                tp_goal = 'Momentum-Exit via Rate-of-Change (ROC) Zielerreichung im Slot oder Not-SL bei 4140.50 $.'
-                
-            entries.append({
-                'ticket': int(p.ticket),
-                'time_ts': int(p.time),
-                'strategy': 'XAU Titan Pro' if account_id == 'titan' else 'GoldM15 Reconstruction',
-                'account': account_id,
-                'status': 'OPEN',
-                'type': action_str,
-                'volume': float(p.volume),
-                'open_price': open_price,
-                'current_price': cur_price,
-                'points': round(float(points), 2),
-                'sl_price': round(float(p.sl), 2),
-                'tp_price': round(float(p.tp), 2),
-                'profit_usd': round(float(p.profit), 2),
-                'time_server': p_time.strftime('%H:%M:%S'),
-                'time_de': (p_time.replace(hour=(p_time.hour - 3) % 24)).strftime('%H:%M:%S'),
-                'why_triggered': why,
-                'profit_goal': tp_goal
-            })
-            
-    # 2. Closed Deals (HISTORIE)
-    # Preserve first-matching-deal semantics without O(exits * all_deals).
-    first_by_order, first_by_position = {}, {}
-    for idx, deal in enumerate(deals):
-        first_by_order.setdefault(deal.order, (idx, deal))
-        first_by_position.setdefault(getattr(deal, 'position_id', None), (idx, deal))
-    out_deals = [d for d in deals if d.entry == mt5.DEAL_ENTRY_OUT and datetime.fromtimestamp(d.time) >= cutoff_server]
-    for d in out_deals:
-        d_time = datetime.fromtimestamp(d.time)
-        matches = [match for match in (
-            first_by_order.get(d.order),
-            first_by_position.get(getattr(d, 'position_id', None))
-        ) if match is not None]
-        in_deal = min(matches, key=lambda match: match[0])[1] if matches else None
-        open_price = round(float(in_deal.price if in_deal else d.price), 2)
-        close_price = round(float(d.price), 2)
-        orig_type = 'SELL' if d.type == mt5.DEAL_TYPE_BUY else 'BUY'
-        points = (close_price - open_price) if orig_type == 'BUY' else (open_price - close_price)
-        
-        if account_id == 'goldm15':
-            comment_str = str(in_deal.comment if in_deal else d.comment)
-            slot = 'S1' if 'S1' in comment_str else ('S2' if 'S2' in comment_str else 'S3')
-            why = f'Ausgelöst bei M15-Kerzenschluss (Subsystem {slot}): Bärischer Trendfilter (RSI30 <= 55) mit überkauftem RSI2-Spike (>= 70) als Mean-Reversion Short-Bounce.'
-            tp_goal = f'Ausstiegsziel: Momentum-Exit bei Erreichen des ROC-Ziels (ROC 5 <= -0.2%/-0.3%). Geschlossen um {d_time.strftime("%H:%M:%S")} Server ({(d_time.replace(hour=(d_time.hour - 3) % 24)).strftime("%H:%M:%S")} DE) bei {d.price:.2f} $.'
-        else:
-            why = 'Champion Trend-Momentum Einstieg.'
-            tp_goal = 'Dynamischer Trend-Runner Ausstieg.'
-            
+        if p.time < journal_accounting.CUTOFF.timestamp() or not journal_accounting.owns(p, magics):
+            continue
+        open_price, cur_price = round(float(p.price_open),2), round(float(p.price_current),2)
+        net = round(float(p.profit+p.swap),2)
         entries.append({
-            'ticket': int(d.ticket),
-            'time_ts': int(d.time),
-            'strategy': 'XAU Titan Pro' if account_id == 'titan' else 'GoldM15 Reconstruction',
-            'account': account_id,
-            'status': 'CLOSED',
-            'type': orig_type,
-            'volume': float(d.volume),
-            'open_price': open_price,
-            'close_price': close_price,
-            'points': round(float(points), 2),
-            'profit_usd': round(float(d.profit), 2),
-            'net_profit_usd': round(float(d.profit + d.swap + d.commission), 2),
-            'time_server': d_time.strftime('%H:%M:%S'),
-            'time_de': (d_time.replace(hour=(d_time.hour - 3) % 24)).strftime('%H:%M:%S'),
-            'why_triggered': why,
-            'profit_goal': tp_goal
+            'ticket': int(p.ticket), 'time_ts': int(p.time),
+            'strategy': strategy, 'account': account_id, 'status': 'OPEN',
+            'symbol': p.symbol, 'magic': p.magic,
+            'slot': slot_by_magic.get(p.magic),
+            'type': 'BUY' if p.type == mt5.ORDER_TYPE_BUY else 'SELL',
+            'volume': float(p.volume), 'open_price': open_price, 'current_price': cur_price,
+            'points': round((cur_price-open_price) if p.type == mt5.ORDER_TYPE_BUY else (open_price-cur_price),2),
+            'sl_price': round(float(p.sl),2), 'tp_price': round(float(p.tp),2),
+            'profit_usd': net, 'net_profit_usd': net, 'gross_profit_usd': round(float(p.profit),2),
+            'pnl_basis': 'unrealized_profit_plus_swap; entry costs excluded',
+            'reason_verified': False, 'why_triggered': journal_accounting.UNKNOWN_ENTRY,
+            'profit_goal': journal_accounting.UNKNOWN_EXIT, **journal_accounting.times(p.time)
         })
-        
+    by_position = {}
+    for d in {int(d.ticket):d for d in deals}.values():
+        if getattr(d,'symbol',None)==SYMBOL and d.entry != mt5.DEAL_ENTRY_IN:
+            by_position.setdefault(d.position_id, []).append(d)
+    for position_id, exits in by_position.items():
+        lifecycle = require_mt5_data(mt5.history_deals_get(position=position_id), 'journal_position_history')
+        lifecycle = [d for d in lifecycle if getattr(d,'position_id',None)==position_id]
+        accounting = journal_accounting.close_accounting(lifecycle + exits, mt5, magics)
+        for d in exits:
+            if d.time < journal_accounting.CUTOFF.timestamp() or d.ticket not in accounting:
+                continue
+            row = accounting[d.ticket]
+            cp, op = round(float(d.price),2), row['open_price']
+            entries.append({
+                'ticket': int(d.ticket), 'time_ts': int(d.time),
+                'strategy': strategy, 'account': account_id, 'status': 'CLOSED',
+                'symbol': d.symbol, 'magic': d.magic, 'position_id': position_id,
+                'slot': slot_by_magic.get(row.get('ownership_magic')),
+                'volume': float(d.volume), 'close_price': cp,
+                'points': None if op is None else round(cp-op if row['type']=='BUY' else op-cp,2),
+                'profit_usd': row['net_profit_usd'], 'pnl_basis': 'realized_net_with_allocated_entry_costs',
+                'reason_verified': False, 'why_triggered': journal_accounting.UNKNOWN_ENTRY,
+                'profit_goal': journal_accounting.UNKNOWN_EXIT,
+                **row, **journal_accounting.times(d.time)
+            })
     entries.sort(key=lambda x: x['time_ts'], reverse=True)
-    JOURNAL_CACHE[account_id] = entries
     return entries
 
-def get_live_market_data():
+def get_live_market_data(include_journal=True):
     if not ensure_mt5_init():
         return None
     
@@ -286,6 +272,8 @@ def get_live_market_data():
     
     if not sym or not tick or not acc:
         return None
+    if not all(math.isfinite(v) and v > 0 for v in (acc.balance, acc.equity)):
+        raise HTTPException(503, 'Kontorisikodaten sind ungültig/unbekannt.')
         
     rates = mt5.copy_rates_from_pos(SYMBOL, TIMEFRAME, 0, 5000 if selected()['id']=='goldm15' else 1000)
     if rates is None or len(rates) < 200:
@@ -301,24 +289,24 @@ def get_live_market_data():
     df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
     df['ema200'] = df['close'].ewm(span=200, adjust=False).mean()
     
-    diff = df['close'].diff()
-    g = diff.clip(lower=0).rolling(14).mean()
-    l = (-diff.clip(upper=0)).rolling(14).mean()
-    df['rsi14'] = 100 - (100 / (1 + g / (l + 1e-9)))
+    # iRSI reference: Wilder smoothing; rolling RSI is not the same indicator.
+    df['rsi14'] = wilder_rsi(df['close'].to_numpy(), 14)
     
     tr = pd.concat([df['high'] - df['low'], abs(df['high'] - df['close'].shift(1)), abs(df['low'] - df['close'].shift(1))], axis=1).max(axis=1)
     df['atr14'] = tr.rolling(14).mean()
     
-    cur_bar = df.iloc[-1]
+    open_bar = df.iloc[-1]
+    cur_bar = df.iloc[-2]  # Shift 1: closed-bar reference criteria.
     
     server_time = datetime.fromtimestamp(tick.time, timezone.utc)
-    local_time = datetime.now().astimezone()
-    german_hour = local_time.hour
+    local_time = server_time.astimezone(journal_accounting.BERLIN)
+
     
-    in_window = (server_time.hour != 0)
+    # Time/config alone cannot prove EA activity or execution permission.
+    in_window = None
                  
     bar_duration = 15 * 60
-    bar_start = int(cur_bar['time'])
+    bar_start = int(open_bar['time'])
     bar_elapsed = tick.time - bar_start
     bar_remaining = max(0, bar_duration - bar_elapsed)
     
@@ -346,7 +334,8 @@ def get_live_market_data():
         'weekly_val':  weekly_vp.get('val', 0.0),
     }
     
-    # 3. Strategy Rules (Champion Trend-Momentum Engine - 1:1 Match to XAU_Titan_Pro.mq5)
+    # 3. Closed-bar reconstruction of committed Titan v7.10 reference defaults.
+    # Not proof of attached EA inputs or execution permission.
     # The EA checks at the bar transition:
     # Buy: (close1 > fast_ema[1]) && (fast_ema[1] > slow_ema[1]) && (close1 > trend_ema[1]) && (rsi_val[1] >= 50.0) && (close1 > open1)
     # Sell: (close1 < fast_ema[1]) && (fast_ema[1] < slow_ema[1]) && (close1 < trend_ema[1]) && (rsi_val[1] <= 50.0) && (close1 < open1)
@@ -379,10 +368,10 @@ def get_live_market_data():
     sell_c7_climax_ok = (red_streak < 3)
 
     # 8. S/R Widerstands-Freiraum
-    swing_lookback = df.iloc[-50:-3] if len(df) >= 55 else df.iloc[:-3]
+    swing_lookback = df.iloc[-49:-4]  # EA closed rates[k=3..47], lookback 48
     recent_res = float(swing_lookback['high'].max()) if len(swing_lookback) > 0 else float(cur_bar['close']) + 10.0
     recent_sup = float(swing_lookback['low'].min()) if len(swing_lookback) > 0 else float(cur_bar['close']) - 10.0
-    min_sr_room = 3.00 # $3.00 auf Gold
+    min_sr_room = 300 * float(getattr(sym, 'point', .01))
     buy_c8_sr_ok = not (recent_res > cur_bar['close'] and (recent_res - cur_bar['close']) < min_sr_room)
     sell_c8_sr_ok = not (cur_bar['close'] > recent_sup and (cur_bar['close'] - recent_sup) < min_sr_room)
 
@@ -516,6 +505,7 @@ def get_live_market_data():
         else:
             trend_diagnosis = "ALLE REGELN ERFÜLLT INKL. ANTI-TRAP SCHUTZ! Bereit für M15-Schluss."
 
+    trend_diagnosis = 'M15-Schluss · Referenzkriterien: ' + trend_diagnosis + ' Live-EA-Freigabe unbekannt.'
     short_missing = trend_diagnosis
 
     # Positions
@@ -556,31 +546,37 @@ def get_live_market_data():
         })
 
     # Daily Drawdown Calculation (Blueberry Funded Rule: Day Start Balance / High Water Mark)
-    midnight_dt = server_time.replace(hour=0, minute=0, second=0, microsecond=0)
+    params = gold_parameters() if selected()['id']=='goldm15' else None
+    reset_hour = int(params['RiskResetHourServer']) if params else 0
+    risk_day = (server_time - timedelta(hours=reset_hour)).date().isoformat()
+    midnight_dt = (server_time - timedelta(hours=reset_hour)).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(hours=reset_hour)
     dd_cfg = load_dd_config()
-    manual_active = dd_cfg.get("manual_reset_active", False)
+    manual_requested = dd_cfg.get('manual_reset_active', False)
     reset_ts = dd_cfg.get("reset_timestamp")
+    manual_active = bool(manual_requested and reset_ts and midnight_dt.timestamp() <= reset_ts <= tick.time and dd_cfg.get('reset_date') == risk_day)
     reset_bal = dd_cfg.get("reset_balance", 10000.0)
 
     if manual_active and reset_ts:
         reset_dt = datetime.fromtimestamp(reset_ts, timezone.utc)
         from_dt = max(midnight_dt, reset_dt)
-        deals = mt5.history_deals_get(from_dt, server_time)
+        deals = require_mt5_data(mt5.history_deals_get(from_dt, server_time), 'daily_history')
         realized_today = 0.0
         if deals:
             for d in deals:
                 if d.type in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL):
-                    realized_today += (d.profit + d.swap + d.commission)
+                    realized_today += (d.profit + d.swap + d.commission + getattr(d, 'fee', 0.))
         day_start_bal = float(reset_bal)
     else:
-        deals = mt5.history_deals_get(midnight_dt, server_time)
+        deals = require_mt5_data(mt5.history_deals_get(midnight_dt, server_time), 'daily_history')
         realized_today = 0.0
         if deals:
             for d in deals:
                 if d.type in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL):
-                    realized_today += (d.profit + d.swap + d.commission)
+                    realized_today += (d.profit + d.swap + d.commission + getattr(d, 'fee', 0.))
         day_start_bal = acc.balance - realized_today
 
+    if not all(math.isfinite(v) for v in (realized_today, day_start_bal)) or day_start_bal <= 0:
+        raise HTTPException(503, 'Tageshistorie/-baseline ist ungültig; Risiko unbekannt.')
     daily_ref = max(day_start_bal, acc.balance)
     daily_loss_usd = max(0.0, daily_ref - acc.equity)
     daily_dd_pct = (daily_loss_usd / daily_ref) * 100.0 if daily_ref > 0 else 0.0
@@ -603,6 +599,10 @@ def get_live_market_data():
         "equity": round(acc.equity, 2),
         "realized_today": round(realized_today, 2),
         "manual_active": manual_active,
+        "manual_expired": bool(manual_requested and not manual_active),
+        "risk_day": risk_day,
+        "risk_timezone": "UTC",
+        "risk_reset_hour": reset_hour,
         "reset_balance": round(float(reset_bal), 2) if manual_active else None,
         "reset_time_str": datetime.fromtimestamp(reset_ts, timezone.utc).strftime("%H:%M:%S") if (manual_active and reset_ts) else None
     }
@@ -642,14 +642,25 @@ def get_live_market_data():
         "daily_vp": daily_vp,
         "weekly_vp": weekly_vp,
         "positions": positions,
-        "daily_drawdown": daily_drawdown,
-        "journal": get_cached_trade_journal(selected()['id'], server_time, local_time),
-        "journal_cache": JOURNAL_CACHE
+        "daily_drawdown": daily_drawdown
     }
+    if include_journal:
+        account_id = selected()['id']
+        entries = get_cached_trade_journal(account_id, server_time, local_time)
+        result.update(journal=entries, journal_cache={account_id: entries}, journal_meta=journal_metadata(account_id))
     result.update(account=public_account(selected()), rule_count=len(rules_matrix), exit_goals=[], ea_guard=None)
+    preview = df.iloc[-1]
+    result.update(
+        signal_mode='closed_bar_reference', signal_label='M15-Schluss · Referenzrekonstruktion, keine EA-Freigabe',
+        signal_bar_time=datetime.fromtimestamp(int(cur_bar['time']), timezone.utc).strftime('%H:%M'),
+        signal_bar_time_utc=datetime.fromtimestamp(int(cur_bar['time']), timezone.utc).isoformat(),
+        ea_execution_verified=False, ea_execution_status='unknown',
+        signal_preview={'mode': 'forming_bar_preview', 'label': 'Laufende M15-Kerze · unverbindliche Vorschau',
+                        'close': float(preview['close']), 'rsi14': float(preview['rsi14']),
+                        'ema9': float(preview['ema9']), 'ema21': float(preview['ema21']), 'ema50': float(preview['ema50'])})
     if selected()['id']=='goldm15':
-        params = gold_parameters()
-        result.update(gold_metrics(df['close'].to_numpy(), params))
+        result.update(GOLD_METRICS_CACHE.get(selected(), SYMBOL, TIMEFRAME, cur_bar['time'],
+                                            df['close'].to_numpy(), params, gold_metrics))
         guard = read_guard(GUARD_FILE, tick.time, acc.equity, params, balance=acc.balance)
         result['ea_guard'] = guard
         result['signal_bar_time'] = datetime.fromtimestamp(int(df.iloc[-2]['time']), timezone.utc).strftime('%H:%M')
@@ -667,21 +678,22 @@ def api_accounts():
 @app.get('/api/journal_summary')
 @scoped(mt5)
 def api_journal_summary(account: str = 'titan'):
-    sym = mt5.symbol_info(SYMBOL)
-    server_time = datetime.fromtimestamp(sym.time) if sym else datetime.now()
-    local_time = datetime.now()
+    tick = require_mt5_data(mt5.symbol_info_tick(SYMBOL), 'journal_tick')
+    server_time = datetime.fromtimestamp(tick.time, timezone.utc)
+    local_time = server_time.astimezone(journal_accounting.BERLIN)
     entries = get_cached_trade_journal(account, server_time, local_time)
     JOURNAL_CACHE[account] = entries
     return {
         'account': account,
         'journal': entries,
-        'journal_cache': JOURNAL_CACHE
+        'journal_cache': {account: entries},
+        'journal_meta': journal_metadata(account)
     }
 
 @app.get("/api/status")
 @scoped(mt5)
-def api_status(account: str = 'titan'):
-    data = get_live_market_data()
+def api_status(account: str = 'titan', include_journal: bool = True, light: bool = False):
+    data = get_live_market_data(include_journal=include_journal and not light)
     if data is None:
         raise HTTPException(status_code=500, detail="MT5 nicht verbunden")
     return data
@@ -862,31 +874,67 @@ def api_chart_preview(req: ChartScenarioPreviewRequest, account: str):
 
 @app.post("/api/modify_position")
 @scoped(mt5)
-def api_modify_position(req: ModifyPositionRequest, account: str = 'titan'):
+def api_modify_position(req: ModifyPositionRequest, account: str):
     if not ensure_mt5_init():
         raise HTTPException(status_code=500, detail="MT5 nicht verbunden")
-    positions = mt5.positions_get(ticket=req.ticket)
+    positions = require_mt5_data(mt5.positions_get(ticket=req.ticket), 'position')
     if not positions:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")
     pos = positions[0]
+    if pos.symbol != SYMBOL:
+        raise HTTPException(403, 'Nur XAUUSD-Positionen sind freigegeben.')
     sym = mt5.symbol_info(pos.symbol)
+    if sym is None:
+        raise HTTPException(503, 'Symbolinformationen fehlen.')
     contract_size = sym.trade_contract_size
     vol = pos.volume
     op = pos.price_open
     is_buy = (pos.type == mt5.ORDER_TYPE_BUY)
+    if not all(math.isfinite(v) and v > 0 for v in (contract_size, vol, op)):
+        raise HTTPException(503, 'Positionsdaten sind ungültig.')
     
     target_sl = pos.sl
     target_tp = pos.tp
     if req.sl_usd is not None:
         target_sl = (op + (req.sl_usd / (vol * contract_size))) if is_buy else (op - (req.sl_usd / (vol * contract_size)))
-        target_sl = round(target_sl, sym.digits)
+
     if req.tp_usd is not None:
         target_tp = (op + (req.tp_usd / (vol * contract_size))) if is_buy else (op - (req.tp_usd / (vol * contract_size)))
-        target_tp = round(target_tp, sym.digits)
+
     if req.sl_price is not None:
-        target_sl = round(req.sl_price, sym.digits)
+        target_sl = req.sl_price
     if req.tp_price is not None:
-        target_tp = round(req.tp_price, sym.digits)
+        target_tp = req.tp_price
+    if req.remove_sl:
+        target_sl = 0.0
+    if req.remove_tp:
+        target_tp = 0.0
+
+    tick = mt5.symbol_info_tick(pos.symbol)
+    tick_size = getattr(sym, 'trade_tick_size', 0)
+    point = getattr(sym, 'point', 0)
+    stops = getattr(sym, 'trade_stops_level', None)
+    freeze = getattr(sym, 'trade_freeze_level', None)
+    if (tick is None or not all(math.isfinite(v) and v > 0 for v in (tick_size, point, tick.bid, tick.ask))
+            or stops is None or freeze is None or not all(math.isfinite(v) and v >= 0 for v in (stops, freeze))):
+        raise HTTPException(503, 'Broker-Quote oder Stop-Metadaten fehlen.')
+    reference = tick.bid if is_buy else tick.ask
+    distance = max(stops, freeze) * point
+    for side, target in (('sl', target_sl), ('tp', target_tp)):
+        changed = (getattr(req, side+'_usd') is not None or getattr(req, side+'_price') is not None or getattr(req, 'remove_'+side))
+        if not changed:
+            continue
+        explicit_remove = getattr(req, 'remove_'+side) or getattr(req, side+'_price') == 0
+        if explicit_remove:
+            continue
+        if not math.isfinite(target) or target <= 0:
+            raise HTTPException(422, 'Berechneter Schutzpreis muss endlich und positiv sein.')
+        if abs(target/tick_size - round(target/tick_size)) > 1e-6:
+            raise HTTPException(422, 'Schutzpreis liegt nicht auf der Broker-Tickgröße.')
+        gap = reference-target if (side=='sl') == is_buy else target-reference
+        if gap <= 0 or gap + 1e-9 < distance:
+            raise HTTPException(422, 'Schutzpreis verletzt Broker-Stops-/Freeze-Level.')
+    target_sl, target_tp = round(target_sl, sym.digits), round(target_tp, sym.digits)
         
     request = {
         "action": mt5.TRADE_ACTION_SLTP,
@@ -905,15 +953,19 @@ def api_modify_position(req: ModifyPositionRequest, account: str = 'titan'):
 
 @app.post("/api/close_position")
 @scoped(mt5)
-def api_close_position(req: ClosePositionRequest, account: str = 'titan'):
+def api_close_position(req: ClosePositionRequest, account: str):
     if not ensure_mt5_init():
         raise HTTPException(status_code=500, detail="MT5 nicht verbunden")
-    positions = mt5.positions_get(ticket=req.ticket)
+    positions = require_mt5_data(mt5.positions_get(ticket=req.ticket), 'position')
     if not positions:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")
     pos = positions[0]
+    if pos.symbol != SYMBOL:
+        raise HTTPException(403, 'Nur XAUUSD-Positionen sind freigegeben.')
     sym = mt5.symbol_info(pos.symbol)
     tick = mt5.symbol_info_tick(pos.symbol)
+    if sym is None or tick is None or not all(math.isfinite(v) and v > 0 for v in (tick.bid, tick.ask, pos.volume)):
+        raise HTTPException(503, 'Broker-Quote oder Positionsdaten fehlen/ungültig.')
     is_buy = (pos.type == mt5.ORDER_TYPE_BUY)
     price = tick.bid if is_buy else tick.ask
     order_type = mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY
@@ -940,7 +992,7 @@ def api_close_position(req: ClosePositionRequest, account: str = 'titan'):
 
 @app.post("/api/reset_drawdown")
 @scoped(mt5)
-def api_reset_drawdown(req: ResetDrawdownRequest, account: str = 'titan'):
+def api_reset_drawdown(req: ResetDrawdownRequest, account: str):
     if not ensure_mt5_init():
         raise HTTPException(status_code=500, detail="MT5 nicht verbunden")
     tick = mt5.symbol_info_tick(SYMBOL)
@@ -964,11 +1016,12 @@ def api_reset_drawdown(req: ResetDrawdownRequest, account: str = 'titan'):
     else:
         baseline = float(req.baseline) if (req.baseline is not None and req.baseline > 0) else float(acc.balance)
         server_time = datetime.fromtimestamp(tick.time, timezone.utc)
+        reset_hour = int(gold_parameters()['RiskResetHourServer']) if account=='goldm15' else 0
         cfg = {
             "manual_reset_active": True,
             "reset_balance": baseline,
             "reset_timestamp": int(tick.time),
-            "reset_date": server_time.strftime("%Y-%m-%d")
+            "reset_date": (server_time-timedelta(hours=reset_hour)).date().isoformat()
         }
         save_dd_config(cfg)
         return {
