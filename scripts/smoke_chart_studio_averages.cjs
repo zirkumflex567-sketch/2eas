@@ -57,6 +57,21 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(await page.evaluate(()=>ChartStudioAverages.getConfigs().length),0);
   await quick.locator(".cs-ma-quick-period").fill("34");
   await page.locator("#cs-beta-toggle").click();
+  const catalog=page.locator(".cs-catalog");
+  assert.equal(await catalog.isVisible(),true);
+  await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("weighted moving");
+  assert.equal(await catalog.locator(".cs-catalog-entry").count(),1);
+  await catalog.locator('[data-indicator="wma"] button').click();
+  assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].type,"WMA");
+  await areaCleanup();
+  await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("RSI");
+  await catalog.locator('[data-indicator="rsi"] button').click();
+  assert.equal((await page.evaluate(()=>ChartStudioOscillators.settings())).length,1);
+  await page.evaluate(()=>ChartStudioOscillators.applySettings([]));
+  await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("");
+  async function areaCleanup(){
+    await page.locator('[data-instance="ma1"] [data-action="remove"]').click();
+  }
   const area=page.locator(".cs-ma-editor");
   assert.equal(await area.isVisible(),true);
   await area.locator(".cs-ma-presets button").first().click();
@@ -73,6 +88,18 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(cfg[0].period,34);assert.equal(cfg[0].source,"hlc3");
   assert.equal(cfg[0].color,"#44ffaa");assert.equal(cfg[0].lineWidth,3);
   assert.equal(cfg[0].label,"Trend EMA 34");
+  // Changing only style must not re-transfer the historical series.
+  const priorWrites=await page.evaluate(()=>ChartStudioAverages.diagnostics().dataWrites);
+  await page.evaluate(()=>ChartStudioAverages.edit("ma1","lineWidth",2));
+  await page.evaluate(()=>ChartStudioAverages.edit("ma1","lineWidth",3));
+  await page.evaluate(()=>ChartStudioAverages.edit("ma1","color","#66aaff"));
+  await page.evaluate(()=>ChartStudioAverages.edit("ma1","color","#44ffaa"));
+  assert.equal(await page.evaluate(()=>ChartStudioAverages.diagnostics().dataWrites),priorWrites);
+  await page.evaluate(()=>ChartStudioAverages.edit("ma1","period",35));
+  assert.equal(await page.evaluate(()=>ChartStudioAverages.diagnostics().dataWrites),priorWrites+1);
+  await page.evaluate(()=>ChartStudioAverages.edit("ma1","period",34));
+  assert.equal(await page.evaluate(()=>ChartStudioAverages.diagnostics().dataWrites),priorWrites+2);
+
   await area.locator('[data-instance="ma2"] [data-action="duplicate"]').click();
   assert.equal(await page.evaluate(()=>ChartStudioAverages.getConfigs().length),3);
   await area.locator('[data-instance="ma3"] [data-action="remove"]').click();
@@ -88,6 +115,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   // Account isolation, including persisted original.
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
   assert.equal(await page.evaluate(()=>ChartStudioAverages.getConfigs().length),0);
+  assert.equal(await page.evaluate(()=>ChartStudioAverages.diagnostics().seriesCount),0);
   await area.locator(".cs-ma-presets button").nth(1).click();
   assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].period,50);
   await page.evaluate(()=>ChartStudioBeta.account("titan"));

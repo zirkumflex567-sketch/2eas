@@ -129,3 +129,10 @@ Branch `test/chart-studio-object-manager`: live selectable drawing list, safe la
 ### Chart render deduplication / performance package
 
 Branch `test/chart-studio-incremental-render`: shared dual-32-bit OHLCV fingerprint over **every bar**, including interior historical corrections (not just first/last time or price), used across ChartStudioBeta/Indicators/Oscillators/Averages/ChartTypes. Repeated identical market polls no longer trigger expensive Studio series rebuilds; current-bar price changes still update. SMA20/SMA50/Bollinger20 use lightweight `series.update` when only the last bar changes and indicator toggles are constant. New bars, altered historical bars or changed options force `setData` recomputation. Account/timeframe changes invalidate fingerprints. Test Node fingerprint contract and Chromium identical/live-candle/historical-correction/account/timeframe scenarios with no MT5 writes. **Not** a claimed MT5 source pagination implementation or AT-025 performance budget signoff.
+
+### 2026-10-09 — Incremental /goal execution
+
+- **Merged to main:** PR #17 (`213b751`), prominent EMA quick control, arbitrary 2–500 period, responsive UI; both GitHub PR test workflows passed. Existing EMA/SMA/WMA calculation and persistence retained.
+- **PR #18 / pending CI:** Searchable, read-only catalog for EMA/SMA/WMA, RSI/MACD/ATR/ADX, volume and VWAP. Uses tested indicator modules; browser add/filter checks extend the chart smoke. Task 2.2 remains **partial** until the v5 renderer and native pane manager are implemented and accepted.
+- **Unchanged gates:** 0.7 and task 4 broker writes blocked until authenticated, demo-tested release gate. Task 0.8, 1.8, 2.1 and subsequent stages are **not completed** by either PR.
+- Keep this file aligned with actual merges and CI evidence; never mark /goal fully complete based on drafts or unit tests alone.

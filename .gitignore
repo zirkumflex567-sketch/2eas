@@ -38,3 +38,8 @@ output/audit-ui/*.network.json
 output/audit-ui/*.png
 output/audit-ui/*.json
 output/audit-ui/*.log
+
+# Experimental v5 adapter generated code and npm install
+chart_studio_v5/node_modules/
+chart_studio_v5/dist/
+chart_studio_v5/package-lock.json

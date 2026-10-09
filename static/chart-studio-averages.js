@@ -103,7 +103,7 @@ function refreshSeries(){
  const desired=new Set(state.configs.map(x=>x.id));
  for(const [id,series] of state.series){
   if(desired.has(id))continue;
-  state.chart.removeSeries(series);state.series.delete(id);
+  state.chart.removeSeries(series);state.series.delete(id);state.loaded.delete(id);
  }
  const cache=state.cache;
  if(cache.size>48)cache.clear();
@@ -115,10 +115,16 @@ function refreshSeries(){
       visible:cfg.visible,lastValueVisible:true,priceLineVisible:false});
    state.series.set(cfg.id,series);
   }else series.applyOptions({title,color:cfg.color,lineWidth:cfg.lineWidth,visible:cfg.visible});
-  if(!cfg.visible){series.setData([]);continue}
+  // Hiding is handled by native visibility. Do not erase buffered history.
+  if(!cfg.visible)continue;
   const cacheKey=keyFor(cfg);
+  const dataKey=String(state.signature)+":"+cacheKey;
+  // A styling-only edit must never resend 1000+ historical points.
+  if(state.loaded.get(cfg.id)===dataKey)continue;
   if(!cache.has(cacheKey))cache.set(cacheKey,calculate(state.bars,cfg.type,cfg.period,cfg.source));
   series.setData(cache.get(cacheKey));
+  state.loaded.set(cfg.id,dataKey);
+  state.dataWrites++;
  }
 }
 function optionsSelect(values,value,aria,field,id){
@@ -209,6 +215,9 @@ function updateBars(bars){
 }
 function switchAccount(account){
  if(!state)return;
+ // Remove all series before loading a different account, even when IDs overlap.
+ for(const series of state.series.values())state.chart.removeSeries(series);
+ state.series.clear();state.loaded.clear();
  state.account=account;state.bars=[];state.signature=null;state.cache.clear();
  state.configs=restore(account);redrawEditor();refreshSeries();
 }
@@ -232,7 +241,7 @@ function mount({chart,panel,account="titan"}){
  root.append(heading,info,commands,instances,message);
  panel.append(root);
  state={chart,root,count:counter,items:instances,message,account,configs:restore(account),
-  bars:[],signature:null,series:new Map(),cache:new Map()};
+  bars:[],signature:null,series:new Map(),cache:new Map(),loaded:new Map(),dataWrites:0};
  instances.addEventListener("change",event=>{
   const target=event.target,id=target?.dataset?.id,field=target?.dataset?.field;
   if(!id||!field)return;
@@ -255,5 +264,6 @@ function mount({chart,panel,account="titan"}){
  redrawEditor();refreshSeries();
 }
 window.ChartStudioAverages=Object.freeze({mount,updateBars,switchAccount,getConfigs,
- applySettings,add,edit,remove,calculate,normalize,normalizeList,MAX_INSTANCES});
+ applySettings,add,edit,remove,calculate,normalize,normalizeList,MAX_INSTANCES,
+ diagnostics:()=>state?{account:state.account,dataWrites:state.dataWrites,seriesCount:state.series.size}:null});
 })();

@@ -1,0 +1,30 @@
+# Chart Studio v5 Adapter RFC — staged migration (0.8)
+
+**Decision:** pin `lightweight-charts@5.2.1`, `typescript@5.9.3` and `esbuild@0.25.12` in `chart_studio_v5/package.json`. This is an **opt-in, read-only renderer proof**, not yet a production switchover.
+
+## Current integration and compatibility
+
+- Existing dashboard, data feeds, EA signals, risk guards and all MT5 functionality continue using `static/lightweight-charts.js` (v4). **Do not change the active `app.py` Chart mount in this PR.**
+- v5 replaces `chart.addLineSeries(options)` with `chart.addSeries(LineSeries, options)`, and likewise Candlestick/Histogram. v5 supports `addSeries(..., paneIndex)`, `moveToPane`, `chart.panes()`, and native pane height management.
+- An independent native TypeScript adapter in `chart_studio_v5/src/adapter.ts` currently renders candles, configurable line-instance data, native indicator panes and volume. It rejects invalid/duplicate candles, stale out-of-order updates, unsafe line IDs, and indicator count excess. An account switch clears series and bars; no broker routes are called.
+- Run: `npm install --prefix chart_studio_v5 --package-lock=false --no-audit --no-fund`, `npm --prefix chart_studio_v5 run check`, `npm --prefix chart_studio_v5 run build`, then `node scripts/smoke_chart_studio_v5.cjs` after installing the repository's Playwright Chromium dependencies. CI repeats these steps and stores a screenshot.
+- Source is modular TypeScript. Generated `dist/` is not committed. No LWC 5 script or compiled bundles are shipped to production in this RFC.
+
+## License, provenance and version lock
+
+Lightweight Charts™ is distributed under Apache-2.0; its attribution requirements include linking to TradingView and retaining the upstream NOTICE. The v5 browser fixture includes a link to https://www.tradingview.com/. **Before actual main-dashboard migration**, display the mandatory attribution persistently in the UI and bundle the upstream NOTICE/LICENSE text appropriately (do not substitute a generic source-code link). Refer to https://tradingview.github.io/lightweight-charts/docs/ and https://tradingview.github.io/lightweight-charts/docs/migrations/from-v4-to-v5.
+
+Pin must be reviewed for a security update with an explicit PR rather than `latest` dependency drifting silently. Production third-party asset/CDN injection is not allowed. Offline/local static packaging is the intended deployment.
+
+## Next engineering gates (not claimed by this RFC)
+
+1. Replace v4-specific price/time coordinate and mouse-gesture assumptions behind a versioned adapter interface; stable native price and time scale semantics, including multi-symbol/timeframe subscriptions.
+2. Move production indicator math to v5 native panes **without duplicate render or duplicated EMA calculations**. Implement pane resizing, preserving user settings, true canvas-backed drawing primitives and stop/target draft overlays.
+3. Add robust rollback and v4/v5 screenshot parity on real historical broker data (account-scoped; no foreign-account fallback), responsiveness at 320/390/768/1440 px, full-screen, touch and reduced-motion.
+4. Do not permit any new MT5 mutation from adapter or smoke tests; all real stop adjustments remain behind separate auth/CSRF/guard/revision/idempotency, and demo-user-release gates in Tasks 0.7/4.x.
+5. Only after native browser/Windows-MT5 demo testing, migration review and user acceptance may `app.py` switch to v5. Build currently has **no** production switch.
+
+## Acceptance evidence
+
+- Task 0.8: version and API/license decision plus isolated proof source exist; CI results must be recorded before treating 0.8 as complete.
+- Task 1.8, 2.1: **not completed**. The renderer is isolated and deliberately does not yet replace the production wrapper or implement v5 drawing primitives.
