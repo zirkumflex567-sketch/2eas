@@ -46,7 +46,10 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   title:opts.title??opts.id,priceLineVisible:false,lastValueVisible:true});
  type LineApi=ReturnType<typeof newLine>;
  const averages=new Map<string,LineApi>();
- let volume:ReturnType<typeof chart.addSeries<typeof HistogramSeries>>|null=null;
+ const newVolume=()=>chart.addSeries(HistogramSeries,{priceFormat:{type:"volume"},
+  priceLineVisible:false,lastValueVisible:false},chart.panes().length);
+ type VolumeApi=ReturnType<typeof newVolume>;
+ let volume:VolumeApi|null=null;
  let bars:Candle[]=[],activeAccount=accountId,destroyed=false;
  function guard(){if(destroyed)throw Error("Chart was destroyed")}
  function setCandles(data:readonly Candle[]){
@@ -74,20 +77,19 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  function showVolume(show:boolean){
   guard();
   if(show&&!volume){
-   volume=chart.addSeries(HistogramSeries,{priceFormat:{type:"volume"},
-    priceLineVisible:false,lastValueVisible:false},chart.panes().length);
+   volume=newVolume();
    volume.setData(volumeRows());
-   const pane=chart.panes().at(-1);
+   const pane=chart.panes()[chart.panes().length-1];
    if(pane)pane.setHeight(140);
   }else if(!show&&volume){chart.removeSeries(volume);volume=null}
  }
  function updateLast(c:Candle){
   guard();if(!validBar(c))throw Error("Invalid candle");
-  const prev=bars.at(-1);
+  const prev=bars[bars.length-1];
   if(prev&&c.time<prev.time)throw Error("Cannot update historical bar out of order");
   if(prev&&c.time===prev.time)bars[bars.length-1]={...c};
   else bars.push({...c});
-  price.update(c);if(volume)volume.update(volumeRows().at(-1)!);
+  price.update(c);if(volume)volume.update(volumeRows()[bars.length-1]);
  }
  function removeAverage(id:string){
   guard();const s=averages.get(id);if(!s)return false;
@@ -100,7 +102,7 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   averages.clear();if(volume)volume.setData([]);
  }
  function inspect(){guard();return {version:VERSION,account:activeAccount,
-  candleCount:bars.length,lastTime:bars.at(-1)?.time??null,
+  candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
   averageCount:averages.size,paneCount:chart.panes().length,volumeVisible:!!volume}}
  function destroy(){if(destroyed)return;destroyed=true;chart.remove();averages.clear();volume=null;bars=[]}
  return Object.freeze({setCandles,addAverage,moveAverage,removeAverage,showVolume,
