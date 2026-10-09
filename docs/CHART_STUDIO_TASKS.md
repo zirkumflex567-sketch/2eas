@@ -143,3 +143,9 @@ Branch `test/chart-studio-incremental-render`: shared dual-32-bit OHLCV fingerpr
 - Replay snaps an immutable sorted/validated historical series at Start; step/seek/play show only the as-of prefix. Live bar refreshes cannot add future candles while active.
 - Account/timeframe changes forcibly exit replay, clear the old snapshot and data, and require freshly loaded candles; no replay persistence across accounts.
 - Browser smoke checks frozen as-of progression, no POSTs and context isolation. Test proof must be confirmed before merging. Task 5.6 stays **partial** until multi-indicator, provenance, performance and broker-real replay acceptance.
+
+### Responsive acceptance package (PR #23; review/CI pending)
+
+- Chart Studio panels, indicator catalog, multi-MA editor, scenario form and replay controls use flex wrapping and bounded widths on 320/390/768/1440 viewports rather than cutting off controls.
+- Browser smoke checks a real EMA add, searchable catalog, chart zoom/resize, absence of document-wide horizontal scroll, touch-capable contexts and CSS `prefers-reduced-motion` at 320 px. Four screenshots are saved by the Chart CI workflow.
+- Responsive viewport emulation is **not** the same as physical mobile/hardware touch and does not satisfy broker-connected two-account release gates. Task 1.7 remains partial pending green CI and complete mobile/fullscreen acceptance.
