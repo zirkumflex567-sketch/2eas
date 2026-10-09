@@ -100,11 +100,13 @@ def compute_volume_profile(df_subset, num_bins=24):
     bins = np.linspace(min_p, max_p, num_bins + 1)
     bin_vols = np.zeros(num_bins)
     
-    for _, row in df_subset.iterrows():
-        vol = float(row['tick_volume'])
-        mid = (float(row['high']) + float(row['low'])) / 2.0
-        b_idx = int(np.clip((mid - min_p) / (max_p - min_p) * num_bins, 0, num_bins - 1))
-        bin_vols[b_idx] += vol
+    # Vectorized midpoint binning with unchanged clipping semantics.
+    midpoint = (df_subset['high'].to_numpy(dtype=float) +
+                df_subset['low'].to_numpy(dtype=float)) / 2.0
+    indices = np.clip(((midpoint - min_p) / (max_p - min_p) * num_bins).astype(int),
+                      0, num_bins - 1)
+    bin_vols = np.bincount(indices, weights=df_subset['tick_volume'].to_numpy(dtype=float),
+                           minlength=num_bins).astype(float)
         
     poc_idx = int(np.argmax(bin_vols))
     poc_price = float((bins[poc_idx] + bins[poc_idx+1]) / 2.0)
@@ -153,6 +155,20 @@ def compute_volume_profile(df_subset, num_bins=24):
     }
 
 JOURNAL_CACHE = {}
+JOURNAL_CACHE_AT = {}
+JOURNAL_CACHE_TTL_SEC = 3.0
+
+
+def get_cached_trade_journal(account_id, server_time, local_time):
+    # Called inside the account-verified MT5 lock. Never used for trade/risk writes.
+    now = time.monotonic()
+    if (account_id in JOURNAL_CACHE and
+            now - JOURNAL_CACHE_AT.get(account_id, -1e12) < JOURNAL_CACHE_TTL_SEC):
+        return JOURNAL_CACHE[account_id]
+    entries = build_trade_journal(account_id, server_time, local_time)
+    JOURNAL_CACHE[account_id] = entries
+    JOURNAL_CACHE_AT[account_id] = now
+    return entries
 
 def build_trade_journal(account_id, server_time, local_time):
     cutoff_server = datetime(2026, 10, 8, 23, 0, 0)
@@ -197,11 +213,19 @@ def build_trade_journal(account_id, server_time, local_time):
             })
             
     # 2. Closed Deals (HISTORIE)
+    # Preserve first-matching-deal semantics without O(exits * all_deals).
+    first_by_order, first_by_position = {}, {}
+    for idx, deal in enumerate(deals):
+        first_by_order.setdefault(deal.order, (idx, deal))
+        first_by_position.setdefault(getattr(deal, 'position_id', None), (idx, deal))
     out_deals = [d for d in deals if d.entry == mt5.DEAL_ENTRY_OUT and datetime.fromtimestamp(d.time) >= cutoff_server]
     for d in out_deals:
         d_time = datetime.fromtimestamp(d.time)
-        in_deals = [x for x in deals if x.order == d.order or getattr(x, 'position_id', None) == getattr(d, 'position_id', None)]
-        in_deal = in_deals[0] if in_deals else None
+        matches = [match for match in (
+            first_by_order.get(d.order),
+            first_by_position.get(getattr(d, 'position_id', None))
+        ) if match is not None]
+        in_deal = min(matches, key=lambda match: match[0])[1] if matches else None
         open_price = round(float(in_deal.price if in_deal else d.price), 2)
         close_price = round(float(d.price), 2)
         orig_type = 'SELL' if d.type == mt5.DEAL_TYPE_BUY else 'BUY'
@@ -260,7 +284,7 @@ def get_live_market_data():
     # Indicators
     df['ema9'] = df['close'].ewm(span=9, adjust=False).mean()
     df['ema21'] = df['close'].ewm(span=21, adjust=False).mean()
-    df['ema20'] = df['ema21']
+    df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()  # UI EMA20; separate from EA ema21
     df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
     df['ema200'] = df['close'].ewm(span=200, adjust=False).mean()
     
@@ -606,7 +630,7 @@ def get_live_market_data():
         "weekly_vp": weekly_vp,
         "positions": positions,
         "daily_drawdown": daily_drawdown,
-        "journal": build_trade_journal(selected()['id'], server_time, local_time),
+        "journal": get_cached_trade_journal(selected()['id'], server_time, local_time),
         "journal_cache": JOURNAL_CACHE
     }
     result.update(account=public_account(selected()), rule_count=len(rules_matrix), exit_goals=[], ea_guard=None)
@@ -633,7 +657,7 @@ def api_journal_summary(account: str = 'titan'):
     sym = mt5.symbol_info(SYMBOL)
     server_time = datetime.fromtimestamp(sym.time) if sym else datetime.now()
     local_time = datetime.now()
-    entries = build_trade_journal(account, server_time, local_time)
+    entries = get_cached_trade_journal(account, server_time, local_time)
     JOURNAL_CACHE[account] = entries
     return {
         'account': account,
@@ -881,7 +905,8 @@ HTML_CONTENT = """<!DOCTYPE html>
   <meta charset="UTF-8">
   <title>XAU Titan Pro - Live Cockpit & Volume Profile</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Precompiled offline: no Play-CDN runtime compiler -->
+  <link rel="stylesheet" href="static/tailwind.generated.css">
   <script src="static/lightweight-charts.js"></script>
   <script src="static/stone-chart-effects.js"></script>
   <script src="static/stone-celebrations.js"></script>
@@ -1342,7 +1367,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <!-- 4. JAVASCRIPT ENGINE -->
   <script>
     let chart, candleSeries, ema20Series, ema50Series, ema200Series;
-    let emaGlowSeries = [[], [], []];
+    // Sparse overlay FX no longer allocates six transparent chart series.
     let srLines = {};
     let isInitialLoad = true;
     let lastCandleTime = 0;
@@ -1366,6 +1391,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     let candlesBusy = null;
     let showEAStatusText = localStorage.getItem('chart_show_ea_status') !== 'false';
     let currentChartMarkers = [];
+    let matrixSignature = null, vpSignature = null;
 
     function updateEAStatusButtonUI() {
       const btn = document.getElementById('toggle-ea-status-btn');
@@ -1438,6 +1464,8 @@ HTML_CONTENT = """<!DOCTYPE html>
       document.getElementById('live-spread').textContent = 'Spr: —';
       document.getElementById('dd-reset-tag').classList.add('hidden');
       document.getElementById('positions-list').textContent = 'Kontodaten werden geladen …';
+      delete document.getElementById('positions-list').dataset.structure;
+      matrixSignature = null; vpSignature = null;
       renderJournal();
       document.getElementById('matrix-tbody').replaceChildren();
       document.getElementById('exit-goals').replaceChildren();
@@ -1454,7 +1482,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         srLines = {};
         const levelLegend = document.getElementById('chart-level-legend');
         if (levelLegend) { levelLegend.replaceChildren(); levelLegend.hidden = true; }
-        for (const series of [candleSeries,ema20Series,ema50Series,ema200Series,...emaGlowSeries.flat()]) series.setData([]);
+        for (const series of [candleSeries,ema20Series,ema50Series,ema200Series]) series.setData([]);
       }
       isInitialLoad = true;
       lastCandleTime = 0;
@@ -1617,16 +1645,11 @@ HTML_CONTENT = """<!DOCTYPE html>
         wickDownColor: '#f43f5e', wickUpColor: '#10b981',
       });
 
-      // Native glow series: same plot / price scale / timestamps as the EMAs.
-      // Draw under the actual 2px EMA cores; no independently traced EMA canvas.
-      const glowOpts = {color:'rgba(0,0,0,0)',lineWidth:4,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false};
-      emaGlowSeries = Array.from({length:3},()=>[
-        chart.addLineSeries({...glowOpts}), chart.addLineSeries({...glowOpts,lineWidth:3})
-      ]);
+      // Intermittent glow is rendered only on the transparent FX canvas.
       ema20Series  = chart.addLineSeries({ color: '#00d2ff', lineWidth: 2, title: 'EMA20' });
       ema50Series  = chart.addLineSeries({ color: '#ff9f43', lineWidth: 2, title: 'EMA50' });
       ema200Series = chart.addLineSeries({ color: '#a55eea', lineWidth: 2, title: 'EMA200' });
-      try { window.StoneChartFX?.attach({chart, host:container, candleSeries, emaSeries:[ema20Series,ema50Series,ema200Series], glowSeries:emaGlowSeries}); } catch (_) {}
+      try { window.StoneChartFX?.attach({chart, host:container, candleSeries, emaSeries:[ema20Series,ema50Series,ema200Series]}); } catch (_) {}
       try { window.StoneCelebration?.applyChartSettings(); } catch (_) {}
 
       // Robust ResizeObserver
@@ -1772,16 +1795,6 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
     }
 
-    function syncEmaGlows(sets, incremental = false) {
-      for (let i=0;i<emaGlowSeries.length;i++) {
-        const points=sets[i];
-        if (!Array.isArray(points) || !points.length) continue;
-        for (const series of emaGlowSeries[i]) {
-          if (incremental) series.update(points[points.length-1]);
-          else series.setData(points);
-        }
-      }
-    }
     // --- SMOOTH CANDLES LOAD (NO JUMPING & PRESERVES ZOOM) ---
     async function loadCandles() {
       const generation = accountGeneration;
@@ -1804,7 +1817,6 @@ HTML_CONTENT = """<!DOCTYPE html>
           ema20Series.setData(data.ema20);
           ema50Series.setData(data.ema50);
           ema200Series.setData(data.ema200);
-          syncEmaGlows([data.ema20, data.ema50, data.ema200]);
           updateChartSRLines(data.sr_levels, curPrice);
           applyOptimalChartView(data.candles.length);
           isInitialLoad = false;
@@ -1815,7 +1827,6 @@ HTML_CONTENT = """<!DOCTYPE html>
             ema20Series.update(data.ema20[data.ema20.length - 1]);
             ema50Series.update(data.ema50[data.ema50.length - 1]);
             ema200Series.update(data.ema200[data.ema200.length - 1]);
-            syncEmaGlows([data.ema20, data.ema50, data.ema200], true);
           } else {
             // New bar: keep exact user zoom & position with 12-bar right offset
             const curRange = chart.timeScale().getVisibleLogicalRange();
@@ -1826,7 +1837,6 @@ HTML_CONTENT = """<!DOCTYPE html>
             ema20Series.setData(data.ema20);
             ema50Series.setData(data.ema50);
             ema200Series.setData(data.ema200);
-          syncEmaGlows([data.ema20, data.ema50, data.ema200]);
 
             if (curRange) {
               if (wasAtEnd) {
@@ -2001,6 +2011,9 @@ HTML_CONTENT = """<!DOCTYPE html>
     }
 
     function renderMatrix(rules) {
+      const signature = JSON.stringify(rules);
+      if (matrixSignature === signature) return;
+      matrixSignature = signature;
       const tbody = document.getElementById('matrix-tbody');
       tbody.innerHTML = rules.map((r,index) => `
         <tr class="hover-row transition-colors stone-target-row stone-target-row--${index % 5}">
@@ -2031,6 +2044,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     // --- VOLUME PROFILE RENDERER ---
     function switchVPTab(tab) {
       currentVPTab = tab;
+      vpSignature = null;
       document.getElementById('vp-tab-daily').className = (tab === 'daily') ? 'px-2.5 py-0.5 rounded-md font-bold bg-blue-600 text-white cursor-pointer' : 'px-2.5 py-0.5 rounded-md font-bold opacity-60 cursor-pointer';
       document.getElementById('vp-tab-weekly').className = (tab === 'weekly') ? 'px-2.5 py-0.5 rounded-md font-bold bg-blue-600 text-white cursor-pointer' : 'px-2.5 py-0.5 rounded-md font-bold opacity-60 cursor-pointer';
       if (currentData) renderVolumeProfile(currentData);
@@ -2039,6 +2053,9 @@ HTML_CONTENT = """<!DOCTYPE html>
     function renderVolumeProfile(data) {
       const vp = (currentVPTab === 'daily') ? data.daily_vp : data.weekly_vp;
       if (!vp || !vp.histogram) return;
+      const signature = currentVPTab + JSON.stringify(vp);
+      if (vpSignature === signature) return;
+      vpSignature = signature;
 
       document.getElementById('vp-summary-badge').innerHTML = `
         <span class="text-amber-500 font-bold">POC: $${vp.poc.toFixed(2)}</span> | 
@@ -2091,24 +2108,37 @@ HTML_CONTENT = """<!DOCTYPE html>
       const list = document.getElementById('positions-list');
       const badge = document.getElementById('pos-count-badge');
       badge.innerText = `${positions.length} Aktiv`;
+      if (!list.dataset.dirtyBound) {
+        list.addEventListener('input', event => {
+          if (event.target.matches('input[id^="sl-input-"], input[id^="tp-input-"]')) {
+            event.target.dataset.dirty = 'true';
+          }
+        });
+        list.dataset.dirtyBound = '1';
+      }
+      const structure = positions.map(pos => [pos.ticket,pos.type,pos.volume,pos.open_price].join(':')).join('|');
 
       if (positions.length === 0) {
-        list.innerHTML = `<div class="py-6 flex items-center justify-center text-sub text-xs">Aktuell keine offenen Positionen auf XAUUSD. Der EA scannt den Markt bei jedem M15-Kerzenschluss (:00, :15, :30, :45).</div>`;
+        if (list.dataset.structure !== '') {
+          list.innerHTML = `<div class="py-6 flex items-center justify-center text-sub text-xs">Aktuell keine offenen Positionen auf XAUUSD. Der EA scannt den Markt bei jedem M15-Kerzenschluss (:00, :15, :30, :45).</div>`;
+          list.dataset.structure = '';
+        }
         return;
       }
 
-      list.innerHTML = positions.map(p => `
-        <div class="p-3 rounded-xl ticker-bg border flex flex-wrap items-center justify-between gap-3 text-xs mb-2">
+      if (list.dataset.structure !== structure) {
+        list.innerHTML = positions.map(p => `
+        <div data-position-ticket="${p.ticket}" class="p-3 rounded-xl ticker-bg border flex flex-wrap items-center justify-between gap-3 text-xs mb-2">
           <div class="flex items-center gap-2.5">
             <span class="px-2 py-1 rounded-md font-bold font-mono text-[11px] text-white ${p.type === 'BUY' ? 'bg-emerald-600' : 'bg-rose-600'}">
               ${p.type} ${p.volume} Lot
             </span>
             <span class="font-mono font-bold text-xs">#${p.ticket} @ $${p.open_price.toFixed(2)}</span>
-            <span class="text-sub font-mono text-[10px]">Aktuell: $${p.current_price.toFixed(2)}</span>
+            <span data-position-current class="text-sub font-mono text-[10px]">Aktuell: &#36;${p.current_price.toFixed(2)}</span>
           </div>
 
           <div class="font-mono text-right">
-            <span class="font-extrabold text-sm ${p.profit_usd >= 0 ? 'text-emerald-500' : 'text-rose-500'}">
+            <span data-position-pnl class="font-extrabold text-sm ${p.profit_usd >= 0 ? 'text-emerald-500' : 'text-rose-500'}">
               ${p.profit_usd >= 0 ? '+' : ''}$${p.profit_usd.toFixed(2)} (${p.profit_pct >= 0 ? '+' : ''}${p.profit_pct.toFixed(2)}%)
             </span>
           </div>
@@ -2136,6 +2166,28 @@ HTML_CONTENT = """<!DOCTYPE html>
           </button>
         </div>
       `).join('');
+        list.dataset.structure = structure;
+      }
+      for (const pos of positions) {
+        const row = list.querySelector('[data-position-ticket="' + pos.ticket + '"]');
+        if (!row) continue;
+        const price = row.querySelector('[data-position-current]');
+        if (price) price.textContent = 'Aktuell: ' + String.fromCharCode(36) + pos.current_price.toFixed(2);
+        const pnl = row.querySelector('[data-position-pnl]');
+        if (pnl) {
+          pnl.textContent = (pos.profit_usd >= 0 ? '+' : '') + String.fromCharCode(36) + pos.profit_usd.toFixed(2) +
+            ' (' + (pos.profit_pct >= 0 ? '+' : '') + pos.profit_pct.toFixed(2) + '%)';
+          pnl.classList.toggle('text-emerald-500', pos.profit_usd >= 0);
+          pnl.classList.toggle('text-rose-500', pos.profit_usd < 0);
+        }
+        for (const [id, value] of [['sl-input-' + pos.ticket,pos.sl_usd],
+                                  ['tp-input-' + pos.ticket,pos.tp_usd]]) {
+          const input = document.getElementById(id);
+          if (input && document.activeElement !== input && input.dataset.dirty !== 'true') {
+            input.value = value.toFixed(2);
+          }
+        }
+      }
     }
 
     // Journal selection is independent from the account that controls orders.
@@ -2409,6 +2461,10 @@ HTML_CONTENT = """<!DOCTYPE html>
         });
         const result = await res.json();
         if (result.success) {
+          for (const id of [`sl-input-${ticket}`,`tp-input-${ticket}`]) {
+            const input = document.getElementById(id);
+            if (input) delete input.dataset.dirty;
+          }
           alert(`Position #${ticket} in MT5 erfolgreich aktualisiert!`);
           updateStatus();
         } else {

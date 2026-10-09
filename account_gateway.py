@@ -2,6 +2,7 @@
 import ctypes
 import ntpath
 import threading
+import atexit
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
@@ -19,6 +20,27 @@ ACCOUNTS = {
 }
 _selected = ContextVar('dashboard_account', default='titan')
 _lock = threading.RLock()
+_attached_mt5 = None
+_attached_account = None
+
+
+def _disconnect(mt5):
+    """Call only while holding _lock; never keep a session after identity failure."""
+    global _attached_mt5, _attached_account
+    try:
+        mt5.shutdown()
+    finally:
+        _attached_mt5 = None
+        _attached_account = None
+
+
+def _shutdown_at_exit():
+    with _lock:
+        if _attached_mt5 is not None:
+            _disconnect(_attached_mt5)
+
+
+atexit.register(_shutdown_at_exit)
 
 
 def selected():
@@ -82,21 +104,44 @@ def verify_identity(mt5, account):
 
 @contextmanager
 def session(mt5, account='titan'):
+    """Reuse a verified terminal between reads; isolate every account under one lock.
+
+    Switching terminals always reattaches. Every request re-verifies login,
+    server, terminal path and connection state; a mismatch fails closed.
+    """
+    global _attached_mt5, _attached_account
     if account not in ACCOUNTS:
         raise HTTPException(400, 'Unbekannter Account.')
     spec = ACCOUNTS[account]
     with _lock:
         if not terminal_running(spec['terminal']):
+            if _attached_mt5 is mt5:
+                _disconnect(mt5)
             raise HTTPException(503, f"{spec['name']}: MT5-Terminal läuft nicht. Bitte selbst öffnen.")
         token = _selected.set(account)
         try:
-            mt5.shutdown()
-            if not mt5.initialize(spec['terminal'], portable=spec['portable'], timeout=5000):
-                raise HTTPException(503, f"{spec['name']}: MT5-Verbindung fehlgeschlagen.")
-            verify_identity(mt5, spec)
+            # A cached handle may have been detached externally (terminal restart
+            # or test adapter swap). Reattach once, then verify identity anew.
+            reused = _attached_mt5 is mt5 and _attached_account == account
+            if reused:
+                try:
+                    attached = bool(mt5.account_info()) and bool(mt5.terminal_info())
+                except (TypeError, AttributeError):
+                    attached = False
+            else:
+                attached = False
+            if not attached:
+                _disconnect(mt5)
+                if not mt5.initialize(spec['terminal'], portable=spec['portable'], timeout=5000):
+                    raise HTTPException(503, f"{spec['name']}: MT5-Verbindung fehlgeschlagen.")
+                _attached_mt5, _attached_account = mt5, account
+            try:
+                verify_identity(mt5, spec)
+            except Exception:
+                _disconnect(mt5)
+                raise
             yield spec
         finally:
-            mt5.shutdown()
             _selected.reset(token)
 
 

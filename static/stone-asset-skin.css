@@ -38,8 +38,8 @@ body.theme-stone .glass-card {
 body.theme-stone .glass-card::before {
   opacity: .27;
   background:
-    url("stone-assets/ready/27_broken_corner_ornament.png") left top / 98px auto no-repeat,
-    url("stone-assets/ready/27_broken_corner_ornament.png") right bottom / 98px auto no-repeat;
+    url("stone-assets/ready/27_broken_corner_ornament.webp") left top / 98px auto no-repeat,
+    url("stone-assets/ready/27_broken_corner_ornament.webp") right bottom / 98px auto no-repeat;
   filter: none;
   mix-blend-mode: screen;
 }
@@ -59,7 +59,7 @@ body.theme-stone .glass-card:hover {
 body.theme-stone nav.stone-asset-nav {
   padding: 18px 22px !important;
   border: 16px solid transparent !important;
-  border-image: url("stone-assets/ready/15_header_command_slab.png") 130 160 130 160 / 20px / 0 stretch !important;
+  border-image: url("stone-assets/ready/15_header_command_slab.webp") 130 160 130 160 / 20px / 0 stretch !important;
   background:
     linear-gradient(95deg, rgba(8, 21, 27, .91), rgba(16, 26, 32, .96) 51%, rgba(8, 17, 23, .94)),
     url("stone-assets/ready/07_brushed_gunmetal_tile.webp") center / 470px repeat !important;
@@ -68,7 +68,7 @@ body.theme-stone header.stone-asset-header {
   padding: 19px 22px !important;
   gap: 12px 20px;
   border: 13px solid transparent !important;
-  border-image: url("stone-assets/ready/15_header_command_slab.png") 135 165 130 165 / 20px / 0 stretch !important;
+  border-image: url("stone-assets/ready/15_header_command_slab.webp") 135 165 130 165 / 20px / 0 stretch !important;
   background:
     linear-gradient(95deg, rgba(5,19,28,.89), rgba(15,25,30,.96) 52%, rgba(40,28,21,.90)),
     url("stone-assets/ready/09_bionic_inlay_tile.webp") center / 480px repeat !important;
@@ -81,7 +81,7 @@ body.theme-stone header.stone-asset-header h1 {
 }
 body.theme-stone .stone-cockpit-crest {
   width: 42px; height: 42px;
-  background: url("stone-assets/ready/25_rune_crest_emblem.png") center / contain no-repeat !important;
+  background: url("stone-assets/ready/25_rune_crest_emblem.webp") center / contain no-repeat !important;
   border: none; box-shadow: none; color: transparent;
   filter: drop-shadow(0 0 8px rgba(43,197,242,.45));
   animation: stone-asset-crest 5s ease-in-out infinite;
@@ -89,14 +89,14 @@ body.theme-stone .stone-cockpit-crest {
 body.theme-stone .account-tab {
   position: relative;
   border: 10px solid transparent !important;
-  border-image: url("stone-assets/ready/37_tab_idle_stone.png") 75 fill / 11px / 0 stretch !important;
+  border-image: url("stone-assets/ready/37_tab_idle_stone.webp") 75 fill / 11px / 0 stretch !important;
   background: #18242b !important;
   border-radius: 0 !important;
   transform: none !important;
   transition: filter .2s, box-shadow .2s;
 }
 body.theme-stone .account-tab[aria-pressed="true"] {
-  border-image-source: url("stone-assets/ready/38_tab_selected_cyan.png") !important;
+  border-image-source: url("stone-assets/ready/38_tab_selected_cyan.webp") !important;
   color: #e6fbff; filter: drop-shadow(0 0 6px rgba(66,216,249,.35));
 }
 body.theme-stone .account-tab:hover { filter: brightness(1.16); }
@@ -119,7 +119,7 @@ body.theme-stone .stone-asset-panel .font-black {
 }
 body.theme-stone .stone-asset-panel--chart {
   border: 22px solid transparent !important;
-  border-image: url("stone-assets/ready/12_chart_frame_wide.png") 140 170 150 170 / 25px / 0 stretch !important;
+  border-image: url("stone-assets/ready/12_chart_frame_wide.webp") 140 170 150 170 / 25px / 0 stretch !important;
   padding: 16px 18px 20px !important;
   background:
     linear-gradient(rgba(6, 12, 18, .94), rgba(8, 20, 24, .95)),
@@ -136,7 +136,7 @@ body.theme-stone .stone-chart-stage > div:first-child {
 }
 body.theme-stone .stone-side-volume {
   border: 17px solid transparent !important;
-  border-image: url("stone-assets/ready/13_volume_frame_tall.png") 160 130 160 130 / 21px / 0 stretch !important;
+  border-image: url("stone-assets/ready/13_volume_frame_tall.webp") 160 130 160 130 / 21px / 0 stretch !important;
   border-radius: 0 !important;
   background:
     linear-gradient(rgba(5, 12, 16, .86),rgba(6, 15, 19, .93)),
@@ -148,20 +148,20 @@ body.theme-stone .stone-volume-title {
   text-shadow: 0 0 11px rgba(53,204,246,.46);
 }
 body.theme-stone .stone-mini-track {
-  background: #071116 url("stone-assets/ready/44_volume_bar_inactive.png") center / 100% 100% no-repeat;
+  background: #071116 url("stone-assets/ready/44_volume_bar_inactive.webp") center / 100% 100% no-repeat;
 }
 body.theme-stone .stone-mini-fill {
-  background: url("stone-assets/ready/42_volume_bar_cyan.png") left center / 100% 100% no-repeat;
+  background: url("stone-assets/ready/42_volume_bar_cyan.webp") left center / 100% 100% no-repeat;
 }
 body.theme-stone .stone-mini-fill[data-kind="poc"] {
-  background-image: url("stone-assets/ready/43_volume_bar_gold.png");
+  background-image: url("stone-assets/ready/43_volume_bar_gold.webp");
 }
 body.theme-stone .stone-mini-fill[data-kind="off"] {
-  background-image: url("stone-assets/ready/44_volume_bar_inactive.png");
+  background-image: url("stone-assets/ready/44_volume_bar_inactive.webp");
 }
 body.theme-stone .stone-asset-panel--volume {
   border: 19px solid transparent !important;
-  border-image: url("stone-assets/ready/14_long_volume_plate.png") 115 150 115 150 / 21px / 0 stretch !important;
+  border-image: url("stone-assets/ready/14_long_volume_plate.webp") 115 150 115 150 / 21px / 0 stretch !important;
 }
 body.theme-stone #vp-histogram-container {
   background: linear-gradient(180deg, rgba(7, 13, 18, .80), rgba(14, 27, 32, .65)),
@@ -169,33 +169,33 @@ body.theme-stone #vp-histogram-container {
   padding: 16px !important;
 }
 body.theme-stone #vp-histogram-container .vp-bar {
-  background: url("stone-assets/ready/42_volume_bar_cyan.png") left center / 100% 100% no-repeat;
+  background: url("stone-assets/ready/42_volume_bar_cyan.webp") left center / 100% 100% no-repeat;
   border: 0 !important;
   box-shadow: 0 0 8px rgba(36,170,226,.30);
 }
 body.theme-stone #vp-histogram-container .vp-bar.bg-amber-500,
 body.theme-stone #vp-histogram-container .vp-bar[class*="amber"] {
-  background-image: url("stone-assets/ready/43_volume_bar_gold.png");
+  background-image: url("stone-assets/ready/43_volume_bar_gold.webp");
 }
 body.theme-stone .stone-asset-panel--diagnostic {
   border: 17px solid transparent !important;
-  border-image: url("stone-assets/ready/16_diagnostic_core_panel.png") 125 140 125 140 / 20px / 0 stretch !important;
+  border-image: url("stone-assets/ready/16_diagnostic_core_panel.webp") 125 140 125 140 / 20px / 0 stretch !important;
   background:
     linear-gradient(rgba(9,17,22,.87),rgba(9,17,22,.94)),
     url("stone-assets/ready/09_bionic_inlay_tile.webp") center / 290px repeat !important;
 }
 body.theme-stone .stone-asset-panel--diagnostic .stone-edge-light {
-  background: url("stone-assets/ready/29_electric_corner_glow.png") right top / contain no-repeat !important;
+  background: url("stone-assets/ready/29_electric_corner_glow.webp") right top / contain no-repeat !important;
   width: 108px; height: 108px; opacity: .76; z-index: 0 !important;
 }
 /* Art-directed accent: the tall #11 slate is a subtle side relief, not a stretched data panel. */
 body.theme-stone .stone-asset-panel--diagnostic::before {
-  background: url("stone-assets/ready/11_master_dashboard_panel.png") right 8px center / 112px auto no-repeat !important;
+  background: url("stone-assets/ready/11_master_dashboard_panel.webp") right 8px center / 112px auto no-repeat !important;
   opacity: .14 !important;
   mix-blend-mode: luminosity;
 }
 body.theme-stone .stone-asset-panel--chart::before {
-  background: url("stone-assets/ready/23_blue_crack_emissive.png") top 5px right 10px / 34% 76px no-repeat !important;
+  background: url("stone-assets/ready/23_blue_crack_emissive.webp") top 5px right 10px / 34% 76px no-repeat !important;
   opacity: .24 !important;
   mix-blend-mode: screen;
 }
@@ -208,14 +208,14 @@ body.theme-stone .stone-asset-panel--chart::after {
   to { background-position: 165% top; }
 }
 body.theme-stone #sell-bar {
-  background: url("stone-assets/ready/45_risk_fill_red.png") left center / 100% 100% no-repeat !important;
+  background: url("stone-assets/ready/45_risk_fill_red.webp") left center / 100% 100% no-repeat !important;
 }
 body.theme-stone #buy-bar {
-  background: url("stone-assets/ready/46_readiness_fill_green.png") left center / 100% 100% no-repeat !important;
+  background: url("stone-assets/ready/46_readiness_fill_green.webp") left center / 100% 100% no-repeat !important;
 }
 body.theme-stone .stone-asset-panel--matrix {
   border: 22px solid transparent !important;
-  border-image: url("stone-assets/ready/19_entry_matrix_frame.png") 150 180 155 180 / 27px / 0 stretch !important;
+  border-image: url("stone-assets/ready/19_entry_matrix_frame.webp") 150 180 155 180 / 27px / 0 stretch !important;
   background:
     linear-gradient(180deg, rgba(3, 12, 18, .96), rgba(8, 19, 24, .96)),
     url("stone-assets/ready/03_obsidian_smoked_tile.webp") center / 400px repeat !important;
@@ -229,19 +229,19 @@ body.theme-stone .stone-asset-panel--matrix table tbody tr:hover {
 }
 body.theme-stone .stone-asset-panel--guard {
   border: 14px solid transparent !important;
-  border-image: url("stone-assets/ready/20_guard_warning_plaque.png") 100 120 100 120 / 16px / 0 stretch !important;
+  border-image: url("stone-assets/ready/20_guard_warning_plaque.webp") 100 120 100 120 / 16px / 0 stretch !important;
 }
 body.theme-stone .stone-asset-panel--positions {
   border: 19px solid transparent !important;
-  border-image: url("stone-assets/ready/17_trade_ticket_cartridge.png") 155 140 150 140 / 23px / 0 stretch !important;
+  border-image: url("stone-assets/ready/17_trade_ticket_cartridge.webp") 155 140 150 140 / 23px / 0 stretch !important;
 }
 body.theme-stone .stone-asset-panel--journal {
   border: 18px solid transparent !important;
-  border-image: url("stone-assets/ready/18_journal_stone_plate.png") 135 160 130 160 / 21px / 0 stretch !important;
+  border-image: url("stone-assets/ready/18_journal_stone_plate.webp") 135 160 130 160 / 21px / 0 stretch !important;
 }
 body.theme-stone .stone-asset-panel--positions input[type=number],
 body.theme-stone #dd-reset-input {
-  background: #071218 url("stone-assets/ready/36_input_recessed_field.png") center / 100% 100% no-repeat !important;
+  background: #071218 url("stone-assets/ready/36_input_recessed_field.webp") center / 100% 100% no-repeat !important;
   color: #d9faff !important;
   border-color: rgba(82, 163, 187, .6) !important;
 }
@@ -250,7 +250,7 @@ body.theme-stone .stone-theme-dock button,
 body.theme-stone #dd-reset-button {
   background:
     linear-gradient(rgba(7, 17, 23, .22), rgba(7, 17, 23, .22)),
-    url("stone-assets/ready/31_button_idle_blue.png") center / 100% 100% no-repeat !important;
+    url("stone-assets/ready/31_button_idle_blue.webp") center / 100% 100% no-repeat !important;
   border: 1px solid rgba(79, 146, 170, .58) !important;
   border-radius: 4px !important;
   color: #dceff3;
@@ -260,7 +260,7 @@ body.theme-stone .stone-asset-panel button.bg-blue-600,
 body.theme-stone .stone-theme-dock button[aria-pressed="true"],
 body.theme-stone #vp-tab-daily.bg-blue-600,
 body.theme-stone #vp-tab-weekly.bg-blue-600 {
-  background-image: url("stone-assets/ready/32_button_active_blue.png") !important;
+  background-image: url("stone-assets/ready/32_button_active_blue.webp") !important;
   color: #d4faff !important;
   box-shadow: 0 0 11px rgba(28, 192, 230, .22);
 }
@@ -271,7 +271,7 @@ body.theme-stone .stone-theme-dock button:hover {
 body.theme-stone button:disabled { opacity: .45; cursor: not-allowed; }
 body.theme-stone #dd-reset-modal .glass-card {
   border: 19px solid transparent !important;
-  border-image: url("stone-assets/ready/49_modal_warning_frame.png") 145 145 145 145 / 22px / 0 stretch !important;
+  border-image: url("stone-assets/ready/49_modal_warning_frame.webp") 145 145 145 145 / 22px / 0 stretch !important;
   background:
     linear-gradient(rgba(10, 18, 25, .97),rgba(6, 14, 19, .97)),
     url("stone-assets/ready/02_slate_fractured_tile.webp") center / 480px repeat !important;
@@ -279,16 +279,16 @@ body.theme-stone #dd-reset-modal .glass-card {
 body.theme-stone #stone-rails .left,
 body.theme-stone #stone-rails .right {
   width: 50px;
-  background: url("stone-assets/ready/21_cyan_side_circuit.png") center / 100% 100% no-repeat;
+  background: url("stone-assets/ready/21_cyan_side_circuit.webp") center / 100% 100% no-repeat;
   opacity: .68;
 }
 body.theme-stone #stone-rails .right {
-  background-image: url("stone-assets/ready/22_amber_side_circuit.png");
+  background-image: url("stone-assets/ready/22_amber_side_circuit.webp");
 }
 body.theme-stone #stone-rails svg { opacity: .40; }
 body.theme-stone .stone-theme-dock {
   border: 9px solid transparent;
-  border-image: url("stone-assets/ready/15_header_command_slab.png") 130 160 130 160 / 10px / 0 stretch;
+  border-image: url("stone-assets/ready/15_header_command_slab.webp") 130 160 130 160 / 10px / 0 stretch;
   border-radius: 0;
   background: linear-gradient(#0d1d25,#061016);
 }
@@ -338,23 +338,23 @@ body.theme-stone #stone-mini-volume .stone-mini-fill {
   overflow: hidden;
   border-radius: 2px 5px 5px 2px !important;
   transition: filter .28s ease, width .35s ease;
-  background: url("stone-assets/ready/42_volume_bar_cyan.png") left center / 100% 100% no-repeat !important;
+  background: url("stone-assets/ready/42_volume_bar_cyan.webp") left center / 100% 100% no-repeat !important;
   filter: drop-shadow(0 0 4px rgba(67,214,255,.64));
 }
 body.theme-stone #vp-histogram-container .vp-bar[data-tone="amber"],
 body.theme-stone #stone-mini-volume .stone-mini-fill[data-tone="amber"] {
-  background-image: url("stone-assets/ready/43_volume_bar_gold.png") !important;
+  background-image: url("stone-assets/ready/43_volume_bar_gold.webp") !important;
   filter: hue-rotate(-7deg) drop-shadow(0 0 6px rgba(245,161,70,.68));
 }
 body.theme-stone #vp-histogram-container .vp-bar[data-kind="poc"],
 body.theme-stone #stone-mini-volume .stone-mini-fill[data-kind="poc"] {
-  background-image: url("stone-assets/ready/43_volume_bar_gold.png") !important;
+  background-image: url("stone-assets/ready/43_volume_bar_gold.webp") !important;
   box-shadow: inset 0 1px rgba(255,240,194,.8), 0 0 8px rgba(252,166,59,.57) !important;
   filter: brightness(1.18) drop-shadow(0 0 9px rgba(252,186,73,.78)) !important;
 }
 body.theme-stone #vp-histogram-container .vp-bar[data-kind="off"],
 body.theme-stone #stone-mini-volume .stone-mini-fill[data-kind="off"] {
-  background-image: url("stone-assets/ready/44_volume_bar_inactive.png") !important;
+  background-image: url("stone-assets/ready/44_volume_bar_inactive.webp") !important;
   filter: brightness(.84) saturate(.45) !important;
   box-shadow: none !important;
 }
@@ -516,19 +516,19 @@ body.theme-stone .stone-asset-panel--matrix table td span[class*="rose"] {
 /* Actual volume rows get an obvious chromatic outer bloom and tiny light sweep. */
 body.theme-stone #vp-histogram-container .vp-bar[data-tone="cyan"],
 body.theme-stone #stone-mini-volume .stone-mini-fill[data-tone="cyan"] {
-  background-image: url("stone-assets/ready/42_volume_bar_cyan.png") !important;
+  background-image: url("stone-assets/ready/42_volume_bar_cyan.webp") !important;
   box-shadow: 0 0 6px #00d3ff, 0 0 17px rgba(26, 207, 255, .48) !important;
   filter: brightness(1.25) saturate(1.4) drop-shadow(0 0 10px rgba(9,211,255,.83)) !important;
 }
 body.theme-stone #vp-histogram-container .vp-bar[data-tone="amber"],
 body.theme-stone #stone-mini-volume .stone-mini-fill[data-tone="amber"] {
-  background-image: url("stone-assets/ready/43_volume_bar_gold.png") !important;
+  background-image: url("stone-assets/ready/43_volume_bar_gold.webp") !important;
   box-shadow: 0 0 7px #f79b36, 0 0 17px rgba(255,149,41,.5) !important;
   filter: brightness(1.3) saturate(1.45) drop-shadow(0 0 10px rgba(255,155,46,.88)) !important;
 }
 body.theme-stone #vp-histogram-container .vp-bar[data-kind="poc"],
 body.theme-stone #stone-mini-volume .stone-mini-fill[data-kind="poc"] {
-  background-image: url("stone-assets/ready/43_volume_bar_gold.png") !important;
+  background-image: url("stone-assets/ready/43_volume_bar_gold.webp") !important;
   box-shadow: 0 0 7px rgba(255,218,117,1), 0 0 23px rgba(255,169,36,.85), 0 0 38px rgba(247,141,30,.36) !important;
   filter: brightness(1.43) saturate(1.55) drop-shadow(0 0 12px rgba(255,183,54,.95)) !important;
 }
@@ -788,7 +788,7 @@ body.theme-stone #vp-histogram-container .vp-bar[data-tone="cyan"],
 body.theme-stone #stone-mini-volume .stone-mini-fill[data-tone="cyan"],
 body.theme-stone #vp-histogram-container .vp-bar[data-kind="off"][data-tone="cyan"],
 body.theme-stone #stone-mini-volume .stone-mini-fill[data-kind="off"][data-tone="cyan"] {
-  background: url("stone-assets/ready/42_volume_bar_cyan.png") left center / 100% 100% no-repeat !important;
+  background: url("stone-assets/ready/42_volume_bar_cyan.webp") left center / 100% 100% no-repeat !important;
   box-shadow: 0 0 7px rgba(72,231,255,.98), 0 0 19px rgba(26,212,255,.58) !important;
   filter: brightness(1.37) saturate(1.5) drop-shadow(0 0 9px rgba(0,220,255,.92)) !important;
 }
@@ -796,13 +796,13 @@ body.theme-stone #vp-histogram-container .vp-bar[data-tone="amber"],
 body.theme-stone #stone-mini-volume .stone-mini-fill[data-tone="amber"],
 body.theme-stone #vp-histogram-container .vp-bar[data-kind="off"][data-tone="amber"],
 body.theme-stone #stone-mini-volume .stone-mini-fill[data-kind="off"][data-tone="amber"] {
-  background: url("stone-assets/ready/43_volume_bar_gold.png") left center / 100% 100% no-repeat !important;
+  background: url("stone-assets/ready/43_volume_bar_gold.webp") left center / 100% 100% no-repeat !important;
   box-shadow: 0 0 7px rgba(255,181,74,.96), 0 0 19px rgba(255,143,30,.59) !important;
   filter: brightness(1.33) saturate(1.47) drop-shadow(0 0 9px rgba(255,158,44,.87)) !important;
 }
 body.theme-stone #vp-histogram-container .vp-bar[data-kind="poc"],
 body.theme-stone #stone-mini-volume .stone-mini-fill[data-kind="poc"] {
-  background: url("stone-assets/ready/43_volume_bar_gold.png") left center / 100% 100% no-repeat !important;
+  background: url("stone-assets/ready/43_volume_bar_gold.webp") left center / 100% 100% no-repeat !important;
   box-shadow: 0 0 12px #ffdb7b, 0 0 29px rgba(255,159,34,.9) !important;
   filter: brightness(1.5) saturate(1.7) drop-shadow(0 0 12px rgba(255,190,56,.98)) !important;
 }
@@ -836,19 +836,19 @@ body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row {
   box-shadow: inset 0 0 13px rgba(0,0,0,.62), 0 2px 8px rgba(0,0,0,.5) !important;
 }
 body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row--0 {
-  background-image: linear-gradient(90deg,rgba(2,10,17,.53),rgba(3,11,18,.85) 17%,rgba(3,11,18,.88) 79%,rgba(2,10,17,.56)), url("stone-assets/ready/47_table_row_metal.png") !important;
+  background-image: linear-gradient(90deg,rgba(2,10,17,.53),rgba(3,11,18,.85) 17%,rgba(3,11,18,.88) 79%,rgba(2,10,17,.56)), url("stone-assets/ready/47_table_row_metal.webp") !important;
 }
 body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row--1 {
-  background-image: linear-gradient(90deg,rgba(2,10,17,.53),rgba(3,11,18,.87) 17%,rgba(3,11,18,.90) 79%,rgba(2,10,17,.54)), url("stone-assets/ready/48_tooltip_engraved_plate.png") !important;
+  background-image: linear-gradient(90deg,rgba(2,10,17,.53),rgba(3,11,18,.87) 17%,rgba(3,11,18,.90) 79%,rgba(2,10,17,.54)), url("stone-assets/ready/48_tooltip_engraved_plate.webp") !important;
 }
 body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row--2 {
-  background-image: linear-gradient(90deg,rgba(2,10,17,.57),rgba(3,11,18,.89) 17%,rgba(3,11,18,.89) 79%,rgba(2,10,17,.57)), url("stone-assets/ready/17_trade_ticket_cartridge.png") !important;
+  background-image: linear-gradient(90deg,rgba(2,10,17,.57),rgba(3,11,18,.89) 17%,rgba(3,11,18,.89) 79%,rgba(2,10,17,.57)), url("stone-assets/ready/17_trade_ticket_cartridge.webp") !important;
 }
 body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row--3 {
-  background-image: linear-gradient(90deg,rgba(2,10,17,.52),rgba(3,11,18,.87) 17%,rgba(3,11,18,.89) 79%,rgba(2,10,17,.55)), url("stone-assets/ready/14_long_volume_plate.png") !important;
+  background-image: linear-gradient(90deg,rgba(2,10,17,.52),rgba(3,11,18,.87) 17%,rgba(3,11,18,.89) 79%,rgba(2,10,17,.55)), url("stone-assets/ready/14_long_volume_plate.webp") !important;
 }
 body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row--4 {
-  background-image: linear-gradient(90deg,rgba(2,10,17,.53),rgba(3,11,18,.87) 17%,rgba(3,11,18,.9) 79%,rgba(2,10,17,.57)), url("stone-assets/ready/20_guard_warning_plaque.png") !important;
+  background-image: linear-gradient(90deg,rgba(2,10,17,.53),rgba(3,11,18,.87) 17%,rgba(3,11,18,.9) 79%,rgba(2,10,17,.57)), url("stone-assets/ready/20_guard_warning_plaque.webp") !important;
 }
 body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row:hover {
   filter: brightness(1.15);
@@ -1230,4 +1230,45 @@ body.theme-stone .stone-asset-panel--chart::after {
 @media(max-width:800px){.stone-event-toast {font-size:13px;top:120px;padding:9px 12px}.stone-fx-controls {gap:9px}}
 @media(prefers-reduced-motion:reduce){
  .stone-event-toast,.stone-event-spark {animation:none !important;display:none !important;}
+}
+
+/* FX-Off also silences idle ambience. Normal Stone keeps its bionic finish. */
+body.theme-stone.stone-fx-off .stone-ambience { display: none !important; }
+body.theme-stone.stone-fx-off .stone-cockpit-crest,
+body.theme-stone.stone-fx-off .stone-theme-dock button,
+body.theme-stone.stone-fx-off #vp-histogram-container .vp-bar { animation: none !important; }
+body.theme-stone #matrix-tbody .stone-target-row td .text-sub {
+  font-size: 11px !important; line-height: 1.45;
+}
+body.theme-stone #positions-list input:focus-visible,
+body.theme-stone #stone-fx-panel button:focus-visible {
+  outline: 2px solid #88eeff !important; outline-offset: 2px;
+}
+
+/* Frame visibility / safe gutters:
+   The ornamental side rails occupy 50px and paint above the cards (z-index 10).
+   Keep the entire nine-slice border artwork clear of them rather than cropping
+   or replacing the frame illustrations with stretched background-size:cover.
+   Compact viewports use slimmer rails so chart/data width is preserved. */
+@media (min-width: 1081px) {
+  body.theme-stone {
+    padding-left: max(68px, env(safe-area-inset-left)) !important;
+    padding-right: max(68px, env(safe-area-inset-right)) !important;
+  }
+}
+@media (min-width: 701px) and (max-width: 1080px) {
+  body.theme-stone {
+    padding-left: max(40px, env(safe-area-inset-left)) !important;
+    padding-right: max(40px, env(safe-area-inset-right)) !important;
+  }
+  body.theme-stone #stone-rails .left,
+  body.theme-stone #stone-rails .right { width: 24px; }
+}
+@media (max-width: 700px) {
+  body.theme-stone {
+    padding-left: max(15px, env(safe-area-inset-left)) !important;
+    padding-right: max(15px, env(safe-area-inset-right)) !important;
+  }
+  body.theme-stone #stone-rails .left,
+  body.theme-stone #stone-rails .right { width: 9px; opacity: .35; }
 }

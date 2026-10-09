@@ -39,9 +39,23 @@ class MultiAccountTests(unittest.TestCase):
         with self.gateway.session(fake, 'goldm15'):
             self.assertEqual(fake.current['login'], 53090070)
             self.assertEqual(self.gateway.selected()['id'], 'goldm15')
-        self.assertIsNone(fake.current)
+        self.assertEqual(fake.current['login'], 53090070)  # verified connection reused until account switch
         self.assertTrue(all(path and 'login' not in kw and 'password' not in kw for path, kw in fake.calls))
         self.assertTrue(fake.calls[-1][1]['portable'])
+
+    def test_same_account_reuses_verified_terminal_and_switch_reconnects(self):
+        fake = self.fake()
+        with self.gateway.session(fake, 'titan'):
+            pass
+        with self.gateway.session(fake, 'titan'):
+            pass
+        self.assertEqual(len(fake.calls), 1)
+        with self.gateway.session(fake, 'goldm15'):
+            pass
+        self.assertEqual(len(fake.calls), 2)
+        with self.gateway.session(fake, 'goldm15'):
+            pass
+        self.assertEqual(len(fake.calls), 2)
 
     def test_wrong_account_fails_before_body(self):
         fake = self.fake(wrong=True)
@@ -259,7 +273,7 @@ class MultiAccountTests(unittest.TestCase):
                 data=app.get_live_market_data()
         for field in ['daily_vp','weekly_vp','sr_levels','positions','indicators','daily_drawdown','rules_matrix','buy_readiness','sell_readiness']:
             self.assertIn(field,data)
-        self.assertEqual(len(data['rules_matrix']),5)
+        self.assertEqual(len(data['rules_matrix']),8)  # 5 champion rules + 3 anti-trap guards
         self.assertEqual(data['account']['login'],53087839)
         from datetime import datetime,timezone
         self.assertEqual(data['times']['server'],datetime.fromtimestamp(tick_time,timezone.utc).strftime('%H:%M:%S'))
