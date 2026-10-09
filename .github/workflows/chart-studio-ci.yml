@@ -82,6 +82,7 @@ jobs:
       - name: Run Chromium UI smoke (no MT5 server)
         run: |
           node scripts/smoke_chart_studio_replay.cjs
+          node scripts/smoke_chart_studio_responsive.cjs
           node scripts/smoke_chart_studio_beta.cjs
           node scripts/smoke_chart_studio_averages.cjs
           node scripts/smoke_chart_studio_appearance.cjs
@@ -96,6 +97,7 @@ jobs:
           name: chart-studio-beta-screenshot
           path: |
             output/visual-smoke/chart-studio-replay.png
+            output/visual-smoke/chart-studio-responsive-*.png
             output/visual-smoke/chart-studio-beta.png
             output/visual-smoke/chart-studio-multi-ma.png
             output/visual-smoke/chart-studio-appearance.png
