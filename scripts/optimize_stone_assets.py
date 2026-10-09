@@ -44,11 +44,27 @@ def main():
                                                   "stone-assets/ready/" + result.name)
     for file, css in content.items():
         file.write_text(css, encoding="utf-8")
-    manifest = {"method": "lossless WebP, exact decoded RGBA verified", "files": converted,
-                "original_bytes": before, "optimized_bytes": after, "saved_bytes": before - after}
-    (ROOT / "static" / "stone-assets" / "optimized-assets.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"Verified {len(converted)} optimized images, saved {before-after:,} bytes")
+    # Preserve successful earlier conversions on subsequent idempotent builds.
+    # Otherwise a no-op run would erase all accumulated savings evidence.
+    manifest_path = ROOT / "static" / "stone-assets" / "optimized-assets.json"
+    previous = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
+    by_name = {item["png"]: item for item in previous.get("files", [])}
+    by_name.update({item["png"]: item for item in converted})
+    for item in by_name.values():
+        if not (READY / item["png"]).is_file() or not (READY / item["webp"]).is_file():
+            raise FileNotFoundError(f"Optimized Stone pair missing: {item['png']}")
+        with Image.open(READY / item["png"]) as original, Image.open(READY / item["webp"]) as optimized:
+            if original.convert("RGBA").tobytes() != optimized.convert("RGBA").tobytes():
+                raise ValueError(f"Existing WebP RGBA mismatch: {item['png']}")
+    files = [by_name[name] for name in sorted(by_name)]
+    manifest = {"method": "lossless WebP, exact decoded RGBA verified", "files": files,
+                "original_bytes": sum(item["bytes_before"] for item in files),
+                "optimized_bytes": sum(item["bytes_after"] for item in files),
+                "saved_bytes": sum(item["bytes_before"] - item["bytes_after"] for item in files)}
+    rendered = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
+    if not manifest_path.exists() or manifest_path.read_text(encoding="utf-8") != rendered:
+        manifest_path.write_text(rendered, encoding="utf-8")
+    print(f"Verified {len(files)} optimized images, saved {manifest['saved_bytes']:,} bytes")
 
 if __name__ == "__main__":
     main()
