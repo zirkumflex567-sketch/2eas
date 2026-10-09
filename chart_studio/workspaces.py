@@ -77,7 +77,7 @@ def validate_document(raw: Any) -> dict:
     seen_ids = set()
     for drawing in drawings:
         required_draw = {"kind", "anchors"}
-        optional_draw = {"id", "label", "visible", "locked"}
+        optional_draw = {"id", "label", "visible", "locked", "levels"}
         if not isinstance(drawing, dict) or not required_draw.issubset(drawing) or (
             set(drawing) - required_draw - optional_draw
         ):
@@ -114,6 +114,21 @@ def validate_document(raw: Any) -> dict:
                 raise StoreError("Ungültiger Zeitpunkt oder Preis.")
             safe_anchors.append({"time": stamp, "price": price})
         normalized = {"kind": kind, "anchors": safe_anchors}
+        if "levels" in drawing:
+            if kind != "fib":
+                raise StoreError("Fibonacci-Level nur für Fibonacci-Zeichnungen erlaubt.")
+            levels = drawing["levels"]
+            if not isinstance(levels, list) or not 1 <= len(levels) <= 16:
+                raise StoreError("Fibonacci-Level müssen 1–16 Werte enthalten.")
+            last = -1.0
+            clean_levels = []
+            for raw_level in levels:
+                value = _number(raw_level, "Fibonacci-Level")
+                if not 0 <= value <= 2 or value <= last + 1e-9:
+                    raise StoreError("Fibonacci-Level ungültig oder nicht streng steigend.")
+                clean_levels.append(value)
+                last = value
+            normalized["levels"] = clean_levels
         for field in ("id", "label", "visible", "locked"):
             if field in drawing:
                 normalized[field] = drawing[field]
