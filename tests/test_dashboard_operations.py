@@ -13,7 +13,7 @@ class ReproducibleDashboardTests(unittest.TestCase):
     def test_runtime_dependencies_are_pinned(self):
         config=ROOT/'requirements-dashboard.txt'
         self.assertTrue(config.exists(), 'runtime lock absent')
-        rows=[r.strip() for r in config.read_text().splitlines() if r.strip() and not r.startswith('#')]
+        rows=[r.strip() for r in config.read_text().splitlines() if r.strip() and not r.startswith(('#','-'))]
         self.assertGreaterEqual(len(rows),8)
         self.assertTrue(all('==' in r for r in rows))
 

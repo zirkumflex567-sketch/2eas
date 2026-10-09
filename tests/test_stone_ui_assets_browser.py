@@ -24,7 +24,11 @@ def fixture(optimized, nonchart_only):
     html = next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
                 and any(isinstance(t, ast.Name) and t.id == 'HTML_CONTENT' for t in n.targets))
     html = re.sub(r'<script\b.*?</script>', '', html, flags=re.S)
-    if optimized:
+    # Real application now includes the layer. Remove it only for the explicit
+    # unoptimized baseline; append only if exercising an older HTML fixture.
+    if not optimized:
+        html = re.sub(r'<link[^>]+href="static/stone-ui-assets.css"[^>]*>', '', html)
+    elif 'href="static/stone-ui-assets.css"' not in html:
         html = html.replace('</head>', '<link rel="stylesheet" href="static/stone-ui-assets.css"></head>')
     html = html.replace('</body>', '<script src="static/stone-cockpit.js"></script></body>')
     return html

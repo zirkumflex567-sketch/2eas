@@ -234,7 +234,8 @@ def build_trade_journal(account_id, server_time, local_time):
     strategy = ACCOUNTS[account_id]['name']
     entries = []
     for p in positions:
-        if p.time < journal_accounting.CUTOFF.timestamp() or not journal_accounting.owns(p, magics):
+        # Recording cutoff limits realized history, never currently open risk.
+        if not journal_accounting.owns(p, magics):
             continue
         open_price, cur_price = round(float(p.price_open),2), round(float(p.price_current),2)
         net = round(float(p.profit+p.swap),2)
@@ -1242,7 +1243,8 @@ HTML_CONTENT = """<!DOCTYPE html>
   <!-- Optional runic stone material; selectors scoped to body.theme-stone -->
   <link rel="stylesheet" href="static/stone-cockpit.css">
   <link rel="stylesheet" href="static/stone-asset-skin.css">
-  <link rel="stylesheet" href="static/dashboard-accessibility.css">
+    <link rel="stylesheet" href="static/stone-ui-assets.css">
+    <link rel="stylesheet" href="static/dashboard-accessibility.css">
 </head>
 <body class="theme-dark flex flex-col p-3 min-h-screen text-xs select-none">
 
@@ -1545,7 +1547,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         </select>
         <div class="text-[11px] text-sub font-mono">
         <div class="text-[11px] text-sub font-mono">
-          Aufnahme aktiv ab: <strong class="text-white">Heute 20:00 Uhr DE (23:00 Server)</strong>
+          <span id="journal-recording-start">Historie ab: <strong class="text-white">08.10.2026 23:00 UTC · Offene Positionen unabhängig vom Einstiegstag</strong></span>
         </div>
       </div>
     </div>
@@ -2199,7 +2201,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       if (statusBusy === generation) return;
       statusBusy = generation;
       try {
-        const res = await accountFetch('/api/status');
+        const res = await accountFetch('/api/status?include_journal=false');
         const data = await res.json();
         if (generation !== accountGeneration) throw staleRequest();
         const needsCharts = currentData === null;
@@ -2662,19 +2664,22 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (list) {
           list.innerHTML = `
             <div class="py-6 flex flex-col items-center justify-center text-sub text-xs gap-1">
-              <span>${journalErrors.length === wanted.length ? 'Journal derzeit nicht erreichbar.' : 'Keine Trades seit 20:00 Uhr DE-Zeit für ' + stratName + ' verzeichnet.'}</span>
-              <span class="text-[10px] opacity-75">Neue Einstiege und Exits werden ab 20:00 Uhr automatisch erfasst und begründet.</span>
+              <span>${journalErrors.length === wanted.length ? 'Journal derzeit nicht erreichbar.' : 'Keine aufgezeichneten Trades für ' + stratName + ' verzeichnet.'}</span>
+              <span class="text-[10px] opacity-75">Offene Positionen werden vollständig angezeigt; historische Deals ab dem angegebenen Aufzeichnungsbeginn. Unbelegte Gründe bleiben unbekannt.</span>
             </div>`;
         }
         return;
       }
 
       // Calculations
-      const totalPnL = itemsToRender.reduce((sum, it) => sum + (it.profit_usd || 0), 0);
+      const totalUnknown = journalErrors.length > 0 || itemsToRender.some(it => !Number.isFinite(it.profit_usd) || it.net_complete === false);
+      const totalPnL = itemsToRender.reduce((sum, it) => sum + (Number.isFinite(it.profit_usd) ? it.profit_usd : 0), 0);
       const liveItems = itemsToRender.filter(it => it.status === 'OPEN');
       const closedItems = itemsToRender.filter(it => it.status === 'CLOSED');
       const livePnL = liveItems.reduce((sum, it) => sum + (it.profit_usd || 0), 0);
       const closedPnL = closedItems.reduce((sum, it) => sum + (it.profit_usd || 0), 0);
+      const liveUnknown = journalErrors.length > 0 || liveItems.some(it => !Number.isFinite(it.profit_usd));
+      const closedUnknown = journalErrors.length > 0 || closedItems.some(it => !Number.isFinite(it.profit_usd) || it.net_complete === false);
 
       if (countBadge) {
         countBadge.innerText = journalErrors.length ? `${itemsToRender.length} zuletzt bekannte Trades · unvollständig` : `${itemsToRender.length} Trades (${liveItems.length} Live · ${closedItems.length} Hist)`;
@@ -2683,7 +2688,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
       if (totBadge) {
         const sign = totalPnL >= 0 ? '+' : '-';
-        totBadge.textContent = journalErrors.length ? 'Gesamt: — (unvollständig)' : `Gesamt: ${sign}$${Math.abs(totalPnL).toFixed(2)}`;
+        totBadge.textContent = totalUnknown ? 'Gesamt: — (unvollständig)' : `Gesamt: ${sign}$${Math.abs(totalPnL).toFixed(2)}`;
         totBadge.className = `px-2.5 py-0.5 rounded-md font-mono text-[11px] font-black border ${
           totalPnL >= 0 
             ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' 
@@ -2695,7 +2700,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (liveItems.length > 0) {
           liveBadge.classList.remove('hidden');
           const sign = livePnL >= 0 ? '+' : '-';
-          liveBadge.textContent = journalErrors.length ? 'Live: — (unvollständig)' : `Live: ${sign}$${Math.abs(livePnL).toFixed(2)}`;
+          liveBadge.textContent = liveUnknown ? 'Live: — (unvollständig)' : `Live: ${sign}$${Math.abs(livePnL).toFixed(2)}`;
           liveBadge.className = `px-2 py-0.5 rounded-md font-mono text-[10px] font-bold border ${
             livePnL >= 0 ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
           }`;
@@ -2708,7 +2713,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (closedItems.length > 0) {
           closedBadge.classList.remove('hidden');
           const sign = closedPnL >= 0 ? '+' : '-';
-          closedBadge.textContent = journalErrors.length ? 'Hist: — (unvollständig)' : `Hist: ${sign}$${Math.abs(closedPnL).toFixed(2)}`;
+          closedBadge.textContent = closedUnknown ? 'Hist: — (unvollständig)' : `Hist: ${sign}$${Math.abs(closedPnL).toFixed(2)}`;
           closedBadge.className = `px-2 py-0.5 rounded-md font-mono text-[10px] font-bold border ${
             closedPnL >= 0 ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
           }`;
@@ -2729,7 +2734,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         const isProfit = item.profit_usd >= 0;
         const profitSign = isProfit ? '+' : '-';
         const absProfit = Math.abs(item.profit_usd).toFixed(2);
-        const pnlFormatted = `${profitSign}$${absProfit}`;
+        const pnlFormatted = Number.isFinite(item.profit_usd) && item.net_complete !== false ? `${profitSign}$${absProfit}` : '— (unbekannt)';
         const ptsSign = (item.points >= 0) ? '+' : '-';
         const ptsFormatted = (typeof item.points === 'number') ? `${ptsSign}${Math.abs(item.points).toFixed(2)} Pkt` : '';
 
@@ -2762,8 +2767,8 @@ HTML_CONTENT = """<!DOCTYPE html>
           : `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/40">GOLDM15 RECONSTRUCTION</span>`;
 
         const priceDetails = isOpen
-          ? `<span class="text-sub font-mono">Einstieg: <strong class="text-white">$${item.open_price.toFixed(2)}</strong> · Aktuell: <strong class="${isProfit ? 'text-emerald-400':'text-rose-400'}">$${item.current_price.toFixed(2)}</strong></span>`
-          : `<span class="text-sub font-mono">Einstieg: <strong class="text-white">$${item.open_price.toFixed(2)}</strong> · Ausstieg: <strong class="text-white">$${item.close_price.toFixed(2)}</strong></span>`;
+          ? `<span class="text-sub font-mono">Einstieg: <strong class="text-white">$${Number.isFinite(item.open_price) ? item.open_price.toFixed(2) : '— (unbekannt)'}</strong> · Aktuell: <strong class="${isProfit ? 'text-emerald-400':'text-rose-400'}">$${Number.isFinite(item.current_price) ? item.current_price.toFixed(2) : '— (unbekannt)'}</strong></span>`
+          : `<span class="text-sub font-mono">Einstieg: <strong class="text-white">$${Number.isFinite(item.open_price) ? item.open_price.toFixed(2) : '— (unbekannt)'}</strong> · Ausstieg: <strong class="text-white">$${Number.isFinite(item.close_price) ? item.close_price.toFixed(2) : '— (unbekannt)'}</strong></span>`;
 
         return `
           <div data-journal-key="${key}" class="glass-card rounded-lg p-3 border border-white/5 hover:border-white/15 transition-all">

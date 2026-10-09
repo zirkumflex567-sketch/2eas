@@ -29,3 +29,12 @@ state/
 *.sqlite3-shm
 *.db-wal
 *.db-shm
+
+# Dashboard generated evidence may contain broker/account data.
+output/integration-live/
+output/dashboard-*.xml
+output/stone-ui-assets/
+output/audit-ui/*.network.json
+output/audit-ui/*.png
+output/audit-ui/*.json
+output/audit-ui/*.log

@@ -1,8 +1,0 @@
-.                                                                        [100%]
-============================== warnings summary ===============================
-tests/test_dashboard_frontend.py: 33 warnings
-  C:\Users\zirku\AppData\Local\hermes\cache\scratch\audit-ui\tests\test_dashboard_frontend.py:327: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
-    ratios = [(max(foreground,lum(pixel))+.05)/(min(foreground,lum(pixel))+.05) for pixel in image.getdata()]
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-1 passed, 22 deselected, 33 warnings in 9.81s
