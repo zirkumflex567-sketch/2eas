@@ -16,6 +16,8 @@ Microsoft documents [ConvertFrom-Json DateKind](https://learn.microsoft.com/en-u
 
 ## Task 1: raw JSON parsing and cross-shell regression
 
+Implementation commit 67e8a3d: cross-shell regression reproduced the original refusal before the parser change; unsupported Core parsing reproduced the unhelpful generic diagnostic. Focused cross-shell/unsupported tests passed after the fix. All 120 runtime/proxy/control tests passed on the two installed shells. Independent spec and quality review and release CI/live proof are pending.
+
 Files: modify scripts/dashboard_runtime.ps1, tests/test_dashboard_runtime.py and docs/STT_OPERATIONS.md. Parent owns OPEN_TASKS and this plan.
 
 - [ ] Add a helper-shell argument to the existing test harness with default powershell.exe. Discover pwsh.exe using shutil.which; only its specific tests skip when absent. Keep the existing 120-second harness bound, fixture cleanup by exact app path plus interpreter, and original tests.
