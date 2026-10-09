@@ -14,6 +14,9 @@ on:
       - test/chart-studio-chart-types
       - test/chart-studio-object-manager
       - test/chart-studio-incremental-render
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 permissions:
   contents: read
