@@ -63,4 +63,14 @@ The history contract received independent spec and quality approval. The separat
 
 Filtered live evidence remains ignored under `output/integration-live/runtime-20261009/`: live-proof.json, broker-read-proof.json, trade-history-proof.json and browser-after-deployment.json. Credentials, full account responses and cookies are not committed.
 
+## Package #30: actual read-only position stop preview
+
+PR [#30](https://github.com/zirkumflex567-sketch/2eas/pull/30) merged as main `aa6bf08569c5e3ae8403e5aad2e658f7c7fcac02`. Final head 9b93b801 received independent spec and quality approval; both PR workflows passed 755 tests plus 245 subtests and math/native-v5/browser/Stone checks (37985116089, 37985116016). Subsequent main workflows are pending at this checkpoint.
+
+PowerShell 7 guarded Restart succeeded: PID 35968, startedUtc 2026-10-09T20:21:30.398872Z, matching startup/disk revision and digest `c2870d107df04b0e7de86ffba4542e91c4b3b91e4872cc9f9d93d7ae4b3d4707`; clean application source, restart_required=false. Windows PowerShell 5.1 Status confirms the identical runtime. Local/public HTML still matches SHA256 af9cdd70b32c85dd51f25b486e028588afe67f2b26e90e7b08d930debc009020, both feeds fresh and ingress forgery rejected.
+
+Both demos, on both local and public surfaces, passed an actual ticket/read/calculation/readback sequence: proposals valid, canonical response contract, correct account currency, real gross profit estimates, guard UNKNOWN/source NONE and both execution flags false. Position/pending revision books matched before/after. A deliberately stale expected revision returned 409 POSITION_CHANGED. Only the reviewed read-only preview endpoint was POSTed; no broker order/modify/close/reset was sent.
+
+Public Chromium completed 20 account switches (265–549 ms), nine canvases, no errors and zero API mutations. MT5/tunnel process identities remain unchanged. Filtered preview evidence is position-preview-proof.json; #29 release files were preserved separately before the new proof. Native drag/touch, genuine live EA action policy and independent write acceptance remain open.
+
 Native symbol/order UI, historical fills, FX and the independent chart write gate remain open. Private evidence stays in the ignored directory; package #27 proofs are preserved separately.
