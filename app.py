@@ -1365,7 +1365,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <!-- 4. JAVASCRIPT ENGINE -->
   <script>
     let chart, candleSeries, ema20Series, ema50Series, ema200Series;
-    let emaGlowSeries = [[], [], []];
+    // Sparse overlay FX no longer allocates six transparent chart series.
     let srLines = {};
     let isInitialLoad = true;
     let lastCandleTime = 0;
@@ -1389,6 +1389,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     let candlesBusy = null;
     let showEAStatusText = localStorage.getItem('chart_show_ea_status') !== 'false';
     let currentChartMarkers = [];
+    let matrixSignature = null, vpSignature = null;
 
     function updateEAStatusButtonUI() {
       const btn = document.getElementById('toggle-ea-status-btn');
@@ -1461,6 +1462,8 @@ HTML_CONTENT = """<!DOCTYPE html>
       document.getElementById('live-spread').textContent = 'Spr: —';
       document.getElementById('dd-reset-tag').classList.add('hidden');
       document.getElementById('positions-list').textContent = 'Kontodaten werden geladen …';
+      delete document.getElementById('positions-list').dataset.structure;
+      matrixSignature = null; vpSignature = null;
       renderJournal();
       document.getElementById('matrix-tbody').replaceChildren();
       document.getElementById('exit-goals').replaceChildren();
@@ -1477,7 +1480,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         srLines = {};
         const levelLegend = document.getElementById('chart-level-legend');
         if (levelLegend) { levelLegend.replaceChildren(); levelLegend.hidden = true; }
-        for (const series of [candleSeries,ema20Series,ema50Series,ema200Series,...emaGlowSeries.flat()]) series.setData([]);
+        for (const series of [candleSeries,ema20Series,ema50Series,ema200Series]) series.setData([]);
       }
       isInitialLoad = true;
       lastCandleTime = 0;
@@ -1640,16 +1643,11 @@ HTML_CONTENT = """<!DOCTYPE html>
         wickDownColor: '#f43f5e', wickUpColor: '#10b981',
       });
 
-      // Native glow series: same plot / price scale / timestamps as the EMAs.
-      // Draw under the actual 2px EMA cores; no independently traced EMA canvas.
-      const glowOpts = {color:'rgba(0,0,0,0)',lineWidth:4,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false};
-      emaGlowSeries = Array.from({length:3},()=>[
-        chart.addLineSeries({...glowOpts}), chart.addLineSeries({...glowOpts,lineWidth:3})
-      ]);
+      // Intermittent glow is rendered only on the transparent FX canvas.
       ema20Series  = chart.addLineSeries({ color: '#00d2ff', lineWidth: 2, title: 'EMA20' });
       ema50Series  = chart.addLineSeries({ color: '#ff9f43', lineWidth: 2, title: 'EMA50' });
       ema200Series = chart.addLineSeries({ color: '#a55eea', lineWidth: 2, title: 'EMA200' });
-      try { window.StoneChartFX?.attach({chart, host:container, candleSeries, emaSeries:[ema20Series,ema50Series,ema200Series], glowSeries:emaGlowSeries}); } catch (_) {}
+      try { window.StoneChartFX?.attach({chart, host:container, candleSeries, emaSeries:[ema20Series,ema50Series,ema200Series]}); } catch (_) {}
       try { window.StoneCelebration?.applyChartSettings(); } catch (_) {}
 
       // Robust ResizeObserver
@@ -1795,16 +1793,6 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
     }
 
-    function syncEmaGlows(sets, incremental = false) {
-      for (let i=0;i<emaGlowSeries.length;i++) {
-        const points=sets[i];
-        if (!Array.isArray(points) || !points.length) continue;
-        for (const series of emaGlowSeries[i]) {
-          if (incremental) series.update(points[points.length-1]);
-          else series.setData(points);
-        }
-      }
-    }
     // --- SMOOTH CANDLES LOAD (NO JUMPING & PRESERVES ZOOM) ---
     async function loadCandles() {
       const generation = accountGeneration;
@@ -1827,7 +1815,6 @@ HTML_CONTENT = """<!DOCTYPE html>
           ema20Series.setData(data.ema20);
           ema50Series.setData(data.ema50);
           ema200Series.setData(data.ema200);
-          syncEmaGlows([data.ema20, data.ema50, data.ema200]);
           updateChartSRLines(data.sr_levels, curPrice);
           applyOptimalChartView(data.candles.length);
           isInitialLoad = false;
@@ -1838,7 +1825,6 @@ HTML_CONTENT = """<!DOCTYPE html>
             ema20Series.update(data.ema20[data.ema20.length - 1]);
             ema50Series.update(data.ema50[data.ema50.length - 1]);
             ema200Series.update(data.ema200[data.ema200.length - 1]);
-            syncEmaGlows([data.ema20, data.ema50, data.ema200], true);
           } else {
             // New bar: keep exact user zoom & position with 12-bar right offset
             const curRange = chart.timeScale().getVisibleLogicalRange();
@@ -1849,7 +1835,6 @@ HTML_CONTENT = """<!DOCTYPE html>
             ema20Series.setData(data.ema20);
             ema50Series.setData(data.ema50);
             ema200Series.setData(data.ema200);
-          syncEmaGlows([data.ema20, data.ema50, data.ema200]);
 
             if (curRange) {
               if (wasAtEnd) {
@@ -2024,6 +2009,9 @@ HTML_CONTENT = """<!DOCTYPE html>
     }
 
     function renderMatrix(rules) {
+      const signature = JSON.stringify(rules);
+      if (matrixSignature === signature) return;
+      matrixSignature = signature;
       const tbody = document.getElementById('matrix-tbody');
       tbody.innerHTML = rules.map((r,index) => `
         <tr class="hover-row transition-colors stone-target-row stone-target-row--${index % 5}">
@@ -2054,6 +2042,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     // --- VOLUME PROFILE RENDERER ---
     function switchVPTab(tab) {
       currentVPTab = tab;
+      vpSignature = null;
       document.getElementById('vp-tab-daily').className = (tab === 'daily') ? 'px-2.5 py-0.5 rounded-md font-bold bg-blue-600 text-white cursor-pointer' : 'px-2.5 py-0.5 rounded-md font-bold opacity-60 cursor-pointer';
       document.getElementById('vp-tab-weekly').className = (tab === 'weekly') ? 'px-2.5 py-0.5 rounded-md font-bold bg-blue-600 text-white cursor-pointer' : 'px-2.5 py-0.5 rounded-md font-bold opacity-60 cursor-pointer';
       if (currentData) renderVolumeProfile(currentData);
@@ -2062,6 +2051,9 @@ HTML_CONTENT = """<!DOCTYPE html>
     function renderVolumeProfile(data) {
       const vp = (currentVPTab === 'daily') ? data.daily_vp : data.weekly_vp;
       if (!vp || !vp.histogram) return;
+      const signature = currentVPTab + JSON.stringify(vp);
+      if (vpSignature === signature) return;
+      vpSignature = signature;
 
       document.getElementById('vp-summary-badge').innerHTML = `
         <span class="text-amber-500 font-bold">POC: $${vp.poc.toFixed(2)}</span> | 
@@ -2114,24 +2106,37 @@ HTML_CONTENT = """<!DOCTYPE html>
       const list = document.getElementById('positions-list');
       const badge = document.getElementById('pos-count-badge');
       badge.innerText = `${positions.length} Aktiv`;
+      if (!list.dataset.dirtyBound) {
+        list.addEventListener('input', event => {
+          if (event.target.matches('input[id^="sl-input-"], input[id^="tp-input-"]')) {
+            event.target.dataset.dirty = 'true';
+          }
+        });
+        list.dataset.dirtyBound = '1';
+      }
+      const structure = positions.map(pos => [pos.ticket,pos.type,pos.volume,pos.open_price].join(':')).join('|');
 
       if (positions.length === 0) {
-        list.innerHTML = `<div class="py-6 flex items-center justify-center text-sub text-xs">Aktuell keine offenen Positionen auf XAUUSD. Der EA scannt den Markt bei jedem M15-Kerzenschluss (:00, :15, :30, :45).</div>`;
+        if (list.dataset.structure !== '') {
+          list.innerHTML = `<div class="py-6 flex items-center justify-center text-sub text-xs">Aktuell keine offenen Positionen auf XAUUSD. Der EA scannt den Markt bei jedem M15-Kerzenschluss (:00, :15, :30, :45).</div>`;
+          list.dataset.structure = '';
+        }
         return;
       }
 
-      list.innerHTML = positions.map(p => `
-        <div class="p-3 rounded-xl ticker-bg border flex flex-wrap items-center justify-between gap-3 text-xs mb-2">
+      if (list.dataset.structure !== structure) {
+        list.innerHTML = positions.map(p => `
+        <div data-position-ticket="${p.ticket}" class="p-3 rounded-xl ticker-bg border flex flex-wrap items-center justify-between gap-3 text-xs mb-2">
           <div class="flex items-center gap-2.5">
             <span class="px-2 py-1 rounded-md font-bold font-mono text-[11px] text-white ${p.type === 'BUY' ? 'bg-emerald-600' : 'bg-rose-600'}">
               ${p.type} ${p.volume} Lot
             </span>
             <span class="font-mono font-bold text-xs">#${p.ticket} @ $${p.open_price.toFixed(2)}</span>
-            <span class="text-sub font-mono text-[10px]">Aktuell: $${p.current_price.toFixed(2)}</span>
+            <span data-position-current class="text-sub font-mono text-[10px]">Aktuell: ${p.current_price.toFixed(2)}</span>
           </div>
 
           <div class="font-mono text-right">
-            <span class="font-extrabold text-sm ${p.profit_usd >= 0 ? 'text-emerald-500' : 'text-rose-500'}">
+            <span data-position-pnl class="font-extrabold text-sm ${p.profit_usd >= 0 ? 'text-emerald-500' : 'text-rose-500'}">
               ${p.profit_usd >= 0 ? '+' : ''}$${p.profit_usd.toFixed(2)} (${p.profit_pct >= 0 ? '+' : ''}${p.profit_pct.toFixed(2)}%)
             </span>
           </div>
@@ -2159,6 +2164,28 @@ HTML_CONTENT = """<!DOCTYPE html>
           </button>
         </div>
       `).join('');
+        list.dataset.structure = structure;
+      }
+      for (const pos of positions) {
+        const row = list.querySelector('[data-position-ticket="' + pos.ticket + '"]');
+        if (!row) continue;
+        const price = row.querySelector('[data-position-current]');
+        if (price) price.textContent = 'Aktuell:  + pos.current_price.toFixed(2);
+        const pnl = row.querySelector('[data-position-pnl]');
+        if (pnl) {
+          pnl.textContent = (pos.profit_usd >= 0 ? '+' : '') + ' + pos.profit_usd.toFixed(2) +
+            ' (' + (pos.profit_pct >= 0 ? '+' : '') + pos.profit_pct.toFixed(2) + '%)';
+          pnl.classList.toggle('text-emerald-500', pos.profit_usd >= 0);
+          pnl.classList.toggle('text-rose-500', pos.profit_usd < 0);
+        }
+        for (const [id, value] of [['sl-input-' + pos.ticket,pos.sl_usd],
+                                  ['tp-input-' + pos.ticket,pos.tp_usd]]) {
+          const input = document.getElementById(id);
+          if (input && document.activeElement !== input && input.dataset.dirty !== 'true') {
+            input.value = value.toFixed(2);
+          }
+        }
+      }
     }
 
     // Journal selection is independent from the account that controls orders.
@@ -2432,6 +2459,10 @@ HTML_CONTENT = """<!DOCTYPE html>
         });
         const result = await res.json();
         if (result.success) {
+          for (const id of [`sl-input-${ticket}`,`tp-input-${ticket}`]) {
+            const input = document.getElementById(id);
+            if (input) delete input.dataset.dirty;
+          }
           alert(`Position #${ticket} in MT5 erfolgreich aktualisiert!`);
           updateStatus();
         } else {
