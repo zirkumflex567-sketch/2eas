@@ -33,7 +33,7 @@
 - [~] 2.3 Drawing tool catalog and **object manager**: horizontal, trend, rectangle, Fibonacci, ray, price/time ruler, 3-anchor parallel channel, handles/OHLC snap, Undo, object tree with names, visibility, lock, stacking, duplicates and deletion. Advanced fibs, mobile gestures, v5 primitives, hit-test priorities and annotation styles remain open.
 - [~] 2.4 Drawing SQLite store, schema migration, revision conflicts, server layout/indicator profiles, import/export. **Implemented on branch:** private schema-v1 SQLite workspace store, optimistic revisions, account-scoped layout JSON, authenticated opt-in REST plus existing browser toolbar server save/load/delete; multi-user ACL, full v5 profile migration and remote conflict merge remain open.
 - [~] 2.5 Chart appearance plus optional Candle/OHLC Bar/Line/Area chart types with account-scoped local+SQLite layouts. Symbol watchlist, synced multi-chart workspaces, additional chart types and native pane/layout management remain open.
-- [ ] 2.6 Optimized paging, streaming and incremental calculations; performance budgets AT-025/031.
+- [~] 2.6 Render performance: whole-history OHLCV fingerprint prevents redundant 5-second indicator updates, including account/timeframe invalidation; SMA/Bollinger update only the last point on in-progress-bar changes, while corrected historical bars trigger full rebuild. MT5 paginated history, incremental RSI/MACD/ATR update, streaming, benchmarks and AT-025/031 budgets remain open.
 
 ## Task 3 — Broker read-only lifecycle and transparent risk
 
@@ -125,3 +125,7 @@ Branch `test/chart-studio-chart-types`, based on merged multi-oscillator main. A
 Branch `test/chart-studio-object-manager`: live selectable drawing list, safe labels, hidden/locked selection safeguards, up/down stacking, copies, deletion and Undo with account-scoped metadata stored in local profiles and revision-controlled SQLite layouts. Legacy v1 drawing documents remain compatible. Real MT5 orders and the legacy trading routes are untouched. Python/Chromium tests are required before this checkbox can be fully marked complete.
 
 **Goal status:** the overall /plan remains IN PROGRESS. Do not equate successful incremental PRs with acceptance of FR-001–FR-035 or AT-001–AT-056. Unfinished gated tasks: 0.7/0.8, 1.8, 2.1/2.6, 3.1–3.6, all 4.x and 5.x. Real MT5 demo identity/authoritative pricing, secured tunnel and broker-write approval cannot be simulated.
+
+### Chart render deduplication / performance package
+
+Branch `test/chart-studio-incremental-render`: shared dual-32-bit OHLCV fingerprint over **every bar**, including interior historical corrections (not just first/last time or price), used across ChartStudioBeta/Indicators/Oscillators/Averages/ChartTypes. Repeated identical market polls no longer trigger expensive Studio series rebuilds; current-bar price changes still update. SMA20/SMA50/Bollinger20 use lightweight `series.update` when only the last bar changes and indicator toggles are constant. New bars, altered historical bars or changed options force `setData` recomputation. Account/timeframe changes invalidate fingerprints. Test Node fingerprint contract and Chromium identical/live-candle/historical-correction/account/timeframe scenarios with no MT5 writes. **Not** a claimed MT5 source pagination implementation or AT-025 performance budget signoff.
