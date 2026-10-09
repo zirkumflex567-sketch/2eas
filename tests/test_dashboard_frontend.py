@@ -263,15 +263,19 @@ class DashboardFrontendTests(unittest.TestCase):
         self.assertEqual(dot.evaluate('el=>getComputedStyle(el).animationName'), 'none')
         self.page.emulate_media(reduced_motion='no-preference')
         self.page.get_by_label('Nicht-Chart-Dekoration').select_option('full')
-        self.page.locator('header').scroll_into_view_if_needed()
+        # This tests IntersectionObserver/motion, not pointer actionability.
+        # Native scrolling works while decoration/layout is still animating.
+        self.page.locator('header').evaluate("el=>el.scrollIntoView({block:'start',behavior:'instant'})")
         expect(self.page.locator('header')).to_have_attribute('data-ui-visible', 'true')
         self.assertNotEqual(dot.evaluate('el=>getComputedStyle(el).animationName'), 'none')
         self.page.get_by_label('Nicht-Chart-Dekoration').select_option('off')
         self.assertEqual(dot.evaluate('el=>getComputedStyle(el).animationName'), 'none')
         self.page.get_by_label('Nicht-Chart-Dekoration').select_option('full')
-        self.page.locator('#journal-list').scroll_into_view_if_needed()
+        self.page.locator('#journal-list').evaluate("el=>el.scrollIntoView({block:'start',behavior:'instant'})")
         expect(self.page.locator('header')).to_have_attribute('data-ui-visible', 'false')
         self.assertEqual(dot.evaluate('el=>getComputedStyle(el).animationPlayState'), 'paused')
+        self.assertEqual(self.errors, [])
+        self.assertEqual(self.mutations, [])
     def test_stale_status_recovery_is_automatic(self):
         self.load(); self.status_fail = True; self.page.evaluate('updateStatus()')
         expect(self.page.locator('#account-connection')).to_contain_text('STALE')

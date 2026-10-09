@@ -28,10 +28,12 @@ from chart_studio.money import PreviewError, preview_scenario
 from dashboard_security import install_control_security
 from chart_studio.workspaces import WorkspaceStore, StoreError, WorkspaceMissing, RevisionConflict
 from functools import lru_cache
+from dashboard_runtime import install_runtime
 
 app = FastAPI(title="XAU Titan Pro - Institutional Live Cockpit")
 install_control_security(app)
 BASE_DIR = Path(__file__).resolve().parent
+install_runtime(app, BASE_DIR)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / 'static')), name="static")
 
@@ -3194,4 +3196,4 @@ def index():
 
 if __name__ == "__main__":
     print("Starte XAU Titan Pro Institutional Cockpit auf http://127.0.0.1:8050 ...")
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get('DASHBOARD_PORT', '8050')), log_level="warning")
+    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get('DASHBOARD_PORT', '8050')), log_level="warning", proxy_headers=False)
