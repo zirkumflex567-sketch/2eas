@@ -118,7 +118,8 @@ class PreviewRegistry:
         with self.lock:
             item = self.items.get(token)
             if item is None or item[0]<=self.clock() or item[1]!=scope:
-                raise HTTPException(410, {'code':'PREVIEW_EXPIRED', 'canExecute':False, 'canCommit':False})
+                raise HTTPException(410, {'code':'PREVIEW_EXPIRED', 'canExecute':False, 'canCommit':False,
+                                          'guard':{'state':'UNKNOWN','source':'NONE'}})
             return copy.deepcopy(item[2])
 
 class PreviewLimiter:

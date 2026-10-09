@@ -48,9 +48,9 @@ def test_route_is_read_only_ticket_bound_gross_eur(api):
     data=response.json()
     assert data['canExecute'] is data['canCommit'] is False
     assert data['guard']=={'state':'UNKNOWN','source':'NONE'}
-    assert data['money']['currency']=='EUR'
+    assert data['pnlAtSl']['currency']=='EUR'
     assert data['geometry']['state']=='VALID'
-    assert data['finalBrokerPreview']=={'sl':'3999.00','tp':'4002.00'}
+    assert data['brokerPreview']=={'slPrice':'3999.00','tpPrice':'4002.00'}
 
 def test_conflict_and_strict_candidate(api):
     client,fake,payload=api
@@ -93,8 +93,8 @@ def test_unset_omitted_and_profitable_trailing(api):
     payload['candidate']={'slPrice':'4001','tpPrice':None}
     data=client.post('/api/chart/v1/position/preview-stop',json=payload).json()
     assert data['geometry']['state']=='VALID'
-    assert data['money']['riskReward'] is None
-    assert data['money']['estimatedGross']['tp'] is None
+    assert data['ratioRiskReward'] is None
+    assert data['pnlAtTp'] is None
 
 def test_limiter_refill_release_and_global_concurrency():
     from chart_studio.position_preview import PreviewLimiter
@@ -297,3 +297,50 @@ def test_preview_does_not_depend_on_or_mutate_global_decimal_precision(api):
         assert response.status_code==200,response.text
         assert getcontext().prec==3
     finally: getcontext().prec=old
+def test_canonical_master_spec_preview_contract(api):
+    client,fake,payload=api
+    data=client.post('/api/chart/v1/position/preview-stop',json=payload).json()
+    assert data['positionRevision']==payload['expectedRevision']
+    assert data['brokerPreview']=={'slPrice':'3999.00','tpPrice':'4002.00'}
+    assert data['valid'] is True
+    assert data['pnlAtSl']=={'amount':'-0.1','currency':'EUR','kind':'estimatedGross'}
+    assert data['pnlAtTp']=={'amount':'0.2','currency':'EUR','kind':'estimatedGross'}
+    assert data['ratioRiskReward']=='2'
+    assert data['quoteTimeUtc']=='2026-10-09T12:00:00.123000Z'
+    assert data['expiresAtUtc']
+    assert not {'actualPositionRevision','finalBrokerPreview','expiresUtc'} & data.keys()
+
+@pytest.mark.parametrize('field,initial,changed',[
+    ('trade_contract_size',100.,200.),('trade_calc_mode',0,1),
+    ('currency_profit','USD','EUR'),('currency_base','XAU','XAG'),
+    ('currency_margin','USD','EUR'),('trade_tick_value',1.,2.),
+    ('trade_tick_value_profit',1.,2.),('trade_tick_value_loss',1.,2.)])
+def test_monetary_symbol_context_correction_conflicts(api,field,initial,changed):
+    client,fake,payload=api
+    setattr(fake.symbols[0],field,initial)
+    def calculate(*args):
+        setattr(fake.symbols[0],field,changed)
+        return -1.
+    fake.order_calc_profit=calculate
+    response=client.post('/api/chart/v1/position/preview-stop',json=payload)
+    assert response.status_code==409
+    assert response.json()['detail']['code']=='SYMBOL_CHANGED'
+
+def test_monetary_account_currency_correction_conflicts(api):
+    client,fake,payload=api
+    original=fake.account_info
+    currency=['EUR']
+    def info():
+        result=original(); result.currency=currency[0]; return result
+    fake.account_info=info
+    def calculate(*args): currency[0]='USD'; return -1.
+    fake.order_calc_profit=calculate
+    response=client.post('/api/chart/v1/position/preview-stop',json=payload)
+    assert response.status_code==409
+    assert response.json()['detail']['code']=='ACCOUNT_CURRENCY_CHANGED'
+
+def test_registry_expired_error_guard_invariant():
+    from chart_studio.position_preview import PreviewRegistry
+    with pytest.raises(HTTPException) as caught:
+        PreviewRegistry().lookup('missing','scope')
+    assert caught.value.detail['guard']=={'state':'UNKNOWN','source':'NONE'}

@@ -130,7 +130,10 @@ def install_preview_routes(app, mt5, *, now=None, monotonic=None):
                         metadata=reads.require_symbol(mt5,payload.symbol)
                         reads.symbol_model(metadata,spec)
                         attrs=('point','trade_tick_size','volume_step','volume_min','volume_max',
-                               'trade_stops_level','trade_freeze_level','trade_mode','order_mode')
+                               'trade_stops_level','trade_freeze_level','trade_mode','order_mode',
+                               'trade_contract_size','trade_calc_mode','currency_base',
+                               'currency_profit','currency_margin','trade_tick_value',
+                               'trade_tick_value_profit','trade_tick_value_loss')
                         metadata_snapshot=tuple(getattr(metadata,a,None) for a in attrs)
                         candidate=payload.candidate.model_dump(exclude_unset=True)
                         final,reasons,step=geometry(position,candidate,metadata,initial_quote)
@@ -139,7 +142,11 @@ def install_preview_routes(app, mt5, *, now=None, monotonic=None):
                         if volume % volume_step: raise PolicyError('NUMERIC_POLICY_UNSUPPORTED')
                         opening=actual_number(Decimal(position['priceOpen']))
                         money={}
-                        gateway.verify_identity(mt5,spec)
+                        def verify_money_currency():
+                            current=reads.text(reads.required(gateway.verify_identity(mt5,spec),'currency'))
+                            if current != position['currency']:
+                                raise failure(409,'ACCOUNT_CURRENCY_CHANGED')
+                        verify_money_currency()
                         for leg,price in final.items():
                             if price is None: money[leg]=None; continue
                             target=number(price)
@@ -148,8 +155,10 @@ def install_preview_routes(app, mt5, *, now=None, monotonic=None):
                             if isinstance(result,bool) or not isinstance(result,(int,float,Decimal)) or not Decimal(str(result)).is_finite():
                                 raise failure(503,'PROFIT_UNAVAILABLE')
                             money[leg]=canonical(Decimal(str(result)))
-                        gateway.verify_identity(mt5,spec)
+                        verify_money_currency()
                         final_position,final_quote=snapshot(spec,payload)
+                        if final_position['currency'] != position['currency']:
+                            raise failure(409,'ACCOUNT_CURRENCY_CHANGED')
                         if final_position['revision']!=position['revision']:
                             raise failure(409,'POSITION_CHANGED',currentRevision=final_position['revision'])
                         final_metadata=reads.require_symbol(mt5,payload.symbol)
@@ -158,7 +167,7 @@ def install_preview_routes(app, mt5, *, now=None, monotonic=None):
                         # Metadata correction during calculation invalidates that calculation.
                         if metadata_snapshot != tuple(getattr(final_metadata,a,None) for a in attrs):
                             raise failure(409,'SYMBOL_CHANGED')
-                        gateway.verify_identity(mt5,spec)
+                        verify_money_currency()
                         asof=clock()
                         with localcontext() as ctx:
                             ctx.prec=64
@@ -166,15 +175,21 @@ def install_preview_routes(app, mt5, *, now=None, monotonic=None):
                                 if money['sl'] is not None and money['tp'] is not None and
                                 Decimal(money['sl'])<0<Decimal(money['tp']) else None)
                         result={'schemaVersion':1,'clientRequestId':payload.clientRequestId,
-                            'positionTicket':payload.positionTicket,'actualPositionRevision':position['revision'],
-                            'account':spec['id'],'symbol':payload.symbol,'finalBrokerPreview':final,
+                            'positionTicket':payload.positionTicket,'positionRevision':position['revision'],
+                            'account':spec['id'],'symbol':payload.symbol,'brokerPreview':{'slPrice':final['sl'],'tpPrice':final['tp']},
                             'quote':final_quote,'initialQuote':initial_quote,
-                            'money':{'currency':position['currency'],'estimatedGross':money,
-                                     'riskReward':rr,'riskRewardState':'AVAILABLE' if rr is not None else 'UNAVAILABLE'},
+                            'pnlAtSl':({'amount':money['sl'],'currency':position['currency'],
+                                        'kind':'estimatedGross'} if money['sl'] is not None else None),
+                            'pnlAtTp':({'amount':money['tp'],'currency':position['currency'],
+                                        'kind':'estimatedGross'} if money['tp'] is not None else None),
+                            'ratioRiskReward':rr,
+                            'ratioRiskRewardState':'AVAILABLE' if rr is not None else 'UNAVAILABLE',
+                            'quoteTimeUtc':utc(final_quote['quoteTimeUtcMs']/1000),
+                            'valid':not reasons,
                             'geometry':{'state':'VALID' if not reasons else 'INVALID','reasons':reasons},
                             'marketSession':{'state':'UNKNOWN','source':'NONE'},
                             'guard':{'state':'UNKNOWN','source':'NONE'},'canExecute':False,'canCommit':False,
-                            'asOfServerUtc':utc(asof),'expiresUtc':utc(asof+10),
+                            'asOfServerUtc':utc(asof),'expiresAtUtc':utc(asof+10),
                             'warnings':['GROSS_EXCLUDES_FEES_SWAP_GAPS_SLIPPAGE','MARKET_SESSION_UNKNOWN',
                                         'GUARD_UNKNOWN','CALCULATION_IS_NOT_PERMISSION','CONSERVATIVE_EXISTING_FREEZE_POLICY']}
                         scope=scope_hash(identity,peer,spec,payload.symbol,payload.positionTicket,position['revision'])

@@ -223,3 +223,11 @@ clock, configured offset, normalized UTC and permitted skew. An ID is never a wr
 capability: any future write gate needs separate live authorization, confirmation,
 CSRF and fresh broker/guard reads. A monotonic per-principal 4/s burst-8 limiter and
 one global in-flight preview reject excess work before entering the gateway.
+
+The canonical result exposes `valid`, `positionRevision`, `brokerPreview` with
+`slPrice`/`tpPrice`, nullable `pnlAtSl`/`pnlAtTp` estimated-gross money objects,
+`ratioRiskReward`, UTC `quoteTimeUtc`, and `expiresAtUtc`. Symbol contract size,
+calculation mode, monetary currencies and tick-value variants are included in the
+actual initial/final calculation-context comparison when exposed by the adapter;
+a correction conflicts instead of returning stale money. Account currency is also
+verified before and after calculation and at final readback.
