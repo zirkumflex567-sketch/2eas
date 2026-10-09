@@ -19,6 +19,8 @@
 
 ### Task 1: proxy identity, role-bound operator sessions
 
+Implementation status: code complete at `74d6691`; port documentation clarified at `28fa2f9`. RED observed (39 failing new tests), final 76 security tests pass. Independent spec review and quality review approved after fixing local bearer compatibility and early session revocation. Live rollout remains pending Task 2 and CI.
+
 Files: modify dashboard_security.py, app.py (__main__ only), stt_nginx.conf; add tests/test_dashboard_proxy_security.py and docs/STT_OPERATIONS.md. Keep tests/test_dashboard_control_security.py passing.
 
 - [ ] RED: test trusted loopback proxy + >=32-character shared secret + explicitly mapped username => read/layout/trade role. Unknown user, invalid secret, duplicate auth headers and non-loopback transport fail closed.
@@ -32,6 +34,8 @@ Files: modify dashboard_security.py, app.py (__main__ only), stt_nginx.conf; add
 - [ ] Run targeted tests, commit only task files; spec review then quality review, fix and re-review findings.
 
 ### Task 2: runtime version proof and safe restart
+
+Implementation status: in progress in the isolated worktree. Live baseline remains main `3032426`.
 
 Files: add dashboard_runtime.py, tests/test_dashboard_runtime.py, scripts/dashboard_runtime.ps1; modify app.py to install GET /api/runtime; extend docs/STT_OPERATIONS.md.
 
