@@ -189,6 +189,32 @@ class SqliteLayoutTests(unittest.TestCase):
         with self.assertRaises(StoreError):
             validate_document({**old,"movingAverages":"no"})
 
+    def test_chart_appearance_document_is_optional_strict_and_scoped(self):
+        before = example()
+        self.assertNotIn("chartAppearance", validate_document(before))
+        appearance = {
+            "theme": "dark", "grid": False, "crosshair": True,
+            "scale": "logarithmic", "upColor": "#44ffaa",
+            "downColor": "#f43f5e", "wickVisible": True,
+            "borderVisible": False, "lastPriceVisible": True,
+        }
+        doc = {**before, "chartAppearance": appearance}
+        self.assertEqual(validate_document(doc)["chartAppearance"], appearance)
+        record = self.store.put("local-owner", "titan", "XAUUSD", "Style", doc, 0)
+        self.assertEqual(record["revision"],1)
+        self.assertEqual(self.store.get("local-owner","titan","XAUUSD","Style")["document"],doc)
+        for invalid in [
+            {**appearance, "theme":"external"},
+            {**appearance, "scale":"invalid"},
+            {**appearance, "upColor":"javascript:alert(1)"},
+            {**appearance, "downColor":"red"},
+            {**appearance, "grid":1},
+            {**appearance, "borderVisible":"no"},
+            {**appearance, "id":"script"},
+        ]:
+            with self.subTest(case=str(invalid)[:55]),self.assertRaises(StoreError):
+                validate_document({**before,"chartAppearance":invalid})
+
 
 class ApiAccessTests(unittest.TestCase):
     def setUp(self):

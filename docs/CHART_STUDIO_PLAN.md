@@ -78,3 +78,7 @@ Advanced drawing tools on `test/chart-studio-advanced-drawings`: horizontal and 
 ## Immediate UI priority: multi-instance indicator editor
 
 The fixed chart indicator toggles are supplemented, not replaced, by a new isolated `ChartStudioAverages` module with 16 optional EMA/SMA/WMA instances, editable source, periods 2–500, colors/width/labels and scoped local/server profile persistence. This is a working next step toward an indicator registry with instance IDs (v5 target), not a full TradingView clone. The old v4 chart, both EAs and all MT5 execution routes remain unchanged. A version-1 workspace extension `movingAverages` is optional for backwards compatibility; strict server validation prevents invalid styling/config injection. CI must include math/validation, Chromium UI and existing complete regression before PR merge.
+
+## Visual chart settings module
+
+`ChartStudioAppearance` adds controlled chart appearance customization with a strict schema and account-local settings: background theme, grid, crosshair, right-scale logarithmic/normal, candle up/down styling and last-price line. The optional `chartAppearance` server workspace field preserves schema-v1 backward compatibility. Do not alter any EA indicator inputs or broker order execution. E2E Chromium fixture checks renderer options and local/server profile round trips. Chart types, v5 engine and all higher-level plans remain open.

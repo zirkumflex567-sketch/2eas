@@ -67,7 +67,7 @@ def _number(value: Any, label: str, *, integer: bool = False) -> float | int:
 def validate_document(raw: Any) -> dict:
     """Strict version-1 JSON input; never store executable markup or arbitrary keys."""
     required = {"schemaVersion", "drawings", "options", "indicators", "timeframe"}
-    allowed = required | {"movingAverages"}
+    allowed = required | {"movingAverages", "chartAppearance"}
     if not isinstance(raw, dict) or not required.issubset(raw) or not set(raw).issubset(allowed) or type(raw["schemaVersion"]) is not int or raw["schemaVersion"] != 1:
         raise StoreError("Nicht unterstütztes Workspace-Schema.")
     drawings = raw["drawings"]
@@ -161,6 +161,32 @@ def validate_document(raw: Any) -> dict:
                 raise StoreError("Ungültiger MA-Name.")
             clean_ma.append(item.copy())
         safe["movingAverages"] = clean_ma
+    if "chartAppearance" in raw:
+        appearance = raw["chartAppearance"]
+        fields = {"theme", "grid", "crosshair", "scale", "upColor",
+                  "downColor", "wickVisible", "borderVisible", "lastPriceVisible"}
+        if not isinstance(appearance, dict) or any(k not in fields for k in appearance):
+            raise StoreError("Ungültige Chart-Darstellung.")
+        if "theme" in appearance and (
+            type(appearance["theme"]) is not str or
+            appearance["theme"] not in {"inherit", "dark", "light"}
+        ):
+            raise StoreError("Unbekanntes Chart-Farbschema.")
+        if "scale" in appearance and (
+            type(appearance["scale"]) is not str or
+            appearance["scale"] not in {"normal", "logarithmic"}
+        ):
+            raise StoreError("Ungültige Preisskala.")
+        for key in {"grid", "crosshair", "wickVisible", "borderVisible", "lastPriceVisible"}:
+            if key in appearance and type(appearance[key]) is not bool:
+                raise StoreError("Chart-Sichtbarkeit muss boolesch sein.")
+        for key in {"upColor", "downColor"}:
+            if key in appearance and (
+                not isinstance(appearance[key], str) or
+                not re.fullmatch(r"#[0-9a-fA-F]{6}", appearance[key])
+            ):
+                raise StoreError("Ungültige Kerzenfarbe.")
+        safe["chartAppearance"] = appearance.copy()
     encoded = json.dumps(safe, ensure_ascii=False, allow_nan=False,
                          separators=(",", ":")).encode("utf-8")
     if len(encoded) > MAX_DOCUMENT_BYTES:
