@@ -28,10 +28,12 @@ from chart_studio.money import PreviewError, preview_scenario
 from dashboard_security import install_control_security
 from chart_studio.workspaces import WorkspaceStore, StoreError, WorkspaceMissing, RevisionConflict
 from functools import lru_cache
+from dashboard_runtime import install_runtime
 
 app = FastAPI(title="XAU Titan Pro - Institutional Live Cockpit")
 install_control_security(app)
 BASE_DIR = Path(__file__).resolve().parent
+install_runtime(app, BASE_DIR)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / 'static')), name="static")
 

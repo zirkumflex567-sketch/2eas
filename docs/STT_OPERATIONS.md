@@ -89,6 +89,91 @@ blocked by the network/service binding.
 This repository change does not perform deployment, service reloads, broker calls
 or live trade verification.
 
+## Runtime version proof and guarded Windows restart
+
+`GET /api/runtime` returns `pid`, `startedUtc`, `checkoutId`, `startupRevision`,
+`startupDigest`, `diskRevision`, `diskDigest`, `applicationCodeDirty`,
+`sourceAvailable` and `restart_required`. Startup revision/digest are captured
+once before serving and remain fixed for the lifetime of the process. Current
+disk revision/digest are inspected afresh, so editing a module or static source,
+staging a source addition, deleting tracked source or changing HEAD requires a
+restart. An unreadable/missing source also requires a restart. The response
+contains no paths, environment values, account data or credentials.
+
+The digest includes tracked Python, JavaScript/TypeScript (including CJS/MJS),
+CSS/HTML and immutable package/build manifests and dashboard dependency locks.
+It excludes tests, docs, private/secrets directories, generated output, package
+installations, runtime state, untracked files and mutable `drawdown_config.json`.
+It does not attest installed dependency binaries or images/fonts. `checkoutId`
+is SHA256 of the normalized resolved absolute checkout root; identical source
+in another Git worktree therefore cannot authorize stopping this process.
+Without a usable Git checkout, revision is explicitly `unknown` and inspection
+is limited to known dashboard root modules and source directories. The guarded
+script requires a readable Git checkout and refuses this fallback.
+
+Inspect expected code without importing the dashboard or MT5:
+
+```powershell
+& 'C:\Python314\python.exe' 'C:\path\dashboard\dashboard_runtime.py' --inspect-checkout 'C:\path\dashboard'
+```
+
+Use `scripts/dashboard_runtime.ps1` with Windows PowerShell 5.1 or later and
+explicit absolute repository/Python paths and backend port. These examples are
+operator commands; they are not executed by this change:
+
+```powershell
+.\scripts\dashboard_runtime.ps1 -Action Status -Repo 'C:\path\dashboard' -Python 'C:\Python314\python.exe' -Port 8050
+.\scripts\dashboard_runtime.ps1 -Action Start -Repo 'C:\path\dashboard' -Python 'C:\Python314\python.exe' -Port 8050 -PrivateEnvJson 'C:\protected\dashboard-env.json'
+.\scripts\dashboard_runtime.ps1 -Action Restart -Repo 'C:\path\dashboard' -Python 'C:\Python314\python.exe' -Port 8050 -PrivateEnvJson 'C:\protected\dashboard-env.json'
+```
+
+The private file must be outside the resolved checkout and protected by local
+ACLs. It is a JSON object with unique keys and string values. Permitted keys are
+the five proxy/control variables documented above,
+`DASHBOARD_QUOTE_MAX_AGE_SECONDS`, `CHART_STUDIO_STORAGE_TOKEN`,
+`CHART_STUDIO_STORAGE_ENABLED`, and `CHART_STUDIO_DB`. Secret values/passwords
+must never be placed in shell arguments or Git. The private file can be omitted
+for default local configuration. Controlled dashboard/chart variables are cleared
+in the child environment before applying this file; protected settings must be
+provided explicitly on every launch. Port is supplied by `-Port`, not the file.
+The file does not provision nginx Basic-auth passwords, enable a new chart write
+gate or replace the protected nginx secret include.
+
+Start/Restart rejects dirty tracked application code, missing source, malformed
+JSON, duplicate keys, invalid roles/prefixes, short/missing proxy secrets and
+invalid quote/storage configuration before any stop. Mutable drawdown changes
+do not count as application code. Syntax preflight compiles source without
+importing app/MT5. The script then verifies that the actual loopback listener PID
+matches the runtime endpoint PID and that `checkoutId` matches the requested
+checkout. Unrelated listeners, wildcard-bound listeners, malformed endpoints
+and another worktree are refused. Restart can intentionally replace a stale
+running revision with the current clean checkout revision.
+
+Launch uses the selected Python and absolute `app.py` path in a hidden process.
+Unique `.dashboard-runtime-*.stdout.log`, `.stderr.log` and `.previous.log`
+files must be ignored by Git before launch. Treat these local logs as private;
+application tracebacks may contain protected data. No log contents or private
+environment values are printed by the script. Startup waits up to 30 seconds
+(configurable with `-StartupTimeoutSeconds`, maximum 60), checking listener PID,
+checkout identity, startup/disk revision/digest and a false `restart_required`.
+There is no Git pull, MT5/EA restart, SSH/tunnel restart or broker operation.
+
+If the replacement fails, the script stops only its own newly launched process,
+reports the previous public runtime proof and preserves source, protected
+environment file and ignored recovery record. It does not automatically roll
+back files or replay environment secrets. Use the deployment backup to restore
+the prior checkout revision/environment and rerun Start. A source digest alone
+cannot restore old source bytes; keep a recoverable Git revision and protected
+configuration backup before an approved rollout.
+
+An older running dashboard without `/api/runtime` cannot be restarted by this
+guard. During the first migration, the operator must independently verify the
+existing listener's PID, executable, command line and checkout ownership, back
+up its configuration, and explicitly stop that dashboard process only. Then
+launch the upgraded clean checkout with Start and verify local/public runtime
+proof. Do not infer ownership from a matching port or HTML, and do not stop
+MT5, EA, Python processes generally or the reverse SSH tunnel.
+
 ## Rollback
 
 If validation fails, close public access to the STT location first. Restore the
