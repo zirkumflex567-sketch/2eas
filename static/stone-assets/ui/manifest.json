@@ -1,0 +1,1096 @@
+{
+  "schema": 1,
+  "pillow": "12.1.1",
+  "budget_bytes": 3145728,
+  "resize": "full-image proportional LANCZOS; no cropping; no upscaling",
+  "original_sha256": {
+    "app.py": "77809a35f9794bbe00c4e698463810ddb29a726540da0c1a3131e964a85a99cd",
+    "static/stone-asset-skin.css": "0f2dac63782435d916b436f5a0c9874de0fb74b05a1049c11aa59d596d40e7ca",
+    "static/stone-assets/ready/01_basalt_dark_tile.webp": "6e17e4aa33348857b93d600141071b44d9f204da122e2ec951b8e25b3bd457e1",
+    "static/stone-assets/ready/02_slate_fractured_tile.webp": "796ae9731cf7f6a975b7813bec3d4653a3e7df21060ddb1a2c961e1351f95ed7",
+    "static/stone-assets/ready/03_obsidian_smoked_tile.webp": "32c91ff2be0d4c2df413c7caa57d052acd024c2f38c069ce017d50e30769f82b",
+    "static/stone-assets/ready/04_granite_worn_tile.webp": "686317d2d5740dec4922014b0099759a0d88ebcfaec9a93920e60dc9cc699b7c",
+    "static/stone-assets/ready/05_chiseled_stone_tile.webp": "acf223973c51fef7ef840b20a3e13bf01ce9080fb25667b09db6415b93d98b1b",
+    "static/stone-assets/ready/06_antique_bronze_tile.webp": "17a87068d2481f2de978e94e3aaf9856a5911e68560e3c63df1cd7be46c41ce9",
+    "static/stone-assets/ready/07_brushed_gunmetal_tile.webp": "4691fe4fd8dca06118e8502e5db37e563a649da3f2fc1adb32f231cd5a34f8d7",
+    "static/stone-assets/ready/08_charred_iron_tile.webp": "015fcd3ebab943a0a44d8298cbe8412a7b5efd09a88205992f86c8b6841cbfd1",
+    "static/stone-assets/ready/09_bionic_inlay_tile.webp": "e3de2df4ac7fcfafebcdb54f35ea0ae5dd5aa1cd774cb125f88afa26b925c30c",
+    "static/stone-assets/ready/10_ancient_circuit_stone_tile.webp": "611ccaa94ccb4b9f079691224ea8bb7d0b79ef728d09f363feea271088dd4cc8",
+    "static/stone-assets/ready/11_master_dashboard_panel.png": "cb1e26d596ad2f1f7dd076ea0c58b8848e8ee24ad0edc904df9411ad8d034de4",
+    "static/stone-assets/ready/11_master_dashboard_panel.webp": "ba1240939949c6c632014a467f128c1c8557ed6125664fdacae6d9ff6a5d6b07",
+    "static/stone-assets/ready/12_chart_frame_wide.png": "260fc8ac96c7a93814a4233113a790cc2b1d0b692c39131e4a093468067d4d9e",
+    "static/stone-assets/ready/12_chart_frame_wide.webp": "5b661a16cb76387ed44a7e64ab94f2221ee77765ea334ed569914d58a553add0",
+    "static/stone-assets/ready/13_volume_frame_tall.png": "5d0c7b531c44057fa405066c9d1773831fa3dc2c2ad9e74d13b2ba404ce20219",
+    "static/stone-assets/ready/13_volume_frame_tall.webp": "e96e33e4521a5bc9aa35d947d6c1446b47ed06f2dc5a618cff999d8bddf63b2d",
+    "static/stone-assets/ready/14_long_volume_plate.png": "61df120edc397d8ddf026180ccba99e0ae18995e45208c451e7d672b8a3bf05f",
+    "static/stone-assets/ready/14_long_volume_plate.webp": "0201cf6af74a43d3d8211967f02f7af216b1ffac891ee7a7c361c251a9f772a4",
+    "static/stone-assets/ready/15_header_command_slab.png": "c555c8165236e9e4825ad937b7bd6637b6aff202cdc31357e00d81f400b7ddda",
+    "static/stone-assets/ready/15_header_command_slab.webp": "343c43b4cb1c1fa25946685249631d7c7f58f9d28e907a6f13f9b8c355fcea2c",
+    "static/stone-assets/ready/16_diagnostic_core_panel.png": "f227c85f935f1cd93daafd0a8ce3a0bf5016e9f031ba0b36d4e06130ff5de8f5",
+    "static/stone-assets/ready/16_diagnostic_core_panel.webp": "21a813767b3c2fc477175b3da13e348a5240eb83f47c79b0c265d0e115e1ab43",
+    "static/stone-assets/ready/17_trade_ticket_cartridge.png": "4c5751e6d6717dd51d60d5949742eca9de49bf0ee8f0fb9191b07e2a59e04bbc",
+    "static/stone-assets/ready/17_trade_ticket_cartridge.webp": "d699e8d7ce73edeb4f66b91054cd4fdc717fb68aa13a4f7d33c66b62948044da",
+    "static/stone-assets/ready/18_journal_stone_plate.png": "59b356df8b89cb5330403f97ed7d14feb6c136cc31d758737163b89db81041ae",
+    "static/stone-assets/ready/18_journal_stone_plate.webp": "50584ec4ae98bc1a706c27dacade634b5dbecdbea84aa4af2627288ed9fc32d6",
+    "static/stone-assets/ready/19_entry_matrix_frame.png": "24ff6496f7e4b9a4029beb1b6dbd0999a22e93b3bc2b668065db162160debfff",
+    "static/stone-assets/ready/19_entry_matrix_frame.webp": "5a859c0461bdb624b68051af356d621ead2263e20d3235fbe6cf247dc80e3028",
+    "static/stone-assets/ready/20_guard_warning_plaque.png": "762a282d69587df28f52ddd0b5de2a70037121e93bbbdfae71849b395e0791f9",
+    "static/stone-assets/ready/20_guard_warning_plaque.webp": "87ad29855d9cd71169e539019e4f48f95288199b95eac31ad64091a9b7a391ff",
+    "static/stone-assets/ready/21_cyan_side_circuit.png": "9606d5214f026049ebc91753fa2a288e810b485b062993640f1ea5104f395c58",
+    "static/stone-assets/ready/21_cyan_side_circuit.webp": "64b13a27c669269ebab2e829d8465112cfeec34afe84c43aa18fa9d26bd1f3ae",
+    "static/stone-assets/ready/22_amber_side_circuit.png": "ec9a8fa652ec12c9fc84fea2e201e61afdba65832048902decddd9780b6af761",
+    "static/stone-assets/ready/22_amber_side_circuit.webp": "8ee62547c56a08ef615b55492e023847f51066f822276519d740d72d28c63d04",
+    "static/stone-assets/ready/23_blue_crack_emissive.png": "fc7de93d07f62ed5b1738722a3116b5dc6bc758a0425376cf3eb4467abf0bf0d",
+    "static/stone-assets/ready/23_blue_crack_emissive.webp": "ec4b341c1b25b56333e6d4060ec3003459e1b150723a4922d68db3e84b4ab7ab",
+    "static/stone-assets/ready/24_amber_crack_emissive.png": "d982053aa3ecbdb6be6a6cdd6721b4d4f859efc65f5413d8a5be0281c2eb3d87",
+    "static/stone-assets/ready/25_rune_crest_emblem.png": "59cb30a497ebc8a2535d0912b751efb2f1bf485145f71661919c317a1499b325",
+    "static/stone-assets/ready/25_rune_crest_emblem.webp": "6b57fc6865b6ee1147a82bee57f9768a6eb254bba79b477d6fa84ce5374557cc",
+    "static/stone-assets/ready/26_metal_rivet.png": "fd6574c33f4dedb36ff7a86ae4681a0229c047a5eaaf29ddfdee508e3ccf5dfc",
+    "static/stone-assets/ready/27_broken_corner_ornament.png": "0770801053686ad4fae1f2ea358e164f8b27efd656bfc717aec086d5c0e8ec75",
+    "static/stone-assets/ready/27_broken_corner_ornament.webp": "76b34d0d0259380d1bea8f1305127236a9710dd5bd19748c00cfc4cabf767f6e",
+    "static/stone-assets/ready/28_bionic_joint_connector.png": "161d0420178a49d8887b43100d66c58a39f1daac9900a349a0909b5021dcadda",
+    "static/stone-assets/ready/29_electric_corner_glow.png": "67a3e4d525d4fa0ff4317283b0df8f9b27f7f662aab8896b50eed7ed20939920",
+    "static/stone-assets/ready/29_electric_corner_glow.webp": "b6166902c8cac993c5b63b4f0239aa026b06d83cf5bb15f83c1cd1af6bc7eaf9",
+    "static/stone-assets/ready/30_ancient_power_core.png": "b2387860c31d358ca16b94af878b8dc9bfb94c3e7593ef91e6bd67f8ae5099e2",
+    "static/stone-assets/ready/31_button_idle_blue.png": "5f4a7344f490b752bc64b50a2460444f2272301f09844429ba8759a4f05a5a2c",
+    "static/stone-assets/ready/31_button_idle_blue.webp": "446d3c7896d44c8e15fd7f77be5a7da0c902e9bea46006772eaa83499e1de172",
+    "static/stone-assets/ready/32_button_active_blue.png": "dc3ada6a2397a7c1dbe72d599ef1764f546d1ca3c74e75a41100ef997fea71e5",
+    "static/stone-assets/ready/32_button_active_blue.webp": "c9346a61991f29b2283a48e96ddab5ad6b14958a4b2228c356fdcaeb22333399",
+    "static/stone-assets/ready/33_button_confirm_green.png": "ee643bbf065b491162da02a8088772fe687808500541b996a8cd7159d4092a24",
+    "static/stone-assets/ready/34_button_danger_red.png": "d181ca6ab9965bf8e0bb60472ee2c1257804bfec547943d006ea199f2d542c2a",
+    "static/stone-assets/ready/35_button_warning_amber.png": "72810191c9fccf3599ad03ac4c6c39bc3a0a509dc89b2639c8fbd001912aa4f2",
+    "static/stone-assets/ready/36_input_recessed_field.png": "2ad9408ebd2c659d165e7e85462be6f4e35a551767fed83408476adb1c9f4a44",
+    "static/stone-assets/ready/36_input_recessed_field.webp": "594d1fe00f96a060f103cb3fcde54e7fe32ed000711a6dbe02211e84f8f84361",
+    "static/stone-assets/ready/37_tab_idle_stone.png": "09af7a7315b79716b76decd223b20b9bc9059062de9bdaf301c4e22c7b40ae4c",
+    "static/stone-assets/ready/37_tab_idle_stone.webp": "fb93e57698aecfb4ff6b8102eb2459bdd200000ca27bfa8ac56744701d8389d8",
+    "static/stone-assets/ready/38_tab_selected_cyan.png": "1aa25f7e13527a39db081f1534fae81315c7ab42d4503a0e51acfd7a7a683c2d",
+    "static/stone-assets/ready/38_tab_selected_cyan.webp": "0bb28e5df1e187bd562b1c9639b47d6f240ef39d73adcaef1b6973e8ae1b3ed3",
+    "static/stone-assets/ready/39_slider_metal_track.png": "71a8b705717ee8e2368c45937873686156bfb7f67bc67eb2225f5fcf3125a403",
+    "static/stone-assets/ready/40_slider_power_knob.png": "0b95464aba9c430a1d80491499c73a328d8abb7f433024e11c103a5d088685bf",
+    "static/stone-assets/ready/41_chart_recessed_surface.webp": "f06cf4c90352b8367591bf7a90e43edc49e7dcddd7f22742d33dbb912000208c",
+    "static/stone-assets/ready/42_volume_bar_cyan.png": "0ca3696e3d2391c5447e81d6e756f387f0d385626718f1f5fdad0b6d81600242",
+    "static/stone-assets/ready/42_volume_bar_cyan.webp": "47f1c53b719e48f41b5cba7f7e4b9fb590b3888efeb8ad0b457d577c47ba8c87",
+    "static/stone-assets/ready/43_volume_bar_gold.png": "c48ed4cada296437c5c8224aa1de9109614853466b59877d6c1ff3d6b8b5bbb5",
+    "static/stone-assets/ready/43_volume_bar_gold.webp": "4e4dc236d7482bb577037f4b7ce21d7cc04031462295d34e88539b81139e017f",
+    "static/stone-assets/ready/44_volume_bar_inactive.png": "0a3f4be3220a6dc25ad646d882fbe3a65e9a8a9ae27bf9d29b7595781ab5d21b",
+    "static/stone-assets/ready/44_volume_bar_inactive.webp": "0c0303decb6d03f4bbcc7821f25acdc80eb461aa7c3892c150b1958273aed393",
+    "static/stone-assets/ready/45_risk_fill_red.png": "311ca1eb0d16b71c6a9232bd9bd4b6a9d4ccfe84e90f0a5afef62c5f4bc36aaf",
+    "static/stone-assets/ready/45_risk_fill_red.webp": "77f407e9ebd9cee0809e8d693a0132e39e64f955b809698e711c9dd1db763389",
+    "static/stone-assets/ready/46_readiness_fill_green.png": "b7366e5f3da768ca4c04498200fa0af221ea2e7c2f427c4ab1d1b6b28ed063e2",
+    "static/stone-assets/ready/46_readiness_fill_green.webp": "68e93b200ba6607e515d3ca0f5aca67343ff994876770765f469595587cc3497",
+    "static/stone-assets/ready/47_table_row_metal.png": "79249478c5e4677c4ed1e785fba97defd6c0d1dc86aa3088288dd328642e865b",
+    "static/stone-assets/ready/47_table_row_metal.webp": "53d8a79d9dba7a8f5c237f4891afd13425dc89b8767cb9fae0a721fb08e9d2cc",
+    "static/stone-assets/ready/48_tooltip_engraved_plate.png": "88f1c9ed4f91d73ba620ad024a2c997f1385b530f94204a380a72499d582126b",
+    "static/stone-assets/ready/48_tooltip_engraved_plate.webp": "9ed2c0d46f17db420db4791fd6ad02d4b58d266efb3c6c4730856b3d43b6890a",
+    "static/stone-assets/ready/49_modal_warning_frame.png": "b527159935f27aad9604f82ff09caa6b040a289575c357a73c940edbd7d92aeb",
+    "static/stone-assets/ready/49_modal_warning_frame.webp": "6217134b637b5201f373460beaba010116460af45be3de3882524bbe259ba2dc",
+    "static/stone-assets/ready/50_scroll_track_etched.png": "755cb2552606092e40510f6c2245d1dd74773c12563808107463c092099c2081",
+    "static/stone-assets/ready/processing-report.json": "ca7b03b2b4760eb6a151bb423c4906ac92a68d2334d503b64108eb172cfd6af6",
+    "static/stone-assets/source/01_basalt_dark_tile.jpg": "6bcc1ae0514892843e93b99d1429fe4964c9408a788a8061bdae4b0b76d1d736",
+    "static/stone-assets/source/02_slate_fractured_tile.jpg": "b74a76928b40ee41d93c2d3b7d3c441698ce0734fc2f71510ac9662a1c7dd79f",
+    "static/stone-assets/source/03_obsidian_smoked_tile.jpg": "897315e081a0e6f18cb17b132c4d59ce2e6d1dc5fb0b653e70898c7032ecf54e",
+    "static/stone-assets/source/04_granite_worn_tile.jpg": "5003947591338077f862710c7ccd725ab2e3ee0d0aa86ed4cceac095257665de",
+    "static/stone-assets/source/05_chiseled_stone_tile.jpg": "b6815952e57c7bba8d27ea3a7d4c1481a977fc5935a1bb83e6a8b6712c584767",
+    "static/stone-assets/source/06_antique_bronze_tile.jpg": "98df00b8db14f0910122b3d0b0814d27173aa4330f3fc1090a25e49f430e14db",
+    "static/stone-assets/source/07_brushed_gunmetal_tile.jpg": "b795142a4810e72aba5fb9691e0a616be9530dde3adadc03d9488b4cd79e7cf4",
+    "static/stone-assets/source/08_charred_iron_tile.jpg": "add2d558c57f4a1364cac2021e736e44c90f8cb02a640c7e1028c09835d9933a",
+    "static/stone-assets/source/09_bionic_inlay_tile.jpg": "2af91b854113c611ebc36ae10247d530e6d741fbaba4ac1c01c85eb011cd8b58",
+    "static/stone-assets/source/10_ancient_circuit_stone_tile.jpg": "91d92125855fdb4dcf34ae5a932c2cc321064ee045bf55d8f651a25aa55fe5bd",
+    "static/stone-assets/source/11_master_dashboard_panel.jpg": "6af27995bccc924842dfa07b9c9f393a7a357dafe5823188ff984f9f3565cdbb",
+    "static/stone-assets/source/12_chart_frame_wide.jpg": "da1e4eafa45e822be2f106260b1d54599e0fbe4953b1ff6d1cce1eb87ddeb977",
+    "static/stone-assets/source/13_volume_frame_tall.jpg": "40f163a2089049345dbd428302bb9375b28632015097d473f4030495b6450d51",
+    "static/stone-assets/source/14_long_volume_plate.jpg": "60df05bbc6efe491172203b8ddb0c4d9ffad0e08dd34529668d7eea54bd3ccb2",
+    "static/stone-assets/source/15_header_command_slab.jpg": "40ddeae43856b0644dfa93fe0e9606e8d78034a20ed3a46d0fba9d3fc8ac1ae4",
+    "static/stone-assets/source/16_diagnostic_core_panel.jpg": "5d661101733327683f71eeea3b1a63975e9c708b339cb3f2a3f3092090322209",
+    "static/stone-assets/source/17_trade_ticket_cartridge.jpg": "efee0db53115890225530a348e0362a9c1d169be0614fb76f78a68a6d158319d",
+    "static/stone-assets/source/18_journal_stone_plate.jpg": "c7a3d1386ee00c5db263ca08f9e659cba192f1de3799539677660cb0d2f09f7e",
+    "static/stone-assets/source/19_entry_matrix_frame.jpg": "8710f5b51bdcca2026cc26b7368f307e5237fd405059feecf7a7a119e863baf7",
+    "static/stone-assets/source/20_guard_warning_plaque.jpg": "2b4f28687af831efd62d59b828fa12a51af559d21f2681e655b4e6980085afc0",
+    "static/stone-assets/source/21_cyan_side_circuit.jpg": "0d39a38260567c221d69f272d8d8f7280b9eac54956b3e12752b6e51d9860b65",
+    "static/stone-assets/source/22_amber_side_circuit.jpg": "3ecdcad8780cc4c0331daf9cdcdb9b5301c4713403962827d39af2c14aa0afce",
+    "static/stone-assets/source/23_blue_crack_emissive.jpg": "fb23ec8bcd512a79a985dc7ed4304c625ef28d2b70d71d6cab98b8b3a339ce06",
+    "static/stone-assets/source/24_amber_crack_emissive.jpg": "072049e1b525d9e42f90e6df4621e370ae5f07ebbe683fd476704727aba404c3",
+    "static/stone-assets/source/25_rune_crest_emblem.jpg": "12e14214f66419b0eeadfe50b371a71f01fce58332d499064a87344d68e4937e",
+    "static/stone-assets/source/26_metal_rivet.jpg": "1f7224ecc56b72210f0e602ffc100cb040f11d714cdd02017eabaec0553242d5",
+    "static/stone-assets/source/27_broken_corner_ornament.jpg": "f2ca70b4fb003bd7b03c08f790b3d0fd13df57b042500c1ee0ea11a7180dadf4",
+    "static/stone-assets/source/28_bionic_joint_connector.jpg": "9ae129b7336f9350c14fc7953c58610d7b28ead868423508494e98cd10d24718",
+    "static/stone-assets/source/29_electric_corner_glow.jpg": "cc7bb639bdfe0b4451d4f3d3b07aa30b329ab45a242a04acad0afcb75e16fb93",
+    "static/stone-assets/source/30_ancient_power_core.jpg": "66d2909305de46a26d4c173326a1ad9e0698d3ab54d51764faf1f5806af1fff3",
+    "static/stone-assets/source/31_button_idle_blue.jpg": "cb5b8532208a6b021a6df96362c39247d3c51ae596fa0917eaff391e9eac78e7",
+    "static/stone-assets/source/32_button_active_blue.jpg": "defe6ac27b8ad1cbe19a9b1a699bd439aa91c064962ae51bf8729b3ceffa3b1a",
+    "static/stone-assets/source/33_button_confirm_green.jpg": "e706ae53f18ec60617464caf70c4a6a342fad131dcd948e1b5c377e279800b95",
+    "static/stone-assets/source/34_button_danger_red.jpg": "fe74133a2766640f0ecaaae045e64c7fd3b05e9fbb329c1c83f18fd8aa5d2d4f",
+    "static/stone-assets/source/35_button_warning_amber.jpg": "c1c85dab76ea63f81f33c1cdbf5bb51cffa67449393bcde8cbc805057682a09a",
+    "static/stone-assets/source/36_input_recessed_field.jpg": "2361bf278f879a58fec004f05bcc2c5af4709bbf1e65c4a368bdef856abcec94",
+    "static/stone-assets/source/37_tab_idle_stone.jpg": "672cf30c1e1fdd7f0575783c5eb79853300570285ae2ee32ec6d622365debfae",
+    "static/stone-assets/source/38_tab_selected_cyan.jpg": "e7967687a18fc84072718a13700093a533275283ac9297aadcbc0a1284a85559",
+    "static/stone-assets/source/39_slider_metal_track.jpg": "38dc5f9edf3540115bd558712c88eef7547fec0257138fe599e1884b4602cc37",
+    "static/stone-assets/source/40_slider_power_knob.jpg": "d4195da66badd386fc04e2c296e33b0fbd624cae4f39151b67ec148f65eb455c",
+    "static/stone-assets/source/41_chart_recessed_surface.jpg": "77fc8431d71c0821389236a28d4ba38da9a1acdbc291cac56608327e19084026",
+    "static/stone-assets/source/42_volume_bar_cyan.jpg": "99fdd8b875bab9eadf910bc6f85407341de083139177ed1ded1c11e0a24dd974",
+    "static/stone-assets/source/43_volume_bar_gold.jpg": "f35ace6d3ea8011bfeef8a94eeef6e931b378fe1d3709dba59ab58484b667bb9",
+    "static/stone-assets/source/44_volume_bar_inactive.jpg": "ccb25572d81f774ccf64f5d7e0772eee8235d27120f40f0330f46c0371fae2f0",
+    "static/stone-assets/source/45_risk_fill_red.jpg": "27dac171966c68b854ea6c654dc629c9a400e454f8fb750f3163c3d6130503a0",
+    "static/stone-assets/source/46_readiness_fill_green.jpg": "8d39dc979a7252ae48a18b61856f1db8a91cfee8848b1a075f247dc2d18189ce",
+    "static/stone-assets/source/47_table_row_metal.jpg": "310708c34482d7f5dd50020cd8c761b6bc8804c7d53565d216dce904118a56e6",
+    "static/stone-assets/source/48_tooltip_engraved_plate.jpg": "32feaa06464843e8a6b2c7c28d25e32bdbc0e7cb8ae33ea453f7e399c31cc6d1",
+    "static/stone-assets/source/49_modal_warning_frame.jpg": "c7b9dde14aff6b32f407a8e6aedb1a9c57bf9c224215119556b3237c2727a9a9",
+    "static/stone-assets/source/50_scroll_track_etched.jpg": "31d3e876597dcecfb2d5319bb6802bb5237a7a3875b31ec39a9792aade91e289",
+    "static/stone-cockpit.css": "06235ad2153f47d38f8151cad572a8eb1e6a23ef28a334dcf47062d320d78f87"
+  },
+  "assets": [
+    {
+      "id": 1,
+      "source": "static/stone-assets/ready/01_basalt_dark_tile.webp",
+      "output": "static/stone-assets/ui/01_basalt_dark_tile.webp",
+      "original_bytes": 487938,
+      "bytes": 215770,
+      "original_size": [
+        1024,
+        1024
+      ],
+      "size": [
+        768,
+        768
+      ],
+      "mode": "RGB",
+      "quality": 85,
+      "lossless": false,
+      "sha256": "13a24326573233d183681a9a138f35b8d2ceb33e5ca1ec72fe52fc7b0f12686a",
+      "rgba_rms": [
+        3.0992485530245033,
+        2.965598484854684,
+        3.0900676146252413,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "source": "static/stone-assets/ready/02_slate_fractured_tile.webp",
+      "output": "static/stone-assets/ui/02_slate_fractured_tile.webp",
+      "original_bytes": 430742,
+      "bytes": 189574,
+      "original_size": [
+        1024,
+        1024
+      ],
+      "size": [
+        768,
+        768
+      ],
+      "mode": "RGB",
+      "quality": 85,
+      "lossless": false,
+      "sha256": "be39c9c9ac7f0bd72de04c2fd4bb43026e28a05ad8d2b5522f78a23d5937596f",
+      "rgba_rms": [
+        3.2470204315560918,
+        3.065349472890574,
+        3.464648260722799,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .glass-card:where(nav.stone-asset-nav, header.stone-asset-header, .stone-asset-panel--diagnostic, .stone-asset-panel--matrix, .stone-asset-panel--guard, .stone-asset-panel--positions, .stone-asset-panel--journal, #dd-reset-modal .glass-card)",
+          "property": "background-image"
+        },
+        {
+          "selector": "body.theme-stone #dd-reset-modal .glass-card",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "source": "static/stone-assets/ready/03_obsidian_smoked_tile.webp",
+      "output": "static/stone-assets/ui/03_obsidian_smoked_tile.webp",
+      "original_bytes": 375794,
+      "bytes": 110990,
+      "original_size": [
+        1024,
+        1024
+      ],
+      "size": [
+        640,
+        640
+      ],
+      "mode": "RGB",
+      "quality": 85,
+      "lossless": false,
+      "sha256": "c93fda962783fe869eb5dd7090c2d2691a1bdcc16a5081c4cf75b64e47d26bac",
+      "rgba_rms": [
+        3.2275565962553237,
+        3.075487448661594,
+        3.372515361459641,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .stone-asset-panel--matrix",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "source": "static/stone-assets/ready/07_brushed_gunmetal_tile.webp",
+      "output": "static/stone-assets/ui/07_brushed_gunmetal_tile.webp",
+      "original_bytes": 400884,
+      "bytes": 157828,
+      "original_size": [
+        1024,
+        1024
+      ],
+      "size": [
+        768,
+        768
+      ],
+      "mode": "RGB",
+      "quality": 85,
+      "lossless": false,
+      "sha256": "0925800e243255ddae67b3253606588c213d88984d8199822ade5e1d7b3dc890",
+      "rgba_rms": [
+        3.143019607330128,
+        3.057407010884932,
+        3.271441295839914,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone nav.stone-asset-nav",
+          "property": "background-image"
+        },
+        {
+          "selector": "body.theme-stone header.stone-asset-header .ticker-bg",
+          "property": "background-image"
+        },
+        {
+          "selector": "body.theme-stone .stone-asset-panel:where(.stone-asset-panel--diagnostic, .stone-asset-panel--matrix, .stone-asset-panel--guard, .stone-asset-panel--positions, .stone-asset-panel--journal) .ticker-bg",
+          "property": "background-image"
+        },
+        {
+          "selector": "body.theme-stone #dd-reset-modal .ticker-bg",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "source": "static/stone-assets/ready/09_bionic_inlay_tile.webp",
+      "output": "static/stone-assets/ui/09_bionic_inlay_tile.webp",
+      "original_bytes": 408720,
+      "bytes": 175614,
+      "original_size": [
+        1024,
+        1024
+      ],
+      "size": [
+        768,
+        768
+      ],
+      "mode": "RGB",
+      "quality": 85,
+      "lossless": false,
+      "sha256": "9ababdffe69b13eb8f0a598ca63f05b55c99eaafe957c6508ace4727875f6b89",
+      "rgba_rms": [
+        3.416021766896994,
+        3.0725254650352256,
+        3.6760803526171144,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone header.stone-asset-header",
+          "property": "background-image"
+        },
+        {
+          "selector": "body.theme-stone .stone-asset-panel--diagnostic",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "source": "static/stone-assets/ready/10_ancient_circuit_stone_tile.webp",
+      "output": "static/stone-assets/ui/10_ancient_circuit_stone_tile.webp",
+      "original_bytes": 385352,
+      "bytes": 163086,
+      "original_size": [
+        1024,
+        1024
+      ],
+      "size": [
+        768,
+        768
+      ],
+      "mode": "RGB",
+      "quality": 85,
+      "lossless": false,
+      "sha256": "3c49512e981af8e35f6ea3f90554a50666bb91e4d5b4d3add07b85be330d578a",
+      "rgba_rms": [
+        3.343155187067706,
+        3.0877867832748773,
+        3.514560988678723,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone::before",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "source": "static/stone-assets/ready/11_master_dashboard_panel.webp",
+      "output": "static/stone-assets/ui/11_master_dashboard_panel.webp",
+      "original_bytes": 2025248,
+      "bytes": 88572,
+      "original_size": [
+        1086,
+        1448
+      ],
+      "size": [
+        224,
+        299
+      ],
+      "mode": "RGBA",
+      "quality": 95,
+      "lossless": true,
+      "sha256": "3d3580e51d3d33de1123f50f567904a0900427d424e563573565a3d25d9de387",
+      "rgba_rms": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .stone-asset-panel--diagnostic::before",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "source": "static/stone-assets/ready/14_long_volume_plate.webp",
+      "output": "static/stone-assets/ui/14_long_volume_plate.webp",
+      "original_bytes": 551586,
+      "bytes": 81964,
+      "original_size": [
+        1355,
+        376
+      ],
+      "size": [
+        1024,
+        284
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "b515f443d3546b0c42c6d81b96766c9e0fa700a186fa5481a9d917e6f7dd1f47",
+      "rgba_rms": [
+        2.508351477501329,
+        1.9582125640141002,
+        2.7294428606705607,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row--3",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "source": "static/stone-assets/ready/15_header_command_slab.webp",
+      "output": "static/stone-assets/ui/15_header_command_slab.webp",
+      "original_bytes": 556380,
+      "bytes": 165666,
+      "original_size": [
+        1369,
+        364
+      ],
+      "size": [
+        1369,
+        364
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "c013ce2e71e95c64c0c742fa06e9a74d6bf4639ca0a9a755b083f05704e508a2",
+      "rgba_rms": [
+        2.193999159897814,
+        1.8995765478373763,
+        2.383846769239144,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone nav.stone-asset-nav",
+          "property": "border-image-source"
+        },
+        {
+          "selector": "body.theme-stone header.stone-asset-header",
+          "property": "border-image-source"
+        },
+        {
+          "selector": "body.theme-stone header.stone-asset-header .stone-theme-dock",
+          "property": "border-image-source"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "source": "static/stone-assets/ready/16_diagnostic_core_panel.webp",
+      "output": "static/stone-assets/ui/16_diagnostic_core_panel.webp",
+      "original_bytes": 810708,
+      "bytes": 143188,
+      "original_size": [
+        959,
+        784
+      ],
+      "size": [
+        768,
+        628
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "33e582eac48100d110c3a598afa1adcebbbd894fda28e522214075372ef86787",
+      "rgba_rms": [
+        2.4212282327616457,
+        1.929025818493094,
+        2.7651973584412692,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .stone-asset-panel--diagnostic",
+          "property": "border-image-source"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "source": "static/stone-assets/ready/17_trade_ticket_cartridge.webp",
+      "output": "static/stone-assets/ui/17_trade_ticket_cartridge.webp",
+      "original_bytes": 773422,
+      "bytes": 127116,
+      "original_size": [
+        1336,
+        549
+      ],
+      "size": [
+        1024,
+        421
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "ccd1d5d1ffdc25c2a0588c74b78140b46e4746440f22afe5cce25f1727279420",
+      "rgba_rms": [
+        2.3464360103596666,
+        1.9379656650578185,
+        2.624716327563447,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .stone-asset-panel--positions",
+          "property": "border-image-source"
+        },
+        {
+          "selector": "body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row--2",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "source": "static/stone-assets/ready/18_journal_stone_plate.webp",
+      "output": "static/stone-assets/ui/18_journal_stone_plate.webp",
+      "original_bytes": 856928,
+      "bytes": 133960,
+      "original_size": [
+        1304,
+        620
+      ],
+      "size": [
+        1024,
+        487
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "69f555f9a89d11b86644218eee58abeb3f91c3dbd2f2cf14820025fcf01b2cba",
+      "rgba_rms": [
+        2.7429561559445843,
+        1.9780350659233994,
+        2.8777843962524656,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .stone-asset-panel--journal",
+          "property": "border-image-source"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "source": "static/stone-assets/ready/19_entry_matrix_frame.webp",
+      "output": "static/stone-assets/ui/19_entry_matrix_frame.webp",
+      "original_bytes": 1188542,
+      "bytes": 167644,
+      "original_size": [
+        1672,
+        941
+      ],
+      "size": [
+        1024,
+        576
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "d8696313ca70af6b767508bca750fca2fa74fa2832effd79debcf5b4cacb4764",
+      "rgba_rms": [
+        8.023178325867885,
+        3.596849131700589,
+        6.200238918500188,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .stone-asset-panel--matrix",
+          "property": "border-image-source"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "source": "static/stone-assets/ready/20_guard_warning_plaque.webp",
+      "output": "static/stone-assets/ui/20_guard_warning_plaque.webp",
+      "original_bytes": 903720,
+      "bytes": 149342,
+      "original_size": [
+        1346,
+        586
+      ],
+      "size": [
+        1024,
+        446
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "963071802ca52a881240fca9dac4fe59e4b59c53efb603fe0661fdab11890901",
+      "rgba_rms": [
+        2.5304276573464617,
+        1.962153181023737,
+        2.6198128167728187,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .stone-asset-panel--guard",
+          "property": "border-image-source"
+        },
+        {
+          "selector": "body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row--4",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "source": "static/stone-assets/ready/21_cyan_side_circuit.webp",
+      "output": "static/stone-assets/ui/21_cyan_side_circuit.webp",
+      "original_bytes": 687128,
+      "bytes": 188360,
+      "original_size": [
+        354,
+        1376
+      ],
+      "size": [
+        264,
+        1026
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "9e8dc11f2c54e2ac27151a6445554c4f18f2eb98b6e9955a4c186e45ee52f831",
+      "rgba_rms": [
+        4.589035568091879,
+        3.073741852773951,
+        5.555049152890299,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone #stone-rails .left",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "source": "static/stone-assets/ready/22_amber_side_circuit.webp",
+      "output": "static/stone-assets/ui/22_amber_side_circuit.webp",
+      "original_bytes": 656416,
+      "bytes": 185876,
+      "original_size": [
+        425,
+        1376
+      ],
+      "size": [
+        316,
+        1023
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "51aa1f178cb2ba2b0fefdc5346f587577d262f690ea9cddfebb4d84baf41de73",
+      "rgba_rms": [
+        7.581480954210032,
+        2.909411155919246,
+        6.212892366101908,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone #stone-rails .right",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "source": "static/stone-assets/ready/25_rune_crest_emblem.webp",
+      "output": "static/stone-assets/ui/25_rune_crest_emblem.webp",
+      "original_bytes": 1186368,
+      "bytes": 14798,
+      "original_size": [
+        1012,
+        1016
+      ],
+      "size": [
+        84,
+        84
+      ],
+      "mode": "RGBA",
+      "quality": 95,
+      "lossless": true,
+      "sha256": "f7e2b52df54110e34d8d0e6dab83f1ce7657f6c857beb12d76dfef4c8a87349e",
+      "rgba_rms": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone header.stone-asset-header .stone-cockpit-crest",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "source": "static/stone-assets/ready/27_broken_corner_ornament.webp",
+      "output": "static/stone-assets/ui/27_broken_corner_ornament.webp",
+      "original_bytes": 774930,
+      "bytes": 17968,
+      "original_size": [
+        920,
+        937
+      ],
+      "size": [
+        196,
+        200
+      ],
+      "mode": "RGBA",
+      "quality": 95,
+      "lossless": false,
+      "sha256": "53b42e7cd4fb72190cf3fbf49a33df7424ddc159b57bedf227a1d9c82e9f7c87",
+      "rgba_rms": [
+        4.95165144581243,
+        2.588179566681523,
+        6.458304257121293,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .glass-card:where(nav.stone-asset-nav, header.stone-asset-header, .stone-asset-panel--diagnostic, .stone-asset-panel--matrix, .stone-asset-panel--guard, .stone-asset-panel--positions, .stone-asset-panel--journal, #dd-reset-modal .glass-card)::before",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "source": "static/stone-assets/ready/29_electric_corner_glow.webp",
+      "output": "static/stone-assets/ui/29_electric_corner_glow.webp",
+      "original_bytes": 280352,
+      "bytes": 9286,
+      "original_size": [
+        866,
+        874
+      ],
+      "size": [
+        216,
+        218
+      ],
+      "mode": "RGBA",
+      "quality": 95,
+      "lossless": false,
+      "sha256": "c715ec1cfdf478afaefc02532203f79eb9a9391dffb17d89905f4cb82b2d55d4",
+      "rgba_rms": [
+        4.188003472859712,
+        3.159422208539257,
+        4.966856255232551,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .stone-asset-panel--diagnostic .stone-edge-light",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "source": "static/stone-assets/ready/31_button_idle_blue.webp",
+      "output": "static/stone-assets/ui/31_button_idle_blue.webp",
+      "original_bytes": 702340,
+      "bytes": 48048,
+      "original_size": [
+        1341,
+        492
+      ],
+      "size": [
+        640,
+        235
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "6e87d6993dd75690504cc19dd854257e781fd9ebce2bcdc84317738edaaf3113",
+      "rgba_rms": [
+        2.6572875007612797,
+        2.030264695561284,
+        3.055344985222357,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .stone-asset-panel:where(.stone-asset-panel--diagnostic, .stone-asset-panel--matrix, .stone-asset-panel--guard, .stone-asset-panel--positions, .stone-asset-panel--journal) button:not([disabled])",
+          "property": "background-image"
+        },
+        {
+          "selector": "body.theme-stone header.stone-asset-header .stone-theme-dock button",
+          "property": "background-image"
+        },
+        {
+          "selector": "body.theme-stone header.stone-asset-header #dd-reset-button",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "source": "static/stone-assets/ready/32_button_active_blue.webp",
+      "output": "static/stone-assets/ui/32_button_active_blue.webp",
+      "original_bytes": 801222,
+      "bytes": 64696,
+      "original_size": [
+        1255,
+        542
+      ],
+      "size": [
+        640,
+        276
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "325854455ae67cfab1e6ceb06246b836d93f156f46ab03664de5539f487a556f",
+      "rgba_rms": [
+        3.25517981871569,
+        2.1971126783523895,
+        3.2031823298156907,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .stone-asset-panel:where(.stone-asset-panel--diagnostic, .stone-asset-panel--matrix, .stone-asset-panel--guard, .stone-asset-panel--positions, .stone-asset-panel--journal) button.bg-blue-600",
+          "property": "background-image"
+        },
+        {
+          "selector": "body.theme-stone header.stone-asset-header .stone-theme-dock button[aria-pressed=\"true\"]",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "source": "static/stone-assets/ready/36_input_recessed_field.webp",
+      "output": "static/stone-assets/ui/36_input_recessed_field.webp",
+      "original_bytes": 335364,
+      "bytes": 20638,
+      "original_size": [
+        1132,
+        284
+      ],
+      "size": [
+        512,
+        128
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "78151dad357c1ef6e2f5b7b6445c78f85de1770e6c21a365b19c90757da7fb6f",
+      "rgba_rms": [
+        3.507009843441017,
+        2.188267164583372,
+        4.199967229806123,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .stone-asset-panel--positions input[type=number]",
+          "property": "background-image"
+        },
+        {
+          "selector": "body.theme-stone #dd-reset-modal #dd-reset-input",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 37,
+      "source": "static/stone-assets/ready/37_tab_idle_stone.webp",
+      "output": "static/stone-assets/ui/37_tab_idle_stone.webp",
+      "original_bytes": 795148,
+      "bytes": 81012,
+      "original_size": [
+        1296,
+        542
+      ],
+      "size": [
+        768,
+        321
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "e5bb2055b4ad2bddd83c72a2bbc6ded1fc75f128349f1c0ac9e2a75e10142207",
+      "rgba_rms": [
+        2.7875887068013827,
+        2.0196005007185445,
+        2.894144939115613,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone nav.stone-asset-nav .account-tab",
+          "property": "border-image-source"
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "source": "static/stone-assets/ready/38_tab_selected_cyan.webp",
+      "output": "static/stone-assets/ui/38_tab_selected_cyan.webp",
+      "original_bytes": 671176,
+      "bytes": 68214,
+      "original_size": [
+        1356,
+        420
+      ],
+      "size": [
+        768,
+        238
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "74fda0d9eedbdd81db067bfdc2fd58f811a99d4888b639c0630f9a237c197017",
+      "rgba_rms": [
+        3.7625483038953345,
+        2.2470425338229636,
+        3.285708339036757,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone nav.stone-asset-nav .account-tab[aria-pressed=\"true\"]",
+          "property": "border-image-source"
+        }
+      ]
+    },
+    {
+      "id": 45,
+      "source": "static/stone-assets/ready/45_risk_fill_red.webp",
+      "output": "static/stone-assets/ui/45_risk_fill_red.webp",
+      "original_bytes": 359188,
+      "bytes": 28712,
+      "original_size": [
+        1374,
+        260
+      ],
+      "size": [
+        640,
+        121
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "c5e471bc228397bb9ca0596f210e462fe8eb5e561282229f6e1b4e13be4f0260",
+      "rgba_rms": [
+        5.699255062239521,
+        2.5871259261681177,
+        3.146328044767306,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .stone-asset-panel--diagnostic #sell-bar",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 46,
+      "source": "static/stone-assets/ready/46_readiness_fill_green.webp",
+      "output": "static/stone-assets/ui/46_readiness_fill_green.webp",
+      "original_bytes": 388492,
+      "bytes": 33640,
+      "original_size": [
+        1376,
+        268
+      ],
+      "size": [
+        640,
+        125
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "4b2be153410855b71045689f753b42934257a16733c03c370c548d29bae623f0",
+      "rgba_rms": [
+        5.377094940578974,
+        3.4079924442404503,
+        3.8651018744659242,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .stone-asset-panel--diagnostic #buy-bar",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 47,
+      "source": "static/stone-assets/ready/47_table_row_metal.webp",
+      "output": "static/stone-assets/ui/47_table_row_metal.webp",
+      "original_bytes": 310822,
+      "bytes": 49564,
+      "original_size": [
+        1376,
+        203
+      ],
+      "size": [
+        1024,
+        151
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "8bf94dd9733af9dcbaff77e61362c5ada8c7776bfa9f5d83ef17c31cdcb967ab",
+      "rgba_rms": [
+        2.527697357699138,
+        1.9817729296103588,
+        2.972795909833566,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row--0",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 48,
+      "source": "static/stone-assets/ready/48_tooltip_engraved_plate.webp",
+      "output": "static/stone-assets/ui/48_tooltip_engraved_plate.webp",
+      "original_bytes": 593010,
+      "bytes": 113652,
+      "original_size": [
+        969,
+        545
+      ],
+      "size": [
+        768,
+        432
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "2578909f05c1caed56b601b2f9439db9183bacca5ce0367e207cc43423e408c4",
+      "rgba_rms": [
+        2.6857319047510178,
+        2.023729996078855,
+        2.9748764150139886,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row--1",
+          "property": "background-image"
+        }
+      ]
+    },
+    {
+      "id": 49,
+      "source": "static/stone-assets/ready/49_modal_warning_frame.webp",
+      "output": "static/stone-assets/ui/49_modal_warning_frame.webp",
+      "original_bytes": 967718,
+      "bytes": 98386,
+      "original_size": [
+        1165,
+        853
+      ],
+      "size": [
+        768,
+        562
+      ],
+      "mode": "RGBA",
+      "quality": 92,
+      "lossless": false,
+      "sha256": "89fc171e80e4f58b6fcb34ec9097528e81d7f78d3679aa55db130ecdd9c22034",
+      "rgba_rms": [
+        2.5807637629083153,
+        1.8944767381803675,
+        2.5934348859592675,
+        0.0
+      ],
+      "uses": [
+        {
+          "selector": "body.theme-stone #dd-reset-modal .glass-card",
+          "property": "border-image-source"
+        }
+      ]
+    }
+  ],
+  "original_unique_bytes": 19665638,
+  "optimized_unique_bytes": 3093164
+}
