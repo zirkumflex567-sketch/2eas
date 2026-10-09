@@ -49,3 +49,5 @@ Files: create chart_studio/position_preview.py, chart_studio/preview_api.py and 
 
 - [x] Parent runs full suite/CI and merges with expected head. On both running demos, use actual GET-read tickets/revisions for read-only preview requests and confirm broker positions/orders unchanged; private evidence stays ignored. No order_send, modify/close/reset or real trade-ticket test is part of this package.
 - [x] Record backend FR-006 partial status. Native v5 drag/Touch controls, verified live action policy, whole-account risk/FX and the independent FR-007 write release remain open. Proposal IDs alone never authorize trading.
+
+Subsequent main CI verified green at aa6bf085: Chart Studio run 37986313388 and Auditfix run 37986313353, including native v5 adapter and Chromium smoke.
