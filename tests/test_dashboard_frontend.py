@@ -146,9 +146,16 @@ class DashboardFrontendTests(unittest.TestCase):
         self.load()
         self.page.evaluate("""() => {
           const realFetch = window.fetch;
-          window.fetch = (url, options) => String(url).includes('/api/status') ? new Promise(() => {}) : realFetch(url, options);
+          window.fetch = (url, options) => {
+            if (String(url).includes('/api/status')) {
+              window.hungStatusStarted = true;
+              return new Promise(() => {});
+            }
+            return realFetch(url, options);
+          };
           void updateStatus();
         }""")
+        self.page.wait_for_function('window.hungStatusStarted === true')
         expect(self.page.locator('#account-connection')).to_contain_text('STALE', timeout=7500)
         self.assertIsNone(self.page.evaluate('statusBusy'))
         expect(self.page.locator('#live-bid')).to_have_text('4010.00')

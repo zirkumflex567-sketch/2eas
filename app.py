@@ -25,6 +25,8 @@ from pathlib import Path
 from account_gateway import ACCOUNTS, config_path, public_account, scoped, selected, verify_identity, writes_titan_reset
 from goldm15_dashboard import GUARD_FILE, metrics as gold_metrics, parameters as gold_parameters, read_guard, wilder_rsi
 from chart_studio.money import PreviewError, preview_scenario
+from chart_studio.broker_reads import legacy_quote
+from chart_studio.read_api import install_read_routes
 from dashboard_security import install_control_security
 from chart_studio.workspaces import WorkspaceStore, StoreError, WorkspaceMissing, RevisionConflict
 from functools import lru_cache
@@ -34,6 +36,7 @@ app = FastAPI(title="XAU Titan Pro - Institutional Live Cockpit")
 install_control_security(app)
 BASE_DIR = Path(__file__).resolve().parent
 install_runtime(app, BASE_DIR)
+install_read_routes(app, mt5)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / 'static')), name="static")
 
@@ -1004,6 +1007,8 @@ def api_chart_capabilities():
             "historicalCandles": True, "emaToggles": True,
             "experimentalDrawings": True, "readOnlyPositionOverlays": True,
             "scenarioPreview": True,
+            "brokerSymbolSearch": True, "brokerSymbolInfo": True,
+            "brokerPositionOrderReads": True,
             "persistentServerDrawings": os.getenv("CHART_STUDIO_STORAGE_ENABLED") == "1"
             and len(os.getenv("CHART_STUDIO_STORAGE_TOKEN", "")) >= 32,
             "realStopDragging": False, "brokerMutations": False,
@@ -1018,18 +1023,7 @@ def api_chart_quotes(account: str, symbol: str = SYMBOL):
     if symbol != SYMBOL:
         raise HTTPException(status_code=400, detail="Dieses Chart-Modul unterstützt noch ausschließlich XAUUSD.")
     acc = verify_identity(mt5, selected())
-    tick = mt5.symbol_info_tick(symbol)
-    sym = mt5.symbol_info(symbol)
-    if tick is None or sym is None:
-        raise HTTPException(status_code=503, detail="Broker-Quote oder Symbolinformationen fehlen.")
-    return {
-        "account": selected()["id"], "symbol": symbol,
-        "currency": str(getattr(acc, "currency", "") or ""),
-        "bid": float(tick.bid), "ask": float(tick.ask),
-        "quoteTimeUtc": int(tick.time),
-        "tickSize": float(getattr(sym, "trade_tick_size", 0) or 0),
-        "source": "MT5_VERIFIED"
-    }
+    return legacy_quote(mt5, selected(), acc, symbol, now=time.time())
 
 
 @app.post("/api/chart/v1/scenarios/preview")
