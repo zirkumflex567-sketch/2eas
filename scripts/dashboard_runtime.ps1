@@ -1,4 +1,4 @@
-# Windows PowerShell 5.1. Only the verified dashboard process can be stopped.
+# Windows PowerShell 5.1 / PowerShell 7.6. Only the verified dashboard process can be stopped.
 [CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)][ValidateSet('Status','Start','Restart')][string]$Action,
@@ -14,6 +14,7 @@ $script:Failure = 'Runtime operation failed; no environment values were printed.
 $script:Stopped = $false
 $script:Previous = $null
 $script:Child = $null
+$script:RuntimeJsonParameters = @{}
 
 function Reject([string]$Message) { $script:Failure = $Message; throw 'guard refused' }
 function Quote-Argument([string]$Value) {
@@ -64,7 +65,8 @@ function Get-Listener {
 }
 function Read-Runtime([int]$ListenerPid) {
     try {
-        $value = Invoke-RestMethod -Uri ('http://127.0.0.1:' + $Port + '/api/runtime') -Method Get -TimeoutSec 2
+        $response = Invoke-WebRequest -Uri ('http://127.0.0.1:' + $Port + '/api/runtime') -Method Get -UseBasicParsing -TimeoutSec 2
+        $value = ConvertFrom-Json -InputObject $response.Content @script:RuntimeJsonParameters
         $required = @('pid','startedUtc','checkoutId','startupRevision','startupDigest','diskRevision','diskDigest',
                       'applicationCodeDirty','sourceAvailable','restart_required')
         foreach ($key in $required) {
@@ -89,6 +91,13 @@ function Read-Runtime([int]$ListenerPid) {
 }
 
 try {
+    # Core parsers can convert ISO timestamps to DateTime automatically. Preserve
+    # the source string (DateKind was added in 7.5); 5.1 already preserves it.
+    if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')) {
+        $script:RuntimeJsonParameters.DateKind = 'String'
+    } elseif ($PSVersionTable.PSEdition -eq 'Core') {
+        Reject 'PowerShell JSON parser cannot preserve runtime timestamp strings; nothing stopped.'
+    }
     $script:RepoPath = (Resolve-Path -LiteralPath $Repo).Path.TrimEnd('\','/')
     $script:PythonPath = (Resolve-Path -LiteralPath $Python).Path
     if (-not (Test-Path -LiteralPath $script:RepoPath -PathType Container) -or

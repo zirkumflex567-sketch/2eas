@@ -8,6 +8,7 @@ import time
 from fastapi import HTTPException
 import account_gateway as gateway
 import broker_clock
+from chart_studio import history_cursor
 
 SOURCE = 'MT5_VERIFIED'
 SYMBOL_PATTERN = r'^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$'
@@ -246,6 +247,109 @@ def positions_read(mt5, spec, symbol, *, ticket=None, magic=None, manual=None, n
             'marginMode': margin_mode, 'quote': quote,
             'positions': [r for r in models if matches(r)],
             'orders': [r for r in pending if matches(r)]}
+
+
+# Official DEAL_TYPE values (BUY_CANCELED=13, SELL_CANCELED=14). Unknown newer
+# categories remain explicit omissions rather than guessed executions.
+DEAL_TYPES = {0:'BUY', 1:'SELL', 2:'BALANCE', 3:'CREDIT', 4:'CHARGE',
+              5:'CORRECTION', 6:'BONUS', 7:'COMMISSION', 8:'COMMISSION_DAILY',
+              9:'COMMISSION_MONTHLY', 10:'COMMISSION_AGENT_DAILY',
+              11:'COMMISSION_AGENT_MONTHLY', 12:'INTEREST',
+              13:'BUY_CANCELED', 14:'SELL_CANCELED'}
+DEAL_ENTRIES = {0:'IN', 1:'OUT', 2:'INOUT', 3:'OUT_BY'}
+HISTORY_MAX_ROWS = 50000
+
+
+def deal_model(row, spec, currency):
+    kind = integer(required(row, 'type'))
+    executed = kind in (0, 1)
+    raw_symbol = text(required(row, 'symbol'), nonempty=executed)
+    symbol = broker_symbol(raw_symbol) if raw_symbol else ''
+    entry = integer(required(row, 'entry'))
+    magic = integer(required(row, 'magic'))
+    result = {**provenance(spec), 'symbol':symbol,
+              'ticket':str(integer(required(row, 'ticket'), positive=True)),
+              'orderTicket':str(integer(required(row, 'order'))),
+              'positionIdentifier':str(integer(required(row, 'position_id'))),
+              'rawType':kind, 'type':DEAL_TYPES.get(kind, 'OTHER_UNKNOWN'),
+              'side':DEAL_TYPES[kind] if executed else 'UNKNOWN',
+              'status':'EXECUTED' if executed else 'OMITTED',
+              'rawEntry':entry, 'entry':DEAL_ENTRIES.get(entry, 'UNKNOWN'),
+              'rawReason':integer(required(row, 'reason')),
+              'externalId':text(required(row, 'external_id'), nonempty=False),
+              'magic':str(magic), 'ownership':'MANUAL' if magic == 0 else 'UNKNOWN',
+              'comment':text(required(row, 'comment'), nonempty=False),
+              'rawBrokerTime':integer(required(row, 'time'), positive=True),
+              'fillTime':paired_timestamp(row, 'time', 'time_msc', spec),
+              'price':decimal(required(row, 'price'), positive=executed),
+              'volume':decimal(required(row, 'volume'), positive=executed),
+              'currency':currency}
+    for field in ('commission', 'swap', 'profit', 'fee'):
+        result[field] = decimal(required(row, field), signed=True)
+    return result
+
+
+def trades_read(mt5, spec, symbol, start, stop, *, limit=100, ticket=None,
+                magic=None, manual=None, cursor=None, now=None):
+    """Read actual HISTORY_DEAL only, inside verified_read's shared session lock."""
+    offset = broker_clock.offset_seconds(spec)
+    observed = history_cursor.observed_us(time.time() if now is None else now)
+    scope = history_cursor.digest({'account':spec['id'], 'login':str(spec['login']),
+        'server':spec['server'], 'terminal':spec['terminal'], 'offset':offset,
+        'symbol':symbol, 'start':start, 'stop':stop,
+        'ticket':ticket, 'magic':magic, 'manual':manual})
+    state = history_cursor.decode(cursor, scope, stop, observed) if cursor is not None else None
+    asof = state['asof'] if state else min(stop, observed)
+    require_symbol(mt5, symbol)
+    currency = text(required(gateway.verify_identity(mt5, spec), 'currency'))
+    # Broker wall-clock epochs are offset from UTC by this account's policy.
+    # Both datetimes carry UTC tzinfo so no machine-local conversion is possible.
+    rows = broker_rows(mt5.history_deals_get(
+        history_cursor.utc_datetime(start+offset*1000000),
+        history_cursor.utc_datetime(asof+offset*1000000))) if asof >= start else ()
+    if len(rows) > HISTORY_MAX_ROWS:
+        raise HTTPException(503, {'code':'HISTORY_LIMIT',
+                                 'message':'Broker history exceeds 50000 rows; narrow the UTC range.'})
+    # Validate all raw rows, including filtered and omitted categories, first.
+    unique = {}
+    for row in rows:
+        model = deal_model(row, spec, currency)
+        previous = unique.get(model['ticket'])
+        if previous is not None and previous != model:
+            raise BrokerReadError('conflicting duplicate deal ticket')
+        unique[model['ticket']] = model
+    key = lambda r: (r['fillTime']['rawBrokerEpochMs'], int(r['ticket']))
+    eligible = sorted((r for r in unique.values()
+                       if start <= r['fillTime']['utcEpochMs']*1000 <= asof), key=key)
+    # Detect corrected or late-arriving history across pages instead of silently
+    # repeating a moved deal or losing one inserted before the previous boundary.
+    snapshot = history_cursor.digest(eligible)
+    if state and state['snapshot'] != snapshot:
+        raise history_cursor.invalid_cursor()
+    omitted = {}
+    fills = []
+    for row in eligible:
+        if row['status'] != 'EXECUTED':
+            kind = row['rawType']
+            omitted[kind] = omitted.get(kind, 0)+1
+        elif (row['symbol'] == symbol and (ticket is None or row['ticket'] == ticket)
+              and (magic is None or row['magic'] == magic)
+              and (manual is None or (row['ownership'] == 'MANUAL') == manual)):
+            fills.append(row)
+    if state:
+        boundary = tuple(state['after'])
+        if not any(key(r) == boundary for r in fills):
+            raise history_cursor.invalid_cursor()
+        fills = [r for r in fills if key(r) > boundary]
+    page = fills[:limit]
+    next_cursor = (history_cursor.encode(scope, asof, key(page[-1]), snapshot)
+                   if len(fills) > limit else None)
+    return {**provenance(spec), 'symbol':symbol, 'currency':currency,
+            'fromUtc':history_cursor.utc_text(start), 'toUtc':history_cursor.utc_text(stop),
+            'asOfUtc':history_cursor.utc_text(asof), 'limit':limit,
+            'trades':page, 'nextCursor':next_cursor,
+            'omittedCategories':[{'type':DEAL_TYPES.get(k, 'OTHER_UNKNOWN'),
+                                  'rawType':k, 'count':omitted[k]} for k in sorted(omitted)]}
 
 
 def legacy_quote(mt5, spec, info, symbol, *, now=None):
