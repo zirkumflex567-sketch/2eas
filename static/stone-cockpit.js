@@ -56,7 +56,10 @@
 
     if (chartInstance) {
       try {
-        const onRange = () => requestSync();
+        const onRange = () => {
+          requestSync();
+          setTimeout(requestSync, 50);
+        };
         chartInstance.timeScale().subscribeVisibleLogicalRangeChange(onRange);
         chartInstance.timeScale().subscribeVisibleTimeRangeChange(onRange);
         cleanupFns.push(() => {
@@ -88,10 +91,15 @@
           isDragging = false;
           cancelAnimationFrame(dragRaf);
           requestSync();
+          setTimeout(requestSync, 50);
         }
       };
 
-      const onWheel = () => requestSync();
+      const onWheel = () => {
+        requestSync();
+        setTimeout(requestSync, 50);
+        setTimeout(requestSync, 150);
+      };
 
       chartElem.addEventListener("pointerdown", onPointerDown);
       window.addEventListener("pointerup", onPointerUp);
