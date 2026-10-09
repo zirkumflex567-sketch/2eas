@@ -69,6 +69,13 @@ class ControlSecurityTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/control_session', headers={'Sec-Fetch-Site': 'cross-site'}).status_code, 403)
         self.assertEqual(self.client.get('/api/control_session', headers={'Origin': 'https://evil.example'}).status_code, 403)
 
+    def test_root_path_prefix_cannot_bypass_any_control_mutation(self):
+        prefixed = TestClient(self.app, base_url='http://127.0.0.1:8058', root_path='/stt', client=('203.0.113.2',9999))
+        for path in ('modify_position','close_position','reset_drawdown'):
+            response = prefixed.post('/stt/api/'+path, headers={'Origin':'https://evil.example'})
+            self.assertEqual(response.status_code,403,path)
+        self.assertEqual(self.writes,[])
+
     def test_remote_clients_require_explicit_bearer(self):
         from unittest.mock import patch
         remote = TestClient(self.app, base_url='http://127.0.0.1:8058', client=('203.0.113.2', 9999))

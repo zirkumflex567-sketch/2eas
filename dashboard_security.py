@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
+from starlette._utils import get_route_path
 
 CONTROL_PATHS = frozenset({'/api/modify_position', '/api/close_position', '/api/reset_drawdown'})
 COOKIE = 'dashboard_control_session'
@@ -68,7 +69,10 @@ def install_control_security(app):
 
     @app.middleware('http')
     async def guard(request: Request, call_next):
-        if request.method == 'POST' and request.url.path in CONTROL_PATHS:
+        # Match precisely the router's deployment-relative path, including
+        # decoded/trailing-slash forms; URL.path includes root_path under proxies.
+        route_path = get_route_path(request.scope).rstrip('/') or '/'
+        if request.method == 'POST' and route_path in CONTROL_PATHS:
             if not host_allowed(request):
                 return reject()
             origin = request.headers.get('origin')
