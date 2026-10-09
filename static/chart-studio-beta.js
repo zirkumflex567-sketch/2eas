@@ -489,7 +489,9 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null};
  try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}
  catch (err) {console.warn("Chart Studio indicator pane could not load:",err);}
- try {window.ChartStudioCatalog?.mount({panel});}\n catch (err) {console.warn("Chart indicator catalog unavailable:",err);}\n try {window.ChartStudioAverages?.mount({chart,panel,account:accountId});}
+ try {window.ChartStudioCatalog?.mount({panel});}
+ catch (err) {console.warn("Chart indicator catalog unavailable:",err);}
+ try {window.ChartStudioAverages?.mount({chart,panel,account:accountId});}
  catch (err) {console.warn("Chart Studio average editor unavailable:",err);}
  try{window.ChartStudioAppearance?.mount({chart,candleSeries,panel,account:accountId});}
  catch(err){console.warn("Chart settings unavailable:",err);}
