@@ -48,4 +48,11 @@ Stop release on account mismatch, scope leak, incorrect order_calc_profit, stale
 
 ## Current iteration deliverable
 
-A **working progressive prototype**, *not* full 35-feature implementation: beta toolbar, first indicator math, four drawing primitives, temporary drawing persistence, optional position zones, read-only broker-price what-if API, and tests. Continue with all remaining tasks in [CHART_STUDIO_TASKS.md](CHART_STUDIO_TASKS.md). This iteration must NOT be presented as the final product.
+A **working progressive prototype**, *not* full 35-feature implementation: beta toolbar, first indicator math, four drawing primitives, temporary local drawing/indicator profiles, optional position zones, read-only broker-price what-if API, and tests. Continue with all remaining tasks in [CHART_STUDIO_TASKS.md](CHART_STUDIO_TASKS.md). This iteration must NOT be presented as the final product.
+
+## Erste überprüfte CI-Baseline
+
+- Initialer Windows-CI-Lauf 37881550432 wurde durch eine historische GoldM15-Preset-Abhängigkeit auf einen lokalen Windows-Pfad blockiert; er ist **kein** Fehler des neuen Chart-Studio-Money-Moduls.
+- Testumgebung nutzt jetzt die im Repository versionierte `goldm15/GoldM15_Reconstruction.set`.
+- Nachfolgender Lauf [37881702809](https://github.com/zirkumflex567-sketch/2eas/actions/runs/37881702809) **PASS**: 46 Python-Tests, JavaScript-Syntax/Indikator-Math sowie ein echter Chromium-UI-Test inklusive Chartzeichnungen und What-if-Demo; **kein reales MT5**.
+- Browser-Funktionstest der zusätzlichen lokalen Layoutprofile, echte Windows-Terminal-Broker-Kalkulation, Touch/DPI, V5-Migration, serverseitige Persistenz und reale Stop-Mutationen bleiben offen.

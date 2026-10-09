@@ -11,7 +11,7 @@
 - [x] 0.3 Create one explicit /plan and /task tracking document referencing the single master spec.
 - [x] 0.4 Add pure broker-money validation and read-only P0 scenario/quote/capabilities endpoints.
 - [x] 0.5 Add initial isolated regression tests + Windows CI config (CI status must still be independently confirmed).
-- [~] 0.6 Run complete baseline suite and Chromium chart smoke on actual Windows runtime.
+- [~] 0.6 GitHub Actions Windows test run: 46 Python tests and Chromium desktop beta smoke PASS (run 37881702809). Further responsive/MT5-connected browser verification remains open.
 - [ ] 0.7 Audit all exposed trading POSTs and reverse tunnel for auth/CSRF/permissions before enabling mutations.
 - [ ] 0.8 Lock target v5 version, review API/license and publish migration adapter RFC/PoC.
 
@@ -20,10 +20,10 @@
 - [x] 1.1 Mount beta toolbar next to fullscreen, leaving old chart operational.
 - [x] 1.2 Toggle EMA20/50/200, overlay correctly calculated SMA20/SMA50/Bollinger20.
 - [x] 1.3 Draw horizontal, trendline, rectangle and Fibonacci using price/time anchors, plus handle editing, Undo/Redo.
-- [x] 1.4 Account-scoped **temporary localStorage** saving/loading drawings, chart toggles and JSON-copy export.
+- [x] 1.4 Account-scoped **temporary localStorage** saving/loading drawings, chart toggles, named local layouts (save/load/delete) and JSON-copy export.
 - [x] 1.5 Toggle genuine account-scoped MT5 open-position Entry/SL/TP overlays (**view-only**).
 - [x] 1.6 Read-only What-if scenario form + optional verified Bid/Ask fill + backend broker PnL/margin preview; distinct PLAN zones, no trade execution.
-- [~] 1.7 Verify brush hit-test/labels/responsive touch/fullscreen/zoom and all modes via browser screenshots. **Experimental** until verified.
+- [~] 1.7 Chromium desktop smoke PASSED for initial tools, drawings/Fibo, Undo/Redo, account isolation and What-if; local named layouts being added. Mobile/fullscreen/zoom/reduced-motion remains **not verified**.
 - [ ] 1.8 Replace experimental v4 wrapper with correctly tested v5 TypeScript chart adapter + dedicated panes.
 
 ## Task 2 — Full chart, drawings and storage

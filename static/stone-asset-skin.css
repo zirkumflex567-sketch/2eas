@@ -1321,3 +1321,12 @@ body.theme-stone #stone-fx-panel button:focus-visible {
  border-radius:5px;color:#e5faff;min-height:34px}
 .cs-scenario button[type=submit]{border-color:#debb77;background:#4b3d25;color:#fff2cd;font-weight:800}
 #cs-scenario-result{display:block;margin-top:9px;white-space:normal;line-height:1.6;color:#c1dce2}
+
+/* Beta account-local named chart layouts, to be replaced by revisioned SQLite profiles. */
+.cs-beta-profiles{display:flex;flex-wrap:wrap;align-items:center;gap:8px;
+ margin:11px 0;padding:8px 10px;border:1px solid #5b7b85;border-radius:7px;background:rgba(10,34,46,.67)}
+.cs-beta-profiles strong{color:#d4eefd;font:800 11px ui-monospace,Consolas,monospace}
+.cs-beta-profiles select{min-width:145px;max-width:220px;background:#122c38;
+ border:1px solid #628795;color:#ecfbff;border-radius:5px;padding:6px;font-size:11px}
+.cs-beta-profiles button{padding:7px 9px;border:1px solid #5e8c9a;background:#1c3e4f;
+ color:#eefaff;cursor:pointer;border-radius:5px;font-size:11px}

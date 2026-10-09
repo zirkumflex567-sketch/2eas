@@ -11,6 +11,33 @@ const get=(k,df)=>{try{const v=JSON.parse(localStorage.getItem(prefix+k));return
 const save=(k,v)=>{try{localStorage.setItem(prefix+k,JSON.stringify(v))}catch(_){}};
 const optsDefault=()=>({ema20:true,ema50:true,ema200:true,sma20:false,sma50:false,bb:false,positions:false});
 const drawKey=()=>s.account+":draw:XAUUSD",optKey=()=>s.account+":opts:XAUUSD";
+const profileKey=()=>s.account+":profiles:XAUUSD";
+function profiles(){const p=get(profileKey(),{});return p&&typeof p==="object"&&!Array.isArray(p)?p:{}}
+function refreshProfiles(){
+ if(!s)return;const sel=s.panel.querySelector("#cs-beta-profile");
+ if(!sel)return;sel.replaceChildren();
+ const empty=document.createElement("option");empty.value="";empty.textContent="Layout wählen";sel.append(empty);
+ for(const name of Object.keys(profiles()).sort()){const option=document.createElement("option");option.value=name;option.textContent=name;sel.append(option)}
+}
+function saveProfile(){
+ const name=window.prompt("Name des lokalen Chartlayouts (max. 40 Zeichen):","");
+ if(!name)return;const trimmed=name.trim().slice(0,40);if(!trimmed)return;
+ const all=profiles();if(Object.keys(all).length>=15&&!all[trimmed]){updateMessage("Maximal 15 lokale Layouts.");return}
+ if(all[trimmed]&&!window.confirm("Gespeichertes Layout überschreiben?"))return;
+ all[trimmed]={draw:json(s.draw),opts:json(s.opts)};
+ save(profileKey(),all);refreshProfiles();s.panel.querySelector("#cs-beta-profile").value=trimmed;updateMessage("Layout '"+trimmed+"' lokal gesichert.");
+}
+function loadProfile(){
+ const name=s.panel.querySelector("#cs-beta-profile")?.value;const item=profiles()[name];
+ if(!item)return;snapshot();s.draw=safeDraw(item.draw);
+ s.opts={...optsDefault(),...(item.opts||{})};persist();save(optKey(),s.opts);showOpts();updateSeries();requestDraw();
+ updateMessage("Layout '"+name+"' geladen (nur lokal).");
+}
+function deleteProfile(){
+ const name=s.panel.querySelector("#cs-beta-profile")?.value;
+ if(!name||!window.confirm("Layout '"+name+"' dauerhaft lokal löschen?"))return;
+ const all=profiles();delete all[name];save(profileKey(),all);refreshProfiles();updateMessage("Layout gelöscht.");
+}
 function updateMessage(x){if(s?.status)s.status.textContent=x}
 function sma(c,n){const out=[];let sum=0;for(let i=0;i<c.length;i++){sum+=Number(c[i].close);if(i>=n)sum-=Number(c[i-n].close);if(i>=n-1)out.push({time:c[i].time,value:sum/n})}return out}
 function bollinger(c,n=20,k=2){const hi=[],lo=[];let sum=0,sq=0;for(let i=0;i<c.length;i++){let v=Number(c[i].close);sum+=v;sq+=v*v;if(i>=n){v=Number(c[i-n].close);sum-=v;sq-=v*v}if(i>=n-1){const mid=sum/n,sd=Math.sqrt(Math.max(0,sq/n-mid*mid));hi.push({time:c[i].time,value:mid+k*sd});lo.push({time:c[i].time,value:mid-k*sd})}}return {upper:hi,lower:lo}}
@@ -140,7 +167,7 @@ function pointermove(e){
  else if(s.begin){s.preview=p;requestDraw()}
 }
 function pointerup(e){if(!s?.drag)return;s.drag=null;persist();try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){}}
-function account(id){if(!s)return;s.account=id;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.scenario=null;s.begin=null;s.preview=null;s.drag=null;scenarioGeneration++;showOpts();updateSeries();requestDraw()}
+function account(id){if(!s)return;s.account=id;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.scenario=null;s.begin=null;s.preview=null;s.drag=null;scenarioGeneration++;showOpts();refreshProfiles();updateSeries();requestDraw()}
 function timeframe(tf){if(s){s.tf=tf;s.begin=null;s.preview=null;s.drag=null;requestDraw()}}
 function updateCandles(c){if(s&&Array.isArray(c)){s.candles=c;updateSeries();requestDraw()}}
 function updatePositions(accountId,positions){if(s&&s.account===accountId){s.positions=Array.isArray(positions)?positions:[];requestDraw()}}
@@ -160,7 +187,11 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   '<div class="cs-beta-buttons">'+toolLabels.map(([id,label])=>'<button type="button" data-tool="'+id+'">'+label+'</button>').join("")+
   ["undo","redo","export","clear"].map(id=>'<button type="button" data-cmd="'+id+'">'+({undo:"↶ Undo",redo:"↷ Redo",export:"JSON kopieren",clear:"Alle Zeichnungen löschen"}[id])+'</button>').join("")+'</div>'+
   '<div class="cs-beta-buttons">'+optLabels.map(([id,label])=>'<button type="button" data-opt="'+id+'">'+label+'</button>').join("")+'</div>'+
-  '<p id="cs-beta-message" role="status" aria-live="polite">Dies ist die sichere Beta-Chartansicht. Alle Brokerpositionen sind nur lesbar.</p>'+
+  '<div class="cs-beta-profiles"><strong>Lokale Layouts</strong> <select id="cs-beta-profile" aria-label="Gespeichertes Chartlayout"></select>'+
+ '<button type="button" data-cmd="save-profile">Speichern</button>'+
+ '<button type="button" data-cmd="load-profile">Laden</button>'+
+ '<button type="button" data-cmd="delete-profile">Löschen</button></div>'+
+ '<p id="cs-beta-message" role="status" aria-live="polite">Dies ist die sichere Beta-Chartansicht. Alle Brokerpositionen sind nur lesbar.</p>'+
  '<details class="cs-scenario"><summary>What-if · Broker-Risiko &amp; Margin (kein Orderversand)</summary>'+
  '<form id="cs-scenario-form">'+
  '<label>Seite <select name="side"><option>BUY</option><option>SELL</option></select></label>'+
@@ -186,6 +217,9 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   if(b.dataset.opt){s.opts[b.dataset.opt]=!s.opts[b.dataset.opt];save(optKey(),s.opts);showOpts();updateSeries();requestDraw();return}
   if(b.dataset.cmd==="quote")return;
   if(b.dataset.cmd==="clear-plan"){s.scenario=null;scenarioGeneration++;requestDraw();const out=panel.querySelector("#cs-scenario-result");if(out)out.textContent="Plan entfernt (keine Brokeraktion).";return}
+  if(b.dataset.cmd==="save-profile")saveProfile();
+  if(b.dataset.cmd==="load-profile")loadProfile();
+  if(b.dataset.cmd==="delete-profile")deleteProfile();
   if(b.dataset.cmd==="undo")undo();if(b.dataset.cmd==="redo")redo();
   if(b.dataset.cmd==="clear"&&window.confirm("Zeichnungen für dieses Konto löschen?")){snapshot();s.draw=[];persist()}
   if(b.dataset.cmd==="export"){const data=JSON.stringify({schemaVersion:1,account:s.account,symbol:"XAUUSD",drawings:s.draw},null,2);
