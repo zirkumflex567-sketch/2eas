@@ -263,6 +263,34 @@ class SqliteLayoutTests(unittest.TestCase):
             with self.subTest(value=value),self.assertRaises(StoreError):
                 validate_document({**original,"chartType":value})
 
+    def test_named_locked_hidden_drawing_objects_and_legacy_compatibility(self):
+        older = example()
+        self.assertEqual(validate_document(older), older)
+        base = {"kind":"trend", "anchors":[
+            {"time":1700000000,"price":4100.0},
+            {"time":1700000900,"price":4120.0}
+        ],"id":"trend_1","label":"London Pullback","visible":False,"locked":True}
+        doc = {**older,"drawings":[base]}
+        self.assertEqual(validate_document(doc)["drawings"],[base])
+        saved = self.store.put("local-owner","titan","XAUUSD","Objects",doc,0)
+        self.assertEqual(saved["revision"],1)
+        self.assertEqual(self.store.get("local-owner","titan","XAUUSD","Objects")["document"],doc)
+        with self.assertRaises(WorkspaceMissing):
+            self.store.get("local-owner","goldm15","XAUUSD","Objects")
+        cases = [
+            [{**base,"id":"../../secret"}],
+            [{**base,"id":"bad script"}],
+            [base,base],
+            [{**base,"label":"x"*41}],
+            [{**base,"label":"evil\ncmd"}],
+            [{**base,"visible":1}],
+            [{**base,"locked":"false"}],
+            [{**base,"onclick":"alert(1)"}]
+        ]
+        for case in cases:
+            with self.subTest(value=str(case)[:60]),self.assertRaises(StoreError):
+                validate_document({**older,"drawings":case})
+
 
 class ApiAccessTests(unittest.TestCase):
     def setUp(self):

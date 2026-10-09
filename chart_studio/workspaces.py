@@ -74,9 +74,29 @@ def validate_document(raw: Any) -> dict:
     if not isinstance(drawings, list) or len(drawings) > MAX_DRAWINGS:
         raise StoreError("Zu viele oder ungültige Zeichnungen.")
     out = []
+    seen_ids = set()
     for drawing in drawings:
-        if not isinstance(drawing, dict) or set(drawing) != {"kind", "anchors"}:
+        required_draw = {"kind", "anchors"}
+        optional_draw = {"id", "label", "visible", "locked"}
+        if not isinstance(drawing, dict) or not required_draw.issubset(drawing) or (
+            set(drawing) - required_draw - optional_draw
+        ):
             raise StoreError("Unbekannte Zeichenobjekt-Eigenschaften.")
+        if "id" in drawing:
+            drawing_id = drawing["id"]
+            if not isinstance(drawing_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", drawing_id):
+                raise StoreError("Ungültige Objekt-Identität.")
+            if drawing_id in seen_ids:
+                raise StoreError("Doppelte Objekt-Identität.")
+            seen_ids.add(drawing_id)
+        if "label" in drawing and (
+            not isinstance(drawing["label"], str) or len(drawing["label"]) > 40
+            or any(ord(char) < 32 for char in drawing["label"])
+        ):
+            raise StoreError("Ungültiger Objektname.")
+        for field in ("visible", "locked"):
+            if field in drawing and type(drawing[field]) is not bool:
+                raise StoreError("Ungültige Objekt-Sichtbarkeit oder Sperre.")
         kind = drawing["kind"]
         if not isinstance(kind, str) or kind not in DRAWING_TYPES:
             raise StoreError("Nicht unterstützter Zeichnungstyp.")
@@ -93,7 +113,11 @@ def validate_document(raw: Any) -> dict:
             if stamp <= 0 or stamp > 7258118400 or price <= 0 or price > 1e15:
                 raise StoreError("Ungültiger Zeitpunkt oder Preis.")
             safe_anchors.append({"time": stamp, "price": price})
-        out.append({"kind": kind, "anchors": safe_anchors})
+        normalized = {"kind": kind, "anchors": safe_anchors}
+        for field in ("id", "label", "visible", "locked"):
+            if field in drawing:
+                normalized[field] = drawing[field]
+        out.append(normalized)
     options = raw["options"]
     if not isinstance(options, dict) or any(k not in UI_FLAGS for k in options):
         raise StoreError("Nicht unterstützte Chart-Option.")
