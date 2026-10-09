@@ -2132,7 +2132,7 @@ HTML_CONTENT = """<!DOCTYPE html>
               ${p.type} ${p.volume} Lot
             </span>
             <span class="font-mono font-bold text-xs">#${p.ticket} @ $${p.open_price.toFixed(2)}</span>
-            <span data-position-current class="text-sub font-mono text-[10px]">Aktuell: ${p.current_price.toFixed(2)}</span>
+            <span data-position-current class="text-sub font-mono text-[10px]">Aktuell: &#36;${p.current_price.toFixed(2)}</span>
           </div>
 
           <div class="font-mono text-right">
@@ -2170,10 +2170,10 @@ HTML_CONTENT = """<!DOCTYPE html>
         const row = list.querySelector('[data-position-ticket="' + pos.ticket + '"]');
         if (!row) continue;
         const price = row.querySelector('[data-position-current]');
-        if (price) price.textContent = 'Aktuell:  + pos.current_price.toFixed(2);
+        if (price) price.textContent = 'Aktuell: ' + String.fromCharCode(36) + pos.current_price.toFixed(2);
         const pnl = row.querySelector('[data-position-pnl]');
         if (pnl) {
-          pnl.textContent = (pos.profit_usd >= 0 ? '+' : '') + ' + pos.profit_usd.toFixed(2) +
+          pnl.textContent = (pos.profit_usd >= 0 ? '+' : '') + String.fromCharCode(36) + pos.profit_usd.toFixed(2) +
             ' (' + (pos.profit_pct >= 0 ? '+' : '') + pos.profit_pct.toFixed(2) + '%)';
           pnl.classList.toggle('text-emerald-500', pos.profit_usd >= 0);
           pnl.classList.toggle('text-rose-500', pos.profit_usd < 0);
