@@ -39,6 +39,8 @@ jobs:
       - name: Check browser scripts and chart math
         run: |
           node --check static/chart-studio-replay.js
+          node --check static/chart-studio-fib.js
+          node scripts/test_chart_studio_fib.cjs
           node --check static/chart-studio-beta.js
           node --check static/chart-studio-data-signature.js
           node scripts/test_chart_studio_data_signature.cjs
@@ -82,6 +84,7 @@ jobs:
       - name: Run Chromium UI smoke (no MT5 server)
         run: |
           node scripts/smoke_chart_studio_replay.cjs
+          node scripts/smoke_chart_studio_fib.cjs
           node scripts/smoke_chart_studio_beta.cjs
           node scripts/smoke_chart_studio_averages.cjs
           node scripts/smoke_chart_studio_appearance.cjs
@@ -96,6 +99,7 @@ jobs:
           name: chart-studio-beta-screenshot
           path: |
             output/visual-smoke/chart-studio-replay.png
+            output/visual-smoke/chart-studio-fibonacci-levels.png
             output/visual-smoke/chart-studio-beta.png
             output/visual-smoke/chart-studio-multi-ma.png
             output/visual-smoke/chart-studio-appearance.png
