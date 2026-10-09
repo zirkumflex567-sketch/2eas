@@ -26,3 +26,15 @@ Date: 2026-10-09. Baseline main: `3032426f5749a4600c0e8d1198a3ac0dc46ff2bc`. Thi
 - Public `/stt/api/control_session` returned 403 despite successful Basic authentication. The authenticated username/role was not propagated to the application. The separate proxy-identity package addresses this with explicit roles and verified forwarding; release evidence must be added after its deployment.
 - Running EA binary/preset identity was not proven. Repository source/ex5 hashes alone cannot identify an already loaded program. No EA acknowledgement, guard reset, SL/TP modification or trade close was tested.
 - Private screenshots, filtered responses and measurement JSON remain in ignored `output/integration-live/runtime-20261009/`; they are intentionally not committed because screenshots can include broker/account information.
+
+## Package #27 deployment, 2026-10-09 14:55 UTC
+
+Main `4a0cb125288fb07e6d593a980fa7337b909de841` is deployed locally and through htown `/stt`. The dashboard alone was restarted after verifying its process identity; both MT5 terminals and the reverse SSH tunnel were preserved. nginx syntax validation and reload passed. Its shared-secret snippet is root-owned mode 0600, with a protected rollback copy; credentials remain outside Git.
+
+- Local/public runtime agree: startup and disk revision `4a0cb12`, tracked-code digest `8f14960e867ff3826f74776f3961bed808280420f251f2ce6623fec4b3b6bbc1`, application code clean, restart_required=false. Runtime evidence identifies the serving process and checkout independently of HTML equality.
+- Both account feeds are fresh locally and publicly. Authenticated public control_session now returns 200, role=trade, control_enabled=true; its cookie is Secure, HttpOnly and SameSite=Strict. No trading mutation was sent.
+- A forged unauthenticated public identity returns 401. Direct loopback with the public Host and a wrong proxy secret returns 403. The prior public-control 403 finding is resolved.
+- Public Chromium completed 20 account switches with matching account/chart identities (267–450 ms), opened ChartStudio, and reported zero page errors and zero mutation requests. Nine canvases were present.
+- Both final PR workflows passed, including 397 tests and 245 subtests. The subsequent main Audit workflow passed; main Chart workflow `37947096233` failed one hung-status frontend fixture assertion. An existing status request can delay when the deliberately hung request starts; the next package must anchor that fixture's deadline to the actual intercepted request and obtain green main CI. The other 396 tests and all 245 subtests passed in that run.
+
+This proves the deployed ingress/runtime package and read-only demo paths at that time. EA identity, actual broker writes, hardware and long-term performance acceptance remain as listed above. Filtered proof and screenshots are stored in the ignored evidence directory.
