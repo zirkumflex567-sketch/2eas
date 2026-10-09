@@ -13,10 +13,10 @@ from fastapi import HTTPException
 ACCOUNTS = {
     'titan': dict(id='titan', name='XAU Titan Pro', login=53087839,
                   server='ICMarketsEU-Demo', terminal=r'C:\Program Files\PU Prime MT5 Terminal\terminal64.exe',
-                  portable=False, version='v6.0 LIVE', capacity=3),
+                  portable=False, version='v6.0 LIVE', capacity=3, broker_utc_offset_seconds=10800),
     'goldm15': dict(id='goldm15', name='GoldM15 Reconstruction', login=53090070,
                     server='ICMarketsEU-Demo', terminal=r'C:\Users\zirku\Documents\goldm5\.mt5-demo\terminal64.exe',
-                    portable=True, version='v1.21 GUARDED', capacity=3),
+                    portable=True, version='v1.21 GUARDED', capacity=3, broker_utc_offset_seconds=10800),
 }
 _selected = ContextVar('dashboard_account', default='titan')
 _lock = threading.RLock()

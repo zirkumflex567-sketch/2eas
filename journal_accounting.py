@@ -10,12 +10,13 @@ UNKNOWN_ENTRY = 'Einstiegsgrund unbekannt: kein bestätigtes EA-Entscheidungsere
 UNKNOWN_EXIT = 'Ausstiegsziel/-grund unbekannt: aus MT5-Deals nicht belegbar.'
 
 
-def times(stamp):
-    utc = datetime.fromtimestamp(stamp, timezone.utc)
-    return dict(time_utc=utc.isoformat(), time_server=utc.strftime('%H:%M:%S'),
+def times(stamp, broker_utc_offset_seconds=0):
+    utc = datetime.fromtimestamp(stamp-broker_utc_offset_seconds, timezone.utc)
+    server = datetime.fromtimestamp(stamp, timezone.utc)
+    return dict(time_utc=utc.isoformat(), time_server=server.strftime('%H:%M:%S'),
                 time_de=utc.astimezone(BERLIN).strftime('%H:%M:%S'),
                 time_berlin=utc.astimezone(BERLIN).isoformat(),
-                server_time_basis='MT5 epoch interpreted as UTC', timezone='Europe/Berlin')
+                server_time_basis=f'Broker epoch minus configured {broker_utc_offset_seconds}s → UTC', timezone='Europe/Berlin')
 
 
 def owns(record, magics):

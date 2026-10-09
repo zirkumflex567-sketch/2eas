@@ -19,6 +19,7 @@ from pydantic import BaseModel, FiniteFloat, Field, StrictBool, model_validator
 import uvicorn
 import dd_persistence
 import journal_accounting
+import broker_clock
 from metrics_cache import ClosedBarMetricsCache
 from pathlib import Path
 from account_gateway import ACCOUNTS, config_path, public_account, scoped, selected, verify_identity, writes_titan_reset
@@ -203,7 +204,12 @@ def quote_metadata(tick, now=None):
     except (TypeError, ValueError):
         configured_age = QUOTE_MAX_AGE_SECONDS
     max_age = min(configured_age, QUOTE_MAX_AGE_SECONDS) if math.isfinite(configured_age) and configured_age > 0 else QUOTE_MAX_AGE_SECONDS
-    stamp = getattr(tick, 'time', None)
+    raw_stamp = getattr(tick, 'time', None)
+    try:
+        offset = broker_clock.offset_seconds(selected())
+    except ValueError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    stamp = raw_stamp-offset if isinstance(raw_stamp,(int,float)) and not isinstance(raw_stamp,bool) else None
     valid = isinstance(stamp, (int, float)) and not isinstance(stamp, bool) and math.isfinite(stamp) and stamp > 0
     if valid:
         try:
@@ -217,6 +223,7 @@ def quote_metadata(tick, now=None):
                        for v in (getattr(tick, 'bid', None), getattr(tick, 'ask', None)))
     fresh = age is not None and -QUOTE_FUTURE_TOLERANCE_SECONDS <= age <= max_age and prices_valid
     return dict(source_fresh=bool(fresh), quote_time_epoch=stamp if valid else None,
+                quote_broker_time_epoch=raw_stamp if valid else None, broker_utc_offset_seconds=offset,
                 quote_age_seconds=age, source_status='fresh' if fresh else ('stale' if valid else 'unknown'),
                 quote_max_age_seconds=max_age,
                 quote_future_tolerance_seconds=QUOTE_FUTURE_TOLERANCE_SECONDS)
@@ -234,15 +241,17 @@ def require_fresh_quote(tick, now=None, risk_context=None):
 
 def risk_day_context(now, reset_hour, cfg):
     """The risk policy clock is wall UTC; a frozen quote cannot retain resets."""
-    wall = datetime.fromtimestamp(now, timezone.utc)
+    offset = broker_clock.offset_seconds(selected())
+    wall = datetime.fromtimestamp(now+offset, timezone.utc)
     shifted = wall-timedelta(hours=reset_hour)
-    midnight = shifted.replace(hour=0, minute=0, second=0, microsecond=0)+timedelta(hours=reset_hour)
+    broker_midnight = shifted.replace(hour=0, minute=0, second=0, microsecond=0)+timedelta(hours=reset_hour)
+    midnight = broker_midnight-timedelta(seconds=offset)
     day = shifted.date().isoformat()
     stamp = cfg.get('reset_timestamp')
     requested = cfg.get('manual_reset_active', False)
     active = bool(requested and stamp and midnight.timestamp() <= stamp <= now and cfg.get('reset_date') == day)
     return dict(manual_active=active, manual_expired=bool(requested and not active),
-                risk_day=day, risk_timezone='UTC', risk_reset_hour=reset_hour), midnight
+                risk_day=day, risk_timezone=broker_clock.zone_label(selected()), risk_reset_hour=reset_hour), midnight
 
 
 def require_mt5_data(data, source):
@@ -266,7 +275,7 @@ def get_cached_trade_journal(account_id, server_time, local_time):
 def journal_metadata(account_id):
     return {'cutoff_utc': journal_accounting.CUTOFF.isoformat(),
             'cutoff_label': 'Aufzeichnung seit 08.10.2026 23:00 UTC (09.10.2026 01:00 Europe/Berlin)',
-            'timezone': 'Europe/Berlin', 'timestamp_basis': 'MT5 epoch interpreted as UTC',
+            'timezone': 'Europe/Berlin', 'timestamp_basis': broker_clock.zone_label(selected()) + ' → UTC', 'broker_utc_offset_seconds': broker_clock.offset_seconds(selected()),
             'snapshot_age_seconds': max(0., time.monotonic()-JOURNAL_CACHE_AT.get(account_id, time.monotonic()))}
 
 
@@ -280,7 +289,9 @@ def journal_magics(account_id):
 def build_trade_journal(account_id, server_time, local_time):
     if server_time.tzinfo is None:
         server_time = server_time.replace(tzinfo=timezone.utc)
-    deals = require_mt5_data(mt5.history_deals_get(journal_accounting.CUTOFF, server_time), 'journal_history')
+    deals = require_mt5_data(mt5.history_deals_get(
+        journal_accounting.CUTOFF+timedelta(seconds=broker_clock.offset_seconds(selected())),
+        server_time+timedelta(seconds=broker_clock.offset_seconds(selected()))), 'journal_history')
     positions = require_mt5_data(mt5.positions_get(symbol=SYMBOL), 'journal_positions')
     magics = journal_magics(account_id)
     slot_by_magic = {m:i+1 for i,m in enumerate(sorted(magics))} if account_id=='goldm15' else {}
@@ -304,7 +315,7 @@ def build_trade_journal(account_id, server_time, local_time):
             'profit_usd': net, 'net_profit_usd': net, 'gross_profit_usd': round(float(p.profit),2),
             'pnl_basis': 'unrealized_profit_plus_swap; entry costs excluded',
             'reason_verified': False, 'why_triggered': journal_accounting.UNKNOWN_ENTRY,
-            'profit_goal': journal_accounting.UNKNOWN_EXIT, **journal_accounting.times(p.time)
+            'profit_goal': journal_accounting.UNKNOWN_EXIT, **journal_accounting.times(p.time, broker_clock.offset_seconds(selected()))
         })
     by_position = {}
     for d in {int(d.ticket):d for d in deals}.values():
@@ -315,7 +326,7 @@ def build_trade_journal(account_id, server_time, local_time):
         lifecycle = [d for d in lifecycle if getattr(d,'position_id',None)==position_id]
         accounting = journal_accounting.close_accounting(lifecycle + exits, mt5, magics)
         for d in exits:
-            if d.time < journal_accounting.CUTOFF.timestamp() or d.ticket not in accounting:
+            if broker_clock.to_utc_epoch(d.time, selected()) < journal_accounting.CUTOFF.timestamp() or d.ticket not in accounting:
                 continue
             row = accounting[d.ticket]
             cp, op = round(float(d.price),2), row['open_price']
@@ -329,7 +340,7 @@ def build_trade_journal(account_id, server_time, local_time):
                 'profit_usd': row['net_profit_usd'], 'pnl_basis': 'realized_net_with_allocated_entry_costs',
                 'reason_verified': False, 'why_triggered': journal_accounting.UNKNOWN_ENTRY,
                 'profit_goal': journal_accounting.UNKNOWN_EXIT,
-                **row, **journal_accounting.times(d.time)
+                **row, **journal_accounting.times(d.time, broker_clock.offset_seconds(selected()))
             })
     entries.sort(key=lambda x: x['time_ts'], reverse=True)
     return entries
@@ -378,7 +389,7 @@ def get_live_market_data(include_journal=True):
     cur_bar = df.iloc[-2]  # Shift 1: closed-bar reference criteria.
     
     server_time = datetime.fromtimestamp(tick.time, timezone.utc)
-    local_time = server_time.astimezone(journal_accounting.BERLIN)
+    local_time = datetime.fromtimestamp(broker_clock.to_utc_epoch(tick.time, selected()), timezone.utc).astimezone(journal_accounting.BERLIN)
 
     
     # Time/config alone cannot prove EA activity or execution permission.
@@ -634,7 +645,7 @@ def get_live_market_data(include_journal=True):
     if manual_active and reset_ts:
         reset_dt = datetime.fromtimestamp(reset_ts, timezone.utc)
         from_dt = max(midnight_dt, reset_dt)
-        deals = require_mt5_data(mt5.history_deals_get(from_dt, wall_time), 'daily_history')
+        deals = require_mt5_data(mt5.history_deals_get(from_dt+timedelta(seconds=broker_clock.offset_seconds(selected())), wall_time+timedelta(seconds=broker_clock.offset_seconds(selected()))), 'daily_history')
         realized_today = 0.0
         if deals:
             for d in deals:
@@ -642,7 +653,7 @@ def get_live_market_data(include_journal=True):
                     realized_today += (d.profit + d.swap + d.commission + getattr(d, 'fee', 0.))
         day_start_bal = float(reset_bal)
     else:
-        deals = require_mt5_data(mt5.history_deals_get(midnight_dt, wall_time), 'daily_history')
+        deals = require_mt5_data(mt5.history_deals_get(midnight_dt+timedelta(seconds=broker_clock.offset_seconds(selected())), wall_time+timedelta(seconds=broker_clock.offset_seconds(selected()))), 'daily_history')
         realized_today = 0.0
         if deals:
             for d in deals:
@@ -676,7 +687,7 @@ def get_live_market_data(include_journal=True):
         "manual_active": manual_active,
         "manual_expired": bool(manual_requested and not manual_active),
         "risk_day": risk_day,
-        "risk_timezone": "UTC",
+        "risk_timezone": risk_context['risk_timezone'],
         "risk_reset_hour": reset_hour,
         "reset_balance": round(float(reset_bal), 2) if manual_active else None,
         "reset_time_str": datetime.fromtimestamp(reset_ts, timezone.utc).strftime("%H:%M:%S") if (manual_active and reset_ts) else None
@@ -723,14 +734,14 @@ def get_live_market_data(include_journal=True):
     }
     if include_journal:
         account_id = selected()['id']
-        entries = get_cached_trade_journal(account_id, server_time, local_time)
+        entries = get_cached_trade_journal(account_id, wall_time, local_time)
         result.update(journal=entries, journal_cache={account_id: entries}, journal_meta=journal_metadata(account_id))
     result.update(account=public_account(selected()), rule_count=len(rules_matrix), exit_goals=[], ea_guard=None)
     preview = df.iloc[-1]
     result.update(
         signal_mode='closed_bar_reference', signal_label='M15-Schluss · Referenzrekonstruktion, keine EA-Freigabe',
         signal_bar_time=datetime.fromtimestamp(int(cur_bar['time']), timezone.utc).strftime('%H:%M'),
-        signal_bar_time_utc=datetime.fromtimestamp(int(cur_bar['time']), timezone.utc).isoformat(),
+        signal_bar_time_utc=datetime.fromtimestamp(broker_clock.to_utc_epoch(int(cur_bar['time']), selected()), timezone.utc).isoformat(),
         ea_execution_verified=False, ea_execution_status='unknown',
         signal_preview={'mode': 'forming_bar_preview', 'label': 'Laufende M15-Kerze · unverbindliche Vorschau',
                         'close': float(preview['close']), 'rsi14': float(preview['rsi14']),
@@ -738,7 +749,7 @@ def get_live_market_data(include_journal=True):
     if selected()['id']=='goldm15':
         result.update(GOLD_METRICS_CACHE.get(selected(), SYMBOL, TIMEFRAME, cur_bar['time'],
                                             df['close'].to_numpy(), params, gold_metrics))
-        guard = read_guard(GUARD_FILE, now, acc.equity, params, balance=acc.balance)
+        guard = read_guard(GUARD_FILE, broker_clock.to_broker_epoch(now, selected()), acc.equity, params, balance=acc.balance)
         result['ea_guard'] = guard
         result['signal_bar_time'] = datetime.fromtimestamp(int(df.iloc[-2]['time']), timezone.utc).strftime('%H:%M')
         if guard['baseline_verified'] and not manual_active:
@@ -756,8 +767,8 @@ def api_accounts():
 @scoped(mt5)
 def api_journal_summary(account: str = 'titan'):
     tick = require_mt5_data(mt5.symbol_info_tick(SYMBOL), 'journal_tick')
-    server_time = datetime.fromtimestamp(tick.time, timezone.utc)
-    local_time = server_time.astimezone(journal_accounting.BERLIN)
+    server_time = datetime.fromtimestamp(broker_clock.to_utc_epoch(tick.time, selected()), timezone.utc)
+    local_time = datetime.fromtimestamp(broker_clock.to_utc_epoch(tick.time, selected()), timezone.utc).astimezone(journal_accounting.BERLIN)
     entries = get_cached_trade_journal(account, server_time, local_time)
     JOURNAL_CACHE[account] = entries
     return {
@@ -1210,7 +1221,7 @@ def api_reset_drawdown(req: ResetDrawdownRequest, account: str):
             "manual_reset_active": True,
             "reset_balance": baseline,
             "reset_timestamp": int(now),
-            "reset_date": (server_time-timedelta(hours=reset_hour)).date().isoformat()
+            "reset_date": risk_day_context(now, reset_hour, {})[0]['risk_day']
         }
         save_dd_config(cfg)
         return {
