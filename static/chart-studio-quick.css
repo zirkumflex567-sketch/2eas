@@ -33,3 +33,54 @@
 .cs-catalog-entry button{border:1px solid #6cbdcf;background:#194658;color:#fff;
  border-radius:6px;padding:7px;cursor:pointer;min-height:36px}
 .cs-catalog-entry button:focus-visible,.cs-catalog input:focus-visible{outline:2px solid #65dcf4;outline-offset:2px}
+
+/* Read-only replay, separate from broker chart and production position overlays. */
+.cs-replay{margin:12px 0;padding:10px;border:1px solid rgba(107,208,226,.5);
+ border-radius:8px;background:#0a202c;color:#e4f7fa}
+.cs-replay summary{cursor:pointer;font-weight:700;padding:6px 0}
+.cs-replay-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:8px 0}
+.cs-replay-actions button{border:1px solid #6bb7c5;border-radius:5px;
+ background:#143e50;color:#f1fafe;padding:7px 10px;min-height:36px;cursor:pointer}
+.cs-replay-actions button:disabled{opacity:.5;cursor:not-allowed}
+.cs-replay-actions input[type="range"]{flex:1 1 180px;min-width:100px}
+.cs-replay-actions button:focus-visible,.cs-replay-actions input:focus-visible{outline:2px solid #65dded;outline-offset:2px}
+.cs-replay-plot{height:240px;min-height:240px;max-width:100%;overflow:hidden}
+.cs-replay output{display:block;color:#bde0e9;font-size:12px;margin:6px 0;min-height:18px}
+
+/* Chart Studio adaptive layout: no controls may disappear off-canvas on touch widths. */
+#cs-beta-panel,.cs-ma-editor,.cs-ma-items,.cs-catalog,.cs-replay,
+.cs-indicator-controls,.cs-indicator-panes,.cs-indicator-pane{
+ box-sizing:border-box;max-width:100%;min-width:0}
+#cs-beta-panel{width:100%;overflow-wrap:anywhere}
+#cs-beta-panel .cs-beta-buttons,
+#cs-beta-panel .cs-beta-profiles,
+#cs-beta-panel .cs-ma-presets,
+#cs-beta-panel .cs-ma-header,
+#cs-beta-panel .cs-ma-instance{
+ display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+#cs-beta-panel button,#cs-beta-panel select,#cs-beta-panel input{
+ max-width:100%;box-sizing:border-box}
+#cs-beta-panel button{min-height:34px;white-space:normal;overflow-wrap:anywhere}
+#cs-beta-panel .cs-ma-instance{border:1px solid rgba(116,178,198,.35);
+ border-radius:7px;padding:8px;margin:6px 0}
+#cs-beta-panel .cs-ma-instance label{display:flex;align-items:center;
+ gap:6px;flex:1 1 135px;min-width:0}
+#cs-beta-panel .cs-ma-instance input:not([type="checkbox"]),
+#cs-beta-panel .cs-ma-instance select{min-width:0;flex:1 1 65px}
+#cs-beta-panel .cs-scenario form{display:flex;flex-wrap:wrap;gap:8px}
+#cs-beta-panel .cs-scenario label{min-width:0;flex:1 1 120px}
+#cs-beta-panel .cs-scenario label input,#cs-beta-panel .cs-scenario label select{width:100%}
+#cs-beta-panel .cs-catalog-results{grid-template-columns:repeat(auto-fit,minmax(min(100%,235px),1fr))}
+#cs-beta-panel .cs-beta-keyboard-hint{font-size:11px;opacity:.85;line-height:1.5}
+@media(max-width:420px){
+ #cs-beta-panel{padding:8px}
+ #cs-beta-panel .cs-ma-instance label{flex-basis:100%}
+ #cs-beta-panel .cs-beta-buttons button{flex:1 1 110px}
+ #cs-beta-panel .cs-replay-actions button{flex:1 1 115px}
+ .cs-replay-plot{height:220px;min-height:220px}
+}
+@media(prefers-reduced-motion:reduce){
+ #cs-beta-panel *,#cs-beta-panel *::before,#cs-beta-panel *::after{
+  animation-duration:0.01ms!important;transition-duration:0.01ms!important;
+  scroll-behavior:auto!important}
+}
