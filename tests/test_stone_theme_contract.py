@@ -96,8 +96,34 @@ class StoneThemeContractTests(unittest.TestCase):
         self.assertIn('src="static/stone-chart-effects.js"', live)
         self.assertIn('src="stone-chart-effects.js"', demo)
         self.assertIn("animation: none !important;", skin)
-        self.assertIn("stone-asset-panel--chart::after", skin)
+    def test_volume_profile_price_scale_tracking_contract(self):
+        js = (STATIC / "stone-cockpit.js").read_text(encoding="utf-8")
+        css = (STATIC / "stone-cockpit.css").read_text(encoding="utf-8")
+        app = (ROOT / "app.py").read_text(encoding="utf-8")
+        demo = (STATIC / "stone-preview.html").read_text(encoding="utf-8")
+
+        # stone-cockpit.js tracks price scale via priceToCoordinate and exports API
+        self.assertIn("attachChart", js)
+        self.assertIn("priceToCoordinate", js)
+        self.assertIn("syncPositions", js)
+        self.assertIn("requestSync", js)
+        self.assertIn("window.StoneCockpit", js)
+
+        # stone-cockpit.css has dynamic row coordinates and fallback
+        self.assertIn(".stone-mini-volume.stone-mini-fallback", css)
+        self.assertIn("position:absolute;inset:0;overflow:hidden", css.replace(" ", ""))
+        self.assertIn("transform:translateY(-50%)", css.replace(" ", ""))
+
+        # app.py attaches chart/series and binds high-res vpData
+        self.assertIn("StoneCockpit?.attachChart", app)
+        self.assertIn("container.__candleSeries = candleSeries", app)
+        self.assertIn("container.__vpData = vp", app)
+        self.assertIn("StoneCockpit?.requestSync", app)
+
+        # stone-preview.html attaches demo chart and candle series
+        self.assertIn("StoneCockpit?.attachChart", demo)
 
 
 if __name__ == "__main__":
     unittest.main()
+

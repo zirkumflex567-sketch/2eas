@@ -232,7 +232,9 @@ h2{font-size:13px;letter-spacing:.045em;color:#67d4f6;margin:0 0 9px}
      });
      candle=chart.addCandlestickSeries({upColor:'#2cea98',downColor:'#ff6654',borderUpColor:'#3cedaa',borderDownColor:'#f66c57',wickUpColor:'#45eda3',wickDownColor:'#ff6a54'});
       emas=[chart.addLineSeries({color:'#5edcf1',lineWidth:2}),chart.addLineSeries({color:'#f0a753',lineWidth:2}),chart.addLineSeries({color:'#b277d1',lineWidth:2})];
-     const ro=new ResizeObserver(()=>chart.applyOptions({width:div.clientWidth||700,height:div.clientHeight||520}));ro.observe(div);
+     div.__chart=chart;div.__candleSeries=candle;
+      try{window.StoneCockpit?.attachChart?.({chart,candleSeries:candle});}catch(_){}
+      const ro=new ResizeObserver(()=>chart.applyOptions({width:div.clientWidth||700,height:div.clientHeight||520}));ro.observe(div);
    }
    const cs=candleData(tf);
    candle.setData(cs);
@@ -243,6 +245,7 @@ h2{font-size:13px;letter-spacing:.045em;color:#67d4f6;margin:0 0 9px}
      window.StoneChartFX?.update({candles:cs,emas:demoEmas,markers:[],context:'demo/'+tf,newBar:false});
    } catch (_) { /* Demo chart remains usable even if decoration fails. */ }
    chart.timeScale().fitContent();
+    try{window.StoneCockpit?.requestSync?.();}catch(_){}
    document.querySelectorAll('#frame-buttons button').forEach(b=>b.classList.toggle('active',b.dataset.frame===tf));
  }
  document.querySelectorAll('#frame-buttons button').forEach(b=>b.onclick=()=>setFrame(b.dataset.frame));

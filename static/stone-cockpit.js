@@ -24,6 +24,299 @@
     document.body.append(rail);
   }
 
+  let chartInstance = null;
+  let candleSeriesInstance = null;
+  let syncQueued = false;
+  let cleanupChartEvents = null;
+
+  function requestSync() {
+    if (syncQueued) return;
+    syncQueued = true;
+    requestAnimationFrame(() => {
+      syncQueued = false;
+      syncPositions();
+    });
+  }
+
+  function attachChart(bindings) {
+    if (!bindings) return;
+    if (bindings.chart) chartInstance = bindings.chart;
+    if (bindings.candleSeries) candleSeriesInstance = bindings.candleSeries;
+    bindChartEvents();
+    requestSync();
+  }
+
+  function bindChartEvents() {
+    if (cleanupChartEvents) {
+      cleanupChartEvents();
+      cleanupChartEvents = null;
+    }
+    const chartElem = byId("tv-chart");
+    const cleanupFns = [];
+
+    if (chartInstance) {
+      try {
+        const onRange = () => requestSync();
+        chartInstance.timeScale().subscribeVisibleLogicalRangeChange(onRange);
+        chartInstance.timeScale().subscribeVisibleTimeRangeChange(onRange);
+        cleanupFns.push(() => {
+          try { chartInstance.timeScale().unsubscribeVisibleLogicalRangeChange(onRange); } catch (_) {}
+          try { chartInstance.timeScale().unsubscribeVisibleTimeRangeChange(onRange); } catch (_) {}
+        });
+      } catch (_) {}
+    }
+
+    if (chartElem) {
+      let isDragging = false;
+      let dragRaf = 0;
+
+      const onDragLoop = () => {
+        syncPositions();
+        if (isDragging) {
+          dragRaf = requestAnimationFrame(onDragLoop);
+        }
+      };
+
+      const onPointerDown = () => {
+        isDragging = true;
+        cancelAnimationFrame(dragRaf);
+        dragRaf = requestAnimationFrame(onDragLoop);
+      };
+
+      const onPointerUp = () => {
+        if (isDragging) {
+          isDragging = false;
+          cancelAnimationFrame(dragRaf);
+          requestSync();
+        }
+      };
+
+      const onWheel = () => requestSync();
+
+      chartElem.addEventListener("pointerdown", onPointerDown);
+      window.addEventListener("pointerup", onPointerUp);
+      window.addEventListener("pointercancel", onPointerUp);
+      chartElem.addEventListener("wheel", onWheel, { passive: true });
+
+      const card = chartElem.closest(".glass-card");
+      if (card) {
+        card.addEventListener("click", () => requestAnimationFrame(requestSync));
+      }
+
+      cleanupFns.push(() => {
+        chartElem.removeEventListener("pointerdown", onPointerDown);
+        window.removeEventListener("pointerup", onPointerUp);
+        window.removeEventListener("pointercancel", onPointerUp);
+        chartElem.removeEventListener("wheel", onWheel);
+        cancelAnimationFrame(dragRaf);
+      });
+    }
+
+    cleanupChartEvents = () => {
+      cleanupFns.forEach(fn => fn());
+    };
+  }
+
+  function getRawProfileItems() {
+    const source = byId("vp-histogram-container");
+    if (!source) return [];
+
+    const fullVP = source.__vpData || window.__currentVP;
+    if (fullVP && Array.isArray(fullVP.histogram) && fullVP.histogram.length > 0) {
+      return fullVP.histogram.map((b, index) => {
+        const isPoc = Boolean(b.is_poc);
+        const inVa = Boolean(b.in_va);
+        const tone = isPoc ? "gold" : (index % 2 === 0 ? "cyan" : "amber");
+        const kind = isPoc ? "poc" : (inVa ? "va" : "off");
+        return {
+          price: Number(b.price),
+          volPct: Math.max(0, Math.min(100, Number(b.vol_pct) || 0)),
+          isPoc,
+          inVa,
+          tone,
+          kind
+        };
+      });
+    }
+
+    const rows = Array.from(source.children);
+    const items = [];
+    for (let i = 0; i < rows.length; i++) {
+      const original = rows[i];
+      const priceEl = original.querySelector(".stone-mini-price, .vprice, span:first-child");
+      const barEl = original.querySelector(".stone-mini-fill, .vp-bar");
+      if (!priceEl || !barEl) continue;
+
+      const text = priceEl.textContent || "";
+      const cleanText = text.replace(/[^0-9.-]/g, "");
+      const price = parseFloat(original.dataset.price || cleanText);
+      if (!Number.isFinite(price) || price <= 0) continue;
+
+      let volPct = parseFloat(original.dataset.volPct || barEl.style.width || "0");
+      if (!Number.isFinite(volPct)) volPct = 0;
+
+      const isPoc = barEl.dataset.kind === "poc" ||
+                    barEl.classList.contains("poc") ||
+                    (original.dataset.poc === "true") ||
+                    original.textContent.includes("POC");
+      const inVa = barEl.dataset.kind === "va" || (!isPoc && volPct >= 40);
+      const kind = isPoc ? "poc" : (inVa ? "va" : "off");
+      const tone = barEl.dataset.tone || (isPoc ? "gold" : (i % 2 === 0 ? "cyan" : "amber"));
+
+      items.push({
+        price,
+        volPct: Math.max(0, Math.min(100, volPct)),
+        isPoc,
+        inVa,
+        tone,
+        kind
+      });
+    }
+    return items;
+  }
+
+  function renderFallbackRows(items, container) {
+    const fragment = document.createDocumentFragment();
+    for (const item of items.slice(0, 8)) {
+      const row = document.createElement("div");
+      row.className = "stone-mini-row";
+      row.dataset.poc = String(item.isPoc);
+
+      const head = document.createElement("div");
+      head.className = "stone-mini-row-head";
+
+      const priceLabel = document.createElement("span");
+      priceLabel.className = "stone-mini-price";
+      priceLabel.textContent = (item.isPoc ? "★ $" : "$") + item.price.toFixed(2);
+
+      const pctLabel = document.createElement("span");
+      pctLabel.className = "stone-mini-pct";
+      pctLabel.textContent = item.isPoc ? "POC" : Math.round(item.volPct) + "%";
+
+      head.append(priceLabel, pctLabel);
+
+      const track = document.createElement("span");
+      track.className = "stone-mini-track" + (item.isPoc ? " stone-mini-track--poc" : "");
+
+      const fill = document.createElement("span");
+      fill.className = "stone-mini-fill";
+      fill.style.width = item.volPct + "%";
+      fill.dataset.kind = item.kind;
+      fill.dataset.tone = item.tone;
+
+      track.append(fill);
+      row.append(head, track);
+      fragment.append(row);
+    }
+    container.replaceChildren(fragment);
+  }
+
+  function renderDynamicRows(accepted, container) {
+    const fragment = document.createDocumentFragment();
+    for (const item of accepted) {
+      const row = document.createElement("div");
+      row.className = "stone-mini-row";
+      row.dataset.poc = String(item.isPoc);
+      row.style.top = item.y + "px";
+      row.title = `${item.isPoc ? "Point of Control (POC): " : "Volumenprofil: "}$${item.price.toFixed(2)} (${Math.round(item.volPct)}%)`;
+
+      const head = document.createElement("div");
+      head.className = "stone-mini-row-head";
+
+      const priceLabel = document.createElement("span");
+      priceLabel.className = "stone-mini-price";
+      priceLabel.textContent = (item.isPoc ? "★ $" : "$") + item.price.toFixed(2);
+
+      const pctLabel = document.createElement("span");
+      pctLabel.className = "stone-mini-pct";
+      pctLabel.textContent = item.isPoc ? "POC" : Math.round(item.volPct) + "%";
+
+      head.append(priceLabel, pctLabel);
+
+      const track = document.createElement("span");
+      track.className = "stone-mini-track" + (item.isPoc ? " stone-mini-track--poc" : "");
+
+      const fill = document.createElement("span");
+      fill.className = "stone-mini-fill";
+      fill.style.width = item.volPct + "%";
+      fill.dataset.kind = item.kind;
+      fill.dataset.tone = item.tone;
+
+      track.append(fill);
+      row.append(head, track);
+      fragment.append(row);
+    }
+    container.replaceChildren(fragment);
+  }
+
+  function syncPositions() {
+    const chartElem = byId("tv-chart");
+    const aside = document.querySelector(".stone-side-volume");
+    const barsContainer = byId("stone-mini-volume");
+    if (!chartElem || !aside || !barsContainer) return;
+
+    const series = candleSeriesInstance || chartElem.__candleSeries || window.__stoneCandleSeries;
+    const items = getRawProfileItems();
+
+    if (!items.length) {
+      barsContainer.className = "stone-mini-volume stone-mini-fallback";
+      barsContainer.replaceChildren();
+      const waiting = document.createElement("div");
+      waiting.className = "stone-mini-wait";
+      waiting.textContent = "Warte auf MT5-Volumendaten";
+      barsContainer.append(waiting);
+      return;
+    }
+
+    let coordinatesAvailable = false;
+    const chartRect = chartElem.getBoundingClientRect();
+    const asideRect = aside.getBoundingClientRect();
+    const offsetY = Math.round(chartRect.top - asideRect.top);
+    const asideHeight = aside.clientHeight || 520;
+
+    const candidates = [];
+    if (series && typeof series.priceToCoordinate === "function") {
+      for (const item of items) {
+        try {
+          const yCoord = series.priceToCoordinate(item.price);
+          if (Number.isFinite(yCoord)) {
+            coordinatesAvailable = true;
+            const finalY = Math.round(yCoord + offsetY);
+            if (finalY >= 38 && finalY <= asideHeight - 16) {
+              candidates.push({ ...item, y: finalY });
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (!coordinatesAvailable) {
+      barsContainer.className = "stone-mini-volume stone-mini-fallback";
+      renderFallbackRows(items, barsContainer);
+      return;
+    }
+
+    barsContainer.className = "stone-mini-volume";
+
+    candidates.sort((a, b) => {
+      if (a.isPoc && !b.isPoc) return -1;
+      if (!a.isPoc && b.isPoc) return 1;
+      return b.volPct - a.volPct;
+    });
+
+    const MIN_GAP = 24;
+    const accepted = [];
+    for (const cand of candidates) {
+      const collides = accepted.some(acc => Math.abs(acc.y - cand.y) < MIN_GAP);
+      if (!collides) {
+        accepted.push(cand);
+      }
+    }
+
+    accepted.sort((a, b) => a.y - b.y);
+    renderDynamicRows(accepted, barsContainer);
+  }
+
   function constructChartLadder() {
     const chart = byId("tv-chart");
     const source = byId("vp-histogram-container");
@@ -37,58 +330,44 @@
 
     const aside = document.createElement("aside");
     aside.className = "stone-side-volume";
-    aside.setAttribute("aria-label", "Live-Volumenprofil, gespiegelt aus Tages- oder Wochenansicht");
+    aside.setAttribute("aria-label", "Live-Volumenprofil, synchronisiert mit der Chart-Werteskala");
     const heading = document.createElement("div");
     heading.className = "stone-volume-title";
     heading.textContent = "ᚦ  VOLUMENPROFIL";
     const bars = document.createElement("div");
     bars.id = "stone-mini-volume";
     bars.className = "stone-mini-volume";
-    aside.append(heading,bars);
+    aside.append(heading, bars);
     stage.append(aside);
 
-    let queued = false;
-    const render = () => {
-      queued = false;
-      const rows = Array.from(source.children);
-      bars.replaceChildren();
-      if (!rows.length) {
-        const waiting = document.createElement("div");
-        waiting.className = "stone-mini-wait";
-        waiting.textContent = "Warte auf MT5-Volumendaten";
-        bars.append(waiting);
-        return;
-      }
-      for (const original of rows) {
-        const price = original.querySelector("span");
-        const originalBar = original.querySelector(".vp-bar");
-        if (!price || !originalBar) continue;
-        const row = document.createElement("div");
-        row.className = "stone-mini-row";
-        const priceLabel = document.createElement("span");
-        priceLabel.className = "stone-mini-price";
-        priceLabel.textContent = price.textContent;
-        const track = document.createElement("span");
-        track.className = "stone-mini-track";
-        const fill = document.createElement("span");
-        fill.className = "stone-mini-fill";
-        fill.style.width = originalBar.style.width || "0%";
-        fill.dataset.kind = originalBar.dataset.kind || (originalBar.classList.contains("poc") ? "poc" : "va");
-        fill.dataset.tone = originalBar.dataset.tone || (fill.dataset.kind === "poc" ? "gold" : "cyan");
-        track.append(fill);
-        row.append(priceLabel, track);
-        bars.append(row);
-      }
-    };
+    if (chart.__chart || chart.__candleSeries) {
+      attachChart({
+        chart: chart.__chart,
+        candleSeries: chart.__candleSeries
+      });
+    } else {
+      bindChartEvents();
+    }
+
     const observer = new MutationObserver(() => {
-      if (!queued) {
-        queued = true;
-        requestAnimationFrame(render);
-      }
+      requestSync();
     });
-    observer.observe(source, {childList:true, subtree:true});
-    render();
+    observer.observe(source, { childList: true, subtree: true });
+
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(() => requestSync());
+      ro.observe(chart);
+      ro.observe(aside);
+    }
+
+    requestSync();
   }
+
+  window.StoneCockpit = Object.freeze({
+    attachChart,
+    requestSync,
+    syncPositions
+  });
 
   function decor() {
     const brand = byId("strategy-title");

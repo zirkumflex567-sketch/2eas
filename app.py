@@ -2069,6 +2069,9 @@ HTML_CONTENT = """<!DOCTYPE html>
       ema20Series  = chart.addLineSeries({ color: '#00d2ff', lineWidth: 2, title: 'EMA20' });
       ema50Series  = chart.addLineSeries({ color: '#ff9f43', lineWidth: 2, title: 'EMA50' });
       ema200Series = chart.addLineSeries({ color: '#a55eea', lineWidth: 2, title: 'EMA200' });
+      container.__chart = chart;
+      container.__candleSeries = candleSeries;
+      try { window.StoneCockpit?.attachChart?.({chart, candleSeries}); } catch (_) {}
       try { window.StoneChartFX?.attach({chart, host:container, candleSeries, emaSeries:[ema20Series,ema50Series,ema200Series]}); } catch (_) {}
       try { window.StoneCelebration?.applyChartSettings(); } catch (_) {}
       try { window.ChartStudioBeta?.mount({chart,host:container,candleSeries,emaSeries:[ema20Series,ema50Series,ema200Series],account:activeAccount,timeframe:activeTimeframe}); } catch (err) { console.warn("Chart Studio Beta konnte nicht gestartet werden:",err); }
@@ -2116,6 +2119,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           bottom: currentBottomMargin
         }
       });
+      try { window.StoneCockpit?.requestSync?.(); } catch (_) {}
     }
 
     function resetChartZoom() {
@@ -2126,6 +2130,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           scaleMargins: { top: 0.10, bottom: currentBottomMargin }
         });
         applyOptimalChartView(currentCandlesCount || 150);
+        try { window.StoneCockpit?.requestSync?.(); } catch (_) {}
       }
     }
 
@@ -2139,6 +2144,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         from: Math.round(mid - span / 2),
         to: Math.round(mid + span / 2)
       });
+      try { window.StoneCockpit?.requestSync?.(); } catch (_) {}
     }
 
     // --- SUPPORT & RESISTANCE / VOLUME PROFILE LINES ON CHART ---
@@ -2274,6 +2280,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           }
           updateChartSRLines(data.sr_levels, curPrice);
         }
+        try { window.StoneCockpit?.requestSync?.(); } catch (_) {}
 
         try { window.ChartStudioBeta?.updateCandles(data.candles); } catch (_) {}
         currentChartMarkers = data.markers || [];
@@ -2503,6 +2510,8 @@ HTML_CONTENT = """<!DOCTYPE html>
       `;
 
       const container = document.getElementById('vp-histogram-container');
+      container.__vpData = vp;
+      window.__currentVP = vp;
       const histogram = [...vp.histogram].reverse();
       const sorted = histogram.filter((_, i) => i % 2 === 0).slice(0, 8);
       // Always preserve the genuine POC row when decimating the histogram to 8 bars.
@@ -2529,7 +2538,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           label = b.in_va ? 'VA (70%)' : 'Außerhalb VA';
         }
         return `
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2" data-price="${b.price}" data-vol-pct="${b.vol_pct}" data-poc="${b.is_poc}">
             <span class="w-16 font-mono text-[10px] opacity-80 text-right">$${b.price.toFixed(2)}</span>
             <div class="flex-1 bg-black/20 rounded-full h-3 overflow-hidden flex items-center">
               <div class="h-full rounded-full vp-bar ${barColor}" data-kind="${stoneKind}" data-tone="${stoneTone}" style="width: ${Math.max(0, Math.min(100, Number(b.vol_pct) || 0))}%"></div>
@@ -2538,6 +2547,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           </div>
         `;
       }).join('');
+      try { window.StoneCockpit?.requestSync?.(); } catch (_) {}
     }
 
     // --- POSITIONS & SL/TP MANAGER ---
