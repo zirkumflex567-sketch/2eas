@@ -66,6 +66,13 @@ jobs:
         run: |
           npm install --no-save playwright@1.56.0
           npx playwright install chromium
+      - name: Compile native v5 TypeScript adapter (isolated)
+        run: |
+          npm install --prefix chart_studio_v5 --package-lock=false --no-audit --no-fund
+          npm --prefix chart_studio_v5 run check
+          npm --prefix chart_studio_v5 run build
+      - name: Chromium native v5 proof (read-only)
+        run: node scripts/smoke_chart_studio_v5.cjs
       - name: Run Chromium UI smoke (no MT5 server)
         run: |
           node scripts/smoke_chart_studio_beta.cjs
@@ -88,4 +95,5 @@ jobs:
             output/visual-smoke/chart-studio-chart-types.png
             output/visual-smoke/chart-studio-object-manager.png
             output/visual-smoke/chart-studio-incremental.png
+            output/visual-smoke/chart-studio-v5-poc.png
           if-no-files-found: ignore
