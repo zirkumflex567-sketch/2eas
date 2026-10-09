@@ -201,11 +201,14 @@ class MultiAccountTests(unittest.TestCase):
         fake = self.fake()
         pos = SimpleNamespace(type=0, symbol='XAUUSD', volume=.01, price_open=4000, sl=3990, tp=0)
         fake.positions_get = lambda **kw: [pos] if kw['ticket']==11 else []
-        fake.symbol_info = lambda _: SimpleNamespace(trade_contract_size=100, digits=2)
+        # Stop writes now require broker tick/stop metadata (fail closed if absent).
+        fake.symbol_info = lambda _: SimpleNamespace(trade_contract_size=100, digits=2,
+            trade_tick_size=.01, point=.01, trade_stops_level=0, trade_freeze_level=0)
+        fake.symbol_info_tick = lambda _: SimpleNamespace(time=1791547200, bid=4000., ask=4000.05)
         fake.order_send = lambda req: (fake.sent.append((fake.current['login'], req)) or SimpleNamespace(retcode=10009, comment='ok'))
         for key in ('ORDER_TYPE_BUY','TRADE_ACTION_SLTP','TRADE_RETCODE_DONE'):
             setattr(fake, key, getattr(app.mt5, key))
-        with patch.object(app, 'mt5', fake):
+        with patch.object(app, 'mt5', fake), patch.object(app.time, 'time', return_value=1791547200.):
             # Decorator binds the actual app module object; mock its calls too.
             with patch.object(app.api_modify_position, '__wrapped__', app.api_modify_position.__wrapped__):
                 with self.gateway.session(fake, 'goldm15'):
@@ -218,9 +221,9 @@ class MultiAccountTests(unittest.TestCase):
     def test_gold_reset_cannot_write_titan_or_guard_files(self):
         import app
         fake = self.fake()
-        fake.symbol_info_tick = lambda _: SimpleNamespace(time=1791480000)
+        fake.symbol_info_tick = lambda _: SimpleNamespace(time=1791547200, bid=4000., ask=4000.05)
         fake.account_info = lambda: SimpleNamespace(login=53090070, server='ICMarketsEU-Demo', balance=9975)
-        with tempfile.TemporaryDirectory() as root, patch.object(app, 'BASE_DIR', Path(root)), patch.object(app, 'COMMON_FILES_DIR', root), patch.object(app, 'mt5', fake):
+        with tempfile.TemporaryDirectory() as root, patch.object(app, 'BASE_DIR', Path(root)), patch.object(app, 'COMMON_FILES_DIR', root), patch.object(app, 'mt5', fake), patch.object(app.time, 'time', return_value=1791547200.):
             with self.gateway.session(fake, 'goldm15'):
                 app.api_reset_drawdown.__wrapped__(app.ResetDrawdownRequest(action='reset', baseline=10000), account='goldm15')
             self.assertTrue((Path(root)/'drawdown_config_goldm15.json').exists())
@@ -237,15 +240,17 @@ class MultiAccountTests(unittest.TestCase):
             return []
         with patch.multiple(app.mt5, initialize=fake.initialize, shutdown=fake.shutdown, account_info=fake.account_info, terminal_info=fake.terminal_info, positions_get=positions_get), patch.object(app.mt5, 'order_send') as send:
             client = TestClient(app.app)
+            csrf = client.get('/api/control_session').json()['csrf_token']
             for route in ('modify_position','close_position'):
-                response = client.post(f'/api/{route}?account=goldm15', json={'ticket':999})
+                response = client.post(f'/api/{route}?account=goldm15', json={'ticket':999}, headers={'X-Dashboard-CSRF': csrf})
                 self.assertEqual(response.status_code, 404)
             self.assertEqual(lookups, [(53090070,999), (53090070,999)])
             send.assert_not_called()
         fake = self.fake(wrong=True)
         with patch.multiple(app.mt5, initialize=fake.initialize, shutdown=fake.shutdown, account_info=fake.account_info, terminal_info=fake.terminal_info), patch.object(app.mt5, 'order_send') as send:
             client = TestClient(app.app)
-            response = client.post('/api/close_position?account=goldm15', json={'ticket':999})
+            csrf = client.get('/api/control_session').json()['csrf_token']
+            response = client.post('/api/close_position?account=goldm15', json={'ticket':999}, headers={'X-Dashboard-CSRF': csrf})
             self.assertEqual(response.status_code, 409)
             send.assert_not_called()
 
@@ -268,7 +273,7 @@ class MultiAccountTests(unittest.TestCase):
         fake.positions_get=lambda **kw:[]
         fake.history_deals_get=lambda *args:[]
         fake.ORDER_TYPE_BUY=app.mt5.ORDER_TYPE_BUY
-        with patch.object(app,'mt5',fake),patch.object(app,'load_dd_config',return_value={}):
+        with patch.object(app,'mt5',fake),patch.object(app,'load_dd_config',return_value={}),patch.object(app.time,'time',return_value=float(tick_time)):
             with self.gateway.session(fake,'titan'):
                 data=app.get_live_market_data()
         for field in ['daily_vp','weekly_vp','sr_levels','positions','indicators','daily_drawdown','rules_matrix','buy_readiness','sell_readiness']:

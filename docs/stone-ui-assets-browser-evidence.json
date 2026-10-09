@@ -1,0 +1,1086 @@
+[
+  {
+    "width": 390,
+    "selector": "nav.stone-asset-nav",
+    "screenshot_rgb_rms": [
+      4.368498780938296,
+      4.157192933509311,
+      4.2273104435475055
+    ]
+  },
+  {
+    "width": 390,
+    "selector": "header.stone-asset-header",
+    "screenshot_rgb_rms": [
+      4.8555085146714045,
+      4.786285527475016,
+      5.1417680407882385
+    ]
+  },
+  {
+    "width": 390,
+    "selector": ".stone-asset-panel--diagnostic",
+    "screenshot_rgb_rms": [
+      2.2403284362025166,
+      2.1998273563634974,
+      2.2241947264279625
+    ]
+  },
+  {
+    "width": 390,
+    "selector": ".stone-asset-panel--matrix",
+    "screenshot_rgb_rms": [
+      2.0987469640258416,
+      2.0019291738115608,
+      2.094175143534071
+    ]
+  },
+  {
+    "width": 390,
+    "nonchart": false,
+    "resources": [
+      {
+        "url": "stone-assets/ui/01_basalt_dark_tile.webp",
+        "encoded": 215770,
+        "transfer": 216070
+      },
+      {
+        "url": "stone-assets/ui/10_ancient_circuit_stone_tile.webp",
+        "encoded": 163086,
+        "transfer": 163386
+      },
+      {
+        "url": "stone-assets/ui/07_brushed_gunmetal_tile.webp",
+        "encoded": 157828,
+        "transfer": 158128
+      },
+      {
+        "url": "stone-assets/ui/15_header_command_slab.webp",
+        "encoded": 165666,
+        "transfer": 165966
+      },
+      {
+        "url": "stone-assets/ui/27_broken_corner_ornament.webp",
+        "encoded": 17968,
+        "transfer": 18268
+      },
+      {
+        "url": "stone-assets/ui/38_tab_selected_cyan.webp",
+        "encoded": 68214,
+        "transfer": 68514
+      },
+      {
+        "url": "stone-assets/ui/37_tab_idle_stone.webp",
+        "encoded": 81012,
+        "transfer": 81312
+      },
+      {
+        "url": "stone-assets/ui/09_bionic_inlay_tile.webp",
+        "encoded": 175614,
+        "transfer": 175914
+      },
+      {
+        "url": "stone-assets/ui/25_rune_crest_emblem.webp",
+        "encoded": 14798,
+        "transfer": 15098
+      },
+      {
+        "url": "stone-assets/ui/31_button_idle_blue.webp",
+        "encoded": 48048,
+        "transfer": 48348
+      },
+      {
+        "url": "stone-assets/ui/32_button_active_blue.webp",
+        "encoded": 64696,
+        "transfer": 64996
+      },
+      {
+        "url": "stone-assets/ready/03_obsidian_smoked_tile.webp",
+        "encoded": 375794,
+        "transfer": 376094
+      },
+      {
+        "url": "stone-assets/ready/12_chart_frame_wide.webp",
+        "encoded": 1054984,
+        "transfer": 1055284
+      },
+      {
+        "url": "stone-assets/ready/23_blue_crack_emissive.webp",
+        "encoded": 461378,
+        "transfer": 461678
+      },
+      {
+        "url": "stone-assets/ready/07_brushed_gunmetal_tile.webp",
+        "encoded": 400884,
+        "transfer": 401184
+      },
+      {
+        "url": "stone-assets/ready/31_button_idle_blue.webp",
+        "encoded": 702340,
+        "transfer": 702640
+      },
+      {
+        "url": "stone-assets/ready/32_button_active_blue.webp",
+        "encoded": 801222,
+        "transfer": 801522
+      },
+      {
+        "url": "stone-assets/ready/41_chart_recessed_surface.webp",
+        "encoded": 138316,
+        "transfer": 138616
+      },
+      {
+        "url": "stone-assets/ready/02_slate_fractured_tile.webp",
+        "encoded": 430742,
+        "transfer": 431042
+      },
+      {
+        "url": "stone-assets/ready/14_long_volume_plate.webp",
+        "encoded": 551586,
+        "transfer": 551886
+      },
+      {
+        "url": "stone-assets/ready/27_broken_corner_ornament.webp",
+        "encoded": 774930,
+        "transfer": 775230
+      },
+      {
+        "url": "stone-assets/ui/16_diagnostic_core_panel.webp",
+        "encoded": 143188,
+        "transfer": 143488
+      },
+      {
+        "url": "stone-assets/ui/11_master_dashboard_panel.webp",
+        "encoded": 88572,
+        "transfer": 88872
+      },
+      {
+        "url": "stone-assets/ui/45_risk_fill_red.webp",
+        "encoded": 28712,
+        "transfer": 29012
+      },
+      {
+        "url": "stone-assets/ui/46_readiness_fill_green.webp",
+        "encoded": 33640,
+        "transfer": 33940
+      },
+      {
+        "url": "stone-assets/ui/29_electric_corner_glow.webp",
+        "encoded": 9286,
+        "transfer": 9586
+      },
+      {
+        "url": "stone-assets/ui/03_obsidian_smoked_tile.webp",
+        "encoded": 110990,
+        "transfer": 111290
+      },
+      {
+        "url": "stone-assets/ui/19_entry_matrix_frame.webp",
+        "encoded": 167644,
+        "transfer": 167944
+      },
+      {
+        "url": "stone-assets/ui/02_slate_fractured_tile.webp",
+        "encoded": 189574,
+        "transfer": 189874
+      },
+      {
+        "url": "stone-assets/ui/17_trade_ticket_cartridge.webp",
+        "encoded": 127116,
+        "transfer": 127416
+      },
+      {
+        "url": "stone-assets/ui/18_journal_stone_plate.webp",
+        "encoded": 133960,
+        "transfer": 134260
+      },
+      {
+        "url": "stone-assets/ui/21_cyan_side_circuit.webp",
+        "encoded": 188360,
+        "transfer": 188660
+      },
+      {
+        "url": "stone-assets/ui/22_amber_side_circuit.webp",
+        "encoded": 185876,
+        "transfer": 186176
+      },
+      {
+        "url": "stone-assets/ui/20_guard_warning_plaque.webp",
+        "encoded": 149342,
+        "transfer": 149642
+      },
+      {
+        "url": "stone-assets/ui/47_table_row_metal.webp",
+        "encoded": 49564,
+        "transfer": 49864
+      },
+      {
+        "url": "stone-assets/ui/48_tooltip_engraved_plate.webp",
+        "encoded": 113652,
+        "transfer": 113952
+      },
+      {
+        "url": "stone-assets/ui/14_long_volume_plate.webp",
+        "encoded": 81964,
+        "transfer": 82264
+      },
+      {
+        "url": "stone-assets/ui/36_input_recessed_field.webp",
+        "encoded": 20638,
+        "transfer": 20938
+      },
+      {
+        "url": "stone-assets/ui/49_modal_warning_frame.webp",
+        "encoded": 98386,
+        "transfer": 98686
+      }
+    ]
+  },
+  {
+    "width": 768,
+    "selector": "nav.stone-asset-nav",
+    "screenshot_rgb_rms": [
+      2.9839706176244167,
+      2.8223986979605256,
+      3.0431986176074752
+    ]
+  },
+  {
+    "width": 768,
+    "selector": "header.stone-asset-header",
+    "screenshot_rgb_rms": [
+      3.9088020485786674,
+      3.8598525855940284,
+      4.1547106007104295
+    ]
+  },
+  {
+    "width": 768,
+    "selector": ".stone-asset-panel--diagnostic",
+    "screenshot_rgb_rms": [
+      2.1812510622677292,
+      2.1433636136264513,
+      2.180205941354553
+    ]
+  },
+  {
+    "width": 768,
+    "selector": ".stone-asset-panel--matrix",
+    "screenshot_rgb_rms": [
+      2.1027770799630456,
+      2.033540002303846,
+      2.1202323209747824
+    ]
+  },
+  {
+    "width": 768,
+    "nonchart": false,
+    "resources": [
+      {
+        "url": "stone-assets/ui/01_basalt_dark_tile.webp",
+        "encoded": 215770,
+        "transfer": 216070
+      },
+      {
+        "url": "stone-assets/ui/10_ancient_circuit_stone_tile.webp",
+        "encoded": 163086,
+        "transfer": 163386
+      },
+      {
+        "url": "stone-assets/ui/07_brushed_gunmetal_tile.webp",
+        "encoded": 157828,
+        "transfer": 158128
+      },
+      {
+        "url": "stone-assets/ui/15_header_command_slab.webp",
+        "encoded": 165666,
+        "transfer": 165966
+      },
+      {
+        "url": "stone-assets/ui/27_broken_corner_ornament.webp",
+        "encoded": 17968,
+        "transfer": 18268
+      },
+      {
+        "url": "stone-assets/ui/38_tab_selected_cyan.webp",
+        "encoded": 68214,
+        "transfer": 68514
+      },
+      {
+        "url": "stone-assets/ui/37_tab_idle_stone.webp",
+        "encoded": 81012,
+        "transfer": 81312
+      },
+      {
+        "url": "stone-assets/ui/09_bionic_inlay_tile.webp",
+        "encoded": 175614,
+        "transfer": 175914
+      },
+      {
+        "url": "stone-assets/ui/25_rune_crest_emblem.webp",
+        "encoded": 14798,
+        "transfer": 15098
+      },
+      {
+        "url": "stone-assets/ui/31_button_idle_blue.webp",
+        "encoded": 48048,
+        "transfer": 48348
+      },
+      {
+        "url": "stone-assets/ui/32_button_active_blue.webp",
+        "encoded": 64696,
+        "transfer": 64996
+      },
+      {
+        "url": "stone-assets/ready/03_obsidian_smoked_tile.webp",
+        "encoded": 375794,
+        "transfer": 376094
+      },
+      {
+        "url": "stone-assets/ready/12_chart_frame_wide.webp",
+        "encoded": 1054984,
+        "transfer": 1055284
+      },
+      {
+        "url": "stone-assets/ready/23_blue_crack_emissive.webp",
+        "encoded": 461378,
+        "transfer": 461678
+      },
+      {
+        "url": "stone-assets/ready/07_brushed_gunmetal_tile.webp",
+        "encoded": 400884,
+        "transfer": 401184
+      },
+      {
+        "url": "stone-assets/ready/31_button_idle_blue.webp",
+        "encoded": 702340,
+        "transfer": 702640
+      },
+      {
+        "url": "stone-assets/ready/32_button_active_blue.webp",
+        "encoded": 801222,
+        "transfer": 801522
+      },
+      {
+        "url": "stone-assets/ready/41_chart_recessed_surface.webp",
+        "encoded": 138316,
+        "transfer": 138616
+      },
+      {
+        "url": "stone-assets/ready/02_slate_fractured_tile.webp",
+        "encoded": 430742,
+        "transfer": 431042
+      },
+      {
+        "url": "stone-assets/ready/14_long_volume_plate.webp",
+        "encoded": 551586,
+        "transfer": 551886
+      },
+      {
+        "url": "stone-assets/ready/27_broken_corner_ornament.webp",
+        "encoded": 774930,
+        "transfer": 775230
+      },
+      {
+        "url": "stone-assets/ui/16_diagnostic_core_panel.webp",
+        "encoded": 143188,
+        "transfer": 143488
+      },
+      {
+        "url": "stone-assets/ui/11_master_dashboard_panel.webp",
+        "encoded": 88572,
+        "transfer": 88872
+      },
+      {
+        "url": "stone-assets/ui/45_risk_fill_red.webp",
+        "encoded": 28712,
+        "transfer": 29012
+      },
+      {
+        "url": "stone-assets/ui/46_readiness_fill_green.webp",
+        "encoded": 33640,
+        "transfer": 33940
+      },
+      {
+        "url": "stone-assets/ui/29_electric_corner_glow.webp",
+        "encoded": 9286,
+        "transfer": 9586
+      },
+      {
+        "url": "stone-assets/ui/03_obsidian_smoked_tile.webp",
+        "encoded": 110990,
+        "transfer": 111290
+      },
+      {
+        "url": "stone-assets/ui/19_entry_matrix_frame.webp",
+        "encoded": 167644,
+        "transfer": 167944
+      },
+      {
+        "url": "stone-assets/ui/02_slate_fractured_tile.webp",
+        "encoded": 189574,
+        "transfer": 189874
+      },
+      {
+        "url": "stone-assets/ui/17_trade_ticket_cartridge.webp",
+        "encoded": 127116,
+        "transfer": 127416
+      },
+      {
+        "url": "stone-assets/ui/18_journal_stone_plate.webp",
+        "encoded": 133960,
+        "transfer": 134260
+      },
+      {
+        "url": "stone-assets/ui/21_cyan_side_circuit.webp",
+        "encoded": 188360,
+        "transfer": 188660
+      },
+      {
+        "url": "stone-assets/ui/22_amber_side_circuit.webp",
+        "encoded": 185876,
+        "transfer": 186176
+      },
+      {
+        "url": "stone-assets/ui/20_guard_warning_plaque.webp",
+        "encoded": 149342,
+        "transfer": 149642
+      },
+      {
+        "url": "stone-assets/ui/47_table_row_metal.webp",
+        "encoded": 49564,
+        "transfer": 49864
+      },
+      {
+        "url": "stone-assets/ui/48_tooltip_engraved_plate.webp",
+        "encoded": 113652,
+        "transfer": 113952
+      },
+      {
+        "url": "stone-assets/ui/14_long_volume_plate.webp",
+        "encoded": 81964,
+        "transfer": 82264
+      },
+      {
+        "url": "stone-assets/ui/36_input_recessed_field.webp",
+        "encoded": 20638,
+        "transfer": 20938
+      },
+      {
+        "url": "stone-assets/ui/49_modal_warning_frame.webp",
+        "encoded": 98386,
+        "transfer": 98686
+      }
+    ]
+  },
+  {
+    "width": 390,
+    "nonchart": true,
+    "baseline": true,
+    "resources": [
+      {
+        "url": "stone-assets/ready/01_basalt_dark_tile.webp",
+        "encoded": 487938,
+        "transfer": 488238
+      },
+      {
+        "url": "stone-assets/ready/10_ancient_circuit_stone_tile.webp",
+        "encoded": 385352,
+        "transfer": 385652
+      },
+      {
+        "url": "stone-assets/ready/07_brushed_gunmetal_tile.webp",
+        "encoded": 400884,
+        "transfer": 401184
+      },
+      {
+        "url": "stone-assets/ready/15_header_command_slab.webp",
+        "encoded": 556380,
+        "transfer": 556680
+      },
+      {
+        "url": "stone-assets/ready/27_broken_corner_ornament.webp",
+        "encoded": 774930,
+        "transfer": 775230
+      },
+      {
+        "url": "stone-assets/ready/38_tab_selected_cyan.webp",
+        "encoded": 671176,
+        "transfer": 671476
+      },
+      {
+        "url": "stone-assets/ready/37_tab_idle_stone.webp",
+        "encoded": 795148,
+        "transfer": 795448
+      },
+      {
+        "url": "stone-assets/ready/09_bionic_inlay_tile.webp",
+        "encoded": 408720,
+        "transfer": 409020
+      },
+      {
+        "url": "stone-assets/ready/25_rune_crest_emblem.webp",
+        "encoded": 1186368,
+        "transfer": 1186668
+      },
+      {
+        "url": "stone-assets/ready/31_button_idle_blue.webp",
+        "encoded": 702340,
+        "transfer": 702640
+      },
+      {
+        "url": "stone-assets/ready/32_button_active_blue.webp",
+        "encoded": 801222,
+        "transfer": 801522
+      },
+      {
+        "url": "stone-assets/ready/16_diagnostic_core_panel.webp",
+        "encoded": 810708,
+        "transfer": 811008
+      },
+      {
+        "url": "stone-assets/ready/11_master_dashboard_panel.webp",
+        "encoded": 2025248,
+        "transfer": 2025548
+      },
+      {
+        "url": "stone-assets/ready/45_risk_fill_red.webp",
+        "encoded": 359188,
+        "transfer": 359488
+      },
+      {
+        "url": "stone-assets/ready/46_readiness_fill_green.webp",
+        "encoded": 388492,
+        "transfer": 388792
+      },
+      {
+        "url": "stone-assets/ready/29_electric_corner_glow.webp",
+        "encoded": 280352,
+        "transfer": 280652
+      },
+      {
+        "url": "stone-assets/ready/03_obsidian_smoked_tile.webp",
+        "encoded": 375794,
+        "transfer": 376094
+      },
+      {
+        "url": "stone-assets/ready/19_entry_matrix_frame.webp",
+        "encoded": 1188542,
+        "transfer": 1188842
+      },
+      {
+        "url": "stone-assets/ready/02_slate_fractured_tile.webp",
+        "encoded": 430742,
+        "transfer": 431042
+      },
+      {
+        "url": "stone-assets/ready/17_trade_ticket_cartridge.webp",
+        "encoded": 773422,
+        "transfer": 773722
+      },
+      {
+        "url": "stone-assets/ready/18_journal_stone_plate.webp",
+        "encoded": 856928,
+        "transfer": 857228
+      },
+      {
+        "url": "stone-assets/ready/21_cyan_side_circuit.webp",
+        "encoded": 687128,
+        "transfer": 687428
+      },
+      {
+        "url": "stone-assets/ready/22_amber_side_circuit.webp",
+        "encoded": 656416,
+        "transfer": 656716
+      },
+      {
+        "url": "stone-assets/ready/20_guard_warning_plaque.webp",
+        "encoded": 903720,
+        "transfer": 904020
+      },
+      {
+        "url": "stone-assets/ready/47_table_row_metal.webp",
+        "encoded": 310822,
+        "transfer": 311122
+      },
+      {
+        "url": "stone-assets/ready/48_tooltip_engraved_plate.webp",
+        "encoded": 593010,
+        "transfer": 593310
+      },
+      {
+        "url": "stone-assets/ready/14_long_volume_plate.webp",
+        "encoded": 551586,
+        "transfer": 551886
+      },
+      {
+        "url": "stone-assets/ready/36_input_recessed_field.webp",
+        "encoded": 335364,
+        "transfer": 335664
+      },
+      {
+        "url": "stone-assets/ready/49_modal_warning_frame.webp",
+        "encoded": 967718,
+        "transfer": 968018
+      }
+    ],
+    "encoded_unique_bytes": 19665638
+  },
+  {
+    "width": 390,
+    "nonchart": true,
+    "resources": [
+      {
+        "url": "stone-assets/ui/01_basalt_dark_tile.webp",
+        "encoded": 215770,
+        "transfer": 216070
+      },
+      {
+        "url": "stone-assets/ui/10_ancient_circuit_stone_tile.webp",
+        "encoded": 163086,
+        "transfer": 163386
+      },
+      {
+        "url": "stone-assets/ui/07_brushed_gunmetal_tile.webp",
+        "encoded": 157828,
+        "transfer": 158128
+      },
+      {
+        "url": "stone-assets/ui/15_header_command_slab.webp",
+        "encoded": 165666,
+        "transfer": 165966
+      },
+      {
+        "url": "stone-assets/ui/27_broken_corner_ornament.webp",
+        "encoded": 17968,
+        "transfer": 18268
+      },
+      {
+        "url": "stone-assets/ui/38_tab_selected_cyan.webp",
+        "encoded": 68214,
+        "transfer": 68514
+      },
+      {
+        "url": "stone-assets/ui/37_tab_idle_stone.webp",
+        "encoded": 81012,
+        "transfer": 81312
+      },
+      {
+        "url": "stone-assets/ui/09_bionic_inlay_tile.webp",
+        "encoded": 175614,
+        "transfer": 175914
+      },
+      {
+        "url": "stone-assets/ui/25_rune_crest_emblem.webp",
+        "encoded": 14798,
+        "transfer": 15098
+      },
+      {
+        "url": "stone-assets/ui/31_button_idle_blue.webp",
+        "encoded": 48048,
+        "transfer": 48348
+      },
+      {
+        "url": "stone-assets/ui/32_button_active_blue.webp",
+        "encoded": 64696,
+        "transfer": 64996
+      },
+      {
+        "url": "stone-assets/ui/16_diagnostic_core_panel.webp",
+        "encoded": 143188,
+        "transfer": 143488
+      },
+      {
+        "url": "stone-assets/ui/11_master_dashboard_panel.webp",
+        "encoded": 88572,
+        "transfer": 88872
+      },
+      {
+        "url": "stone-assets/ui/45_risk_fill_red.webp",
+        "encoded": 28712,
+        "transfer": 29012
+      },
+      {
+        "url": "stone-assets/ui/46_readiness_fill_green.webp",
+        "encoded": 33640,
+        "transfer": 33940
+      },
+      {
+        "url": "stone-assets/ui/29_electric_corner_glow.webp",
+        "encoded": 9286,
+        "transfer": 9586
+      },
+      {
+        "url": "stone-assets/ui/03_obsidian_smoked_tile.webp",
+        "encoded": 110990,
+        "transfer": 111290
+      },
+      {
+        "url": "stone-assets/ui/19_entry_matrix_frame.webp",
+        "encoded": 167644,
+        "transfer": 167944
+      },
+      {
+        "url": "stone-assets/ui/17_trade_ticket_cartridge.webp",
+        "encoded": 127116,
+        "transfer": 127416
+      },
+      {
+        "url": "stone-assets/ui/02_slate_fractured_tile.webp",
+        "encoded": 189574,
+        "transfer": 189874
+      },
+      {
+        "url": "stone-assets/ui/18_journal_stone_plate.webp",
+        "encoded": 133960,
+        "transfer": 134260
+      },
+      {
+        "url": "stone-assets/ui/21_cyan_side_circuit.webp",
+        "encoded": 188360,
+        "transfer": 188660
+      },
+      {
+        "url": "stone-assets/ui/22_amber_side_circuit.webp",
+        "encoded": 185876,
+        "transfer": 186176
+      },
+      {
+        "url": "stone-assets/ui/20_guard_warning_plaque.webp",
+        "encoded": 149342,
+        "transfer": 149642
+      },
+      {
+        "url": "stone-assets/ui/47_table_row_metal.webp",
+        "encoded": 49564,
+        "transfer": 49864
+      },
+      {
+        "url": "stone-assets/ui/48_tooltip_engraved_plate.webp",
+        "encoded": 113652,
+        "transfer": 113952
+      },
+      {
+        "url": "stone-assets/ui/14_long_volume_plate.webp",
+        "encoded": 81964,
+        "transfer": 82264
+      },
+      {
+        "url": "stone-assets/ui/36_input_recessed_field.webp",
+        "encoded": 20638,
+        "transfer": 20938
+      },
+      {
+        "url": "stone-assets/ui/49_modal_warning_frame.webp",
+        "encoded": 98386,
+        "transfer": 98686
+      }
+    ],
+    "encoded_unique_bytes": 3093164
+  },
+  {
+    "width": 768,
+    "nonchart": true,
+    "baseline": true,
+    "resources": [
+      {
+        "url": "stone-assets/ready/01_basalt_dark_tile.webp",
+        "encoded": 487938,
+        "transfer": 488238
+      },
+      {
+        "url": "stone-assets/ready/10_ancient_circuit_stone_tile.webp",
+        "encoded": 385352,
+        "transfer": 385652
+      },
+      {
+        "url": "stone-assets/ready/07_brushed_gunmetal_tile.webp",
+        "encoded": 400884,
+        "transfer": 401184
+      },
+      {
+        "url": "stone-assets/ready/15_header_command_slab.webp",
+        "encoded": 556380,
+        "transfer": 556680
+      },
+      {
+        "url": "stone-assets/ready/27_broken_corner_ornament.webp",
+        "encoded": 774930,
+        "transfer": 775230
+      },
+      {
+        "url": "stone-assets/ready/38_tab_selected_cyan.webp",
+        "encoded": 671176,
+        "transfer": 671476
+      },
+      {
+        "url": "stone-assets/ready/37_tab_idle_stone.webp",
+        "encoded": 795148,
+        "transfer": 795448
+      },
+      {
+        "url": "stone-assets/ready/09_bionic_inlay_tile.webp",
+        "encoded": 408720,
+        "transfer": 409020
+      },
+      {
+        "url": "stone-assets/ready/25_rune_crest_emblem.webp",
+        "encoded": 1186368,
+        "transfer": 1186668
+      },
+      {
+        "url": "stone-assets/ready/31_button_idle_blue.webp",
+        "encoded": 702340,
+        "transfer": 702640
+      },
+      {
+        "url": "stone-assets/ready/32_button_active_blue.webp",
+        "encoded": 801222,
+        "transfer": 801522
+      },
+      {
+        "url": "stone-assets/ready/16_diagnostic_core_panel.webp",
+        "encoded": 810708,
+        "transfer": 811008
+      },
+      {
+        "url": "stone-assets/ready/11_master_dashboard_panel.webp",
+        "encoded": 2025248,
+        "transfer": 2025548
+      },
+      {
+        "url": "stone-assets/ready/45_risk_fill_red.webp",
+        "encoded": 359188,
+        "transfer": 359488
+      },
+      {
+        "url": "stone-assets/ready/46_readiness_fill_green.webp",
+        "encoded": 388492,
+        "transfer": 388792
+      },
+      {
+        "url": "stone-assets/ready/29_electric_corner_glow.webp",
+        "encoded": 280352,
+        "transfer": 280652
+      },
+      {
+        "url": "stone-assets/ready/03_obsidian_smoked_tile.webp",
+        "encoded": 375794,
+        "transfer": 376094
+      },
+      {
+        "url": "stone-assets/ready/19_entry_matrix_frame.webp",
+        "encoded": 1188542,
+        "transfer": 1188842
+      },
+      {
+        "url": "stone-assets/ready/02_slate_fractured_tile.webp",
+        "encoded": 430742,
+        "transfer": 431042
+      },
+      {
+        "url": "stone-assets/ready/17_trade_ticket_cartridge.webp",
+        "encoded": 773422,
+        "transfer": 773722
+      },
+      {
+        "url": "stone-assets/ready/18_journal_stone_plate.webp",
+        "encoded": 856928,
+        "transfer": 857228
+      },
+      {
+        "url": "stone-assets/ready/21_cyan_side_circuit.webp",
+        "encoded": 687128,
+        "transfer": 687428
+      },
+      {
+        "url": "stone-assets/ready/22_amber_side_circuit.webp",
+        "encoded": 656416,
+        "transfer": 656716
+      },
+      {
+        "url": "stone-assets/ready/20_guard_warning_plaque.webp",
+        "encoded": 903720,
+        "transfer": 904020
+      },
+      {
+        "url": "stone-assets/ready/47_table_row_metal.webp",
+        "encoded": 310822,
+        "transfer": 311122
+      },
+      {
+        "url": "stone-assets/ready/48_tooltip_engraved_plate.webp",
+        "encoded": 593010,
+        "transfer": 593310
+      },
+      {
+        "url": "stone-assets/ready/14_long_volume_plate.webp",
+        "encoded": 551586,
+        "transfer": 551886
+      },
+      {
+        "url": "stone-assets/ready/36_input_recessed_field.webp",
+        "encoded": 335364,
+        "transfer": 335664
+      },
+      {
+        "url": "stone-assets/ready/49_modal_warning_frame.webp",
+        "encoded": 967718,
+        "transfer": 968018
+      }
+    ],
+    "encoded_unique_bytes": 19665638
+  },
+  {
+    "width": 768,
+    "nonchart": true,
+    "resources": [
+      {
+        "url": "stone-assets/ui/01_basalt_dark_tile.webp",
+        "encoded": 215770,
+        "transfer": 216070
+      },
+      {
+        "url": "stone-assets/ui/10_ancient_circuit_stone_tile.webp",
+        "encoded": 163086,
+        "transfer": 163386
+      },
+      {
+        "url": "stone-assets/ui/07_brushed_gunmetal_tile.webp",
+        "encoded": 157828,
+        "transfer": 158128
+      },
+      {
+        "url": "stone-assets/ui/15_header_command_slab.webp",
+        "encoded": 165666,
+        "transfer": 165966
+      },
+      {
+        "url": "stone-assets/ui/27_broken_corner_ornament.webp",
+        "encoded": 17968,
+        "transfer": 18268
+      },
+      {
+        "url": "stone-assets/ui/38_tab_selected_cyan.webp",
+        "encoded": 68214,
+        "transfer": 68514
+      },
+      {
+        "url": "stone-assets/ui/37_tab_idle_stone.webp",
+        "encoded": 81012,
+        "transfer": 81312
+      },
+      {
+        "url": "stone-assets/ui/09_bionic_inlay_tile.webp",
+        "encoded": 175614,
+        "transfer": 175914
+      },
+      {
+        "url": "stone-assets/ui/25_rune_crest_emblem.webp",
+        "encoded": 14798,
+        "transfer": 15098
+      },
+      {
+        "url": "stone-assets/ui/31_button_idle_blue.webp",
+        "encoded": 48048,
+        "transfer": 48348
+      },
+      {
+        "url": "stone-assets/ui/32_button_active_blue.webp",
+        "encoded": 64696,
+        "transfer": 64996
+      },
+      {
+        "url": "stone-assets/ui/16_diagnostic_core_panel.webp",
+        "encoded": 143188,
+        "transfer": 143488
+      },
+      {
+        "url": "stone-assets/ui/11_master_dashboard_panel.webp",
+        "encoded": 88572,
+        "transfer": 88872
+      },
+      {
+        "url": "stone-assets/ui/45_risk_fill_red.webp",
+        "encoded": 28712,
+        "transfer": 29012
+      },
+      {
+        "url": "stone-assets/ui/46_readiness_fill_green.webp",
+        "encoded": 33640,
+        "transfer": 33940
+      },
+      {
+        "url": "stone-assets/ui/29_electric_corner_glow.webp",
+        "encoded": 9286,
+        "transfer": 9586
+      },
+      {
+        "url": "stone-assets/ui/03_obsidian_smoked_tile.webp",
+        "encoded": 110990,
+        "transfer": 111290
+      },
+      {
+        "url": "stone-assets/ui/19_entry_matrix_frame.webp",
+        "encoded": 167644,
+        "transfer": 167944
+      },
+      {
+        "url": "stone-assets/ui/02_slate_fractured_tile.webp",
+        "encoded": 189574,
+        "transfer": 189874
+      },
+      {
+        "url": "stone-assets/ui/17_trade_ticket_cartridge.webp",
+        "encoded": 127116,
+        "transfer": 127416
+      },
+      {
+        "url": "stone-assets/ui/18_journal_stone_plate.webp",
+        "encoded": 133960,
+        "transfer": 134260
+      },
+      {
+        "url": "stone-assets/ui/21_cyan_side_circuit.webp",
+        "encoded": 188360,
+        "transfer": 188660
+      },
+      {
+        "url": "stone-assets/ui/22_amber_side_circuit.webp",
+        "encoded": 185876,
+        "transfer": 186176
+      },
+      {
+        "url": "stone-assets/ui/20_guard_warning_plaque.webp",
+        "encoded": 149342,
+        "transfer": 149642
+      },
+      {
+        "url": "stone-assets/ui/47_table_row_metal.webp",
+        "encoded": 49564,
+        "transfer": 49864
+      },
+      {
+        "url": "stone-assets/ui/48_tooltip_engraved_plate.webp",
+        "encoded": 113652,
+        "transfer": 113952
+      },
+      {
+        "url": "stone-assets/ui/14_long_volume_plate.webp",
+        "encoded": 81964,
+        "transfer": 82264
+      },
+      {
+        "url": "stone-assets/ui/36_input_recessed_field.webp",
+        "encoded": 20638,
+        "transfer": 20938
+      },
+      {
+        "url": "stone-assets/ui/49_modal_warning_frame.webp",
+        "encoded": 98386,
+        "transfer": 98686
+      }
+    ],
+    "encoded_unique_bytes": 3093164
+  }
+]

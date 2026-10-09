@@ -20,6 +20,9 @@ const fs=require("node:fs"),path=require("node:path");
   await page.waitForFunction(()=>window.__chartSmokeReady);
   await page.locator("#cs-beta-toggle").click();
   await page.locator('[data-tool="horizontal"]').click();
+  // The expanded Studio toolbar can put the chart below the viewport. Raw
+  // mouse coordinates do not scroll like locator.click() does.
+  await page.locator(".cs-beta-canvas").scrollIntoViewIfNeeded();
   const rect=await page.locator(".cs-beta-canvas").boundingBox();
   assert.ok(rect&&rect.width>150);
   await page.mouse.click(rect.x+rect.width*.55,rect.y+rect.height*.44);

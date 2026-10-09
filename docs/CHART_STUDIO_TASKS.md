@@ -1,5 +1,7 @@
 # /task — 2EAs Chart Studio implementation board
 
+**Aktueller Restumfang und Abnahme:** [OPEN_TASKS.md](OPEN_TASKS.md). Die Branch-Paketnotizen weiter unten sind historische Umsetzungsschritte; maßgeblich sind die konsolidierte Restliste und [MAIN_CONSOLIDATION.md](MAIN_CONSOLIDATION.md).
+
 **Master spec:** [CHART_STUDIO_MASTER_SPEC.md](CHART_STUDIO_MASTER_SPEC.md).
 **Execution plan:** [CHART_STUDIO_PLAN.md](CHART_STUDIO_PLAN.md).
 **Source of implemented status:** merged `main` and individually CI-checked test-branch PRs. `[x]` = implementation and stated gate verified; `[~]` = partial/ongoing; `[ ]` = open. Broker-live release gates are always separate.
@@ -11,8 +13,8 @@
 - [x] 0.3 Create one explicit /plan and /task tracking document referencing the single master spec.
 - [x] 0.4 Add pure broker-money validation and read-only P0 scenario/quote/capabilities endpoints.
 - [x] 0.5 Add initial isolated regression tests + Windows CI config (CI status must still be independently confirmed).
-- [~] 0.6 GitHub Actions Windows test run: 46 Python tests and Chromium desktop beta smoke PASS (run 37881702809). Further responsive/MT5-connected browser verification remains open.
-- [~] 0.7 Static audit of MT5 write handlers identifies unauthenticated legacy `/api/modify_position`, `/api/close_position` and dashboard-only `/api/reset_drawdown`; these DO NOT use the separate token-protected Chart Studio layout API. Reverse-tunnel origin/CSRF analysis, auth architecture and any write-mode enablement remain BLOCKED pending deployment review. See `docs/CHART_STUDIO_SECURITY_GATE.md`.
+- [~] 0.6 Windows/Python/Chromium-Regressionen einschließlich responsiver Emulation vorhanden (PRs #4–#26 und Auditfix #14). Aktuelle Suite/CI siehe MAIN_CONSOLIDATION. Echte Mobilgeräte-/MT5-Demo-/Gesamtabnahme bleibt offen.
+- [~] 0.7 Auditfix #14 schützt bestehende Position-/Reset-POSTs mit lokaler Steuer-Sitzung/CSRF/Host/Origin; Layout-Bearer bleibt separat. Remote-Perimeter-/Nutzer-/Rollenprüfung, neue Chart-Writes und Demo-/Release-Abnahme bleiben offen. Siehe CHART_STUDIO_SECURITY_GATE.md und OPEN_TASKS.md.
 - [x] 0.8 v5 pinned at Lightweight Charts 5.2.1, TypeScript adapter and public API/license migration RFC/PoC delivered in merged PR #19 (`5658fa92`), Windows typecheck/build and Chromium pane smoke PASS (run 37896791685). **This is not the v5 production cutover in 1.8.**
 
 ## Task 1 — Functional opt-in Chart Studio prototype (CURRENT)
@@ -23,15 +25,15 @@
 - [x] 1.4 Account-scoped **temporary localStorage** saving/loading drawings, chart toggles, named local layouts (save/load/delete) and JSON-copy export.
 - [x] 1.5 Toggle genuine account-scoped MT5 open-position Entry/SL/TP overlays (**view-only**).
 - [x] 1.6 Read-only What-if scenario form + optional verified Bid/Ask fill + backend broker PnL/margin preview; distinct PLAN zones, no trade execution.
-- [~] 1.7 Chromium desktop smoke PASS; responsive 320/390/768/1440 browser matrix, simulated touch, zoom and reduced-motion is in PR #23 pending CI. Real mobile hardware, expanded layout acceptance and broker-connected proof remain open.
-- [~] 1.8 v5 TypeScript adapter/isolated renderer PoC merged in #19; PR #25 adds native oscillator pane line APIs, resize/move and account reset (CI pending). **Existing production v4 chart is not replaced**; parity, drawing primitives, real MT5 demo and full rollout remain open.
+- [~] 1.7 Chromium desktop smoke PASS; responsive 320/390/768/1440 browser matrix, simulated touch, zoom and reduced-motion merged with green CI in PR #23. Real mobile hardware, expanded layout acceptance and broker-connected proof remain open.
+- [~] 1.8 v5 TypeScript adapter/isolated renderer PoC merged in #19; merged PR #25 adds native oscillator pane line APIs, resize/move and account reset (CI green). **Existing production v4 chart is not replaced**; parity, drawing primitives, real MT5 demo and full rollout remain open.
 
 ## Task 2 — Full chart, drawings and storage
 
 - [ ] 2.1 V5 plugin/primitives and own drawing registry, drag states, snapping and hit-test priorities.
 - [~] 2.2 Configurable indicator instances: EMA/SMA/WMA multi-instance price overlays (up to 16); separate multiple RSI/MACD/ATR/ADX oscillator instances (up to 8), independent periods, panes, color/width/label/visibility, duplicates and deletion, saved in local+SQLite profiles; prior volume + UTC VWAP remain. Native v5 plugin migration and advanced pane manager still open.
-- [~] 2.3 Drawing tool catalog and **object manager**: horizontal, trend, rectangle, Fibonacci, ray, price/time ruler, 3-anchor parallel channel, handles/OHLC snap, Undo, object tree with names, visibility, lock, stacking, duplicates and deletion. Advanced fibs, mobile gestures, v5 primitives, hit-test priorities and annotation styles remain open.
-- [~] 2.4 Drawing SQLite store, schema migration, revision conflicts, server layout/indicator profiles, import/export. **Implemented on branch:** private schema-v1 SQLite workspace store, optimistic revisions, account-scoped layout JSON, authenticated opt-in REST plus existing browser toolbar server save/load/delete; multi-user ACL, full v5 profile migration and remote conflict merge remain open.
+- [~] 2.3 Drawing tool catalog and **object manager**: horizontal, trend, rectangle, Fibonacci, ray, price/time ruler, 3-anchor parallel channel, handles/OHLC snap, Undo, object tree with names, visibility, lock, stacking, duplicates and deletion. Custom Fibonacci retracement levels merged in #24; extensions/fans/time zones, mobile gestures, v5 primitives, hit-test priorities and annotation styles remain open.
+- [~] 2.4 Drawing SQLite store, schema migration, revision conflicts, server layout/indicator profiles, import/export. **Merged in main (#7 and extensions):** private schema-v1 SQLite workspace store, optimistic revisions, account-scoped layout JSON, authenticated opt-in REST plus existing browser toolbar server save/load/delete; multi-user ACL, full v5 profile migration and remote conflict merge remain open.
 - [~] 2.5 Chart appearance plus optional Candle/OHLC Bar/Line/Area chart types with account-scoped local+SQLite layouts. Symbol watchlist, synced multi-chart workspaces, additional chart types and native pane/layout management remain open.
 - [~] 2.6 Render performance: whole-history OHLCV fingerprints, SMA/Bollinger last-point updates and merged PR #20 (`e87c345d`), which skips multi-MA full-history `setData` on style-only changes and clears account-scoped series. MT5 paginated history, incremental RSI/MACD/ATR, streaming, benchmarks and AT-025/031 remain open.
 
@@ -59,7 +61,7 @@
 - [ ] 5.3 Execution quality with real intended-vs-fill quote baselines/partial fills.
 - [ ] 5.4 Reproducible market regimes with OOS analysis.
 - [ ] 5.5 Licensed news/event overlays, EA-news-guard differentiation.
-- [~] 5.6 Read-only deterministic replay with no-lookahead and zero trading routes. Browser-only as-of candlestick preview, frozen snapshot, seek/step/playback, context reset and no-trade smoke prepared in PR #21; EA telemetry/replay-compatible indicators, real broker dataset validation and full acceptance are not complete.
+- [~] 5.6 Read-only deterministic replay with no-lookahead and zero trading routes. Browser-only as-of candlestick preview, frozen snapshot, seek/step/playback, context reset and no-trade smoke merged in PR #21; EA telemetry/replay-compatible indicators, real broker dataset validation and full acceptance are not complete.
 - [ ] 5.7 All AT-001–AT-056 green with proof, legacy parity, screenshots and complete rollout/rollback plan.
 
 ## Gate proof required before marking "complete"
@@ -88,7 +90,7 @@ Branch `test/chart-studio-drag-preview` from merged main `8bbbb74`. New What-if 
 - Separate fail-closed Bearer authorization for new layout API; disabled unless `CHART_STUDIO_STORAGE_ENABLED=1` and a 32+ character `CHART_STUDIO_STORAGE_TOKEN` exists. Token is memory-only in browser, never LocalStorage or URL.
 - Private SQLite DB under `state/` (or operator-configured private path), migration v1, WAL, optimistic `expectedRevision`, strict 131072-byte/500-drawing caps, owner/account/symbol/layout scope. DB under `/static` disallowed.
 - GET list/read, PUT save, DELETE with stale-write conflict handling and private HTTP cache policy; current v4/beta LocalStorage profiles untouched.
-- Security prerequisite **still open**: legacy MT5 POST endpoints `/api/modify_position`, `/api/close_position`, `/api/reset_drawdown` are not independently authenticated. Do not activate additional MT5 mutations before holistic auth/CSRF/tunnel audit (Tasks 0.7/4.1).
+- Security prerequisite **still open**: legacy MT5 POST endpoints now have Auditfix #14 local capability/CSRF/Host/Origin protection; full remote authentication/roles and deployment acceptance remain open. Do not activate additional MT5 mutations before holistic auth/CSRF/tunnel audit (Tasks 0.7/4.1).
 - Frontend loads drawings/visible indicators but intentionally leaves the active timeframe unchanged; full versioned v5 multi-view restoration is still open.
 - Python SQLite tests, auth API integration tests and Chromium version/cross-account tests must pass before merging.
 
@@ -124,7 +126,7 @@ Branch `test/chart-studio-chart-types`, based on merged multi-oscillator main. A
 
 Branch `test/chart-studio-object-manager`: live selectable drawing list, safe labels, hidden/locked selection safeguards, up/down stacking, copies, deletion and Undo with account-scoped metadata stored in local profiles and revision-controlled SQLite layouts. Legacy v1 drawing documents remain compatible. Real MT5 orders and the legacy trading routes are untouched. Python/Chromium tests are required before this checkbox can be fully marked complete.
 
-**Goal status:** the overall /plan remains IN PROGRESS. Do not equate successful incremental PRs with acceptance of FR-001–FR-035 or AT-001–AT-056. Unfinished gated tasks: 0.7/0.8, 1.8, 2.1/2.6, 3.1–3.6, all 4.x and 5.x. Real MT5 demo identity/authoritative pricing, secured tunnel and broker-write approval cannot be simulated.
+**Goal status:** the overall /plan remains IN PROGRESS. Do not equate successful incremental PRs with acceptance of FR-001–FR-035 or AT-001–AT-056. Unfinished gated tasks: 0.7 (0.8 v5 PoC is implemented), 1.8, 2.1/2.6, 3.1–3.6, all 4.x and 5.x. Real MT5 demo identity/authoritative pricing, secured tunnel and broker-write approval cannot be simulated.
 
 ### Chart render deduplication / performance package
 
@@ -144,13 +146,13 @@ Branch `test/chart-studio-incremental-render`: shared dual-32-bit OHLCV fingerpr
 - Account/timeframe changes forcibly exit replay, clear the old snapshot and data, and require freshly loaded candles; no replay persistence across accounts.
 - Browser smoke checks frozen as-of progression, no POSTs and context isolation. Windows/Chromium proof passed before merge. Task 5.6 stays **partial** until multi-indicator, provenance, performance and broker-real replay acceptance.
 
-### Responsive acceptance package (PR #23; review/CI pending)
+### Responsive acceptance package (merged PR #23; CI green)
 
 - Chart Studio panels, indicator catalog, multi-MA editor, scenario form and replay controls use flex wrapping and bounded widths on 320/390/768/1440 viewports rather than cutting off controls.
 - Browser smoke checks a real EMA add, searchable catalog, chart zoom/resize, absence of document-wide horizontal scroll, touch-capable contexts and CSS `prefers-reduced-motion` at 320 px. Four screenshots are saved by the Chart CI workflow.
-- Responsive viewport emulation is **not** the same as physical mobile/hardware touch and does not satisfy broker-connected two-account release gates. Task 1.7 remains partial pending green CI and complete mobile/fullscreen acceptance.
+- Responsive viewport emulation is **not** the same as physical mobile/hardware touch and does not satisfy broker-connected two-account release gates. Task 1.7 remains partial pending hardware mobile/fullscreen and broker-connected acceptance; PR #23 CI is green.
 
-### Browser-only chart image export (PR #26; CI pending)
+### Browser-only chart image export (merged PR #26; CI green, final consolidation smoke repaired for viewport scrolling)
 
 - The current v4 chart can create a PNG from its own real `takeScreenshot()` canvas. A separate local-only composition includes the Chart Studio drawing overlay aligned to the plot, SL/TP display if enabled, and TradingView/Lightweight Charts attribution in the exported bitmap.
 - Explicit user-click download only; generated files are not uploaded or persisted on the server. Filenames include account and timeframe, never credentials.

@@ -23,6 +23,7 @@ const assert=require("node:assert/strict"),fs=require("node:fs"),path=require("n
   await input.fill("0; 25; 50; 100; 161,8");
   await page.locator('[data-cmd="fib-default"]').click();
   await page.locator('[data-tool="fib"]').click();
+  await page.locator(".cs-beta-canvas").scrollIntoViewIfNeeded();
   const canvas=page.locator(".cs-beta-canvas"),box=await canvas.boundingBox();
   assert.ok(box&&box.width>300);
   await page.mouse.click(box.x+box.width*.45,box.y+box.height*.27);

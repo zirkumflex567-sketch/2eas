@@ -1,0 +1,74 @@
+/* Non-chart only. No selectors for chart cards, scenes or chart controls. */
+body { --ui-ink:#f1f5f9; --ui-sub:#cbd5e1; --ui-surface:#0d1321; --ui-inset:#172235; --ui-good:#6ee7b7; --ui-bad:#fda4af; --ui-warn:#fde68a; --ui-info:#93c5fd; }
+body.theme-light { --ui-ink:#0f172a; --ui-sub:#334155; --ui-surface:#ffffff; --ui-inset:#f1f5f9; --ui-good:#065f46; --ui-bad:#9f1239; --ui-warn:#78350f; --ui-info:#1e40af; }
+body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal .glass-card) { color:var(--ui-ink) !important; background-color:var(--ui-surface) !important; }
+body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal) :is(.glass-card,.ticker-bg,.account-tab) { background-color:var(--ui-inset) !important; color:var(--ui-ink) !important; }
+body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal) [class*="text-"] { color:var(--ui-ink) !important; }
+body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal) :is(.text-sub,[class*="text-slate-"]) { color:var(--ui-sub) !important; }
+body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal) :is([class*="text-emerald-"]) { color:var(--ui-good) !important; }
+body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal) :is([class*="text-rose-"]) { color:var(--ui-bad) !important; }
+body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal) :is([class*="text-amber-"]) { color:var(--ui-warn) !important; }
+body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal) :is([class*="text-blue-"],[class*="text-sky-"],[class*="text-cyan-"],[class*="text-purple-"]) { color:var(--ui-info) !important; }
+body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal) :is([class*="bg-black/"],[class*="bg-emerald-"],[class*="bg-rose-"],[class*="bg-amber-"],[class*="bg-slate-"],[class*="bg-cyan-"]) { background-color:var(--ui-inset) !important; }
+body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal) :is(button.text-white,[data-position-type],#strategy-version) { background-color:#1e40af !important; color:#ffffff !important; }
+body .dashboard-panel [class*="opacity-"], body nav[aria-label="Konto und Strategie"] small { opacity:1 !important; }
+body .dashboard-panel button:disabled { opacity:1 !important; color:var(--ui-sub) !important; background-color:var(--ui-inset) !important; }
+body .dashboard-panel #buy-bar, body header #dd-dot.bg-emerald-500, body header .animate-pulse { background-color:var(--ui-good) !important; }
+body .dashboard-panel #sell-bar, body header #dd-dot.bg-rose-500 { background-color:var(--ui-bad) !important; }
+body header #dd-dot.bg-amber-500 { background-color:var(--ui-warn) !important; }
+body .dashboard-panel .vp-bar { background-color:#0891b2 !important; }
+body .dashboard-panel .vp-bar[data-tone="amber"], body .dashboard-panel .vp-bar[data-kind="poc"] { background-color:#b45309 !important; }
+body :is(nav[aria-label="Konto und Strategie"], header.glass-card, .dashboard-panel, #dd-reset-modal) { min-width:0; }
+body header.glass-card { gap:12px; }
+body header.glass-card > div,
+body header.glass-card > div > div { min-width:0; max-width:100%; flex-wrap:wrap; }
+body header.glass-card h1 { flex-wrap:wrap; }
+body header.glass-card #dd-badge { flex-wrap:wrap; gap:8px; }
+body #bar-countdown { font-size:24px !important; line-height:1.25; font-variant-numeric:tabular-nums; }
+body header.glass-card button, body nav[aria-label="Konto und Strategie"] button,
+body .dashboard-panel button, body .dashboard-panel select,
+body #dd-reset-modal button, body #dd-reset-modal input { min-height:44px; }
+body #positions-list input { width:128px !important; min-height:44px; font-size:16px !important; }
+body #positions-list [data-position-ticket] > div { flex-wrap:wrap; max-width:100%; min-width:0; }
+body .dashboard-panel > .flex { flex-wrap:wrap; gap:10px; }
+body .dashboard-panel :is([class*="text-[9px]"],[class*="text-[10px]"],[class*="text-[11px]"]),
+body header.glass-card [class*="text-[11px]"] { font-size:13px !important; }
+body .dashboard-panel { overflow-wrap:anywhere; }
+body #matrix-scroll { overflow-x:auto !important; max-width:100%; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch; }
+body #matrix-scroll table { min-width:560px; }
+body #matrix-scroll-hint { font-size:13px; margin:8px 0; }
+body .dashboard-panel :is(.flex.items-center.justify-between,.flex.items-center.gap-2) { flex-wrap:wrap; gap:8px; }
+body #dd-reset-modal > .glass-card { max-height:calc(100dvh - 32px); overflow:auto; }
+body #dd-reset-modal :is(.flex.items-center,.flex.justify-between) { flex-wrap:wrap; }
+body #dd-reset-modal input { min-width:0; }
+body #account-content[data-connected="false"] { opacity:1; pointer-events:auto; }
+body :is(header.glass-card,nav[aria-label="Konto und Strategie"],.dashboard-panel,#dd-reset-modal) :focus-visible { outline:3px solid #38bdf8 !important; outline-offset:3px; }
+body :is(header.glass-card,nav[aria-label="Konto und Strategie"],.dashboard-panel,#dd-reset-modal) button:disabled { opacity:.6; cursor:not-allowed; }
+@media(max-width:768px) {
+  body header.glass-card { padding:12px !important; }
+  body header.glass-card > div { flex-basis:100%; }
+  body header.glass-card #dd-badge { flex-basis:100%; }
+  body nav[aria-label="Konto und Strategie"] .account-switcher { width:100%; }
+  body #positions-list [data-position-ticket] { padding:10px; }
+  body #dd-reset-modal > .glass-card { padding:16px 14px 22px !important; }
+  body #dd-reset-modal > .glass-card > .flex:first-child { flex-wrap:nowrap; gap:6px; margin-bottom:8px; padding-bottom:8px; }
+  body #dd-reset-modal > .glass-card > .flex:first-child > div { flex:1; min-width:0; }
+  body #dd-reset-modal h3 { font-size:13px; }
+  body #dd-reset-modal > .glass-card > .flex:first-child > div > span { display:none; }
+  body #dd-reset-modal > .glass-card > .flex:nth-child(2) { gap:8px; margin-bottom:8px; }
+  body #dd-reset-modal > .glass-card > .flex:last-child { display:grid; grid-template-columns:1fr; gap:6px; }
+  body #dd-reset-modal > .glass-card > .flex:last-child > div { display:grid; grid-template-columns:1fr 1.25fr; gap:6px; }
+  body #dd-reset-modal > .glass-card > .flex:last-child button { padding:8px; }
+}
+body[data-ui-motion="off"] :is(header.glass-card,nav[aria-label="Konto und Strategie"],.dashboard-panel,#dd-reset-modal) *,
+body[data-ui-motion="off"] :is(header.glass-card,nav[aria-label="Konto und Strategie"],.dashboard-panel,#dd-reset-modal)::before,
+body[data-ui-motion="off"] :is(header.glass-card,nav[aria-label="Konto und Strategie"],.dashboard-panel,#dd-reset-modal)::after { animation:none !important; transition:none !important; }
+body[data-ui-motion="low"] :is(header.glass-card,nav[aria-label="Konto und Strategie"],.dashboard-panel) :is(.stone-ambience,.stone-edge-light,.animate-pulse,.animate-ping) { animation:none !important; filter:none !important; }
+body[data-ui-motion="off"] :is(header.glass-card,nav[aria-label="Konto und Strategie"],.dashboard-panel) .stone-ambience,
+body[data-ui-motion="low"] :is(header.glass-card,nav[aria-label="Konto und Strategie"],.dashboard-panel) .stone-ambience { display:none !important; }
+body :is(header.glass-card,nav[aria-label="Konto und Strategie"],.dashboard-panel,#dd-reset-modal)[data-ui-visible="false"] *, body[data-ui-hidden="true"] :is(header.glass-card,nav[aria-label="Konto und Strategie"],.dashboard-panel,#dd-reset-modal) * { animation-play-state:paused !important; }
+@media(prefers-reduced-motion:reduce) {
+  body :is(header.glass-card,nav[aria-label="Konto und Strategie"],.dashboard-panel,#dd-reset-modal) *,
+  body :is(header.glass-card,nav[aria-label="Konto und Strategie"],.dashboard-panel,#dd-reset-modal)::before,
+  body :is(header.glass-card,nav[aria-label="Konto und Strategie"],.dashboard-panel,#dd-reset-modal)::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; }
+}

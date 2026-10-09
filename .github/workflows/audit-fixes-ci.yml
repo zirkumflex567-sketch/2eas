@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - test/performance-ux-audit-fixes
+      - test/dashboard-audit-hardening
+      - main
   pull_request:
     branches:
       - main
@@ -20,28 +22,37 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
       - name: Install MT5 and test dependencies
-        run: python -m pip install --upgrade numpy pandas MetaTrader5 fastapi uvicorn httpx pydantic
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m pip install -r requirements-dashboard-test.txt
+          python -m playwright install chromium
       - name: Check Python compilation
         run: python -m compileall -q app.py account_gateway.py goldm15_dashboard.py scripts tests
       - name: Check browser JavaScript
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
           node --check static/stone-chart-effects.js
           node --check static/stone-celebrations.js
           node --check static/stone-cockpit.js
+          node --check static/dashboard-runtime.js
           python scripts/check_frontend_syntax.py
       - name: Run isolated unit and contract suite
         env:
           GOLDM15_PRESET: ${{ github.workspace }}\goldm15\GoldM15_Reconstruction.set
-        run: python -m unittest discover -s tests -v
+        run: python -m pytest -q --junitxml=output/dashboard-junit.xml
 
       - name: Install browser smoke dependencies
         run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
           npm install --no-save playwright@1.56.0
           npx playwright install chromium
       - name: Render Stone demo on Chromium
@@ -51,7 +62,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: stone-preview-screenshots
-          path: output/visual-smoke/*.png
+          path: |
+            output/visual-smoke/*.png
+            output/dashboard-junit.xml
+            output/audit-ui/
+            output/stone-ui-assets/
           if-no-files-found: ignore
 
   optimize-stone-assets:
@@ -65,7 +80,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

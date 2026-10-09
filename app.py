@@ -4,9 +4,10 @@ import time
 import math
 import json
 import hmac
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 import webbrowser
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, Literal, Annotated
 
 import pandas as pd
 import numpy as np
@@ -14,16 +15,22 @@ import MetaTrader5 as mt5
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, FiniteFloat, Field, StrictBool, model_validator
 import uvicorn
+import dd_persistence
+import journal_accounting
+import broker_clock
+from metrics_cache import ClosedBarMetricsCache
 from pathlib import Path
 from account_gateway import ACCOUNTS, config_path, public_account, scoped, selected, verify_identity, writes_titan_reset
 from goldm15_dashboard import GUARD_FILE, metrics as gold_metrics, parameters as gold_parameters, read_guard, wilder_rsi
 from chart_studio.money import PreviewError, preview_scenario
+from dashboard_security import install_control_security
 from chart_studio.workspaces import WorkspaceStore, StoreError, WorkspaceMissing, RevisionConflict
 from functools import lru_cache
 
 app = FastAPI(title="XAU Titan Pro - Institutional Live Cockpit")
+install_control_security(app)
 BASE_DIR = Path(__file__).resolve().parent
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / 'static')), name="static")
@@ -46,11 +53,22 @@ def ensure_mt5_init():
     return bool(verify_identity(mt5, selected()))
 
 class ModifyPositionRequest(BaseModel):
-    ticket: int
-    sl_usd: Optional[float] = None
-    tp_usd: Optional[float] = None
-    sl_price: Optional[float] = None
-    tp_price: Optional[float] = None
+    ticket: Annotated[int, Field(gt=0, strict=True)]
+    sl_usd: Optional[FiniteFloat] = None
+    tp_usd: Optional[FiniteFloat] = None
+    sl_price: Optional[Annotated[FiniteFloat, Field(ge=0)]] = None
+    tp_price: Optional[Annotated[FiniteFloat, Field(ge=0)]] = None
+    # Explicit price 0 or remove_* removes; USD 0 sets break-even, never removes.
+    remove_sl: StrictBool = False
+    remove_tp: StrictBool = False
+
+    @model_validator(mode='after')
+    def exclusive_operations(self):
+        for side in ('sl', 'tp'):
+            usd, price = getattr(self, side+'_usd'), getattr(self, side+'_price')
+            if sum((usd is not None, price is not None, getattr(self, 'remove_'+side))) > 1:
+                raise ValueError(f'{side}: USD, Preis und Entfernen schließen sich aus.')
+        return self
 
 class ChartScenarioPreviewRequest(BaseModel):
     account: str
@@ -78,44 +96,31 @@ class ChartWorkspaceDeleteRequest(BaseModel):
 
 
 class ClosePositionRequest(BaseModel):
-    ticket: int
+    ticket: Annotated[int, Field(gt=0, strict=True)]
 
 class ResetDrawdownRequest(BaseModel):
-    action: str = "reset"  # "reset" or "auto"
-    baseline: Optional[float] = None
+    action: Literal['reset', 'auto'] = 'reset'
+    baseline: Optional[Annotated[FiniteFloat, Field(gt=0)]] = None
 
 # --- DAILY DRAWDOWN CONFIG PERSISTENCE ---
 DD_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "drawdown_config.json")
 COMMON_FILES_DIR = os.path.expanduser(r"~\AppData\Roaming\MetaQuotes\Terminal\Common\Files")
 
 def load_dd_config():
-    filename = config_path(BASE_DIR)
-    if filename.exists():
-        try:
-            with open(filename, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {
-        "manual_reset_active": False,
-        "reset_balance": 10000.0,
-        "reset_timestamp": None,
-        "reset_date": None
-    }
+    try:
+        return dd_persistence.load(config_path(BASE_DIR))
+    except (OSError, ValueError) as exc:
+        raise HTTPException(503, 'Drawdown-Konfiguration ungültig oder nicht lesbar.') from exc
+
 
 def save_dd_config(cfg):
+    targets = [config_path(BASE_DIR)]
+    if writes_titan_reset():
+        targets.append(Path(COMMON_FILES_DIR) / 'titan_dd_reset.json')
     try:
-        with open(config_path(BASE_DIR), "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2)
-    except Exception as e:
-        print(f"Error saving local dd config: {e}")
-    try:
-        if writes_titan_reset() and os.path.exists(COMMON_FILES_DIR):
-            common_file = os.path.join(COMMON_FILES_DIR, "titan_dd_reset.json")
-            with open(common_file, "w", encoding="utf-8") as f:
-                json.dump(cfg, f, indent=2)
-    except Exception as e:
-        print(f"Error saving common dd config: {e}")
+        return dd_persistence.save(cfg, targets)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(503, str(exc)) from exc
 
 # --- VOLUME PROFILE & S/R HELPER ---
 def compute_volume_profile(df_subset, num_bins=24):
@@ -186,6 +191,74 @@ def compute_volume_profile(df_subset, num_bins=24):
 JOURNAL_CACHE = {}
 JOURNAL_CACHE_AT = {}
 JOURNAL_CACHE_TTL_SEC = 3.0
+GOLD_METRICS_CACHE = ClosedBarMetricsCache()
+QUOTE_MAX_AGE_SECONDS = 30.0
+QUOTE_FUTURE_TOLERANCE_SECONDS = 5.0
+
+
+def quote_metadata(tick, now=None):
+    """Broker epoch UTC versus wall time, not request/EA heartbeat proof."""
+    now = time.time() if now is None else now
+    try:
+        configured_age = float(os.getenv('DASHBOARD_QUOTE_MAX_AGE_SECONDS', QUOTE_MAX_AGE_SECONDS))
+    except (TypeError, ValueError):
+        configured_age = QUOTE_MAX_AGE_SECONDS
+    max_age = min(configured_age, QUOTE_MAX_AGE_SECONDS) if math.isfinite(configured_age) and configured_age > 0 else QUOTE_MAX_AGE_SECONDS
+    raw_stamp = getattr(tick, 'time', None)
+    try:
+        offset = broker_clock.offset_seconds(selected())
+    except ValueError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    stamp = raw_stamp-offset if isinstance(raw_stamp,(int,float)) and not isinstance(raw_stamp,bool) else None
+    valid = isinstance(stamp, (int, float)) and not isinstance(stamp, bool) and math.isfinite(stamp) and stamp > 0
+    if valid:
+        try:
+            datetime.fromtimestamp(stamp, timezone.utc)
+        except (ValueError, OverflowError, OSError):
+            valid = False
+    age = now-stamp if valid else None
+    if age is not None and not math.isfinite(age):
+        age = None
+    prices_valid = all(isinstance(v, (int, float)) and math.isfinite(v) and v > 0
+                       for v in (getattr(tick, 'bid', None), getattr(tick, 'ask', None)))
+    fresh = age is not None and -QUOTE_FUTURE_TOLERANCE_SECONDS <= age <= max_age and prices_valid
+    return dict(source_fresh=bool(fresh), quote_time_epoch=stamp if valid else None,
+                quote_broker_time_epoch=raw_stamp if valid else None, broker_utc_offset_seconds=offset,
+                quote_age_seconds=age, source_status='fresh' if fresh else ('stale' if valid else 'unknown'),
+                quote_max_age_seconds=max_age,
+                quote_future_tolerance_seconds=QUOTE_FUTURE_TOLERANCE_SECONDS)
+
+
+def require_fresh_quote(tick, now=None, risk_context=None):
+    meta = quote_metadata(tick, now)
+    if not meta['source_fresh']:
+        detail = dict(meta, risk_status='unknown', message='Broker-Quote veraltet/ungültig; Live-Risiko unbekannt.')
+        if risk_context is not None:
+            detail['daily_drawdown'] = dict(risk_context, risk_status='unknown')
+        raise HTTPException(503, detail)
+    return meta
+
+
+def risk_day_context(now, reset_hour, cfg):
+    """The risk policy clock is wall UTC; a frozen quote cannot retain resets."""
+    offset = broker_clock.offset_seconds(selected())
+    wall = datetime.fromtimestamp(now+offset, timezone.utc)
+    shifted = wall-timedelta(hours=reset_hour)
+    broker_midnight = shifted.replace(hour=0, minute=0, second=0, microsecond=0)+timedelta(hours=reset_hour)
+    midnight = broker_midnight-timedelta(seconds=offset)
+    day = shifted.date().isoformat()
+    stamp = cfg.get('reset_timestamp')
+    requested = cfg.get('manual_reset_active', False)
+    active = bool(requested and stamp and midnight.timestamp() <= stamp <= now and cfg.get('reset_date') == day)
+    return dict(manual_active=active, manual_expired=bool(requested and not active),
+                risk_day=day, risk_timezone=broker_clock.zone_label(selected()), risk_reset_hour=reset_hour), midnight
+
+
+def require_mt5_data(data, source):
+    if data is None:
+        error = mt5.last_error() if hasattr(mt5, 'last_error') else None
+        raise HTTPException(503, {'source': source, 'message': 'MT5-Abfrage fehlgeschlagen; Daten unbekannt.', 'mt5_error': error})
+    return data
 
 
 def get_cached_trade_journal(account_id, server_time, local_time):
@@ -199,109 +272,98 @@ def get_cached_trade_journal(account_id, server_time, local_time):
     JOURNAL_CACHE_AT[account_id] = now
     return entries
 
+def journal_metadata(account_id):
+    return {'cutoff_utc': journal_accounting.CUTOFF.isoformat(),
+            'cutoff_label': 'Aufzeichnung seit 08.10.2026 23:00 UTC (09.10.2026 01:00 Europe/Berlin)',
+            'timezone': 'Europe/Berlin', 'timestamp_basis': broker_clock.zone_label(selected()) + ' → UTC', 'broker_utc_offset_seconds': broker_clock.offset_seconds(selected()),
+            'snapshot_age_seconds': max(0., time.monotonic()-JOURNAL_CACHE_AT.get(account_id, time.monotonic()))}
+
+
+def journal_magics(account_id):
+    if account_id == 'titan':
+        return {881122}  # XAU_Titan_Pro.mq5 and committed .set reference
+    base = int(gold_parameters()['MagicBase'])
+    return {base+1, base+2, base+3}
+
+
 def build_trade_journal(account_id, server_time, local_time):
-    cutoff_server = datetime(2026, 10, 8, 23, 0, 0)
-    deals = mt5.history_deals_get(datetime(2026, 10, 8, 22, 0, 0), datetime.now() + timedelta(days=2)) or []
-    positions = mt5.positions_get(symbol=SYMBOL) or []
-    
+    if server_time.tzinfo is None:
+        server_time = server_time.replace(tzinfo=timezone.utc)
+    deals = require_mt5_data(mt5.history_deals_get(
+        journal_accounting.CUTOFF+timedelta(seconds=broker_clock.offset_seconds(selected())),
+        server_time+timedelta(seconds=broker_clock.offset_seconds(selected()))), 'journal_history')
+    positions = require_mt5_data(mt5.positions_get(symbol=SYMBOL), 'journal_positions')
+    magics = journal_magics(account_id)
+    slot_by_magic = {m:i+1 for i,m in enumerate(sorted(magics))} if account_id=='goldm15' else {}
+    strategy = ACCOUNTS[account_id]['name']
     entries = []
-    
-    # 1. Open Positions (LIVE)
     for p in positions:
-        p_time = datetime.fromtimestamp(p.time)
-        if p_time >= cutoff_server:
-            action_str = 'BUY' if p.type == mt5.ORDER_TYPE_BUY else 'SELL'
-            cur_price = round(float(p.price_current), 2)
-            open_price = round(float(p.price_open), 2)
-            points = (cur_price - open_price) if p.type == mt5.ORDER_TYPE_BUY else (open_price - cur_price)
-            if account_id == 'titan':
-                why = 'Ausgelöst bei M15-Kerzenschluss (20:00 DE / 23:00 Server). Alle 5 Champion-Kriterien erfüllt: 1. Bullischer Trend-Fächer (EMA9 > EMA21), 2. Kurs über Trendfilter EMA50 ($4133.09 > $4123.69), 3. Kurs über Basis-EMA9 ($4127.33), 4. RSI14 bei 54.1 (Momentum >= 50.0), 5. Grüne Bestätigungskerze (Close > Open). Keine Cluster-Sperre aktiv.'
-                tp_goal = 'Dynamischer Trend-Runner Modus (Kein fixer TP für maximale Gewinne). Trailing-Ausstieg: Schließt, sobald mindestens +$28.00 Gewinn erreicht sind und eine M15-Kerze unter die Basis-EMA9 schließt. Absicherung: Struktureller Swing-SL bei 4102.68 $ (-30.41 $ Puffer).'
-            else:
-                why = f'Ausgelöst durch Subsystem {p.comment}. RSI-Trendfilter aktiv mit RSI-Pullback Extremwert.'
-                tp_goal = 'Momentum-Exit via Rate-of-Change (ROC) Zielerreichung im Slot oder Not-SL bei 4140.50 $.'
-                
-            entries.append({
-                'ticket': int(p.ticket),
-                'time_ts': int(p.time),
-                'strategy': 'XAU Titan Pro' if account_id == 'titan' else 'GoldM15 Reconstruction',
-                'account': account_id,
-                'status': 'OPEN',
-                'type': action_str,
-                'volume': float(p.volume),
-                'open_price': open_price,
-                'current_price': cur_price,
-                'points': round(float(points), 2),
-                'sl_price': round(float(p.sl), 2),
-                'tp_price': round(float(p.tp), 2),
-                'profit_usd': round(float(p.profit), 2),
-                'time_server': p_time.strftime('%H:%M:%S'),
-                'time_de': (p_time.replace(hour=(p_time.hour - 3) % 24)).strftime('%H:%M:%S'),
-                'why_triggered': why,
-                'profit_goal': tp_goal
-            })
-            
-    # 2. Closed Deals (HISTORIE)
-    # Preserve first-matching-deal semantics without O(exits * all_deals).
-    first_by_order, first_by_position = {}, {}
-    for idx, deal in enumerate(deals):
-        first_by_order.setdefault(deal.order, (idx, deal))
-        first_by_position.setdefault(getattr(deal, 'position_id', None), (idx, deal))
-    out_deals = [d for d in deals if d.entry == mt5.DEAL_ENTRY_OUT and datetime.fromtimestamp(d.time) >= cutoff_server]
-    for d in out_deals:
-        d_time = datetime.fromtimestamp(d.time)
-        matches = [match for match in (
-            first_by_order.get(d.order),
-            first_by_position.get(getattr(d, 'position_id', None))
-        ) if match is not None]
-        in_deal = min(matches, key=lambda match: match[0])[1] if matches else None
-        open_price = round(float(in_deal.price if in_deal else d.price), 2)
-        close_price = round(float(d.price), 2)
-        orig_type = 'SELL' if d.type == mt5.DEAL_TYPE_BUY else 'BUY'
-        points = (close_price - open_price) if orig_type == 'BUY' else (open_price - close_price)
-        
-        if account_id == 'goldm15':
-            comment_str = str(in_deal.comment if in_deal else d.comment)
-            slot = 'S1' if 'S1' in comment_str else ('S2' if 'S2' in comment_str else 'S3')
-            why = f'Ausgelöst bei M15-Kerzenschluss (Subsystem {slot}): Bärischer Trendfilter (RSI30 <= 55) mit überkauftem RSI2-Spike (>= 70) als Mean-Reversion Short-Bounce.'
-            tp_goal = f'Ausstiegsziel: Momentum-Exit bei Erreichen des ROC-Ziels (ROC 5 <= -0.2%/-0.3%). Geschlossen um {d_time.strftime("%H:%M:%S")} Server ({(d_time.replace(hour=(d_time.hour - 3) % 24)).strftime("%H:%M:%S")} DE) bei {d.price:.2f} $.'
-        else:
-            why = 'Champion Trend-Momentum Einstieg.'
-            tp_goal = 'Dynamischer Trend-Runner Ausstieg.'
-            
+        # Recording cutoff limits realized history, never currently open risk.
+        if not journal_accounting.owns(p, magics):
+            continue
+        open_price, cur_price = round(float(p.price_open),2), round(float(p.price_current),2)
+        net = round(float(p.profit+p.swap),2)
         entries.append({
-            'ticket': int(d.ticket),
-            'time_ts': int(d.time),
-            'strategy': 'XAU Titan Pro' if account_id == 'titan' else 'GoldM15 Reconstruction',
-            'account': account_id,
-            'status': 'CLOSED',
-            'type': orig_type,
-            'volume': float(d.volume),
-            'open_price': open_price,
-            'close_price': close_price,
-            'points': round(float(points), 2),
-            'profit_usd': round(float(d.profit), 2),
-            'net_profit_usd': round(float(d.profit + d.swap + d.commission), 2),
-            'time_server': d_time.strftime('%H:%M:%S'),
-            'time_de': (d_time.replace(hour=(d_time.hour - 3) % 24)).strftime('%H:%M:%S'),
-            'why_triggered': why,
-            'profit_goal': tp_goal
+            'ticket': int(p.ticket), 'time_ts': int(p.time),
+            'strategy': strategy, 'account': account_id, 'status': 'OPEN',
+            'symbol': p.symbol, 'magic': p.magic,
+            'slot': slot_by_magic.get(p.magic),
+            'type': 'BUY' if p.type == mt5.ORDER_TYPE_BUY else 'SELL',
+            'volume': float(p.volume), 'open_price': open_price, 'current_price': cur_price,
+            'points': round((cur_price-open_price) if p.type == mt5.ORDER_TYPE_BUY else (open_price-cur_price),2),
+            'sl_price': round(float(p.sl),2), 'tp_price': round(float(p.tp),2),
+            'profit_usd': net, 'net_profit_usd': net, 'gross_profit_usd': round(float(p.profit),2),
+            'pnl_basis': 'unrealized_profit_plus_swap; entry costs excluded',
+            'reason_verified': False, 'why_triggered': journal_accounting.UNKNOWN_ENTRY,
+            'profit_goal': journal_accounting.UNKNOWN_EXIT, **journal_accounting.times(p.time, broker_clock.offset_seconds(selected()))
         })
-        
+    by_position = {}
+    for d in {int(d.ticket):d for d in deals}.values():
+        if getattr(d,'symbol',None)==SYMBOL and d.entry != mt5.DEAL_ENTRY_IN:
+            by_position.setdefault(d.position_id, []).append(d)
+    for position_id, exits in by_position.items():
+        lifecycle = require_mt5_data(mt5.history_deals_get(position=position_id), 'journal_position_history')
+        lifecycle = [d for d in lifecycle if getattr(d,'position_id',None)==position_id]
+        accounting = journal_accounting.close_accounting(lifecycle + exits, mt5, magics)
+        for d in exits:
+            if broker_clock.to_utc_epoch(d.time, selected()) < journal_accounting.CUTOFF.timestamp() or d.ticket not in accounting:
+                continue
+            row = accounting[d.ticket]
+            cp, op = round(float(d.price),2), row['open_price']
+            entries.append({
+                'ticket': int(d.ticket), 'time_ts': int(d.time),
+                'strategy': strategy, 'account': account_id, 'status': 'CLOSED',
+                'symbol': d.symbol, 'magic': d.magic, 'position_id': position_id,
+                'slot': slot_by_magic.get(row.get('ownership_magic')),
+                'close_price': cp,  # Attributable volume comes from accounting, not the whole deal.
+                'points': None if op is None else round(cp-op if row['type']=='BUY' else op-cp,2),
+                'profit_usd': row['net_profit_usd'], 'pnl_basis': 'realized_net_with_allocated_entry_costs',
+                'reason_verified': False, 'why_triggered': journal_accounting.UNKNOWN_ENTRY,
+                'profit_goal': journal_accounting.UNKNOWN_EXIT,
+                **row, **journal_accounting.times(d.time, broker_clock.offset_seconds(selected()))
+            })
     entries.sort(key=lambda x: x['time_ts'], reverse=True)
-    JOURNAL_CACHE[account_id] = entries
     return entries
 
-def get_live_market_data():
+def get_live_market_data(include_journal=True):
     if not ensure_mt5_init():
         return None
     
     sym = mt5.symbol_info(SYMBOL)
     tick = mt5.symbol_info_tick(SYMBOL)
     acc = mt5.account_info()
+    now = time.time()
+    params = gold_parameters() if selected()['id']=='goldm15' else None
+    reset_hour = int(params['RiskResetHourServer']) if params else 0
+    dd_cfg = load_dd_config()
+    risk_context, midnight_dt = risk_day_context(now, reset_hour, dd_cfg)
+    source_meta = require_fresh_quote(tick, now, risk_context)
+    wall_time = datetime.fromtimestamp(now, timezone.utc)
     
     if not sym or not tick or not acc:
         return None
+    if not all(math.isfinite(v) and v > 0 for v in (acc.balance, acc.equity)):
+        raise HTTPException(503, 'Kontorisikodaten sind ungültig/unbekannt.')
         
     rates = mt5.copy_rates_from_pos(SYMBOL, TIMEFRAME, 0, 5000 if selected()['id']=='goldm15' else 1000)
     if rates is None or len(rates) < 200:
@@ -317,24 +379,24 @@ def get_live_market_data():
     df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
     df['ema200'] = df['close'].ewm(span=200, adjust=False).mean()
     
-    diff = df['close'].diff()
-    g = diff.clip(lower=0).rolling(14).mean()
-    l = (-diff.clip(upper=0)).rolling(14).mean()
-    df['rsi14'] = 100 - (100 / (1 + g / (l + 1e-9)))
+    # iRSI reference: Wilder smoothing; rolling RSI is not the same indicator.
+    df['rsi14'] = wilder_rsi(df['close'].to_numpy(), 14)
     
     tr = pd.concat([df['high'] - df['low'], abs(df['high'] - df['close'].shift(1)), abs(df['low'] - df['close'].shift(1))], axis=1).max(axis=1)
     df['atr14'] = tr.rolling(14).mean()
     
-    cur_bar = df.iloc[-1]
+    open_bar = df.iloc[-1]
+    cur_bar = df.iloc[-2]  # Shift 1: closed-bar reference criteria.
     
     server_time = datetime.fromtimestamp(tick.time, timezone.utc)
-    local_time = datetime.now().astimezone()
-    german_hour = local_time.hour
+    local_time = datetime.fromtimestamp(broker_clock.to_utc_epoch(tick.time, selected()), timezone.utc).astimezone(journal_accounting.BERLIN)
+
     
-    in_window = (server_time.hour != 0)
+    # Time/config alone cannot prove EA activity or execution permission.
+    in_window = None
                  
     bar_duration = 15 * 60
-    bar_start = int(cur_bar['time'])
+    bar_start = int(open_bar['time'])
     bar_elapsed = tick.time - bar_start
     bar_remaining = max(0, bar_duration - bar_elapsed)
     
@@ -362,7 +424,8 @@ def get_live_market_data():
         'weekly_val':  weekly_vp.get('val', 0.0),
     }
     
-    # 3. Strategy Rules (Champion Trend-Momentum Engine - 1:1 Match to XAU_Titan_Pro.mq5)
+    # 3. Closed-bar reconstruction of committed Titan v7.10 reference defaults.
+    # Not proof of attached EA inputs or execution permission.
     # The EA checks at the bar transition:
     # Buy: (close1 > fast_ema[1]) && (fast_ema[1] > slow_ema[1]) && (close1 > trend_ema[1]) && (rsi_val[1] >= 50.0) && (close1 > open1)
     # Sell: (close1 < fast_ema[1]) && (fast_ema[1] < slow_ema[1]) && (close1 < trend_ema[1]) && (rsi_val[1] <= 50.0) && (close1 < open1)
@@ -395,10 +458,10 @@ def get_live_market_data():
     sell_c7_climax_ok = (red_streak < 3)
 
     # 8. S/R Widerstands-Freiraum
-    swing_lookback = df.iloc[-50:-3] if len(df) >= 55 else df.iloc[:-3]
+    swing_lookback = df.iloc[-49:-4]  # EA closed rates[k=3..47], lookback 48
     recent_res = float(swing_lookback['high'].max()) if len(swing_lookback) > 0 else float(cur_bar['close']) + 10.0
     recent_sup = float(swing_lookback['low'].min()) if len(swing_lookback) > 0 else float(cur_bar['close']) - 10.0
-    min_sr_room = 3.00 # $3.00 auf Gold
+    min_sr_room = 300 * float(getattr(sym, 'point', .01))
     buy_c8_sr_ok = not (recent_res > cur_bar['close'] and (recent_res - cur_bar['close']) < min_sr_room)
     sell_c8_sr_ok = not (cur_bar['close'] > recent_sup and (cur_bar['close'] - recent_sup) < min_sr_room)
 
@@ -532,6 +595,7 @@ def get_live_market_data():
         else:
             trend_diagnosis = "ALLE REGELN ERFÜLLT INKL. ANTI-TRAP SCHUTZ! Bereit für M15-Schluss."
 
+    trend_diagnosis = 'M15-Schluss · Referenzkriterien: ' + trend_diagnosis + ' Live-EA-Freigabe unbekannt.'
     short_missing = trend_diagnosis
 
     # Positions
@@ -572,31 +636,33 @@ def get_live_market_data():
         })
 
     # Daily Drawdown Calculation (Blueberry Funded Rule: Day Start Balance / High Water Mark)
-    midnight_dt = server_time.replace(hour=0, minute=0, second=0, microsecond=0)
-    dd_cfg = load_dd_config()
-    manual_active = dd_cfg.get("manual_reset_active", False)
+    risk_day = risk_context['risk_day']
+    manual_requested = dd_cfg.get('manual_reset_active', False)
     reset_ts = dd_cfg.get("reset_timestamp")
+    manual_active = risk_context['manual_active']
     reset_bal = dd_cfg.get("reset_balance", 10000.0)
 
     if manual_active and reset_ts:
         reset_dt = datetime.fromtimestamp(reset_ts, timezone.utc)
         from_dt = max(midnight_dt, reset_dt)
-        deals = mt5.history_deals_get(from_dt, server_time)
+        deals = require_mt5_data(mt5.history_deals_get(from_dt+timedelta(seconds=broker_clock.offset_seconds(selected())), wall_time+timedelta(seconds=broker_clock.offset_seconds(selected()))), 'daily_history')
         realized_today = 0.0
         if deals:
             for d in deals:
                 if d.type in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL):
-                    realized_today += (d.profit + d.swap + d.commission)
+                    realized_today += (d.profit + d.swap + d.commission + getattr(d, 'fee', 0.))
         day_start_bal = float(reset_bal)
     else:
-        deals = mt5.history_deals_get(midnight_dt, server_time)
+        deals = require_mt5_data(mt5.history_deals_get(midnight_dt+timedelta(seconds=broker_clock.offset_seconds(selected())), wall_time+timedelta(seconds=broker_clock.offset_seconds(selected()))), 'daily_history')
         realized_today = 0.0
         if deals:
             for d in deals:
                 if d.type in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL):
-                    realized_today += (d.profit + d.swap + d.commission)
+                    realized_today += (d.profit + d.swap + d.commission + getattr(d, 'fee', 0.))
         day_start_bal = acc.balance - realized_today
 
+    if not all(math.isfinite(v) for v in (realized_today, day_start_bal)) or day_start_bal <= 0:
+        raise HTTPException(503, 'Tageshistorie/-baseline ist ungültig; Risiko unbekannt.')
     daily_ref = max(day_start_bal, acc.balance)
     daily_loss_usd = max(0.0, daily_ref - acc.equity)
     daily_dd_pct = (daily_loss_usd / daily_ref) * 100.0 if daily_ref > 0 else 0.0
@@ -619,11 +685,17 @@ def get_live_market_data():
         "equity": round(acc.equity, 2),
         "realized_today": round(realized_today, 2),
         "manual_active": manual_active,
+        "manual_expired": bool(manual_requested and not manual_active),
+        "risk_day": risk_day,
+        "risk_timezone": risk_context['risk_timezone'],
+        "risk_reset_hour": reset_hour,
         "reset_balance": round(float(reset_bal), 2) if manual_active else None,
         "reset_time_str": datetime.fromtimestamp(reset_ts, timezone.utc).strftime("%H:%M:%S") if (manual_active and reset_ts) else None
     }
 
     result = {
+        **source_meta,
+        "risk_status": "available",
         "symbol": SYMBOL,
         "bid": tick.bid,
         "ask": tick.ask,
@@ -658,15 +730,26 @@ def get_live_market_data():
         "daily_vp": daily_vp,
         "weekly_vp": weekly_vp,
         "positions": positions,
-        "daily_drawdown": daily_drawdown,
-        "journal": get_cached_trade_journal(selected()['id'], server_time, local_time),
-        "journal_cache": JOURNAL_CACHE
+        "daily_drawdown": daily_drawdown
     }
+    if include_journal:
+        account_id = selected()['id']
+        entries = get_cached_trade_journal(account_id, wall_time, local_time)
+        result.update(journal=entries, journal_cache={account_id: entries}, journal_meta=journal_metadata(account_id))
     result.update(account=public_account(selected()), rule_count=len(rules_matrix), exit_goals=[], ea_guard=None)
+    preview = df.iloc[-1]
+    result.update(
+        signal_mode='closed_bar_reference', signal_label='M15-Schluss · Referenzrekonstruktion, keine EA-Freigabe',
+        signal_bar_time=datetime.fromtimestamp(int(cur_bar['time']), timezone.utc).strftime('%H:%M'),
+        signal_bar_time_utc=datetime.fromtimestamp(broker_clock.to_utc_epoch(int(cur_bar['time']), selected()), timezone.utc).isoformat(),
+        ea_execution_verified=False, ea_execution_status='unknown',
+        signal_preview={'mode': 'forming_bar_preview', 'label': 'Laufende M15-Kerze · unverbindliche Vorschau',
+                        'close': float(preview['close']), 'rsi14': float(preview['rsi14']),
+                        'ema9': float(preview['ema9']), 'ema21': float(preview['ema21']), 'ema50': float(preview['ema50'])})
     if selected()['id']=='goldm15':
-        params = gold_parameters()
-        result.update(gold_metrics(df['close'].to_numpy(), params))
-        guard = read_guard(GUARD_FILE, tick.time, acc.equity, params, balance=acc.balance)
+        result.update(GOLD_METRICS_CACHE.get(selected(), SYMBOL, TIMEFRAME, cur_bar['time'],
+                                            df['close'].to_numpy(), params, gold_metrics))
+        guard = read_guard(GUARD_FILE, broker_clock.to_broker_epoch(now, selected()), acc.equity, params, balance=acc.balance)
         result['ea_guard'] = guard
         result['signal_bar_time'] = datetime.fromtimestamp(int(df.iloc[-2]['time']), timezone.utc).strftime('%H:%M')
         if guard['baseline_verified'] and not manual_active:
@@ -683,21 +766,22 @@ def api_accounts():
 @app.get('/api/journal_summary')
 @scoped(mt5)
 def api_journal_summary(account: str = 'titan'):
-    sym = mt5.symbol_info(SYMBOL)
-    server_time = datetime.fromtimestamp(sym.time) if sym else datetime.now()
-    local_time = datetime.now()
+    tick = require_mt5_data(mt5.symbol_info_tick(SYMBOL), 'journal_tick')
+    server_time = datetime.fromtimestamp(broker_clock.to_utc_epoch(tick.time, selected()), timezone.utc)
+    local_time = datetime.fromtimestamp(broker_clock.to_utc_epoch(tick.time, selected()), timezone.utc).astimezone(journal_accounting.BERLIN)
     entries = get_cached_trade_journal(account, server_time, local_time)
     JOURNAL_CACHE[account] = entries
     return {
         'account': account,
         'journal': entries,
-        'journal_cache': JOURNAL_CACHE
+        'journal_cache': {account: entries},
+        'journal_meta': journal_metadata(account)
     }
 
 @app.get("/api/status")
 @scoped(mt5)
-def api_status(account: str = 'titan'):
-    data = get_live_market_data()
+def api_status(account: str = 'titan', include_journal: bool = True, light: bool = False):
+    data = get_live_market_data(include_journal=include_journal and not light)
     if data is None:
         raise HTTPException(status_code=500, detail="MT5 nicht verbunden")
     return data
@@ -972,31 +1056,78 @@ def api_chart_preview(req: ChartScenarioPreviewRequest, account: str):
 
 @app.post("/api/modify_position")
 @scoped(mt5)
-def api_modify_position(req: ModifyPositionRequest, account: str = 'titan'):
+def api_modify_position(req: ModifyPositionRequest, account: str):
     if not ensure_mt5_init():
         raise HTTPException(status_code=500, detail="MT5 nicht verbunden")
-    positions = mt5.positions_get(ticket=req.ticket)
+    positions = require_mt5_data(mt5.positions_get(ticket=req.ticket), 'position')
     if not positions:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")
     pos = positions[0]
+    if pos.symbol != SYMBOL:
+        raise HTTPException(403, 'Nur XAUUSD-Positionen sind freigegeben.')
     sym = mt5.symbol_info(pos.symbol)
+    if sym is None:
+        raise HTTPException(503, 'Symbolinformationen fehlen.')
     contract_size = sym.trade_contract_size
     vol = pos.volume
     op = pos.price_open
     is_buy = (pos.type == mt5.ORDER_TYPE_BUY)
+    if not all(math.isfinite(v) and v > 0 for v in (contract_size, vol, op)):
+        raise HTTPException(503, 'Positionsdaten sind ungültig.')
     
     target_sl = pos.sl
     target_tp = pos.tp
-    if req.sl_usd is not None:
-        target_sl = (op + (req.sl_usd / (vol * contract_size))) if is_buy else (op - (req.sl_usd / (vol * contract_size)))
-        target_sl = round(target_sl, sym.digits)
-    if req.tp_usd is not None:
-        target_tp = (op + (req.tp_usd / (vol * contract_size))) if is_buy else (op - (req.tp_usd / (vol * contract_size)))
-        target_tp = round(target_tp, sym.digits)
     if req.sl_price is not None:
-        target_sl = round(req.sl_price, sym.digits)
+        target_sl = req.sl_price
     if req.tp_price is not None:
-        target_tp = round(req.tp_price, sym.digits)
+        target_tp = req.tp_price
+    if req.remove_sl:
+        target_sl = 0.0
+    if req.remove_tp:
+        target_tp = 0.0
+
+    tick = mt5.symbol_info_tick(pos.symbol)
+    require_fresh_quote(tick)
+    tick_size = getattr(sym, 'trade_tick_size', 0)
+    point = getattr(sym, 'point', 0)
+    stops = getattr(sym, 'trade_stops_level', None)
+    freeze = getattr(sym, 'trade_freeze_level', None)
+    if (tick is None or not all(math.isfinite(v) and v > 0 for v in (tick_size, point, tick.bid, tick.ask))
+            or stops is None or freeze is None or not all(math.isfinite(v) and v >= 0 for v in (stops, freeze))):
+        raise HTTPException(503, 'Broker-Quote oder Stop-Metadaten fehlen.')
+    reference = tick.bid if is_buy else tick.ask
+    distance = max(stops, freeze) * point
+    # Derived USD targets may be fractional ticks. Round toward greater payoff:
+    # BUY up / SELL down, so an SL never increases requested nominal loss.
+    # Exact client prices remain strict and must already lie on the tick grid.
+    for side in ('sl', 'tp'):
+        usd = getattr(req, side+'_usd')
+        if usd is not None:
+            step = Decimal(str(tick_size))
+            delta = Decimal(str(usd)) / (Decimal(str(vol))*Decimal(str(contract_size)))
+            raw = Decimal(str(op)) + (delta if is_buy else -delta)
+            if raw <= 0:
+                raise HTTPException(422, 'Berechneter Schutzpreis muss endlich und positiv sein.')
+            target = float((raw/step).to_integral_value(rounding=ROUND_CEILING if is_buy else ROUND_FLOOR)*step)
+            if side == 'sl':
+                target_sl = target
+            else:
+                target_tp = target
+    for side, target in (('sl', target_sl), ('tp', target_tp)):
+        changed = (getattr(req, side+'_usd') is not None or getattr(req, side+'_price') is not None or getattr(req, 'remove_'+side))
+        if not changed:
+            continue
+        explicit_remove = getattr(req, 'remove_'+side) or getattr(req, side+'_price') == 0
+        if explicit_remove:
+            continue
+        if not math.isfinite(target) or target <= 0:
+            raise HTTPException(422, 'Berechneter Schutzpreis muss endlich und positiv sein.')
+        if Decimal(str(target)) % Decimal(str(tick_size)) != 0:
+            raise HTTPException(422, 'Schutzpreis liegt nicht auf der Broker-Tickgröße.')
+        gap = reference-target if (side=='sl') == is_buy else target-reference
+        if gap <= 0 or gap + 1e-9 < distance:
+            raise HTTPException(422, 'Schutzpreis verletzt Broker-Stops-/Freeze-Level.')
+    target_sl, target_tp = round(target_sl, sym.digits), round(target_tp, sym.digits)
         
     request = {
         "action": mt5.TRADE_ACTION_SLTP,
@@ -1006,6 +1137,7 @@ def api_modify_position(req: ModifyPositionRequest, account: str = 'titan'):
         "tp": float(target_tp) if target_tp > 0 else 0.0
     }
     verify_identity(mt5, selected())
+    require_fresh_quote(mt5.symbol_info_tick(pos.symbol))
     res = mt5.order_send(request)
     if res is None:
         raise HTTPException(503, 'MT5 hat die Änderung nicht bestätigt; Status neu laden.')
@@ -1015,15 +1147,20 @@ def api_modify_position(req: ModifyPositionRequest, account: str = 'titan'):
 
 @app.post("/api/close_position")
 @scoped(mt5)
-def api_close_position(req: ClosePositionRequest, account: str = 'titan'):
+def api_close_position(req: ClosePositionRequest, account: str):
     if not ensure_mt5_init():
         raise HTTPException(status_code=500, detail="MT5 nicht verbunden")
-    positions = mt5.positions_get(ticket=req.ticket)
+    positions = require_mt5_data(mt5.positions_get(ticket=req.ticket), 'position')
     if not positions:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")
     pos = positions[0]
+    if pos.symbol != SYMBOL:
+        raise HTTPException(403, 'Nur XAUUSD-Positionen sind freigegeben.')
     sym = mt5.symbol_info(pos.symbol)
     tick = mt5.symbol_info_tick(pos.symbol)
+    require_fresh_quote(tick)
+    if sym is None or tick is None or not all(math.isfinite(v) and v > 0 for v in (tick.bid, tick.ask, pos.volume)):
+        raise HTTPException(503, 'Broker-Quote oder Positionsdaten fehlen/ungültig.')
     is_buy = (pos.type == mt5.ORDER_TYPE_BUY)
     price = tick.bid if is_buy else tick.ask
     order_type = mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY
@@ -1041,6 +1178,9 @@ def api_close_position(req: ClosePositionRequest, account: str = 'titan'):
         "comment": "Webapp_Manual_Close"
     }
     verify_identity(mt5, selected())
+    tick = mt5.symbol_info_tick(pos.symbol)
+    require_fresh_quote(tick)
+    request['price'] = tick.bid if is_buy else tick.ask
     res = mt5.order_send(request)
     if res is None:
         raise HTTPException(503, 'MT5 hat die Schließung nicht bestätigt; Status neu laden.')
@@ -1050,11 +1190,13 @@ def api_close_position(req: ClosePositionRequest, account: str = 'titan'):
 
 @app.post("/api/reset_drawdown")
 @scoped(mt5)
-def api_reset_drawdown(req: ResetDrawdownRequest, account: str = 'titan'):
+def api_reset_drawdown(req: ResetDrawdownRequest, account: str):
     if not ensure_mt5_init():
         raise HTTPException(status_code=500, detail="MT5 nicht verbunden")
     tick = mt5.symbol_info_tick(SYMBOL)
     acc = mt5.account_info()
+    now = time.time()
+    require_fresh_quote(tick, now)
     if tick is None or acc is None:
         raise HTTPException(status_code=500, detail="MT5 Kontodaten nicht verfügbar")
 
@@ -1073,12 +1215,13 @@ def api_reset_drawdown(req: ResetDrawdownRequest, account: str = 'titan'):
         }
     else:
         baseline = float(req.baseline) if (req.baseline is not None and req.baseline > 0) else float(acc.balance)
-        server_time = datetime.fromtimestamp(tick.time, timezone.utc)
+        server_time = datetime.fromtimestamp(now, timezone.utc)
+        reset_hour = int(gold_parameters()['RiskResetHourServer']) if account=='goldm15' else 0
         cfg = {
             "manual_reset_active": True,
             "reset_balance": baseline,
-            "reset_timestamp": int(tick.time),
-            "reset_date": server_time.strftime("%Y-%m-%d")
+            "reset_timestamp": int(now),
+            "reset_date": risk_day_context(now, reset_hour, {})[0]['risk_day']
         }
         save_dd_config(cfg)
         return {
@@ -1195,6 +1338,8 @@ HTML_CONTENT = """<!DOCTYPE html>
   <!-- Optional runic stone material; selectors scoped to body.theme-stone -->
   <link rel="stylesheet" href="static/stone-cockpit.css">
   <link rel="stylesheet" href="static/stone-asset-skin.css">
+    <link rel="stylesheet" href="static/stone-ui-assets.css">
+    <link rel="stylesheet" href="static/dashboard-accessibility.css">
 </head>
 <body class="theme-dark flex flex-col p-3 min-h-screen text-xs select-none">
 
@@ -1257,6 +1402,10 @@ HTML_CONTENT = """<!DOCTYPE html>
       </div>
 
       <!-- THEME TOGGLE BUTTON -->
+      <label class="text-sub" for="ui-motion">UI-Deko:</label>
+      <select id="ui-motion" aria-label="Nicht-Chart-Dekoration" class="ticker-bg border rounded-lg px-2 py-1">
+        <option value="off">Aus</option><option value="low">Wenig</option><option value="full">Voll</option>
+      </select>
       <button onclick="toggleTheme()" class="px-3 py-1 rounded-lg ticker-bg border font-sans font-bold hover:opacity-80 flex items-center gap-1.5 text-[11px] cursor-pointer">
         <span id="theme-icon">☀️</span> <span id="theme-label">Hell</span>
       </button>
@@ -1408,7 +1557,8 @@ HTML_CONTENT = """<!DOCTYPE html>
           <span id="matrix-time" class="text-[10px] text-sub font-mono">M15 Kerzenschluss</span>
         </div>
 
-        <div class="w-full overflow-hidden">
+        <p id="matrix-scroll-hint" class="text-sub">Alle Spalten: horizontal wischen oder fokussieren und Pfeiltasten / Ende verwenden.</p>
+        <div id="matrix-scroll" class="w-full" role="region" aria-label="Target-Matrix · alle Regelspalten" aria-describedby="matrix-scroll-hint" tabindex="0">
           <table class="w-full text-left border-collapse text-[11px]">
             <thead>
               <tr class="border-b table-border text-sub text-[10px] uppercase font-mono">
@@ -1458,9 +1608,10 @@ HTML_CONTENT = """<!DOCTYPE html>
         <span class="font-black text-sm">📊 Offene Positionen & SL/TP Manager (MT5 Live-Sync)</span>
         <span id="pos-count-badge" class="px-2 py-0.5 rounded font-mono text-[10px] ticker-bg border font-bold">0 Aktiv</span>
       </div>
-      <span class="text-[11px] text-sub">Passe Stop-Loss und Take-Profit direkt in Dollar an. Klicke auf 'Set' zum sofortigen MT5-Sync.</span>
+      <span class="text-[11px] text-sub">Ziel-P/L in USD, kein Stoppreis. Senden aktualisiert beide Felder sofort in MT5. TP = 0: kein fixer TP.</span>
     </div>
 
+    <p id="position-edit-status" role="status" aria-live="polite" class="text-amber-500"></p>
     <div id="positions-list" class="min-h-[100px]">
       <div class="py-6 flex items-center justify-center text-sub text-xs">
         Aktuell keine offenen Positionen auf XAUUSD. Der EA scannt den Markt bei jedem M15-Kerzenschluss.
@@ -1491,7 +1642,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         </select>
         <div class="text-[11px] text-sub font-mono">
         <div class="text-[11px] text-sub font-mono">
-          Aufnahme aktiv ab: <strong class="text-white">Heute 20:00 Uhr DE (23:00 Server)</strong>
+          <span id="journal-recording-start">Historie ab: <strong class="text-white">08.10.2026 23:00 UTC · Offene Positionen unabhängig vom Einstiegstag</strong></span>
         </div>
       </div>
     </div>
@@ -1507,17 +1658,17 @@ HTML_CONTENT = """<!DOCTYPE html>
   </main>
 
   <!-- MODAL: DAILY DRAWDOWN RESET -->
-  <div id="dd-reset-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+  <div id="dd-reset-modal" role="dialog" aria-modal="true" aria-labelledby="dd-reset-title" aria-describedby="reset-description" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
     <div class="glass-card rounded-2xl max-w-md w-full p-5 border border-white/10 shadow-2xl relative animate-in fade-in zoom-in duration-200">
       <div class="flex items-center justify-between pb-3 mb-3 border-b table-border">
         <div class="flex items-center gap-2">
           <span class="text-xl">🔄</span>
           <div>
-            <h3 class="font-black text-sm tracking-wide">Tages-Drawdown Reset</h3>
+            <h3 id="dd-reset-title" class="font-black text-sm tracking-wide">Tages-Drawdown Reset</h3>
             <p class="text-[10px] text-sub">Konto-Reset auf 0.00% Drawdown (Blueberry Funded)</p>
           </div>
         </div>
-        <button onclick="closeDrawdownResetModal()" class="text-sub hover:text-white text-lg font-bold px-2 py-0.5 rounded cursor-pointer">&times;</button>
+        <button aria-label="Reset-Dialog schließen" onclick="closeDrawdownResetModal()" class="text-sub hover:text-white text-lg font-bold px-2 py-0.5 rounded cursor-pointer">&times;</button>
       </div>
 
       <div class="flex flex-col gap-3 text-xs mb-4">
@@ -1540,15 +1691,16 @@ HTML_CONTENT = """<!DOCTYPE html>
         </div>
 
         <div>
-          <label class="block text-[11px] font-bold text-sub mb-1">
+          <label for="dd-reset-input" class="block text-[11px] font-bold text-sub mb-1">
             Start-Referenzkapital ($):
           </label>
           <div class="flex items-center gap-2">
-            <input type="number" id="dd-reset-input" step="100" class="w-full rounded-lg px-3 py-2 ticker-bg border font-mono font-bold text-sm text-emerald-400 focus:outline-none focus:border-blue-500" placeholder="10000.00">
+            <input type="number" id="dd-reset-input" min="0.01" required aria-describedby="reset-help dd-reset-error" step="0.01" class="w-full rounded-lg px-3 py-2 ticker-bg border font-mono font-bold text-sm text-emerald-400 focus:outline-none focus:border-blue-500" placeholder="10000.00">
             <button onclick="setModalInputBal(10000)" class="px-2.5 py-2 rounded-lg ticker-bg border hover:bg-slate-700 text-[10px] font-mono font-bold cursor-pointer whitespace-nowrap">$10k</button>
             <button onclick="setModalInputBalCurrent()" class="px-2.5 py-2 rounded-lg ticker-bg border hover:bg-slate-700 text-[10px] font-mono font-bold cursor-pointer whitespace-nowrap">Aktuell</button>
           </div>
           <span id="reset-help" class="text-[10px] text-sub mt-1 block">Die Baseline, ab der die 3.5% EA- und 4.0% Broker-Notbremse gerechnet wird.</span>
+          <p id="dd-reset-error" role="alert" class="text-rose-500 mt-2"></p>
         </div>
       </div>
 
@@ -1569,7 +1721,9 @@ HTML_CONTENT = """<!DOCTYPE html>
   </div>
 
   <!-- 4. JAVASCRIPT ENGINE -->
+  <script src="static/dashboard-runtime.js"></script>
   <script>
+    const localStorage = DashboardRuntime.storage; // Optional preferences must never stop the dashboard.
     let chart, candleSeries, ema20Series, ema50Series, ema200Series;
     // Sparse overlay FX no longer allocates six transparent chart series.
     let srLines = {};
@@ -1592,6 +1746,41 @@ HTML_CONTENT = """<!DOCTYPE html>
     let journalBusyMode = null;
     let journalRequestVersion = 0;
     let statusBusy = null;
+    const STATUS_MAX_AGE = 6000;
+    let lastStatusSuccess = 0;
+    let statusConfirmed = false;
+    function quoteIsFresh() {
+      const data = currentData;
+      if (!data) return false;
+      // Compatibility only for old payloads with no source metadata at all.
+      if (!['source_fresh','quote_time_epoch','quote_age_seconds'].some(key => key in data)) return true;
+      if (data.source_fresh !== true || !Number.isFinite(data.quote_time_epoch) || !Number.isFinite(data.quote_age_seconds)) return false;
+      const epochAge = Date.now()/1000 - data.quote_time_epoch;
+      const reportedAge = data.quote_age_seconds + Math.max(0, (Date.now()-lastStatusSuccess)/1000);
+      return epochAge >= -5 && epochAge <= 30 && reportedAge >= -5 && reportedAge <= 30;
+    }
+    function accountIsFresh() {
+      return statusConfirmed && quoteIsFresh() && currentData?.account?.id === activeAccount && lastStatusSuccess > 0 && Date.now()-lastStatusSuccess < STATUS_MAX_AGE;
+    }
+    function gateAccountActions(enabled) {
+      const dd = currentData?.daily_drawdown;
+      const riskKnown = dd && ['pct','loss_usd','buffer_usd','balance','equity'].every(key => Number.isFinite(dd[key]));
+      enabled = enabled && accountIsFresh() && !!riskKnown;
+      document.querySelectorAll('#positions-list button,[onclick="openDrawdownResetModal()"],[onclick="executeDrawdownReset()"],[onclick="revertAutoDrawdown()"]').forEach(button => button.disabled = !enabled);
+    }
+    function accountActionsReady() {
+      const dd = currentData?.daily_drawdown;
+      return accountIsFresh() && dd && ['pct','loss_usd','buffer_usd','balance','equity'].every(key => Number.isFinite(dd[key]));
+    }
+    function markStatusStale(error) {
+      statusConfirmed = false;
+      gateAccountActions(false);
+      document.getElementById('account-content').dataset.connected = currentData ? 'stale' : 'false';
+      const age = lastStatusSuccess ? Math.floor((Date.now()-lastStatusSuccess)/1000)+' s alt' : 'noch nicht bestätigt';
+      const status = document.getElementById('account-connection');
+      status.textContent = (currentData ? 'STALE' : 'OFFLINE')+' · '+age+(error ? ' · '+error.message : '');
+      status.className = 'text-amber-500 font-bold';
+    }
     let candlesBusy = null;
     let showEAStatusText = localStorage.getItem('chart_show_ea_status') !== 'false';
     let currentChartMarkers = [];
@@ -1646,33 +1835,58 @@ HTML_CONTENT = """<!DOCTYPE html>
     }
 
     function staleRequest() { return new DOMException('Account wurde gewechselt', 'AbortError'); }
+    let controlSessionPromise = null;
+    function getControlSession() {
+      if (!controlSessionPromise) controlSessionPromise = (async () => {
+        const response = await DashboardRuntime.request(BASE_PATH + '/api/control_session');
+        const session = await response.json();
+        if (!response.ok || !session.control_enabled || typeof session.csrf_token !== 'string' || !session.csrf_token) {
+          throw new Error('Dashboard-Steuerung gesperrt. Kontrollsitzung nicht verfügbar.');
+        }
+        return session;
+      })().catch(error => { controlSessionPromise = null; throw error; });
+      return controlSessionPromise;
+    }
     async function accountFetch(url, options = {}) {
       const account = activeAccount, generation = accountGeneration;
-      if (options.method === 'POST' && (!currentData || currentData.account.id !== account)) throw new Error('Bitte zuerst auf bestätigte Kontodaten warten.');
+      if (options.method === 'POST' && !accountActionsReady()) throw new Error('Bitte zuerst auf frische, bestätigte Konto- und Risikodaten warten.');
+      const controlled = options.method === 'POST' && ['/api/modify_position','/api/close_position','/api/reset_drawdown'].includes(url.split('?')[0]);
+      if (controlled) {
+        const session = await getControlSession();
+        if (generation !== accountGeneration || account !== activeAccount) throw staleRequest();
+        if (!accountActionsReady()) throw new Error('Konto- oder Risikodaten inzwischen unbestätigt. Bitte erneut prüfen.');
+        options = {...options, credentials:'same-origin', headers:{...options.headers, 'X-Dashboard-CSRF':session.csrf_token}};
+      }
       const targetUrl = url.startsWith('/') ? (BASE_PATH + url) : url;
-      const response = await fetch(targetUrl + (targetUrl.includes('?') ? '&' : '?') + 'account=' + encodeURIComponent(account), options);
+      const requestUrl = targetUrl + (targetUrl.includes('?') ? '&' : '?') + 'account=' + encodeURIComponent(account);
+      const response = await DashboardRuntime.request(requestUrl, options, 4500, true);
       const body = await response.json();
       if (generation !== accountGeneration || account !== activeAccount) throw staleRequest();
-      if (!response.ok) throw new Error(body.detail || 'MT5-Anfrage fehlgeschlagen');
+      if (!response.ok) {
+        if (controlled && response.status === 403) controlSessionPromise = null;
+        throw new Error(body.detail || (response.status === 403 ? 'Dashboard-Steuerung nicht autorisiert.' : 'MT5-Anfrage fehlgeschlagen'));
+      }
       if (body.account && body.account.id !== account) throw new Error('Antwort gehört zu einem anderen Konto.');
       return {json: async () => body};
     }
 
     function clearAccountView() {
       currentData = null;
+      lastStatusSuccess = 0;
+      gateAccountActions(false);
       try {window.StoneCelebration?.clearEMAs();}catch(_){};
       document.getElementById('account-content').dataset.connected = 'false';
       document.getElementById('dd-reset-button').disabled = true;
       closeDrawdownResetModal();
       document.getElementById('dd-reset-input').value = '';
-      for (const id of ['live-bid','live-ask','time-server','time-german','bar-countdown','dd-pct','dd-usd','dd-buffer','dd-matrix-detail','acc-matrix-bal','pos-matrix-count','pos-count-badge','sell-pct','buy-pct']) document.getElementById(id).textContent = '—';
+      for (const id of ['live-bid','live-ask','time-server','time-german','bar-countdown','dd-pct','dd-usd','dd-buffer','dd-matrix-detail','acc-matrix-bal','pos-matrix-count','pos-count-badge','sell-pct','buy-pct','matrix-time']) document.getElementById(id).textContent = '—';
       document.getElementById('live-spread').textContent = 'Spr: —';
       document.getElementById('dd-reset-tag').classList.add('hidden');
-      document.getElementById('positions-list').textContent = 'Kontodaten werden geladen …';
+      document.getElementById('positions-list').textContent = 'Positionen unbekannt · Kontodaten werden geladen …';
       delete document.getElementById('positions-list').dataset.structure;
       matrixSignature = null; vpSignature = null;
       renderJournal();
-      document.getElementById('matrix-tbody').replaceChildren();
+      document.getElementById('matrix-tbody').innerHTML = '<tr><td colspan="4">Regeln unbekannt · Kontodaten werden geladen …</td></tr>';
       document.getElementById('exit-goals').replaceChildren();
       document.getElementById('gold-details').classList.add('hidden');
       document.getElementById('vp-histogram-container').replaceChildren();
@@ -1695,10 +1909,9 @@ HTML_CONTENT = """<!DOCTYPE html>
 
     function reportAccountError(error, generation) {
       if (error.name === 'AbortError' || generation !== accountGeneration) return;
-      clearAccountView();
-      const status = document.getElementById('account-connection');
-      status.textContent = error.message;
-      status.className = 'text-rose-500 font-bold';
+      // Optional candle failures must not erase verified account/risk data.
+      if (accountIsFresh()) return;
+      markStatusStale(error);
     }
 
     async function switchAccount(account) {
@@ -1706,6 +1919,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       activeAccount = account;
       try { window.ChartStudioBeta?.account(account); } catch (_) {}
       accountGeneration++;
+      DashboardRuntime.abortAccount();
       localStorage.setItem('gold_dashboard_account', account);
       document.querySelectorAll('.account-tab').forEach(tab => tab.setAttribute('aria-pressed', String(tab.dataset.account===account)));
       const meta = accounts[account];
@@ -1726,6 +1940,10 @@ HTML_CONTENT = """<!DOCTYPE html>
       await Promise.all([updateStatus(),loadCandles()]);
     }
 
+    function escapeHTML(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    }
+
     function renderGoldDetails(data) {
       const container = document.getElementById('gold-details');
       container.classList.toggle('hidden', !data.ea_guard);
@@ -1736,8 +1954,8 @@ HTML_CONTENT = """<!DOCTYPE html>
       document.getElementById('guard-status').textContent = locked ? 'EA-SPERRE AKTIV' : guard.baseline_verified ? 'TAGESBASIS BESTÄTIGT' : 'SCHUTZSTATUS UNBEKANNT';
       document.getElementById('guard-status').className = locked || !guard.baseline_verified ? 'text-rose-500 font-bold' : 'text-emerald-500 font-bold';
       document.getElementById('guard-detail').textContent = 'Basis '+money(guard.baseline)+' · Puffer bis $350: '+money(guard.daily_buffer_usd)+' · Mit Tagesreserve: '+money(guard.daily_protected_buffer_usd)+' · Geschützte Untergrenze '+money(guard.hard_protected_floor_usd)+' · Rest '+money(guard.hard_buffer_usd);
-      document.getElementById('guard-note').textContent = guard.note;
-      document.getElementById('exit-goals').innerHTML = data.exit_goals.map(goal => `<div class="ticker-bg border rounded-lg p-2"><div class="font-bold mb-1">System ${goal.slot}</div><div class="text-rose-500">Short: ${goal.short_note} · ${goal.short_value.toFixed(3)}% ${goal.short_met?'✓ erreicht':'offen'}</div><div class="text-emerald-500">Long: ${goal.long_note} · ${goal.long_value.toFixed(3)}% ${goal.long_met?'✓ erreicht':'offen'}</div></div>`).join('');
+      document.getElementById('guard-note').textContent = (guard.note || '') + ' · EA-Heartbeat unbekannt; Quellfrische ist keine EA-Bestätigung.';
+      document.getElementById('exit-goals').innerHTML = data.exit_goals.map(goal => `<div class="ticker-bg border rounded-lg p-2"><div class="font-bold mb-1">System ${escapeHTML(goal.slot)}</div><div class="text-rose-500">Short: ${escapeHTML(goal.short_note)} · ${goal.short_value.toFixed(3)}% ${goal.short_met?'✓ erreicht':'offen'}</div><div class="text-emerald-500">Long: ${escapeHTML(goal.long_note)} · ${goal.long_value.toFixed(3)}% ${goal.long_met?'✓ erreicht':'offen'}</div></div>`).join('');
     }
     let currentBottomMargin = 0.10;
 
@@ -2087,15 +2305,18 @@ HTML_CONTENT = """<!DOCTYPE html>
 
     // --- LIVE STATUS & TARGET MATRIX ---
     async function updateStatus() {
+      if (document.hidden || !accounts[activeAccount]) return;
       const generation = accountGeneration;
       if (statusBusy === generation) return;
       statusBusy = generation;
       try {
-        const res = await accountFetch('/api/status');
+        const res = await accountFetch('/api/status?include_journal=false');
         const data = await res.json();
         if (generation !== accountGeneration) throw staleRequest();
         const needsCharts = currentData === null;
         currentData = data;
+        lastStatusSuccess = Date.now();
+        statusConfirmed = true;
         try { window.ChartStudioBeta?.updatePositions(data.account.id, data.positions); } catch (_) {}
         try { window.StoneCelebration?.observeTrades(data.account.id,data.journal,data.positions); }
         catch (_) { /* Visual event detection must not affect trading. */ }
@@ -2116,7 +2337,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         document.getElementById('bar-countdown').innerText = data.times.bar_remaining_fmt;
 
         // Daily Drawdown & Account Update
-        if (data.daily_drawdown) {
+        if (data.daily_drawdown && ['pct','loss_usd','buffer_usd','balance','equity'].every(key => Number.isFinite(data.daily_drawdown[key]))) {
           const dd = data.daily_drawdown;
           const ddPctElem = document.getElementById('dd-pct');
           const ddUsdElem = document.getElementById('dd-usd');
@@ -2174,6 +2395,12 @@ HTML_CONTENT = """<!DOCTYPE html>
         }
 
         const posCountElem = document.getElementById('pos-matrix-count');
+        if (!data.daily_drawdown || !['pct','loss_usd','buffer_usd','balance','equity'].every(key => Number.isFinite(data.daily_drawdown[key]))) {
+          for (const id of ['dd-pct','dd-buffer','dd-matrix-detail']) document.getElementById(id).textContent = 'unbekannt';
+          document.getElementById('dd-usd').textContent = '(Historie / Risiko nicht bestätigt)';
+          document.getElementById('acc-matrix-bal').textContent = '—';
+          document.getElementById('dd-reset-tag').classList.add('hidden');
+        }
         if (posCountElem && data.positions) {
           posCountElem.innerText = `${data.positions.length} / ${data.account.capacity} Aktiv`;
         }
@@ -2187,14 +2414,16 @@ HTML_CONTENT = """<!DOCTYPE html>
 
         const cardElem = document.getElementById('diagnose-card');
         if (cardElem && data.trend_direction) {
-          cardElem.className = `glass-card rounded-xl p-3.5 border-l-4 ${data.trend_direction === 'BULLISH' ? 'border-l-emerald-500' : 'border-l-rose-500'}`;
+          cardElem.classList.remove('border-l-blue-500');
+          cardElem.classList.toggle('border-l-emerald-500', data.trend_direction === 'BULLISH');
+          cardElem.classList.toggle('border-l-rose-500', data.trend_direction !== 'BULLISH');
         }
 
         const statusPrefix = data.account.id==='goldm15' ? '<span class="text-blue-400 font-black">RSI-Setup:</span>' : (data.trend_direction === 'BULLISH') 
           ? `<span class="text-emerald-400 font-black">Aktiver Trend (Long):</span>` 
           : `<span class="text-rose-400 font-black">Aktiver Trend (Short):</span>`;
         
-        document.getElementById('short-missing-text').innerHTML = `${statusPrefix} ${data.trend_diagnosis || data.short_missing}`;
+        document.getElementById('short-missing-text').innerHTML = `${statusPrefix} ${escapeHTML(data.trend_diagnosis || data.short_missing)}`;
         document.getElementById('sell-pct').innerText = `${data.sell_readiness}% (${data.sell_met_count}/${data.rule_count})`;
         document.getElementById('sell-bar').style.width = `${data.sell_readiness}%`;
         document.getElementById('buy-pct').innerText = `${data.buy_readiness}% (${data.buy_met_count}/${data.rule_count})`;
@@ -2208,6 +2437,9 @@ HTML_CONTENT = """<!DOCTYPE html>
 
         // Render Positions
         renderPositions(data.positions);
+        if (!quoteIsFresh()) markStatusStale(new Error('MT5-Quote veraltet oder Quellzeit unbestätigt'));
+        else gateAccountActions(true);
+        if (!document.getElementById('dd-reset-modal').classList.contains('hidden')) refreshResetModalValues();
 
         // The journal is independently queried for one or BOTH strategies.
         // Do not replace the merged view with activeAccount-only status data.
@@ -2215,7 +2447,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (needsCharts) void loadCandles();
 
       } catch (err) {
-        reportAccountError(err, generation);
+        if (generation === accountGeneration && err.name !== 'AbortError') markStatusStale(err);
       } finally { if (statusBusy === generation) statusBusy = null; }
     }
 
@@ -2227,24 +2459,24 @@ HTML_CONTENT = """<!DOCTYPE html>
       tbody.innerHTML = rules.map((r,index) => `
         <tr class="hover-row transition-colors stone-target-row stone-target-row--${index % 5}">
           <td class="py-2 pr-2">
-            <div class="font-sans font-bold text-xs">${r.name}</div>
+            <div class="font-sans font-bold text-xs">${escapeHTML(r.name)}</div>
           </td>
           <td class="py-2 px-2 text-center whitespace-nowrap">
             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${r.short_met ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'}">
               <span>${r.short_met ? '✅' : '❌'}</span>
               <span>${r.short_met ? 'ERFÜLLT' : 'FEHLT'}</span>
             </span>
-            <div class="text-[9px] text-sub mt-1 whitespace-normal">${r.short_note}</div>
+            <div class="text-[9px] text-sub mt-1 whitespace-normal">${escapeHTML(r.short_note)}</div>
           </td>
           <td class="py-2 px-2 text-center whitespace-nowrap">
             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${r.long_met ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'}">
               <span>${r.long_met ? '✅' : '❌'}</span>
               <span>${r.long_met ? 'ERFÜLLT' : 'FEHLT'}</span>
             </span>
-            <div class="text-[9px] text-sub mt-1 whitespace-normal">${r.long_note}</div>
+            <div class="text-[9px] text-sub mt-1 whitespace-normal">${escapeHTML(r.long_note)}</div>
           </td>
           <td class="py-2 pl-2 text-right font-mono text-[10px] opacity-90 font-bold stone-target-live">
-            ${r.current_val}
+            ${escapeHTML(r.current_val)}
           </td>
         </tr>
       `).join('');
@@ -2313,6 +2545,14 @@ HTML_CONTENT = """<!DOCTYPE html>
     }
 
     // --- POSITIONS & SL/TP MANAGER ---
+    const positionDrafts = new Map();
+    document.getElementById('matrix-scroll').addEventListener('keydown', event => {
+      const area = event.currentTarget;
+      const next = event.key === 'End' ? area.scrollWidth : event.key === 'Home' ? 0 : event.key === 'ArrowRight' ? area.scrollLeft+100 : event.key === 'ArrowLeft' ? area.scrollLeft-100 : null;
+      if (next !== null) { event.preventDefault(); area.scrollLeft = next; }
+    });
+    for (const id of ['vp-histogram-container','diagnose-card','gold-details','matrix-title','positions-list','journal-list']) document.getElementById(id).closest('.glass-card').classList.add('dashboard-panel');
+    DashboardRuntime.initPresentation();
     function renderPositions(positions) {
       const list = document.getElementById('positions-list');
       const badge = document.getElementById('pos-count-badge');
@@ -2321,6 +2561,8 @@ HTML_CONTENT = """<!DOCTYPE html>
         list.addEventListener('input', event => {
           if (event.target.matches('input[id^="sl-input-"], input[id^="tp-input-"]')) {
             event.target.dataset.dirty = 'true';
+            positionDrafts.set(activeAccount+':'+event.target.id, event.target.value);
+            event.target.closest('[data-position-ticket]')?.querySelector('[data-draft-note]')?.classList.remove('hidden');
           }
         });
         list.dataset.dirtyBound = '1';
@@ -2328,6 +2570,8 @@ HTML_CONTENT = """<!DOCTYPE html>
       const structure = positions.map(pos => [pos.ticket,pos.type,pos.volume,pos.open_price].join(':')).join('|');
 
       if (positions.length === 0) {
+        if (list.querySelector('[data-dirty="true"]')) document.getElementById('position-edit-status').textContent = 'Position geschlossen: der zugehörige ungesendete Entwurf wurde verworfen.';
+        for (const key of positionDrafts.keys()) if (key.startsWith(activeAccount+':')) positionDrafts.delete(key);
         if (list.dataset.structure !== '') {
           list.innerHTML = `<div class="py-6 flex items-center justify-center text-sub text-xs">Aktuell keine offenen Positionen auf XAUUSD. Der EA scannt den Markt bei jedem M15-Kerzenschluss (:00, :15, :30, :45).</div>`;
           list.dataset.structure = '';
@@ -2336,13 +2580,17 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
 
       if (list.dataset.structure !== structure) {
-        list.innerHTML = positions.map(p => `
+        const oldRows = new Map([...list.querySelectorAll('[data-position-ticket]')].map(row => [row.dataset.positionTicket,row]));
+        const focused = document.activeElement;
+        const removedDraft = [...oldRows].some(([ticket,row]) => !positions.some(p => String(p.ticket) === ticket) && row.querySelector('[data-dirty="true"]'));
+        const template = document.createElement('template');
+        template.innerHTML = positions.map(p => `
         <div data-position-ticket="${p.ticket}" class="p-3 rounded-xl ticker-bg border flex flex-wrap items-center justify-between gap-3 text-xs mb-2">
           <div class="flex items-center gap-2.5">
-            <span class="px-2 py-1 rounded-md font-bold font-mono text-[11px] text-white ${p.type === 'BUY' ? 'bg-emerald-600' : 'bg-rose-600'}">
-              ${p.type} ${p.volume} Lot
+            <span data-position-type class="px-2 py-1 rounded-md font-bold font-mono text-[11px] text-white ${p.type === 'BUY' ? 'bg-emerald-600' : 'bg-rose-600'}">
+              ${escapeHTML(p.type)} ${escapeHTML(p.volume)} Lot
             </span>
-            <span class="font-mono font-bold text-xs">#${p.ticket} @ $${p.open_price.toFixed(2)}</span>
+            <span data-position-entry class="font-mono font-bold text-xs">#${p.ticket} @ $${p.open_price.toFixed(2)}</span>
             <span data-position-current class="text-sub font-mono text-[10px]">Aktuell: &#36;${p.current_price.toFixed(2)}</span>
           </div>
 
@@ -2354,32 +2602,46 @@ HTML_CONTENT = """<!DOCTYPE html>
 
           <!-- SL in USD -->
           <div class="flex items-center gap-1.5 font-mono text-xs">
-            <span class="text-sub font-bold">SL:</span>
-            <input type="number" id="sl-input-${p.ticket}" step="5" value="${p.sl_usd.toFixed(2)}" class="w-16 rounded px-1.5 py-0.5 text-center text-xs ticker-bg border text-rose-500 font-bold">
-            <button onclick="applySLTP(${p.ticket})" class="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded text-[10px] cursor-pointer">Set</button>
-            <button onclick="quickBE(${p.ticket})" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-amber-500 border rounded text-[10px] font-bold cursor-pointer" title="Break-Even +$5">BE +$5</button>
-            <button onclick="quickSL(${p.ticket}, -50)" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-rose-500 border rounded text-[10px] cursor-pointer">-$50</button>
+            <label for="sl-input-${p.ticket}" class="text-sub font-bold">SL · USD:</label>
+            <input type="number" aria-label="SL Ziel-P/L in USD · ${escapeHTML(accounts[activeAccount].name)} · Ticket ${p.ticket}" id="sl-input-${p.ticket}" step="0.01" value="${p.sl_usd.toFixed(2)}" class="rounded px-1.5 py-0.5 text-center text-xs ticker-bg border text-rose-500 font-bold">
+            <button onclick="quickBE(${p.ticket})" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-amber-500 border rounded text-[10px] font-bold cursor-pointer" title="SL sofort +5 USD; TP-Feld wird ebenfalls gesendet">SL sofort +5 USD</button>
+            <button onclick="quickSL(${p.ticket}, -50)" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-rose-500 border rounded text-[10px] cursor-pointer" title="TP-Feld wird ebenfalls gesendet">SL sofort −50 USD</button>
           </div>
 
           <!-- TP in USD -->
           <div class="flex items-center gap-1.5 font-mono text-xs">
-            <span class="text-sub font-bold">TP:</span>
-            <input type="number" id="tp-input-${p.ticket}" step="10" value="${p.tp_usd.toFixed(2)}" class="w-16 rounded px-1.5 py-0.5 text-center text-xs ticker-bg border text-emerald-500 font-bold">
-            <button onclick="applySLTP(${p.ticket})" class="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded text-[10px] cursor-pointer">Set</button>
-            <button onclick="quickTP(${p.ticket}, 50)" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-emerald-500 border rounded text-[10px] font-bold cursor-pointer">+$50</button>
-            <button onclick="quickTP(${p.ticket}, 100)" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-emerald-500 border rounded text-[10px] font-bold cursor-pointer">+$100</button>
+            <label for="tp-input-${p.ticket}" class="text-sub font-bold">TP · USD:</label>
+            <input type="number" aria-label="TP Ziel-P/L in USD · ${escapeHTML(accounts[activeAccount].name)} · Ticket ${p.ticket}" aria-describedby="tp-help-${p.ticket}" id="tp-input-${p.ticket}" min="0" step="0.01" value="${p.tp_usd.toFixed(2)}" class="rounded px-1.5 py-0.5 text-center text-xs ticker-bg border text-emerald-500 font-bold">
+            <button onclick="quickTP(${p.ticket}, 50)" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-emerald-500 border rounded text-[10px] font-bold cursor-pointer" title="SL-Feld wird ebenfalls gesendet">TP sofort +50 USD</button>
+            <button onclick="quickTP(${p.ticket}, 100)" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-emerald-500 border rounded text-[10px] font-bold cursor-pointer" title="SL-Feld wird ebenfalls gesendet">TP sofort +100 USD</button>
+            <span id="tp-help-${p.ticket}" data-tp-help class="text-sub">0 USD = Kein fixer TP</span>
           </div>
+          <button aria-label="SL und TP an MT5 senden · Ticket ${p.ticket}" onclick="applySLTP(${p.ticket})" class="px-3 py-2 bg-blue-600 text-white font-bold rounded">SL + TP an MT5 senden</button>
 
           <button onclick="closePos(${p.ticket})" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs cursor-pointer shadow-sm">
             Position Schließen
           </button>
+          <span data-draft-note class="text-amber-500 hidden">Entwurf · noch nicht an MT5 gesendet</span>
         </div>
       `).join('');
+        const incoming = [...template.content.children];
+        if (!oldRows.size) list.replaceChildren();
+        for (const newRow of incoming) list.append(oldRows.get(newRow.dataset.positionTicket) || newRow);
+        for (const [ticket,row] of oldRows) if (!positions.some(p => String(p.ticket) === ticket)) {
+          row.remove();
+          for (const side of ['sl','tp']) positionDrafts.delete(activeAccount+':'+side+'-input-'+ticket);
+        }
+        if (focused?.isConnected) focused.focus({preventScroll:true});
+        if (removedDraft) document.getElementById('position-edit-status').textContent = 'Position geschlossen: der zugehörige ungesendete Entwurf wurde verworfen.';
         list.dataset.structure = structure;
       }
       for (const pos of positions) {
         const row = list.querySelector('[data-position-ticket="' + pos.ticket + '"]');
         if (!row) continue;
+        const type = row.querySelector('[data-position-type]');
+        if (type) type.textContent = pos.type+' '+pos.volume+' Lot';
+        const entry = row.querySelector('[data-position-entry]');
+        if (entry) entry.textContent = '#'+pos.ticket+' @ $'+pos.open_price.toFixed(2);
         const price = row.querySelector('[data-position-current]');
         if (price) price.textContent = 'Aktuell: ' + String.fromCharCode(36) + pos.current_price.toFixed(2);
         const pnl = row.querySelector('[data-position-pnl]');
@@ -2392,6 +2654,11 @@ HTML_CONTENT = """<!DOCTYPE html>
         for (const [id, value] of [['sl-input-' + pos.ticket,pos.sl_usd],
                                   ['tp-input-' + pos.ticket,pos.tp_usd]]) {
           const input = document.getElementById(id);
+          if (input && positionDrafts.has(activeAccount+':'+id)) {
+            input.value = positionDrafts.get(activeAccount+':'+id);
+            input.dataset.dirty = 'true';
+            row.querySelector('[data-draft-note]')?.classList.remove('hidden');
+          }
           if (input && document.activeElement !== input && input.dataset.dirty !== 'true') {
             input.value = value.toFixed(2);
           }
@@ -2411,12 +2678,12 @@ HTML_CONTENT = """<!DOCTYPE html>
       journalBusyMode = null;
       journalLoadedMode = null;
       journalErrors = [];
-      journalEntriesByAccount = {titan: [], goldm15: []};
       renderJournal();
       return refreshJournal();
     }
 
     async function refreshJournal() {
+      if (document.hidden) return;
       if (!Object.keys(accounts).length || journalBusyMode === journalFilter) return;
       const mode = journalFilter;
       const requestVersion = ++journalRequestVersion;
@@ -2426,7 +2693,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         try {
           // Deliberately NOT accountFetch: that helper is tied to the trading
           // account and would silently replace the selected journal account.
-          const response = await fetch(BASE_PATH + '/api/journal_summary?account=' + encodeURIComponent(id));
+          const response = await DashboardRuntime.request(BASE_PATH + '/api/journal_summary?account=' + encodeURIComponent(id));
           const payload = await response.json();
           if (!response.ok) throw new Error(payload.detail || 'MT5-Journal nicht erreichbar');
           if (payload.account !== id || !Array.isArray(payload.journal)) {
@@ -2445,6 +2712,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       journalErrors = [];
       for (const result of results) {
         if (result.error) {
+          fresh[result.id] = journalEntriesByAccount[result.id] || [];
           journalErrors.push((accounts[result.id]?.name || result.id) + ': ' + result.error);
         } else {
           fresh[result.id] = result.entries;
@@ -2496,11 +2764,11 @@ HTML_CONTENT = """<!DOCTYPE html>
 
       if (!itemsToRender.length) {
         if (countBadge) {
-          countBadge.innerText = '0 Aufgezeichnet';
+          countBadge.innerText = journalErrors.length ? '— Aufgezeichnet (unvollständig)' : '0 Aufgezeichnet';
           countBadge.className = 'px-2 py-0.5 rounded font-mono text-[10px] ticker-bg border font-bold text-sub';
         }
         if (totBadge) {
-          totBadge.textContent = 'PnL: $0.00';
+          totBadge.textContent = journalErrors.length ? 'Gesamt: — (unvollständig)' : 'PnL: $0.00';
           totBadge.className = 'px-2.5 py-0.5 rounded-md font-mono text-[11px] font-black border bg-black/30 text-sub';
         }
         if (liveBadge) liveBadge.classList.add('hidden');
@@ -2509,28 +2777,31 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (list) {
           list.innerHTML = `
             <div class="py-6 flex flex-col items-center justify-center text-sub text-xs gap-1">
-              <span>${journalErrors.length === wanted.length ? 'Journal derzeit nicht erreichbar.' : 'Keine Trades seit 20:00 Uhr DE-Zeit für ' + stratName + ' verzeichnet.'}</span>
-              <span class="text-[10px] opacity-75">Neue Einstiege und Exits werden ab 20:00 Uhr automatisch erfasst und begründet.</span>
+              <span>${journalErrors.length === wanted.length ? 'Journal derzeit nicht erreichbar.' : 'Keine aufgezeichneten Trades für ' + stratName + ' verzeichnet.'}</span>
+              <span class="text-[10px] opacity-75">Offene Positionen werden vollständig angezeigt; historische Deals ab dem angegebenen Aufzeichnungsbeginn. Unbelegte Gründe bleiben unbekannt.</span>
             </div>`;
         }
         return;
       }
 
       // Calculations
-      const totalPnL = itemsToRender.reduce((sum, it) => sum + (it.profit_usd || 0), 0);
+      const totalUnknown = journalErrors.length > 0 || itemsToRender.some(it => !Number.isFinite(it.profit_usd) || it.net_complete === false);
+      const totalPnL = itemsToRender.reduce((sum, it) => sum + (Number.isFinite(it.profit_usd) ? it.profit_usd : 0), 0);
       const liveItems = itemsToRender.filter(it => it.status === 'OPEN');
       const closedItems = itemsToRender.filter(it => it.status === 'CLOSED');
       const livePnL = liveItems.reduce((sum, it) => sum + (it.profit_usd || 0), 0);
       const closedPnL = closedItems.reduce((sum, it) => sum + (it.profit_usd || 0), 0);
+      const liveUnknown = journalErrors.length > 0 || liveItems.some(it => !Number.isFinite(it.profit_usd));
+      const closedUnknown = journalErrors.length > 0 || closedItems.some(it => !Number.isFinite(it.profit_usd) || it.net_complete === false);
 
       if (countBadge) {
-        countBadge.innerText = `${itemsToRender.length} Trades (${liveItems.length} Live · ${closedItems.length} Hist)`;
+        countBadge.innerText = journalErrors.length ? `${itemsToRender.length} zuletzt bekannte Trades · unvollständig` : `${itemsToRender.length} Trades (${liveItems.length} Live · ${closedItems.length} Hist)`;
         countBadge.className = 'px-2 py-0.5 rounded font-mono text-[10px] ticker-bg border font-bold text-white';
       }
 
       if (totBadge) {
         const sign = totalPnL >= 0 ? '+' : '-';
-        totBadge.textContent = `Gesamt: ${sign}$${Math.abs(totalPnL).toFixed(2)}`;
+        totBadge.textContent = totalUnknown ? 'Gesamt: — (unvollständig)' : `Gesamt: ${sign}$${Math.abs(totalPnL).toFixed(2)}`;
         totBadge.className = `px-2.5 py-0.5 rounded-md font-mono text-[11px] font-black border ${
           totalPnL >= 0 
             ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' 
@@ -2542,7 +2813,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (liveItems.length > 0) {
           liveBadge.classList.remove('hidden');
           const sign = livePnL >= 0 ? '+' : '-';
-          liveBadge.textContent = `Live: ${sign}$${Math.abs(livePnL).toFixed(2)}`;
+          liveBadge.textContent = liveUnknown ? 'Live: — (unvollständig)' : `Live: ${sign}$${Math.abs(livePnL).toFixed(2)}`;
           liveBadge.className = `px-2 py-0.5 rounded-md font-mono text-[10px] font-bold border ${
             livePnL >= 0 ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
           }`;
@@ -2555,7 +2826,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (closedItems.length > 0) {
           closedBadge.classList.remove('hidden');
           const sign = closedPnL >= 0 ? '+' : '-';
-          closedBadge.textContent = `Hist: ${sign}$${Math.abs(closedPnL).toFixed(2)}`;
+          closedBadge.textContent = closedUnknown ? 'Hist: — (unvollständig)' : `Hist: ${sign}$${Math.abs(closedPnL).toFixed(2)}`;
           closedBadge.className = `px-2 py-0.5 rounded-md font-mono text-[10px] font-bold border ${
             closedPnL >= 0 ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
           }`;
@@ -2566,13 +2837,17 @@ HTML_CONTENT = """<!DOCTYPE html>
 
       if (!list) return;
 
-      list.innerHTML = itemsToRender.map(item => {
+      const signatures = new Map();
+      const template = document.createElement('template');
+      template.innerHTML = itemsToRender.map(item => {
+        const key = item.account+':'+item.ticket+':'+item.status;
+        signatures.set(key, JSON.stringify(item));
         const isOpen = item.status === 'OPEN';
         const isBuy = item.type === 'BUY';
         const isProfit = item.profit_usd >= 0;
         const profitSign = isProfit ? '+' : '-';
         const absProfit = Math.abs(item.profit_usd).toFixed(2);
-        const pnlFormatted = `${profitSign}$${absProfit}`;
+        const pnlFormatted = Number.isFinite(item.profit_usd) && item.net_complete !== false ? `${profitSign}$${absProfit}` : '— (unbekannt)';
         const ptsSign = (item.points >= 0) ? '+' : '-';
         const ptsFormatted = (typeof item.points === 'number') ? `${ptsSign}${Math.abs(item.points).toFixed(2)} Pkt` : '';
 
@@ -2598,35 +2873,37 @@ HTML_CONTENT = """<!DOCTYPE html>
 
         const typeBadge = isBuy
           ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">BUY</span>`
-          : `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30">SELL</span>`;
+          : item.type === 'SELL' ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30">SELL</span>`
+          : `<span class="px-2 py-0.5 rounded text-[10px] font-black ticker-bg border text-sub">UNBEKANNT</span>`;
 
         const stratBadge = item.account === 'titan'
           ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">XAU TITAN PRO</span>`
           : `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/40">GOLDM15 RECONSTRUCTION</span>`;
 
         const priceDetails = isOpen
-          ? `<span class="text-sub font-mono">Einstieg: <strong class="text-white">$${item.open_price.toFixed(2)}</strong> · Aktuell: <strong class="${isProfit ? 'text-emerald-400':'text-rose-400'}">$${item.current_price.toFixed(2)}</strong></span>`
-          : `<span class="text-sub font-mono">Einstieg: <strong class="text-white">$${item.open_price.toFixed(2)}</strong> · Ausstieg: <strong class="text-white">$${item.close_price.toFixed(2)}</strong></span>`;
+          ? `<span class="text-sub font-mono">Einstieg: <strong class="text-white">$${Number.isFinite(item.open_price) ? item.open_price.toFixed(2) : '— (unbekannt)'}</strong> · Aktuell: <strong class="${isProfit ? 'text-emerald-400':'text-rose-400'}">$${Number.isFinite(item.current_price) ? item.current_price.toFixed(2) : '— (unbekannt)'}</strong></span>`
+          : `<span class="text-sub font-mono">Einstieg: <strong class="text-white">$${Number.isFinite(item.open_price) ? item.open_price.toFixed(2) : '— (unbekannt)'}</strong> · Ausstieg: <strong class="text-white">$${Number.isFinite(item.close_price) ? item.close_price.toFixed(2) : '— (unbekannt)'}</strong></span>`;
 
         return `
-          <div class="glass-card rounded-lg p-3 border border-white/5 hover:border-white/15 transition-all">
+          <div data-journal-key="${escapeHTML(key)}" class="glass-card rounded-lg p-3 border border-white/5 hover:border-white/15 transition-all">
             <!-- HEADER WITH PNL -->
             <div class="flex flex-wrap items-center justify-between gap-2 pb-2 mb-2 border-b table-border">
               <div class="flex flex-wrap items-center gap-2">
                 ${stratBadge}
                 ${typeBadge}
-                <span class="font-mono text-xs font-bold">${item.volume} Lot</span>
+                <span class="font-mono text-xs font-bold">${escapeHTML(item.volume)} Lot</span>
                 ${priceDetails}
-                <span class="text-[10px] text-sub font-mono">#${item.ticket}</span>
+                <span class="text-[10px] text-sub font-mono">#${escapeHTML(item.ticket)}</span>
               </div>
               <div class="flex flex-wrap items-center gap-2.5">
-                <span class="text-[10px] text-sub font-mono">⏰ DE ${item.time_de} (Server ${item.time_server})</span>
+                <span class="text-[10px] text-sub font-mono">⏰ DE ${escapeHTML(item.time_de)} (Server ${escapeHTML(item.time_server)})</span>
                 ${statusBadge}
                 ${pnlBadge}
               </div>
             </div>
 
             <!-- 2 INFO BOXES -->
+            <details><summary>Begründung und Ausstiegsregel anzeigen</summary>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
               <!-- WHY TRIGGERED -->
               <div class="rounded-md p-2.5 bg-black/20 border border-white/5 flex flex-col justify-between">
@@ -2635,7 +2912,7 @@ HTML_CONTENT = """<!DOCTYPE html>
                     <span>🎯</span>
                     <span>Warum wurde der Trade ausgelöst? (Einstiegs-Begründung)</span>
                   </div>
-                  <p class="text-[11px] leading-relaxed text-sub">${item.why_triggered}</p>
+                  <p class="text-[11px] leading-relaxed text-sub">${escapeHTML(item.why_triggered)}</p>
                 </div>
               </div>
 
@@ -2646,7 +2923,7 @@ HTML_CONTENT = """<!DOCTYPE html>
                     <span>🏁</span>
                     <span>Was ist das Profitziel / die Ausstiegsregel?</span>
                   </div>
-                  <p class="text-[11px] leading-relaxed text-sub">${item.profit_goal}</p>
+                  <p class="text-[11px] leading-relaxed text-sub">${escapeHTML(item.profit_goal)}</p>
                 </div>
                 ${item.sl_price ? `<div class="mt-2 text-[10px] font-mono text-sub flex gap-3">
                   <span>SL: <strong class="text-rose-400">$${item.sl_price.toFixed(2)}</strong></span>
@@ -2654,26 +2931,54 @@ HTML_CONTENT = """<!DOCTYPE html>
                 </div>` : ''}
               </div>
             </div>
+            </details>
           </div>
         `;
       }).join('');
+      const old = new Map([...list.querySelectorAll('[data-journal-key]')].map(row => [row.dataset.journalKey,row]));
+      const wantedKeys = new Set(signatures.keys());
+      for (const row of [...list.childNodes]) if (row.nodeType !== Node.ELEMENT_NODE || !wantedKeys.has(row.dataset.journalKey)) row.remove();
+      let index = 0;
+      for (const newRow of [...template.content.children]) {
+        const key = newRow.dataset.journalKey, signature = signatures.get(key);
+        const row = old.get(key) || newRow;
+        if (row !== newRow && row.dataset.signature !== signature) {
+          // Preserve the outer keyed node and focused details disclosure.
+          const details = row.querySelector('details'), replacement = newRow.querySelector('details');
+          row.firstElementChild.replaceChildren(...newRow.firstElementChild.childNodes);
+          details.querySelector('div').replaceChildren(...replacement.querySelector('div').childNodes);
+        }
+        row.dataset.signature = signature;
+        if (list.children[index] !== row) list.insertBefore(row, list.children[index] || null);
+        index++;
+      }
     }
 
     async function applySLTP(ticket) {
+      const draftAccount = activeAccount;
+      const submitted = new Map([['sl-input-'+ticket,document.getElementById('sl-input-'+ticket).value],['tp-input-'+ticket,document.getElementById('tp-input-'+ticket).value]]);
       const sl_usd = parseFloat(document.getElementById(`sl-input-${ticket}`).value);
       const tp_usd = parseFloat(document.getElementById(`tp-input-${ticket}`).value);
+      if (!Number.isFinite(sl_usd) || !Number.isFinite(tp_usd) || tp_usd < 0) {
+        document.getElementById('position-edit-status').textContent = 'Bitte eine endliche Zahl für SL und TP eingeben. TP muss mindestens 0 USD sein.';
+        return;
+      }
       try {
         const res = await accountFetch('/api/modify_position', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ticket, sl_usd, tp_usd })
+          body: JSON.stringify(tp_usd === 0 ? { ticket, sl_usd, remove_tp: true } : { ticket, sl_usd, tp_usd })
         });
         const result = await res.json();
         if (result.success) {
           for (const id of [`sl-input-${ticket}`,`tp-input-${ticket}`]) {
             const input = document.getElementById(id);
-            if (input) delete input.dataset.dirty;
+            if (input && activeAccount === draftAccount && input.value === submitted.get(id)) {
+              delete input.dataset.dirty; positionDrafts.delete(draftAccount+':'+id);
+            }
           }
+          const row = document.querySelector('[data-position-ticket="'+ticket+'"]');
+          if (row) row.querySelector('[data-draft-note]')?.classList.toggle('hidden', !row.querySelector('[data-dirty="true"]'));
           alert(`Position #${ticket} in MT5 erfolgreich aktualisiert!`);
           updateStatus();
         } else {
@@ -2685,19 +2990,26 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
     }
 
+    function setPositionDraft(id, value) {
+      const input = document.getElementById(id);
+      input.value = value;
+      // Synchronous user-input path publishes the draft before any request/poll.
+      input.dispatchEvent(new Event('input', {bubbles:true}));
+    }
+
     async function quickBE(ticket) {
-      document.getElementById(`sl-input-${ticket}`).value = "5.00";
-      applySLTP(ticket);
+      setPositionDraft(`sl-input-${ticket}`, "5.00");
+      return applySLTP(ticket);
     }
 
     async function quickSL(ticket, val) {
-      document.getElementById(`sl-input-${ticket}`).value = val.toFixed(2);
-      applySLTP(ticket);
+      setPositionDraft(`sl-input-${ticket}`, val.toFixed(2));
+      return applySLTP(ticket);
     }
 
     async function quickTP(ticket, val) {
-      document.getElementById(`tp-input-${ticket}`).value = val.toFixed(2);
-      applySLTP(ticket);
+      setPositionDraft(`tp-input-${ticket}`, val.toFixed(2));
+      return applySLTP(ticket);
     }
 
     async function closePos(ticket) {
@@ -2722,34 +3034,51 @@ HTML_CONTENT = """<!DOCTYPE html>
     }
 
     // --- DAILY DRAWDOWN RESET MODAL CONTROLS ---
+    let resetReturnFocus = null;
+    document.addEventListener('keydown', event => {
+      const modal = document.getElementById('dd-reset-modal');
+      if (modal.classList.contains('hidden')) return;
+      if (event.key === 'Escape') {
+        event.preventDefault(); event.stopImmediatePropagation(); closeDrawdownResetModal();
+      } else if (event.key === 'Tab') {
+        const controls = [...modal.querySelectorAll('button:not(:disabled),input:not(:disabled)')].filter(el => el.getClientRects().length);
+        const first = controls[0], last = controls[controls.length - 1];
+        if (!modal.contains(document.activeElement) || (event.shiftKey && document.activeElement === first)) {
+          event.preventDefault(); (event.shiftKey ? last : first)?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    }, true);
+    function refreshResetModalValues() {
+      const dd = currentData?.daily_drawdown;
+      document.getElementById('modal-current-bal').textContent = Number.isFinite(dd?.balance) ? '$'+dd.balance.toFixed(2) : 'unbekannt';
+      document.getElementById('modal-current-dd').textContent = Number.isFinite(dd?.pct) && Number.isFinite(dd?.loss_usd) ? `${dd.pct.toFixed(2)}% (-$${dd.loss_usd.toFixed(2)})` : 'unbekannt';
+      document.getElementById('modal-reset-status-row').classList.toggle('hidden', !dd?.manual_active);
+      document.getElementById('modal-reset-status-text').textContent = dd?.manual_active ? `Aktiv seit ${dd.reset_time_str || ''} @ ${Number.isFinite(dd.reset_balance) ? '$'+dd.reset_balance.toFixed(2) : 'unbekannt'}` : '';
+    }
     function openDrawdownResetModal() {
-      if (!currentData || currentData.account.id !== activeAccount) return;
+      if (!accountActionsReady()) return;
       document.getElementById('reset-description').textContent = activeAccount==='goldm15' ? 'Konto '+accounts[activeAccount].login+': Dieser Reset betrifft ausschließlich die Dashboard-Anzeige. Er verändert weder die feste $350-Tagesgrenze noch die EA-Baseline oder bestehende Handelssperren.' : 'Setzt den Tagesverlust und die High-Water-Mark auf 0.00% zurück. Trades vor dem Reset werden für die heutige Drawdown-Berechnung ignoriert.';
       document.getElementById('reset-help').textContent = activeAccount==='goldm15' ? 'Referenzwert nur für die Anzeige; der tatsächliche EA-Schutzstatus steht separat im Dashboard.' : 'Die Baseline, ab der die 3.5% EA- und 4.0% Broker-Notbremse gerechnet wird.';
       const modal = document.getElementById('dd-reset-modal');
       const input = document.getElementById('dd-reset-input');
       const currentBal = (currentData && currentData.daily_drawdown) ? currentData.daily_drawdown.balance : 10000.0;
       
-      document.getElementById('modal-current-bal').innerText = `$${currentBal.toFixed(2)}`;
-      if (currentData && currentData.daily_drawdown) {
-        const dd = currentData.daily_drawdown;
-        document.getElementById('modal-current-dd').innerText = `${dd.pct.toFixed(2)}% (-$${dd.loss_usd.toFixed(2)})`;
-        if (dd.manual_active) {
-          document.getElementById('modal-reset-status-row').classList.remove('hidden');
-          document.getElementById('modal-reset-status-text').innerText = `Aktiv seit ${dd.reset_time_str || ''} @ $${dd.reset_balance ? dd.reset_balance.toFixed(2) : ''}`;
-        } else {
-          document.getElementById('modal-reset-status-row').classList.add('hidden');
-        }
-      }
+      refreshResetModalValues();
       
       if (!input.value || parseFloat(input.value) <= 0) {
         input.value = currentBal.toFixed(2);
       }
+      resetReturnFocus = document.activeElement;
       modal.classList.remove('hidden');
+      for (const region of document.querySelectorAll('body > nav,body > header,#account-content')) region.inert = true;
+      input.focus();
     }
 
     function closeDrawdownResetModal() {
       document.getElementById('dd-reset-modal').classList.add('hidden');
+      for (const region of document.querySelectorAll('body > nav,body > header,#account-content')) region.inert = false;
+      if (resetReturnFocus?.isConnected) resetReturnFocus.focus();
+      resetReturnFocus = null;
     }
 
     function setModalInputBal(val) {
@@ -2762,7 +3091,12 @@ HTML_CONTENT = """<!DOCTYPE html>
     }
 
     async function executeDrawdownReset() {
-      const val = parseFloat(document.getElementById('dd-reset-input').value) || 10000.0;
+      const input = document.getElementById('dd-reset-input');
+      const val = Number(input.value);
+      const invalid = !input.value.trim() || !Number.isFinite(val) || val <= 0;
+      input.setAttribute('aria-invalid', String(invalid));
+      document.getElementById('dd-reset-error').textContent = invalid ? 'Bitte einen endlichen, positiven Referenzwert in USD eingeben.' : '';
+      if (invalid) { input.focus(); return; }
       try {
         const res = await accountFetch('/api/reset_drawdown', {
           method: 'POST',
@@ -2805,23 +3139,45 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
     }
 
-    window.onload = async () => {
-      initTheme();
-      initChart();
-      // Apply theme to freshly created chart instance
-      applyTheme(localStorage.getItem('titan_theme') || 'dark');
+    let bootstrapBusy = false, bootstrapAttempt = 0;
+    async function bootstrapAccounts() {
+      if (bootstrapBusy || document.hidden) return;
+      bootstrapBusy = true;
       try {
-        const response = await fetch(BASE_PATH + '/api/accounts');
+        const response = await DashboardRuntime.request(BASE_PATH + '/api/accounts');
         if (!response.ok) throw new Error('Kontoliste nicht verfügbar');
         const data = await response.json();
+        if (!Array.isArray(data.accounts) || !data.accounts.length || !data.accounts.some(a => a.id === data.default)) throw new Error('Kontoliste ungültig');
         accounts = Object.fromEntries(data.accounts.map(a => [a.id,a]));
         const journalSelect = document.getElementById('journal-strategy-filter');
         if (journalSelect) journalSelect.value = journalFilter;
         void refreshJournal();
         const saved = localStorage.getItem('gold_dashboard_account');
         await switchAccount(accounts[saved] ? saved : data.default);
-      } catch(error) { reportAccountError(error, accountGeneration); }
-      setInterval(updateStatus, 1500); // 1.5s live status update
+        bootstrapAttempt = 0;
+      } catch(error) {
+        reportAccountError(error, accountGeneration);
+        setTimeout(() => { void bootstrapAccounts(); }, Math.min(15000, 1000 * 2 ** Math.min(bootstrapAttempt++, 4)));
+      } finally { bootstrapBusy = false; }
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        if (!Object.keys(accounts).length) void bootstrapAccounts();
+        else { if (!accountIsFresh()) markStatusStale(); void updateStatus(); void refreshJournal(); }
+      }
+    });
+    window.onload = async () => {
+      clearAccountView(); // Unknown state also when the first accounts request fails.
+      initTheme();
+      try { initChart(); }
+      catch (error) { console.warn('Optionale Chartinitialisierung fehlgeschlagen:', error); }
+      // Apply theme to freshly created chart instance
+      applyTheme(localStorage.getItem('titan_theme') || 'dark');
+      await bootstrapAccounts();
+      setInterval(() => {
+        if (lastStatusSuccess && !accountIsFresh()) markStatusStale();
+        if (!document.hidden) void updateStatus();
+      }, 1500); // freshness watchdog also expires a suspended poll
       setInterval(loadCandles, 5000);   // 5s smooth candle update (no reset)
       setInterval(() => { void refreshJournal(); }, 30000); // independent, low-rate journal sync
     };

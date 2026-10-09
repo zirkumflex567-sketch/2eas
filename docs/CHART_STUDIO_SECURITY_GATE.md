@@ -1,5 +1,7 @@
 # Chart Studio / MT5 write-security release gate
 
+**Aktueller Stand (09.10.2026):** Auditfix PR #14 schützt die drei bestehenden Position-/Reset-POSTs mit browserbezogener lokaler Capability, CSRF, Host/Origin und frischen Quellen; Stop-/Freeze-/Tickprüfung und Pflichtaccount sind umgesetzt. Die nachstehende Tabelle beschreibt den historischen Ausgangscommit und ist kein aktueller Befund dieser bereits reparierten Lücken. Remote-Login/Rollen, tatsächliche Tunnel-/Proxy-Abnahme, versionierte Vorschläge/Idempotenz/Readback, Demo-E2E und neue Chart-Writes bleiben offen. Siehe [OPEN_TASKS.md](OPEN_TASKS.md), [DASHBOARD_HARDENING.md](DASHBOARD_HARDENING.md) und [MAIN_CONSOLIDATION.md](MAIN_CONSOLIDATION.md).
+
 **Audit date:** 2026-10-09. **Status: BLOCKED — source inspection only, no server/tunnel verification.**
 
 Scope of this review: `app.py` and `account_gateway.py` at main
