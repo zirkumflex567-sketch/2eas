@@ -1391,3 +1391,33 @@ body.theme-stone #stone-fx-panel button:focus-visible {
 .cs-server-sync button:hover{filter:brightness(1.17)}
 .cs-server-sync p{margin:9px 0 0;color:#b7cbd4;overflow-wrap:anywhere}
 @media(max-width:650px){.cs-server-sync-row>*{flex:1 1 110px}}
+
+/* Chart Studio multi-instance moving-average editor: read-only chart overlays. */
+.cs-ma-editor{margin:14px 0;padding:13px;border:1px solid #5c8495;border-radius:10px;
+ background:linear-gradient(122deg,rgba(10,26,39,.97),rgba(30,49,63,.93));
+ color:#e0edf7;font:11px/1.45 ui-monospace,Consolas,monospace}
+.cs-ma-header{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;
+ align-items:center;letter-spacing:.07em;color:#f6d69d}
+.cs-ma-header strong{font-size:12px}
+.cs-ma-header span{color:#aacbd7}
+.cs-ma-editor>p{color:#b5d2dd;margin:8px 0 11px}
+.cs-ma-presets{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px}
+.cs-ma-editor button{min-height:31px;padding:6px 10px;color:#e7f7ff;background:#214251;
+ border:1px solid #6b90a0;border-radius:5px;cursor:pointer;white-space:nowrap}
+.cs-ma-editor button:hover{border-color:#8cdfe8;filter:brightness(1.12)}
+.cs-ma-items{display:flex;flex-direction:column;gap:8px}
+.cs-ma-instance{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;padding:10px;
+ border:1px solid #405e6a;border-radius:7px;background:rgba(3,17,28,.65)}
+.cs-ma-instance label{display:flex;flex-direction:column;gap:4px;color:#99b8c5;
+ flex:1 1 90px;min-width:70px}
+.cs-ma-instance label:first-child{flex:0 0 56px}
+.cs-ma-instance label:last-of-type{flex:2 1 160px}
+.cs-ma-instance input:not([type=checkbox]),.cs-ma-instance select{box-sizing:border-box;
+ width:100%;min-width:0;height:32px;padding:3px 5px;
+ background:#102735;color:#e7f7ff;border:1px solid #587e8e;border-radius:4px}
+.cs-ma-instance input[type=color]{padding:2px}
+.cs-ma-instance input[type=checkbox]{width:19px;height:23px;accent-color:#6cd9e0}
+.cs-ma-instance button[data-action=remove]{border-color:#915c67;color:#ffd8da}
+.cs-ma-message{min-height:16px;margin:9px 0 0;color:#b8dadc}
+@media(max-width:700px){.cs-ma-instance{gap:7px}.cs-ma-instance label{flex:1 1 90px}
+ .cs-ma-instance button{flex:1 1 110px}}

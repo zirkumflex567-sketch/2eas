@@ -66,9 +66,9 @@ def _number(value: Any, label: str, *, integer: bool = False) -> float | int:
 
 def validate_document(raw: Any) -> dict:
     """Strict version-1 JSON input; never store executable markup or arbitrary keys."""
-    if not isinstance(raw, dict) or set(raw) != {
-        "schemaVersion", "drawings", "options", "indicators", "timeframe"
-    } or raw["schemaVersion"] != 1:
+    required = {"schemaVersion", "drawings", "options", "indicators", "timeframe"}
+    allowed = required | {"movingAverages"}
+    if not isinstance(raw, dict) or not required.issubset(raw) or not set(raw).issubset(allowed) or type(raw["schemaVersion"]) is not int or raw["schemaVersion"] != 1:
         raise StoreError("Nicht unterstütztes Workspace-Schema.")
     drawings = raw["drawings"]
     if not isinstance(drawings, list) or len(drawings) > MAX_DRAWINGS:
@@ -124,6 +124,43 @@ def validate_document(raw: Any) -> dict:
         raise StoreError("Unbekannter Timeframe.")
     safe = {"schemaVersion": 1, "drawings": out, "options": options,
             "indicators": clean_indicators, "timeframe": tf}
+    # Backward-compatible extension: historic schema-v1 documents omit this key.
+    if "movingAverages" in raw:
+        entries = raw["movingAverages"]
+        if not isinstance(entries, list) or len(entries) > 16:
+            raise StoreError("Maximal 16 gleitende Durchschnitte erlaubt.")
+        ids = set()
+        allowed_ma = {"id", "type", "period", "source", "color",
+                      "lineWidth", "visible", "label"}
+        types = {"EMA", "SMA", "WMA"}
+        sources = {"close", "open", "high", "low", "hl2", "hlc3", "ohlc4"}
+        clean_ma = []
+        for item in entries:
+            if not isinstance(item, dict) or set(item) != allowed_ma:
+                raise StoreError("Unbekannte Eigenschaften einer MA-Linie.")
+            ident = item["id"]
+            if not isinstance(ident, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", ident):
+                raise StoreError("Ungültige MA-Identität.")
+            if ident in ids:
+                raise StoreError("Doppelte MA-Identität.")
+            ids.add(ident)
+            if not isinstance(item["type"], str) or item["type"] not in types:
+                raise StoreError("Unbekannter Moving-Average-Typ.")
+            if not isinstance(item["source"], str) or item["source"] not in sources:
+                raise StoreError("Unbekannte MA-Preisquelle.")
+            if type(item["period"]) is not int or not 2 <= item["period"] <= 500:
+                raise StoreError("MA-Periode muss zwischen 2 und 500 liegen.")
+            if type(item["lineWidth"]) is not int or not 1 <= item["lineWidth"] <= 4:
+                raise StoreError("Linienbreite außerhalb 1–4.")
+            if type(item["visible"]) is not bool:
+                raise StoreError("MA-Sichtbarkeit muss boolesch sein.")
+            if not isinstance(item["color"], str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", item["color"]):
+                raise StoreError("Ungültige MA-Farbe.")
+            label = item["label"]
+            if not isinstance(label, str) or len(label) > 40 or any(ord(c) < 32 for c in label):
+                raise StoreError("Ungültiger MA-Name.")
+            clean_ma.append(item.copy())
+        safe["movingAverages"] = clean_ma
     encoded = json.dumps(safe, ensure_ascii=False, allow_nan=False,
                          separators=(",", ":")).encode("utf-8")
     if len(encoded) > MAX_DOCUMENT_BYTES:

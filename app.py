@@ -1102,6 +1102,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="static/chart-studio-indicators.js"></script>
   <script src="static/chart-studio-server-sync.js"></script>
   <script src="static/chart-studio-drawing-geometry.js"></script>
+  <script src="static/chart-studio-averages.js"></script>
   <script src="static/chart-studio-beta.js"></script>
   <script src="static/stone-celebrations.js"></script>
   <style>

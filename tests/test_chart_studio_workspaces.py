@@ -161,6 +161,34 @@ class SqliteLayoutTests(unittest.TestCase):
                 doc["drawings"] = [broken]
                 validate_document(doc)
 
+    def test_multi_average_configs_backward_compatible_and_strict(self):
+        cfg = {"id":"ma1","type":"EMA","period":34,"source":"hlc3",
+               "color":"#68dfff","lineWidth":3,"visible":True,"label":"Trend 34"}
+        old = example()
+        self.assertNotIn("movingAverages", validate_document(old))
+        current = {**old, "movingAverages":[cfg]}
+        self.assertEqual(validate_document(current)["movingAverages"], [cfg])
+        saved = self.store.put("local-owner","titan","XAUUSD","Multi",current,0)
+        self.assertEqual(saved["revision"],1)
+        self.assertEqual(self.store.get("local-owner","titan","XAUUSD","Multi")["document"],current)
+        for bad in [
+            [cfg, cfg],
+            [{**cfg,"period":501}],
+            [{**cfg,"period":2.2}],
+            [{**cfg,"color":"red"}],
+            [{**cfg,"source":"foo"}],
+            [{**cfg,"visible":"true"}],
+            [{**cfg,"lineWidth":5}],
+            [{**cfg,"label":"x"*41}],
+            [{**cfg,"onclick":"alert(1)"}],
+            [{**cfg,"id":"../insecure"}],
+            [cfg]*17
+        ]:
+            with self.subTest(case=str(bad)[:50]),self.assertRaises(StoreError):
+                validate_document({**old,"movingAverages":bad})
+        with self.assertRaises(StoreError):
+            validate_document({**old,"movingAverages":"no"})
+
 
 class ApiAccessTests(unittest.TestCase):
     def setUp(self):
