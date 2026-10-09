@@ -26,7 +26,7 @@ const fs=require("node:fs"),path=require("node:path");
     assert.equal(req.symbol,"XAUUSD");
     await route.fulfill({status:200,contentType:"application/json",
       body:JSON.stringify({account:"titan",canExecute:false,pnlAtSl:{amount:-80,currency:"USD"},
-      pnlAtTp:{amount:160,currency:"USD"},margin:{amount:95,currency:"USD"},riskRewardRatio:2})});
+      pnlAtTp:{amount:160,currency:"USD"},margin:{amount:95,currency:"USD"},riskRewardRatio:2,tickSize:0.01})});
   });
   await page.goto("http://127.0.0.1:8864/static/chart-studio-fixture.html",{waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartSmokeReady===true);
@@ -79,8 +79,29 @@ const fs=require("node:fs"),path=require("node:path");
   await page.locator('[name="tpPrice"]').fill("4120");
   await page.locator('#cs-scenario-form button[type="submit"]').click();
   await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER"));
-  assert.equal(requests.length,1);
-  assert.ok(requests.every(url=>url.includes("/api/chart/v1/scenarios/preview")));
+  // Drag only a VIRTUAL plan stop: the scenario API remains read-only.
+  const beforePlan=await page.evaluate(()=>ChartStudioBeta.getState().scenario.slPrice);
+  const planY=await page.evaluate(()=>candleSeries.priceToCoordinate(4100-10));
+  const pbox=await page.locator("canvas.cs-beta-canvas").boundingBox();
+  assert.ok(Number.isFinite(planY)&&pbox&&planY>=0&&planY<pbox.height,
+    "Plan stop handle must be inside visible price pane");
+  await page.locator('[data-cmd="drag-plan"]').click();
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().tool),"plan");
+  const px=pbox.x+pbox.width*.45,py=pbox.y+planY;
+  await page.mouse.move(px,py);
+  await page.mouse.down();
+  await page.mouse.move(px,py-27,{steps:5});
+  await page.mouse.up();
+  await page.waitForFunction(()=>{
+    const state=ChartStudioBeta.getState();
+    return state.scenario&&state.scenario.slPrice!==4090&&
+      document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER");
+  },{timeout:15000});
+  const afterPlan=await page.evaluate(()=>ChartStudioBeta.getState().scenario.slPrice);
+  assert.notEqual(afterPlan,beforePlan);
+  assert.ok(requests.length>=2);
+  assert.ok(requests.every(url=>url.includes("/api/chart/v1/scenarios/preview")),
+    "No broker modify/order-send request may be used during drag");
   assert.deepEqual(consoleErrors,[]);
   const output=path.join("output","visual-smoke");
   fs.mkdirSync(output,{recursive:true});

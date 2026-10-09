@@ -1370,3 +1370,9 @@ body.theme-stone #stone-fx-panel button:focus-visible {
  .cs-indicator-pane{height:147px}
  .cs-indicator-pane-title{font-size:9px}
 }
+
+/* Broker-verified What-if grip: visual draft only, never a live stop button. */
+.cs-scenario button[data-cmd="drag-plan"][aria-pressed="true"]{
+ background:linear-gradient(140deg,#4b351e,#142e39);color:#fff4c3;
+ border-color:#ffbd63;box-shadow:0 0 14px rgba(242,177,59,.25);
+}

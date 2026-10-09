@@ -3,9 +3,9 @@
    No broker write calls or chart trading mutations in this module. */
 (()=>{
 "use strict";
-const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","trend","rect","fib"];
+const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","trend","rect","fib","plan"];
 const ratios=[0,.236,.382,.5,.618,.786,1];
-let s=null,requestId=0,scenarioGeneration=0;
+let s=null,requestId=0,scenarioGeneration=0,planTimer=null;
 const json=v=>JSON.parse(JSON.stringify(v));
 const get=(k,df)=>{try{const v=JSON.parse(localStorage.getItem(prefix+k));return v??df}catch(_){return df}};
 const save=(k,v)=>{try{localStorage.setItem(prefix+k,JSON.stringify(v))}catch(_){}};
@@ -51,11 +51,13 @@ function undo(){if(!s?.undo.length)return;s.redo.push(json(s.draw));s.draw=s.und
 function redo(){if(!s?.redo.length)return;s.undo.push(json(s.draw));s.draw=s.redo.pop();persist()}
 function setTool(kind){
  if(!s||!kinds.includes(kind))return;
+ if(s.tool==="plan"&&kind!=="plan")cancelPlanPreview();
  s.tool=kind;s.begin=null;s.preview=null;s.drag=null;
  s.canvas.style.pointerEvents=kind==="cursor"?"none":"auto";
- s.canvas.style.cursor=kind==="edit"?"grab":"crosshair";
+ s.canvas.style.cursor=kind==="edit"?"grab":kind==="plan"?"ns-resize":"crosshair";
+ s.panel.querySelector('[data-cmd="drag-plan"]')?.setAttribute("aria-pressed",String(kind==="plan"));
  s.panel.querySelectorAll("[data-tool]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.tool===kind)));
- updateMessage(kind==="cursor"?"Navigation":kind==="edit"?"Griff anklicken und ziehen":kind==="horizontal"?"Preislinie: einmal klicken":"Zwei Anker setzen · Esc abbrechen");
+ updateMessage(kind==="cursor"?"Navigation":kind==="edit"?"Griff anklicken und ziehen":kind==="horizontal"?"Preislinie: einmal klicken":kind==="plan"?"PLAN: SL oder TP am Chart ziehen · nur Broker-Vorschau":"Zwei Anker setzen · Esc abbrechen");
  requestDraw();
 }
 function showOpts(){
@@ -136,6 +138,12 @@ function drawScenario(ctx,d){
  ctx.fillText("PLAN SL "+plan.slPrice.toFixed(2),5,Math.max(12,Math.min(d.h-4,sl-5)));
  ctx.strokeStyle="#6aefbd";ctx.beginPath();ctx.moveTo(0,tp);ctx.lineTo(d.w-56,tp);ctx.stroke();
  ctx.fillText("PLAN TP "+plan.tpPrice.toFixed(2),5,Math.max(12,Math.min(d.h-4,tp-5)));
+ if(s.tool==="plan"){
+  for(const [py,color] of [[sl,"#ff8c98"],[tp,"#70ecc5"]]){
+   ctx.fillStyle=color;ctx.strokeStyle="#0a2431";ctx.lineWidth=2;
+   ctx.fillRect(d.w*.45-8,py-8,16,16);ctx.strokeRect(d.w*.45-8,py-8,16,16);
+  }
+ }
  ctx.restore();
 }
 function render(){
@@ -150,10 +158,49 @@ function render(){
  if(s.begin&&s.preview)drawObject(ctx,{kind:s.tool,anchors:[s.begin,s.preview],preview:true},d);
 }
 function xy(e){const r=s.canvas.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top}}
+function cancelPlanPreview(){
+ if(planTimer){clearTimeout(planTimer);planTimer=null}
+ if(s?.planOriginal){
+  s.scenario=json(s.planOriginal);
+  const form=s.panel.querySelector("#cs-scenario-form");
+  if(form)for(const key of ["slPrice","tpPrice"])
+   form.elements.namedItem(key).value=String(s.scenario[key]);
+ }
+ if(s){s.planDrag=null;s.planOriginal=null}
+ scenarioGeneration++;requestDraw();
+ try{window.StoneCelebration?.applyChartSettings()}catch(_){}
+}
+function validScenario(p){
+ return p&&p.volumeLots>0&&p.entryPrice>0&&p.slPrice>0&&p.tpPrice>0&&
+ (p.side==="BUY"?p.slPrice<p.entryPrice&&p.entryPrice<p.tpPrice:
+  p.tpPrice<p.entryPrice&&p.entryPrice<p.slPrice);
+}
+function previewPlan(immediate=false){
+ if(!s?.scenario||!validScenario(s.scenario))return;
+ if(planTimer)clearTimeout(planTimer);
+ planTimer=setTimeout(()=>{
+  planTimer=null;
+  s.panel.querySelector("#cs-scenario-form")?.requestSubmit();
+ },immediate?0:260);
+}
+function findPlanGrip(x,y){
+ if(!s?.scenario||!s.planTickSize)return null;
+ const sl=s.series.priceToCoordinate(s.scenario.slPrice),tp=s.series.priceToCoordinate(s.scenario.tpPrice);
+ const dsl=Number.isFinite(sl)?Math.abs(y-sl):Infinity,dtp=Number.isFinite(tp)?Math.abs(y-tp):Infinity;
+ if(Math.min(dsl,dtp)>19)return null;
+ return dsl<=dtp?"slPrice":"tpPrice";
+}
 function closestHandle(x,y){for(let i=s.draw.length-1;i>=0;i--)for(let j=0;j<s.draw[i].anchors.length;j++){const p=project(s.draw[i].anchors[j]);if(p&&Math.hypot(p.x-x,p.y-y)<11)return {i,j}}return null}
 function pointerdown(e){
  if(!s||s.tool==="cursor"||e.button!==0)return;
  const {x,y}=xy(e),p=unproject(x,y);if(!p)return;
+ if(s.tool==="plan"){
+  const grip=findPlanGrip(x,y);if(!grip){updateMessage("PLAN: SL- oder TP-Griff anklicken.");return}
+  s.planOriginal=json(s.scenario);s.planDrag=grip;
+  s.canvas.setPointerCapture(e.pointerId);
+  try{window.StoneChartFX?.configure({enabled:false,ambient:false})}catch(_){}
+  e.preventDefault();return;
+ }
  if(s.tool==="edit"){
   const hit=closestHandle(x,y);if(!hit)return;
   snapshot();s.drag=hit;s.canvas.setPointerCapture(e.pointerId);e.preventDefault();return;
@@ -166,14 +213,34 @@ function pointerdown(e){
 function pointermove(e){
  if(!s||s.tool==="cursor")return;
  const {x,y}=xy(e),p=unproject(x,y);if(!p)return;
+ if(s.tool==="plan"&&s.planDrag&&s.scenario){
+  const tick=s.planTickSize;
+  const value=Number((Math.round(p.price/tick)*tick).toFixed(8));
+  const next={...s.scenario,[s.planDrag]:value};
+  if(!validScenario(next)){s.panel.querySelector("#cs-scenario-result").textContent="PLAN ungültig: SL/TP liegt auf der falschen Entry-Seite.";return}
+  s.scenario=next;
+  s.panel.querySelector("#cs-scenario-form").elements.namedItem(s.planDrag).value=String(value);
+  s.panel.querySelector("#cs-scenario-result").textContent="PLAN-VORSCHAU · USD-Risiko wird vom Broker neu berechnet … KEINE ORDER";
+  previewPlan();requestDraw();return;
+ }
  if(s.drag){s.draw[s.drag.i].anchors[s.drag.j]=p;requestDraw()}
  else if(s.begin){s.preview=p;requestDraw()}
 }
-function pointerup(e){if(!s?.drag)return;s.drag=null;persist();try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){}}
-function account(id){if(!s)return;s.account=id;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.scenario=null;s.begin=null;s.preview=null;s.drag=null;scenarioGeneration++;
+function pointerup(e){
+ if(!s)return;
+ if(s.planDrag){
+  s.planDrag=null;
+  previewPlan(true);requestDraw();
+  try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){}
+  try{window.StoneCelebration?.applyChartSettings()}catch(_){}
+  return;
+ }
+ if(!s.drag)return;s.drag=null;persist();try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){}
+}
+function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;scenarioGeneration++;if(s.tool==="plan")setTool("cursor");
  window.ChartStudioIndicators?.switchAccount(id);
  showOpts();refreshProfiles();updateSeries();requestDraw()}
-function timeframe(tf){if(s){s.tf=tf;s.begin=null;s.preview=null;s.drag=null;
+function timeframe(tf){if(s){cancelPlanPreview();s.tf=tf;s.begin=null;s.preview=null;s.drag=null;if(s.tool==="plan")setTool("cursor");
  window.ChartStudioIndicators?.updateBars([]);
  requestDraw()}}
 function updateCandles(c){if(s&&Array.isArray(c)){s.candles=c;updateSeries();
@@ -210,6 +277,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  '<label>TP <input type="number" name="tpPrice" step="any" required></label>'+
  '<button type="button" data-cmd="quote">Bid/Ask übernehmen</button>'+
  '<button type="submit">Broker-Vorschau berechnen</button>'+
+ '<button type="button" data-cmd="drag-plan" aria-pressed="false">↕ SL/TP-Plan am Chart ziehen</button>'+
  '<button type="button" data-cmd="clear-plan">Plan ausblenden</button>'+
  '</form><output id="cs-scenario-result" role="status" aria-live="polite">Nur Schätzung. Keine Brokeränderungen.</output></details>';
  host.parentElement.insertAdjacentElement("beforebegin",panel);
@@ -217,7 +285,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  host.style.position="relative";host.appendChild(canvas);
  s={chart,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
   account:accountId,tf,tool:"cursor",begin:null,preview:null,drag:null,
-  draw:[],undo:[],redo:[],candles:[],positions:[],scenario:null,opts:optsDefault(),extras:{}};
+  draw:[],undo:[],redo:[],candles:[],positions:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{}};
  try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}
  catch (err) {console.warn("Chart Studio indicator pane could not load:",err);}
  account(accountId);
@@ -227,7 +295,11 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   if(b.dataset.tool){setTool(b.dataset.tool);return}
   if(b.dataset.opt){s.opts[b.dataset.opt]=!s.opts[b.dataset.opt];save(optKey(),s.opts);showOpts();updateSeries();requestDraw();return}
   if(b.dataset.cmd==="quote")return;
-  if(b.dataset.cmd==="clear-plan"){s.scenario=null;scenarioGeneration++;requestDraw();const out=panel.querySelector("#cs-scenario-result");if(out)out.textContent="Plan entfernt (keine Brokeraktion).";return}
+  if(b.dataset.cmd==="drag-plan"){
+   if(!s.scenario||!s.planTickSize){updateMessage("Zuerst eine gültige MT5-What-if-Vorschau berechnen.");return}
+   setTool(s.tool==="plan"?"cursor":"plan");return;
+  }
+  if(b.dataset.cmd==="clear-plan"){cancelPlanPreview();s.scenario=null;s.validatedScenario=null;s.planTickSize=null;if(s.tool==="plan")setTool("cursor");requestDraw();const out=panel.querySelector("#cs-scenario-result");if(out)out.textContent="Plan entfernt (keine Brokeraktion).";return}
   if(b.dataset.cmd==="save-profile")saveProfile();
   if(b.dataset.cmd==="load-profile")loadProfile();
   if(b.dataset.cmd==="delete-profile")deleteProfile();
@@ -249,6 +321,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
    if(nonce!==scenarioGeneration||acc!==s.account)return;
    if(!response.ok||data.account!==acc)throw Error(typeof data.detail==="string"?data.detail:"MT5-Daten ungültig.");
    fields.entryPrice.value=fields.side.value==="BUY"?data.ask:data.bid;
+   if(Number.isFinite(Number(data.tickSize))&&Number(data.tickSize)>0)s.planTickSize=Number(data.tickSize);
    output.textContent="MT5-Quote übernommen. SL/TP eingeben, Vorschau ist read-only.";
   }catch(e){if(nonce===scenarioGeneration)output.textContent="Quote fehlt: "+e.message}
  });
@@ -269,20 +342,33 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
    if(!response.ok||result.account!==account||result.canExecute!==false){
     const detail=result.detail;throw Error(typeof detail==="string"?detail:detail?.message||"Broker-Rechenfehler");
    }
-   s.scenario=payload;requestDraw();
+   s.scenario=payload;s.validatedScenario=json(payload);s.planOriginal=null;
+   if(Number.isFinite(Number(result.tickSize))&&Number(result.tickSize)>0)s.planTickSize=Number(result.tickSize);
+   requestDraw();
    const loss=result.pnlAtSl.amount,reward=result.pnlAtTp.amount,cur=result.pnlAtSl.currency;
    output.textContent="PLAN · Stop "+loss+" "+cur+" / Ziel +"+reward+" "+cur+
     " · R:R "+result.riskRewardRatio+" · Margin "+result.margin.amount+" "+cur+
     (cur==="USD"?"":" · USD-Konversion nicht verfügbar")+
     " · GROSS vor Gebühren/Slippage · KEINE ORDER";
-  }catch(err){if(nonce===scenarioGeneration){s.scenario=null;requestDraw();output.textContent="Nicht verfügbar: "+err.message}}
+  }catch(err){if(nonce===scenarioGeneration){
+    if(s.validatedScenario||s.planOriginal){
+     s.scenario=json(s.validatedScenario||s.planOriginal);
+     for(const key of ["slPrice","tpPrice"])fields[key].value=String(s.scenario[key]);
+     s.planOriginal=null;
+    }else{s.scenario=null}
+    requestDraw();output.textContent="Nicht verfügbar: "+err.message;
+   }}
  });
  canvas.addEventListener("pointerdown",pointerdown);canvas.addEventListener("pointermove",pointermove);
- canvas.addEventListener("pointerup",pointerup);canvas.addEventListener("pointercancel",pointerup);
- window.addEventListener("keydown",e=>{if(s&&e.key==="Escape"&&s.tool!=="cursor"){s.begin=null;s.preview=null;s.drag=null;setTool("cursor")}});
+ canvas.addEventListener("pointerup",pointerup);
+ canvas.addEventListener("pointercancel",()=>{cancelPlanPreview();s.drag=null;s.begin=null;s.preview=null;setTool("cursor")});
+ window.addEventListener("keydown",e=>{if(s&&e.key==="Escape"&&s.tool!=="cursor"){
+  cancelPlanPreview();s.begin=null;s.preview=null;s.drag=null;setTool("cursor")
+ }});
  chart.timeScale().subscribeVisibleLogicalRangeChange(requestDraw);
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();
 }
-window.ChartStudioBeta=Object.freeze({mount,account,timeframe,updateCandles,updatePositions,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,drawings:json(s.draw),options:json(s.opts)}:null});
+window.ChartStudioBeta=Object.freeze({mount,account,timeframe,updateCandles,updatePositions,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,drawings:json(s.draw),options:json(s.opts),
+ scenario:s.scenario?json(s.scenario):null,tool:s.tool}:null});
 })();

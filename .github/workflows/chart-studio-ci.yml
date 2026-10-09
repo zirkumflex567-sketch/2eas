@@ -4,6 +4,7 @@ on:
     branches:
       - test/chart-studio-implementation
       - test/chart-studio-phase2
+      - test/chart-studio-drag-preview
   workflow_dispatch:
 permissions:
   contents: read

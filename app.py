@@ -854,6 +854,7 @@ def api_chart_preview(req: ChartScenarioPreviewRequest, account: str):
     except PreviewError as exc:
         raise HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)}) from exc
     result["account"] = account
+    result["tickSize"] = float(sym.trade_tick_size)
     return result
 
 
