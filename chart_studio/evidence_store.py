@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import sqlite3
 import stat
+import struct
 import subprocess
 import threading
 import time
@@ -146,6 +147,7 @@ class EvidenceStore:
         self._file_identity = None
         self._root_identity = None
         self._generation = None
+        self._verified_contents = None
         self._loss = {}
         self._lock = threading.RLock()
         if self.root:
@@ -248,7 +250,7 @@ class EvidenceStore:
                 if len(rows) != 1 or rows[0]['singleton'] != 1 or rows[0]['schemaVersion'] != 1:
                     raise StoreUnavailable()
                 generation = rows[0]['generation']
-                if str(uuid.UUID(generation)) != generation:
+                if not isinstance(generation, str) or str(uuid.UUID(generation)) != generation:
                     raise StoreUnavailable()
                 if self._generation and self._generation != generation:
                     raise StoreReplaced()
@@ -308,6 +310,38 @@ class EvidenceStore:
         if actual != expected:
             raise StoreUnavailable()
         return record
+
+    def _verify_contents(self, db):
+        """Verify before trusting any filtering column, across the read snapshot.
+
+        Every read streams all actual canonical bytes, stored hashes, metadata,
+        and reference edges into a digest. Only an identical previously fully
+        validated snapshot can reuse validation. The cache is a single digest,
+        never an mtime/generation shortcut or a growing collection of records.
+        A change requires complete model/hash/metadata/reference validation.
+        The database's 96 MiB and 100,000-record caps bound this scan; returned
+        pages remain indexed, offsetless, and independently bounded.
+        """
+        digest = hashlib.sha256()
+        count = 0
+        for row in db.execute('SELECT * FROM records ORDER BY seq'):
+            count += 1
+            raw = row['canonical_json']
+            if count > RECORD_LIMIT or row['seq'] < 1 or not isinstance(raw, bytes) or len(raw)>models.MAX_BYTES:
+                raise StoreUnavailable()
+            metadata = models.canonical_bytes([row[key] for key in row.keys() if key != 'canonical_json'])
+            digest.update(b'R' + struct.pack('>Q', len(metadata)) + metadata)
+            digest.update(b'B' + struct.pack('>Q', len(raw)) + raw)
+        for source, target in db.execute('SELECT source_seq,target_seq FROM refs ORDER BY source_seq,target_seq'):
+            digest.update(b'F' + struct.pack('>qq', source, target))
+        fingerprint = digest.digest()
+        if fingerprint == self._verified_contents:
+            return
+        if db.execute('PRAGMA foreign_key_check').fetchone():
+            raise StoreUnavailable()
+        for row in db.execute('SELECT * FROM records ORDER BY seq'):
+            self._checked_record(db, row)
+        self._verified_contents = fingerprint
 
     def append(self, context, envelope):
         """Internal trusted-provider entry point; no ingestion route exists."""
@@ -400,6 +434,7 @@ class EvidenceStore:
                 if db is None:
                     return result
                 db.execute('BEGIN')
+                self._verify_contents(db)
                 pin = db.execute('SELECT COALESCE(MAX(seq),0) FROM records').fetchone()[0] if pinned is None else pinned
                 where = ['account=?', 'terminal=?', 'kind=?', 'seq<=?']
                 args = [context.account_id, context.terminal_identity_hash, kind, pin]
@@ -428,11 +463,7 @@ class EvidenceStore:
                     size += len(row['canonical_json'])
                     returned.append(decoded)
                     result['last'] = [row['event_us'], row['id'], row['revision'], row['seq']]
-                # Availability describes actual stored provenance in this scope,
-                # not the current page (which can be empty for a narrow range).
-                provenance = {row[0] for row in db.execute("SELECT DISTINCT json_extract(canonical_json,'$.provenance') FROM records WHERE account=? AND terminal=? AND kind=? AND seq<=?", (context.account_id, context.terminal_identity_hash, kind, pin))}
-                if not provenance <= {'RECORDED', 'RECONSTRUCTED'}:
-                    raise StoreUnavailable()
+                provenance = {record['provenance'] for record in returned}
                 result.update(records=returned, hasMore=has_more, generation=self._generation, pinnedMaxSeq=pin, storeState='INITIALIZED')
                 if provenance:
                     result['availability'] = next(iter(provenance)) if len(provenance) == 1 else 'MIXED'

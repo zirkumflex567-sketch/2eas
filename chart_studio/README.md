@@ -59,8 +59,13 @@ reviewed trusted provider, with transactional correction/reference validation
 and immutable originals. There is no HTTP ingestion endpoint, EA recorder,
 automatic snapshot capture, current original decision history, or renderer in
 this phase. `renderAssetRef` remains null and no rendered files are invented.
-Recorded versus reconstructed availability follows actual stored provenance;
-empty/uninitialized/disabled stores return `NOT_RECORDED`. Coverage is always
+Recorded versus reconstructed availability follows the validated records on
+the returned page; an empty page, uninitialized store, or disabled store returns
+`NOT_RECORDED`. Every read verifies store-wide canonical bytes, stored hashes,
+indexed metadata, and reference edges before trusting query filters. A single
+cached digest avoids repeating semantic validation only for an identical,
+previously fully verified snapshot; every read still hashes actual contents,
+and changes or process restart require full validation. Coverage is always
 `UNKNOWN`, history may be unrecorded, and the loss counter is bounded,
 process-only, and resets on restart. It makes no durable gap guarantee.
 

@@ -219,9 +219,9 @@ def test_synthetic_benchmark_1000_events_100_record_pages(private_root,monkeypat
         t=time.monotonic();result=s.append(context(),e);append_ms.append((time.monotonic()-t)*1000)
         assert result['ok'],result
         peak=max(peak,sum(p.stat().st_size for p in private_root.iterdir() if p.is_file()))
+    reader=store(private_root)
     for timings in (cold,warm):
         last=None;pin=None
-        reader=store(private_root) if timings is cold else s
         while True:
             t=time.monotonic();page=reader.read(context(),kind='DECISION',limit=100,pinned=pin,last=last)
             timings.append((time.monotonic()-t)*1000)
@@ -247,7 +247,7 @@ def test_synthetic_benchmark_1000_events_100_record_pages(private_root,monkeypat
         return {f'p{p}Ms':ordered[min(len(ordered)-1,int(len(ordered)*p/100))] for p in (50,95,99)}
     result={'syntheticOnly':True,'productionLatencyClaim':False,'events':1000,'pageRecords':100,
             'coldDefinition':'first read pass with fresh store; OS cache not flushed',
-            'warmDefinition':'second read pass; every request still opens a fresh SQLite connection',
+            'warmDefinition':'second read pass reuses the verified store object; every request opens a fresh SQLite connection',
             'memoryMeasurement':'whole-process lifetime OS peak working set, not incremental evidence allocations',
             'cold':percentiles(cold),'warm':percentiles(warm),'append':percentiles(append_ms),
             'wallSeconds':elapsed,'dbJournalPeakBytes':peak,'peakProcessWorkingSetBytes':memory,'platform':os.name}
@@ -367,3 +367,70 @@ def test_public_schema_and_empty_account_provenance(private_root):
     assert response.json()['accountId']=='titan'
     assert response.json()['terminalIdentityHash']==context().terminal_identity_hash
     assert c.get('/api/chart/v1/decisions').json()['schemaVersion']==1
+
+@pytest.mark.parametrize('column,value',[('event_us',0),('symbol','OTHER'),('account','goldm15'),('terminal','b'*64),('kind','LIFECYCLE'),('id','hidden_id'),('revision',9),('strategy','OTHER'),('position_id','9')])
+@pytest.mark.parametrize('warm',[False,True])
+def test_hidden_index_metadata_corruption_503(private_root,column,value,warm):
+    s=store(private_root);assert s.append(context(),envelope())['ok']
+    c=client(s)
+    if warm:assert c.get('/api/chart/v1/decisions',params=RANGE).status_code==200
+    with sqlite3.connect(s.path) as db:db.execute('UPDATE records SET '+column+'=?',(value,))
+    response=c.get('/api/chart/v1/decisions',params={**RANGE,'symbol':'XAUUSD','strategyId':'test_strategy'})
+    assert response.status_code==503,response.text
+    assert response.json()['detail']['code']=='STORE_UNAVAILABLE'
+
+@pytest.mark.parametrize('damage',['hash','provenance','refs'])
+@pytest.mark.parametrize('warm',[False,True])
+def test_excluded_row_corruption_503(private_root,damage,warm):
+    from chart_studio.evidence_models import canonical_bytes
+    import json
+    s=store(private_root);assert s.append(context(),envelope())['ok']
+    assert s.append(context(),envelope(snapshot(),'SNAPSHOT'))['ok']
+    c=client(s)
+    if warm:assert c.get('/api/chart/v1/decisions',params=RANGE).status_code==200
+    with sqlite3.connect(s.path) as db:
+        if damage=='hash':db.execute("UPDATE records SET sha256='bad' WHERE kind='DECISION'")
+        elif damage=='provenance':
+            raw=db.execute("SELECT canonical_json FROM records WHERE kind='DECISION'").fetchone()[0]
+            record=json.loads(raw);record['provenance']='RECONSTRUCTED';record['payload']['dataProvenance']='reconstructed'
+            db.execute("UPDATE records SET canonical_json=? WHERE kind='DECISION'",(canonical_bytes(record),))
+        else:db.execute('DELETE FROM refs')
+    # Neither the corrupted decision nor the snapshot is selected by this range.
+    response=c.get('/api/chart/v1/decisions',params={**RANGE,'fromUtc':'2026-01-01T00:00:00Z','toUtc':'2026-01-01T01:00:00Z'})
+    assert response.status_code==503,response.text
+    # A fresh process/store must also fail rather than trusting the former cache.
+    assert client(store(private_root)).get('/api/chart/v1/decisions',params={**RANGE,'symbol':'EURUSD'}).status_code==503
+
+def test_availability_is_validated_page_provenance(private_root):
+    s=store(private_root)
+    assert s.append(context(),envelope())['ok']
+    e=envelope();e['id']=e['payload']['eventId']='reconstructed_other'
+    e['provenance']='RECONSTRUCTED';e['payload']['dataProvenance']='reconstructed';e['payload']['symbol']='OTHER'
+    assert s.append(context(),e)['ok']
+    c=client(s)
+    assert c.get('/api/chart/v1/decisions',params={**RANGE,'symbol':'EURUSD'}).json()['availability']=='NOT_RECORDED'
+    assert c.get('/api/chart/v1/decisions',params={**RANGE,'symbol':'XAUUSD'}).json()['availability']=='RECORDED'
+    assert c.get('/api/chart/v1/decisions',params={**RANGE,'symbol':'OTHER'}).json()['availability']=='RECONSTRUCTED'
+    assert c.get('/api/chart/v1/decisions',params=RANGE).json()['availability']=='MIXED'
+
+def test_cached_reference_dependency_time_change_503(private_root):
+    import hashlib
+    from chart_studio.evidence_models import validate_envelope,canonical_bytes,utc_microseconds
+    s=store(private_root);assert s.append(context(),envelope())['ok']
+    assert s.append(context(),envelope(snapshot(),'SNAPSHOT'))['ok']
+    c=client(s);assert c.get('/api/chart/v1/decisions',params=RANGE).status_code==200
+    e=envelope()
+    e['payload']['decisionTimeUtc']=e['payload']['capturedAtUtc']='2026-01-04T00:00:00Z'
+    normalized=validate_envelope(e,context=context());raw=canonical_bytes(normalized)
+    with sqlite3.connect(s.path) as db:
+        db.execute("UPDATE records SET canonical_json=?,sha256=?,event_us=? WHERE kind='DECISION'",(raw,hashlib.sha256(raw).hexdigest(),utc_microseconds(e['payload']['decisionTimeUtc'])))
+    # Changed target is itself a valid model with a matching hash/index, but
+    # the existing snapshot can no longer reference that later decision.
+    assert c.get('/api/chart/v1/decisions',params=RANGE).status_code==503
+
+def test_malformed_generation_type_is_explicit_unavailable(private_root):
+    s=store(private_root);assert s.append(context(),envelope())['ok']
+    with sqlite3.connect(s.path) as db:db.execute('UPDATE metadata SET generation=?',(sqlite3.Binary(b'not-a-uuid'),))
+    response=client(s).get('/api/chart/v1/decisions',params=RANGE)
+    assert response.status_code==503
+    assert response.json()['detail']['code']=='STORE_UNAVAILABLE'
