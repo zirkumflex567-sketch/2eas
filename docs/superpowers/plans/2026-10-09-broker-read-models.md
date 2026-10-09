@@ -10,7 +10,7 @@
 
 ## Task 1: symbols, symbol info and open/pending snapshots
 
-Implementation/review evidence: commits 47bc90f and e3fc782 (rebased without content changes from independently approved bb94ef9). 135 focused tests pass. Spec fixes rejected inconsistent second/millisecond clocks and missing/mismatched legacy symbol metadata. Full suite, PR CI and live rollout remain pending.
+Implementation/review evidence: commits 47bc90f and e3fc782 (rebased without content changes from independently approved bb94ef9). 135 focused tests pass. Spec fixes rejected inconsistent second/millisecond clocks and missing/mismatched legacy symbol metadata. Full local/PR CI suites passed 532 tests plus 245 subtests. Merged PR #28 as main 04194ec, deployed with the Windows PowerShell 5.1 guard; new APIs for both demos and 20 account switches on each local/public surface pass. Native UI/history/write acceptance stays open; subsequent main CI is running.
 
 Files: create chart_studio/broker_reads.py, chart_studio/read_api.py, tests/test_chart_studio_broker_reads.py; modify app.py to install routes and capabilities, docs/OPEN_TASKS.md partial evidence.
 
@@ -23,7 +23,7 @@ Files: create chart_studio/broker_reads.py, chart_studio/read_api.py, tests/test
 - [x] RED tests: position revision includes account login/server, symbol, ticket/identifier/type/volume/price_open/SL/TP/time_update_msc. Pending order revision has a separate real TradeOrder schema: account/login/server/symbol/ticket/position_id/type/volume_current/volume_initial/price_open/price_stoplimit/SL/TP/time_setup_msc/time_expiration/type_time/type_filling/state. Pending orders have no time_update/position identifier field to invent. Any semantic mutation changes its hash; quote-only floating price/PnL changes don't change revisions. MT5 server-clock creation/update/expiry times converted using broker_clock, with original raw epoch and offset source retained. A missing required field cannot silently produce fabricated data.
 - [x] Run `C:/Python314/python.exe -m pytest tests/test_chart_studio_broker_reads.py -q`, observe RED; implement minimal functions and endpoints under locked gateway.
 - [x] Add mock API tests verifying query/body validation, malformed responses, account mismatch and zero order_send. Add new read endpoints; retain legacy quote fields/types while correcting their UTC meaning. The current UI consumes bid/ask/tickSize, not quoteTimeUtc.
-- [ ] Targeted tests plus full pytest pass; independent spec then quality review and fixes. Commit exact files. Do not mark all FR-004/005/019 acceptance complete: UI/historical rendering and currency conversion are later tasks.
+- [x] Targeted tests plus full pytest pass; independent spec then quality review and fixes. Commit exact files. Do not mark all FR-004/005/019 acceptance complete: UI/historical rendering and currency conversion are later tasks.
 
 ## Task 2: actual history deal pagination
 
@@ -46,5 +46,5 @@ Files: extend broker_reads.py/read_api.py; add tests/test_chart_studio_trade_his
 
 Official references: [positions_get](https://www.mql5.com/en/docs/python_metatrader5/mt5positionsget_py), [orders_get](https://www.mql5.com/en/docs/python_metatrader5/mt5ordersget_py), [history_deals_get](https://www.mql5.com/en/docs/python_metatrader5/mt5historydealsget_py). The native API returns None on error and tuples on success; symbol takes precedence over ticket, so request one symbol dataset and filter its tickets rather than assuming both filters are applied.
 
-- [ ] Public/local authenticated GET smoke on both existing demos, account switch races and no mutation requests; filtered evidence stays under ignored output/integration-live.
-- [ ] CI then main merge, latest runtime proof and public smoke. Preserve existing running MT5 charts/EAs.
+- [x] Public/local authenticated GET smoke on both existing demos, account switch races and no mutation requests; filtered evidence stays under ignored output/integration-live.
+- [x] CI then main merge, latest runtime proof and public smoke. Preserve existing running MT5 charts/EAs.
