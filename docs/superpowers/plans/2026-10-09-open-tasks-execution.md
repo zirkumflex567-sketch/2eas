@@ -35,7 +35,7 @@ Files: modify dashboard_security.py, app.py (__main__ only), stt_nginx.conf; add
 
 ### Task 2: runtime version proof and safe restart
 
-Implementation status: in progress in the isolated worktree. Live baseline remains main `3032426`.
+Implementation status: implemented at `44fc4de`, review corrections at `df74a11`. Original RED and seven additional failing review regressions observed; corrected runtime suite: 32 passed, including disposable PowerShell lifecycle/refusal/recovery. The original integrated suite passed 389 tests plus 245 subtests; final PR CI and live rollout are pending. Live baseline remains main `3032426`.
 
 Files: add dashboard_runtime.py, tests/test_dashboard_runtime.py, scripts/dashboard_runtime.ps1; modify app.py to install GET /api/runtime; extend docs/STT_OPERATIONS.md.
 
