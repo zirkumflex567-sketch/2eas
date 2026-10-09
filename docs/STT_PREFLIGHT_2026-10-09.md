@@ -41,7 +41,7 @@ This proves the deployed ingress/runtime package and read-only demo paths at tha
 
 ## Broker read package #28 deployment, 2026-10-09 15:26 UTC
 
-Main `04194ec090f8e727ae594aa469cd55cc846f24ef` is deployed with the reviewed Windows PowerShell 5.1 Restart guard. Both final PR workflows passed: 532 tests and 245 subtests, chart math, isolated native-v5 build/proof and browser/Stone smoke. Independent broker, fixture and integration reviews approved. The new main workflows are running; their results remain a separate gate.
+Main `04194ec090f8e727ae594aa469cd55cc846f24ef` is deployed with the reviewed Windows PowerShell 5.1 Restart guard. Both final PR workflows passed: 532 tests and 245 subtests, chart math, isolated native-v5 build/proof and browser/Stone smoke. Independent broker, fixture and integration reviews approved. Both subsequent main workflows passed as well: Chart run 37951699511 and Audit run 37951699667.
 
 - Local/public runtime agree on startup/disk main `04194ec` and digest `f461f3d6042ac915b31833847dbfd31c9fb6c469bd8e5ec568f989eefcf469fb`, with clean source and restart_required=false. Existing MT5 terminal processes and reverse tunnel were preserved.
 - GET symbols, symbol-info and positions return verified account/symbol data and fresh quotes for both demos, with separate open/pending arrays and canExecute=false. Both demos currently return an empty pending array; positive pending-schema coverage comes from fake tests, not a created demo order.

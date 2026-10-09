@@ -10,7 +10,7 @@
 
 ## Task 1: symbols, symbol info and open/pending snapshots
 
-Implementation/review evidence: commits 47bc90f and e3fc782 (rebased without content changes from independently approved bb94ef9). 135 focused tests pass. Spec fixes rejected inconsistent second/millisecond clocks and missing/mismatched legacy symbol metadata. Full local/PR CI suites passed 532 tests plus 245 subtests. Merged PR #28 as main 04194ec, deployed with the Windows PowerShell 5.1 guard; new APIs for both demos and 20 account switches on each local/public surface pass. Native UI/history/write acceptance stays open; subsequent main CI is running.
+Implementation/review evidence: commits 47bc90f and e3fc782 (rebased without content changes from independently approved bb94ef9). 135 focused tests pass. Spec fixes rejected inconsistent second/millisecond clocks and missing/mismatched legacy symbol metadata. Full local/PR CI suites passed 532 tests plus 245 subtests. Merged PR #28 as main 04194ec, deployed with the Windows PowerShell 5.1 guard; new APIs for both demos and 20 account switches on each local/public surface pass. Native UI/history/write acceptance stays open; both subsequent main workflows passed.
 
 Files: create chart_studio/broker_reads.py, chart_studio/read_api.py, tests/test_chart_studio_broker_reads.py; modify app.py to install routes and capabilities, docs/OPEN_TASKS.md partial evidence.
 
@@ -27,12 +27,14 @@ Files: create chart_studio/broker_reads.py, chart_studio/read_api.py, tests/test
 
 ## Task 2: actual history deal pagination
 
+Implementation evidence: 4e56f92 adds the read contract and cursor (111 RED to GREEN); 319065d validates actual broker reason/external ID and includes both in duplicate/snapshot comparisons (33 additional RED to GREEN). Current focused suite: 144 history plus 135 existing broker tests passed. Independent spec review found that provenance gap and is rechecking its fix; quality, full release CI and live history proof remain pending. Omitted-category counts represent unique deals after deduplication, with raw type retained.
+
 Files: extend broker_reads.py/read_api.py; add tests/test_chart_studio_trade_history.py and chart_studio/history_cursor.py.
 
-- [ ] RED: GET /trades requires account/symbol, bounded explicit UTC range <=31 days and limit1..500, returns HISTORY_DEAL from history_deals_get exclusively. Preserve entry/exit/reversal kind, actual fill time/price/volume/cost/profit/positionIdentifier/orderTicket; trade-side unknown is explicit, not guessed.
-- [ ] RED: distinguish errorNone from empty history; exclude non-trade balance/credit rows from fills while reporting omitted categories. Account/symbol/magic/manual/ticket filters enforced after broker fetch.
-- [ ] RED: cursor pins UTC range/as-of upper boundary and exact filter/account identity; authenticated opaque cursor invalid across accounts/filters or after process restart (explicit cursor-expired), stable ordering(time_msc,ticket) excludes repeated rows. Bound raw history <=50000 rows or explicit HISTORY_LIMIT, not silent truncation. Newer data cannot leak beyond pinned boundary.
-- [ ] RED: datetime query sent in configured broker clock; raw broker times and normalized UTC retained; no future markers from cursor/history. String-decimal money, account currency, no invented USD FX.
+- [x] RED: GET /trades requires account/symbol, bounded explicit UTC range <=31 days and limit1..500, returns HISTORY_DEAL from history_deals_get exclusively. Preserve entry/exit/reversal kind, actual fill time/price/volume/cost/profit/positionIdentifier/orderTicket; trade-side unknown is explicit, not guessed.
+- [x] RED: distinguish errorNone from empty history; exclude non-trade balance/credit rows from fills while reporting omitted categories. Account/symbol/magic/manual/ticket filters enforced after broker fetch.
+- [x] RED: cursor pins UTC range/as-of upper boundary and exact filter/account identity; authenticated opaque cursor invalid across accounts/filters or after process restart (explicit cursor-expired), stable ordering(time_msc,ticket) excludes repeated rows. Bound raw history <=50000 rows or explicit HISTORY_LIMIT, not silent truncation. Newer data cannot leak beyond pinned boundary.
+- [x] RED: datetime query sent in configured broker clock; raw broker times and normalized UTC retained; no future markers from cursor/history. String-decimal money, account currency, no invented USD FX.
 - [ ] Observe failing pytest, implement minimal HMAC cursor with random process key, no URL secrets and constant-time verification; focused tests then spec/quality review. Existing FIFO journal remains unchanged.
 
 ## Next read-model tasks (separate detailed plans)
