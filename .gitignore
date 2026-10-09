@@ -29,3 +29,8 @@ state/
 *.sqlite3-shm
 *.db-wal
 *.db-shm
+
+# Experimental v5 adapter generated code and npm install
+chart_studio_v5/node_modules/
+chart_studio_v5/dist/
+chart_studio_v5/package-lock.json
