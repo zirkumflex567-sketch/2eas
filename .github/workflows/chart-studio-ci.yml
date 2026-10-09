@@ -11,6 +11,7 @@ on:
       - test/chart-studio-configurable-averages
       - test/chart-studio-chart-appearance
       - test/chart-studio-oscillator-instances
+      - test/chart-studio-chart-types
   workflow_dispatch:
 permissions:
   contents: read
@@ -38,6 +39,8 @@ jobs:
           node --check static/chart-studio-server-sync.js
           node --check static/chart-studio-indicators.js
           node --check static/chart-studio-oscillators.js
+          node --check static/chart-studio-chart-types.js
+          node scripts/test_chart_studio_chart_types.cjs
           node scripts/test_chart_studio_oscillators.cjs
           node --check static/chart-studio-averages.js
           node --check static/chart-studio-appearance.js
@@ -61,6 +64,7 @@ jobs:
           node scripts/smoke_chart_studio_averages.cjs
           node scripts/smoke_chart_studio_appearance.cjs
           node scripts/smoke_chart_studio_oscillators.cjs
+          node scripts/smoke_chart_studio_chart_types.cjs
       - name: Upload Chart Studio browser screenshot
         if: always()
         uses: actions/upload-artifact@v4
@@ -71,4 +75,5 @@ jobs:
             output/visual-smoke/chart-studio-multi-ma.png
             output/visual-smoke/chart-studio-appearance.png
             output/visual-smoke/chart-studio-oscillators.png
+            output/visual-smoke/chart-studio-chart-types.png
           if-no-files-found: ignore

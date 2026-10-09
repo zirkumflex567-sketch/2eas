@@ -67,7 +67,7 @@ def _number(value: Any, label: str, *, integer: bool = False) -> float | int:
 def validate_document(raw: Any) -> dict:
     """Strict version-1 JSON input; never store executable markup or arbitrary keys."""
     required = {"schemaVersion", "drawings", "options", "indicators", "timeframe"}
-    allowed = required | {"movingAverages", "chartAppearance", "oscillatorInstances"}
+    allowed = required | {"movingAverages", "chartAppearance", "oscillatorInstances", "chartType"}
     if not isinstance(raw, dict) or not required.issubset(raw) or not set(raw).issubset(allowed) or type(raw["schemaVersion"]) is not int or raw["schemaVersion"] != 1:
         raise StoreError("Nicht unterstütztes Workspace-Schema.")
     drawings = raw["drawings"]
@@ -226,6 +226,12 @@ def validate_document(raw: Any) -> dict:
                 raise StoreError("MACD benötigt fast kleiner slow.")
             clean_osc.append(inst.copy())
         safe["oscillatorInstances"] = clean_osc
+    if "chartType" in raw:
+        if type(raw["chartType"]) is not str or raw["chartType"] not in {
+            "candles", "bars", "line", "area"
+        }:
+            raise StoreError("Unbekannter Chart-Typ.")
+        safe["chartType"] = raw["chartType"]
     encoded = json.dumps(safe, ensure_ascii=False, allow_nan=False,
                          separators=(",", ":")).encode("utf-8")
     if len(encoded) > MAX_DOCUMENT_BYTES:

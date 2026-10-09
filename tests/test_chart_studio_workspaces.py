@@ -249,6 +249,20 @@ class SqliteLayoutTests(unittest.TestCase):
         with self.assertRaises(StoreError):
             validate_document({**original,"oscillatorInstances":"not a list"})
 
+    def test_chart_type_compatibility_and_strict_validation(self):
+        original = example()
+        self.assertNotIn("chartType", validate_document(original))
+        for chart_type in ("candles","bars","line","area"):
+            document = {**original,"chartType":chart_type}
+            self.assertEqual(validate_document(document)["chartType"], chart_type)
+        saved = self.store.put("local-owner","titan","XAUUSD","PriceStyle",
+                               {**original,"chartType":"area"},0)
+        self.assertEqual(saved["revision"],1)
+        self.assertEqual(self.store.get("local-owner","titan","XAUUSD","PriceStyle")["document"]["chartType"],"area")
+        for value in (None,[],{},True,4,"heikinashi","javascript:alert(1)","CANDLES"):
+            with self.subTest(value=value),self.assertRaises(StoreError):
+                validate_document({**original,"chartType":value})
+
 
 class ApiAccessTests(unittest.TestCase):
     def setUp(self):
