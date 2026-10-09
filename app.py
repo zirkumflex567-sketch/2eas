@@ -1110,6 +1110,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="static/chart-studio-object-manager.js"></script>
   <link rel="stylesheet" href="static/chart-studio-quick.css">
   <script src="static/chart-studio-catalog.js"></script>\n  <script src="static/chart-studio-replay.js"></script>
+  <script src="static/chart-studio-fib.js"></script>
   <script src="static/chart-studio-beta.js"></script>
   <script src="static/stone-celebrations.js"></script>
   <style>
