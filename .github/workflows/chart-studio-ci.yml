@@ -50,6 +50,7 @@ jobs:
           node --check static/chart-studio-chart-types.js
           node scripts/test_chart_studio_chart_types.cjs
           node scripts/test_chart_studio_oscillators.cjs
+          node --check static/chart-studio-catalog.js
           node --check static/chart-studio-averages.js
           node --check static/chart-studio-appearance.js
           node scripts/test_chart_studio_appearance.cjs
