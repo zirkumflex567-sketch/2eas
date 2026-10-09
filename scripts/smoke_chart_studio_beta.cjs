@@ -24,9 +24,13 @@ const fs=require("node:fs"),path=require("node:path");
     const req=route.request().postDataJSON();
     assert.equal(req.account,"titan");
     assert.equal(req.symbol,"XAUUSD");
+    const sign=req.side==="BUY"?1:-1;
+    const risk=Number(((req.slPrice-req.entryPrice)*req.volumeLots*100*sign).toFixed(2));
+    const reward=Number(((req.tpPrice-req.entryPrice)*req.volumeLots*100*sign).toFixed(2));
     await route.fulfill({status:200,contentType:"application/json",
-      body:JSON.stringify({account:"titan",canExecute:false,pnlAtSl:{amount:-80,currency:"USD"},
-      pnlAtTp:{amount:160,currency:"USD"},margin:{amount:95,currency:"USD"},riskRewardRatio:2,tickSize:0.01})});
+      body:JSON.stringify({account:"titan",canExecute:false,pnlAtSl:{amount:risk,currency:"USD"},
+      pnlAtTp:{amount:reward,currency:"USD"},margin:{amount:95,currency:"USD"},
+      riskRewardRatio:Number((reward/-risk).toFixed(3)),tickSize:0.01})});
   });
   await page.goto("http://127.0.0.1:8864/static/chart-studio-fixture.html",{waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartSmokeReady===true);
@@ -104,11 +108,15 @@ const fs=require("node:fs"),path=require("node:path");
   await page.waitForFunction(()=>{
     const state=ChartStudioBeta.getState();
     return state.scenario&&state.scenario.slPrice!==4090&&
+      document.querySelector("#cs-scenario-result").textContent.startsWith("PLAN · Stop ")&&
       document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER");
   },{timeout:15000});
   const afterPlan=await page.evaluate(()=>ChartStudioBeta.getState().scenario.slPrice);
   assert.notEqual(afterPlan,beforePlan);
   assert.ok(requests.length>=2);
+  const money=await page.locator("#cs-scenario-result").textContent();
+  assert.ok(money.includes("Stop "+Number(((afterPlan-4100)*0.1*100).toFixed(2))+" USD"),
+    "USD risk must reflect the broker-priced new stop rather than old UI value");
   assert.ok(requests.every(url=>url.includes("/api/chart/v1/scenarios/preview")),
     "No broker modify/order-send request may be used during drag");
   assert.deepEqual(consoleErrors,[]);
