@@ -440,6 +440,21 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  toggle.setAttribute("aria-expanded","false");toggle.setAttribute("aria-controls","cs-beta-panel");
  const expand=card.querySelector("#stone-chart-expand-btn");if(expand)expand.insertAdjacentElement("afterend",toggle);
  else card.prepend(toggle);
+ // Always-visible EMA entry point: users should not need to discover the beta drawer.
+ const maQuick=document.createElement("div");maQuick.className="cs-ma-quick";
+ maQuick.setAttribute("role","group");maQuick.setAttribute("aria-label","EMA Schnellzugriff");
+ const maOpen=document.createElement("button");maOpen.type="button";
+ maOpen.className="cs-ma-quick-open";maOpen.textContent="⚙ EMAs einstellen";
+ maOpen.setAttribute("aria-controls","cs-beta-panel");maOpen.setAttribute("aria-expanded","false");
+ const maPeriod=document.createElement("input");maPeriod.type="number";maPeriod.min="2";
+ maPeriod.max="500";maPeriod.step="1";maPeriod.value="34";maPeriod.className="cs-ma-quick-period";
+ maPeriod.setAttribute("aria-label","Periode für neue EMA");
+ const maAdd=document.createElement("button");maAdd.type="button";maAdd.textContent="+ EMA";
+ maAdd.setAttribute("aria-label","EMA mit gewählter Periode hinzufügen");
+ const maHint=document.createElement("span");maHint.className="cs-ma-quick-hint";
+ maHint.textContent="EMA 20/50/200 sind separat einblendbar";
+ maQuick.append(maOpen,maPeriod,maAdd,maHint);
+ toggle.insertAdjacentElement("afterend",maQuick);
  const panel=document.createElement("section");panel.id="cs-beta-panel";panel.className="cs-beta-panel";panel.hidden=true;
  const toolLabels=[["cursor","Navigation"],["edit","Griffe bearbeiten"],["horizontal","Preislinie"],["trend","Trendlinie"],["ray","Strahl"],["rect","Zone"],["channel","Parallelkanal"],["fib","Fibonacci"],["ruler","Preis-/Zeitmessung"]];
  const optLabels=[["ema20","EMA20"],["ema50","EMA50"],["ema200","EMA200"],["sma20","SMA20"],["sma50","SMA50"],["bb","Bollinger20"],["positions","Positionen & SL/TP"]];
@@ -489,7 +504,29 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  try{window.ChartStudioServerSync?.mount({panel,account:accountId,
    exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,
    getAccount:()=>s?.account})}catch(err){console.warn("Chart-Workspace-Sync nicht verfügbar:",err)}
- toggle.addEventListener("click",()=>{panel.hidden=!panel.hidden;toggle.setAttribute("aria-expanded",String(!panel.hidden));requestDraw()});
+ const openAverages=()=>{
+  if(panel.hidden){panel.hidden=false;toggle.setAttribute("aria-expanded","true");}
+  maOpen.setAttribute("aria-expanded","true");
+  const editor=panel.querySelector(".cs-ma-editor");
+  if(editor){editor.scrollIntoView({block:"nearest",behavior:"auto"});editor.querySelector("button")?.focus({preventScroll:true});}
+  requestDraw();
+ };
+ maOpen.addEventListener("click",openAverages);
+ maAdd.addEventListener("click",()=>{
+  const period=maPeriod.valueAsNumber;
+  if(!Number.isInteger(period)||period<2||period>500){
+   maPeriod.setCustomValidity("EMA-Periode muss zwischen 2 und 500 liegen.");
+   maPeriod.reportValidity();return;
+  }
+  maPeriod.setCustomValidity("");
+  if(!window.ChartStudioAverages?.add("EMA",period)){
+   openAverages();return;
+  }
+  openAverages();
+ });
+ maPeriod.addEventListener("input",()=>maPeriod.setCustomValidity(""));
+ maPeriod.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();maAdd.click()}});
+ toggle.addEventListener("click",()=>{panel.hidden=!panel.hidden;toggle.setAttribute("aria-expanded",String(!panel.hidden));maOpen.setAttribute("aria-expanded",String(!panel.hidden));requestDraw()});
  panel.addEventListener("click",e=>{
   const b=e.target.closest("button");if(!b)return;
   if(b.dataset.tool){setTool(b.dataset.tool);return}
