@@ -59,7 +59,7 @@
 - [ ] 5.3 Execution quality with real intended-vs-fill quote baselines/partial fills.
 - [ ] 5.4 Reproducible market regimes with OOS analysis.
 - [ ] 5.5 Licensed news/event overlays, EA-news-guard differentiation.
-- [ ] 5.6 Read-only deterministic replay with no-lookahead and zero trading routes.
+- [~] 5.6 Read-only deterministic replay with no-lookahead and zero trading routes. Browser-only as-of candlestick preview, frozen snapshot, seek/step/playback, context reset and no-trade smoke prepared in PR #21; EA telemetry/replay-compatible indicators, real broker dataset validation and full acceptance are not complete.
 - [ ] 5.7 All AT-001–AT-056 green with proof, legacy parity, screenshots and complete rollout/rollback plan.
 
 ## Gate proof required before marking "complete"
@@ -133,6 +133,13 @@ Branch `test/chart-studio-incremental-render`: shared dual-32-bit OHLCV fingerpr
 ### 2026-10-09 — Incremental /goal execution
 
 - **Merged to main:** PR #17 (`213b751`), prominent EMA quick control, arbitrary 2–500 period, responsive UI; both GitHub PR test workflows passed. Existing EMA/SMA/WMA calculation and persistence retained.
-- **PR #18 / pending CI:** Searchable, read-only catalog for EMA/SMA/WMA, RSI/MACD/ATR/ADX, volume and VWAP. Uses tested indicator modules; browser add/filter checks extend the chart smoke. Task 2.2 remains **partial** until the v5 renderer and native pane manager are implemented and accepted.
+- **Merged PR #18:** Searchable, read-only catalog for EMA/SMA/WMA, RSI/MACD/ATR/ADX, volume and VWAP. Uses tested indicator modules; browser add/filter checks extend the chart smoke. Task 2.2 remains **partial** until the v5 renderer and native pane manager are implemented and accepted.
 - **Unchanged gates:** 0.7 and task 4 broker writes blocked until authenticated, demo-tested release gate. Task 0.8, 1.8, 2.1 and subsequent stages are **not completed** by either PR.
 - Keep this file aligned with actual merges and CI evidence; never mark /goal fully complete based on drafts or unit tests alone.
+
+### Replay incremental package (PR #21, CI pending)
+
+- New isolated `ChartStudioReplay` module uses only existing broker candle data in a **separate** preview chart; the production `candleSeries` and all broker writes are untouched.
+- Replay snaps an immutable sorted/validated historical series at Start; step/seek/play show only the as-of prefix. Live bar refreshes cannot add future candles while active.
+- Account/timeframe changes forcibly exit replay, clear the old snapshot and data, and require freshly loaded candles; no replay persistence across accounts.
+- Browser smoke checks frozen as-of progression, no POSTs and context isolation. Test proof must be confirmed before merging. Task 5.6 stays **partial** until multi-indicator, provenance, performance and broker-real replay acceptance.
