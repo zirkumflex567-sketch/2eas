@@ -92,13 +92,47 @@ const fs=require("node:fs"),path=require("node:path");
   await page.mouse.click(cv.x+cv.width*.60,cv.y+cv.height*.62);
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),2);
   await page.locator('[data-cmd="undo"]').click();
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),5);
+  await page.locator('[data-cmd="undo"]').click();
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),1);
   await page.locator('[data-cmd="redo"]').click();
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),2);
+  async function addDrawing(kind,positions){
+    await page.locator('[data-tool="'+kind+'"]').click();
+    const canvas=page.locator("canvas.cs-beta-canvas");
+    await canvas.scrollIntoViewIfNeeded();
+    const box=await canvas.boundingBox();
+    assert.ok(box&&box.width>250&&box.height>250);
+    for(const [fx,fy] of positions)await page.mouse.click(box.x+box.width*fx,box.y+box.height*fy);
+  }
+  await addDrawing("ray",[[.25,.34],[.45,.39]]);
+  await addDrawing("ruler",[[.34,.40],[.48,.55]]);
+  await addDrawing("channel",[[.30,.33],[.51,.44],[.39,.59]]);
+  assert.deepEqual(await page.evaluate(()=>ChartStudioBeta.getState().drawings.slice(2).map(o=>o.kind)),
+     ["ray","ruler","channel"]);
+  const channel=await page.evaluate(()=>ChartStudioBeta.getState().drawings.at(-1));
+  assert.equal(channel.anchors.length,3);
+  await page.locator('[data-cmd="magnet"]').click();
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().magnet),true);
+  await page.locator('[data-cmd="magnet"]').click();
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().magnet),false);
+  // An actual handle should select/delete one object only; Undo restores.
+  await page.locator('[data-tool="edit"]').click();
+  await page.locator("canvas.cs-beta-canvas").scrollIntoViewIfNeeded();
+  const selectedAnchor=await page.evaluate(()=>ChartStudioBeta.getState().drawings[4].anchors[2]);
+  const cursor=await page.evaluate(anchor=>({
+    x:chart.timeScale().timeToCoordinate(anchor.time),
+    y:candleSeries.priceToCoordinate(anchor.price)
+  }),selectedAnchor);
+  const editRect=await page.locator("canvas.cs-beta-canvas").boundingBox();
+  await page.mouse.click(editRect.x+cursor.x,editRect.y+cursor.y);
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().selected),4);
+  await page.locator('[data-cmd="delete-selected"]').click();
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),4);
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),0);
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
-  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),2);
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),5);
   page.once("dialog", dialog=>dialog.accept("GoldSetup"));
   await page.locator('[data-cmd="save-profile"]').click();
   assert.equal(await page.locator("#cs-beta-profile").inputValue(),"GoldSetup");

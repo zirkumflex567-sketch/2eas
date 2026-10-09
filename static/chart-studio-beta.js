@@ -3,7 +3,7 @@
    No broker write calls or chart trading mutations in this module. */
 (()=>{
 "use strict";
-const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","trend","rect","fib","plan"];
+const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","trend","rect","fib","ray","ruler","channel","plan"];
 const ratios=[0,.236,.382,.5,.618,.786,1];
 let s=null,requestId=0,scenarioGeneration=0,planTimer=null;
 const json=v=>JSON.parse(JSON.stringify(v));
@@ -11,7 +11,7 @@ const get=(k,df)=>{try{const v=JSON.parse(localStorage.getItem(prefix+k));return
 const save=(k,v)=>{try{localStorage.setItem(prefix+k,JSON.stringify(v))}catch(_){}};
 const optsDefault=()=>({ema20:true,ema50:true,ema200:true,sma20:false,sma50:false,bb:false,positions:false});
 const drawKey=()=>s.account+":draw:XAUUSD",optKey=()=>s.account+":opts:XAUUSD";
-const profileKey=()=>s.account+":profiles:XAUUSD";
+const profileKey=()=>s.account+":profiles:XAUUSD",magnetKey=()=>s.account+":magnet:XAUUSD";
 function profiles(){const p=get(profileKey(),{});return p&&typeof p==="object"&&!Array.isArray(p)?p:{}}
 function refreshProfiles(){
  if(!s)return;const sel=s.panel.querySelector("#cs-beta-profile");
@@ -30,7 +30,7 @@ function saveProfile(){
 }
 function loadProfile(){
  const name=s.panel.querySelector("#cs-beta-profile")?.value;const item=profiles()[name];
- if(!item)return;snapshot();s.draw=safeDraw(item.draw);
+ if(!item)return;snapshot();s.draw=safeDraw(item.draw);s.selected=null;
  s.opts={...optsDefault(),...(item.opts||{})};persist();save(optKey(),s.opts);showOpts();updateSeries();
  if(item.indicators)window.ChartStudioIndicators?.applySettings(item.indicators);
  requestDraw();
@@ -47,7 +47,7 @@ function importWorkspaceDocument(document){
  // Do not import scenarios, order tickets, account identity or executable text.
  const drawings=safeDraw(document.drawings);
  if(drawings.length!==document.drawings.length)return false;
- snapshot();s.draw=drawings;s.opts={...optsDefault(),...(document.options||{})};
+ snapshot();s.draw=drawings;s.selected=null;s.opts={...optsDefault(),...(document.options||{})};
  persist();save(optKey(),s.opts);showOpts();updateSeries();
  window.ChartStudioIndicators?.applySettings(document.indicators||{});
  requestDraw();updateMessage("Serverlayout geladen. Brokerpositionen, What-if und aktiver Timeframe bleiben unverändert.");
@@ -61,15 +61,15 @@ function deleteProfile(){
 function updateMessage(x){if(s?.status)s.status.textContent=x}
 function sma(c,n){const out=[];let sum=0;for(let i=0;i<c.length;i++){sum+=Number(c[i].close);if(i>=n)sum-=Number(c[i-n].close);if(i>=n-1)out.push({time:c[i].time,value:sum/n})}return out}
 function bollinger(c,n=20,k=2){const hi=[],lo=[];let sum=0,sq=0;for(let i=0;i<c.length;i++){let v=Number(c[i].close);sum+=v;sq+=v*v;if(i>=n){v=Number(c[i-n].close);sum-=v;sq-=v*v}if(i>=n-1){const mid=sum/n,sd=Math.sqrt(Math.max(0,sq/n-mid*mid));hi.push({time:c[i].time,value:mid+k*sd});lo.push({time:c[i].time,value:mid-k*sd})}}return {upper:hi,lower:lo}}
-function safeDraw(list){if(!Array.isArray(list))return [];return list.slice(0,500).filter(o=>o&&["horizontal","trend","rect","fib"].includes(o.kind)&&Array.isArray(o.anchors)&&o.anchors.length>=1&&o.anchors.length<=2&&o.anchors.every(p=>Number.isFinite(p.time)&&p.time>0&&Number.isFinite(p.price)&&p.price>0)).map(o=>({kind:o.kind,anchors:o.anchors.map(p=>({time:p.time,price:p.price}))}))}
+function safeDraw(list){if(!Array.isArray(list))return [];return list.slice(0,500).filter(o=>window.ChartStudioDrawingGeometry?.validDrawing(o)).map(o=>({kind:o.kind,anchors:o.anchors.map(p=>({time:p.time,price:p.price}))}))}
 function snapshot(){s.undo.push(json(s.draw));if(s.undo.length>50)s.undo.shift();s.redo=[]}
 function persist(){save(drawKey(),s.draw);requestDraw()}
-function undo(){if(!s?.undo.length)return;s.redo.push(json(s.draw));s.draw=s.undo.pop();persist()}
-function redo(){if(!s?.redo.length)return;s.undo.push(json(s.draw));s.draw=s.redo.pop();persist()}
+function undo(){if(!s?.undo.length)return;s.redo.push(json(s.draw));s.draw=s.undo.pop();s.selected=null;persist()}
+function redo(){if(!s?.redo.length)return;s.undo.push(json(s.draw));s.draw=s.redo.pop();s.selected=null;persist()}
 function setTool(kind){
  if(!s||!kinds.includes(kind))return;
  if(s.tool==="plan"&&kind!=="plan")cancelPlanPreview();
- s.tool=kind;s.begin=null;s.preview=null;s.drag=null;
+ s.tool=kind;s.begin=null;s.preview=null;s.pending=[];s.drag=null;s.selected=null;
  s.canvas.style.pointerEvents=kind==="cursor"?"none":"auto";
  s.canvas.style.cursor=kind==="edit"?"grab":kind==="plan"?"ns-resize":"crosshair";
  s.panel.querySelector('[data-cmd="drag-plan"]')?.setAttribute("aria-pressed",String(kind==="plan"));
@@ -100,6 +100,20 @@ function project(anchor){
  try{x=s.chart.timeScale().timeToCoordinate(anchor.time);y=s.series.priceToCoordinate(anchor.price)}catch(_){}
  return Number.isFinite(x)&&Number.isFinite(y)?{x,y}:null;
 }
+function snapAnchor(point){
+ if(!s?.magnet||!point)return point;
+ const c=window.ChartStudioDrawingGeometry?.nearestSnap(point,s.candles,
+ time=>s.chart.timeScale().timeToCoordinate(time),
+ price=>s.series.priceToCoordinate(price),12);
+ return c?{time:c.time,price:c.price}:point;
+}
+function removeSelected(){
+ if(!s||!Number.isInteger(s.selected)||s.selected<0||s.selected>=s.draw.length){
+  updateMessage("Erst einen Zeichnungsgriff auswählen.");return;
+ }
+ snapshot();s.draw.splice(s.selected,1);s.selected=null;persist();
+ updateMessage("Ausgewählte Zeichnung gelöscht. Undo möglich.");
+}
 function unproject(x,y){
  const time=s.chart.timeScale().coordinateToTime(x),price=s.series.coordinateToPrice(y);
  return typeof time==="number"&&Number.isFinite(price)&&price>0?{time,price}:null;
@@ -120,7 +134,43 @@ function drawObject(ctx,o,d){
  if(b&&o.kind==="rect"){ctx.fillRect(a.x,a.y,b.x-a.x,b.y-a.y);ctx.strokeRect(a.x,a.y,b.x-a.x,b.y-a.y)}
  if(b&&o.kind==="fib"){for(const k of ratios){const y=a.y+(b.y-a.y)*k;ctx.strokeStyle=k===.618?"#f7c874":"#8da8f9";
  ctx.beginPath();ctx.moveTo(Math.min(a.x,b.x),y);ctx.lineTo(d.w-2,y);ctx.stroke();ctx.fillStyle="#f7f8ff";ctx.font="11px monospace";ctx.fillText(String(k),Math.max(3,d.w-45),y-3)}}
- if(s.tool==="edit")for(const p of [a,b].filter(Boolean)){ctx.fillStyle="#f3faff";ctx.fillRect(p.x-5,p.y-5,10,10);ctx.strokeRect(p.x-5,p.y-5,10,10)}
+ if(s.tool==="edit")for(const p of o.anchors.map(project).filter(Boolean)){ctx.fillStyle="#f3faff";ctx.fillRect(p.x-5,p.y-5,10,10);ctx.strokeRect(p.x-5,p.y-5,10,10)}
+
+ if(b&&o.kind==="ray"){
+  const segment=window.ChartStudioDrawingGeometry?.clipRay(a,b,d.w);
+  if(segment){ctx.beginPath();ctx.moveTo(segment[0].x,segment[0].y);ctx.lineTo(segment[1].x,segment[1].y);ctx.stroke()}
+ }
+ if(b&&o.kind==="channel"){
+  ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+  const c=o.anchors[2]?project(o.anchors[2]):null;
+  if(c){
+   const ch=window.ChartStudioDrawingGeometry?.parallelChannel(a,b,c);
+   if(ch){
+    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);
+    ctx.lineTo(ch.second[1].x,ch.second[1].y);ctx.lineTo(ch.second[0].x,ch.second[0].y);
+    ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.save();ctx.setLineDash([3,4]);ctx.beginPath();
+    ctx.moveTo(ch.mid[0].x,ch.mid[0].y);ctx.lineTo(ch.mid[1].x,ch.mid[1].y);
+    ctx.stroke();ctx.restore();
+   }
+  }
+ }
+ if(b&&o.kind==="ruler"){
+  ctx.strokeStyle="#f3d49a";ctx.setLineDash([4,3]);ctx.beginPath();
+  ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+  const interval=({M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400})[s.tf]||900;
+  const m=window.ChartStudioDrawingGeometry?.measure(o.anchors[0],o.anchors[1],interval);
+  if(m){
+   const label="Preis: "+(m.delta>=0?"+":"")+m.delta.toFixed(2)+
+     " ("+(m.percent>=0?"+":"")+m.percent.toFixed(2)+"%) | "+Math.abs(m.bars)+" Bars";
+   ctx.font="11px monospace";
+   const width=Math.min(d.w-12,ctx.measureText(label).width+12);
+   const lx=Math.max(4,Math.min(d.w-width-4,(a.x+b.x)*.5-width*.5));
+   const ly=Math.max(17,Math.min(d.h-10,(a.y+b.y)*.5-10));
+   ctx.fillStyle="#132b35";ctx.fillRect(lx,ly-15,width,19);
+   ctx.fillStyle="#ffe8b6";ctx.fillText(label,lx+5,ly-2,width-10);
+  }
+ }
  ctx.restore();
 }
 function drawPositions(ctx,d){
@@ -172,7 +222,7 @@ function render(){
  if(s.opts.positions)drawPositions(ctx,d);
  if(s.scenario)drawScenario(ctx,d);
  for(const o of s.draw)drawObject(ctx,o,d);
- if(s.begin&&s.preview)drawObject(ctx,{kind:s.tool,anchors:[s.begin,s.preview],preview:true},d);
+ if(s.pending.length&&s.preview)drawObject(ctx,{kind:s.tool,anchors:[...s.pending,s.preview],preview:true},d);
 }
 function xy(e){const r=s.canvas.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top}}
 function cancelPlanPreview(){
@@ -210,7 +260,8 @@ function findPlanGrip(x,y){
 function closestHandle(x,y){for(let i=s.draw.length-1;i>=0;i--)for(let j=0;j<s.draw[i].anchors.length;j++){const p=project(s.draw[i].anchors[j]);if(p&&Math.hypot(p.x-x,p.y-y)<11)return {i,j}}return null}
 function pointerdown(e){
  if(!s||s.tool==="cursor"||e.button!==0)return;
- const {x,y}=xy(e),p=unproject(x,y);if(!p)return;
+ const {x,y}=xy(e),raw=unproject(x,y);if(!raw)return;
+ const p=s.tool==="plan"?raw:snapAnchor(raw);
  if(s.tool==="plan"){
   const grip=findPlanGrip(x,y);if(!grip){updateMessage("PLAN: SL- oder TP-Griff anklicken.");return}
   s.planOriginal=json(s.scenario);s.planDrag=grip;
@@ -219,17 +270,25 @@ function pointerdown(e){
   e.preventDefault();return;
  }
  if(s.tool==="edit"){
-  const hit=closestHandle(x,y);if(!hit)return;
-  snapshot();s.drag=hit;s.canvas.setPointerCapture(e.pointerId);e.preventDefault();return;
+  const hit=closestHandle(x,y);if(!hit){s.selected=null;updateMessage("Griff wählen.");return}
+  s.selected=hit.i;snapshot();s.drag=hit;s.canvas.setPointerCapture(e.pointerId);e.preventDefault();return;
  }
  if(s.tool==="horizontal"){snapshot();s.draw.push({kind:s.tool,anchors:[p]});persist();return}
- if(!s.begin){s.begin=p;s.preview=p;updateMessage("Zweiten Anker setzen · Esc bricht ab");}
- else {snapshot();s.draw.push({kind:s.tool,anchors:[s.begin,p]});s.begin=null;s.preview=null;persist()}
+ const required=window.ChartStudioDrawingGeometry?.expected(s.tool)||2;
+ if(!s.pending.length){s.begin=p;s.pending=[p];s.preview=p;updateMessage("Nächsten Anker setzen · Esc bricht ab.");}
+ else{
+  s.pending.push(p);
+  if(s.pending.length>=required){
+   snapshot();s.draw.push({kind:s.tool,anchors:s.pending.map(point=>({...point}))});
+   s.begin=null;s.pending=[];s.preview=null;persist();updateMessage("Zeichnung gespeichert.");
+  }else updateMessage("Dritten Kanal-Anker für Abstand setzen.");
+ }
  requestDraw();e.preventDefault();
 }
 function pointermove(e){
  if(!s||s.tool==="cursor")return;
- const {x,y}=xy(e),p=unproject(x,y);if(!p)return;
+ const {x,y}=xy(e),raw=unproject(x,y);if(!raw)return;
+ const p=s.tool==="plan"?raw:snapAnchor(raw);
  if(s.tool==="plan"&&s.planDrag&&s.scenario){
   const tick=s.planTickSize;
   const value=Number((Math.round(p.price/tick)*tick).toFixed(8));
@@ -241,7 +300,7 @@ function pointermove(e){
   previewPlan();requestDraw();return;
  }
  if(s.drag){s.draw[s.drag.i].anchors[s.drag.j]=p;requestDraw()}
- else if(s.begin){s.preview=p;requestDraw()}
+ else if(s.pending.length){s.preview=p;requestDraw()}
 }
 function pointerup(e){
  if(!s)return;
@@ -254,11 +313,13 @@ function pointerup(e){
  }
  if(!s.drag)return;s.drag=null;persist();try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){}
 }
-function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;scenarioGeneration++;if(s.tool==="plan")setTool("cursor");
+function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;scenarioGeneration++;if(s.tool==="plan")setTool("cursor");
+ s.panel.querySelector('[data-cmd="magnet"]')?.setAttribute("aria-pressed",String(s.magnet));
+ const mag=s.panel.querySelector('[data-cmd="magnet"]');if(mag)mag.textContent="Magnet: "+(s.magnet?"AN":"AUS")+" · Kerzen-OHLC";
  window.ChartStudioIndicators?.switchAccount(id);
  window.ChartStudioServerSync?.account(id);
  showOpts();refreshProfiles();updateSeries();requestDraw()}
-function timeframe(tf){if(s){cancelPlanPreview();s.tf=tf;s.begin=null;s.preview=null;s.drag=null;if(s.tool==="plan")setTool("cursor");
+function timeframe(tf){if(s){cancelPlanPreview();s.tf=tf;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");
  window.ChartStudioIndicators?.updateBars([]);
  requestDraw()}}
 function updateCandles(c){if(s&&Array.isArray(c)){s.candles=c;updateSeries();
@@ -274,13 +335,14 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  const expand=card.querySelector("#stone-chart-expand-btn");if(expand)expand.insertAdjacentElement("afterend",toggle);
  else card.prepend(toggle);
  const panel=document.createElement("section");panel.id="cs-beta-panel";panel.className="cs-beta-panel";panel.hidden=true;
- const toolLabels=[["cursor","Navigation"],["edit","Griffe bearbeiten"],["horizontal","Preislinie"],["trend","Trendlinie"],["rect","Zone"],["fib","Fibonacci"]];
+ const toolLabels=[["cursor","Navigation"],["edit","Griffe bearbeiten"],["horizontal","Preislinie"],["trend","Trendlinie"],["ray","Strahl"],["rect","Zone"],["channel","Parallelkanal"],["fib","Fibonacci"],["ruler","Preis-/Zeitmessung"]];
  const optLabels=[["ema20","EMA20"],["ema50","EMA50"],["ema200","EMA200"],["sma20","SMA20"],["sma50","SMA50"],["bb","Bollinger20"],["positions","Positionen & SL/TP"]];
  panel.innerHTML=
   '<div class="cs-beta-head"><strong>CHART STUDIO · EXPERIMENTELL</strong><span>Keine Handelsausführung</span></div>'+
   '<div class="cs-beta-buttons">'+toolLabels.map(([id,label])=>'<button type="button" data-tool="'+id+'">'+label+'</button>').join("")+
-  ["undo","redo","export","clear"].map(id=>'<button type="button" data-cmd="'+id+'">'+({undo:"↶ Undo",redo:"↷ Redo",export:"JSON kopieren",clear:"Alle Zeichnungen löschen"}[id])+'</button>').join("")+'</div>'+
-  '<div class="cs-beta-buttons">'+optLabels.map(([id,label])=>'<button type="button" data-opt="'+id+'">'+label+'</button>').join("")+'</div>'+
+  ["undo","redo","delete-selected","export","clear"].map(id=>'<button type="button" data-cmd="'+id+'">'+({undo:"↶ Undo",redo:"↷ Redo","delete-selected":"Ausgewählte löschen",export:"JSON kopieren",clear:"Alle Zeichnungen löschen"}[id])+'</button>').join("")+'</div>'+
+  '<div class="cs-beta-buttons"><button type="button" data-cmd="magnet" aria-pressed="false">Magnet: AUS · Kerzen-OHLC</button></div>'+
+ '<div class="cs-beta-buttons">'+optLabels.map(([id,label])=>'<button type="button" data-opt="'+id+'">'+label+'</button>').join("")+'</div>'+
   '<div class="cs-beta-profiles"><strong>Lokale Layouts</strong> <select id="cs-beta-profile" aria-label="Gespeichertes Chartlayout"></select>'+
  '<button type="button" data-cmd="save-profile">Speichern</button>'+
  '<button type="button" data-cmd="load-profile">Laden</button>'+
@@ -302,7 +364,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  const canvas=document.createElement("canvas");canvas.className="cs-beta-canvas";canvas.style.pointerEvents="none";canvas.setAttribute("aria-hidden","true");
  host.style.position="relative";host.appendChild(canvas);
  s={chart,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
-  account:accountId,tf,tool:"cursor",begin:null,preview:null,drag:null,
+  account:accountId,tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,
   draw:[],undo:[],redo:[],candles:[],positions:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{}};
  try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}
  catch (err) {console.warn("Chart Studio indicator pane could not load:",err);}
@@ -325,7 +387,14 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   if(b.dataset.cmd==="load-profile")loadProfile();
   if(b.dataset.cmd==="delete-profile")deleteProfile();
   if(b.dataset.cmd==="undo")undo();if(b.dataset.cmd==="redo")redo();
-  if(b.dataset.cmd==="clear"&&window.confirm("Zeichnungen für dieses Konto löschen?")){snapshot();s.draw=[];persist()}
+   if(b.dataset.cmd==="delete-selected")removeSelected();
+   if(b.dataset.cmd==="magnet"){
+    s.magnet=!s.magnet;save(magnetKey(),s.magnet);
+    b.setAttribute("aria-pressed",String(s.magnet));
+    b.textContent="Magnet: "+(s.magnet?"AN":"AUS")+" · Kerzen-OHLC";
+    updateMessage(s.magnet?"OHLC-Snap im 12-Pixel-Radius aktiviert.":"Magnet deaktiviert.");
+   }
+  if(b.dataset.cmd==="clear"&&window.confirm("Zeichnungen für dieses Konto löschen?")){snapshot();s.draw=[];s.selected=null;persist()}
   if(b.dataset.cmd==="export"){const data=JSON.stringify({schemaVersion:1,account:s.account,symbol:"XAUUSD",drawings:s.draw},null,2);
    navigator.clipboard?.writeText(data).then(()=>updateMessage("JSON kopiert.")).catch(()=>updateMessage("Kopieren nicht möglich."))}
  });
@@ -382,14 +451,14 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  });
  canvas.addEventListener("pointerdown",pointerdown);canvas.addEventListener("pointermove",pointermove);
  canvas.addEventListener("pointerup",pointerup);
- canvas.addEventListener("pointercancel",()=>{cancelPlanPreview();s.drag=null;s.begin=null;s.preview=null;setTool("cursor")});
+ canvas.addEventListener("pointercancel",()=>{cancelPlanPreview();s.drag=null;s.begin=null;s.preview=null;s.pending=[];setTool("cursor")});
  window.addEventListener("keydown",e=>{if(s&&e.key==="Escape"&&s.tool!=="cursor"){
-  cancelPlanPreview();s.begin=null;s.preview=null;s.drag=null;setTool("cursor")
+  cancelPlanPreview();s.begin=null;s.preview=null;s.pending=[];s.drag=null;setTool("cursor")
  }});
  chart.timeScale().subscribeVisibleLogicalRangeChange(requestDraw);
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();
 }
 window.ChartStudioBeta=Object.freeze({mount,account,timeframe,updateCandles,updatePositions,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,drawings:json(s.draw),options:json(s.opts),
- scenario:s.scenario?json(s.scenario):null,tool:s.tool}:null});
+ scenario:s.scenario?json(s.scenario):null,tool:s.tool,magnet:s.magnet,selected:s.selected}:null});
 })();
