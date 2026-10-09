@@ -19,8 +19,10 @@ from pathlib import Path
 from account_gateway import ACCOUNTS, config_path, public_account, scoped, selected, verify_identity, writes_titan_reset
 from goldm15_dashboard import GUARD_FILE, metrics as gold_metrics, parameters as gold_parameters, read_guard, wilder_rsi
 from chart_studio.money import PreviewError, preview_scenario
+from dashboard_security import install_control_security
 
 app = FastAPI(title="XAU Titan Pro - Institutional Live Cockpit")
+install_control_security(app)
 BASE_DIR = Path(__file__).resolve().parent
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / 'static')), name="static")

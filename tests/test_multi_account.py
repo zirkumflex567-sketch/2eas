@@ -237,15 +237,17 @@ class MultiAccountTests(unittest.TestCase):
             return []
         with patch.multiple(app.mt5, initialize=fake.initialize, shutdown=fake.shutdown, account_info=fake.account_info, terminal_info=fake.terminal_info, positions_get=positions_get), patch.object(app.mt5, 'order_send') as send:
             client = TestClient(app.app)
+            csrf = client.get('/api/control_session').json()['csrf_token']
             for route in ('modify_position','close_position'):
-                response = client.post(f'/api/{route}?account=goldm15', json={'ticket':999})
+                response = client.post(f'/api/{route}?account=goldm15', json={'ticket':999}, headers={'X-Dashboard-CSRF': csrf})
                 self.assertEqual(response.status_code, 404)
             self.assertEqual(lookups, [(53090070,999), (53090070,999)])
             send.assert_not_called()
         fake = self.fake(wrong=True)
         with patch.multiple(app.mt5, initialize=fake.initialize, shutdown=fake.shutdown, account_info=fake.account_info, terminal_info=fake.terminal_info), patch.object(app.mt5, 'order_send') as send:
             client = TestClient(app.app)
-            response = client.post('/api/close_position?account=goldm15', json={'ticket':999})
+            csrf = client.get('/api/control_session').json()['csrf_token']
+            response = client.post('/api/close_position?account=goldm15', json={'ticket':999}, headers={'X-Dashboard-CSRF': csrf})
             self.assertEqual(response.status_code, 409)
             send.assert_not_called()
 

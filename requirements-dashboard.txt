@@ -1,0 +1,10 @@
+# Dashboard runtime, verified with Python 3.14 on Windows.
+# For CI use Python 3.14; MetaTrader5 requires Windows.
+fastapi==0.135.3
+uvicorn==0.41.0
+MetaTrader5==5.0.6180
+pandas==3.0.6
+numpy==2.4.3
+pydantic==2.12.5
+httpx==0.28.1
+tzdata==2025.3
