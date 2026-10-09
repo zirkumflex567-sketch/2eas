@@ -26,8 +26,16 @@ const {pathToFileURL} = require('node:url');
     await page.setViewportSize({width:390,height:844});
     await page.waitForTimeout(350);
     await page.screenshot({path:path.join(out,'390-stone-demo.png'),fullPage:true,animations:'disabled'});
-    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth > document.documentElement.clientWidth+4),
-      false,'Unexpected page-level horizontal overflow at mobile width');
+    const overflow = await page.evaluate(() => ({
+      width: document.documentElement.clientWidth,
+      scroll: document.documentElement.scrollWidth,
+      nodes: [...document.querySelectorAll('body *')].map(el => {
+        const rect = el.getBoundingClientRect();
+        return {tag:el.tagName,id:el.id,cls:String(el.className||'').slice(0,80),left:Math.round(rect.left),right:Math.round(rect.right),width:Math.round(rect.width)};
+      }).filter(el => el.right > document.documentElement.clientWidth+4 || el.left < -4).sort((a,b)=>b.right-a.right).slice(0,25)
+    }));
+    console.log('MOBILE OVERFLOW DIAGNOSTICS',JSON.stringify(overflow));
+    assert.equal(overflow.scroll > overflow.width+4,false,'Unexpected page-level horizontal overflow at mobile width');
     assert.deepEqual(errors,[],'Browser console and page errors');
     console.log('STONE VISUAL SMOKE PASSED: canvas, demo-only controls, responsive viewport, browser errors');
   } finally {
