@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - test/chart-studio-implementation
+      - test/chart-studio-phase2
   workflow_dispatch:
 permissions:
   contents: read
@@ -25,6 +26,8 @@ jobs:
       - name: Check browser scripts and chart math
         run: |
           node --check static/chart-studio-beta.js
+          node --check static/chart-studio-indicators.js
+          node scripts/test_chart_studio_indicators.cjs
           node --check static/stone-chart-effects.js
           node scripts/test_chart_studio_math.cjs
           python scripts/check_frontend_syntax.py

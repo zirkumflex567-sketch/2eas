@@ -29,7 +29,7 @@
 ## Task 2 — Full chart, drawings and storage
 
 - [ ] 2.1 V5 plugin/primitives and own drawing registry, drag states, snapping and hit-test priorities.
-- [ ] 2.2 Full indicator catalog and configurable instances/parameters, RSI/MACD/ATR/ADX/VWAP panes.
+- [~] 2.2 Full indicator catalog and configurable instances/parameters, RSI/MACD/ATR/ADX/VWAP panes. **Phase-2 work:** independent RSI(Wilder)/MACD/ATR/Volume panes with chart-time alignment and configurable periods/fast/slow/signal; ADX, VWAP, full registry/instance creation and v5 migration remain open.
 - [ ] 2.3 Full drawing tool catalog incl. advanced fibos, channels, labels, multiple handles and responsive touch.
 - [ ] 2.4 Drawing SQLite store, schema migration, revision conflicts, server layout/indicator profiles, import/export.
 - [ ] 2.5 Symbol watchlist, timeframe, panes, chart type, multichart and per-layout configuration.
@@ -70,3 +70,11 @@
 - Verified account identity on **both** independently connected MT5 demos for broker previews.
 - No MT5-write action in beta modules, What-if simulator, replay or automated tests.
 - 35 requirements and 56 acceptance tests tracked as passed/not passed—not inferred from a plan.
+
+### Phase-2 branch evidence (in progress)
+
+- Branch: `test/chart-studio-phase2` created from merged `main` (`b7cabcd3`).
+- Real broker `tick_volume` and `real_volume` are added as backward-compatible candle fields, supporting volume provenance.
+- New `ChartStudioIndicators` module: Wilder RSI, ATR, MACD, real/tick volume and separate resizable panes, parameters persisted per account, local profile roundtrip.
+- Static math checks prepared. Chromium CI and final validation must pass before marking this phase green and proposing a PR.
+- All broker mutations remain out of scope for this work package; main and EAs are untouched until acceptance.

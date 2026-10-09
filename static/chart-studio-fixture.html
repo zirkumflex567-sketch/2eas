@@ -6,6 +6,7 @@
 <body><div class="glass-card"><div><strong>XAUUSD M15 DEMO · READ ONLY</strong> <button id="stone-chart-expand-btn">GROSS</button></div>
 <div class="frame"><div id="tv-chart"></div></div></div>
 <script src="lightweight-charts.js"></script>
+<script src="chart-studio-indicators.js"></script>
 <script src="chart-studio-beta.js"></script>
 <script>
 const host=document.getElementById("tv-chart");
@@ -21,7 +22,8 @@ const emas=[
 const base=1700000000;
 const candles=Array.from({length:120},(_,i)=>{
  const price=4100+Math.sin(i/8)*12+i*.11;
- return {time:base+i*900,open:price-1,high:price+3,low:price-4,close:price+1};
+ return {time:base+i*900,open:price-1,high:price+3,low:price-4,close:price+1,
+  tick_volume:800+i*2,real_volume:0};
 });
 candleSeries.setData(candles);
 emas.forEach((series,j)=>series.setData(candles.map(c=>({time:c.time,value:c.close-2+j}))));

@@ -24,13 +24,16 @@ function saveProfile(){
  if(!name)return;const trimmed=name.trim().slice(0,40);if(!trimmed)return;
  const all=profiles();if(Object.keys(all).length>=15&&!all[trimmed]){updateMessage("Maximal 15 lokale Layouts.");return}
  if(all[trimmed]&&!window.confirm("Gespeichertes Layout überschreiben?"))return;
- all[trimmed]={draw:json(s.draw),opts:json(s.opts)};
+ all[trimmed]={draw:json(s.draw),opts:json(s.opts),
+  indicators:window.ChartStudioIndicators?.settings()||null};
  save(profileKey(),all);refreshProfiles();s.panel.querySelector("#cs-beta-profile").value=trimmed;updateMessage("Layout '"+trimmed+"' lokal gesichert.");
 }
 function loadProfile(){
  const name=s.panel.querySelector("#cs-beta-profile")?.value;const item=profiles()[name];
  if(!item)return;snapshot();s.draw=safeDraw(item.draw);
- s.opts={...optsDefault(),...(item.opts||{})};persist();save(optKey(),s.opts);showOpts();updateSeries();requestDraw();
+ s.opts={...optsDefault(),...(item.opts||{})};persist();save(optKey(),s.opts);showOpts();updateSeries();
+ if(item.indicators)window.ChartStudioIndicators?.applySettings(item.indicators);
+ requestDraw();
  updateMessage("Layout '"+name+"' geladen (nur lokal).");
 }
 function deleteProfile(){
@@ -167,9 +170,15 @@ function pointermove(e){
  else if(s.begin){s.preview=p;requestDraw()}
 }
 function pointerup(e){if(!s?.drag)return;s.drag=null;persist();try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){}}
-function account(id){if(!s)return;s.account=id;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.scenario=null;s.begin=null;s.preview=null;s.drag=null;scenarioGeneration++;showOpts();refreshProfiles();updateSeries();requestDraw()}
-function timeframe(tf){if(s){s.tf=tf;s.begin=null;s.preview=null;s.drag=null;requestDraw()}}
-function updateCandles(c){if(s&&Array.isArray(c)){s.candles=c;updateSeries();requestDraw()}}
+function account(id){if(!s)return;s.account=id;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.scenario=null;s.begin=null;s.preview=null;s.drag=null;scenarioGeneration++;
+ window.ChartStudioIndicators?.switchAccount(id);
+ showOpts();refreshProfiles();updateSeries();requestDraw()}
+function timeframe(tf){if(s){s.tf=tf;s.begin=null;s.preview=null;s.drag=null;
+ window.ChartStudioIndicators?.updateBars([]);
+ requestDraw()}}
+function updateCandles(c){if(s&&Array.isArray(c)){s.candles=c;updateSeries();
+ window.ChartStudioIndicators?.updateBars(c);
+ requestDraw()}}
 function updatePositions(accountId,positions){if(s&&s.account===accountId){s.positions=Array.isArray(positions)?positions:[];requestDraw()}}
 function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",timeframe:tf="M15"}){
  if(s||!chart||!host||!candleSeries)return;
@@ -209,6 +218,8 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  s={chart,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
   account:accountId,tf,tool:"cursor",begin:null,preview:null,drag:null,
   draw:[],undo:[],redo:[],candles:[],positions:[],scenario:null,opts:optsDefault(),extras:{}};
+ try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}
+ catch (err) {console.warn("Chart Studio indicator pane could not load:",err);}
  account(accountId);
  toggle.addEventListener("click",()=>{panel.hidden=!panel.hidden;toggle.setAttribute("aria-expanded",String(!panel.hidden));requestDraw()});
  panel.addEventListener("click",e=>{

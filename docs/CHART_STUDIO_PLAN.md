@@ -56,3 +56,9 @@ A **working progressive prototype**, *not* full 35-feature implementation: beta 
 - Testumgebung nutzt jetzt die im Repository versionierte `goldm15/GoldM15_Reconstruction.set`.
 - Nachfolgender Lauf [37881702809](https://github.com/zirkumflex567-sketch/2eas/actions/runs/37881702809) **PASS**: 46 Python-Tests, JavaScript-Syntax/Indikator-Math sowie ein echter Chromium-UI-Test inklusive Chartzeichnungen und What-if-Demo; **kein reales MT5**.
 - Browser-Funktionstest der zusätzlichen lokalen Layoutprofile, echte Windows-Terminal-Broker-Kalkulation, Touch/DPI, V5-Migration, serverseitige Persistenz und reale Stop-Mutationen bleiben offen.
+
+## Next implementation branch: first independent oscillator panes
+
+`test/chart-studio-phase2` adds RSI, MACD, ATR and real/tick volume pane controls while retaining the v4 fallback adapter. Chart timelines are aligned using whitespace points for indicator warm-up periods. It adds the original MT5 volume fields to `/api/candles` without changing existing price fields. Account-local named profiles include pane preferences and input periods.
+
+These are **not** the full configurable indicator framework, and are not the planned v5 migration. Must pass expanded Node math tests and Windows Chromium integration before any subsequent PR. Real broker writes remain disabled.
