@@ -74,8 +74,13 @@ def geometry(position, candidate, metadata, quote):
         mode = getattr(metadata, 'order_mode', None)
         if type(mode) is not int or mode < 0:
             reasons.append('ORDER_MODE_UNAVAILABLE')
-        if metadata.trade_mode != 4:
-            reasons.append('TRADE_DISABLED')
+        trade_reasons={0:'TRADE_DISABLED',1:'TRADE_LONG_ONLY',
+                       2:'TRADE_SHORT_ONLY',3:'TRADE_CLOSE_ONLY'}
+        actual_mode=getattr(metadata,'trade_mode',None)
+        if type(actual_mode) is not int or actual_mode not in range(5):
+            reasons.append('TRADE_MODE_UNKNOWN')
+        elif actual_mode in trade_reasons:
+            reasons.append(trade_reasons[actual_mode])
         for leg in ('sl', 'tp'):
             key = leg+'Price'
             if key not in candidate: continue

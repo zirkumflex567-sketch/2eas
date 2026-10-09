@@ -231,3 +231,9 @@ calculation mode, monetary currencies and tick-value variants are included in th
 actual initial/final calculation-context comparison when exposed by the adapter;
 a correction conflicts instead of returning stale money. Account currency is also
 verified before and after calculation and at final readback.
+
+Trade-mode provenance reports the actual MT5 integer. Mode 0 is disabled; modes
+1/2/3 are long-only/short-only/close-only and conservatively block proposal validity
+with distinct reasons. Unknown modes fail explicitly. Rate-limit quota follows the
+verified authentication channel and subject across peer/role changes; registry
+bindings continue to include the full role and raw peer.

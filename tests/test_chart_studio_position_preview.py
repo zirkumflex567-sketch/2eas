@@ -344,3 +344,48 @@ def test_registry_expired_error_guard_invariant():
     with pytest.raises(HTTPException) as caught:
         PreviewRegistry().lookup('missing','scope')
     assert caught.value.detail['guard']=={'state':'UNKNOWN','source':'NONE'}
+@pytest.mark.parametrize('mode,reason',[(0,'TRADE_DISABLED'),(1,'TRADE_LONG_ONLY'),(2,'TRADE_SHORT_ONLY'),(3,'TRADE_CLOSE_ONLY'),(4,None)])
+def test_trade_modes_are_accurately_reported(api,mode,reason):
+    client,fake,payload=api; fake.symbols[0].trade_mode=mode
+    data=client.post('/api/chart/v1/position/preview-stop',json=payload).json()
+    assert data['geometry']['tradeMode']==mode
+    if reason is None: assert data['geometry']['state']=='VALID'
+    else:
+        assert reason in data['geometry']['reasons']
+        assert data['geometry']['state']=='INVALID'
+        if mode: assert 'TRADE_DISABLED' not in data['geometry']['reasons']
+
+def test_unknown_trade_mode_is_explicit(api):
+    client,fake,payload=api; fake.symbols[0].trade_mode=99
+    response=client.post('/api/chart/v1/position/preview-stop',json=payload)
+    assert response.status_code==503
+    assert response.json()['detail']['code']=='TRADE_MODE_UNKNOWN'
+
+def test_same_verified_bearer_principal_shares_quota_across_peers(api,monkeypatch):
+    from chart_studio.preview_api import install_preview_routes
+    client,fake,payload=api
+    monkeypatch.setenv('DASHBOARD_CONTROL_TOKEN','x'*40)
+    app=FastAPI(); install_control_security(app)
+    install_preview_routes(app,fake,now=lambda:NOW,monotonic=lambda:0.)
+    one=TestClient(app,client=('203.0.113.1',1)); two=TestClient(app,client=('203.0.113.2',2))
+    headers={'Authorization':'Bearer '+'x'*40}
+    for _ in range(8): assert one.post('/api/chart/v1/position/preview-stop',json=payload,headers=headers).status_code==200
+    assert one.post('/api/chart/v1/position/preview-stop',json=payload,headers=headers).status_code==429
+    calls=list(fake.calls)
+    assert two.post('/api/chart/v1/position/preview-stop',json=payload,headers=headers).status_code==429
+    assert fake.calls==calls
+
+def test_same_proxy_principal_shares_quota_across_roles_other_user_isolated(api,monkeypatch):
+    import json
+    from chart_studio.preview_api import install_preview_routes
+    client,fake,payload=api
+    monkeypatch.setenv('DASHBOARD_PROXY_SECRET','x'*40)
+    monkeypatch.setenv('DASHBOARD_PROXY_USERS',json.dumps({'alice':'trade','bob':'read'}))
+    app=FastAPI(); install_control_security(app)
+    install_preview_routes(app,fake,now=lambda:NOW,monotonic=lambda:0.)
+    proxy=TestClient(app,client=('127.0.0.1',1))
+    def headers(user): return {'X-Dashboard-Proxy-Secret':'x'*40,'X-Dashboard-User':user}
+    for _ in range(8): assert proxy.post('/api/chart/v1/position/preview-stop',json=payload,headers=headers('alice')).status_code==200
+    monkeypatch.setenv('DASHBOARD_PROXY_USERS',json.dumps({'alice':'read','bob':'read'}))
+    assert proxy.post('/api/chart/v1/position/preview-stop',json=payload,headers=headers('alice')).status_code==429
+    assert proxy.post('/api/chart/v1/position/preview-stop',json=payload,headers=headers('bob')).status_code==200

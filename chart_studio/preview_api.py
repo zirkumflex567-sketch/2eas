@@ -117,7 +117,9 @@ def install_preview_routes(app, mt5, *, now=None, monotonic=None):
         if (not isinstance(identity,tuple) or len(identity)!=3 or
                 identity[2] not in ('read','layout','trade') or not isinstance(peer,str) or not peer):
             raise failure(403,'IDENTITY_REQUIRED')
-        principal=tuple(identity)+(peer,)
+        # Quota follows authentication subject across peer and role changes.
+        # Full identity, role and raw peer still bind every registry snapshot.
+        principal=identity[:2]
         try:
             with localcontext() as context:
                 context.prec = 64
@@ -128,6 +130,8 @@ def install_preview_routes(app, mt5, *, now=None, monotonic=None):
                         if position['revision']!=payload.expectedRevision:
                             raise failure(409,'POSITION_CHANGED',currentRevision=position['revision'])
                         metadata=reads.require_symbol(mt5,payload.symbol)
+                        if type(getattr(metadata,'trade_mode',None)) is not int or metadata.trade_mode not in range(5):
+                            raise failure(503,'TRADE_MODE_UNKNOWN')
                         reads.symbol_model(metadata,spec)
                         attrs=('point','trade_tick_size','volume_step','volume_min','volume_max',
                                'trade_stops_level','trade_freeze_level','trade_mode','order_mode',
@@ -162,6 +166,8 @@ def install_preview_routes(app, mt5, *, now=None, monotonic=None):
                         if final_position['revision']!=position['revision']:
                             raise failure(409,'POSITION_CHANGED',currentRevision=final_position['revision'])
                         final_metadata=reads.require_symbol(mt5,payload.symbol)
+                        if type(getattr(final_metadata,'trade_mode',None)) is not int or final_metadata.trade_mode not in range(5):
+                            raise failure(503,'TRADE_MODE_UNKNOWN')
                         reads.symbol_model(final_metadata,spec)
                         final,reasons,step=geometry(final_position,candidate,final_metadata,final_quote)
                         # Metadata correction during calculation invalidates that calculation.
@@ -186,7 +192,8 @@ def install_preview_routes(app, mt5, *, now=None, monotonic=None):
                             'ratioRiskRewardState':'AVAILABLE' if rr is not None else 'UNAVAILABLE',
                             'quoteTimeUtc':utc(final_quote['quoteTimeUtcMs']/1000),
                             'valid':not reasons,
-                            'geometry':{'state':'VALID' if not reasons else 'INVALID','reasons':reasons},
+                            'geometry':{'state':'VALID' if not reasons else 'INVALID','reasons':reasons,
+                                        'tradeMode':final_metadata.trade_mode},
                             'marketSession':{'state':'UNKNOWN','source':'NONE'},
                             'guard':{'state':'UNKNOWN','source':'NONE'},'canExecute':False,'canCommit':False,
                             'asOfServerUtc':utc(asof),'expiresAtUtc':utc(asof+10),
