@@ -57,6 +57,21 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(await page.evaluate(()=>ChartStudioAverages.getConfigs().length),0);
   await quick.locator(".cs-ma-quick-period").fill("34");
   await page.locator("#cs-beta-toggle").click();
+  const catalog=page.locator(".cs-catalog");
+  assert.equal(await catalog.isVisible(),true);
+  await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("weighted moving");
+  assert.equal(await catalog.locator(".cs-catalog-entry").count(),1);
+  await catalog.locator('[data-indicator="wma"] button').click();
+  assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].type,"WMA");
+  await areaCleanup();
+  await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("RSI");
+  await catalog.locator('[data-indicator="rsi"] button').click();
+  assert.equal((await page.evaluate(()=>ChartStudioOscillators.settings())).length,1);
+  await page.evaluate(()=>ChartStudioOscillators.applySettings([]));
+  await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("");
+  async function areaCleanup(){
+    await page.locator('[data-instance="ma1"] [data-action="remove"]').click();
+  }
   const area=page.locator(".cs-ma-editor");
   assert.equal(await area.isVisible(),true);
   await area.locator(".cs-ma-presets button").first().click();
