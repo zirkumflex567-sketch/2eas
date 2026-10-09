@@ -7,6 +7,12 @@ import test_dashboard_frontend as frontend
 
 
 def test_apply_zero_tp_removes_tp_while_zero_sl_remains_breakeven(isolated):
+    # Backend fixture patches the shared time module. Align its deterministic
+    # clock to the real browser clock for this cross-process integration probe.
+    # Source-age unit tests retain their independently frozen clocks.
+    from datetime import datetime, timezone
+    isolated.clock.now = datetime.now(timezone.utc).timestamp()
+    isolated.tick.time = int(isolated.clock.now)
     frontend.DashboardFrontendTests.setUpClass()
     ui = frontend.DashboardFrontendTests('test_position_invalid_numeric_draft_never_posts')
     ui.setUp()
