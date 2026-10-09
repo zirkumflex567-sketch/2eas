@@ -415,12 +415,14 @@ function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.candleSigna
  window.ChartStudioOscillators?.switchAccount(id);
  window.ChartStudioChartTypes?.switchAccount(id);
  window.ChartStudioServerSync?.account(id);
+ window.ChartStudioReplay?.switchContext(id,s.tf);
  showOpts();refreshProfiles();updateSeries();window.ChartStudioObjectManager?.render();requestDraw()}
 function timeframe(tf){if(s){cancelPlanPreview();s.tf=tf;s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");
  window.ChartStudioIndicators?.updateBars([]);
   window.ChartStudioOscillators?.updateBars([]);
   window.ChartStudioChartTypes?.updateBars([]);
   window.ChartStudioAverages?.updateBars([]);
+  window.ChartStudioReplay?.switchContext(s.account,tf);
  requestDraw()}}
 function updateCandles(c){if(s&&Array.isArray(c)){
   const sig=window.ChartStudioDataSignature?.signature(c);
@@ -430,6 +432,7 @@ function updateCandles(c){if(s&&Array.isArray(c)){
   window.ChartStudioOscillators?.updateBars(c);
   window.ChartStudioChartTypes?.updateBars(c);
   window.ChartStudioAverages?.updateBars(c);
+   window.ChartStudioReplay?.updateBars(c);
  requestDraw()}}
 function updatePositions(accountId,positions){if(s&&s.account===accountId){s.positions=Array.isArray(positions)?positions:[];requestDraw()}}
 function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",timeframe:tf="M15"}){
@@ -503,6 +506,8 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   getItems:()=>s?.draw||[],getSelected:()=>s?.selected,
   operate:operateObject})}catch(err){console.warn("Chart object manager unavailable:",err)}
  account(accountId);
+ try{window.ChartStudioReplay?.mount({panel,account:accountId,timeframe:tf})}
+ catch(err){console.warn("Read-only chart replay unavailable:",err)}
  try{window.ChartStudioServerSync?.mount({panel,account:accountId,
    exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,
    getAccount:()=>s?.account})}catch(err){console.warn("Chart-Workspace-Sync nicht verfügbar:",err)}

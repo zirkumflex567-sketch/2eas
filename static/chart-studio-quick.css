@@ -33,3 +33,16 @@
 .cs-catalog-entry button{border:1px solid #6cbdcf;background:#194658;color:#fff;
  border-radius:6px;padding:7px;cursor:pointer;min-height:36px}
 .cs-catalog-entry button:focus-visible,.cs-catalog input:focus-visible{outline:2px solid #65dcf4;outline-offset:2px}
+
+/* Read-only replay, separate from broker chart and production position overlays. */
+.cs-replay{margin:12px 0;padding:10px;border:1px solid rgba(107,208,226,.5);
+ border-radius:8px;background:#0a202c;color:#e4f7fa}
+.cs-replay summary{cursor:pointer;font-weight:700;padding:6px 0}
+.cs-replay-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:8px 0}
+.cs-replay-actions button{border:1px solid #6bb7c5;border-radius:5px;
+ background:#143e50;color:#f1fafe;padding:7px 10px;min-height:36px;cursor:pointer}
+.cs-replay-actions button:disabled{opacity:.5;cursor:not-allowed}
+.cs-replay-actions input[type="range"]{flex:1 1 180px;min-width:100px}
+.cs-replay-actions button:focus-visible,.cs-replay-actions input:focus-visible{outline:2px solid #65dded;outline-offset:2px}
+.cs-replay-plot{height:240px;min-height:240px;max-width:100%;overflow:hidden}
+.cs-replay output{display:block;color:#bde0e9;font-size:12px;margin:6px 0;min-height:18px}
