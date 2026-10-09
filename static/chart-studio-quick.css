@@ -1,0 +1,19 @@
+/* Chart Studio: discoverable, account-scoped multi-EMA entry point.
+   Independent of Stone/light/dark themes; never overlays or obscures price canvas. */
+.cs-ma-quick{display:inline-flex;align-items:center;flex-wrap:wrap;gap:7px;
+ margin:7px 8px 9px 0;padding:7px 10px;vertical-align:middle;
+ border:1px solid rgba(83,181,208,.48);border-radius:8px;
+ background:rgba(10,27,38,.89);color:#e4f5fb;max-width:100%;box-sizing:border-box}
+.cs-ma-quick button{border:1px solid rgba(117,214,239,.5);border-radius:6px;
+ padding:7px 11px;background:#153747;color:#f0fcff;font:inherit;cursor:pointer;
+ min-height:36px}
+.cs-ma-quick button:hover{background:#20546a}
+.cs-ma-quick button:focus-visible,.cs-ma-quick input:focus-visible{
+ outline:2px solid #74e8ff;outline-offset:2px}
+.cs-ma-quick-period{width:70px;max-width:90px;min-height:36px;box-sizing:border-box;
+ border:1px solid #638fa0;border-radius:6px;padding:4px 6px;background:#071e2b;
+ color:#fff;font:inherit;color-scheme:dark}
+.cs-ma-quick-hint{font-size:11px;opacity:.85}
+@media(max-width:600px){.cs-ma-quick{display:flex;margin:8px 0;width:100%}
+ .cs-ma-quick-hint{flex-basis:100%}}
+@media(prefers-reduced-motion:reduce){.cs-ma-quick *{scroll-behavior:auto}}
