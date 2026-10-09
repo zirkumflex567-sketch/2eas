@@ -11,7 +11,7 @@ const get=(k,df)=>{try{const v=JSON.parse(localStorage.getItem(prefix+k));return
 const save=(k,v)=>{try{localStorage.setItem(prefix+k,JSON.stringify(v))}catch(_){}};
 const optsDefault=()=>({ema20:true,ema50:true,ema200:true,sma20:false,sma50:false,bb:false,positions:false});
 const drawKey=()=>s.account+":draw:XAUUSD",optKey=()=>s.account+":opts:XAUUSD";
-const profileKey=()=>s.account+":profiles:XAUUSD",magnetKey=()=>s.account+":magnet:XAUUSD";
+const profileKey=()=>s.account+":profiles:XAUUSD",magnetKey=()=>s.account+":magnet:XAUUSD",fibKey=()=>s.account+":fibLevels:XAUUSD";
 function profiles(){const p=get(profileKey(),{});return p&&typeof p==="object"&&!Array.isArray(p)?p:{}}
 function refreshProfiles(){
  if(!s)return;const sel=s.panel.querySelector("#cs-beta-profile");
@@ -80,7 +80,7 @@ function bollinger(c,n=20,k=2){const hi=[],lo=[];let sum=0,sq=0;for(let i=0;i<c.
 function safeDraw(list){
  if(!Array.isArray(list))return [];
  const reserved=new Set(list.filter(o=>o&&typeof o.id==="string"&&/^[A-Za-z0-9_-]{1,32}$/.test(o.id)).map(o=>o.id));
- const used=new Set(),allowed=new Set(["kind","anchors","id","label","visible","locked"]);
+ const used=new Set(),allowed=new Set(["kind","anchors","id","label","visible","locked","levels"]);
  let serial=1;const result=[];
  for(const o of list.slice(0,500)){
   if(!window.ChartStudioDrawingGeometry?.validDrawing(o)||
@@ -91,11 +91,16 @@ function safeDraw(list){
    /[\u0000-\u001f]/.test(o.label)))continue;
   if(o.visible!==undefined&&typeof o.visible!=="boolean")continue;
   if(o.locked!==undefined&&typeof o.locked!=="boolean")continue;
+  if(o.levels!==undefined&&o.kind!=="fib")continue;
+  const fibLevels=o.kind==="fib"&&o.levels!==undefined?
+   window.ChartStudioFib?.normalizeLevels(o.levels):null;
+  if(o.levels!==undefined&&!fibLevels)continue;
   let id=o.id;
   if(!id){do{id="obj_"+serial++}while(reserved.has(id)||used.has(id))}
   used.add(id);
   result.push({kind:o.kind,anchors:o.anchors.map(p=>({time:p.time,price:p.price})),
-   id,label:o.label||"",visible:o.visible!==false,locked:o.locked===true});
+   id,label:o.label||"",visible:o.visible!==false,locked:o.locked===true,
+   ...(fibLevels?{levels:fibLevels}:{})});
  }
  return result;
 }
@@ -225,8 +230,8 @@ function drawObject(ctx,o,d){
  if(o.kind==="horizontal"){ctx.setLineDash([5,4]);ctx.beginPath();ctx.moveTo(0,a.y);ctx.lineTo(d.w,a.y);ctx.stroke()}
  if(b&&o.kind==="trend"){ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
  if(b&&o.kind==="rect"){ctx.fillRect(a.x,a.y,b.x-a.x,b.y-a.y);ctx.strokeRect(a.x,a.y,b.x-a.x,b.y-a.y)}
- if(b&&o.kind==="fib"){for(const k of ratios){const y=a.y+(b.y-a.y)*k;ctx.strokeStyle=k===.618?"#f7c874":"#8da8f9";
- ctx.beginPath();ctx.moveTo(Math.min(a.x,b.x),y);ctx.lineTo(d.w-2,y);ctx.stroke();ctx.fillStyle="#f7f8ff";ctx.font="11px monospace";ctx.fillText(String(k),Math.max(3,d.w-45),y-3)}}
+ if(b&&o.kind==="fib"){for(const k of (o.levels||ratios)){const y=a.y+(b.y-a.y)*k;ctx.strokeStyle=k===.618?"#f7c874":"#8da8f9";
+ ctx.beginPath();ctx.moveTo(Math.min(a.x,b.x),y);ctx.lineTo(d.w-2,y);ctx.stroke();ctx.fillStyle="#f7f8ff";ctx.font="11px monospace";ctx.fillText((k*100).toLocaleString("de-DE",{maximumFractionDigits:2})+"%",Math.max(3,d.w-64),y-3)}}
  if(s.tool==="edit"&&!o.locked)for(const p of o.anchors.map(project).filter(Boolean)){ctx.fillStyle="#f3faff";ctx.fillRect(p.x-5,p.y-5,10,10);ctx.strokeRect(p.x-5,p.y-5,10,10)}
 
  if(b&&o.kind==="ray"){
@@ -372,7 +377,8 @@ function pointerdown(e){
  else{
   s.pending.push(p);
   if(s.pending.length>=required){
-   snapshot();s.draw.push({kind:s.tool,anchors:s.pending.map(point=>({...point}))});
+   snapshot();s.draw.push({kind:s.tool,anchors:s.pending.map(point=>({...point})),
+     ...(s.tool==="fib"?{levels:[...s.fibLevels]}:{})});
    s.begin=null;s.pending=[];s.preview=null;persist();updateMessage("Zeichnung gespeichert.");
   }else updateMessage("Dritten Kanal-Anker für Abstand setzen.");
  }
@@ -406,7 +412,10 @@ function pointerup(e){
  }
  if(!s.drag)return;s.drag=null;persist();try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){}
 }
-function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;scenarioGeneration++;if(s.tool==="plan")setTool("cursor");
+function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
+  s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
+  const fibInput=s.panel.querySelector("#cs-fib-levels");if(fibInput)fibInput.value=window.ChartStudioFib?.display(s.fibLevels)||"";
+  scenarioGeneration++;if(s.tool==="plan")setTool("cursor");
  s.panel.querySelector('[data-cmd="magnet"]')?.setAttribute("aria-pressed",String(s.magnet));
  const mag=s.panel.querySelector('[data-cmd="magnet"]');if(mag)mag.textContent="Magnet: "+(s.magnet?"AN":"AUS")+" · Kerzen-OHLC";
  window.ChartStudioIndicators?.switchAccount(id);
@@ -466,6 +475,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   '<div class="cs-beta-buttons">'+toolLabels.map(([id,label])=>'<button type="button" data-tool="'+id+'">'+label+'</button>').join("")+
   ["undo","redo","delete-selected","export","clear"].map(id=>'<button type="button" data-cmd="'+id+'">'+({undo:"↶ Undo",redo:"↷ Redo","delete-selected":"Ausgewählte löschen",export:"JSON kopieren",clear:"Alle Zeichnungen löschen"}[id])+'</button>').join("")+'</div>'+
   '<p class="cs-beta-keyboard-hint">Kürzel: V Navigation · E Bearbeiten · H Linie · T Trend · R Zone · F Fibonacci · C Kanal · M Messen · Strg+Z Rückgängig · Entf Löschen</p>'+
+  '<div class="cs-beta-buttons cs-fib-settings"><label>Fibonacci-Level (%) <input type="text" id="cs-fib-levels" aria-label="Fibonacci-Level in Prozent" placeholder="0; 23,6; 38,2; 50; 61,8; 78,6; 100" maxlength="240"></label><button type="button" data-cmd="fib-default">Fibo-Vorlage speichern</button><button type="button" data-cmd="fib-selected">Ausgewählte Fibo ändern</button></div>'+
   '<div class="cs-beta-buttons"><button type="button" data-cmd="magnet" aria-pressed="false">Magnet: AUS · Kerzen-OHLC</button></div>'+
  '<div class="cs-beta-buttons">'+optLabels.map(([id,label])=>'<button type="button" data-opt="'+id+'">'+label+'</button>').join("")+'</div>'+
   '<div class="cs-beta-profiles"><strong>Lokale Layouts</strong> <select id="cs-beta-profile" aria-label="Gespeichertes Chartlayout"></select>'+
@@ -490,7 +500,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  host.style.position="relative";host.appendChild(canvas);
  s={chart,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
   account:accountId,tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,
-  draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null};
+  draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null,fibLevels:[...ratios]};
  try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}
  catch (err) {console.warn("Chart Studio indicator pane could not load:",err);}
  try {window.ChartStudioCatalog?.mount({panel});}
@@ -539,6 +549,18 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   const b=e.target.closest("button");if(!b)return;
   if(b.dataset.tool){setTool(b.dataset.tool);return}
   if(b.dataset.opt){s.opts[b.dataset.opt]=!s.opts[b.dataset.opt];save(optKey(),s.opts);showOpts();updateSeries();requestDraw();return}
+  if(b.dataset.cmd==="fib-default"||b.dataset.cmd==="fib-selected"){
+   const levels=window.ChartStudioFib?.parsePercent(panel.querySelector("#cs-fib-levels").value);
+   if(!levels){updateMessage("Fibo-Ebenen ungültig: 1–16 steigende Prozentwerte zwischen 0 und 200; Trennzeichen ;");return}
+   if(b.dataset.cmd==="fib-default"){
+    s.fibLevels=levels;save(fibKey(),levels);updateMessage("Fibonacci-Vorlage für neue Zeichnungen gespeichert.");
+   }else{
+    const obj=s.draw[s.selected];
+    if(!obj||obj.kind!=="fib"||obj.locked){updateMessage("Zuerst eine ungesperrte Fibo-Zeichnung über ihren Griff auswählen.");return}
+    snapshot();obj.levels=levels;persist();updateMessage("Fibonacci-Level geändert. Undo möglich.");
+   }
+   return;
+  }
   if(b.dataset.cmd==="quote")return;
   if(b.dataset.cmd==="drag-plan"){
    if(!s.scenario||!s.planTickSize){updateMessage("Zuerst eine gültige MT5-What-if-Vorschau berechnen.");return}
