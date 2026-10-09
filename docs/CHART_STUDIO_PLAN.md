@@ -82,3 +82,7 @@ The fixed chart indicator toggles are supplemented, not replaced, by a new isola
 ## Visual chart settings module
 
 `ChartStudioAppearance` adds controlled chart appearance customization with a strict schema and account-local settings: background theme, grid, crosshair, right-scale logarithmic/normal, candle up/down styling and last-price line. The optional `chartAppearance` server workspace field preserves schema-v1 backward compatibility. Do not alter any EA indicator inputs or broker order execution. E2E Chromium fixture checks renderer options and local/server profile round trips. Chart types, v5 engine and all higher-level plans remain open.
+
+## Independent RSI/MACD/ATR/ADX instances (increment after multi-MA)
+
+Add `ChartStudioOscillators` isolated v4 pane adapter: max 8 independent instances, unique IDs, validated per-type periods and MACD fast < slow, mutable visual styling, visibility, duplication/removal and type switch with proper chart disposal. Keep existing preset panes unchanged and retain shared RSI/Wilder/MACD/ATR/ADX math in `ChartStudioIndicators`. Rebuild after loaded broker bars; sync logical visible range to parent chart and disconnect chart ResizeObservers on delete. Each account receives independent local settings. Extend optional version-one server layout schema with strict `oscillatorInstances` collection (old layouts still valid). Regression must prove renderer panes, local/server roundtrips, no broker writes, and full prior test coverage. v5 adapter and multi-pane docking still pending.
