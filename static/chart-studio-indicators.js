@@ -266,7 +266,8 @@ function renderPanes(){
 function updateBars(bars){
  if(!state||!Array.isArray(bars))return;
  const last=bars.at(-1)||{};
- const signature=[bars.length,last.time,last.close,last.high,last.low,last.tick_volume,last.real_volume].join(":");
+ const signature=window.ChartStudioDataSignature?.signature(bars)||
+  [bars.length,last.time,last.close,last.high,last.low,last.tick_volume,last.real_volume].join(":");
  if(signature===state.signature)return;
  state.signature=signature;state.bars=bars;
  renderPanes();

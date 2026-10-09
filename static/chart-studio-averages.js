@@ -201,7 +201,8 @@ function updateBars(bars){
  if(!state||!Array.isArray(bars))return;
  const last=bars[bars.length-1]||{};
  const first=bars[0]||{};
- const signature=[bars.length,first.time,last.time,last.open,last.high,last.low,last.close].join("|");
+ const signature=window.ChartStudioDataSignature?.signature(bars)||
+  [bars.length,first.time,last.time,last.open,last.high,last.low,last.close].join("|");
  if(signature===state.signature)return;
  state.signature=signature;state.bars=rows(bars);state.cache.clear();
  refreshSeries();

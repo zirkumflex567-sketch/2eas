@@ -80,13 +80,16 @@ function applyAppearance(appearance){
 }
 function updateBars(input){
  if(!state||!Array.isArray(input))return;
+ const signature=window.ChartStudioDataSignature?.signature(input);
+ if(signature&&signature===state.signature)return;
+ state.signature=signature;
  const rows=window.ChartStudioIndicators?.math.validateBars(input)||[];
  state.bars=rows;
  if(state.alternative)state.alternative.setData(dataFor(state.type,rows));
 }
 function switchAccount(account){
  if(!state)return;
- state.account=account;state.type=restore(account);state.bars=[];
+ state.account=account;state.type=restore(account);state.bars=[];state.signature=null;
  render();
 }
 function mount({chart,candleSeries,panel,account="titan"}){
@@ -103,7 +106,7 @@ function mount({chart,candleSeries,panel,account="titan"}){
  message.setAttribute("aria-live","polite");
  root.append(title,controls,message);panel.append(root);
  state={chart,candleSeries,root,controls,message,account,type:restore(account),
-  alternative:null,bars:[]};
+  alternative:null,bars:[],signature:null};
  controls.addEventListener("click",event=>{
   const type=event.target.closest("button[data-chart-type]")?.dataset.chartType;
   if(type)applySettings(type);
