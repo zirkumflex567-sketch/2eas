@@ -8,6 +8,7 @@ import copy
 import json
 import os
 import threading
+import time
 import unittest
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -25,6 +26,7 @@ POSITION = dict(ticket=101, type='BUY', volume=.1, open_price=4000., current_pri
 
 def status(account):
     payload = dict(account=ACCOUNTS[account], bid=4010., ask=4010.2, spread=20,
+        source_fresh=True, quote_time_epoch=time.time(), quote_age_seconds=0.,
         times=dict(server='12:00:00', german='11:00:00', bar_remaining_fmt='14:59'),
         daily_drawdown=dict(pct=1., loss_usd=100., buffer_usd=250., balance=10000., equity=9900., manual_active=False),
         positions=[copy.deepcopy(POSITION)], trend_name='Aufwärts', trend_direction='BULLISH',
@@ -413,6 +415,18 @@ class DashboardFrontendTests(unittest.TestCase):
         self.assertTrue(all(0<=b['left'] and b['right']<=320 for b in bounds),bounds)
         self.page.locator('#positions-list').screenshot(path=str(OUTPUT/'gold-320-positions.png'))
         self.page.locator('#journal-list').screenshot(path=str(OUTPUT/'gold-320-journal.png'))
+    def test_position_entry_price_refresh_preserves_input_identity(self):
+        self.load()
+        field = self.page.locator('#sl-input-101'); field.fill('-37.00')
+        self.page.evaluate("window.entryInput = document.getElementById('sl-input-101')")
+        payload = status('titan'); payload['positions'][0]['open_price'] = 4005.
+        self.page.route('**/api/status*', lambda route: route.fulfill(json=payload))
+        self.page.evaluate('updateStatus()')
+        expect(self.page.locator('[data-position-ticket="101"]')).to_contain_text('#101 @ $4005.00')
+        expect(self.page.locator('[data-position-entry]')).to_have_text('#101 @ $4005.00')
+        expect(field).to_have_value('-37.00'); expect(field).to_be_focused()
+        self.assertTrue(self.page.evaluate("entryInput === document.getElementById('sl-input-101')"))
+        self.assertEqual(self.errors, [])
     def test_control_session_disabled_blocks_mutations(self):
         self.load()
         self.page.route('**/api/control_session', lambda route: route.fulfill(json=dict(control_enabled=False,csrf_token='disabled')))
@@ -461,6 +475,165 @@ class DashboardFrontendTests(unittest.TestCase):
         self.load()
         expect(self.page.locator('#journal-count-badge')).to_contain_text('2 Trades')
         self.assertEqual(self.errors,[])
+    def test_quick_actions_publish_draft_before_delayed_send_and_poll(self):
+        self.load()
+        for action, side, value in [('quickBE(101)', 'sl', '5.00'), ('quickSL(101,-50)', 'sl', '-50.00'), ('quickTP(101,100)', 'tp', '100.00')]:
+            with self.subTest(action=action):
+                field = self.page.locator('#'+side+'-input-101'); field.fill('-37.00' if side=='sl' else '37.00')
+                self.page.evaluate('''() => {
+                  window.nativeQuickFetch ||= window.fetch;
+                  window.fetch = (url, options) => String(url).includes('/api/modify_position')
+                    ? new Promise(resolve=>{window.finishQuick=success=>resolve({ok:true,status:200,json:async()=>({success})})}) : window.nativeQuickFetch(url,options);
+                  window.quickEvents=0;
+                  document.getElementById('positions-list').oninput=()=>window.quickEvents++;
+                }''')
+                self.page.evaluate('void '+action)
+                self.page.wait_for_function('typeof window.finishQuick === "function"')
+                self.assertEqual(self.page.evaluate("positionDrafts.get(activeAccount+':'+"+json.dumps(side+'-input-101')+")"),value)
+                self.assertEqual(self.page.evaluate('quickEvents'),1)
+                self.page.evaluate('updateStatus()'); expect(field).to_have_value(value)
+                self.page.evaluate('finishQuick(false)'); self.page.wait_for_timeout(50)
+                self.page.evaluate('updateStatus()'); expect(field).to_have_value(value)
+                self.page.evaluate('delete window.finishQuick; void '+action)
+                self.page.wait_for_function('typeof window.finishQuick === "function"')
+                field.fill('-42.00' if side=='sl' else '142.00')
+                self.page.evaluate('finishQuick(true)'); self.page.wait_for_timeout(50)
+                self.page.evaluate('updateStatus()')
+                expect(field).to_have_value('-42.00' if side=='sl' else '142.00')
+        self.assertEqual(self.errors, [])
+    def test_journal_unknown_direction_is_not_sell(self):
+        self.load(); expect(self.page.locator('#journal-count-badge')).to_contain_text('2 Trades')
+        self.page.evaluate("journalEntriesByAccount.titan[0].type=null; renderJournal()")
+        row = self.page.locator('[data-journal-key="titan:201:CLOSED"]')
+        expect(row).to_contain_text('UNBEKANNT'); expect(row).not_to_contain_text('SELL')
+        self.assertEqual(self.errors, [])
+    def test_api_text_is_literal_and_never_executes_html(self):
+        attack = '<img src=x onerror="window.apiInjected=(window.apiInjected||0)+1"> & \' "'
+        self.load(); expect(self.page.locator('#journal-count-badge')).to_contain_text('2 Trades')
+        for field in ['why_triggered','profit_goal','time_de','time_server']:
+            with self.subTest(field=field):
+                payload = journal('titan'); payload['journal'][0][field] = attack
+                self.page.route('**/api/journal_summary?account=titan', lambda route, request=None, *, p=payload: route.fulfill(json=p))
+                self.page.evaluate('refreshJournal()'); self.page.wait_for_timeout(80)
+                self.assertEqual(self.page.evaluate('window.apiInjected || 0'),0)
+                expect(self.page.locator('[data-journal-key="titan:201:CLOSED"]')).to_contain_text(attack)
+                expect(self.page.locator('#journal-list img')).to_have_count(0)
+        for field in ['name','short_note','long_note','current_val']:
+            with self.subTest(field=field):
+                payload = status('titan'); payload['rules_matrix'][0][field] = attack
+                self.page.route('**/api/status*', lambda route, request=None, *, p=payload: route.fulfill(json=p))
+                self.page.evaluate('updateStatus()')
+                self.assertEqual(self.page.evaluate('window.apiInjected || 0'),0)
+                expect(self.page.locator('#matrix-tbody')).to_contain_text(attack)
+                expect(self.page.locator('#matrix-tbody img')).to_have_count(0)
+        payload = status('titan'); payload['trend_diagnosis'] = attack
+        self.page.route('**/api/status*',lambda route: route.fulfill(json=payload)); self.page.evaluate('updateStatus()')
+        expect(self.page.locator('#short-missing-text')).to_contain_text(attack)
+        expect(self.page.locator('#short-missing-text img')).to_have_count(0)
+        self.page.evaluate('(attack)=>{accounts.titan.name=attack;renderPositions([{...currentData.positions[0],ticket:102}])}',attack)
+        expect(self.page.locator('#sl-input-102')).to_have_attribute('aria-label','SL Ziel-P/L in USD · '+attack+' · Ticket 102')
+        expect(self.page.locator('#positions-list img')).to_have_count(0)
+        payload = status('goldm15'); payload['exit_goals'][0].update(short_note=attack,long_note=attack)
+        self.page.evaluate('(payload)=>renderGoldDetails(payload)',payload)
+        expect(self.page.locator('#exit-goals')).to_contain_text(attack)
+        expect(self.page.locator('#exit-goals img')).to_have_count(0)
+        self.assertEqual(self.page.evaluate('window.apiInjected || 0'),0)
+        self.assertEqual(self.errors, [])
+    def test_permanent_bootstrap_503_keeps_unknown_nonchart_view_before_chart(self):
+        self.page.route('**/api/accounts', lambda route: route.fulfill(status=503,json=dict(detail='permanent offline')))
+        self.context.add_init_script("window.addEventListener('DOMContentLoaded',()=>{window.earlyClearChartUnset = typeof candleSeries === 'undefined'; clearAccountView()})")
+        self.page.goto(self.url)
+        expect(self.page.locator('#account-connection')).to_contain_text('OFFLINE')
+        self.assertTrue(self.page.evaluate('earlyClearChartUnset'))
+        self.page.wait_for_timeout(1200)
+        for id in ['dd-pct','dd-usd','dd-buffer','dd-matrix-detail','acc-matrix-bal','pos-matrix-count','pos-count-badge','sell-pct','buy-pct','matrix-time']:
+            with self.subTest(id=id):
+                expect(self.page.locator('#'+id)).to_have_text('—')
+        expect(self.page.locator('#positions-list')).to_contain_text('unbekannt')
+        expect(self.page.locator('#positions-list')).not_to_contain_text('keine offenen')
+        expect(self.page.locator('#matrix-tbody')).to_contain_text('unbekannt')
+        expect(self.page.locator('#dd-reset-button')).to_be_disabled()
+        self.assertFalse(self.page.evaluate('accountActionsReady()'))
+        self.assertEqual(self.errors, []); self.assertEqual(self.mutations, [])
+    def test_permanent_bootstrap_503_initial_view_never_claims_zero(self):
+        self.page.route('**/api/accounts', lambda route: route.fulfill(status=503,json=dict(detail='permanent offline')))
+        self.page.goto(self.url)
+        expect(self.page.locator('#account-connection')).to_contain_text('OFFLINE')
+        expect(self.page.locator('#pos-count-badge')).to_have_text('—')
+        expect(self.page.locator('#pos-matrix-count')).to_have_text('—')
+        expect(self.page.locator('#dd-matrix-detail')).to_have_text('—')
+        expect(self.page.locator('#positions-list')).to_contain_text('unbekannt')
+        expect(self.page.locator('#matrix-tbody')).to_contain_text('unbekannt')
+        self.assertEqual(self.errors, [])
+    def test_open_reset_modal_refreshes_readonly_values_without_touching_baseline(self):
+        self.load(); self.page.locator('#dd-reset-button').click()
+        field = self.page.locator('#dd-reset-input'); field.fill('12345.67')
+        self.page.evaluate('window.resetInput = document.getElementById("dd-reset-input")')
+        payload = status('titan'); payload['daily_drawdown'].update(balance=9000.,equity=8600.,pct=4.,loss_usd=400.,manual_active=True,reset_time_str='12:34',reset_balance=11000.)
+        self.page.route('**/api/status*',lambda route: route.fulfill(json=payload)); self.page.evaluate('updateStatus()')
+        expect(self.page.locator('#modal-current-bal')).to_have_text('$9000.00')
+        expect(self.page.locator('#modal-current-dd')).to_have_text('4.00% (-$400.00)')
+        expect(self.page.locator('#modal-reset-status-row')).to_be_visible()
+        expect(self.page.locator('#modal-reset-status-text')).to_have_text('Aktiv seit 12:34 @ $11000.00')
+        expect(field).to_have_value('12345.67'); expect(field).to_be_focused()
+        self.assertTrue(self.page.evaluate('resetInput === document.getElementById("dd-reset-input")'))
+        payload['daily_drawdown'].update(pct=None,loss_usd=None,balance=None)
+        self.page.evaluate('updateStatus()')
+        expect(self.page.locator('#modal-current-dd')).to_have_text('unbekannt')
+        expect(self.page.locator('#modal-current-bal')).to_have_text('unbekannt')
+        expect(field).to_have_value('12345.67')
+        expect(self.page.locator('#dd-reset-modal [onclick="executeDrawdownReset()"]')).to_be_disabled()
+        self.assertEqual(self.errors, [])
+    def test_source_freshness_blocks_actions_despite_successful_http_polls(self):
+        self.load()
+        for metadata in [dict(source_fresh=False), dict(quote_age_seconds=31.), dict(quote_time_epoch=time.time()-31), dict(quote_time_epoch=time.time()+10,quote_age_seconds=-10.), dict(quote_time_epoch=None)]:
+            with self.subTest(metadata=metadata):
+                payload = status('titan'); payload.update(metadata)
+                self.page.route('**/api/status*',lambda route, request=None, *, p=payload: route.fulfill(json=p))
+                self.page.evaluate('updateStatus()'); self.page.evaluate('updateStatus()')
+                expect(self.page.locator('#account-connection')).to_contain_text('STALE')
+                expect(self.page.locator('#dd-reset-button')).to_be_disabled()
+                self.assertTrue(self.page.evaluate("[...document.querySelectorAll('#positions-list button')].every(button=>button.disabled)"))
+                self.assertFalse(self.page.evaluate('accountActionsReady()'))
+                self.assertTrue(self.page.evaluate("accountFetch('/api/close_position',{method:'POST'}).then(()=>false,()=>true)"))
+                self.page.route('**/api/status*',lambda route: route.fulfill(json=status('titan')))
+                self.page.evaluate('updateStatus()')
+                expect(self.page.locator('#account-connection')).to_contain_text('LIVE')
+        self.assertEqual(self.mutations,[]); self.assertEqual(self.errors,[])
+    def test_repeated_receipt_cannot_rejuvenate_same_quote_epoch(self):
+        self.load()
+        payload = status('titan')
+        self.page.route('**/api/status*',lambda route:route.fulfill(json=payload)); self.page.evaluate('updateStatus()')
+        self.page.evaluate('Date.now=()=>'+str(int((payload['quote_time_epoch']+31)*1000)))
+        self.page.evaluate('updateStatus()'); self.page.evaluate('updateStatus()')
+        expect(self.page.locator('#account-connection')).to_contain_text('STALE')
+        self.assertFalse(self.page.evaluate('accountActionsReady()'))
+        self.assertEqual(self.mutations,[]); self.assertEqual(self.errors,[])
+    def test_gold_unverified_baseline_keeps_known_risk_manual_actions_not_ea_claim(self):
+        self.load(); self.page.locator('[data-account="goldm15"]').click()
+        expect(self.page.locator('#account-connection')).to_contain_text('53090070')
+        payload = status('goldm15'); payload['ea_guard']['baseline_verified'] = False
+        self.page.route('**/api/status*',lambda route:route.fulfill(json=payload)); self.page.evaluate('updateStatus()')
+        expect(self.page.locator('#guard-status')).to_have_text('SCHUTZSTATUS UNBEKANNT')
+        expect(self.page.locator('#guard-note')).to_contain_text('EA-Heartbeat unbekannt')
+        expect(self.page.locator('#guard-note')).to_contain_text('Quellfrische ist keine EA-Bestätigung')
+        expect(self.page.locator('#dd-reset-button')).to_be_enabled()
+        self.assertTrue(self.page.evaluate('accountActionsReady()'))
+        self.page.locator('#dd-reset-button').click()
+        expect(self.page.locator('#reset-description')).to_contain_text('ausschließlich die Dashboard-Anzeige')
+        self.assertEqual(self.mutations,[]); self.assertEqual(self.errors,[])
+    def test_source_metadata_absent_legacy_payload_remains_compatible(self):
+        self.load(); payload = status('titan')
+        for key in ['source_fresh','quote_time_epoch','quote_age_seconds']: payload.pop(key)
+        self.page.route('**/api/status*',lambda route:route.fulfill(json=payload)); self.page.evaluate('updateStatus()')
+        expect(self.page.locator('#account-connection')).to_contain_text('LIVE')
+        self.assertTrue(self.page.evaluate('accountActionsReady()'))
+    def test_journal_recording_label_stays_explicitly_dated(self):
+        self.load()
+        expect(self.page.locator('#journal-recording-start')).to_contain_text('08.10.2026 23:00 UTC')
+        expect(self.page.locator('#journal-recording-start')).to_contain_text('Offene Positionen unabhängig vom Einstiegstag')
+        expect(self.page.locator('#journal-recording-start')).not_to_contain_text('Heute')
+        expect(self.page.locator('#journal-recording-start')).not_to_contain_text('20:00')
     def test_storage_denied_does_not_break_bootstrap(self):
         self.context.add_init_script("Object.defineProperty(window, 'localStorage', {get(){throw new DOMException('Blocked', 'SecurityError')}})")
         self.load()

@@ -1732,13 +1732,23 @@ HTML_CONTENT = """<!DOCTYPE html>
     const STATUS_MAX_AGE = 6000;
     let lastStatusSuccess = 0;
     let statusConfirmed = false;
+    function quoteIsFresh() {
+      const data = currentData;
+      if (!data) return false;
+      // Compatibility only for old payloads with no source metadata at all.
+      if (!['source_fresh','quote_time_epoch','quote_age_seconds'].some(key => key in data)) return true;
+      if (data.source_fresh !== true || !Number.isFinite(data.quote_time_epoch) || !Number.isFinite(data.quote_age_seconds)) return false;
+      const epochAge = Date.now()/1000 - data.quote_time_epoch;
+      const reportedAge = data.quote_age_seconds + Math.max(0, (Date.now()-lastStatusSuccess)/1000);
+      return epochAge >= -5 && epochAge <= 30 && reportedAge >= -5 && reportedAge <= 30;
+    }
     function accountIsFresh() {
-      return statusConfirmed && currentData?.account?.id === activeAccount && lastStatusSuccess > 0 && Date.now()-lastStatusSuccess < STATUS_MAX_AGE;
+      return statusConfirmed && quoteIsFresh() && currentData?.account?.id === activeAccount && lastStatusSuccess > 0 && Date.now()-lastStatusSuccess < STATUS_MAX_AGE;
     }
     function gateAccountActions(enabled) {
       const dd = currentData?.daily_drawdown;
       const riskKnown = dd && ['pct','loss_usd','buffer_usd','balance','equity'].every(key => Number.isFinite(dd[key]));
-      enabled = enabled && !!riskKnown;
+      enabled = enabled && accountIsFresh() && !!riskKnown;
       document.querySelectorAll('#positions-list button,[onclick="openDrawdownResetModal()"],[onclick="executeDrawdownReset()"],[onclick="revertAutoDrawdown()"]').forEach(button => button.disabled = !enabled);
     }
     function accountActionsReady() {
@@ -1852,14 +1862,14 @@ HTML_CONTENT = """<!DOCTYPE html>
       document.getElementById('dd-reset-button').disabled = true;
       closeDrawdownResetModal();
       document.getElementById('dd-reset-input').value = '';
-      for (const id of ['live-bid','live-ask','time-server','time-german','bar-countdown','dd-pct','dd-usd','dd-buffer','dd-matrix-detail','acc-matrix-bal','pos-matrix-count','pos-count-badge','sell-pct','buy-pct']) document.getElementById(id).textContent = '—';
+      for (const id of ['live-bid','live-ask','time-server','time-german','bar-countdown','dd-pct','dd-usd','dd-buffer','dd-matrix-detail','acc-matrix-bal','pos-matrix-count','pos-count-badge','sell-pct','buy-pct','matrix-time']) document.getElementById(id).textContent = '—';
       document.getElementById('live-spread').textContent = 'Spr: —';
       document.getElementById('dd-reset-tag').classList.add('hidden');
-      document.getElementById('positions-list').textContent = 'Kontodaten werden geladen …';
+      document.getElementById('positions-list').textContent = 'Positionen unbekannt · Kontodaten werden geladen …';
       delete document.getElementById('positions-list').dataset.structure;
       matrixSignature = null; vpSignature = null;
       renderJournal();
-      document.getElementById('matrix-tbody').replaceChildren();
+      document.getElementById('matrix-tbody').innerHTML = '<tr><td colspan="4">Regeln unbekannt · Kontodaten werden geladen …</td></tr>';
       document.getElementById('exit-goals').replaceChildren();
       document.getElementById('gold-details').classList.add('hidden');
       document.getElementById('vp-histogram-container').replaceChildren();
@@ -1913,6 +1923,10 @@ HTML_CONTENT = """<!DOCTYPE html>
       await Promise.all([updateStatus(),loadCandles()]);
     }
 
+    function escapeHTML(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    }
+
     function renderGoldDetails(data) {
       const container = document.getElementById('gold-details');
       container.classList.toggle('hidden', !data.ea_guard);
@@ -1923,8 +1937,8 @@ HTML_CONTENT = """<!DOCTYPE html>
       document.getElementById('guard-status').textContent = locked ? 'EA-SPERRE AKTIV' : guard.baseline_verified ? 'TAGESBASIS BESTÄTIGT' : 'SCHUTZSTATUS UNBEKANNT';
       document.getElementById('guard-status').className = locked || !guard.baseline_verified ? 'text-rose-500 font-bold' : 'text-emerald-500 font-bold';
       document.getElementById('guard-detail').textContent = 'Basis '+money(guard.baseline)+' · Puffer bis $350: '+money(guard.daily_buffer_usd)+' · Mit Tagesreserve: '+money(guard.daily_protected_buffer_usd)+' · Geschützte Untergrenze '+money(guard.hard_protected_floor_usd)+' · Rest '+money(guard.hard_buffer_usd);
-      document.getElementById('guard-note').textContent = guard.note;
-      document.getElementById('exit-goals').innerHTML = data.exit_goals.map(goal => `<div class="ticker-bg border rounded-lg p-2"><div class="font-bold mb-1">System ${goal.slot}</div><div class="text-rose-500">Short: ${goal.short_note} · ${goal.short_value.toFixed(3)}% ${goal.short_met?'✓ erreicht':'offen'}</div><div class="text-emerald-500">Long: ${goal.long_note} · ${goal.long_value.toFixed(3)}% ${goal.long_met?'✓ erreicht':'offen'}</div></div>`).join('');
+      document.getElementById('guard-note').textContent = (guard.note || '') + ' · EA-Heartbeat unbekannt; Quellfrische ist keine EA-Bestätigung.';
+      document.getElementById('exit-goals').innerHTML = data.exit_goals.map(goal => `<div class="ticker-bg border rounded-lg p-2"><div class="font-bold mb-1">System ${escapeHTML(goal.slot)}</div><div class="text-rose-500">Short: ${escapeHTML(goal.short_note)} · ${goal.short_value.toFixed(3)}% ${goal.short_met?'✓ erreicht':'offen'}</div><div class="text-emerald-500">Long: ${escapeHTML(goal.long_note)} · ${goal.long_value.toFixed(3)}% ${goal.long_met?'✓ erreicht':'offen'}</div></div>`).join('');
     }
     let currentBottomMargin = 0.10;
 
@@ -2392,7 +2406,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           ? `<span class="text-emerald-400 font-black">Aktiver Trend (Long):</span>` 
           : `<span class="text-rose-400 font-black">Aktiver Trend (Short):</span>`;
         
-        document.getElementById('short-missing-text').innerHTML = `${statusPrefix} ${data.trend_diagnosis || data.short_missing}`;
+        document.getElementById('short-missing-text').innerHTML = `${statusPrefix} ${escapeHTML(data.trend_diagnosis || data.short_missing)}`;
         document.getElementById('sell-pct').innerText = `${data.sell_readiness}% (${data.sell_met_count}/${data.rule_count})`;
         document.getElementById('sell-bar').style.width = `${data.sell_readiness}%`;
         document.getElementById('buy-pct').innerText = `${data.buy_readiness}% (${data.buy_met_count}/${data.rule_count})`;
@@ -2406,7 +2420,9 @@ HTML_CONTENT = """<!DOCTYPE html>
 
         // Render Positions
         renderPositions(data.positions);
-        gateAccountActions(true);
+        if (!quoteIsFresh()) markStatusStale(new Error('MT5-Quote veraltet oder Quellzeit unbestätigt'));
+        else gateAccountActions(true);
+        if (!document.getElementById('dd-reset-modal').classList.contains('hidden')) refreshResetModalValues();
 
         // The journal is independently queried for one or BOTH strategies.
         // Do not replace the merged view with activeAccount-only status data.
@@ -2426,24 +2442,24 @@ HTML_CONTENT = """<!DOCTYPE html>
       tbody.innerHTML = rules.map((r,index) => `
         <tr class="hover-row transition-colors stone-target-row stone-target-row--${index % 5}">
           <td class="py-2 pr-2">
-            <div class="font-sans font-bold text-xs">${r.name}</div>
+            <div class="font-sans font-bold text-xs">${escapeHTML(r.name)}</div>
           </td>
           <td class="py-2 px-2 text-center whitespace-nowrap">
             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${r.short_met ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'}">
               <span>${r.short_met ? '✅' : '❌'}</span>
               <span>${r.short_met ? 'ERFÜLLT' : 'FEHLT'}</span>
             </span>
-            <div class="text-[9px] text-sub mt-1 whitespace-normal">${r.short_note}</div>
+            <div class="text-[9px] text-sub mt-1 whitespace-normal">${escapeHTML(r.short_note)}</div>
           </td>
           <td class="py-2 px-2 text-center whitespace-nowrap">
             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${r.long_met ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'}">
               <span>${r.long_met ? '✅' : '❌'}</span>
               <span>${r.long_met ? 'ERFÜLLT' : 'FEHLT'}</span>
             </span>
-            <div class="text-[9px] text-sub mt-1 whitespace-normal">${r.long_note}</div>
+            <div class="text-[9px] text-sub mt-1 whitespace-normal">${escapeHTML(r.long_note)}</div>
           </td>
           <td class="py-2 pl-2 text-right font-mono text-[10px] opacity-90 font-bold stone-target-live">
-            ${r.current_val}
+            ${escapeHTML(r.current_val)}
           </td>
         </tr>
       `).join('');
@@ -2555,9 +2571,9 @@ HTML_CONTENT = """<!DOCTYPE html>
         <div data-position-ticket="${p.ticket}" class="p-3 rounded-xl ticker-bg border flex flex-wrap items-center justify-between gap-3 text-xs mb-2">
           <div class="flex items-center gap-2.5">
             <span data-position-type class="px-2 py-1 rounded-md font-bold font-mono text-[11px] text-white ${p.type === 'BUY' ? 'bg-emerald-600' : 'bg-rose-600'}">
-              ${p.type} ${p.volume} Lot
+              ${escapeHTML(p.type)} ${escapeHTML(p.volume)} Lot
             </span>
-            <span class="font-mono font-bold text-xs">#${p.ticket} @ $${p.open_price.toFixed(2)}</span>
+            <span data-position-entry class="font-mono font-bold text-xs">#${p.ticket} @ $${p.open_price.toFixed(2)}</span>
             <span data-position-current class="text-sub font-mono text-[10px]">Aktuell: &#36;${p.current_price.toFixed(2)}</span>
           </div>
 
@@ -2570,7 +2586,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           <!-- SL in USD -->
           <div class="flex items-center gap-1.5 font-mono text-xs">
             <label for="sl-input-${p.ticket}" class="text-sub font-bold">SL · USD:</label>
-            <input type="number" aria-label="SL Ziel-P/L in USD · ${accounts[activeAccount].name} · Ticket ${p.ticket}" id="sl-input-${p.ticket}" step="0.01" value="${p.sl_usd.toFixed(2)}" class="rounded px-1.5 py-0.5 text-center text-xs ticker-bg border text-rose-500 font-bold">
+            <input type="number" aria-label="SL Ziel-P/L in USD · ${escapeHTML(accounts[activeAccount].name)} · Ticket ${p.ticket}" id="sl-input-${p.ticket}" step="0.01" value="${p.sl_usd.toFixed(2)}" class="rounded px-1.5 py-0.5 text-center text-xs ticker-bg border text-rose-500 font-bold">
             <button onclick="quickBE(${p.ticket})" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-amber-500 border rounded text-[10px] font-bold cursor-pointer" title="SL sofort +5 USD; TP-Feld wird ebenfalls gesendet">SL sofort +5 USD</button>
             <button onclick="quickSL(${p.ticket}, -50)" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-rose-500 border rounded text-[10px] cursor-pointer" title="TP-Feld wird ebenfalls gesendet">SL sofort −50 USD</button>
           </div>
@@ -2578,7 +2594,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           <!-- TP in USD -->
           <div class="flex items-center gap-1.5 font-mono text-xs">
             <label for="tp-input-${p.ticket}" class="text-sub font-bold">TP · USD:</label>
-            <input type="number" aria-label="TP Ziel-P/L in USD · ${accounts[activeAccount].name} · Ticket ${p.ticket}" aria-describedby="tp-help-${p.ticket}" id="tp-input-${p.ticket}" min="0" step="0.01" value="${p.tp_usd.toFixed(2)}" class="rounded px-1.5 py-0.5 text-center text-xs ticker-bg border text-emerald-500 font-bold">
+            <input type="number" aria-label="TP Ziel-P/L in USD · ${escapeHTML(accounts[activeAccount].name)} · Ticket ${p.ticket}" aria-describedby="tp-help-${p.ticket}" id="tp-input-${p.ticket}" min="0" step="0.01" value="${p.tp_usd.toFixed(2)}" class="rounded px-1.5 py-0.5 text-center text-xs ticker-bg border text-emerald-500 font-bold">
             <button onclick="quickTP(${p.ticket}, 50)" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-emerald-500 border rounded text-[10px] font-bold cursor-pointer" title="SL-Feld wird ebenfalls gesendet">TP sofort +50 USD</button>
             <button onclick="quickTP(${p.ticket}, 100)" class="px-1.5 py-1 ticker-bg hover:opacity-80 text-emerald-500 border rounded text-[10px] font-bold cursor-pointer" title="SL-Feld wird ebenfalls gesendet">TP sofort +100 USD</button>
             <span id="tp-help-${p.ticket}" data-tp-help class="text-sub">0 USD = Kein fixer TP</span>
@@ -2607,6 +2623,8 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (!row) continue;
         const type = row.querySelector('[data-position-type]');
         if (type) type.textContent = pos.type+' '+pos.volume+' Lot';
+        const entry = row.querySelector('[data-position-entry]');
+        if (entry) entry.textContent = '#'+pos.ticket+' @ $'+pos.open_price.toFixed(2);
         const price = row.querySelector('[data-position-current]');
         if (price) price.textContent = 'Aktuell: ' + String.fromCharCode(36) + pos.current_price.toFixed(2);
         const pnl = row.querySelector('[data-position-pnl]');
@@ -2838,7 +2856,8 @@ HTML_CONTENT = """<!DOCTYPE html>
 
         const typeBadge = isBuy
           ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">BUY</span>`
-          : `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30">SELL</span>`;
+          : item.type === 'SELL' ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30">SELL</span>`
+          : `<span class="px-2 py-0.5 rounded text-[10px] font-black ticker-bg border text-sub">UNBEKANNT</span>`;
 
         const stratBadge = item.account === 'titan'
           ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">XAU TITAN PRO</span>`
@@ -2849,18 +2868,18 @@ HTML_CONTENT = """<!DOCTYPE html>
           : `<span class="text-sub font-mono">Einstieg: <strong class="text-white">$${Number.isFinite(item.open_price) ? item.open_price.toFixed(2) : '— (unbekannt)'}</strong> · Ausstieg: <strong class="text-white">$${Number.isFinite(item.close_price) ? item.close_price.toFixed(2) : '— (unbekannt)'}</strong></span>`;
 
         return `
-          <div data-journal-key="${key}" class="glass-card rounded-lg p-3 border border-white/5 hover:border-white/15 transition-all">
+          <div data-journal-key="${escapeHTML(key)}" class="glass-card rounded-lg p-3 border border-white/5 hover:border-white/15 transition-all">
             <!-- HEADER WITH PNL -->
             <div class="flex flex-wrap items-center justify-between gap-2 pb-2 mb-2 border-b table-border">
               <div class="flex flex-wrap items-center gap-2">
                 ${stratBadge}
                 ${typeBadge}
-                <span class="font-mono text-xs font-bold">${item.volume} Lot</span>
+                <span class="font-mono text-xs font-bold">${escapeHTML(item.volume)} Lot</span>
                 ${priceDetails}
-                <span class="text-[10px] text-sub font-mono">#${item.ticket}</span>
+                <span class="text-[10px] text-sub font-mono">#${escapeHTML(item.ticket)}</span>
               </div>
               <div class="flex flex-wrap items-center gap-2.5">
-                <span class="text-[10px] text-sub font-mono">⏰ DE ${item.time_de} (Server ${item.time_server})</span>
+                <span class="text-[10px] text-sub font-mono">⏰ DE ${escapeHTML(item.time_de)} (Server ${escapeHTML(item.time_server)})</span>
                 ${statusBadge}
                 ${pnlBadge}
               </div>
@@ -2876,7 +2895,7 @@ HTML_CONTENT = """<!DOCTYPE html>
                     <span>🎯</span>
                     <span>Warum wurde der Trade ausgelöst? (Einstiegs-Begründung)</span>
                   </div>
-                  <p class="text-[11px] leading-relaxed text-sub">${item.why_triggered}</p>
+                  <p class="text-[11px] leading-relaxed text-sub">${escapeHTML(item.why_triggered)}</p>
                 </div>
               </div>
 
@@ -2887,7 +2906,7 @@ HTML_CONTENT = """<!DOCTYPE html>
                     <span>🏁</span>
                     <span>Was ist das Profitziel / die Ausstiegsregel?</span>
                   </div>
-                  <p class="text-[11px] leading-relaxed text-sub">${item.profit_goal}</p>
+                  <p class="text-[11px] leading-relaxed text-sub">${escapeHTML(item.profit_goal)}</p>
                 </div>
                 ${item.sl_price ? `<div class="mt-2 text-[10px] font-mono text-sub flex gap-3">
                   <span>SL: <strong class="text-rose-400">$${item.sl_price.toFixed(2)}</strong></span>
@@ -2931,7 +2950,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         const res = await accountFetch('/api/modify_position', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ticket, sl_usd, tp_usd })
+          body: JSON.stringify(tp_usd === 0 ? { ticket, sl_usd, remove_tp: true } : { ticket, sl_usd, tp_usd })
         });
         const result = await res.json();
         if (result.success) {
@@ -2954,19 +2973,26 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
     }
 
+    function setPositionDraft(id, value) {
+      const input = document.getElementById(id);
+      input.value = value;
+      // Synchronous user-input path publishes the draft before any request/poll.
+      input.dispatchEvent(new Event('input', {bubbles:true}));
+    }
+
     async function quickBE(ticket) {
-      document.getElementById(`sl-input-${ticket}`).value = "5.00";
-      applySLTP(ticket);
+      setPositionDraft(`sl-input-${ticket}`, "5.00");
+      return applySLTP(ticket);
     }
 
     async function quickSL(ticket, val) {
-      document.getElementById(`sl-input-${ticket}`).value = val.toFixed(2);
-      applySLTP(ticket);
+      setPositionDraft(`sl-input-${ticket}`, val.toFixed(2));
+      return applySLTP(ticket);
     }
 
     async function quickTP(ticket, val) {
-      document.getElementById(`tp-input-${ticket}`).value = val.toFixed(2);
-      applySLTP(ticket);
+      setPositionDraft(`tp-input-${ticket}`, val.toFixed(2));
+      return applySLTP(ticket);
     }
 
     async function closePos(ticket) {
@@ -3005,6 +3031,13 @@ HTML_CONTENT = """<!DOCTYPE html>
         } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
       }
     }, true);
+    function refreshResetModalValues() {
+      const dd = currentData?.daily_drawdown;
+      document.getElementById('modal-current-bal').textContent = Number.isFinite(dd?.balance) ? '$'+dd.balance.toFixed(2) : 'unbekannt';
+      document.getElementById('modal-current-dd').textContent = Number.isFinite(dd?.pct) && Number.isFinite(dd?.loss_usd) ? `${dd.pct.toFixed(2)}% (-$${dd.loss_usd.toFixed(2)})` : 'unbekannt';
+      document.getElementById('modal-reset-status-row').classList.toggle('hidden', !dd?.manual_active);
+      document.getElementById('modal-reset-status-text').textContent = dd?.manual_active ? `Aktiv seit ${dd.reset_time_str || ''} @ ${Number.isFinite(dd.reset_balance) ? '$'+dd.reset_balance.toFixed(2) : 'unbekannt'}` : '';
+    }
     function openDrawdownResetModal() {
       if (!accountActionsReady()) return;
       document.getElementById('reset-description').textContent = activeAccount==='goldm15' ? 'Konto '+accounts[activeAccount].login+': Dieser Reset betrifft ausschließlich die Dashboard-Anzeige. Er verändert weder die feste $350-Tagesgrenze noch die EA-Baseline oder bestehende Handelssperren.' : 'Setzt den Tagesverlust und die High-Water-Mark auf 0.00% zurück. Trades vor dem Reset werden für die heutige Drawdown-Berechnung ignoriert.';
@@ -3013,17 +3046,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       const input = document.getElementById('dd-reset-input');
       const currentBal = (currentData && currentData.daily_drawdown) ? currentData.daily_drawdown.balance : 10000.0;
       
-      document.getElementById('modal-current-bal').innerText = `$${currentBal.toFixed(2)}`;
-      if (currentData && currentData.daily_drawdown) {
-        const dd = currentData.daily_drawdown;
-        document.getElementById('modal-current-dd').innerText = `${dd.pct.toFixed(2)}% (-$${dd.loss_usd.toFixed(2)})`;
-        if (dd.manual_active) {
-          document.getElementById('modal-reset-status-row').classList.remove('hidden');
-          document.getElementById('modal-reset-status-text').innerText = `Aktiv seit ${dd.reset_time_str || ''} @ $${dd.reset_balance ? dd.reset_balance.toFixed(2) : ''}`;
-        } else {
-          document.getElementById('modal-reset-status-row').classList.add('hidden');
-        }
-      }
+      refreshResetModalValues();
       
       if (!input.value || parseFloat(input.value) <= 0) {
         input.value = currentBal.toFixed(2);
@@ -3127,6 +3150,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
     });
     window.onload = async () => {
+      clearAccountView(); // Unknown state also when the first accounts request fails.
       initTheme();
       try { initChart(); }
       catch (error) { console.warn('Optionale Chartinitialisierung fehlgeschlagen:', error); }
