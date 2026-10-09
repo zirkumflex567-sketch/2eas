@@ -28,6 +28,8 @@ jobs:
           node-version: "22"
       - name: Install MT5 and test dependencies
         run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
           python -m pip install -r requirements-dashboard-test.txt
           python -m playwright install chromium
       - name: Check Python compilation
@@ -35,6 +37,8 @@ jobs:
       - name: Check browser JavaScript
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
           node --check static/stone-chart-effects.js
           node --check static/stone-celebrations.js
           node --check static/stone-cockpit.js
@@ -47,6 +51,8 @@ jobs:
 
       - name: Install browser smoke dependencies
         run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
           npm install --no-save playwright@1.56.0
           npx playwright install chromium
       - name: Render Stone demo on Chromium

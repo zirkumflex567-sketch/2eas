@@ -2,6 +2,8 @@
 
 Vollständiges Repository für den parallelen Betrieb von zwei komplementären MetaTrader 5 Expert Advisors (Gold/XAUUSD) inklusive eines einheitlichen Web-Dashboards (Cockpit) zur Echtzeit-Überwachung und Steuerung.
 
+Aktueller Arbeitsstand: [Offene ChartStudio- und Auditfix-Aufgaben](docs/OPEN_TASKS.md) und [Main-Konsolidierung / Testnachweise](docs/MAIN_CONSOLIDATION.md). Die ChartStudio-Beta bleibt für Brokerorders read-only; der native v5-Adapter ist noch ein isolierter Prototyp.
+
 ---
 
 ## 🤖 1. Die beiden Handelsstrategien (2 EAs)

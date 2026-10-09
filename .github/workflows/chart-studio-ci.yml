@@ -2,6 +2,7 @@ name: Chart Studio implementation tests
 on:
   push:
     branches:
+      - main
       - test/chart-studio-implementation
       - test/chart-studio-phase2
       - test/chart-studio-drag-preview
@@ -34,12 +35,16 @@ jobs:
           node-version: "22"
       - name: Install dashboard dependencies
         run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
           python -m pip install -r requirements-dashboard-test.txt
           python -m playwright install chromium
       - name: Compile Python
         run: python -m compileall -q app.py chart_studio tests
       - name: Check browser scripts and chart math
         run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
           node --check static/chart-studio-replay.js
           node --check static/chart-studio-fib.js
           node scripts/test_chart_studio_fib.cjs
@@ -71,11 +76,15 @@ jobs:
         run: python -m pytest -q --junitxml=output/chart-dashboard-junit.xml
       - name: Install browser smoke dependencies
         run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
           npm install --no-save playwright@1.56.0
           npx playwright install chromium
       - name: Compile native v5 TypeScript adapter (isolated)
         working-directory: chart_studio_v5
         run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
           npm install --package-lock=false --no-audit --no-fund
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run check
@@ -86,6 +95,8 @@ jobs:
         run: node scripts/smoke_chart_studio_v5.cjs
       - name: Run Chromium UI smoke (no MT5 server)
         run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
           node scripts/smoke_chart_studio_replay.cjs
           node scripts/smoke_chart_studio_responsive.cjs
           node scripts/smoke_chart_studio_fib.cjs

@@ -1,5 +1,7 @@
 # Abschlussprüfung der Nicht-Chart-Härtung
 
+**Aktualisierte Konsolidierungsabnahme:** [MAIN_CONSOLIDATION.md](MAIN_CONSOLIDATION.md), vollständige offene Nacharbeiten in [OPEN_TASKS.md](OPEN_TASKS.md). Der integrierte Stand mit ChartStudio bis PR #26 besteht 302 Tests und 245 Subtests sowie die vollständige Chart-/Stone-Browsermatrix. Die folgenden Messungen dokumentieren den früheren Auditstand; alle Remote-/Broker-/Hardwaregrenzen bleiben gesondert ausgewiesen.
+
 Testbranch `test/dashboard-audit-hardening`, PR #14. Keine echten Orders, SL/TP-Änderungen oder Resets.
 
 ## Abnahmeledger
