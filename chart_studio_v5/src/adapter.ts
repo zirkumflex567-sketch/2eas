@@ -46,6 +46,12 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   title:opts.title??opts.id,priceLineVisible:false,lastValueVisible:true});
  type LineApi=ReturnType<typeof newLine>;
  const averages=new Map<string,LineApi>();
+ // Independent native chart panes, not separate chart instances or duplicated time axes.
+ const paneLines=new Map<string,LineApi>();
+ const createPaneLine=(opts:AverageOptions)=>chart.addSeries(LineSeries,{
+  color:opts.color,lineWidth:opts.lineWidth??2,visible:opts.visible??true,
+  title:opts.title??opts.id,priceLineVisible:false,lastValueVisible:true,
+ },chart.panes().length);
  const newVolume=()=>chart.addSeries(HistogramSeries,{priceFormat:{type:"volume"},
   priceLineVisible:false,lastValueVisible:false},chart.panes().length);
  type VolumeApi=ReturnType<typeof newVolume>;
@@ -64,11 +70,43 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   guard();
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color))throw Error("Invalid line options");
   if(averages.size>=16&&!averages.has(opts.id))throw Error("Indicator instance limit");
+  if(paneLines.has(opts.id))throw Error("Duplicate overlay and pane identity");
   let series=averages.get(opts.id);
   if(!series){series=newLine(opts);averages.set(opts.id,series)}
   else series.applyOptions({color:opts.color,lineWidth:opts.lineWidth??2,
    visible:opts.visible??true,title:opts.title??opts.id});
   series.setData(validSeriesData(data));
+ }
+ function addPaneLine(opts:AverageOptions,data:readonly AveragePoint[]){
+  guard();
+  if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color))
+   throw Error("Invalid pane line");
+  if(averages.has(opts.id))throw Error("Duplicate pane and overlay identity");
+  if(paneLines.size>=8&&!paneLines.has(opts.id))throw Error("Native pane limit");
+  let series=paneLines.get(opts.id);
+  if(!series){
+   series=createPaneLine(opts);paneLines.set(opts.id,series);
+   chart.panes()[chart.panes().length-1]?.setHeight(150);
+  }else series.applyOptions({color:opts.color,lineWidth:opts.lineWidth??2,
+   visible:opts.visible??true,title:opts.title??opts.id});
+  series.setData(validSeriesData(data));
+ }
+ function movePaneLine(id:string,paneIndex:number){
+  guard();
+  if(!Number.isInteger(paneIndex)||paneIndex<1||paneIndex>=chart.panes().length)
+   throw Error("Invalid native pane index");
+  const series=paneLines.get(id);if(!series)throw Error("Unknown native pane line");
+  series.moveToPane(paneIndex);
+ }
+ function resizePane(index:number,height:number){
+  guard();
+  if(!Number.isInteger(index)||index<1||index>=chart.panes().length||
+   !Number.isInteger(height)||height<80||height>600)throw Error("Invalid pane height");
+  chart.panes()[index].setHeight(height);
+ }
+ function removePaneLine(id:string){
+  guard();const series=paneLines.get(id);if(!series)return false;
+  chart.removeSeries(series);paneLines.delete(id);return true;
  }
  function moveAverage(id:string,pane:number){
   guard();if(!averages.has(id)||!Number.isInteger(pane)||pane<0||pane>8)throw Error("Invalid pane request");
@@ -99,12 +137,16 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   guard();if(!/^[a-zA-Z0-9_-]{1,50}$/.test(next))throw Error("Invalid account");
   activeAccount=next;bars=[];price.setData([]);
   for(const item of averages.values())chart.removeSeries(item);
-  averages.clear();if(volume)volume.setData([]);
+  averages.clear();
+  for(const line of paneLines.values())chart.removeSeries(line);
+  paneLines.clear();if(volume)volume.setData([]);
  }
  function inspect(){guard();return {version:VERSION,account:activeAccount,
   candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
-  averageCount:averages.size,paneCount:chart.panes().length,volumeVisible:!!volume}}
- function destroy(){if(destroyed)return;destroyed=true;chart.remove();averages.clear();volume=null;bars=[]}
- return Object.freeze({setCandles,addAverage,moveAverage,removeAverage,showVolume,
+  averageCount:averages.size,nativePaneLines:paneLines.size,
+  paneCount:chart.panes().length,volumeVisible:!!volume}}
+ function destroy(){if(destroyed)return;destroyed=true;chart.remove();averages.clear();paneLines.clear();volume=null;bars=[]}
+ return Object.freeze({setCandles,addAverage,moveAverage,removeAverage,
+  addPaneLine,movePaneLine,removePaneLine,resizePane,showVolume,
   updateLast,changeAccount,inspect,destroy});
 }
