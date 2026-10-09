@@ -235,3 +235,26 @@ def test_direct_context_rejects_arbitrary_terminal_identity():
     with pytest.raises(ValueError):
         m.AccountContext(configured.account_id,configured.broker_server,'f'*64)
     assert m.AccountContext(configured.account_id,configured.broker_server,configured.terminal_identity_hash)==configured
+
+
+def test_oversized_scalars_reject_before_costly_operations(monkeypatch):
+    m=api()
+    def costly(*args,**kwargs):
+        pytest.fail('oversized input reached costly operation')
+    with monkeypatch.context() as patch:
+        patch.setattr(m.json,'dumps',costly)
+        for value in ['x'*131073,{'x'*131073:None},['x'*70000,'y'*70000]]:
+            with pytest.raises(ValueError):m.canonical_bytes(value)
+    with monkeypatch.context() as patch:
+        patch.setattr(m.re,'fullmatch',costly)
+        with pytest.raises(ValueError):m.decimal_string('1'*33)
+    class EncodingTrap(str):
+        def encode(self,*args,**kwargs):
+            pytest.fail('oversized raw text reached encoding')
+    with pytest.raises(ValueError):m.parse_envelope(EncodingTrap('x'*131073),context=context())
+
+
+def test_multibyte_canonical_exact_byte_boundary():
+    m=api()
+    assert len(m.canonical_bytes('é'*65535))==131072
+    with pytest.raises(ValueError):m.canonical_bytes('é'*65536)

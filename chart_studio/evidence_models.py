@@ -77,9 +77,9 @@ def number(value):
 
 def decimal_string(value, *, signed=False):
     pattern = r'-?[0-9]+(?:\.[0-9]{1,12})?' if signed else r'[0-9]+(?:\.[0-9]{1,12})?'
-    _pattern(value, pattern)
-    if len(value) > 32:
+    if not isinstance(value, str) or len(value) > 32:
         _fail()
+    _pattern(value, pattern)
     d = Decimal(value)
     if d.copy_abs() > Decimal('1000000000000') or (not signed and d <= 0):
         _fail()
@@ -112,7 +112,13 @@ def utc_microseconds(value):
 
 def _bounds(value):
     entries = 0
+    characters = 0
     ancestors = set()
+    def budget(text):
+        nonlocal characters
+        characters += len(text)
+        if characters > MAX_BYTES:
+            _fail()
     def walk(v, depth):
         nonlocal entries
         if depth > 8:
@@ -127,13 +133,17 @@ def _bounds(value):
             if isinstance(v, dict):
                 if any(not isinstance(k, str) for k in v):
                     _fail()
+                for key in v:
+                    budget(key)
                 children = v.values()
             else:
                 children = v
             for child in children:
                 walk(child, depth + 1)
             ancestors.remove(id(v))
-        elif v is not None and type(v) not in (str, bool, int, float):
+        elif isinstance(v, str):
+            budget(v)
+        elif v is not None and type(v) not in (bool, int, float):
             _fail()
         elif type(v) is float and not math.isfinite(v):
             _fail()
@@ -355,6 +365,8 @@ def parse_envelope(raw, *, context):
     if not isinstance(raw,(str,bytes)):
         _fail()
     try:
+        if len(raw) > MAX_BYTES:
+            _fail()
         encoded = raw.encode('utf-8') if isinstance(raw,str) else raw
         if len(encoded) > MAX_BYTES:
             _fail()
