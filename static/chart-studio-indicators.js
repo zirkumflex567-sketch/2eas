@@ -8,7 +8,9 @@ const REGISTRY=Object.freeze({
  rsi:{name:"RSI (Wilder)",type:"oscillator",period:14,min:2,max:200},
  macd:{name:"MACD",type:"oscillator",fast:12,slow:26,signal:9},
  atr:{name:"ATR (Wilder)",type:"oscillator",period:14,min:2,max:200},
- volume:{name:"Volumen (Tick/Real)",type:"histogram"}
+ volume:{name:"Volumen (Tick/Real)",type:"histogram"},
+ adx:{name:"ADX +DI / −DI (Wilder)",type:"oscillator",period:14,min:2,max:200},
+ vwap:{name:"VWAP (UTC, Volumenproxy)",type:"overlay"}
 });
 const storagePrefix="2eas:studio:indicators:v1:";
 const finite=x=>Number.isFinite(Number(x))?Number(x):null;
@@ -81,16 +83,70 @@ function volumes(input){
   color:b.close>=b.open?"rgba(65,204,233,.8)":"rgba(247,117,139,.72)",
   kind:b.real_volume>0?"real":"tick"}));
 }
+function adx(input,period=14){
+ const bars=validateBars(input),out={adx:[],plusDi:[],minusDi:[]};
+ period=Math.trunc(period);
+ if(period<2||period>200||bars.length<=period)return out;
+ const tr=[],pDM=[],mDM=[];
+ for(let i=1;i<bars.length;i++){
+  const a=bars[i],b=bars[i-1],up=a.high-b.high,down=b.low-a.low;
+  tr[i]=trueRange(bars,i);pDM[i]=up>down&&up>0?up:0;
+  mDM[i]=down>up&&down>0?down:0;
+ }
+ let trSum=0,pSum=0,mSum=0;
+ for(let i=1;i<=period;i++){trSum+=tr[i];pSum+=pDM[i];mSum+=mDM[i]}
+ const dxFirst=[];let average=null;
+ for(let i=period;i<bars.length;i++){
+  if(i>period){
+   trSum=trSum-trSum/period+tr[i];
+   pSum=pSum-pSum/period+pDM[i];
+   mSum=mSum-mSum/period+mDM[i];
+  }
+  const pdi=trSum>0?100*pSum/trSum:0,mdi=trSum>0?100*mSum/trSum:0;
+  const total=pdi+mdi,dx=total>0?100*Math.abs(pdi-mdi)/total:0;
+  out.plusDi.push({time:bars[i].time,value:pdi});
+  out.minusDi.push({time:bars[i].time,value:mdi});
+  if(dxFirst.length<period){
+   dxFirst.push(dx);
+   if(dxFirst.length===period){
+    average=dxFirst.reduce((acc,v)=>acc+v,0)/period;
+    out.adx.push({time:bars[i].time,value:average});
+   }
+  }else{
+   average=(average*(period-1)+dx)/period;
+   out.adx.push({time:bars[i].time,value:average});
+  }
+ }
+ return out;
+}
+function vwap(input){
+ // OTC XAUUSD/FX tick_volume is a weighted-price PROXY, not exchange orderflow.
+ // Reset at UTC midnight; no volume = no invented bar observation.
+ const bars=validateBars(input),out=[];
+ let day=null,sumPV=0,sumVolume=0;
+ for(const b of bars){
+  const d=Math.floor(b.time/86400);
+  if(d!==day){day=d;sumPV=0;sumVolume=0}
+  const volume=b.real_volume>0?b.real_volume:b.tick_volume;
+  if(volume<=0)continue;
+  const typical=(b.high+b.low+b.close)/3;
+  sumPV+=typical*volume;sumVolume+=volume;
+  out.push({time:b.time,value:sumPV/sumVolume});
+ }
+ return out;
+}
 function calc(kind,candles,settings={}){
  if(kind==="rsi")return {rsi:rsi(candles,settings.period||14)};
  if(kind==="atr")return {atr:atr(candles,settings.period||14)};
  if(kind==="macd")return macd(candles,settings.fast||12,settings.slow||26,settings.signal||9);
  if(kind==="volume")return {volume:volumes(candles)};
+ if(kind==="adx")return adx(candles,settings.period||14);
+ if(kind==="vwap")return {vwap:vwap(candles)};
  throw Error("Unknown indicator: "+kind);
 }
 function defaults(){
  return {rsi:{enabled:false,period:14},macd:{enabled:false,fast:12,slow:26,signal:9},
-  atr:{enabled:false,period:14},volume:{enabled:false}};
+  atr:{enabled:false,period:14},volume:{enabled:false},adx:{enabled:false,period:14},vwap:{enabled:false}};
 }
 function restore(account){
  try{const raw=JSON.parse(localStorage.getItem(storagePrefix+account)||"null");
@@ -174,6 +230,7 @@ function createPane(kind){
  if(kind==="atr")series("atr","#a68eff");
  if(kind==="macd"){series("macd","#55d7ee");series("signal","#f3c56a");series("histogram","#53dabd","hist")}
  if(kind==="volume")series("volume","#5de1d8","hist");
+ if(kind==="adx"){series("adx","#e9bc72");series("plusDi","#55deaa");series("minusDi","#f17e97")}
  const pane={shell,chart,plot,lines,observer:null};
  if(typeof ResizeObserver!=="undefined"){pane.observer=new ResizeObserver(()=>{
   chart.applyOptions({width:Math.max(180,plot.clientWidth),height:Math.max(80,plot.clientHeight)});
@@ -184,6 +241,17 @@ function createPane(kind){
 function renderPanes(){
  if(!state)return;
  for(const id of Object.keys(REGISTRY)){
+  if(id==="vwap"){
+   if(state.settings.vwap.enabled&&!state.vwapOverlay){
+    state.vwapOverlay=state.chart.addLineSeries({title:"VWAP UTC · Tick-/Realvolumenproxy",
+     color:"#f1da9b",lineWidth:2,lastValueVisible:true,priceLineVisible:false});
+   }
+   if(state.vwapOverlay){
+    state.vwapOverlay.applyOptions({visible:!!state.settings.vwap.enabled});
+    if(state.settings.vwap.enabled)state.vwapOverlay.setData(data("vwap").vwap);
+   }
+   continue;
+  }
   if(!state.settings[id].enabled){destroyPane(id);continue}
   const pane=state.panes.get(id)||createPane(id);
   const calculated=data(id);
@@ -248,7 +316,7 @@ function mount({chart,host,panel,account="titan"}){
  head.textContent="Zusätzliche Indikator-Panes · unabhängig ein-/ausblendbar";panel.append(head,controls);
  const notice=document.createElement("p");notice.className="cs-indicator-notice";notice.textContent="Indikatoren basieren auf geladenen Brokerkerzen. Warm-up erforderlich.";
  panel.append(notice);
- state={chart,host,stack,controls,notice,account,settings:restore(account),bars:[],signature:null,panes:new Map()};
+ state={chart,host,stack,controls,notice,account,settings:restore(account),bars:[],signature:null,panes:new Map(),vwapOverlay:null};
  controls.addEventListener("change",evt=>{
   const target=evt.target;
   if(!target.dataset.kind)return;
@@ -259,5 +327,5 @@ function mount({chart,host,panel,account="titan"}){
  syncPanel();renderPanes();
 }
 window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,updateConfig,settings,
- registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,macd,atr,volumes})});
+ registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,macd,atr,adx,vwap,volumes})});
 })();

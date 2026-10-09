@@ -29,10 +29,10 @@
 ## Task 2 — Full chart, drawings and storage
 
 - [ ] 2.1 V5 plugin/primitives and own drawing registry, drag states, snapping and hit-test priorities.
-- [~] 2.2 Full indicator catalog and configurable instances/parameters, RSI/MACD/ATR/ADX/VWAP panes. **Phase-2 work:** independent RSI(Wilder)/MACD/ATR/Volume panes with chart-time alignment and configurable periods/fast/slow/signal; ADX, VWAP, full registry/instance creation and v5 migration remain open.
-- [ ] 2.3 Full drawing tool catalog incl. advanced fibos, channels, labels, multiple handles and responsive touch.
-- [ ] 2.4 Drawing SQLite store, schema migration, revision conflicts, server layout/indicator profiles, import/export.
-- [ ] 2.5 Symbol watchlist, timeframe, panes, chart type, multichart and per-layout configuration.
+- [~] 2.2 Configurable indicator instances: EMA/SMA/WMA multi-instance price overlays (max 16, period 2–500, 7 price sources, own color/width/label/visibility, duplicate/delete, scoped local+SQLite layouts), alongside earlier RSI/MACD/ATR/ADX +DI/−DI/Volume panes and UTC-day VWAP. Multiple oscillator instances and native v5 plugin migration remain open.
+- [~] 2.3 Drawing tool catalog: horizontal, trend, rectangle, Fibonacci, ray, price/time ruler, 3-anchor parallel channel, third-anchor editing, OHLC magnet, selected delete and undo; full advanced Fibos, text annotations, mobile gestures, v5 primitives and snap priority remain open.
+- [~] 2.4 Drawing SQLite store, schema migration, revision conflicts, server layout/indicator profiles, import/export. **Implemented on branch:** private schema-v1 SQLite workspace store, optimistic revisions, account-scoped layout JSON, authenticated opt-in REST plus existing browser toolbar server save/load/delete; multi-user ACL, full v5 profile migration and remote conflict merge remain open.
+- [~] 2.5 Chart appearance controls (dark/light/inherit background, candle colors/wicks/borders, grid, crosshair, log/normal scale, last-price line) with account-scoped local+SQLite profiles. Symbol watchlist, chart type, multi-chart and native pane/layout management remain open.
 - [ ] 2.6 Optimized paging, streaming and incremental calculations; performance budgets AT-025/031.
 
 ## Task 3 — Broker read-only lifecycle and transparent risk
@@ -82,3 +82,30 @@
 ### Next test package — virtual stop/target grip
 
 Branch `test/chart-studio-drag-preview` from merged main `8bbbb74`. New What-if PLAN mode visually drags its SL or TP with read-only broker preview at most once after a 260 ms debounce, plus final drop. Attempts to use a real order/position mutation route are forbidden and asserted by Chromium tests. Preserving last validated scenario, canceling on account/timeframe switch, Broker rejection fallback, and returning tickSize from real symbol_info are part of this gate. This is **not** the actual broker stop/target editor in FR-006/FR-007, which remains blocked pending security/MT5 conflict tests.
+
+### Phase 2.4: SQLite server workspaces (branch `test/chart-studio-sqlite-workspaces`)
+
+- Separate fail-closed Bearer authorization for new layout API; disabled unless `CHART_STUDIO_STORAGE_ENABLED=1` and a 32+ character `CHART_STUDIO_STORAGE_TOKEN` exists. Token is memory-only in browser, never LocalStorage or URL.
+- Private SQLite DB under `state/` (or operator-configured private path), migration v1, WAL, optimistic `expectedRevision`, strict 131072-byte/500-drawing caps, owner/account/symbol/layout scope. DB under `/static` disallowed.
+- GET list/read, PUT save, DELETE with stale-write conflict handling and private HTTP cache policy; current v4/beta LocalStorage profiles untouched.
+- Security prerequisite **still open**: legacy MT5 POST endpoints `/api/modify_position`, `/api/close_position`, `/api/reset_drawdown` are not independently authenticated. Do not activate additional MT5 mutations before holistic auth/CSRF/tunnel audit (Tasks 0.7/4.1).
+- Frontend loads drawings/visible indicators but intentionally leaves the active timeframe unchanged; full versioned v5 multi-view restoration is still open.
+- Python SQLite tests, auth API integration tests and Chromium version/cross-account tests must pass before merging.
+
+### Follow-up indicator package: ADX and volume-derived VWAP
+
+Branch `test/chart-studio-adx-vwap` from SQLite-workspaces main merge. Added Wilder-smoothed ADX/+DI/-DI pane (first ADX after 2*N−1 bars) and UTC-session VWAP as an optional main-price overlay. VWAP uses broker `real_volume` if >0, otherwise `tick_volume`, explicitly labeled a **volume-weighted OTC proxy** rather than proven institutional orderflow. Added math tests for warm-up, rising/ranging regimes, VWAP day reset and a browser toggle test. Account-based indicator settings and secured server-layout validation now accept these types. Full session-aware VWAP with IANA/broker calendars, selectable anchor session and indicator performance budget still open.
+
+### Current branch: advanced drawing tools
+
+Branch `test/chart-studio-advanced-drawings`, based on merged main `834f1bc`. Adds ray, channel and price/time measurement, optional 12px OHLC snap (never future candles), three-step channels, third-handle editing, selected-object deletion with undo. UI measurements describe **price** differences and candle counts, not monetary PnL; no broker writes. Updates SQLite schema validation to support 1/2/3-anchor shapes. Tests must validate geometry, local state, account segregation, persistence, Chromium actual drawing/selection and existing What-if no-write contract. v5 engine and mobile input remains pending.
+
+### Chart Studio indicator editor — TradingView-like configuration (current branch)
+
+`test/chart-studio-configurable-averages`: customizable overlay editor, presets, 16 independent EMA/SMA/WMA lines, per-line period (2–500), source (close/open/high/low/HL2/HLC3/OHLC4), style and visibility, duplicate/delete, per-account persistence, local profile plus opt-in SQLite document roundtrips. Legacy native EMA20/50/200 remain unchanged; users can hide those and add separately configured averages. Client uses bounded memoization across style updates and recalculates only when candle signatures change. Existing schema-v1 workspace documents stay readable; `movingAverages` is an **optional** and strictly validated new field.
+
+Remaining for professional TradingView-like behavior: native v5 adapter, fully configurable multiple instances of each oscillator, pane move/resize/layout manager, indicator search/catalog/metadata, symbol/timeframe watchlists, chart type switching, multi-chart workspace, object tree, keyboard shortcuts, responsive mobile gestures, paginated/history indicator warmup, deterministic replay, advanced fibs, drawing settings and broker-authorized trade interactions. Do not represent this editor as full TradingView parity.
+
+### Current visual editor branch
+
+`test/chart-studio-chart-appearance` adds an opt-in Chart Settings panel above the existing chart without changing the MT5 signal logic: dark/light/inherited background, price-scale Normal/Logarithmic, grid/crosshair visibility, rising/falling candle colors, wick/border visibility and last-price line. Settings persist per account and in local/SQLite layouts via a strictly whitelisted optional schema-v1 `chartAppearance` key, preserving older documents. Module captures chart appearance defaults before changes. Test gating: 59 Python tests, Node schema validation, existing Chromium plus dedicated appearance browser workflow. This does **not** implement switchable candle/bar/line chart types or LWC5.

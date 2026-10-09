@@ -1376,3 +1376,66 @@ body.theme-stone #stone-fx-panel button:focus-visible {
  background:linear-gradient(140deg,#4b351e,#142e39);color:#fff4c3;
  border-color:#ffbd63;box-shadow:0 0 14px rgba(242,177,59,.25);
 }
+
+/* Authenticated Chart Studio SQLite layouts, opt-in and separate from trade UI. */
+.cs-server-sync{margin-top:11px;padding:10px;border:1px solid #416878;
+ border-radius:8px;background:linear-gradient(110deg,#132532,#071b28);
+ color:#d4ebf2;font:11px/1.5 ui-monospace,Consolas,monospace}
+.cs-server-sync-head{color:#f9d39e;font-weight:800;margin-bottom:8px;letter-spacing:.06em}
+.cs-server-sync-row{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.cs-server-sync input,.cs-server-sync select{min-width:155px;max-width:240px;flex:1 1 155px;
+ border:1px solid #597c87;border-radius:5px;background:#071924;
+ color:#dff9ff;padding:8px}
+.cs-server-sync button{min-height:34px;padding:7px 11px;cursor:pointer;
+ border:1px solid #5a8595;border-radius:5px;background:#214151;color:#e7f7fc}
+.cs-server-sync button:hover{filter:brightness(1.17)}
+.cs-server-sync p{margin:9px 0 0;color:#b7cbd4;overflow-wrap:anywhere}
+@media(max-width:650px){.cs-server-sync-row>*{flex:1 1 110px}}
+
+/* Chart Studio multi-instance moving-average editor: read-only chart overlays. */
+.cs-ma-editor{margin:14px 0;padding:13px;border:1px solid #5c8495;border-radius:10px;
+ background:linear-gradient(122deg,rgba(10,26,39,.97),rgba(30,49,63,.93));
+ color:#e0edf7;font:11px/1.45 ui-monospace,Consolas,monospace}
+.cs-ma-header{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;
+ align-items:center;letter-spacing:.07em;color:#f6d69d}
+.cs-ma-header strong{font-size:12px}
+.cs-ma-header span{color:#aacbd7}
+.cs-ma-editor>p{color:#b5d2dd;margin:8px 0 11px}
+.cs-ma-presets{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px}
+.cs-ma-editor button{min-height:31px;padding:6px 10px;color:#e7f7ff;background:#214251;
+ border:1px solid #6b90a0;border-radius:5px;cursor:pointer;white-space:nowrap}
+.cs-ma-editor button:hover{border-color:#8cdfe8;filter:brightness(1.12)}
+.cs-ma-items{display:flex;flex-direction:column;gap:8px}
+.cs-ma-instance{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;padding:10px;
+ border:1px solid #405e6a;border-radius:7px;background:rgba(3,17,28,.65)}
+.cs-ma-instance label{display:flex;flex-direction:column;gap:4px;color:#99b8c5;
+ flex:1 1 90px;min-width:70px}
+.cs-ma-instance label:first-child{flex:0 0 56px}
+.cs-ma-instance label:last-of-type{flex:2 1 160px}
+.cs-ma-instance input:not([type=checkbox]),.cs-ma-instance select{box-sizing:border-box;
+ width:100%;min-width:0;height:32px;padding:3px 5px;
+ background:#102735;color:#e7f7ff;border:1px solid #587e8e;border-radius:4px}
+.cs-ma-instance input[type=color]{padding:2px}
+.cs-ma-instance input[type=checkbox]{width:19px;height:23px;accent-color:#6cd9e0}
+.cs-ma-instance button[data-action=remove]{border-color:#915c67;color:#ffd8da}
+.cs-ma-message{min-height:16px;margin:9px 0 0;color:#b8dadc}
+@media(max-width:700px){.cs-ma-instance{gap:7px}.cs-ma-instance label{flex:1 1 90px}
+ .cs-ma-instance button{flex:1 1 110px}}
+
+/* Account-local chart appearance controls; opt-in renderer style, never broker I/O. */
+.cs-appearance{margin:13px 0;padding:10px;border:1px solid #527d8c;
+ border-radius:8px;background:linear-gradient(120deg,#122b39,#091925);
+ color:#d9eaf4;font:11px/1.45 ui-monospace,Consolas,monospace}
+.cs-appearance>summary{cursor:pointer;color:#f1d49d;font-weight:800;letter-spacing:.05em}
+.cs-appearance-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));
+ gap:8px 12px;padding-top:12px}
+.cs-appearance-field{display:flex;flex-direction:column;justify-content:space-between;gap:5px;
+ border:1px solid #416779;padding:8px;border-radius:6px;color:#bfd6e1;background:#10212d}
+.cs-appearance-field select,.cs-appearance-field input:not([type=checkbox]){
+ height:30px;width:100%;border:1px solid #648896;border-radius:4px;color:#ddecf6;
+ background:#152f40;padding:2px 4px}
+.cs-appearance-field input[type=checkbox]{width:21px;height:21px;accent-color:#62d8e3}
+.cs-appearance-actions{display:flex;justify-content:flex-end;margin:12px 0 6px}
+.cs-appearance-actions button{padding:7px 10px;border-radius:5px;background:#264c5b;
+ border:1px solid #709ca9;color:#ecfaff;cursor:pointer}
+.cs-appearance p{margin:8px 0 0;color:#aecbd5}

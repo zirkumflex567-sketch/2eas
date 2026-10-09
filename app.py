@@ -3,6 +3,7 @@ import sys
 import time
 import math
 import json
+import hmac
 import webbrowser
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Literal, Annotated
@@ -10,7 +11,7 @@ from typing import Optional, Literal, Annotated
 import pandas as pd
 import numpy as np
 import MetaTrader5 as mt5
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, FiniteFloat, Field, StrictBool, model_validator
@@ -23,6 +24,8 @@ from account_gateway import ACCOUNTS, config_path, public_account, scoped, selec
 from goldm15_dashboard import GUARD_FILE, metrics as gold_metrics, parameters as gold_parameters, read_guard, wilder_rsi
 from chart_studio.money import PreviewError, preview_scenario
 from dashboard_security import install_control_security
+from chart_studio.workspaces import WorkspaceStore, StoreError, WorkspaceMissing, RevisionConflict
+from functools import lru_cache
 
 app = FastAPI(title="XAU Titan Pro - Institutional Live Cockpit")
 install_control_security(app)
@@ -73,6 +76,21 @@ class ChartScenarioPreviewRequest(BaseModel):
     entryPrice: float
     slPrice: float
     tpPrice: float
+
+
+class ChartWorkspaceWriteRequest(BaseModel):
+    account: str
+    symbol: str
+    name: str
+    expectedRevision: int
+    document: dict
+
+
+class ChartWorkspaceDeleteRequest(BaseModel):
+    account: str
+    symbol: str
+    name: str
+    expectedRevision: int
 
 
 class ClosePositionRequest(BaseModel):
@@ -807,6 +825,98 @@ def api_candles(count: int = 150, account: str = 'titan', tf: str = 'M15'):
         "sr_levels": sr_levels
     }
 
+# --- Chart Studio account-scoped SQLite storage: disabled unless admin opts in ---
+# Do not assume the existing dashboard's unprotected trading routes authenticate a
+# user. This separate Bearer key is NEVER persisted by the browser or served in HTML.
+# Storage authorization cannot be used to place or modify MT5 trades.
+
+def require_chart_workspace_auth(authorization: Optional[str] = Header(default=None)):
+    token = os.getenv("CHART_STUDIO_STORAGE_TOKEN", "")
+    enabled = os.getenv("CHART_STUDIO_STORAGE_ENABLED", "0") == "1"
+    if not enabled or len(token) < 32:
+        raise HTTPException(503, "Chart-Workspace-Speicher ist serverseitig deaktiviert.")
+    candidate = ""
+    if authorization and authorization.startswith("Bearer "):
+        candidate = authorization[7:]
+    if not hmac.compare_digest(candidate, token):
+        raise HTTPException(401, "Chart-Workspace-Zugang erforderlich.")
+    return "local-owner"
+
+
+@lru_cache(maxsize=4)
+def _chart_store_at(path: str):
+    # Never create database in publicly served /static (even if env misconfigured).
+    resolved = Path(path).expanduser().resolve()
+    static = (BASE_DIR / "static").resolve()
+    if resolved == static or static in resolved.parents:
+        raise HTTPException(503, "Datenbank darf nicht im öffentlichen Static-Verzeichnis liegen.")
+    return WorkspaceStore(resolved)
+
+
+def chart_workspace_store():
+    default_path = BASE_DIR / "state" / "chart_studio.sqlite3"
+    return _chart_store_at(os.getenv("CHART_STUDIO_DB", str(default_path)))
+
+
+def chart_store_error(error: StoreError):
+    status = 409 if isinstance(error, RevisionConflict) else (
+        404 if isinstance(error, WorkspaceMissing) else 422
+    )
+    raise HTTPException(status, {"code": error.code, "message": str(error)}) from error
+
+
+@app.get("/api/chart/v1/workspaces")
+def api_chart_workspaces(account: str, symbol: str = SYMBOL,
+                         authorization: Optional[str] = Header(default=None)):
+    owner = require_chart_workspace_auth(authorization)
+    try:
+        items = chart_workspace_store().list(owner, account, symbol)
+    except StoreError as error:
+        chart_store_error(error)
+    return JSONResponse({"account": account, "symbol": symbol, "items": items},
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/chart/v1/workspace")
+def api_chart_workspace(account: str, name: str, symbol: str = SYMBOL,
+                        authorization: Optional[str] = Header(default=None)):
+    owner = require_chart_workspace_auth(authorization)
+    try:
+        result = chart_workspace_store().get(owner, account, symbol, name)
+    except StoreError as error:
+        chart_store_error(error)
+    return JSONResponse({"account": account, "symbol": symbol, **result},
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.put("/api/chart/v1/workspace")
+def api_chart_workspace_put(req: ChartWorkspaceWriteRequest,
+                            authorization: Optional[str] = Header(default=None)):
+    owner = require_chart_workspace_auth(authorization)
+    try:
+        result = chart_workspace_store().put(
+            owner, req.account, req.symbol, req.name,
+            req.document, req.expectedRevision
+        )
+    except StoreError as error:
+        chart_store_error(error)
+    return JSONResponse({"account": req.account, "symbol": req.symbol, **result},
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.delete("/api/chart/v1/workspace")
+def api_chart_workspace_delete(req: ChartWorkspaceDeleteRequest,
+                               authorization: Optional[str] = Header(default=None)):
+    owner = require_chart_workspace_auth(authorization)
+    try:
+        result = chart_workspace_store().delete(
+            owner, req.account, req.symbol, req.name, req.expectedRevision
+        )
+    except StoreError as error:
+        chart_store_error(error)
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
+
+
 # --- Chart Studio opt-in foundation: read-only safe endpoints only ---
 # WARNING: Do not add real order_send or SL/TP commit logic to these routes.
 @app.get("/api/chart/v1/capabilities")
@@ -821,7 +931,9 @@ def api_chart_capabilities():
         "features": {
             "historicalCandles": True, "emaToggles": True,
             "experimentalDrawings": True, "readOnlyPositionOverlays": True,
-            "scenarioPreview": True, "persistentServerDrawings": False,
+            "scenarioPreview": True,
+            "persistentServerDrawings": os.getenv("CHART_STUDIO_STORAGE_ENABLED") == "1"
+            and len(os.getenv("CHART_STUDIO_STORAGE_TOKEN", "")) >= 32,
             "realStopDragging": False, "brokerMutations": False,
             "eaDecisionHistory": False, "immutableSnapshots": False
         }
@@ -1043,6 +1155,10 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="static/lightweight-charts.js"></script>
   <script src="static/stone-chart-effects.js"></script>
   <script src="static/chart-studio-indicators.js"></script>
+  <script src="static/chart-studio-server-sync.js"></script>
+  <script src="static/chart-studio-drawing-geometry.js"></script>
+  <script src="static/chart-studio-averages.js"></script>
+  <script src="static/chart-studio-appearance.js"></script>
   <script src="static/chart-studio-beta.js"></script>
   <script src="static/stone-celebrations.js"></script>
   <style>

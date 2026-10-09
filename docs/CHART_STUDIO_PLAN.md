@@ -62,3 +62,23 @@ A **working progressive prototype**, *not* full 35-feature implementation: beta 
 `test/chart-studio-phase2` adds RSI, MACD, ATR and real/tick volume pane controls while retaining the v4 fallback adapter. Chart timelines are aligned using whitespace points for indicator warm-up periods. It adds the original MT5 volume fields to `/api/candles` without changing existing price fields. Account-local named profiles include pane preferences and input periods.
 
 These are **not** the full configurable indicator framework, and are not the planned v5 migration. Must pass expanded Node math tests and Windows Chromium integration before any subsequent PR. Real broker writes remain disabled.
+
+## Phase 2.4: persistent private SQLite chart layouts (isolated rollout)
+
+New layout store is an account-aware SQLite WAL database, independently authenticated by an opt-in server token. Transactions use optimistic revision checks (409 conflict), strict drawing/indicator schema and size limits. This phase **does not** expose or modify MT5-trading routes. A browser can use local layouts without connecting; server layouts require explicit configuration and a memory-only token. Saved timeframe remains metadata until a future v5 chart view manager restores it safely. Version 1 tested via pure SQLite, FastAPI TestClient and Chromium fixture; add exact CI link after passing. Do not claim it is a multi-user accounts/auth implementation; legacy trading POST hardening remains a security blocker for real SL/TP commits.
+
+## Supplement to Phase 1: ADX/VWAP (tested separately)
+
+Extend the v4 read-only indicator engine with Wilder ADX (+DI/-DI) and VWAP calculated from true broker real volume when available, otherwise explicitly named tick-volume proxy, reset at UTC day boundary. Stored per-account in local layouts and opt-in SQLite documents. This is NOT exchange orderflow and NOT a historical EA decision proof. Keep original candles/MT5 trading unaffected. Full configurable indicator instances, session-aware VWAP and native v5 chart migration remain open.
+
+## Iteration: additional read-only drawing tools
+
+Advanced drawing tools on `test/chart-studio-advanced-drawings`: horizontal and 2-anchor primitives coexist with 3-anchor parallel channel, extended ray and price/time ruler. Magnetic snaps use only loaded OHLC points within 12 screen pixels, are opt-in and account-scoped. Imported drawings continue to pass exact server schema validation. Full advanced Fibo, labels/editors, v5 plugin geometry, mobile multitouch, performance and real stop edits remain explicitly open. Require Node geometry + Windows Python + Chromium test before merging.
+
+## Immediate UI priority: multi-instance indicator editor
+
+The fixed chart indicator toggles are supplemented, not replaced, by a new isolated `ChartStudioAverages` module with 16 optional EMA/SMA/WMA instances, editable source, periods 2–500, colors/width/labels and scoped local/server profile persistence. This is a working next step toward an indicator registry with instance IDs (v5 target), not a full TradingView clone. The old v4 chart, both EAs and all MT5 execution routes remain unchanged. A version-1 workspace extension `movingAverages` is optional for backwards compatibility; strict server validation prevents invalid styling/config injection. CI must include math/validation, Chromium UI and existing complete regression before PR merge.
+
+## Visual chart settings module
+
+`ChartStudioAppearance` adds controlled chart appearance customization with a strict schema and account-local settings: background theme, grid, crosshair, right-scale logarithmic/normal, candle up/down styling and last-price line. The optional `chartAppearance` server workspace field preserves schema-v1 backward compatibility. Do not alter any EA indicator inputs or broker order execution. E2E Chromium fixture checks renderer options and local/server profile round trips. Chart types, v5 engine and all higher-level plans remain open.
