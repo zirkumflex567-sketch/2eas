@@ -13,6 +13,8 @@ Stand: 09.10.2026. Diese Liste ist die zentrale Restarbeit nach der Repository-K
 
 ## Reihenfolge der verbleibenden Arbeit
 
+Nutzerpriorisierung 09.10.2026: Strategie-Backtests und Strategy-Tester-Paritätsläufe werden auf später verschoben. Funktionale Regressionen, Sicherheits-, Speicher-, Browser- und Deploymenttests bleiben Teil der laufenden Arbeit; sie sind keine Strategie-Backtests. Offene Backtest-Abnahmen werden nicht als bestanden markiert.
+
 1. P0: Deployment-/Demo-Abnahme, echtes EA-Decision- und Lifecycle-Recording, autoritative Broker-Readmodelle und vollständiges What-if.
 2. P0: Native v5-Produktmigration mit Zeichnungen/Panes/Layouts, inklusive Datenfenster und Preis-/Währungssemantik; aktuelle Instanz-/Zeichnungslimits mit Spec und Lastbudget abgleichen.
 3. Gesondertes Write-Release: Rollen, versionierte Vorschläge, Konflikt-/Idempotenzschutz, Readback, Demo-E2E und explizite Freigabe.
