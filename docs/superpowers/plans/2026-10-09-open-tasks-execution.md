@@ -66,3 +66,5 @@ These are delivery boundaries, not claims of implemented work. Each receives a d
 - Broker offset/day policy confirmation, active EA/preset hashes/compiler and genuine demo trade ack/readback remain required.
 - User selected MT5 instead of an external licensed provider. Actual terminal calendar/tick capabilities and distribution terms still need verification; missing orderflow cannot be invented. Multi-user permissions require explicit configuration.
 - Do not mark FR/AT complete if its dependent full acceptance remains open. Main stays functional and remote temporary branches are archived/deleted after merging.
+
+User steering 2026-10-09: defer strategy backtests and Strategy Tester parity; continue functional/security/storage/browser/deployment regression. No deferred backtest is counted as passed.
