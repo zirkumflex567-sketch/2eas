@@ -4,6 +4,7 @@ import time
 import math
 import json
 import hmac
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 import webbrowser
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Literal, Annotated
@@ -190,6 +191,58 @@ JOURNAL_CACHE = {}
 JOURNAL_CACHE_AT = {}
 JOURNAL_CACHE_TTL_SEC = 3.0
 GOLD_METRICS_CACHE = ClosedBarMetricsCache()
+QUOTE_MAX_AGE_SECONDS = 30.0
+QUOTE_FUTURE_TOLERANCE_SECONDS = 5.0
+
+
+def quote_metadata(tick, now=None):
+    """Broker epoch UTC versus wall time, not request/EA heartbeat proof."""
+    now = time.time() if now is None else now
+    try:
+        configured_age = float(os.getenv('DASHBOARD_QUOTE_MAX_AGE_SECONDS', QUOTE_MAX_AGE_SECONDS))
+    except (TypeError, ValueError):
+        configured_age = QUOTE_MAX_AGE_SECONDS
+    max_age = min(configured_age, QUOTE_MAX_AGE_SECONDS) if math.isfinite(configured_age) and configured_age > 0 else QUOTE_MAX_AGE_SECONDS
+    stamp = getattr(tick, 'time', None)
+    valid = isinstance(stamp, (int, float)) and not isinstance(stamp, bool) and math.isfinite(stamp) and stamp > 0
+    if valid:
+        try:
+            datetime.fromtimestamp(stamp, timezone.utc)
+        except (ValueError, OverflowError, OSError):
+            valid = False
+    age = now-stamp if valid else None
+    if age is not None and not math.isfinite(age):
+        age = None
+    prices_valid = all(isinstance(v, (int, float)) and math.isfinite(v) and v > 0
+                       for v in (getattr(tick, 'bid', None), getattr(tick, 'ask', None)))
+    fresh = age is not None and -QUOTE_FUTURE_TOLERANCE_SECONDS <= age <= max_age and prices_valid
+    return dict(source_fresh=bool(fresh), quote_time_epoch=stamp if valid else None,
+                quote_age_seconds=age, source_status='fresh' if fresh else ('stale' if valid else 'unknown'),
+                quote_max_age_seconds=max_age,
+                quote_future_tolerance_seconds=QUOTE_FUTURE_TOLERANCE_SECONDS)
+
+
+def require_fresh_quote(tick, now=None, risk_context=None):
+    meta = quote_metadata(tick, now)
+    if not meta['source_fresh']:
+        detail = dict(meta, risk_status='unknown', message='Broker-Quote veraltet/ungültig; Live-Risiko unbekannt.')
+        if risk_context is not None:
+            detail['daily_drawdown'] = dict(risk_context, risk_status='unknown')
+        raise HTTPException(503, detail)
+    return meta
+
+
+def risk_day_context(now, reset_hour, cfg):
+    """The risk policy clock is wall UTC; a frozen quote cannot retain resets."""
+    wall = datetime.fromtimestamp(now, timezone.utc)
+    shifted = wall-timedelta(hours=reset_hour)
+    midnight = shifted.replace(hour=0, minute=0, second=0, microsecond=0)+timedelta(hours=reset_hour)
+    day = shifted.date().isoformat()
+    stamp = cfg.get('reset_timestamp')
+    requested = cfg.get('manual_reset_active', False)
+    active = bool(requested and stamp and midnight.timestamp() <= stamp <= now and cfg.get('reset_date') == day)
+    return dict(manual_active=active, manual_expired=bool(requested and not active),
+                risk_day=day, risk_timezone='UTC', risk_reset_hour=reset_hour), midnight
 
 
 def require_mt5_data(data, source):
@@ -271,7 +324,7 @@ def build_trade_journal(account_id, server_time, local_time):
                 'strategy': strategy, 'account': account_id, 'status': 'CLOSED',
                 'symbol': d.symbol, 'magic': d.magic, 'position_id': position_id,
                 'slot': slot_by_magic.get(row.get('ownership_magic')),
-                'volume': float(d.volume), 'close_price': cp,
+                'close_price': cp,  # Attributable volume comes from accounting, not the whole deal.
                 'points': None if op is None else round(cp-op if row['type']=='BUY' else op-cp,2),
                 'profit_usd': row['net_profit_usd'], 'pnl_basis': 'realized_net_with_allocated_entry_costs',
                 'reason_verified': False, 'why_triggered': journal_accounting.UNKNOWN_ENTRY,
@@ -288,6 +341,13 @@ def get_live_market_data(include_journal=True):
     sym = mt5.symbol_info(SYMBOL)
     tick = mt5.symbol_info_tick(SYMBOL)
     acc = mt5.account_info()
+    now = time.time()
+    params = gold_parameters() if selected()['id']=='goldm15' else None
+    reset_hour = int(params['RiskResetHourServer']) if params else 0
+    dd_cfg = load_dd_config()
+    risk_context, midnight_dt = risk_day_context(now, reset_hour, dd_cfg)
+    source_meta = require_fresh_quote(tick, now, risk_context)
+    wall_time = datetime.fromtimestamp(now, timezone.utc)
     
     if not sym or not tick or not acc:
         return None
@@ -565,20 +625,16 @@ def get_live_market_data(include_journal=True):
         })
 
     # Daily Drawdown Calculation (Blueberry Funded Rule: Day Start Balance / High Water Mark)
-    params = gold_parameters() if selected()['id']=='goldm15' else None
-    reset_hour = int(params['RiskResetHourServer']) if params else 0
-    risk_day = (server_time - timedelta(hours=reset_hour)).date().isoformat()
-    midnight_dt = (server_time - timedelta(hours=reset_hour)).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(hours=reset_hour)
-    dd_cfg = load_dd_config()
+    risk_day = risk_context['risk_day']
     manual_requested = dd_cfg.get('manual_reset_active', False)
     reset_ts = dd_cfg.get("reset_timestamp")
-    manual_active = bool(manual_requested and reset_ts and midnight_dt.timestamp() <= reset_ts <= tick.time and dd_cfg.get('reset_date') == risk_day)
+    manual_active = risk_context['manual_active']
     reset_bal = dd_cfg.get("reset_balance", 10000.0)
 
     if manual_active and reset_ts:
         reset_dt = datetime.fromtimestamp(reset_ts, timezone.utc)
         from_dt = max(midnight_dt, reset_dt)
-        deals = require_mt5_data(mt5.history_deals_get(from_dt, server_time), 'daily_history')
+        deals = require_mt5_data(mt5.history_deals_get(from_dt, wall_time), 'daily_history')
         realized_today = 0.0
         if deals:
             for d in deals:
@@ -586,7 +642,7 @@ def get_live_market_data(include_journal=True):
                     realized_today += (d.profit + d.swap + d.commission + getattr(d, 'fee', 0.))
         day_start_bal = float(reset_bal)
     else:
-        deals = require_mt5_data(mt5.history_deals_get(midnight_dt, server_time), 'daily_history')
+        deals = require_mt5_data(mt5.history_deals_get(midnight_dt, wall_time), 'daily_history')
         realized_today = 0.0
         if deals:
             for d in deals:
@@ -627,6 +683,8 @@ def get_live_market_data(include_journal=True):
     }
 
     result = {
+        **source_meta,
+        "risk_status": "available",
         "symbol": SYMBOL,
         "bid": tick.bid,
         "ask": tick.ask,
@@ -680,7 +738,7 @@ def get_live_market_data(include_journal=True):
     if selected()['id']=='goldm15':
         result.update(GOLD_METRICS_CACHE.get(selected(), SYMBOL, TIMEFRAME, cur_bar['time'],
                                             df['close'].to_numpy(), params, gold_metrics))
-        guard = read_guard(GUARD_FILE, tick.time, acc.equity, params, balance=acc.balance)
+        guard = read_guard(GUARD_FILE, now, acc.equity, params, balance=acc.balance)
         result['ea_guard'] = guard
         result['signal_bar_time'] = datetime.fromtimestamp(int(df.iloc[-2]['time']), timezone.utc).strftime('%H:%M')
         if guard['baseline_verified'] and not manual_active:
@@ -1008,12 +1066,6 @@ def api_modify_position(req: ModifyPositionRequest, account: str):
     
     target_sl = pos.sl
     target_tp = pos.tp
-    if req.sl_usd is not None:
-        target_sl = (op + (req.sl_usd / (vol * contract_size))) if is_buy else (op - (req.sl_usd / (vol * contract_size)))
-
-    if req.tp_usd is not None:
-        target_tp = (op + (req.tp_usd / (vol * contract_size))) if is_buy else (op - (req.tp_usd / (vol * contract_size)))
-
     if req.sl_price is not None:
         target_sl = req.sl_price
     if req.tp_price is not None:
@@ -1024,6 +1076,7 @@ def api_modify_position(req: ModifyPositionRequest, account: str):
         target_tp = 0.0
 
     tick = mt5.symbol_info_tick(pos.symbol)
+    require_fresh_quote(tick)
     tick_size = getattr(sym, 'trade_tick_size', 0)
     point = getattr(sym, 'point', 0)
     stops = getattr(sym, 'trade_stops_level', None)
@@ -1033,6 +1086,22 @@ def api_modify_position(req: ModifyPositionRequest, account: str):
         raise HTTPException(503, 'Broker-Quote oder Stop-Metadaten fehlen.')
     reference = tick.bid if is_buy else tick.ask
     distance = max(stops, freeze) * point
+    # Derived USD targets may be fractional ticks. Round toward greater payoff:
+    # BUY up / SELL down, so an SL never increases requested nominal loss.
+    # Exact client prices remain strict and must already lie on the tick grid.
+    for side in ('sl', 'tp'):
+        usd = getattr(req, side+'_usd')
+        if usd is not None:
+            step = Decimal(str(tick_size))
+            delta = Decimal(str(usd)) / (Decimal(str(vol))*Decimal(str(contract_size)))
+            raw = Decimal(str(op)) + (delta if is_buy else -delta)
+            if raw <= 0:
+                raise HTTPException(422, 'Berechneter Schutzpreis muss endlich und positiv sein.')
+            target = float((raw/step).to_integral_value(rounding=ROUND_CEILING if is_buy else ROUND_FLOOR)*step)
+            if side == 'sl':
+                target_sl = target
+            else:
+                target_tp = target
     for side, target in (('sl', target_sl), ('tp', target_tp)):
         changed = (getattr(req, side+'_usd') is not None or getattr(req, side+'_price') is not None or getattr(req, 'remove_'+side))
         if not changed:
@@ -1042,7 +1111,7 @@ def api_modify_position(req: ModifyPositionRequest, account: str):
             continue
         if not math.isfinite(target) or target <= 0:
             raise HTTPException(422, 'Berechneter Schutzpreis muss endlich und positiv sein.')
-        if abs(target/tick_size - round(target/tick_size)) > 1e-6:
+        if Decimal(str(target)) % Decimal(str(tick_size)) != 0:
             raise HTTPException(422, 'Schutzpreis liegt nicht auf der Broker-Tickgröße.')
         gap = reference-target if (side=='sl') == is_buy else target-reference
         if gap <= 0 or gap + 1e-9 < distance:
@@ -1057,6 +1126,7 @@ def api_modify_position(req: ModifyPositionRequest, account: str):
         "tp": float(target_tp) if target_tp > 0 else 0.0
     }
     verify_identity(mt5, selected())
+    require_fresh_quote(mt5.symbol_info_tick(pos.symbol))
     res = mt5.order_send(request)
     if res is None:
         raise HTTPException(503, 'MT5 hat die Änderung nicht bestätigt; Status neu laden.')
@@ -1077,6 +1147,7 @@ def api_close_position(req: ClosePositionRequest, account: str):
         raise HTTPException(403, 'Nur XAUUSD-Positionen sind freigegeben.')
     sym = mt5.symbol_info(pos.symbol)
     tick = mt5.symbol_info_tick(pos.symbol)
+    require_fresh_quote(tick)
     if sym is None or tick is None or not all(math.isfinite(v) and v > 0 for v in (tick.bid, tick.ask, pos.volume)):
         raise HTTPException(503, 'Broker-Quote oder Positionsdaten fehlen/ungültig.')
     is_buy = (pos.type == mt5.ORDER_TYPE_BUY)
@@ -1096,6 +1167,9 @@ def api_close_position(req: ClosePositionRequest, account: str):
         "comment": "Webapp_Manual_Close"
     }
     verify_identity(mt5, selected())
+    tick = mt5.symbol_info_tick(pos.symbol)
+    require_fresh_quote(tick)
+    request['price'] = tick.bid if is_buy else tick.ask
     res = mt5.order_send(request)
     if res is None:
         raise HTTPException(503, 'MT5 hat die Schließung nicht bestätigt; Status neu laden.')
@@ -1110,6 +1184,8 @@ def api_reset_drawdown(req: ResetDrawdownRequest, account: str):
         raise HTTPException(status_code=500, detail="MT5 nicht verbunden")
     tick = mt5.symbol_info_tick(SYMBOL)
     acc = mt5.account_info()
+    now = time.time()
+    require_fresh_quote(tick, now)
     if tick is None or acc is None:
         raise HTTPException(status_code=500, detail="MT5 Kontodaten nicht verfügbar")
 
@@ -1128,12 +1204,12 @@ def api_reset_drawdown(req: ResetDrawdownRequest, account: str):
         }
     else:
         baseline = float(req.baseline) if (req.baseline is not None and req.baseline > 0) else float(acc.balance)
-        server_time = datetime.fromtimestamp(tick.time, timezone.utc)
+        server_time = datetime.fromtimestamp(now, timezone.utc)
         reset_hour = int(gold_parameters()['RiskResetHourServer']) if account=='goldm15' else 0
         cfg = {
             "manual_reset_active": True,
             "reset_balance": baseline,
-            "reset_timestamp": int(tick.time),
+            "reset_timestamp": int(now),
             "reset_date": (server_time-timedelta(hours=reset_hour)).date().isoformat()
         }
         save_dd_config(cfg)

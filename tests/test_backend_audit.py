@@ -31,7 +31,11 @@ def isolated(monkeypatch, tmp_path):
     rates['high'] = rates['close'] + 4
     rates['low'] = rates['open'] - 4
     rates['tick_volume'] = 10
-    tick = NS(time=int(rates['time'][-1])+100, bid=4030., ask=4030.05)
+    # Deterministic wall clock independent of the broker source clock.
+    clock = NS(now=datetime(2026, 10, 9, 12, tzinfo=timezone.utc).timestamp())
+    monkeypatch.setattr(app.time, 'time', lambda: clock.now)
+    tick = NS(time=int(clock.now), bid=4030., ask=4030.05)
+    rates['time'] = (tick.time//900 - 299 + np.arange(300))*900
     info = NS(login=account['login'], server=account['server'], balance=10000., equity=10000.)
     sym = NS(time=tick.time, spread=5, trade_contract_size=100., digits=2, point=.01,
              trade_tick_size=.01, trade_stops_level=10, trade_freeze_level=0, filling_mode=2)
@@ -63,7 +67,7 @@ def isolated(monkeypatch, tmp_path):
         control = client.get('/api/control_session')
         assert control.status_code==200
         client.headers['x-dashboard-csrf']=control.json()['csrf_token']
-    yield NS(pos=pos, rates=rates, tick=tick, info=info, sym=sym, positions=positions,
+    yield NS(pos=pos, rates=rates, tick=tick, clock=clock, info=info, sym=sym, positions=positions,
              history=history, send=send, client=client, root=tmp_path)
     gateway._selected.reset(token)
     gateway._attached_mt5 = None
@@ -192,6 +196,7 @@ def test_none_history_fail_closed_not_zero(route, isolated):
 def test_manual_reset_expires_at_next_utc_risk_day(stamp, isolated):
     now = datetime.fromisoformat(stamp)
     isolated.tick.time = int(now.timestamp())
+    isolated.clock.now = now.timestamp()
     before = int(now.timestamp())-60
     config = dict(manual_reset_active=True, reset_balance=11000., reset_timestamp=before,
                   reset_date=datetime.fromtimestamp(before, timezone.utc).date().isoformat())
@@ -352,6 +357,7 @@ def test_gold_expired_manual_baseline_returns_to_verified_guard(isolated,monkeyp
     isolated.info.login=gateway.ACCOUNTS['goldm15']['login']
     now=datetime.fromisoformat('2026-10-10T00:00:00+00:00')
     isolated.tick.time=int(now.timestamp())
+    isolated.clock.now=now.timestamp()
     token=gateway._selected.set('goldm15')
     try:
         app.save_dd_config(dict(manual_reset_active=True,reset_balance=11000.,reset_timestamp=isolated.tick.time-60,reset_date='2026-10-09'))
@@ -440,6 +446,7 @@ def test_partial_close_penny_cost_is_not_lost_or_counted_twice(isolated):
 @pytest.mark.parametrize('stamp', ['2026-03-29T01:30:00+00:00','2026-10-25T01:30:00+00:00'])
 def test_header_and_journal_berlin_time_are_same_instant(stamp, isolated):
     isolated.tick.time=int(datetime.fromisoformat(stamp).timestamp())
+    isolated.clock.now=isolated.tick.time
     data=app.get_live_market_data(include_journal=False)
     assert data['times']['german']==__import__('journal_accounting').times(isolated.tick.time)['time_de']
 
