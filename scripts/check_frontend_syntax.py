@@ -16,7 +16,7 @@ for node in tree.body:
         break
 if html is None:
     raise SystemExit("HTML_CONTENT not found")
-blocks = [b for b in re.findall(r"<script\\b[^>]*>([\\s\\S]*?)</script>", html, re.I) if b.strip()]
+blocks = [b for b in re.findall(r"<script\b[^>]*>([\s\S]*?)</script>", html, re.I) if b.strip()]
 if not blocks:
     raise SystemExit("No inline JS blocks found")
 for idx, block in enumerate(blocks):
