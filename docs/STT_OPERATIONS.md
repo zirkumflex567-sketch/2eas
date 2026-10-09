@@ -1,0 +1,102 @@
+# STT dashboard proxy operations
+
+The dashboard supports nginx Basic Authentication with explicitly assigned `read`,
+`layout`, or `trade` roles. A proxy role never defaults to `trade`. Only `trade`
+can use the existing modify-position, close-position and reset-drawdown controls.
+`read` and `layout` receive a session with `control_enabled: false`. Chart workspace
+writes still use the separate existing Chart Studio token gate; a dashboard proxy
+role does not authorize them.
+
+## Trust boundary and application configuration
+
+Run the application on loopback, with the TCP peer preserved. `python app.py`
+passes `proxy_headers=False` to uvicorn. For a CLI/service launch, use
+`uvicorn app:app --host 127.0.0.1 --port 8055 --no-proxy-headers`. Never enable
+`--proxy-headers`, trusted forwarded middleware, or PROXY protocol handling that
+replaces the TCP peer before `dashboard_security` verifies it. Match the port to
+`proxy_pass`; `DASHBOARD_PORT=8055` selects that port for `python app.py`.
+
+Configure these in the application's protected service environment:
+
+| Variable | Meaning |
+| --- | --- |
+| `DASHBOARD_ALLOWED_HOSTS` | Comma-separated public hostnames, without schemes, paths or ports. Default local hosts remain accepted. |
+| `DASHBOARD_PROXY_SECRET` | Shared high-entropy secret of at least 32 characters; identical to the nginx include value. Store outside Git. |
+| `DASHBOARD_PROXY_USERS` | JSON object mapping exact Basic-auth usernames to `read`, `layout`, or `trade`. Example: `{"viewer":"read","designer":"layout","operator":"trade"}`. |
+| `DASHBOARD_PROXY_PREFIX` | Exact deployment prefix; default `/stt`. Change nginx and this value together. No trailing slash. |
+| `DASHBOARD_CONTROL_TOKEN` | Existing optional explicit bearer capability. It is independent of nginx credentials and grants trade controls. |
+
+Malformed JSON, duplicate usernames, unknown roles, unmapped or empty usernames,
+a short/missing secret, a wrong secret, and a non-loopback proxy peer fail closed.
+Duplicate identity/forwarding headers also fail closed. A permitted public Host
+arriving over loopback cannot receive a local operator capability. Local sessions
+require both a local peer and a loopback Host (or the `testserver` test host).
+Forwarding headers alone neither grant a capability nor change request metadata.
+
+Only a verified proxy may supply one literal IPv4/IPv6 `X-Forwarded-For`, an
+`http`/`https` scheme and the exact configured prefix. nginx must terminate HTTPS
+for public use. The normalized HTTPS scheme supplies the external origin and a
+Secure, HttpOnly, SameSite=Strict session cookie. Each control mutation checks the
+current identity, role, session and CSRF token. Changing the user, removing their
+mapping or downgrading their role rejects and revokes the old session; request a
+new session after updating authorization. Sessions expire after one hour and are
+in memory, so restarting the application clears them. Existing explicit bearer
+sessions retain cookie/CSRF compatibility while the configured bearer is unchanged.
+
+## nginx provisioning and deployment
+
+`stt_nginx.conf` is a location template inside the intended HTTPS `server` block.
+Keep `auth_basic` and its protected password file enabled. nginx validates the
+credentials before proxying and replaces `X-Dashboard-User` with `$remote_user`.
+It replaces the forwarding chain with `$remote_addr` and clears upstream
+`Authorization`, so the Basic credential does not reach application handlers.
+These directives must remain together within the location; nginx header directive
+inheritance can change when adding directives in child locations.
+
+Provision `/etc/nginx/snippets/stt-proxy-secret.conf` outside the repository. It
+contains exactly one directive, using the same secret as the application:
+
+```nginx
+proxy_set_header X-Dashboard-Proxy-Secret "<provisioned-secret>";
+```
+
+The placeholder is not a usable secret. Have the deployment secret manager write
+a cryptographically random ASCII value (at least 32 characters, preferably 64
+hex characters) directly into this file and the application environment file.
+Use `root:root` ownership and mode `0600` on both files and restrict the Basic-auth
+password file. The nginx master/service must be able to read the include; a
+rootless deployment needs an equally restricted service-readable arrangement.
+Do not print these files, log request identity secrets, run `nginx -T` in shared
+logs, or put credentials in commands, URLs, reports or Git.
+
+For an approved deployment, back up the installed application/configuration and
+protected files, set the environment and include, install the location template,
+and validate nginx configuration with `nginx -t`. Confirm the application runs
+with raw-peer forwarding disabled, then restart the application and reload nginx
+through the deployment's service manager. Validate `/stt/api/control_session`
+through HTTPS with separate read/layout/trade test identities: confirm each role
+and `control_enabled` result, cookie Secure/HttpOnly flags, and a denied mutation
+for a read identity. Test permitted mutations only against isolated mock handlers;
+do not place or close a live trade to verify security. Confirm invalid proxy
+claims on the loopback backend return 403 and direct external backend access is
+blocked by the network/service binding.
+
+This repository change does not perform deployment, service reloads, broker calls
+or live trade verification.
+
+## Rollback
+
+If validation fails, close public access to the STT location first. Restore the
+previous application, environment and nginx configuration from the protected
+backup, validate configuration, and restart/reload through the approved service
+manager. Do not leave the public proxy serving the prior loopback-only gate: it
+can treat nginx connections as local operators. Keep STT public access disabled
+until equivalent proxy authorization is verified. Reissue sessions after restart
+and rotate the shared secret if it may have been exposed.
+
+## References
+
+The template follows the official nginx documentation for
+[Basic Authentication](https://nginx.org/en/docs/http/ngx_http_auth_basic_module.html),
+[`proxy_set_header` replacement and suppression](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_set_header),
+and the [`$remote_user` and `$remote_addr` variables](https://nginx.org/en/docs/http/ngx_http_core_module.html#variables).

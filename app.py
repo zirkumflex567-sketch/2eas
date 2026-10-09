@@ -3194,4 +3194,4 @@ def index():
 
 if __name__ == "__main__":
     print("Starte XAU Titan Pro Institutional Cockpit auf http://127.0.0.1:8050 ...")
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get('DASHBOARD_PORT', '8050')), log_level="warning")
+    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get('DASHBOARD_PORT', '8050')), log_level="warning", proxy_headers=False)
