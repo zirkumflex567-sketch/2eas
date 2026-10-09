@@ -1,0 +1,39 @@
+name: Test performance and UX fixes
+
+on:
+  push:
+    branches:
+      - test/performance-ux-audit-fixes
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install MT5 and test dependencies
+        run: python -m pip install --upgrade numpy pandas MetaTrader5 fastapi uvicorn httpx pydantic
+      - name: Check Python compilation
+        run: python -m compileall -q app.py account_gateway.py goldm15_dashboard.py scripts tests
+      - name: Check browser JavaScript
+        shell: pwsh
+        run: |
+          node --check static/stone-chart-effects.js
+          node --check static/stone-celebrations.js
+          node --check static/stone-cockpit.js
+          python scripts/check_frontend_syntax.py
+      - name: Run isolated unit and contract suite
+        run: python -m unittest discover -s tests -v

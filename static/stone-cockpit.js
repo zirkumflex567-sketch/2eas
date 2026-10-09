@@ -180,6 +180,8 @@
       document.body.classList.toggle("theme-dark",mode!=="light");
     }
     document.body.classList.toggle("theme-stone",mode==="stone");
+    // Restart dormant chart FX on theme changes (the idle renderer has no timer).
+    try { window.StoneCelebration?.applyChartSettings(); } catch (_) {}
     document.querySelectorAll(".stone-theme-dock button").forEach(button => {
       button.setAttribute("aria-pressed",String(button.dataset.mode === mode));
     });
