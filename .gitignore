@@ -21,3 +21,11 @@ dashboard-backups/
 # Temp backtest exports
 kacki.xlsx
 richtigkkacki.xlsx
+
+# Chart Studio workspace state / SQLite journals (must never publish private drawings)
+state/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.db-wal
+*.db-shm

@@ -36,6 +36,23 @@ function loadProfile(){
  requestDraw();
  updateMessage("Layout '"+name+"' geladen (nur lokal).");
 }
+function exportWorkspaceDocument(){
+ if(!s)return null;
+ return {schemaVersion:1,drawings:json(s.draw),options:json(s.opts),
+  indicators:window.ChartStudioIndicators?.settings()||{},
+  timeframe:s.tf||"M15"};
+}
+function importWorkspaceDocument(document){
+ if(!s||!document||document.schemaVersion!==1||!Array.isArray(document.drawings))return false;
+ // Do not import scenarios, order tickets, account identity or executable text.
+ const drawings=safeDraw(document.drawings);
+ if(drawings.length!==document.drawings.length)return false;
+ snapshot();s.draw=drawings;s.opts={...optsDefault(),...(document.options||{})};
+ persist();save(optKey(),s.opts);showOpts();updateSeries();
+ window.ChartStudioIndicators?.applySettings(document.indicators||{});
+ requestDraw();updateMessage("Serverlayout geladen. Brokerpositionen, What-if und aktiver Timeframe bleiben unverändert.");
+ return true;
+}
 function deleteProfile(){
  const name=s.panel.querySelector("#cs-beta-profile")?.value;
  if(!name||!window.confirm("Layout '"+name+"' dauerhaft lokal löschen?"))return;
@@ -239,6 +256,7 @@ function pointerup(e){
 }
 function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;scenarioGeneration++;if(s.tool==="plan")setTool("cursor");
  window.ChartStudioIndicators?.switchAccount(id);
+ window.ChartStudioServerSync?.account(id);
  showOpts();refreshProfiles();updateSeries();requestDraw()}
 function timeframe(tf){if(s){cancelPlanPreview();s.tf=tf;s.begin=null;s.preview=null;s.drag=null;if(s.tool==="plan")setTool("cursor");
  window.ChartStudioIndicators?.updateBars([]);
@@ -289,6 +307,9 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}
  catch (err) {console.warn("Chart Studio indicator pane could not load:",err);}
  account(accountId);
+ try{window.ChartStudioServerSync?.mount({panel,account:accountId,
+   exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,
+   getAccount:()=>s?.account})}catch(err){console.warn("Chart-Workspace-Sync nicht verfügbar:",err)}
  toggle.addEventListener("click",()=>{panel.hidden=!panel.hidden;toggle.setAttribute("aria-expanded",String(!panel.hidden));requestDraw()});
  panel.addEventListener("click",e=>{
   const b=e.target.closest("button");if(!b)return;
