@@ -192,7 +192,7 @@ def install_control_security(app):
                     return reject()
                 # Explicit bearer sessions retain the existing cookie/CSRF compatibility
                 # without requiring JS to retain the bearer on every request.
-                if identity is None and not claimed_proxy and not forwarding:
+                if (identity is None or identity[0] == 'local') and not claimed_proxy and not forwarding:
                     bearer_identity = ('bearer', _bearer_principal(), 'trade')
                     if saved['identity'] == bearer_identity and saved['peer'] == raw_peer:
                         identity = bearer_identity

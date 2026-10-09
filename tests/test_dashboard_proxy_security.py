@@ -214,3 +214,32 @@ def test_non_ascii_configured_prefix_fails_closed_without_server_error(proxy, mo
         await app(scope, receive, send)
     client = TestClient(raw_header_app, base_url='https://' + HOST, client=('127.0.0.1', 123))
     assert client.get('/api/control_session', headers=headers()).status_code == 403
+
+
+def test_local_bearer_session_retains_cookie_csrf_compatibility(proxy, monkeypatch):
+    app, _, writes = proxy
+    monkeypatch.setenv('DASHBOARD_CONTROL_TOKEN', 'test-only-bearer-capability')
+    client = TestClient(app, base_url='http://localhost', client=('127.0.0.1', 123))
+    token = client.get('/api/control_session', headers={'Authorization': 'Bearer test-only-bearer-capability'}).json()['csrf_token']
+    response = client.post('/api/modify_position', headers={'X-Dashboard-CSRF': token, 'Origin': 'http://localhost'})
+    assert response.status_code == 200
+    assert writes == [True]
+
+
+@pytest.mark.parametrize('change', ['rotated_token', 'foreign_peer', 'verified_read_proxy'])
+def test_saved_local_bearer_cannot_override_changed_credential_peer_or_proxy_role(proxy, monkeypatch, change):
+    app, _, writes = proxy
+    monkeypatch.setenv('DASHBOARD_CONTROL_TOKEN', 'test-only-bearer-capability')
+    client = TestClient(app, base_url='http://localhost', client=('127.0.0.1', 123))
+    token = client.get('/api/control_session', headers={'Authorization': 'Bearer test-only-bearer-capability'}).json()['csrf_token']
+    supplied = {'X-Dashboard-CSRF': token, 'Origin': 'http://localhost'}
+    if change == 'rotated_token':
+        monkeypatch.setenv('DASHBOARD_CONTROL_TOKEN', 'rotated-test-only-bearer')
+    elif change == 'foreign_peer':
+        other = TestClient(app, base_url='http://localhost', client=('203.0.113.8', 123))
+        other.cookies.update(client.cookies)
+        client = other
+    else:
+        supplied.update(headers('viewer', **{'X-Forwarded-Proto': 'http'}))
+    assert client.post('/api/modify_position', headers=supplied).status_code == 403
+    assert not writes
