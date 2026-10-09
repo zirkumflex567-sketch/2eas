@@ -51,7 +51,8 @@ def validate_environment_file(root, private_path):
         if 'DASHBOARD_PROXY_SECRET' in values and len(values['DASHBOARD_PROXY_SECRET']) < 32:
             raise ValueError('short secret')
         users = json.loads(values.get('DASHBOARD_PROXY_USERS', '{}'), object_pairs_hook=unique)
-        if not isinstance(users, dict) or any(not k.strip() or v not in ('read', 'layout', 'trade')
+        if not isinstance(users, dict) or any(not k or not all(32 < ord(c) < 127 and c != ',' for c in k)
+                                              or v not in ('read', 'layout', 'trade')
                                               for k, v in users.items()):
             raise ValueError('invalid proxy users')
         if users and len(values.get('DASHBOARD_PROXY_SECRET', '')) < 32:
@@ -85,6 +86,21 @@ def _git(root, *args):
     return result.stdout
 
 
+def preflight_checkout(root):
+    """Compile the tracked application Python inventory; never import/execute it."""
+    try:
+        root = Path(root).resolve()
+        names = {os.fsdecode(p) for p in _git(root, 'ls-files', '-z').split(b'\0') if p}
+        for name in sorted(names):
+            if _is_source(name) and Path(name).suffix.lower() == '.py':
+                path = root / name
+                if path.is_symlink() or not path.resolve().is_relative_to(root):
+                    raise ValueError('unsafe source')
+                compile(path.read_bytes(), '<application-source>', 'exec')
+    except (OSError, ValueError, SyntaxError, subprocess.SubprocessError):
+        raise ValueError('Invalid application source') from None
+
+
 def inspect_checkout(root):
     root = Path(root).resolve()
     checkout_id = hashlib.sha256(os.path.normcase(str(root)).encode('utf-8')).hexdigest()
@@ -95,10 +111,15 @@ def inspect_checkout(root):
         if top != root:
             raise ValueError('not a checkout root')
         revision = _git(root, 'rev-parse', '--verify', 'HEAD').decode('ascii').strip()
-        names = {os.fsdecode(p) for p in _git(root, 'ls-files', '-z').split(b'\0') if p}
+        entries = [p for p in _git(root, 'ls-files', '-v', '-z').split(b'\0') if p]
+        names = {os.fsdecode(p[2:]) for p in entries}
         changed = {os.fsdecode(p) for p in _git(root, 'diff', '--name-only', '-z',
                                                '--no-renames', 'HEAD', '--').split(b'\0') if p}
-        dirty = any(_is_source(p) for p in changed)
+        # Git diff can conceal edits behind assume-unchanged/skip-worktree.
+        # Refuse these flags on source, including when bytes currently match.
+        concealed = any(_is_source(os.fsdecode(p[2:])) and
+                        (p[:1].islower() or p[:1] == b'S') for p in entries)
+        dirty = concealed or any(_is_source(p) for p in changed)
     except (OSError, subprocess.SubprocessError, ValueError, UnicodeError):
         revision = 'unknown'
         dirty = None
@@ -166,10 +187,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Inspect dashboard code without loading the app')
     parser.add_argument('--inspect-checkout', required=True)
     parser.add_argument('--validate-env', help='Validate private launch JSON without disclosing it')
+    parser.add_argument('--preflight', action='store_true', help='Compile tracked application Python without importing it')
     args = parser.parse_args()
     try:
         if args.validate_env:
             validate_environment_file(args.inspect_checkout, args.validate_env)
+        if args.preflight:
+            preflight_checkout(args.inspect_checkout)
         print(json.dumps(inspect_checkout(args.inspect_checkout), sort_keys=True))
     except Exception:
         # No filenames, environment values, Git stderr or arbitrary exception text.

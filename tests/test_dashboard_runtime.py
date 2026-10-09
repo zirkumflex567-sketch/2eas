@@ -142,6 +142,53 @@ def test_git_checkout_cannot_attest_an_untracked_entrypoint(checkout):
     assert module.RuntimeIdentity(checkout).payload()['restart_required'] is True
 
 
+@pytest.mark.parametrize('flag', ['--assume-unchanged', '--skip-worktree'])
+def test_git_index_flags_cannot_hide_application_changes(checkout, flag):
+    module = runtime_module()
+    original = module.inspect_checkout(checkout)
+    git(checkout, 'update-index', flag, 'module.py')
+    (checkout / 'module.py').write_text('changed = True\n')
+    current = module.inspect_checkout(checkout)
+    assert current['digest'] != original['digest']
+    assert current['applicationCodeDirty'] is True
+
+
+@pytest.mark.parametrize('username', ['viewer other', 'viewer,other', 'viewer\tother', 'viewer\u00e4'])
+def test_private_environment_matches_actual_proxy_username_grammar(checkout, tmp_path, username):
+    private = tmp_path.parent / (tmp_path.name + '-user-validation.json')
+    private.write_text(json.dumps({'DASHBOARD_PROXY_SECRET': 'fixture-secret-never-emit' * 2,
+                                  'DASHBOARD_PROXY_USERS': json.dumps({'operator': 'trade', username: 'read'})}))
+    try:
+        with pytest.raises(ValueError, match='Invalid private environment'):
+            runtime_module().validate_environment_file(checkout, private)
+    finally:
+        private.unlink(missing_ok=True)
+
+
+def test_source_preflight_rejects_committed_helper_syntax_error_without_import(checkout):
+    module = runtime_module()
+    assert hasattr(module, 'preflight_checkout'), 'complete Python inventory preflight required'
+    (checkout / 'module.py').write_text('this is invalid python :\n')
+    git(checkout, 'add', 'module.py')
+    git(checkout, 'commit', '-qm', 'bad helper syntax fixture')
+    with pytest.raises(ValueError, match='Invalid application source'):
+        module.preflight_checkout(checkout)
+
+
+def test_source_preflight_does_not_import_or_compile_excluded_private_files(checkout):
+    module = runtime_module()
+    assert hasattr(module, 'preflight_checkout'), 'complete Python inventory preflight required'
+    (checkout / 'app.py').write_text('raise RuntimeError("must never import")\n')
+    for name in ('tests/test_bad.py', 'docs/example.py', 'private/settings.py'):
+        path = checkout / name
+        path.parent.mkdir(exist_ok=True)
+        path.write_text('fixture secret invalid syntax :\n')
+        git(checkout, 'add', name)
+    (checkout / 'untracked.py').write_text('invalid private syntax :\n')
+    (checkout / 'drawdown_config.json').write_text('{"invalid-json"')
+    module.preflight_checkout(checkout)
+
+
 def test_route_is_installed_without_dependency_on_fastapi(checkout):
     module = runtime_module()
     routes = {}
@@ -182,11 +229,26 @@ def run_control(repo, port, action, env_file=None):
     # Windows background children can inherit subprocess pipe handles even with
     # their own log redirection. File capture keeps operator exit independent.
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
-        result = subprocess.run(args, stdout=stdout, stderr=stderr, timeout=35)
+        # This includes repeated Git/PowerShell preflight in addition to the
+        # bounded 8s application startup wait, and may run beside the full suite.
+        result = subprocess.run(args, stdout=stdout, stderr=stderr, timeout=120)
         stdout.seek(0)
         stderr.seek(0)
         return subprocess.CompletedProcess(args, result.returncode,
                                            stdout.read().decode(), stderr.read().decode())
+
+
+def cleanup_mock_processes(checkout):
+    """Match the exact disposable app path AND interpreter, never a port/PID alone."""
+    env = os.environ.copy()
+    env['DASHBOARD_TEST_FIXTURE_APP'] = str(checkout / 'app.py')
+    env['DASHBOARD_TEST_FIXTURE_PYTHON'] = sys.executable
+    command = '''$targetPattern = '(?:^|\\s)"?' + [regex]::Escape($env:DASHBOARD_TEST_FIXTURE_APP) + '"?(?:\\s|$)';
+Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
+Where-Object { $_.ExecutablePath -eq $env:DASHBOARD_TEST_FIXTURE_PYTHON -and $_.CommandLine -match $targetPattern } |
+ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }'''
+    subprocess.run(['powershell.exe', '-NoProfile', '-Command', command], env=env,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20, check=True)
 
 
 @pytest.mark.skipif(os.name != 'nt', reason='Windows PowerShell operational workflow')
@@ -220,17 +282,41 @@ def test_powershell_lifecycle_and_pre_stop_guards(checkout, tmp_path):
         assert refused.returncode != 0
         assert endpoint()['pid'] == first['pid']
         git(checkout, 'restore', 'module.py')
+        for flag in ('--assume-unchanged', '--skip-worktree'):
+            git(checkout, 'update-index', flag, 'module.py')
+            (checkout / 'module.py').write_text('concealed = True\n')
+            refused = run_control(checkout, port, 'Restart', env_file)
+            assert refused.returncode != 0, refused.stdout + refused.stderr
+            assert endpoint()['pid'] == first['pid']
+            git(checkout, 'update-index', '--no-' + flag[2:], 'module.py')
+            git(checkout, 'restore', 'module.py')
         invalid_env = tmp_path.parent / (tmp_path.name + '-invalid.json')
         invalid_env.write_text('{"PYTHONPATH":"fixture-secret-never-emit"}')
         refused = run_control(checkout, port, 'Restart', invalid_env)
         assert refused.returncode != 0
         assert 'fixture-secret-never-emit' not in refused.stdout + refused.stderr
         assert endpoint()['pid'] == first['pid']
+        for username in ('viewer other', 'viewer,other', 'viewer\tother', 'viewer\u00e4'):
+            invalid_env.write_text(json.dumps({'DASHBOARD_PROXY_SECRET': 'fixture-secret-never-emit' * 2,
+                'DASHBOARD_PROXY_USERS': json.dumps({'operator': 'trade', username: 'read'})}))
+            refused = run_control(checkout, port, 'Restart', invalid_env)
+            assert refused.returncode != 0, refused.stdout + refused.stderr
+            assert 'fixture-secret-never-emit' not in refused.stdout + refused.stderr
+            assert endpoint()['pid'] == first['pid']
         invalid_env.write_text('{"DASHBOARD_PROXY_PREFIX":"/stt/"}')
         refused = run_control(checkout, port, 'Restart', invalid_env)
         assert refused.returncode != 0
         assert endpoint()['pid'] == first['pid']
         invalid_env.unlink()
+        (checkout / 'module.py').write_text('this is invalid python :\n')
+        git(checkout, 'add', 'module.py')
+        git(checkout, 'commit', '-qm', 'committed invalid helper syntax fixture')
+        refused = run_control(checkout, port, 'Restart', env_file)
+        assert refused.returncode != 0, refused.stdout + refused.stderr
+        assert endpoint()['pid'] == first['pid']
+        (checkout / 'module.py').write_text('value = 2\n')
+        git(checkout, 'add', 'module.py')
+        git(checkout, 'commit', '-qm', 'restore helper syntax fixture')
         other = tmp_path / 'identical-other-worktree'
         git(checkout, 'worktree', 'add', '--detach', str(other), 'HEAD')
         refused = run_control(other, port, 'Restart', env_file)
@@ -244,8 +330,7 @@ def test_powershell_lifecycle_and_pre_stop_guards(checkout, tmp_path):
         assert second['startupDigest'] == first['startupDigest']
         assert 'fixture-secret-never-emit' not in started.stdout + restarted.stdout
     finally:
-        for pid in launched:
-            subprocess.run(['taskkill', '/PID', str(pid), '/F'], capture_output=True, timeout=10)
+        cleanup_mock_processes(checkout)
         env_file.unlink(missing_ok=True)
 
 
@@ -377,6 +462,5 @@ def test_powershell_failed_restart_retains_recovery_state(checkout, tmp_path):
         assert env_file.exists()
         assert (checkout / 'app.py').exists()
     finally:
-        if old_pid:
-            subprocess.run(['taskkill', '/PID', str(old_pid), '/F'], capture_output=True, timeout=10)
+        cleanup_mock_processes(checkout)
         env_file.unlink(missing_ok=True)

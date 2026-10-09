@@ -137,7 +137,8 @@ try {
             catch { Reject 'Proxy user mapping is invalid.' }
             if ($null -eq $users -or $users -isnot [PSCustomObject]) { Reject 'Proxy user mapping must be an object.' }
             foreach ($property in $users.PSObject.Properties) {
-                if (-not $property.Name.Trim() -or $property.Value -cnotin @('read','layout','trade')) { Reject 'Proxy user mapping is invalid.' }
+                if ($property.Name -cnotmatch '^[\x21-\x7e]+$' -or $property.Name.Contains(',') -or
+                    $property.Value -cnotin @('read','layout','trade')) { Reject 'Proxy user mapping is invalid.' }
             }
             if (@($users.PSObject.Properties).Count -gt 0 -and
                 (-not $environment.ContainsKey('DASHBOARD_PROXY_SECRET') -or $environment['DASHBOARD_PROXY_SECRET'].Length -lt 32)) {
@@ -145,9 +146,9 @@ try {
             }
         }
     }
-    # Syntax preflight only: never import app.py, MT5, or contact a broker.
-    [void](Run-Python ('-c "import pathlib,sys; [compile(pathlib.Path(p).read_bytes(), p, ''exec'') for p in sys.argv[1:]]" ' +
-                       (Quote-Argument $appPath) + ' ' + (Quote-Argument $script:RuntimePath)))
+    # Compile every tracked application Python source without importing any.
+    [void](Run-Python ((Quote-Argument $script:RuntimePath) + ' --inspect-checkout ' +
+                      (Quote-Argument $script:RepoPath) + ' --preflight'))
     $logId = [Guid]::NewGuid().ToString('N')
     $outLog = Join-Path $script:RepoPath ('.dashboard-runtime-' + $logId + '.stdout.log')
     $errLog = Join-Path $script:RepoPath ('.dashboard-runtime-' + $logId + '.stderr.log')

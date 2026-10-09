@@ -142,8 +142,14 @@ gate or replace the protected nginx secret include.
 Start/Restart rejects dirty tracked application code, missing source, malformed
 JSON, duplicate keys, invalid roles/prefixes, short/missing proxy secrets and
 invalid quote/storage configuration before any stop. Mutable drawdown changes
-do not count as application code. Syntax preflight compiles source without
-importing app/MT5. The script then verifies that the actual loopback listener PID
+do not count as application code. Source files with Git `assume-unchanged` or
+`skip-worktree` flags are rejected even if their bytes match, because these flags
+can conceal changes from Git diff. Clear those flags before an approved launch.
+Proxy usernames must use printable ASCII without spaces or commas, matching the
+application's exact identity grammar. Syntax preflight compiles the complete
+tracked application Python inventory without importing app/MT5; a committed
+helper syntax error is therefore rejected before stopping the old process.
+The script then verifies that the actual loopback listener PID
 matches the runtime endpoint PID and that `checkoutId` matches the requested
 checkout. Unrelated listeners, wildcard-bound listeners, malformed endpoints
 and another worktree are refused. Restart can intentionally replace a stale
