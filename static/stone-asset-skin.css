@@ -1439,3 +1439,32 @@ body.theme-stone #stone-fx-panel button:focus-visible {
 .cs-appearance-actions button{padding:7px 10px;border-radius:5px;background:#264c5b;
  border:1px solid #709ca9;color:#ecfaff;cursor:pointer}
 .cs-appearance p{margin:8px 0 0;color:#aecbd5}
+
+/* Chart Studio: independent oscillator instances and dedicated resizable panes. */
+.cs-osc-editor{margin:13px 0;padding:12px;border:1px solid #547b8f;border-radius:9px;
+ background:linear-gradient(115deg,#142c3a,#091826);color:#e1edf7;
+ font:11px/1.45 ui-monospace,Consolas,monospace}
+.cs-osc-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;
+ color:#f5d69d;gap:8px;letter-spacing:.06em}
+.cs-osc-editor p{margin:8px 0;color:#b5d1dd}
+.cs-osc-presets{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0}
+.cs-osc-editor button{min-height:31px;padding:6px 10px;cursor:pointer;border:1px solid #668f9f;
+ color:#e9f9fc;border-radius:5px;background:#234453}
+.cs-osc-editor button:hover{filter:brightness(1.15)}
+.cs-osc-items{display:flex;flex-direction:column;gap:8px}
+.cs-osc-instance{display:flex;gap:8px;flex-wrap:wrap;align-items:end;padding:10px;
+ background:rgba(5,19,30,.75);border:1px solid #405f70;border-radius:7px}
+.cs-osc-instance label{display:flex;flex:1 1 90px;min-width:75px;flex-direction:column;gap:4px}
+.cs-osc-instance label:nth-last-of-type(1){flex:2 1 135px}
+.cs-osc-instance input:not([type=checkbox]),.cs-osc-instance select{box-sizing:border-box;
+ width:100%;min-width:0;height:31px;border:1px solid #638697;background:#102737;
+ color:#e6f7ff;border-radius:4px;padding:3px}
+.cs-osc-instance input[type=checkbox]{accent-color:#66dbe0;width:20px;height:20px}
+.cs-osc-instance input[type=color]{padding:2px}
+.cs-osc-instance button[data-action=remove]{border-color:#956474;color:#ffdcdf}
+.cs-osc-panes{display:flex;flex-direction:column;gap:7px;width:100%;min-width:0}
+.cs-osc-panes:empty{display:none}
+.cs-osc-pane{height:178px}
+.cs-osc-message{min-height:14px;overflow-wrap:anywhere}
+@media(max-width:700px){.cs-osc-instance label{flex:1 1 85px}
+ .cs-osc-instance button{flex:1 1 110px}}

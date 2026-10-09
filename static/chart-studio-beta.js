@@ -27,7 +27,8 @@ function saveProfile(){
  all[trimmed]={draw:json(s.draw),opts:json(s.opts),
   indicators:window.ChartStudioIndicators?.settings()||null,
    movingAverages:window.ChartStudioAverages?.getConfigs()||[],
-   chartAppearance:window.ChartStudioAppearance?.settings()||{}};
+   chartAppearance:window.ChartStudioAppearance?.settings()||{},
+   oscillatorInstances:window.ChartStudioOscillators?.settings()||[]};
  save(profileKey(),all);refreshProfiles();s.panel.querySelector("#cs-beta-profile").value=trimmed;updateMessage("Layout '"+trimmed+"' lokal gesichert.");
 }
 function loadProfile(){
@@ -37,6 +38,7 @@ function loadProfile(){
  if(item.indicators)window.ChartStudioIndicators?.applySettings(item.indicators);
  window.ChartStudioAverages?.applySettings(item.movingAverages||[]);
  window.ChartStudioAppearance?.applySettings(item.chartAppearance||{});
+ window.ChartStudioOscillators?.applySettings(item.oscillatorInstances||[]);
  requestDraw();
  updateMessage("Layout '"+name+"' geladen (nur lokal).");
 }
@@ -46,6 +48,7 @@ function exportWorkspaceDocument(){
   indicators:window.ChartStudioIndicators?.settings()||{},
    movingAverages:window.ChartStudioAverages?.getConfigs()||[],
   chartAppearance:window.ChartStudioAppearance?.settings()||{},
+  oscillatorInstances:window.ChartStudioOscillators?.settings()||[],
   timeframe:s.tf||"M15"};
 }
 function importWorkspaceDocument(document){
@@ -58,6 +61,7 @@ function importWorkspaceDocument(document){
  window.ChartStudioIndicators?.applySettings(document.indicators||{});
  window.ChartStudioAverages?.applySettings(document.movingAverages||[]);
  window.ChartStudioAppearance?.applySettings(document.chartAppearance||{});
+ window.ChartStudioOscillators?.applySettings(document.oscillatorInstances||[]);
  requestDraw();updateMessage("Serverlayout geladen. Brokerpositionen, What-if und aktiver Timeframe bleiben unverändert.");
  return true;
 }
@@ -327,14 +331,17 @@ function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.draw=safeDr
  window.ChartStudioIndicators?.switchAccount(id);
  window.ChartStudioAverages?.switchAccount(id);
  window.ChartStudioAppearance?.switchAccount(id);
+ window.ChartStudioOscillators?.switchAccount(id);
  window.ChartStudioServerSync?.account(id);
  showOpts();refreshProfiles();updateSeries();requestDraw()}
 function timeframe(tf){if(s){cancelPlanPreview();s.tf=tf;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");
  window.ChartStudioIndicators?.updateBars([]);
+  window.ChartStudioOscillators?.updateBars([]);
   window.ChartStudioAverages?.updateBars([]);
  requestDraw()}}
 function updateCandles(c){if(s&&Array.isArray(c)){s.candles=c;updateSeries();
  window.ChartStudioIndicators?.updateBars(c);
+  window.ChartStudioOscillators?.updateBars(c);
   window.ChartStudioAverages?.updateBars(c);
  requestDraw()}}
 function updatePositions(accountId,positions){if(s&&s.account===accountId){s.positions=Array.isArray(positions)?positions:[];requestDraw()}}
@@ -384,6 +391,8 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  catch (err) {console.warn("Chart Studio average editor unavailable:",err);}
  try{window.ChartStudioAppearance?.mount({chart,candleSeries,panel,account:accountId});}
  catch(err){console.warn("Chart settings unavailable:",err);}
+ try{window.ChartStudioOscillators?.mount({chart,host,panel,account:accountId});}
+ catch(err){console.warn("Chart oscillator instances unavailable:",err);}
  account(accountId);
  try{window.ChartStudioServerSync?.mount({panel,account:accountId,
    exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,
