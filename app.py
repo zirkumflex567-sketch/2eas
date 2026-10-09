@@ -730,7 +730,9 @@ def api_candles(count: int = 150, account: str = 'titan', tf: str = 'M15'):
             'open': round(row['open'], 2),
             'high': round(row['high'], 2),
             'low': round(row['low'], 2),
-            'close': round(row['close'], 2)
+            'close': round(row['close'], 2),
+            'tick_volume': int(row['tick_volume']),
+            'real_volume': int(row['real_volume']) if 'real_volume' in row.index and pd.notna(row['real_volume']) else 0
         })
         ema20_pts.append({'time': t, 'value': round(row['ema20'], 2)})
         ema50_pts.append({'time': t, 'value': round(row['ema50'], 2)})
@@ -984,6 +986,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <link rel="stylesheet" href="static/tailwind.generated.css">
   <script src="static/lightweight-charts.js"></script>
   <script src="static/stone-chart-effects.js"></script>
+  <script src="static/chart-studio-indicators.js"></script>
   <script src="static/chart-studio-beta.js"></script>
   <script src="static/stone-celebrations.js"></script>
   <style>

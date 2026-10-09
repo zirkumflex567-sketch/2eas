@@ -1330,3 +1330,43 @@ body.theme-stone #stone-fx-panel button:focus-visible {
  border:1px solid #628795;color:#ecfbff;border-radius:5px;padding:6px;font-size:11px}
 .cs-beta-profiles button{padding:7px 9px;border:1px solid #5e8c9a;background:#1c3e4f;
  color:#eefaff;cursor:pointer;border-radius:5px;font-size:11px}
+
+
+/* Chart Studio Phase 2: independently toggled real technical indicator panes. */
+.cs-indicator-controls-title{
+ margin:10px 0 7px;font:800 11px ui-monospace,Consolas,monospace;
+ color:#f0d5a6;text-transform:uppercase;letter-spacing:.06em
+}
+.cs-indicator-controls{display:flex;flex-wrap:wrap;align-items:center;gap:7px 14px}
+.cs-indicator-control{
+ display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;min-height:36px;
+ padding:6px 8px;border-radius:7px;border:1px solid #557b88;
+ background:linear-gradient(125deg,rgba(11,33,44,.96),rgba(20,42,54,.96));
+ color:#d6eaf5;font:11px ui-monospace,Consolas,monospace;
+}
+.cs-indicator-control strong{margin-right:5px}
+.cs-indicator-control input[type=checkbox]{height:17px;width:17px;accent-color:#70dce6}
+.cs-indicator-control input[type=number]{width:53px;height:27px;border:1px solid #507b8e;
+ border-radius:5px;background:#0e2838;color:#f2f7ff;padding:3px 4px;font:12px ui-monospace,monospace}
+.cs-indicator-notice{margin:8px 0;color:#9eb7c0;font:10px/1.5 ui-monospace,monospace}
+.cs-indicator-panes{display:flex;flex-direction:column;gap:7px;width:100%;min-width:0}
+.cs-indicator-panes:empty{display:none}
+.cs-indicator-pane{
+ width:100%;min-width:0;height:171px;min-height:125px;max-height:370px;
+ display:flex;flex-direction:column;resize:vertical;overflow:hidden;
+ border:1px solid #4d7281;border-radius:7px;
+ background:linear-gradient(100deg,#0b1d2b,#071722);
+}
+.cs-indicator-pane-title{
+ display:flex;justify-content:space-between;align-items:center;padding:4px 9px;
+ height:31px;min-height:31px;color:#d4e7ff;letter-spacing:.03em;
+ border-bottom:1px solid #3f6878;font:700 10px ui-monospace,monospace
+}
+.cs-indicator-pane-title button{cursor:pointer;padding:0 5px;border-radius:4px;
+ border:1px solid #497b87;color:#b2d3dd;background:#142e3c;line-height:22px}
+.cs-indicator-pane-plot{height:calc(100% - 31px);min-height:80px;width:100%}
+@media(max-width:690px){
+ .cs-indicator-control{flex:1 1 auto;min-width:145px}
+ .cs-indicator-pane{height:147px}
+ .cs-indicator-pane-title{font-size:9px}
+}
