@@ -70,3 +70,7 @@ New layout store is an account-aware SQLite WAL database, independently authenti
 ## Supplement to Phase 1: ADX/VWAP (tested separately)
 
 Extend the v4 read-only indicator engine with Wilder ADX (+DI/-DI) and VWAP calculated from true broker real volume when available, otherwise explicitly named tick-volume proxy, reset at UTC day boundary. Stored per-account in local layouts and opt-in SQLite documents. This is NOT exchange orderflow and NOT a historical EA decision proof. Keep original candles/MT5 trading unaffected. Full configurable indicator instances, session-aware VWAP and native v5 chart migration remain open.
+
+## Iteration: additional read-only drawing tools
+
+Advanced drawing tools on `test/chart-studio-advanced-drawings`: horizontal and 2-anchor primitives coexist with 3-anchor parallel channel, extended ray and price/time ruler. Magnetic snaps use only loaded OHLC points within 12 screen pixels, are opt-in and account-scoped. Imported drawings continue to pass exact server schema validation. Full advanced Fibo, labels/editors, v5 plugin geometry, mobile multitouch, performance and real stop edits remain explicitly open. Require Node geometry + Windows Python + Chromium test before merging.

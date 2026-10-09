@@ -134,6 +134,33 @@ class SqliteLayoutTests(unittest.TestCase):
         self.assertCountEqual(results, ["saved","conflict"])
         self.assertEqual(self.store.get("local-owner", "titan", "XAUUSD", "Shared")["revision"], 2)
 
+    def test_advanced_drawing_shapes_and_revisions(self):
+        base = example()
+        base["drawings"] = [
+            {"kind": "ray", "anchors": [
+                {"time": 1700000000, "price": 4100},
+                {"time": 1700000900, "price": 4120}]},
+            {"kind": "ruler", "anchors": [
+                {"time": 1700000000, "price": 4100},
+                {"time": 1700000900, "price": 4120}]},
+            {"kind": "channel", "anchors": [
+                {"time": 1700000000, "price": 4100},
+                {"time": 1700000900, "price": 4120},
+                {"time": 1700001800, "price": 4145}]},
+        ]
+        saved = self.store.put("local-owner", "titan", "XAUUSD", "Advanced", base, 0)
+        self.assertEqual(saved["revision"], 1)
+        self.assertEqual(self.store.get("local-owner", "titan", "XAUUSD", "Advanced")["document"], base)
+        for broken in [
+            {"kind": "channel", "anchors": base["drawings"][2]["anchors"][:2]},
+            {"kind": "ruler", "anchors": base["drawings"][2]["anchors"]},
+            {"kind": "ray", "anchors": [{"time": 1, "price": float("inf")}, {"time": 2, "price": 2}]},
+        ]:
+            with self.subTest(broken=broken["kind"]), self.assertRaises(StoreError):
+                doc = example()
+                doc["drawings"] = [broken]
+                validate_document(doc)
+
 
 class ApiAccessTests(unittest.TestCase):
     def setUp(self):

@@ -30,7 +30,7 @@
 
 - [ ] 2.1 V5 plugin/primitives and own drawing registry, drag states, snapping and hit-test priorities.
 - [~] 2.2 Full indicator catalog and configurable instances/parameters. RSI/MACD/ATR/ADX +DI/−DI/Volume panes and UTC-day VWAP price overlay implemented with settings; configurable multiple indicator instances and full v5 plugin migration still open.
-- [ ] 2.3 Full drawing tool catalog incl. advanced fibos, channels, labels, multiple handles and responsive touch.
+- [~] 2.3 Drawing tool catalog: horizontal, trend, rectangle, Fibonacci, ray, price/time ruler, 3-anchor parallel channel, third-anchor editing, OHLC magnet, selected delete and undo; full advanced Fibos, text annotations, mobile gestures, v5 primitives and snap priority remain open.
 - [~] 2.4 Drawing SQLite store, schema migration, revision conflicts, server layout/indicator profiles, import/export. **Implemented on branch:** private schema-v1 SQLite workspace store, optimistic revisions, account-scoped layout JSON, authenticated opt-in REST plus existing browser toolbar server save/load/delete; multi-user ACL, full v5 profile migration and remote conflict merge remain open.
 - [ ] 2.5 Symbol watchlist, timeframe, panes, chart type, multichart and per-layout configuration.
 - [ ] 2.6 Optimized paging, streaming and incremental calculations; performance budgets AT-025/031.
@@ -95,3 +95,7 @@ Branch `test/chart-studio-drag-preview` from merged main `8bbbb74`. New What-if 
 ### Follow-up indicator package: ADX and volume-derived VWAP
 
 Branch `test/chart-studio-adx-vwap` from SQLite-workspaces main merge. Added Wilder-smoothed ADX/+DI/-DI pane (first ADX after 2*N−1 bars) and UTC-session VWAP as an optional main-price overlay. VWAP uses broker `real_volume` if >0, otherwise `tick_volume`, explicitly labeled a **volume-weighted OTC proxy** rather than proven institutional orderflow. Added math tests for warm-up, rising/ranging regimes, VWAP day reset and a browser toggle test. Account-based indicator settings and secured server-layout validation now accept these types. Full session-aware VWAP with IANA/broker calendars, selectable anchor session and indicator performance budget still open.
+
+### Current branch: advanced drawing tools
+
+Branch `test/chart-studio-advanced-drawings`, based on merged main `834f1bc`. Adds ray, channel and price/time measurement, optional 12px OHLC snap (never future candles), three-step channels, third-handle editing, selected-object deletion with undo. UI measurements describe **price** differences and candle counts, not monetary PnL; no broker writes. Updates SQLite schema validation to support 1/2/3-anchor shapes. Tests must validate geometry, local state, account segregation, persistence, Chromium actual drawing/selection and existing What-if no-write contract. v5 engine and mobile input remains pending.
