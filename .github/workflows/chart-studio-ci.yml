@@ -8,6 +8,7 @@ on:
       - test/chart-studio-sqlite-workspaces
       - test/chart-studio-adx-vwap
       - test/chart-studio-advanced-drawings
+      - test/chart-studio-configurable-averages
   workflow_dispatch:
 permissions:
   contents: read
@@ -34,6 +35,8 @@ jobs:
           node scripts/test_chart_studio_drawings.cjs
           node --check static/chart-studio-server-sync.js
           node --check static/chart-studio-indicators.js
+          node --check static/chart-studio-averages.js
+          node scripts/test_chart_studio_averages.cjs
           node scripts/test_chart_studio_indicators.cjs
           node --check static/stone-chart-effects.js
           node scripts/test_chart_studio_math.cjs
@@ -47,11 +50,15 @@ jobs:
           npm install --no-save playwright@1.56.0
           npx playwright install chromium
       - name: Run Chromium UI smoke (no MT5 server)
-        run: node scripts/smoke_chart_studio_beta.cjs
+        run: |
+          node scripts/smoke_chart_studio_beta.cjs
+          node scripts/smoke_chart_studio_averages.cjs
       - name: Upload Chart Studio browser screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: chart-studio-beta-screenshot
-          path: output/visual-smoke/chart-studio-beta.png
+          path: |
+            output/visual-smoke/chart-studio-beta.png
+            output/visual-smoke/chart-studio-multi-ma.png
           if-no-files-found: ignore

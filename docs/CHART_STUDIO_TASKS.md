@@ -29,7 +29,7 @@
 ## Task 2 — Full chart, drawings and storage
 
 - [ ] 2.1 V5 plugin/primitives and own drawing registry, drag states, snapping and hit-test priorities.
-- [~] 2.2 Full indicator catalog and configurable instances/parameters. RSI/MACD/ATR/ADX +DI/−DI/Volume panes and UTC-day VWAP price overlay implemented with settings; configurable multiple indicator instances and full v5 plugin migration still open.
+- [~] 2.2 Configurable indicator instances: EMA/SMA/WMA multi-instance price overlays (max 16, period 2–500, 7 price sources, own color/width/label/visibility, duplicate/delete, scoped local+SQLite layouts), alongside earlier RSI/MACD/ATR/ADX +DI/−DI/Volume panes and UTC-day VWAP. Multiple oscillator instances and native v5 plugin migration remain open.
 - [~] 2.3 Drawing tool catalog: horizontal, trend, rectangle, Fibonacci, ray, price/time ruler, 3-anchor parallel channel, third-anchor editing, OHLC magnet, selected delete and undo; full advanced Fibos, text annotations, mobile gestures, v5 primitives and snap priority remain open.
 - [~] 2.4 Drawing SQLite store, schema migration, revision conflicts, server layout/indicator profiles, import/export. **Implemented on branch:** private schema-v1 SQLite workspace store, optimistic revisions, account-scoped layout JSON, authenticated opt-in REST plus existing browser toolbar server save/load/delete; multi-user ACL, full v5 profile migration and remote conflict merge remain open.
 - [ ] 2.5 Symbol watchlist, timeframe, panes, chart type, multichart and per-layout configuration.
@@ -99,3 +99,9 @@ Branch `test/chart-studio-adx-vwap` from SQLite-workspaces main merge. Added Wil
 ### Current branch: advanced drawing tools
 
 Branch `test/chart-studio-advanced-drawings`, based on merged main `834f1bc`. Adds ray, channel and price/time measurement, optional 12px OHLC snap (never future candles), three-step channels, third-handle editing, selected-object deletion with undo. UI measurements describe **price** differences and candle counts, not monetary PnL; no broker writes. Updates SQLite schema validation to support 1/2/3-anchor shapes. Tests must validate geometry, local state, account segregation, persistence, Chromium actual drawing/selection and existing What-if no-write contract. v5 engine and mobile input remains pending.
+
+### Chart Studio indicator editor — TradingView-like configuration (current branch)
+
+`test/chart-studio-configurable-averages`: customizable overlay editor, presets, 16 independent EMA/SMA/WMA lines, per-line period (2–500), source (close/open/high/low/HL2/HLC3/OHLC4), style and visibility, duplicate/delete, per-account persistence, local profile plus opt-in SQLite document roundtrips. Legacy native EMA20/50/200 remain unchanged; users can hide those and add separately configured averages. Client uses bounded memoization across style updates and recalculates only when candle signatures change. Existing schema-v1 workspace documents stay readable; `movingAverages` is an **optional** and strictly validated new field.
+
+Remaining for professional TradingView-like behavior: native v5 adapter, fully configurable multiple instances of each oscillator, pane move/resize/layout manager, indicator search/catalog/metadata, symbol/timeframe watchlists, chart type switching, multi-chart workspace, object tree, keyboard shortcuts, responsive mobile gestures, paginated/history indicator warmup, deterministic replay, advanced fibs, drawing settings and broker-authorized trade interactions. Do not represent this editor as full TradingView parity.

@@ -74,3 +74,7 @@ Extend the v4 read-only indicator engine with Wilder ADX (+DI/-DI) and VWAP calc
 ## Iteration: additional read-only drawing tools
 
 Advanced drawing tools on `test/chart-studio-advanced-drawings`: horizontal and 2-anchor primitives coexist with 3-anchor parallel channel, extended ray and price/time ruler. Magnetic snaps use only loaded OHLC points within 12 screen pixels, are opt-in and account-scoped. Imported drawings continue to pass exact server schema validation. Full advanced Fibo, labels/editors, v5 plugin geometry, mobile multitouch, performance and real stop edits remain explicitly open. Require Node geometry + Windows Python + Chromium test before merging.
+
+## Immediate UI priority: multi-instance indicator editor
+
+The fixed chart indicator toggles are supplemented, not replaced, by a new isolated `ChartStudioAverages` module with 16 optional EMA/SMA/WMA instances, editable source, periods 2–500, colors/width/labels and scoped local/server profile persistence. This is a working next step toward an indicator registry with instance IDs (v5 target), not a full TradingView clone. The old v4 chart, both EAs and all MT5 execution routes remain unchanged. A version-1 workspace extension `movingAverages` is optional for backwards compatibility; strict server validation prevents invalid styling/config injection. CI must include math/validation, Chromium UI and existing complete regression before PR merge.
