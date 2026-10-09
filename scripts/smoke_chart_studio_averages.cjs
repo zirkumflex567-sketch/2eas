@@ -39,6 +39,23 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   });
   await page.goto("http://127.0.0.1:8865/static/chart-studio-fixture.html",{waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartSmokeReady===true);
+  // EMA controls must be directly accessible without opening the beta drawer.
+  const quick=page.locator(".cs-ma-quick");
+  assert.equal(await quick.isVisible(),true);
+  await quick.locator(".cs-ma-quick-period").fill("89");
+  await quick.getByRole("button",{name:"EMA mit gewählter Periode hinzufügen"}).click();
+  assert.equal(await page.locator("#cs-beta-panel").isVisible(),true);
+  assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].period,89);
+  await quick.getByRole("button",{name:"EMAs einstellen"}).click();
+  assert.equal(await page.locator(".cs-ma-editor").isVisible(),true);
+  await page.locator('[data-instance="ma1"] [data-action="remove"]').click();
+  await page.locator("#cs-beta-toggle").click();
+  assert.equal(await page.locator("#cs-beta-panel").isVisible(),false);
+  // Invalid quick-entry cannot add an EMA.
+  await quick.locator(".cs-ma-quick-period").fill("501");
+  await quick.getByRole("button",{name:"EMA mit gewählter Periode hinzufügen"}).click();
+  assert.equal(await page.evaluate(()=>ChartStudioAverages.getConfigs().length),0);
+  await quick.locator(".cs-ma-quick-period").fill("34");
   await page.locator("#cs-beta-toggle").click();
   const area=page.locator(".cs-ma-editor");
   assert.equal(await area.isVisible(),true);
