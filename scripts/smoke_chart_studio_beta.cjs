@@ -84,6 +84,8 @@ const fs=require("node:fs"),path=require("node:path");
   const planY=await page.evaluate(()=>candleSeries.priceToCoordinate(4100-10));
   await page.locator('[data-cmd="drag-plan"]').click();
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().tool),"plan");
+  // Keep the target visible after the open What-if panel increases document height.
+  await page.locator("canvas.cs-beta-canvas").scrollIntoViewIfNeeded();
   // Toolbar click may scroll document. Re-measure the chart AFTER the click.
   const pbox=await page.locator("canvas.cs-beta-canvas").boundingBox();
   assert.ok(Number.isFinite(planY)&&pbox&&planY>=0&&planY<pbox.height,
