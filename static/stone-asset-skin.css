@@ -1244,3 +1244,31 @@ body.theme-stone #positions-list input:focus-visible,
 body.theme-stone #stone-fx-panel button:focus-visible {
   outline: 2px solid #88eeff !important; outline-offset: 2px;
 }
+
+/* Frame visibility / safe gutters:
+   The ornamental side rails occupy 50px and paint above the cards (z-index 10).
+   Keep the entire nine-slice border artwork clear of them rather than cropping
+   or replacing the frame illustrations with stretched background-size:cover.
+   Compact viewports use slimmer rails so chart/data width is preserved. */
+@media (min-width: 1081px) {
+  body.theme-stone {
+    padding-left: max(68px, env(safe-area-inset-left)) !important;
+    padding-right: max(68px, env(safe-area-inset-right)) !important;
+  }
+}
+@media (min-width: 701px) and (max-width: 1080px) {
+  body.theme-stone {
+    padding-left: max(40px, env(safe-area-inset-left)) !important;
+    padding-right: max(40px, env(safe-area-inset-right)) !important;
+  }
+  body.theme-stone #stone-rails .left,
+  body.theme-stone #stone-rails .right { width: 24px; }
+}
+@media (max-width: 700px) {
+  body.theme-stone {
+    padding-left: max(15px, env(safe-area-inset-left)) !important;
+    padding-right: max(15px, env(safe-area-inset-right)) !important;
+  }
+  body.theme-stone #stone-rails .left,
+  body.theme-stone #stone-rails .right { width: 9px; opacity: .35; }
+}
