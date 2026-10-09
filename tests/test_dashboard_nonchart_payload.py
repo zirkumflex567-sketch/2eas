@@ -13,6 +13,11 @@ def test_apply_zero_tp_removes_tp_while_zero_sl_remains_breakeven(isolated):
     from datetime import datetime, timezone
     isolated.clock.now = datetime.now(timezone.utc).timestamp()
     isolated.tick.time = int(isolated.clock.now)
+    # The fixture authenticated before this clock change. Its cookie jar uses
+    # wall time, so a forward jump can legitimately expire that old cookie.
+    control = isolated.client.get('/api/control_session')
+    assert control.status_code == 200
+    isolated.client.headers['x-dashboard-csrf'] = control.json()['csrf_token']
     frontend.DashboardFrontendTests.setUpClass()
     ui = frontend.DashboardFrontendTests('test_position_invalid_numeric_draft_never_posts')
     ui.setUp()
