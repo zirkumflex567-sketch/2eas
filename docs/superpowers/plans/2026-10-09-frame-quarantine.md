@@ -34,3 +34,5 @@ RED/GREEN: `C:/Python314/python.exe -m pytest tests/test_stone_frame_quarantine.
 Existing Stone smoke: `node scripts/smoke_stone_preview.cjs` with PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH if the established environment requires it; expected success and saved ignored screenshots. Full integration: `C:/Python314/python.exe -m pytest -q --junitxml=output/dashboard-frame-quarantine.xml`; expected all tests pass. No production MT5 server is required for fixture/smoke. Existing local node_modules remain untracked.
 
 The fixture must include both actual classes stone-asset-panel and stone-asset-panel--chart, real skin cascade and expanded-mode class/state, not an invented selector-only panel. Preserve 360px expanded side-volume hidden state; validate visible volume at1400px. The test captures baseline bounding rectangles/computed borders/padding before applying the fallback for a direct geometry comparison, and independently asserts the final image rejection and opaque frame color.
+
+Independent plan review approved revised contract at1a3b901; implementation awaits the current evidence-store task/reviews.

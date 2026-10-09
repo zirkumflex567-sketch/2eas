@@ -10,7 +10,7 @@
 
 Plan review: independently approved after explicit numeric/double limits, initial/final quote boundaries, actual SL/TP flags, monotonic immutable preview lifetime and bounded pre-gateway request limits were added. Backend implementation and PR/live acceptance are complete; remaining full FR acceptance is listed below.
 
-Delivered backend checkpoint: commits 38fdff9/53323c7/d6102c1/9b93b80; TDD and independent spec/quality review fixed canonical response, monetary context race, restricted mode labeling, peer quota bypass and numerical unchanged-leg equality. 66 preview tests and 451 focused regressions passed. Both PR #30 workflows passed 755 tests plus 245 subtests; merged main aa6bf08 is live. All four actual demo/surface preview cases are valid with correct currency, unchanged broker books and 409 revision-conflict refusal. Native controls, verified EA guard and the write gate remain open. Main workflows are pending at this checkpoint.
+Delivered backend checkpoint: commits 38fdff9/53323c7/d6102c1/9b93b80; TDD and independent spec/quality review fixed canonical response, monetary context race, restricted mode labeling, peer quota bypass and numerical unchanged-leg equality. 66 preview tests and 451 focused regressions passed. Both PR #30 workflows passed 755 tests plus 245 subtests; merged main aa6bf08 is live. All four actual demo/surface preview cases are valid with correct currency, unchanged broker books and 409 revision-conflict refusal. Native controls, verified EA guard and the write gate remain open. Subsequent main workflows 37986313388 and 37986313353 also passed.
 
 ## Scope and actual policy limits
 
