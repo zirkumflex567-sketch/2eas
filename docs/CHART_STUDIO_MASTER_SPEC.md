@@ -152,12 +152,22 @@ Kennzeichnung: **P0 = erste produktiv nutzbare Version**, **P1 = erweitertes Stu
 | FR-017 | P1 | Preisalarme | Browserbenachrichtigung auf Echtzeitdaten, kein Auto-Trade |
 | FR-018 | P1 | Multi-Chart | 2/4 Charts in synchronisierbaren Layouts |
 | FR-019 | P1 | Pending-Orders | Broker-seitig echte Pending-Level nur bei passender MT5-API/Guard-Anbindung |
-| FR-020 | P1 | Position-Planer | Long/Short-Risikobox mit Lotvorschlag, Pip-/USD-/R:R-Schätzungen |
+| FR-020 | P1 | Position-Planer (erweitert) | Zusätzliche Portfolio-/Korrelations- und Profi-Planerfunktionen; **read-only P0-What-if-Simulator ist bereits FR-027** |
 | FR-021 | P1 | Chart-Interaktion | Optional sichere Trade-Ticket-Maske mit Preisübernahme; eigener Approval-Flow |
-| FR-022 | P2 | Replay/Backtest | Echte historische Daten, isolierter Simulationsmodus ohne Live-Mutationspfad |
+| FR-022 | P2 | Replay-/Backtest-Infrastruktur | Echte historische Daten und strikt isolierter Simulationsmodus; fachliche Umsetzung des EA-Replays konkret in FR-028 |
 | FR-023 | P2 | Erweiterter Footprint | Nur mit echten Bid/Ask-/Tick-Orderflow-Daten, KEINE Fantasiewerte |
 | FR-024 | P2 | Scriptable Indicators | Sandbox mit Ressourcenlimits, signierter Import/Export, keine beliebigen eval-Skripte |
 | FR-025 | P2 | Multi-Geräte-Sync | Erst nach Konfliktauflösung, Rechteverwaltung und Verschlüsselung planen |
+| FR-026 | **P0 früh** | **EA-Entscheidungsanalyse** | Visueller regelbasierter EA-Debugger; aufgezeichnete Kandidaten, Signale, Ablehnungsgründe, Parameter und Guards; nicht protokollierte Vergangenheit ehrlich als fehlend zeigen |
+| FR-027 | **P0 früh** | **What-if-Tradesimulator** | Virtuelle Entry-/SL-/TP-Szenarien, A/B-Vergleich, autoritative MT5-Profit-/Margin-Vorschau in Kontowährung und USD; keinerlei Brokerwrite |
+| FR-028 | **P2** | **Trade-/EA-Replay** | Barweise historischer Markt samt belegten Entscheidungen ohne Future-Leaks; niemals Handelsmutationen |
+| FR-029 | **P1** | **Multi-Timeframe-Confluence** | D1/H4/H1/M15/M5 Bias, Struktur und Setup pro bestätigtem TF-Bar erklärbar zusammenführen |
+| FR-030 | **P1** | **Smart Sessions & Liquidity Map** | Asia/London/NY-Boxen, Highs/Lows, Swings, Equal Levels, Sweeps als ausdrücklich deklarierte Proxy-Zonen |
+| FR-031 | **P1** | **Execution Quality** | Tatsächliche MT5-Deals gegen aufgezeichneten Sollpreis/Quote vergleichen; Slippage, Spread, Gebühren und Latenz nur mit Belegen |
+| FR-032 | **P1** | **Marktregime-Erkennung** | Reproduzierbares Trending/Ranging/High-/Low-Vol/Event-Risk mit as-of Features und transparenter Qualität |
+| FR-033 | **P0 früh** | **Trade-Lifecycle** | Broker-Entry bis Exit, SL/TP-/Trailing-/Partial-Fill-Timeline, nachvollziehbares MFE/MAE |
+| FR-034 | **P1** | **News-/Event-Overlay** | Lizenzierte High-Impact-News, Zeitmarker, Guard-Puffer und Datenqualitätswarnungen ohne EA-Guard-Verwechslung |
+| FR-035 | **P0 früh** | **Chart-Snapshots & Journal** | Entry-/Exit-Zustände versioniert aufzeichnen, nach Strategien filtern und im vorhandenen Journal mit Vorher/Nachher verknüpfen |
 
 ## 6. Interaktionsdetails: Zeichnen und Editieren [DRAW-001]
 
@@ -704,7 +714,7 @@ Dieses Produkt soll **eigenständig und professioneller als das bisherige Dashbo
 | AT-034 | Touch-Drag unter 390px und Windows 150% DPI korrekt |
 | AT-035 | Kein Signalmarker wird versehentlich zu einer echten Position/Order umgedeutet |
 
-Alle P0-Tests müssen **grün** sein. P1-Tests erst verpflichtend, wenn das jeweilige Feature aktiviert wird. Performancewerte sind zu protokollieren statt pauschal „getestet“ zu behaupten.
+Alle P0-Tests müssen **grün** sein, einschließlich der neuen Intelligence-Tests **AT-036–040, AT-049–050 und AT-055–056** aus §24.14, soweit die zugehörige P0-Phase erreicht ist. P1-Tests erst verpflichtend, wenn das jeweilige Feature aktiviert wird; für neue P1-Module gilt §24.14. P2-Replay wird separat abgenommen. Performancewerte sind zu protokollieren statt pauschal „getestet“ zu behaupten.
 
 ## 19. Entwicklungsphasen und Definition of Done [DELIVERY-001]
 
@@ -712,30 +722,36 @@ Alle P0-Tests müssen **grün** sein. P1-Tests erst verpflichtend, wenn das jewe
 - Bestehendes Dashboard unverändert lauffähig sichern, Gold/Titan-Regression-Suite aufstellen, Broker-Client und Chartmodul isolieren, genaues Datenmodell/Idempotenz-Contract beschreiben.
 - Sicherheitsprüfung der aktuellen APIs und des Tunnels, Auth-/Mutation-Policy, Feature-Flags, Layout-Persistenz-Baseline.
 - Lightweight Charts v5 kompatibles Proof-of-Concept getrennt von Produktivchart: Kerzen, Datenmarker, EMA, Zoom, Preislevels, Stone Theme. Baseline-Perf und Visual-Snapshots.
+- - **Intelligence-Basis:** Für Titan/GoldM15 die vorhandene EA-/Broker-Eventtelemetrie und Historiendaten auditieren; P0-Decision-/Lifecycle-/Snapshot-Schemas und Datengütepfade aus §24 entwerfen.
 - **Gate 0:** Alle bisherigen Live-Cockpit-Funktionen bestehen Tests, neue v5-API läuft im Prototyp, keine Orderroute ist unsicherer geworden.
 
 **Phase 1 — Chart-Shell und Indikatoren**
 - Topbar, linke Tools, Pane-Manager, Symbol/TF/ChartType-Suche, Indikator-Registry, Parametereinstellungen, Right Sidebar, Fullscreen.
 - A11y, Context Menu, Datenfenster, LayoutStore.
+- - **Intelligence-P0:** EA-Decision-Inspector mit belegter Recorded/Not-Recorded-Anzeige und What-if-Draft-Grundgeometrie vorbereiten; pure EA-Signalparität prüfen.
 - **Gate 1:** P0-Indikatoren korrekt, Crosshair/Pane-Resizing, Account-/Symbol-Wechsel und bestehendes Dashboard funktionsfähig.
 
 **Phase 2 — Drawings und Persistenz**
 - Trendlinie, H/V, Rechteck/Zonen, Fibo, Text, Undo/Redo, Snap, Objektmanager, Speicherung in SQLite, Export/Import.
 - Hit-testing und kollisionsfreier Label-Layer.
+- - **Intelligence-P0:** Read-only Trade-Lifecycle, Entry-/Exit-Datensnapshots und Journal-Links aufbauen; nicht vorhandene historische Stop-/Entscheidungsdaten markieren.
 - **Gate 2:** AT-004–007, AT-022–024, AT-033–034 grün.
 
 **Phase 3 — Echte Positionslayer und USD-Preview**
 - Read-only Snapshots für Positions-/Pending-Aufträge, Farb- und Sichtbarkeitsschalter, Entry/SL/TP-Zonen, order_calc_profit-basierte MoneyEngine.
 - Drag-Preview ohne Ordermutationen, MT5-Identität und Quote-Staleness.
+- - **Intelligence-P0:** What-if A/B mit order_calc_profit/order_calc_margin validieren; FR-026, FR-027, FR-033 und FR-035 auf Gate-3-Qualität bringen (AT-036–040/049–050/055–056).
 - **Gate 3:** Live-Zonen korrekt, Multi-Ticket, Kontowährungsangaben und USD-Vorschau belastbar, alle Trade-Aktionen weiterhin gesperrt bis separate Freigabe.
 
 **Phase 4 — Sicheres, echtes MT5-SL-/TP-Editing**
 - Gesicherte Accountverifizierung/Guard-Pipeline, versionierte Preview, Pending-Dialog, Einmalbestätigung, idempotente Commit-Routes, Conflict-Handling, Audit-Log.
 - Demo-Windows-MT5-Abnahmetest unter Benutzerkontrolle; EA-Trailing-Konfliktprobe.
+- - **Intelligence-Grenze:** What-if bleibt ohne eigenen separaten Nutzer-Confirm ausschließlich Read-only; Snapshot-/Decision-Inspector darf nie Brokerwrite auslösen.
 - **Gate 4:** Kein unautorisierter SL/TP-Change, MT5-Broker-Reconciliation funktioniert, AT-008–021 und AT-030/032 grün.
 
 **Phase 5 — Professional Studio / P1**
 - Multi-Chart, Alerts, erweiterte Fibo-/Kanäle, Presets, Watchlist, Planer, Pending Orders mit eigener Guard-Policy, Multi-Device-Sync optional.
+- **Intelligence-P1:** Multi-Timeframe-Confluence, Smart Sessions/Liquidity, Execution Quality, Marktregime und News-Overlay gemäß §24.4–24.7/24.9 mit AT-041–048/053–054. **P2-Replay** erst danach mit AT-051/052.
 - Kein P1 Feature priorisieren, bevor P0 sicher und nutzbar ist.
 
 **Migration/Ausrollen:**
@@ -836,6 +852,266 @@ Das Projekt ist erst abgeschlossen, wenn **ohne Spezialwissen** folgende Aussage
 - „Daily High/Low, POC, meine Zeichnungen und die Achsen bleiben auf jedem Zoom und bei jedem Geräteformat lesbar.“
 - „Ich kann das Studio personalisieren, Layouts sichern, wieder laden und mit meinen bisherigen 2EAs-Funktionen arbeiten.“
 - „Ein optisch heftiger Effekt ist als Effekt erkennbar und niemals ein vorgetäuschter Orderfill oder ein versteckter Klick.“
+- „Ich kann einen realen Trade vom belegten EA-Entscheidungsgrund über den Broker-Fill und alle nachweisbaren SL-/TP-Änderungen bis zum Exit nachvollziehen und zum damaligen Entry-/Exit-Chart zurückkehren.“
+- „Ein What-if-Trade zeigt Risiko und Gewinnpotenzial anhand des korrekten MT5-Kontos; er verändert niemals ohne ausdrückliche Freigabe echte Orders.“
+- „Ich sehe bei fehlenden Entscheidungs-, News-, Ausführungs- oder Tickdaten ausdrücklich ‚nicht aufgezeichnet / nicht verfügbar‘ statt erfundene Rückblicke.“
 - „Ein Wartungsagent kann jeden Codepfad anhand dieser Master-Spezifikation und der Test-IDs nachvollziehen; keine neuen Schatten-Architekturen entstehen.“
+
+## 24. Chart Intelligence — zehn zusätzliche, verbindlich einzuplanende Module [INTEL-001]
+
+**Auftragserweiterung vom 09.10.2026:** Die folgenden zehn Module gehören zum selben 2EAs Chart Studio. Sie ersetzen keine FR-001–FR-025, sondern bauen darauf auf. **Keine separate Feature-Spezifikation anlegen.** Abhängigkeiten/Umfang nachstehend sind ausdrücklich Teil der Coding-Agent-Abnahme. Eine frühe P0-Stufe bedeutet eine **funktionierende erste Version**, nicht zwangsläufig alle analytischen Unterfunktionen.
+
+**Verbindliche Entwicklungspriorität:**
+- **P0 / früh:** FR-026 EA-Entscheidungsanalyse, FR-027 What-if-Tradesimulator, FR-033 Trade-Lifecycle und FR-035 Chart-Snapshots/Journal-Verknüpfung. Zuerst read-only mit belastbaren Daten; für historische nicht protokollierte EA-Entscheidungen explizit „nicht verfügbar“.
+- **P1:** FR-029 Multi-Timeframe-Confluence, FR-030 Sessions/Liquidity, FR-031 Execution Quality, FR-032 Marktregime, FR-034 News-Overlay.
+- **P2:** FR-028 vollständiger barweiser EA-Trade-Replay. Frühe P0-Lifecycle-Darstellungen sind **kein** vollständiger Replay; dessen Sequenz-/No-Look-Ahead-Verifikation folgt separat.
+
+**Querschnittsregel:** Vergangene **gehandelte Ereignisse** sind Broker-/Terminaldaten; **EA-Entscheidungsgründe** sind nur dann historisch wahrheitsgetreu, wenn sie zum Entscheidungszeitpunkt protokolliert wurden. Eine spätere Neuberechnung muss den Zusatz **„rekonstruiert“** samt Daten-/Parameterstand tragen. Signal, Plan, Filterkandidat, bestätigter Fill, Paper-Trade und historische Rekonstruktion sind niemals austauschbar.
+
+### 24.1 FR-026 [P0] EA-Entscheidungsanalyse / visueller EA-Debugger
+
+**Ziel:** Auf eine Kerze, einen historischen Trade oder einen abgelehnten Kandidaten klicken und die **damals tatsächlich geprüften Bedingungen** beider EAs sehen: Welche erfüllten Regeln führten zum Signal, welche Filter verhinderten eine Ausführung, welche Guard-Entscheidung galt? Das Studio hilft, Strategiefehler und Regimeabhängigkeiten zu untersuchen; es gibt keine Gewinnzusage.
+
+**UI (Kernablauf):**
+1. Toggle **EA-Diagnose**; Filter Account (Titan/GoldM15), Strategie/Subsystem, Long/Short, Eventtyp (Kandidat, Signal, abgelehnt, Orderversuch, Fill), Zeitraum und ggf. Grundcode.
+2. Marker an der **exakten Ereigniskerze**; Tooltip unterscheidet Live-Decision, historische Eventaufzeichnung und späteres Recompute. Keine ausgeführten Trades allein aus Chart-Signal-Markern ableiten.
+3. Klick öffnet eine **Decision Inspector**-Seitenkarte mit regelbasiertem Status (erfüllt/nicht erfüllt/nicht berechenbar), damaligem Parameterwert, tatsächlichem Featurewert, Schwelle, ausgewertetem M15-Barzeitpunkt, Datenstand und Reason-Code.
+4. Übergeordneter Entscheidungsbaum: **Setup → Signal → Entry-Filter → Risiko-/Guard-Prüfung → Orderversuch → Broker-Retcode/Fill**. Nur tatsächlich vorhandene Stufen anzeigen; keine fehlende Brokerantwort als „gebucht“ markieren.
+5. „Warum kein Trade?“ zeigt die belegten Blocker (z. B. Filter verletzt, Spread zu hoch, Newsfenster, max Risiko, Handelszeit, kein neues Signal). Keine Behauptung über nicht protokollierte Gründe.
+6. Historische Decision Inspector-Ereignisse mit Entry-/Exit-Journal verbinden, jedoch nur über stabil belegbare ID-Kette (account+strategy+symbol+barUtc+decisionId+orderId/positionId), nicht bloß Zeitnähe.
+
+**Pflicht-Schema:** \`DecisionEvent {eventId, accountId, terminalIdentityHash, symbol, strategyId, subsystemId?, strategyVersion, parameterSetHash, decisionTimeUtc, evaluatedBarCloseUtc, timeframe, barIsClosed, sourceQuoteTimeUtc?, featureVector:[{id, value, unit, timeframe}], predicates:[{ruleId, observedValue, comparator, threshold, outcome, reasonCode}], stage, outcome, guardSnapshot?, orderAttemptId?, brokerTicket?, dataProvenance:"recorded"|"reconstructed", dataRevision, capturedAtUtc, correlationId}\`. Fehlt die Originaleventreihe, liefert die API \`availability:"not_recorded"\` statt erdachter Historie.
+
+**Implementierungsoption:** Nicht jede Tickentscheidung an den Browser streamen; eventbasierte, versionierte Telemetrie via bereits geschützten Terminal-Dateikanal/Bridge oder agentenkompatible Logging-Schnittstelle. **Keine unfreigegebene Änderung der Entry-/Exit-Regeln in MQL5**; zunächst Read-only-Adapter und Diagnose-Ereignisse an Hookstellen, danach Regression der unveränderten EA-Signalresultate. Rates-/EMA-Recompute allein kann unbekannte EAs/Guard-Zustände/Parameter nicht beweisen.
+
+**Erste P0-Grenze:** Entscheidungsfenster + gespeicherte Feature-/Predicate-Snapshots für **neu eintreffende, instrumentierte Ereignisse**, korrekte Unavailable-States bei Alt-Trades; Keine automatische Modellinterpretation als Faktenbasis. Optionale freie Erläuterung folgt ausschließlich aus strukturierten Reason-Codes.
+
+**Akzeptanz:** AT-036/037/038. Die UI soll klar zeigen „3/5 erfüllt“ als Regelstatus, **nicht** als Gewinnwahrscheinlichkeit.
+
+### 24.2 FR-027 [P0] What-if-Tradesimulator mit echten Broker-Rechenparametern
+
+**Ziel:** Unter echtem Chart eine **beliebig verschiebbare virtuelle** Entry-/SL-/TP-Projektion verwenden, ohne bestehende MT5-Positionen zu verändern. Zwei benannte Modi: \`PLAN\` (noch keine Position) und \`POSITION_SCENARIO\` (bestehendes Ticket, simulierte Alternative).
+
+**UI:** Mit dem Long-/Short-Positionswerkzeug einen Entry-Anker und farbige SL-/TP-Zonen setzen. In einer Planbox editierbar: Konto/Symbol, Richtung, gewünschtes Risiko ($, Prozent Equity), Lots bzw. auto-berechnete Lots, Entry, SL, TP, Spread-/Slippage-Annahme, R:R, Margin, Stop-Abstände, aktuell verwendeter Brokerpreis. Mehrere Szenarien A/B als schaltbare Overlays; „Vergleichen“ zeigt Risk/Reward, erforderliche Lotgröße, Margin-Puffer, DD-Reserve, Portfolioexposure. Preis und USD-Werte live bei Drag, **schätzungsweise** bis zur autoritativen Serverantwort.
+
+**Geldmathematik:** Für konkrete Brokerkonten \`mt5.order_calc_profit\` und \`mt5.order_calc_margin\` aus dem richtigen verifizierten Terminal lesen, keine universelle Kontraktgrößenformel und kein Trading-Modus zum reinen Rechnen erforderlich. Lotgröße robust mit symbol.volume_min/max/step diskret bestimmen, Risk-per-Trade auf Equity, wirksame Stopdistanz und tick-size; serverseitig Grenze suchen (z. B. binäre Suche über gültige Lotsteps), und Ergebnisse auf Brokergrenzen abrunden. Zeige Spread/Fees/Swap/Slippage als offengelegte Annahmen, nicht präzise Garantien. Korrelations-/Portfolio-Szenarien nur mit tatsächlich verfügbaren Positionen, Exposure und gültigen FX-Umrechnungskursen.
+
+**Risk Guard:** Live-/Funded-Account zeigt seine geltenden DD-/News-/Risikolimits als Kontext. Überschreitung -> roten Hinweis; **niemals** allein durch Simulatorfreigabe die echten Guard-Regeln umgehen. Schätzung bei veraltetem Quote oder unzureichendem Marginstatus blockiert „als reale Order übernehmen“, simulieren darf read-only weitergehen.
+
+**Sicherheitsgrenze:** Standardmäßig keinerlei Broker-Mutation. Exportiert lediglich einen versionierten \`TradePlan\`. Ein optionales reales Orderticket müsste FR-021 mit eigenem Confirm+Auth-Flow erfüllen, niemals ein Klick auf „Simulation berechnen“ oder Drag.
+
+**P0-Definition:** Mindestens ein Long- und Short-Szenario, R:R, Lots, hypothetischer Brutto-PnL in Kontowährung/USD, Margin + DD-Abstand und A/B-Vergleich. Brokerberechnung bei fehlender Verbindung -> **nicht verfügbar**, statt erfundene USD-Beträge. AT-039/040.
+
+### 24.3 FR-028 [P2] Barweiser Trade-Replay / Entscheidungs-Replay
+
+**Ziel:** Vergangene Marktdaten Zeitpunkt für Zeitpunkt abspielen; Entry, SL, TP, Indikatoren und belegte EA-Entscheidungen nur zeigen, sobald sie nach Replay-Zeitpunkt bekannt waren. Damit lassen sich Strategieentscheidungen rückblickend visualisieren, nicht Gewinne im Livekonto vorhersagen.
+
+**Bedienung:** Trade auswählen → „Replay starten“ → frei wählbarer Startpunkt vor Entry, 1×/2×/5×/10×, Vor/Zurück eine Bar, Pause, Jump zu Fill/SL/TP/Exit, synchrones Journal und Sidepanel. In Replay-/Demo-Modus sind **sämtliche MT5-Mutationen technisch gesperrt**, unabhängig vom sichtbaren Trading-Button.
+
+**Datenvertrag:** OHLC-UTC-Zeitstempel mit Quellkonto/Symbol/TF; eindeutige MarketDataVersion, Corporate Actions (wo relevant), Session-/DST-Daten, exakt bekannte Deal-/Decision-Timestamps; die aktuelle unvollständige Bar darf nicht rückwirkend als geschlossene historische Entscheidungsgrundlage erscheinen. Konfigurierbar Trade-/Market-Data-Snapshot speichern; Replay über dieselbe datenversionierte Entscheidungsreihe. Vor dem historischen BarEnd aufgezeichnete Tick-Signale separat von BarClose-Signalen kennzeichnen.
+
+**Wichtige Grenze:** Historischer Candle-OHLC allein liefert **keine** eindeutige Reihenfolge von SL-/TP-Berührungen innerhalb einer Bar. Falls Tickdaten fehlen, „intrabar-Reihenfolge unbekannt“ anzeigen; kein unverdientes perfektes Fill, keine falsche PnL-Kurve. EA-Entscheidungsgründe fehlen -> „nicht aufgezeichnet“. Recompute separat als „nachberechnet“ markieren.
+
+**P2-Gate:** AT-051/052; zunächst nachrangig gegenüber sicherem P0-Chart und Decision-Lifecycle.
+
+### 24.4 FR-029 [P1] Multi-Timeframe-Confluence (D1/H4/H1/M15/M5)
+
+**Ziel:** Konfigurierbares Confluence-Panel zeigt je TF Trendstruktur, EMA-Lage/-Steigung, Volatilitätsstatus, letzte bestätigte Strukturänderung und Setup-Status. D1/H4 Bias, H1 Struktur, M15 Setup, M5 Entry als **Preset**, nicht als universelle „richtige“ Strategie.
+
+**Berechnung:** Für jede TF-Serie nur die am betrachteten Zeitpunkt **bereits geschlossenen** TF-Bars verwenden. Das offene H4-Bar darf ein vergangenes M15-Signal nicht mit späteren H4-Schlusswerten „verbessern“. Event-Zeitfenster, Datengranularität und Warmlauf sind Teil des FeatureSnapshot. Regeln/Schwellen editierbar und versioniert, kein künstlicher Score „85 % Erfolgswahrscheinlichkeit“. Gesamtergebnis: **Confluence erfüllt / teilweise / widersprüchlich / unvollständig**, je Unterkriterium mit erklärter Ursache.
+
+**Interaktion:** Klick auf TF-Zeile fokussiert synchronisierte relevante Kerze und öffnet Details. Optionale Mehrchart-Ansicht aus FR-018 und Zeitlinkage wiederverwenden. Separater „Heute / beim historischen Trade“ Modus verhindert rückblickendes Look-ahead. Datenlücken führen zu \`UNKNOWN\`, nicht automatisch grün/rot.
+
+**P1-Gate:** AT-041/042, beide Strategien separat konfigurierbar, Import aus EA-Decisionlogs wenn vorhanden.
+
+### 24.5 FR-030 [P1] Smart Sessions und Liquiditäts-/Strukturzonen
+
+**Ziel:** Session-Boxen und nachvollziehbare Preisstruktur visualisieren. Auswahl: Asia, London, New York, Frankfurt, Broker-Rollover, benutzerdefinierte Session sowie lokale Sommer-/Winterzeit, Opening Range, Session High/Low, Previous Day/Week High/Low, Equal High/Low, bestätigte Swing-Pivots und Liquidity Sweeps.
+
+**Korrekte Semantik:** \`SessionRange\` mit UTC-Start/Ende, IANA-Zeitzone und DST-Regeln, verwendeter definierter Handelskalender, High/Low aus wirklichen OHLC-Bars, Roll-over-Gap kennzeichnen. „Equal High“ braucht konfigurierbaren Tick-/ATR-Toleranzbereich und Pivot-Strength, Sweep braucht exakte Wick-/Close-Regeln und ConfirmTF; Look-ahead bei Swing-Pivots verhindert durch rechtsseitige Bestätigungsbars.
+
+**Liquiditätswarnung:** Equal Highs, Sweep-Kerzen und „potenzielle Stop-Cluster“ sind **nur geometrische Proxy-Zonen**, keine nachgewiesenen echten Stops/Orders. Im Chart explizit „Struktur-/Liquiditäts-Hypothese“ nennen. Angeblich große Orders, Book Depth, Footprint oder institutionelle Kauf-/Verkaufsvolumen nur anzeigen, wenn eine tatsächlich lizenzierte authentische Level-II-/Tickquelle existiert (FR-023).
+
+**P1-Gate:** AT-045/046, inklusive Broker-Serverzeit ≠ Europe/Berlin, DST-Wechsel, Wochenend-Gap und fehlender Session-Daten.
+
+### 24.6 FR-031 [P1] Execution Quality / Slippage-Kostenanalyse
+
+**Ziel:** Warum weicht tatsächlicher Trade-Exit/Entry von geplanter Ausführung ab? Ein Analyse-Overlay und Journalmodul zeigt je Broker-Deal Fill-Preis, Lots, Spread zum Orderzeitpunkt (falls gespeichert), Kommission/Swap, Brutto-/Netto-PnL, Ausführungszeit und **nur bei vorhandener Referenz** Slippage/Latenz.
+
+**Datenquellen:** MT5 History Deals/Orders, confirmed positions, Strategiedecision \`orderAttemptId\` + intendedPrice/timestamp vom lokalen EA-Eventlogger, Brokerretcodes und QuoteSnapshot (Bid+Ask+Timestamp). Korrelation ausschließlich mit stabilen order/deal/position IDs; bei Partial-Fills gewichtetes tatsächliches \`VWAP_Fill = Σ(price × volume)/Σ(volume)\`. Für Long-Buy/Short-Sell Entry die Richtung beim SignedSlippage definieren: adverse cost positiv; Exit gesondert nach Aktionstyp. Rohpreis-Differenz in Ticks und kalkulierten Geldwerten, Spread und Slippage nicht doppelt addieren.
+
+**Missing-data-Fall:** Ein Deal ohne zum Orderversuch gespeicherten \`intendedPrice\` oder QuoteSnapshot erhält „Referenzpreis nicht aufgezeichnet — Slippage nicht berechenbar“. Aus einem späteren Candle-Close keine präzise Slippage ableiten. Ungemessene EA→Broker-Latenz „nicht messbar“ statt erfundene Millisekunden.
+
+**UI:** Per-Trade Pfeil „geplanter Preis“ → „tatsächlicher Fill“, Tooltip mit Zeitqualität, kumulierte Ausführungskosten nach Strategie/Session/Regime, P50/P95/Max nur bei ausreichender Stichprobe mit Sampleanzahl. Keine doppelten Gebühren in Netto-PnL.
+
+**P1-Gate:** AT-043/044, einschließlich Partial Fills, Teilverkäufen, Netto = Profit+Swap+Commission+weitere Brokergebühren soweit bereitgestellt, fehlender Referenz und gemischter Hedge-Positionen.
+
+### 24.7 FR-032 [P1] Marktregime-Erkennung: erklärbar und reproduzierbar
+
+**Ziel:** Trend / Range / High-Vol / Low-Vol / Event-Risk / UNKNOWN per Symbol und TF als zuschaltbare Infoebene. Erklärung: verwendete ATR-/ADX-/EMA-Slope-/Separation-/realized-vol-/BB-Width-/Structure-Features, Schwellen und Prioritätsregeln; nicht durch „KI-Gefühl“.
+
+**Modell:** Pure deterministic rules mit Version, Lookback, Warmup, hysteresis/minimum duration gegen Zickzack, Timestamps und Confidence **als Datengüte/Regelabdeckung, nicht Gewinnwahrscheinlichkeit**. Gleichzeitige Trend- und HighVol-Zustände als Dimensionen statt „entweder/oder“, News Risk zusätzlicher Ereignisstatus. Speicherung \`RegimeSnapshot {asOfUtc,frame,featureValues,thresholds,revision,regimeTags,qualityFlags}\`.
+
+**Strategievergleich:** Historischer Ertrag/WinRate/Expectancy pro Regime nur aus belegten Trades und as-of validen Regimewerten; Stichprobe n, Fees, Zeitraum, Konfidenzunsicherheit und OOS-Markierung immer sichtbar. Backtest-Validierung mit Walk-Forward/Out-of-Sample, keine adaptive Grenzwertoptimierung auf denselben Testzeitraum als Beweis. Kein Live-Trade-Block nur aufgrund eines visuellen Regime-Badges, sofern nicht separat als vom Nutzer genehmigte und EA-seitig getestete Guard-Regel implementiert.
+
+**P1-Gate:** AT-047/048.
+
+### 24.8 FR-033 [P0] Trade-Lifecycle, MFE/MAE und Exit-Diagnose
+
+**Ziel:** Jede echte Broker-Position erhält einen nachvollziehbaren Verlauf, nicht nur einen Entry-/Exit-Punkt. Chronologische Timeline: EA-Entscheidung (falls aufgezeichnet) → Orderversuch → Broker-Fills → SL/TP initial → jede EA/manuelle SL-/TP-Änderung → Teilverkäufe/Scale-ins → Trailing → Exit und realisiertes Ergebnis.
+
+**Quelle:** MT5 Order/Deal-History + Positionskennungen, langfristig kontinuierlich protokollierte Snapshot-/Audit-Änderungen. PositionTicket allein kann bei Netting/History unzureichend sein; account+server+symbol+positionIdentifier + order/deal IDs verwenden. **Historische SL-/TP-Zwischenstände**, die nicht protokolliert wurden, als „unbekannt“ markieren, niemals aus der Endposition interpolieren.
+
+**Visualisierung:** Chronologische farbige, korrekt zeitverankerte Marker; Mouse-Hover zeigt „wer/was änderte SL“, bisheriger→neuer Preis, verifizierter EA-/Brokerzustand. Trailing-Linie nur dort fortsetzen, wo ausreichende Zwischenstände bekannt sind, sonst gestrichelte Lücken.
+
+**MFE/MAE:** Max Favorable/Adverse Excursion **innerhalb der nachweislich offenen Haltedauer**; ideal über Tickdaten, andernfalls Bars konservativ approximiert und ausdrücklich als \`OHLC approximation\` gekennzeichnet. Exakte Reihenfolge von High/Low und Exit innerhalb der Exitkerze ist ohne Tickdaten nicht bekannt. Für Long/Short korrekt signieren und nur bis tatsächlichen Close-Zeitpunkt messen. Verfügbare Instrument-/Accountwechsel berücksichtigen. Opportunity Cost („verschenkter Gewinn“) nur als deskriptiver ex-post Wert, **nicht als sichere realisierbare Alternative**.
+
+**P0-Kern:** rekonstruierbare Broker-Fills, aktuell verfügbare SL/TP-Events, Timeline/Filter pro Ticket sowie MFE/MAE mit Provenance. Mit FR-035 Snapshotverlinkung kombinieren. **P0 nicht blockieren**, nur weil ein vergangener EA keine vollständige Trailing-Telemetrie enthält — sichtbar „unvollständiger Verlauf“. AT-049/050.
+
+### 24.9 FR-034 [P1] News-/Event-Overlay und Guard-Fenster
+
+**Ziel:** High-/Medium-Impact-Kalenderevents als Linien/Zeitschatten am Chart (Currency, Eventname, Impact, veröffentlichte vs. revidierte Werte bei zulässiger Quelle), optional Countdown und individuell ein-/ausblendbare News-Blockfenster.
+
+**Daten:** Lizenz-/API-konformer Provider, Quelle und lastUpdatedUtc, eindeutige eventId, UTC-Termin, betroffene Währungen, impact, status scheduled/revised/cancelled, individuelle Filter. Ohne lizenzierte Eventdaten zeigt der Chart „News-Kalender nicht verbunden“; aus Schätzungen dürfen keine echten News-Events oder Garantien generiert werden. DST korrekt handhaben.
+
+**Guard-Isolation:** Visualisiertes News-Fenster ist **Information**, nicht die tatsächliche vom EA durchgesetzte Sperre. Wenn ein Broker-/EA-Guard existiert, dessen tatsächlichen Status separat als \`ENFORCED_BY_EA\` kennzeichnen. Bei Diskrepanz „UI-Overlay ≠ EA-Sperre“ warnen. Konto-/strategieabhängige Zeitpuffer sind konfigurierbar und dürfen nicht automatisch unbemerkt die EA-Regeln verändern. Bestehende Positionenverwaltung gegenüber Entry-Fenstern differenzieren (siehe SEC-001).
+
+**P1-Gate:** AT-053/054, inklusive fehlender Providerantwort, Eventrevision, verschobener Uhrzeit und relevanter XAUUSD/USD-News.
+
+### 24.10 FR-035 [P0] Automatische Chart-Snapshots + Journal-Verknüpfung
+
+**Ziel:** Ein Journal-Trade öffnet mit einem Klick den historischen Marktstand **bei Entry und Exit**, inklusive damals belegter Indikatorwerte/Zeichnungen/Decision-Events. Dazu „Vorher / Nachher“ und Vergleich mehrerer Trades nach Strategie.
+
+**Capture:** Bei bestätigtem Brokerfill und bestätigtem Exit je einen asynchronen Snapshottask anstoßen; Daten-Snapshot (OHLC bis asOfUtc, indicator params/values/version, account/symbol/TF, viewRange, executions, visible layers, styleVersion) **als primäre unveränderliche Provenance** speichern. Screenshot PNG/WebP optional zusätzlich clientseitig rendern, falls ein aktiver Browser existiert; **kein Browser geöffnet → trotzdem Datensnapshot möglich, Bild fehlt und wird nicht vorgetäuscht**. Server-Worker nicht an Browser-Event gebunden; idempotente eventId-Verknüpfung und retry-sichere Queue.
+
+**Linking:** (account, terminalIdentityHash, positionIdentifier, dealId, captureType ENTRY|EXIT, asOfUtc, snapshotId, captureStatus). Journal-Eintrag mit Buttons „Entry ansehen“, „Exit ansehen“, „Vergleichen“. 2EAs-All-Strategies-Journal bleibt intakt. Kontosicherheit: Snapshot eines fremden Kontos darf nicht versehentlich im aktiven Trade-Cockpit erscheinen; expliziter Read-only-Popup-Kontohinweis.
+
+**Zeit-/Preiswahrheit:** Bei späterem Öffnen keine heutigen EMA-Werte in den alten Screenshot hineinrendern. Falls damalige Feature-Snapshots fehlen, historisch deterministisch nachgerechnete Reihe gesondert als \`reconstructed\` markieren oder weglassen. Position-Fill vs. Setup-Marker trennen. Broker-Fillzeit aus tatsächlicher Deal-/Positionshistory, nicht Browseruhr.
+
+**Speicherbudget:** Dateigröße/Format, lokale Retention, Bildkompression, Metadatenindex, Duplicate-Elimination, Backup-/Export und optional gezieltes Löschen. Keine Logins/Server-Pfade/Zugriffstokens in Bildmetadaten oder Importexport. Screenshot-Generation darf UI, MT5-Gateway und Trade-Engine nicht blockieren. Bereinigung schützt referenzierte Snapshots oder zeigt im Journal explizit „abgelaufen“.
+
+**P0-Kern:** ENTRY-/EXIT-Datensnapshot, verifizierte Journal-ID-Verknüpfung, eine historische Vorher/Nachher-Ansicht, Export als PNG sofern Client verfügbar, und ehrlicher Fallback ohne Screenshot. AT-055/056.
+
+
+
+### 24.11 Architektur- und Datenvertragszusätze [INTEL-ARCH-002]
+
+Die Module verwenden **eine einheitliche Evidence-/Provenance-Schicht**, keine getrennten widersprüchlichen UI-Kalkulationen. Die Event-/Snapshot-Schemas versionieren und gegenüber öffentlichen HTML-Clients validieren.
+
+**Domänenmodelle (mindestens):**
+- \`EvidenceRef {id,sourceType:MT5_DEAL|MT5_POSITION|MT5_ORDER|EA_DECISION|BROKER_QUOTE|MARKET_BAR|NEWS_PROVIDER|RECONSTRUCTED,accountId,brokerServer,symbol,eventTimeUtc,recordedAtUtc,sourceRevision,confidenceKind:OBSERVED|CALCULATED|PROXY|UNAVAILABLE}\`
+- \`DecisionEvent\` gemäß FR-026. \`reasonCode\` ist eine maschinenstabile Kennung, \`reasonText\` ist lokalisierte Interpretation; nie allein Freitext als Herkunft.
+- \`TradeLifecycleEvent {id,accountId,positionIdentifier,orderTicket?,dealTicket?,eventType,source,asOfUtc,price?,volume?,slBefore?,slAfter?,tpBefore?,tpAfter?,actor:EA|USER|BROKER|UNKNOWN,dataQuality,revision}\`.
+- \`TradeSnapshot {snapshotId,accountId,positionIdentifier,dealTicket,captureType,asOfUtc,chartView,marketDataRef,indicatorInstanceRevisions,decisionEventIds,renderStatus,renderAssetRef?,createdAtUtc}\`.
+- \`Scenario {scenarioId,ownerId,accountId,symbol,side,entry,stop,target,lotMode,lotSize?,riskBudget?,quoteRevision,assumptions,pricingSource,status:DRAFT|READ_ONLY_PREVIEW}\`.
+- \`ConfluenceSnapshot\`, \`SessionStructureEvent\`, \`RegimeSnapshot\`, \`ExecutionQualityRecord\`, \`NewsEventSnapshot\` mit erzwungenen Datenversions-, Zeitstempel- und Quellenfeldern.
+
+**Zusätzliche vorgeschlagene Read-only-Endpunkte** unter \`/api/chart/v1/\` (Routen dürfen nach Repo-Audit leicht anders heißen, Semantik nicht):
+| Method | Route | Rückgabe / Verhalten |
+|---|---|---|
+| GET | decisions?account=&symbol=&strategy=&from=&to= | gefilterte paginierte Event-Snapshots + recorded/reconstructed/not-recorded |
+| GET | decisions/{decisionId} | originale Predicate-/Feature-/Guard-Stufen, kontrollierte Kontoberechtigung |
+| GET | lifecycle?account=&positionId= | geordnete verified lifecycle events + data gaps |
+| GET | execution-quality?account=&period= | Broker-Fillkosten mit Provenance, MissingReference und Stichprobenangaben |
+| POST | scenarios/preview | read-only Szenariorechnung; **keine** Orders |
+| GET | confluence?account=&symbol=&at=&preset= | multi-TF as-of Features, source revisions |
+| GET | regimes?account=&symbol=&tf=&at= | reproduzierbare Tags + Thresholds |
+| GET | structure?account=&symbol=&tf=&from=&to= | Sessions, Pivots, Swings, Hypothesenklassen |
+| GET | calendar/events?currency=&from=&to= | lizenzierte externe Ereignisse, Providerstatus/stale flag |
+| GET | snapshots?account=&positionId= | bestehende Snapshots je Trade/Entry/Exit |
+| GET | snapshots/{id} | kontoberechtigter Snapshot, Datenquellen, optional Bild |
+| POST | snapshots/export/{id} | UI-Export nur mit Auth, scoped Asset, keine Trading-Mutation |
+| GET | replay/available?account=&symbol=&tradeId= | verfügbare historische Daten/Snapshots, Datenlücken |
+| GET | replay/data?sessionId=&cursor= | as-of Datenpakete im read-only Replay (P2) |
+
+**Gemeinsame Implementierungsregeln:**
+- Sensible Trade-/Accountdaten brauchen dieselbe Authorization- und Identity-Scope-Regel wie Kapitel 10. Exporte und Bilder dürfen keine versteckten Terminalpfade, Tokens oder personenbezogenen Zugangsdaten offenlegen.
+- Größere Berechnungen sind paginiert/workerbasiert und mit Cache; MT5-Gateway niemals durch unlimitierte historische N×M-Backfills blockieren.
+- Unveränderliche Snapshot-/Decision-Datensätze für reproduzierbaren historischen Stand; nachträgliche Korrektur nur als Version/Nachtrag, ursprüngliche Beweisdaten bleiben referenzierbar.
+- Backend-/EA-Telemetrie maximal sparsam und ausfallsicher: asynchron oder gebuffert, bounded queue, dedupliziert, definierte Retention. Verlorene Telemetrie darf KEINE EA-Trades blockieren oder falsche Erfolgsmeldungen erzeugen; „Log-Datenlücke“ sichtbar.
+- Keine Indikator-Neuberechnung mit Future-Bars in einem historischen \`asOfUtc\`-Kontext; Caches enthalten Algorithmus-/Parameter-/Quellenversion.
+- Die Chart-Entscheidungsanalyse **zeigt und erklärt**, sie erteilt keine implizite Orderfreigabe. Automatische Änderung bestehender EA-Logik, Guards oder Einstiege ist ein anderes freizugebendes Projekt.
+
+### 24.12 Einbindung in UI und gespeicherte Layouts [INTEL-UI-002]
+
+**Neue Chart-Studio-Seitenleistentabs und Overlays:**
+- \`EA-Debugger\`: regelbasierter Decision Inspector, Marker-Filter, Grundcode-Tabelle, Source-Label „aufgezeichnet/nachberechnet/fehlt“.
+- \`Planer\`: risikobewusster What-if-Editor, A/B-Vergleich, PnL- und Margindaten mit Quote-Zeit, SAVE DRAFT.
+- \`Trade-Verlauf\`: chronologische Broker-Eventleiste, MFE/MAE, SL-/TP-Versionen, Entry/Exit-Snapshot-Links.
+- \`Kontext\`: TF-Confluence, Regime, Sessions/Liquidity, News. Standardmäßig eingeklappt und granular zuschaltbar.
+- \`Ausführung\`: Slippage, Spread, Latenz, Gebühren nur mit ausreichenden Referenzen; Summen mit Sampleanzahl.
+- \`Replay\`: sichtbares REPLAY-/SIMULATION-Banner und deaktivierte MT5-Mutationskontrollen (erst P2).
+
+**Sichtbarkeitspräferenzen als Teil von \`chart_layout\`:** \`showDecisionMarkers\`, \`showRejectedSetups\`, \`showLifecycle\`, \`showHistoricalSnapshots\`, \`showSessionBoxes\`, \`showLiquidityHypotheses\`, \`showConfluence\`, \`showRegime\`, \`showNews\`, \`showExecutionQuality\`, \`showTradePlans\`. Alle standardmäßig mit sinnvoller zurückhaltender Dichte; globale Schalter „Analyse-Layer“ und „Clean Chart“. Etwaige echten Positionen bleiben unabhängig in FR-004. Voreinstellungen pro Account/Symbol/TF speichern.
+
+**Wichtigste Nutzerschritte:** Historischen Entry anklicken → Decision Inspector zeigt damalige Regelwerte → Trade-Verlauf öffnet Broker-Fills und Stopänderungen → „Entry-Snapshot“ stellt damaligen Chart her → „What if?“ importiert nur geometrische Planwerte, **niemals Broker-Stop als neuen Live-SL übernehmen** → A/B ansehen → zurück zum Livechart ohne Änderung von Positionen.
+
+**Labels bei Dichte:** Gesamte Datenquelle/Status in einer stabilen Symbol-/Indicator-Legende oder Side-Inspector; im Chart nur kurze Marker. Keine überdeckten „Daily High/Low/Weekly POC“-Beschriftungen, keine unlesbaren riesigen Boxen. Für EA-Markierungen separate Formen für CANDIDATE/SIGNAL/REJECTED/FILL und passende Tooltips.
+
+### 24.13 Ergänzung des Phasenplans — Vorgabe für Coding-Agent [INTEL-DELIVERY-002]
+
+**Reihenfolge innerhalb der bereits existierenden Phasen (Kapitel 19 gilt weiterhin):**
+- **Phase 0 (sofort):** Daten-Verfügbarkeitsmatrix für beide EAs und MT5-Konten erstellen: Welche Entscheidungen/Gründe, Orderversuche, Deals, SL/TP-Änderungen, Market Quotes und historischen Candles sind bereits tatsächlich vorhanden? Konten und EA-Versionen konkret nachweisen. Versionierte \`DecisionEvent\`-/\`TradeLifecycleEvent\`-/\`TradeSnapshot\`-Schemas entwerfen, Read-only-Recorder/Provider-Interfaces testbar machen. Snapshot- und EA-Logger-Performancebudget messen. Keine unbegründete „vollständige Historie“ versprechen.
+- **Phase 1:** EA-Debugger-P0 als Inspector mit Recorded/Unavailable-States und read-only Decision-Marker aufbauen. Für EAs nur genehmigte, reine Diagnose-Hooks mit Vorher/Nachher-Signalparität implementieren. Die Zeitachsen-/Indikatorarchitektur muss später as-of Entscheidungen zulassen. What-if-Grundgeometrie ohne Brokerwrite ins Chart Studio vorbereiten.
+- **Phase 2:** Trade-Lifecycle aus nachweisbaren MT5-Fills/Deals + auditierbaren Ereignissen als readonly Timeline ergänzen. Entry-/Exit-Snapshot-Pipeline und Journal-Verlinkung (Datensnapshot zuerst) implementieren, Backfill-Lücken klar kennzeichnen. What-if-Tool als rein lokalen Zeichnungsmodus einsetzen.
+- **Phase 3:** What-if mit autoritativem Broker-Money/Margin/Guard-Preview verbinden, Long/Short und A/B, Konto-/Symbolisolation. MFE/MAE bei fehlenden Tickdaten als Schätzung. Abschluss P0 der FR-026/027/033/035 mit AT-036–040/049–050/055–056. Diese Intelligence-Gates werden **zusätzlich** zu bestehenden Gate-3-Tests geprüft.
+- **Phase 4:** Die vorherige What-if-Datenstruktur darf nur dann in einen echten SL-/TP-Commit übergehen, wenn der separate bestehende Gate-4-Broker-Confirm-Flow erfolgreich ist. Szenario „nur simulieren“ bleibt dauerhaft unabhängig. Keine Änderungen an echten MT5-Guards durch Analyzer.
+- **Phase 5:** P1: FR-029/030/031/032/034 (Confluence, Sessions/Liquidity, Execution Quality, Regime, News) modular ausrollen, jeweils mit eigenen Datenverfügbarkeits-/Staleness-Hinweisen und Gate AT-041–048/053–054. P2 FR-028 nur nach stabilem Snapshot-/Decision-Event-Store und explizitem No-Look-Ahead-Test AT-051/052.
+- **Release-Regel:** P0-Entscheidungslogger darf ohne protokollierte Alt-Historie freigegeben werden, **wenn** „nicht aufgezeichnet“ korrekt angezeigt wird. P0-Snapshot ohne aktiven Browser darf reine Datensnapshots speichern. Aber Erfolg niemals für fehlende Eventdaten deklarieren. Die übrigen bisherigen Gates 0–4 bleiben verpflichtend.
+
+**Keine Abkürzung:** Kein vollwertiges Replay bevor Backtest-„as-of“ korrekt und vor Future-Leak geschützt ist; keine Execution-Quality ohne Sollpreis; keine Liquiditäts-Heuristik als Broker-Orderflow und keine deduzierte AI-Erklärung als historische Tatsache.
+
+### 24.14 Zusätzliche Abnahmefälle (Erweiterung zu AT-001–AT-035)
+
+| ID | Priorität | Test | Erwartung |
+|---|---|---|---|
+| AT-036 | P0 | Titan und GoldM15 mit aufgezeichnetem Candidate/Signal/Reject | Decision Inspector zeigt damals protokollierte Bedingungen, ReasonCodes, Parameter- und EMA-/RSI-Werte exakt |
+| AT-037 | P0 | Nicht instrumentierter Alt-Trade | „Nicht aufgezeichnet“; keine frei erfundenen Gründe, kein nachträglicher Fill aus Setupmarker |
+| AT-038 | P0 | Aufzeichnung deaktivieren oder Logger-Fehler | EA-Signal/Trade gleich wie vorher, Lossy-Datenlücke sichtbar, kein blockierter MT5-Handel |
+| AT-039 | P0 | What-if Long und Short in USD-/Nicht-USD-Konto | Broker-order_calc_profit/-margin stimmen, Lots/Stop-/R:R-Kalkulation mit ticksize/lotstep korrekt |
+| AT-040 | P0 | Was-wäre-wenn verschieben/speichern/exportieren | Null MT5-Schreibaufrufe; Plan klar als SIMULATION/DRAFT; Konflikt nach Kontowechsel |
+| AT-041 | P1 | Historischen M15-Einstieg mit H4-Filter prüfen | Nur vorher abgeschlossene H4-Werte; künftiges H4-Bar wird nie berücksichtigt |
+| AT-042 | P1 | Confluence bei Datenlücke/TF-Wechsel | UNKNOWN und sourceTime angezeigt, keine täuschende 100%-Bewertung |
+| AT-043 | P1 | Execution Quality mit intendedPrice, Quote und Deal | Fill-/Spread-/Slippage-Kosten korrekt gerichtet und nicht doppelt verrechnet; Sampleanzahl vorhanden |
+| AT-044 | P1 | Historischer Deal ohne Quote/intendedPrice und Partial-Fills | Slippage als nicht verfügbar; gewichteter Fillpreis aus tatsächlich ausgeführten Lots |
+| AT-045 | P1 | London-/New-York-/Asia-DST und Wochenendwechsel | UTC-Anker, Preisboxen, Opening Range, Swing-Bestätigung stimmen |
+| AT-046 | P1 | Equal High/Sweep und angebliche Liquidity | Als Proxy markiert; keine „echten Stoporders“ oder Institutionen ohne Orderflowfeed |
+| AT-047 | P1 | Deterministischer Marktregime-Klassifikator | Features, Thresholds, Hysterese, as-of und UNKNOWN bei Mangel stabil reproduzierbar |
+| AT-048 | P1 | Regime-Performancevergleich | Nur reale belegte Trades, sample size/fees/OOS, keine Future-Features/Erfolgsversprechen |
+| AT-049 | P0 | Mehrere Positions- und Deal-IDs, Trailing-/Teilfill-Events | Read-only Lifecycle korrekt, unbekannte historische Stopverläufe als Lücke |
+| AT-050 | P0 | MFE/MAE mit Tickdaten vs. OHLC-only | Exakt/geschätzt sauber getrennt, intrabar-Reihenfolge ohne Ticks nicht erfunden |
+| AT-051 | P2 | Replay startet vor realem Fill | Keine späteren Kerzen/Entscheidungen sichtbar, kein Look-ahead |
+| AT-052 | P2 | Replay bei Position/SL/TP im LIVE-Konto | Sämtliche MT5-Mutationsrouten technisch verboten, Orders unverändert |
+| AT-053 | P1 | Lizenzierter News-Event verschoben/abgesagt | Eventstatus/Timestamp korrekt; alte Warnung revidiert statt heimlich ersetzt |
+| AT-054 | P1 | Newsfeed fehlt oder ist veraltet | Providerfehler sichtbar, EA-News-Guard vom UI-Overlay getrennt, keine fingierte Sperre |
+| AT-055 | P0 | Broker-Entry und Exit mit/ohne aktiven Browser | Immutable Datensnapshot für beide, Idempotenz, Journalverlinkung; Bild optional |
+| AT-056 | P0 | Snapshot öffnen nach TF-/Accountwechsel | Ursprünglicher as-of Chart oder korrekt beschrifteter Recompute, keine fremden Tickets/aktuellen EMAs |
+
+**Testerweiterung (verbindlich):**
+- Pure TS Unit-Tests für Confluence-/Regime-Zeitfenster, Liquidity-Pivots, What-if-Geometry sowie Snapshot-as-of; Python Fake-MT5-Tests für OrderCalc, Deal-Korrelation, Netto-Gebühren und Logger-Fallback.
+- Playwright-E2E für fünf Klickpfade: Decision Inspector, A/B What-if, Trade-Lifecycle, Entry/Exit Snapshot, P1-Kontextpanel, mit aufgezeichneten Test-Fixures und mindestens einem Datenausfall.
+- Performance: 500+ Decision-Events und 100+ Lifecycle-Events in einem Chartladen dürfen die chart-p95-Interaktionsbudgets aus PERF-001 nicht überschreiten. News-/Quote-/Telemetry-Backfills dürfen das MT5-Accountgateway nicht verhungern lassen.
+- Sicherheits: Trading-Actions beim Replay, What-if-Draft oder Snapshot-Viewer blockieren. Ein MT5-Testauftrag darf erst nach tatsächlicher Benutzerfreigabe im Demo-Konto stattfinden.
+- **Nachweise:** Video/Screenshots, Testlogs und drei Live-Demo-Audits (ein aufgezeichneter Trade, ein geschlossener Gewinn/Verlust und ein Account-/Serverfehler) protokollieren; ohne Live-Daten offen als „nicht live verifiziert“ deklarieren.
+
+### 24.15 Nicht-Ziele, Datenqualität und verifizierbare Wertversprechen
+
+- Die neuen Module sind **Analyse-/Erklärungs-/Datenjournal-Werkzeuge**. Kein Tool darf durch die reine Anzeige automatisch Orders erzeugen, EA-Trading aktivieren oder Risikogrenzen ändern.
+- Ein schöner Decision-Inspector und ein schöner Profit-Chart sind kein Beleg für Profitabilität. Ursachen können aus Marktregime, Ausführung und Zufall resultieren; jede statistische Schlussfolgerung verlangt genügend Fälle, Kontrolle des Zeitraums und Out-of-Sample.
+- Keine „KI weiß warum“-Prosa ohne Recorded Predicate/RuleCodes. Optional generierte Erklärung ist ausdrücklich Interpretation einer belegbaren Faktenliste und zeigt Links auf Eventquellen.
+- Kein Rückwirkungsfehler: Warm-up, Candle-Close, Datenversion und damalige EA-Parameter sind Pflicht für jede historische „damals“-Aussage. Fehlende Original-Telemetrie wird nicht durch Rückrechnen geheilt.
+- Beim manuellen Overlay-Löschen darf kein echter EA-/Broker-Verlauf gelöscht werden; ursprüngliche mt5.position/transaction log ist geschützt.
+- Kein dauerhaftes Speichern hochauflösender Bilder ohne Quota, keine persönlichen Brokerdaten in öffentlich lesbarem Static-Verzeichnis kopieren.
+- Kein Slippage-Wert ohne Orderversuch/Referenzkurs, kein nachweislicher Orderflow aus Candle-Tickvolume, keine garantierten hypothetischen Gewinne.
+- Bestehendes \`Alle Strategien\`-Journal, das 2-Konten-Gateway, die Guard-Logik und die beiden EAs bleiben unverändert funktional.
+
+### 24.16 Zusammenfassung der Architektur-Reihenfolge
+
+Die Feature-Kette ist absichtlich datengetrieben:
+
+\`Verified MT5/EA Event Recorder → Account-/Time-scoped Evidence Store → Decision/Lifecycle/Snapshot APIs → Chart Inspector + What-if P0 → Multi-TF/Execution/Regime/Sessions/News P1 → strikt read-only Replay P2\`.
+
+**Abnahmeregel:** Ein Coding-Agent meldet FR-026–035 erst dann als umgesetzt, wenn die jeweiligen AT-036–056 mit Quellverweisen und belastbaren Testlogs bestanden wurden. Bei einer nicht instrumentierten historischen EA-Periode ist \`NOT_RECORDED\` ein **korrektes Produktverhalten**, kein Grund, Daten zu erfinden. Dieser §24 erweitert die bestehenden Sicherheits-, Performance-, Daten- und Layoutvorschriften aus §§0–23 und hat bei Widerspruch für die neu hinzugefügten Analytics-Features Vorrang; für Broker-Mutationen bleiben SEC-001 und POS-002 uneingeschränkt verbindlich.
+
 
 **Ende der einzigen verbindlichen Master-Spezifikation für 2EAs Chart Studio.**
