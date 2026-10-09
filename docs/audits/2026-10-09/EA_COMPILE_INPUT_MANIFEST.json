@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "capturedAtUtc": "2026-10-09T20:42:12.079827+00:00",
+  "sourceRevision": "aa6bf08569c5e3ae8403e5aad2e658f7c7fcac02",
+  "inputsUnchangedBeforeAfter": true,
+  "compilerVersion": "5.0.0.6230",
+  "inputs": {
+    "stdlib/Trade/Trade.mqh": {
+      "sha256": "96e6781624534377fe7971cba52cca3d62d1b030bc10d5e4ebf3ed8c541399ed",
+      "bytes": 69541
+    },
+    "stdlib/Object.mqh": {
+      "sha256": "dfad4fdb6d1bf47cf43fcbc2882e52979459f17a776f75f250a7c32d0623ab35",
+      "bytes": 2036
+    },
+    "stdlib/StdLibErr.mqh": {
+      "sha256": "04bb2c47b1b04dceb052e6dba1f85e0330c53abc602f341e2ea95ea1498ab28b",
+      "bytes": 683
+    },
+    "stdlib/Trade/OrderInfo.mqh": {
+      "sha256": "d0e479578ef91d2ef1b07ae63d28ae54e15cebb914dd10e5d4510c269a9ca999",
+      "bytes": 22087
+    },
+    "stdlib/Trade/HistoryOrderInfo.mqh": {
+      "sha256": "e88f6be450462a045470315887ef751a4510da65a5115325dc88542743fc52f8",
+      "bytes": 20018
+    },
+    "stdlib/Trade/PositionInfo.mqh": {
+      "sha256": "dd720b755c7f23dcc109fc81bcf0772b907411d545e4a1117421737bb9ff6897",
+      "bytes": 15820
+    },
+    "stdlib/Trade/DealInfo.mqh": {
+      "sha256": "9d6fb4e7d8754eaee761e43943dc49cdc3a32793ee8438119d939ea7bad71880",
+      "bytes": 16313
+    },
+    "stdlib/Trade/SymbolInfo.mqh": {
+      "sha256": "58d0eedd27ca11d93f4c81cab4c9fe0531fe2b844f871b54e200c32a3574c0e1",
+      "bytes": 35851
+    },
+    "repo/XAU_Titan_Pro.mq5": {
+      "sha256": "518bff6d8f729261ba807c5d8f1fca023cf6ad2baf46d7d2be9e907ea24dc0d2",
+      "bytes": 38694
+    },
+    "repo/goldm15/GoldM15_Reconstruction.mq5": {
+      "sha256": "6dcd7c7a62d66a5e517e6813aae6b88b9b16b551fd3f9ad77e027fbb7ac65573",
+      "bytes": 17247
+    },
+    "repo/goldm15/GoldM15_Core.mqh": {
+      "sha256": "7f0b5aff29e0b49d07ccc870d11dfc25c44cfdbb1f00720eae7acbd31c3e0001",
+      "bytes": 5307
+    },
+    "repo/goldm15/GoldM15_News.mqh": {
+      "sha256": "86ea78eb6c990d0a6ef00b7bdf5c163ba45d4d9d959750caa0980bcd530a3c38",
+      "bytes": 2374
+    },
+    "repo/goldm15/GoldM15_Risk.mqh": {
+      "sha256": "a7597935174b7283e8df57902fb01ab8d7cca0c584b5adc6ed83920230ebe3b5",
+      "bytes": 26229
+    },
+    "repo/goldm15/GoldM15_RiskCore.mqh": {
+      "sha256": "a35b31d1bd1bb22e764c6d7abd0dd95b1a93a96aa429a28016a02893791172cb",
+      "bytes": 3048
+    },
+    "compiler/metaeditor64.exe": {
+      "sha256": "cf2750bde55d98a1f3b4e56bcdd4f59300d0cff5caa6760985f7ef2c2cc12229",
+      "bytes": 116198368
+    }
+  },
+  "compileGraph": {
+    "XAU_Titan_Pro.mq5": {
+      "includes": [
+        "stdlib/Trade/Trade.mqh",
+        "stdlib/Object.mqh",
+        "stdlib/StdLibErr.mqh",
+        "stdlib/Trade/OrderInfo.mqh",
+        "stdlib/Trade/HistoryOrderInfo.mqh",
+        "stdlib/Trade/PositionInfo.mqh",
+        "stdlib/Trade/DealInfo.mqh",
+        "stdlib/Trade/SymbolInfo.mqh"
+      ],
+      "compilerLogSha256": "d4bfbff6ab8b4c12991e2c3fa52e25f1ccd591cc97072fd8121d2d05890a406f"
+    },
+    "goldm15/GoldM15_Reconstruction.mq5": {
+      "includes": [
+        "stdlib/Trade/Trade.mqh",
+        "stdlib/Object.mqh",
+        "stdlib/StdLibErr.mqh",
+        "stdlib/Trade/OrderInfo.mqh",
+        "stdlib/Trade/HistoryOrderInfo.mqh",
+        "stdlib/Trade/PositionInfo.mqh",
+        "stdlib/Trade/DealInfo.mqh",
+        "repo/goldm15/GoldM15_Core.mqh",
+        "repo/goldm15/GoldM15_Risk.mqh",
+        "repo/goldm15/GoldM15_RiskCore.mqh",
+        "repo/goldm15/GoldM15_News.mqh"
+      ],
+      "compilerLogSha256": "31d090983b41f8b4c3f7f29c48dc9eab2a7221cf76211c71238924a12970a9eb"
+    }
+  },
+  "results": [
+    {
+      "source": "XAU_Titan_Pro.mq5",
+      "sourceSha256": "518bff6d8f729261ba807c5d8f1fca023cf6ad2baf46d7d2be9e907ea24dc0d2",
+      "binarySha256": "a4a3e43bc3dd9f753b374db146d6477aa0919212fe1f87ad4af319591d5dd2e6",
+      "errors": 0,
+      "warnings": 0,
+      "compilerExitCode": 1,
+      "elapsedMs": 2168,
+      "deployed": false,
+      "activeBinaryIdentity": "UNKNOWN"
+    },
+    {
+      "source": "goldm15/GoldM15_Reconstruction.mq5",
+      "sourceSha256": "6dcd7c7a62d66a5e517e6813aae6b88b9b16b551fd3f9ad77e027fbb7ac65573",
+      "binarySha256": "a3ea796d4f942d61c6696d3e1dda47422702429459def4417dfed8ddab3b6064",
+      "errors": 0,
+      "warnings": 0,
+      "compilerExitCode": 1,
+      "elapsedMs": 2404,
+      "deployed": false,
+      "activeBinaryIdentity": "UNKNOWN"
+    }
+  ],
+  "activeBinaryIdentity": "UNKNOWN",
+  "presetManifest": "NOT_CAPTURED",
+  "strategyTesterParity": "NOT_RUN",
+  "brokerMutations": 0
+}
