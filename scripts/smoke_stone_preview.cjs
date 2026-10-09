@@ -20,6 +20,37 @@ const {pathToFileURL} = require('node:url');
     assert.equal(await page.locator('body.theme-stone').count(),1,'Stone theme');
     assert.ok(await page.locator('#tv-chart canvas').count()>0,'Demo chart needs canvas');
     assert.ok(await page.locator('button:disabled').count()>0,'Simulated order buttons disabled');
+
+    // A 50px rail painted above a 28px body gutter used to hide panel corners.
+    // Verify the complete image borders remain inside both decorative rails.
+    async function assertFrameClearance(label) {
+      const frameCheck = await page.evaluate(() => {
+        const leftRail = document.querySelector('#stone-rails .left')?.getBoundingClientRect();
+        const rightRail = document.querySelector('#stone-rails .right')?.getBoundingClientRect();
+        const selectors = ['nav.stone-asset-nav','header.stone-asset-header',
+          '.stone-asset-panel--chart','.stone-asset-panel--diagnostic'];
+        const cards = selectors.map(selector => {
+          const el = document.querySelector(selector);
+          if (!el) return {selector,missing:true};
+          const rect = el.getBoundingClientRect();
+          return {selector,left:rect.left,right:rect.right,
+            borderImage:getComputedStyle(el).borderImageSource};
+        });
+        return {leftRail:leftRail?.right,rightRail:rightRail?.left,cards};
+      });
+      assert.ok(Number.isFinite(frameCheck.leftRail) && Number.isFinite(frameCheck.rightRail),
+        label+': ornamental rails exist');
+      for (const card of frameCheck.cards) {
+        assert.ok(!card.missing,label+': '+card.selector+' must exist');
+        assert.ok(card.left >= frameCheck.leftRail+2,
+          label+': '+card.selector+' left frame hidden by side rail: '+JSON.stringify(frameCheck));
+        assert.ok(card.right <= frameCheck.rightRail-2,
+          label+': '+card.selector+' right frame hidden by side rail: '+JSON.stringify(frameCheck));
+        assert.notEqual(card.borderImage,'none',label+': '+card.selector+' image frame');
+      }
+      console.log('STONE FRAME CLEARANCE',label,JSON.stringify(frameCheck));
+    }
+    await assertFrameClearance('desktop 1440');
     const matrixBox = await page.locator('.right-stack .glass-card').nth(1).boundingBox();
     assert.ok(matrixBox && matrixBox.height < 500,'Strategy matrix panel must not stretch into empty space');
     await page.screenshot({path:path.join(out,'1440-stone-demo.png'),fullPage:true,animations:'disabled'});
@@ -27,6 +58,7 @@ const {pathToFileURL} = require('node:url');
     if(await h1.count()) await h1.first().click();
     await page.setViewportSize({width:390,height:844});
     await page.waitForTimeout(350);
+    await assertFrameClearance('mobile 390');
     await page.screenshot({path:path.join(out,'390-stone-demo.png'),fullPage:true,animations:'disabled'});
     const overflow = await page.evaluate(() => ({
       width: document.documentElement.clientWidth,
