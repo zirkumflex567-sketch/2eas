@@ -20,6 +20,8 @@ const {pathToFileURL} = require('node:url');
     assert.equal(await page.locator('body.theme-stone').count(),1,'Stone theme');
     assert.ok(await page.locator('#tv-chart canvas').count()>0,'Demo chart needs canvas');
     assert.ok(await page.locator('button:disabled').count()>0,'Simulated order buttons disabled');
+    const matrixBox = await page.locator('.right-stack .glass-card').nth(1).boundingBox();
+    assert.ok(matrixBox && matrixBox.height < 500,'Strategy matrix panel must not stretch into empty space');
     await page.screenshot({path:path.join(out,'1440-stone-demo.png'),fullPage:true,animations:'disabled'});
     const h1=page.locator('#frame-buttons [data-frame="H1"]');
     if(await h1.count()) await h1.first().click();
