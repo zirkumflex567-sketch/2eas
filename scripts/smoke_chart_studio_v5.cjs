@@ -29,6 +29,10 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.addAverage({id:"ema34",color:"#62deeb",lineWidth:2,title:"EMA 34"},
     bars.slice(33).map(c=>({time:c.time,value:c.close-.7})));
    engine.moveAverage("ema34",1);
+   engine.addPaneLine({id:"rsi14",color:"#b3d5ff",title:"RSI 14"},
+    bars.slice(14).map((c,i)=>({time:c.time,value:50+10*Math.sin(i/8)})));
+   engine.resizePane(2,175);
+   engine.movePaneLine("rsi14",1);
    engine.showVolume(true);
    const first=engine.inspect();
    engine.updateLast({...bars[79],close:bars[79].close+1});
@@ -36,16 +40,18 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    let staleRejected=false;try{engine.updateLast(bars[0])}catch(_){staleRejected=true}
    let invalidRejected=false;try{engine.setCandles([{time:1,open:-4,high:10,low:1,close:2}])}
     catch(_){invalidRejected=true}
+   let badPaneRejected=false;try{engine.resizePane(0,10)}catch(_){badPaneRejected=true}
    engine.changeAccount("goldm15");
    const isolated=engine.inspect();
    const removed=engine.removeAverage("ema34");
    engine.destroy();
    let disposed=false;try{engine.setCandles(bars)}catch(_){disposed=true}
-   return {first,updated,staleRejected,invalidRejected,isolated,removed,disposed};
+   return {first,updated,staleRejected,invalidRejected,isolated,removed,disposed,badPaneRejected};
   });
   assert.equal(result.first.version,"5.2.1");
   assert.equal(result.first.candleCount,80);
   assert.equal(result.first.averageCount,1);
+  assert.equal(result.first.nativePaneLines,1);
   assert.equal(result.first.volumeVisible,true);
   assert.ok(result.first.paneCount>=2);
   assert.equal(result.updated.candleCount,80);
@@ -54,6 +60,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(result.isolated.account,"goldm15");
   assert.equal(result.isolated.candleCount,0);
   assert.equal(result.isolated.averageCount,0);
+  assert.equal(result.isolated.nativePaneLines,0);
+  assert.equal(result.badPaneRejected,true);
   assert.equal(result.removed,false);
   assert.equal(result.disposed,true);
   assert.deepEqual(errors,[]);
@@ -67,6 +75,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    });
    e.setCandles(rows);
    e.addAverage({id:"ema21",color:"#61ddf2"},rows.slice(20).map(c=>({time:c.time,value:c.close-1.2})));
+   e.addPaneLine({id:"rsi14",color:"#f7c774"},rows.slice(14).map((c,i)=>({time:c.time,value:45+18*Math.sin(i/8)})));
    e.showVolume(true);window.__v5Screenshot=e;
   });
   await page.waitForTimeout(150);
@@ -74,6 +83,6 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   const folder=path.join("output","visual-smoke");
   fs.mkdirSync(folder,{recursive:true});
   await page.screenshot({path:path.join(folder,"chart-studio-v5-poc.png"),fullPage:true});
-  console.log("PASS native v5 chart, multi-pane, averages, volume, validation, account isolation, no writes");
+  console.log("PASS native v5 chart, configurable oscillator panes, move/resize, averages, volume, account isolation, no writes");
  }finally{if(browser)await browser.close();server.kill()}
 })().catch(err=>{console.error(err);process.exitCode=1});

@@ -28,3 +28,7 @@ Pin must be reviewed for a security update with an explicit PR rather than `late
 
 - Task 0.8: version and API/license decision plus isolated proof source exist; CI results must be recorded before treating 0.8 as complete.
 - Task 1.8, 2.1: **not completed**. The renderer is isolated and deliberately does not yet replace the production wrapper or implement v5 drawing primitives.
+
+## Follow-up: native pane lifecycle package (PR #25)
+
+The opt-in adapter now includes native v5 `addPaneLine`, `movePaneLine`, `resizePane` and `removePaneLine` using the single chart's `addSeries(LineSeries, ..., paneIndex)` API, not independent chart instances. Its read-only lifecycle caps oscillator panes at eight, validates series points, and removes all pane lines on account switch. The browser proof adds an RSI-shaped line, checks native pane movement and resize bounds, and checks disposal/account isolation. This is a renderer proof only, **not** a completed RSI indicator implementation or the production v5 migration.
