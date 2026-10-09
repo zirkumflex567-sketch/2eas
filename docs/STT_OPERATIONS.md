@@ -11,10 +11,15 @@ role does not authorize them.
 
 Run the application on loopback, with the TCP peer preserved. `python app.py`
 passes `proxy_headers=False` to uvicorn. For a CLI/service launch, use
-`uvicorn app:app --host 127.0.0.1 --port 8055 --no-proxy-headers`. Never enable
+`uvicorn app:app --host 127.0.0.1 --port 8050 --no-proxy-headers`. Never enable
 `--proxy-headers`, trusted forwarded middleware, or PROXY protocol handling that
-replaces the TCP peer before `dashboard_security` verifies it. Match the port to
-`proxy_pass`; `DASHBOARD_PORT=8055` selects that port for `python app.py`.
+replaces the TCP peer before `dashboard_security` verifies it. The current Windows
+application keeps its default port 8050 (`python app.py`, or `DASHBOARD_PORT=8050`).
+The reverse SSH tunnel maps remote loopback port 8055 to the Windows loopback
+backend on port 8050; nginx's `proxy_pass` therefore remains port 8055. If nginx
+and the application instead run on the same host without that SSH tunnel, match
+the backend port to `proxy_pass`: for example, explicitly set
+`DASHBOARD_PORT=8055` for `python app.py`, or CLI `--port 8055`.
 
 Configure these in the application's protected service environment:
 
