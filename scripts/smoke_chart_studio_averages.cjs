@@ -88,6 +88,18 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(cfg[0].period,34);assert.equal(cfg[0].source,"hlc3");
   assert.equal(cfg[0].color,"#44ffaa");assert.equal(cfg[0].lineWidth,3);
   assert.equal(cfg[0].label,"Trend EMA 34");
+  // Changing only style must not re-transfer the historical series.
+  const priorWrites=await page.evaluate(()=>ChartStudioAverages.diagnostics().dataWrites);
+  await page.evaluate(()=>ChartStudioAverages.edit("ma1","lineWidth",2));
+  await page.evaluate(()=>ChartStudioAverages.edit("ma1","lineWidth",3));
+  await page.evaluate(()=>ChartStudioAverages.edit("ma1","color","#66aaff"));
+  await page.evaluate(()=>ChartStudioAverages.edit("ma1","color","#44ffaa"));
+  assert.equal(await page.evaluate(()=>ChartStudioAverages.diagnostics().dataWrites),priorWrites);
+  await page.evaluate(()=>ChartStudioAverages.edit("ma1","period",35));
+  assert.equal(await page.evaluate(()=>ChartStudioAverages.diagnostics().dataWrites),priorWrites+1);
+  await page.evaluate(()=>ChartStudioAverages.edit("ma1","period",34));
+  assert.equal(await page.evaluate(()=>ChartStudioAverages.diagnostics().dataWrites),priorWrites+2);
+
   await area.locator('[data-instance="ma2"] [data-action="duplicate"]').click();
   assert.equal(await page.evaluate(()=>ChartStudioAverages.getConfigs().length),3);
   await area.locator('[data-instance="ma3"] [data-action="remove"]').click();
@@ -103,6 +115,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   // Account isolation, including persisted original.
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
   assert.equal(await page.evaluate(()=>ChartStudioAverages.getConfigs().length),0);
+  assert.equal(await page.evaluate(()=>ChartStudioAverages.diagnostics().seriesCount),0);
   await area.locator(".cs-ma-presets button").nth(1).click();
   assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].period,50);
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
