@@ -178,27 +178,31 @@ def install_control_security(app):
         # Router-relative decoded paths also cover redirects and root_path deployments.
         route_path = get_route_path(request.scope).rstrip('/') or '/'
         if request.method == 'POST' and route_path in CONTROL_PATHS:
+            direct_bearer = bool(identity and identity[0] == 'bearer')
+            cookie = request.cookies.get(COOKIE, '')
+            with lock:
+                saved = sessions.get(cookie)
+            if saved and not direct_bearer:
+                # Resolve the existing bearer cookie compatibility before checking
+                # session identity. This must never override a verified proxy role.
+                if (identity is None or identity[0] == 'local') and not claimed_proxy and not forwarding:
+                    bearer_identity = ('bearer', _bearer_principal(), 'trade')
+                    if saved['identity'] == bearer_identity and saved['peer'] == raw_peer:
+                        identity = bearer_identity
+                # Observed identity/role changes revoke the old capability even
+                # when Origin, fetch metadata or CSRF would also reject this request.
+                if identity != saved['identity'] or identity[2] != 'trade' or saved['peer'] != raw_peer:
+                    with lock:
+                        sessions.pop(cookie, None)
+                    return reject()
             origin = request.headers.get('origin')
             if origin and not _same_origin(origin, request.headers.get('host', ''), request.url.scheme):
                 return reject()
             if request.headers.get('sec-fetch-site') in ('cross-site', 'same-site'):
                 return reject()
-            if not (identity and identity[0] == 'bearer'):
-                cookie = request.cookies.get(COOKIE, '')
+            if not direct_bearer:
                 token = request.headers.get('x-dashboard-csrf', '')
-                with lock:
-                    saved = sessions.get(cookie)
                 if not saved or saved['expires'] <= time.monotonic() or not token or not secrets.compare_digest(token.encode('utf-8'), saved['csrf'].encode('utf-8')):
-                    return reject()
-                # Explicit bearer sessions retain the existing cookie/CSRF compatibility
-                # without requiring JS to retain the bearer on every request.
-                if (identity is None or identity[0] == 'local') and not claimed_proxy and not forwarding:
-                    bearer_identity = ('bearer', _bearer_principal(), 'trade')
-                    if saved['identity'] == bearer_identity and saved['peer'] == raw_peer:
-                        identity = bearer_identity
-                if identity != saved['identity'] or identity[2] != 'trade' or saved['peer'] != raw_peer:
-                    with lock:
-                        sessions.pop(cookie, None)
                     return reject()
         return await call_next(request)
 

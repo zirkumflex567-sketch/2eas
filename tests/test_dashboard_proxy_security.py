@@ -221,6 +221,8 @@ def test_local_bearer_session_retains_cookie_csrf_compatibility(proxy, monkeypat
     monkeypatch.setenv('DASHBOARD_CONTROL_TOKEN', 'test-only-bearer-capability')
     client = TestClient(app, base_url='http://localhost', client=('127.0.0.1', 123))
     token = client.get('/api/control_session', headers={'Authorization': 'Bearer test-only-bearer-capability'}).json()['csrf_token']
+    assert client.post('/api/modify_position', headers={'Origin': 'http://localhost'}).status_code == 403
+    assert client.post('/api/modify_position', headers={'Origin': 'http://localhost', 'X-Dashboard-CSRF': 'wrong'}).status_code == 403
     response = client.post('/api/modify_position', headers={'X-Dashboard-CSRF': token, 'Origin': 'http://localhost'})
     assert response.status_code == 200
     assert writes == [True]
@@ -242,4 +244,20 @@ def test_saved_local_bearer_cannot_override_changed_credential_peer_or_proxy_rol
     else:
         supplied.update(headers('viewer', **{'X-Forwarded-Proto': 'http'}))
     assert client.post('/api/modify_position', headers=supplied).status_code == 403
+    assert not writes
+
+
+@pytest.mark.parametrize('early_rejection', ['missing_csrf', 'foreign_origin', 'cross_site'])
+def test_observed_role_downgrade_revokes_session_even_when_other_checks_reject(proxy, monkeypatch, early_rejection):
+    _, client, writes = proxy
+    token = client.get('/api/control_session', headers=headers()).json()['csrf_token']
+    monkeypatch.setenv('DASHBOARD_PROXY_USERS', '{"operator":"read"}')
+    supplied = headers()
+    if early_rejection == 'foreign_origin':
+        supplied['Origin'] = 'https://evil.example'
+    elif early_rejection == 'cross_site':
+        supplied['Sec-Fetch-Site'] = 'cross-site'
+    assert client.post('/api/modify_position', headers=supplied).status_code == 403
+    monkeypatch.setenv('DASHBOARD_PROXY_USERS', '{"operator":"trade"}')
+    assert client.post('/api/modify_position', headers={**headers(), 'X-Dashboard-CSRF': token}).status_code == 403
     assert not writes
