@@ -66,3 +66,7 @@ These are **not** the full configurable indicator framework, and are not the pla
 ## Phase 2.4: persistent private SQLite chart layouts (isolated rollout)
 
 New layout store is an account-aware SQLite WAL database, independently authenticated by an opt-in server token. Transactions use optimistic revision checks (409 conflict), strict drawing/indicator schema and size limits. This phase **does not** expose or modify MT5-trading routes. A browser can use local layouts without connecting; server layouts require explicit configuration and a memory-only token. Saved timeframe remains metadata until a future v5 chart view manager restores it safely. Version 1 tested via pure SQLite, FastAPI TestClient and Chromium fixture; add exact CI link after passing. Do not claim it is a multi-user accounts/auth implementation; legacy trading POST hardening remains a security blocker for real SL/TP commits.
+
+## Supplement to Phase 1: ADX/VWAP (tested separately)
+
+Extend the v4 read-only indicator engine with Wilder ADX (+DI/-DI) and VWAP calculated from true broker real volume when available, otherwise explicitly named tick-volume proxy, reset at UTC day boundary. Stored per-account in local layouts and opt-in SQLite documents. This is NOT exchange orderflow and NOT a historical EA decision proof. Keep original candles/MT5 trading unaffected. Full configurable indicator instances, session-aware VWAP and native v5 chart migration remain open.

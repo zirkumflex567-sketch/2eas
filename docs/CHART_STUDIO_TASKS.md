@@ -29,7 +29,7 @@
 ## Task 2 — Full chart, drawings and storage
 
 - [ ] 2.1 V5 plugin/primitives and own drawing registry, drag states, snapping and hit-test priorities.
-- [~] 2.2 Full indicator catalog and configurable instances/parameters, RSI/MACD/ATR/ADX/VWAP panes. **Phase-2 work:** independent RSI(Wilder)/MACD/ATR/Volume panes with chart-time alignment and configurable periods/fast/slow/signal; ADX, VWAP, full registry/instance creation and v5 migration remain open.
+- [~] 2.2 Full indicator catalog and configurable instances/parameters. RSI/MACD/ATR/ADX +DI/−DI/Volume panes and UTC-day VWAP price overlay implemented with settings; configurable multiple indicator instances and full v5 plugin migration still open.
 - [ ] 2.3 Full drawing tool catalog incl. advanced fibos, channels, labels, multiple handles and responsive touch.
 - [~] 2.4 Drawing SQLite store, schema migration, revision conflicts, server layout/indicator profiles, import/export. **Implemented on branch:** private schema-v1 SQLite workspace store, optimistic revisions, account-scoped layout JSON, authenticated opt-in REST plus existing browser toolbar server save/load/delete; multi-user ACL, full v5 profile migration and remote conflict merge remain open.
 - [ ] 2.5 Symbol watchlist, timeframe, panes, chart type, multichart and per-layout configuration.
@@ -91,3 +91,7 @@ Branch `test/chart-studio-drag-preview` from merged main `8bbbb74`. New What-if 
 - Security prerequisite **still open**: legacy MT5 POST endpoints `/api/modify_position`, `/api/close_position`, `/api/reset_drawdown` are not independently authenticated. Do not activate additional MT5 mutations before holistic auth/CSRF/tunnel audit (Tasks 0.7/4.1).
 - Frontend loads drawings/visible indicators but intentionally leaves the active timeframe unchanged; full versioned v5 multi-view restoration is still open.
 - Python SQLite tests, auth API integration tests and Chromium version/cross-account tests must pass before merging.
+
+### Follow-up indicator package: ADX and volume-derived VWAP
+
+Branch `test/chart-studio-adx-vwap` from SQLite-workspaces main merge. Added Wilder-smoothed ADX/+DI/-DI pane (first ADX after 2*N−1 bars) and UTC-session VWAP as an optional main-price overlay. VWAP uses broker `real_volume` if >0, otherwise `tick_volume`, explicitly labeled a **volume-weighted OTC proxy** rather than proven institutional orderflow. Added math tests for warm-up, rising/ranging regimes, VWAP day reset and a browser toggle test. Account-based indicator settings and secured server-layout validation now accept these types. Full session-aware VWAP with IANA/broker calendars, selectable anchor session and indicator performance budget still open.
