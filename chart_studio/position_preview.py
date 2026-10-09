@@ -88,7 +88,11 @@ def geometry(position, candidate, metadata, quote):
             final[leg] = proposed
             if type(mode) is int and mode >= 0 and not mode & (SL_MASK if leg=='sl' else TP_MASK):
                 reasons.append(leg.upper()+'_UNSUPPORTED')
-            if proposed == existing[leg]: continue
+            # Decimal spelling cannot turn an unchanged broker level into a change.
+            unchanged = (proposed is None and existing[leg] is None) or (
+                proposed is not None and existing[leg] is not None and
+                number(proposed) == number(existing[leg]))
+            if unchanged: continue
             downward = (position['side']=='BUY') == (leg=='sl')
             def distance(value):
                 return reference-value if downward else value-reference

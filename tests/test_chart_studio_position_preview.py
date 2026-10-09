@@ -389,3 +389,20 @@ def test_same_proxy_principal_shares_quota_across_roles_other_user_isolated(api,
     monkeypatch.setenv('DASHBOARD_PROXY_USERS',json.dumps({'alice':'read','bob':'read'}))
     assert proxy.post('/api/chart/v1/position/preview-stop',json=payload,headers=headers('alice')).status_code==429
     assert proxy.post('/api/chart/v1/position/preview-stop',json=payload,headers=headers('bob')).status_code==200
+@pytest.mark.parametrize('leg,actual,equivalent,changed',[
+    ('sl',3999.99,'3999.990','3999.98'),
+    ('tp',4000.01,'4000.010','4000.02')])
+def test_numeric_equivalent_existing_frozen_leg_is_unchanged(api,leg,actual,equivalent,changed):
+    client,fake,payload=api
+    setattr(fake.positions[0],leg,actual)
+    payload['expectedRevision']=position_model(fake.positions[0],gateway.ACCOUNTS['titan'],'XAUUSD','EUR')['revision']
+    payload['candidate']={leg+'Price':equivalent}
+    data=client.post('/api/chart/v1/position/preview-stop',json=payload).json()
+    assert data['valid'] is True,data
+    assert data['geometry']['reasons']==[]
+    payload['candidate']={leg+'Price':changed}
+    data=client.post('/api/chart/v1/position/preview-stop',json=payload).json()
+    assert leg.upper()+'_EXISTING_FROZEN' in data['geometry']['reasons']
+    payload['candidate']={leg+'Price':None}
+    data=client.post('/api/chart/v1/position/preview-stop',json=payload).json()
+    assert leg.upper()+'_EXISTING_FROZEN' in data['geometry']['reasons']
