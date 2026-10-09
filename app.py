@@ -1242,6 +1242,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <link rel="stylesheet" href="static/tailwind.generated.css">
   <script src="static/lightweight-charts.js"></script>
   <script src="static/stone-chart-effects.js"></script>
+  <script src="static/chart-studio-data-signature.js"></script>
   <script src="static/chart-studio-indicators.js"></script>
   <script src="static/chart-studio-server-sync.js"></script>
   <script src="static/chart-studio-drawing-geometry.js"></script>
@@ -1250,6 +1251,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="static/chart-studio-oscillators.js"></script>
   <script src="static/chart-studio-chart-types.js"></script>
   <script src="static/chart-studio-object-manager.js"></script>
+  <link rel="stylesheet" href="static/chart-studio-quick.css">
   <script src="static/chart-studio-beta.js"></script>
   <script src="static/stone-celebrations.js"></script>
   <style>

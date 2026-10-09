@@ -231,8 +231,9 @@ function applySettings(raw){
 function updateBars(bars){
  if(!state||!Array.isArray(bars))return;
  const first=bars[0]||{},last=bars.at(-1)||{};
- const signature=[bars.length,first.time,first.close,last.time,last.open,last.close,
-  last.high,last.low,last.tick_volume,last.real_volume].join("|");
+ const signature=window.ChartStudioDataSignature?.signature(bars)||
+  [bars.length,first.time,first.close,last.time,last.open,last.close,
+   last.high,last.low,last.tick_volume,last.real_volume].join("|");
  if(signature===state.signature)return;
  state.signature=signature;
  state.bars=window.ChartStudioIndicators?.math.validateBars(bars)||[];

@@ -124,6 +124,29 @@ function updateSeries(){
  if(!s.candles.length)return;
  const conf=[["sma20","SMA20","#76e9a8"],["sma50","SMA50","#ffb675"],["bbUpper","BB+","#b9a1ff"],["bbLower","BB-","#b9a1ff"]];
  for(const [id,name,color] of conf)if(!s.extras[id])s.extras[id]=s.chart.addLineSeries({title:name,color,lineWidth:1,lastValueVisible:false,priceLineVisible:false});
+ const latest=s.candles[s.candles.length-1];
+ const optionKey=[s.opts.sma20,s.opts.sma50,s.opts.bb].join(":");
+ const prefix=window.ChartStudioDataSignature?.signature(s.candles.slice(0,-1));
+ const increment=!!prefix&&prefix===s.extraPrefix&&
+  latest.time===s.extraTime&&optionKey===s.extraOptions&&s.candles.length>=50;
+ if(increment){
+  const lastSma=n=>{
+   let sum=0;for(let i=s.candles.length-n;i<s.candles.length;i++)sum+=Number(s.candles[i].close);
+   return sum/n;
+  };
+  if(s.opts.sma20)s.extras.sma20.update({time:latest.time,value:lastSma(20)});
+  if(s.opts.sma50)s.extras.sma50.update({time:latest.time,value:lastSma(50)});
+  if(s.opts.bb){
+   const mid=lastSma(20);let variance=0;
+   for(let i=s.candles.length-20;i<s.candles.length;i++)
+    variance+=(Number(s.candles[i].close)-mid)**2;
+   const deviation=Math.sqrt(variance/20);
+   s.extras.bbUpper.update({time:latest.time,value:mid+2*deviation});
+   s.extras.bbLower.update({time:latest.time,value:mid-2*deviation});
+  }
+  return;
+ }
+ s.extraPrefix=prefix;s.extraTime=latest.time;s.extraOptions=optionKey;
  const bb=s.opts.bb?bollinger(s.candles):null;
  for(const [key,option,data] of [
   ["sma20","sma20",s.opts.sma20?sma(s.candles,20):[]],
@@ -383,7 +406,7 @@ function pointerup(e){
  }
  if(!s.drag)return;s.drag=null;persist();try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){}
 }
-function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;scenarioGeneration++;if(s.tool==="plan")setTool("cursor");
+function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;scenarioGeneration++;if(s.tool==="plan")setTool("cursor");
  s.panel.querySelector('[data-cmd="magnet"]')?.setAttribute("aria-pressed",String(s.magnet));
  const mag=s.panel.querySelector('[data-cmd="magnet"]');if(mag)mag.textContent="Magnet: "+(s.magnet?"AN":"AUS")+" · Kerzen-OHLC";
  window.ChartStudioIndicators?.switchAccount(id);
@@ -393,13 +416,16 @@ function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.draw=safeDr
  window.ChartStudioChartTypes?.switchAccount(id);
  window.ChartStudioServerSync?.account(id);
  showOpts();refreshProfiles();updateSeries();window.ChartStudioObjectManager?.render();requestDraw()}
-function timeframe(tf){if(s){cancelPlanPreview();s.tf=tf;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");
+function timeframe(tf){if(s){cancelPlanPreview();s.tf=tf;s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");
  window.ChartStudioIndicators?.updateBars([]);
   window.ChartStudioOscillators?.updateBars([]);
   window.ChartStudioChartTypes?.updateBars([]);
   window.ChartStudioAverages?.updateBars([]);
  requestDraw()}}
-function updateCandles(c){if(s&&Array.isArray(c)){s.candles=c;updateSeries();
+function updateCandles(c){if(s&&Array.isArray(c)){
+  const sig=window.ChartStudioDataSignature?.signature(c);
+  if(sig&&sig===s.candleSignature)return;
+  s.candleSignature=sig;s.candles=c;updateSeries();
  window.ChartStudioIndicators?.updateBars(c);
   window.ChartStudioOscillators?.updateBars(c);
   window.ChartStudioChartTypes?.updateBars(c);
@@ -414,6 +440,21 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  toggle.setAttribute("aria-expanded","false");toggle.setAttribute("aria-controls","cs-beta-panel");
  const expand=card.querySelector("#stone-chart-expand-btn");if(expand)expand.insertAdjacentElement("afterend",toggle);
  else card.prepend(toggle);
+ // Always-visible EMA entry point: users should not need to discover the beta drawer.
+ const maQuick=document.createElement("div");maQuick.className="cs-ma-quick";
+ maQuick.setAttribute("role","group");maQuick.setAttribute("aria-label","EMA Schnellzugriff");
+ const maOpen=document.createElement("button");maOpen.type="button";
+ maOpen.className="cs-ma-quick-open";maOpen.textContent="⚙ EMAs einstellen";
+ maOpen.setAttribute("aria-controls","cs-beta-panel");maOpen.setAttribute("aria-expanded","false");
+ const maPeriod=document.createElement("input");maPeriod.type="number";maPeriod.min="2";
+ maPeriod.max="500";maPeriod.step="1";maPeriod.value="34";maPeriod.className="cs-ma-quick-period";
+ maPeriod.setAttribute("aria-label","Periode für neue EMA");
+ const maAdd=document.createElement("button");maAdd.type="button";maAdd.textContent="+ EMA";
+ maAdd.setAttribute("aria-label","EMA mit gewählter Periode hinzufügen");
+ const maHint=document.createElement("span");maHint.className="cs-ma-quick-hint";
+ maHint.textContent="EMA 20/50/200 sind separat einblendbar";
+ maQuick.append(maOpen,maPeriod,maAdd,maHint);
+ toggle.insertAdjacentElement("afterend",maQuick);
  const panel=document.createElement("section");panel.id="cs-beta-panel";panel.className="cs-beta-panel";panel.hidden=true;
  const toolLabels=[["cursor","Navigation"],["edit","Griffe bearbeiten"],["horizontal","Preislinie"],["trend","Trendlinie"],["ray","Strahl"],["rect","Zone"],["channel","Parallelkanal"],["fib","Fibonacci"],["ruler","Preis-/Zeitmessung"]];
  const optLabels=[["ema20","EMA20"],["ema50","EMA50"],["ema200","EMA200"],["sma20","SMA20"],["sma50","SMA50"],["bb","Bollinger20"],["positions","Positionen & SL/TP"]];
@@ -445,7 +486,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  host.style.position="relative";host.appendChild(canvas);
  s={chart,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
   account:accountId,tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,
-  draw:[],undo:[],redo:[],candles:[],positions:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{}};
+  draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null};
  try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}
  catch (err) {console.warn("Chart Studio indicator pane could not load:",err);}
  try {window.ChartStudioAverages?.mount({chart,panel,account:accountId});}
@@ -463,7 +504,29 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  try{window.ChartStudioServerSync?.mount({panel,account:accountId,
    exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,
    getAccount:()=>s?.account})}catch(err){console.warn("Chart-Workspace-Sync nicht verfügbar:",err)}
- toggle.addEventListener("click",()=>{panel.hidden=!panel.hidden;toggle.setAttribute("aria-expanded",String(!panel.hidden));requestDraw()});
+ const openAverages=()=>{
+  if(panel.hidden){panel.hidden=false;toggle.setAttribute("aria-expanded","true");}
+  maOpen.setAttribute("aria-expanded","true");
+  const editor=panel.querySelector(".cs-ma-editor");
+  if(editor){editor.scrollIntoView({block:"nearest",behavior:"auto"});editor.querySelector("button")?.focus({preventScroll:true});}
+  requestDraw();
+ };
+ maOpen.addEventListener("click",openAverages);
+ maAdd.addEventListener("click",()=>{
+  const period=maPeriod.valueAsNumber;
+  if(!Number.isInteger(period)||period<2||period>500){
+   maPeriod.setCustomValidity("EMA-Periode muss zwischen 2 und 500 liegen.");
+   maPeriod.reportValidity();return;
+  }
+  maPeriod.setCustomValidity("");
+  if(!window.ChartStudioAverages?.add("EMA",period)){
+   openAverages();return;
+  }
+  openAverages();
+ });
+ maPeriod.addEventListener("input",()=>maPeriod.setCustomValidity(""));
+ maPeriod.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();maAdd.click()}});
+ toggle.addEventListener("click",()=>{panel.hidden=!panel.hidden;toggle.setAttribute("aria-expanded",String(!panel.hidden));maOpen.setAttribute("aria-expanded",String(!panel.hidden));requestDraw()});
  panel.addEventListener("click",e=>{
   const b=e.target.closest("button");if(!b)return;
   if(b.dataset.tool){setTool(b.dataset.tool);return}

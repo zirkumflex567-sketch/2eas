@@ -13,6 +13,10 @@ on:
       - test/chart-studio-oscillator-instances
       - test/chart-studio-chart-types
       - test/chart-studio-object-manager
+      - test/chart-studio-incremental-render
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 permissions:
   contents: read
@@ -37,6 +41,8 @@ jobs:
       - name: Check browser scripts and chart math
         run: |
           node --check static/chart-studio-beta.js
+          node --check static/chart-studio-data-signature.js
+          node scripts/test_chart_studio_data_signature.cjs
           node --check static/chart-studio-object-manager.js
           node --check static/chart-studio-drawing-geometry.js
           node scripts/test_chart_studio_drawings.cjs
@@ -70,6 +76,7 @@ jobs:
           node scripts/smoke_chart_studio_oscillators.cjs
           node scripts/smoke_chart_studio_chart_types.cjs
           node scripts/smoke_chart_studio_objects.cjs
+          node scripts/smoke_chart_studio_incremental.cjs
       - name: Upload Chart Studio browser screenshot
         if: always()
         uses: actions/upload-artifact@v4
@@ -82,4 +89,5 @@ jobs:
             output/visual-smoke/chart-studio-oscillators.png
             output/visual-smoke/chart-studio-chart-types.png
             output/visual-smoke/chart-studio-object-manager.png
+            output/visual-smoke/chart-studio-incremental.png
           if-no-files-found: ignore
