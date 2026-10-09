@@ -1421,3 +1421,21 @@ body.theme-stone #stone-fx-panel button:focus-visible {
 .cs-ma-message{min-height:16px;margin:9px 0 0;color:#b8dadc}
 @media(max-width:700px){.cs-ma-instance{gap:7px}.cs-ma-instance label{flex:1 1 90px}
  .cs-ma-instance button{flex:1 1 110px}}
+
+/* Account-local chart appearance controls; opt-in renderer style, never broker I/O. */
+.cs-appearance{margin:13px 0;padding:10px;border:1px solid #527d8c;
+ border-radius:8px;background:linear-gradient(120deg,#122b39,#091925);
+ color:#d9eaf4;font:11px/1.45 ui-monospace,Consolas,monospace}
+.cs-appearance>summary{cursor:pointer;color:#f1d49d;font-weight:800;letter-spacing:.05em}
+.cs-appearance-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));
+ gap:8px 12px;padding-top:12px}
+.cs-appearance-field{display:flex;flex-direction:column;justify-content:space-between;gap:5px;
+ border:1px solid #416779;padding:8px;border-radius:6px;color:#bfd6e1;background:#10212d}
+.cs-appearance-field select,.cs-appearance-field input:not([type=checkbox]){
+ height:30px;width:100%;border:1px solid #648896;border-radius:4px;color:#ddecf6;
+ background:#152f40;padding:2px 4px}
+.cs-appearance-field input[type=checkbox]{width:21px;height:21px;accent-color:#62d8e3}
+.cs-appearance-actions{display:flex;justify-content:flex-end;margin:12px 0 6px}
+.cs-appearance-actions button{padding:7px 10px;border-radius:5px;background:#264c5b;
+ border:1px solid #709ca9;color:#ecfaff;cursor:pointer}
+.cs-appearance p{margin:8px 0 0;color:#aecbd5}

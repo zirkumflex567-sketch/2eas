@@ -26,7 +26,8 @@ function saveProfile(){
  if(all[trimmed]&&!window.confirm("Gespeichertes Layout überschreiben?"))return;
  all[trimmed]={draw:json(s.draw),opts:json(s.opts),
   indicators:window.ChartStudioIndicators?.settings()||null,
-   movingAverages:window.ChartStudioAverages?.getConfigs()||[]};
+   movingAverages:window.ChartStudioAverages?.getConfigs()||[],
+   chartAppearance:window.ChartStudioAppearance?.settings()||{}};
  save(profileKey(),all);refreshProfiles();s.panel.querySelector("#cs-beta-profile").value=trimmed;updateMessage("Layout '"+trimmed+"' lokal gesichert.");
 }
 function loadProfile(){
@@ -35,6 +36,7 @@ function loadProfile(){
  s.opts={...optsDefault(),...(item.opts||{})};persist();save(optKey(),s.opts);showOpts();updateSeries();
  if(item.indicators)window.ChartStudioIndicators?.applySettings(item.indicators);
  window.ChartStudioAverages?.applySettings(item.movingAverages||[]);
+ window.ChartStudioAppearance?.applySettings(item.chartAppearance||{});
  requestDraw();
  updateMessage("Layout '"+name+"' geladen (nur lokal).");
 }
@@ -43,6 +45,7 @@ function exportWorkspaceDocument(){
  return {schemaVersion:1,drawings:json(s.draw),options:json(s.opts),
   indicators:window.ChartStudioIndicators?.settings()||{},
    movingAverages:window.ChartStudioAverages?.getConfigs()||[],
+  chartAppearance:window.ChartStudioAppearance?.settings()||{},
   timeframe:s.tf||"M15"};
 }
 function importWorkspaceDocument(document){
@@ -54,6 +57,7 @@ function importWorkspaceDocument(document){
  persist();save(optKey(),s.opts);showOpts();updateSeries();
  window.ChartStudioIndicators?.applySettings(document.indicators||{});
  window.ChartStudioAverages?.applySettings(document.movingAverages||[]);
+ window.ChartStudioAppearance?.applySettings(document.chartAppearance||{});
  requestDraw();updateMessage("Serverlayout geladen. Brokerpositionen, What-if und aktiver Timeframe bleiben unverändert.");
  return true;
 }
@@ -322,6 +326,7 @@ function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.draw=safeDr
  const mag=s.panel.querySelector('[data-cmd="magnet"]');if(mag)mag.textContent="Magnet: "+(s.magnet?"AN":"AUS")+" · Kerzen-OHLC";
  window.ChartStudioIndicators?.switchAccount(id);
  window.ChartStudioAverages?.switchAccount(id);
+ window.ChartStudioAppearance?.switchAccount(id);
  window.ChartStudioServerSync?.account(id);
  showOpts();refreshProfiles();updateSeries();requestDraw()}
 function timeframe(tf){if(s){cancelPlanPreview();s.tf=tf;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");
@@ -377,6 +382,8 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  catch (err) {console.warn("Chart Studio indicator pane could not load:",err);}
  try {window.ChartStudioAverages?.mount({chart,panel,account:accountId});}
  catch (err) {console.warn("Chart Studio average editor unavailable:",err);}
+ try{window.ChartStudioAppearance?.mount({chart,candleSeries,panel,account:accountId});}
+ catch(err){console.warn("Chart settings unavailable:",err);}
  account(accountId);
  try{window.ChartStudioServerSync?.mount({panel,account:accountId,
    exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,
