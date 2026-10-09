@@ -1480,3 +1480,26 @@ body.theme-stone #stone-fx-panel button:focus-visible {
 .cs-chart-type-choices button[aria-pressed=true]{border-color:#f3c97e;
  background:#5c4127;color:#fff3ce;box-shadow:0 0 12px rgba(236,185,93,.22)}
 .cs-chart-type-editor p{margin:9px 0 0;color:#afcbd8}
+
+/* Chart Studio object tree: on-demand DOM, account scoped, no broker writes. */
+.cs-object-manager{margin:12px 0;padding:10px;border:1px solid #54798a;border-radius:9px;
+ background:linear-gradient(108deg,#0b1d2b,#152d3b);color:#d6ebf7;
+ font:11px/1.45 ui-monospace,Consolas,monospace}
+.cs-object-manager summary{cursor:pointer;display:flex;justify-content:space-between;
+ gap:12px;color:#f3d19e;font-weight:750;letter-spacing:.04em}
+.cs-object-count{color:#a9cad8;font-weight:400;white-space:nowrap}
+.cs-object-manager>p{color:#a9c7d5;margin:9px 0}
+.cs-object-list{max-height:430px;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
+.cs-object-row{display:flex;align-items:center;flex-wrap:wrap;gap:5px;
+ border:1px solid #415d70;padding:7px;border-radius:7px;background:rgba(7,25,37,.8)}
+.cs-object-row[data-selected=true]{outline:1px solid #f0ca82;background:#283648}
+.cs-object-row input{flex:2 1 145px;min-width:95px;height:30px;padding:4px 7px;box-sizing:border-box;
+ background:#0d2533;color:#e2f6ff;border:1px solid #507e90;border-radius:4px}
+.cs-object-row button{min-height:30px;border:1px solid #537f90;border-radius:4px;
+ background:#1d3b4a;color:#e4f6fd;padding:5px 8px;cursor:pointer}
+.cs-object-row button[aria-pressed=true]{border-color:#edc57c;color:#ffe3ad}
+.cs-object-row button[data-action=select]{flex:1 1 100px;text-align:left;font-weight:600}
+.cs-object-row button[data-action=remove]{color:#ffc9d0;border-color:#915f6a}
+.cs-object-row button:disabled{opacity:.35;cursor:not-allowed}
+.cs-object-empty{padding:9px;margin:0;color:#b4ccd7}
+@media(max-width:700px){.cs-object-row input{flex:1 1 100%}.cs-object-row button{flex:1 1 60px}}
