@@ -90,6 +90,13 @@ The `trades` array preserves executed BUY/SELL deals, each real `entry`
 `fee`, account currency, magic/ownership and comment. Financial values and
 identifiers are canonical decimal strings. No positions, pending orders,
 signals, inferred EA ownership or USD conversions become history fills.
+Actual broker provenance also retains required `rawReason` (a nonnegative
+integer, including unknown codes) and `externalId` (the actual broker string,
+allowed to be empty). Neither field infers EA ownership. Missing or malformed
+values fail closed even in filtered or omitted rows. Both participate in
+duplicate validation and the pagination fingerprint: conflicting same-ticket
+values return 503, and corrected provenance between pages expires the cursor
+with 410.
 `fillTime` retains raw milliseconds, normalized UTC milliseconds and the
 explicit account offset provenance; `rawBrokerTime` retains the paired seconds.
 The pair must agree on its second. Request UTC datetimes are shifted by the

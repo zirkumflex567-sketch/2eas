@@ -275,6 +275,8 @@ def deal_model(row, spec, currency):
               'side':DEAL_TYPES[kind] if executed else 'UNKNOWN',
               'status':'EXECUTED' if executed else 'OMITTED',
               'rawEntry':entry, 'entry':DEAL_ENTRIES.get(entry, 'UNKNOWN'),
+              'rawReason':integer(required(row, 'reason')),
+              'externalId':text(required(row, 'external_id'), nonempty=False),
               'magic':str(magic), 'ownership':'MANUAL' if magic == 0 else 'UNKNOWN',
               'comment':text(required(row, 'comment'), nonempty=False),
               'rawBrokerTime':integer(required(row, 'time'), positive=True),

@@ -19,7 +19,8 @@ def deal(**changes):
                   position_id=9007199254740995, symbol='XAUUSD', type=0, entry=0,
                   magic=0, time=RAW-60, time_msc=(RAW-60)*1000+123,
                   volume=Decimal('0.1000'), price=Decimal('4000.0500'),
-                  commission=-.25, swap=-.5, profit=1.25, fee=-.1, comment='EA claim')
+                  commission=-.25, swap=-.5, profit=1.25, fee=-.1, comment='EA claim',
+                  reason=0, external_id='')
     fields.update(changes)
     return NS(**fields)
 
@@ -331,3 +332,46 @@ def test_history_errors_do_not_leak_private_data(client, fake):
 
 def test_history_post_forbidden(client):
     assert client.post('/api/chart/v1/trades').status_code == 405
+
+
+@pytest.mark.parametrize('reason,external_id', [(0,''), (4,'broker-reference'), (999,'unknown-reason')])
+def test_actual_provenance_fields_preserved_without_inferred_ownership(client, fake, reason, external_id):
+    fake.deals = (deal(reason=reason, external_id=external_id, magic=42),)
+    fill = read(client).json()['trades'][0]
+    assert fill['rawReason'] == reason
+    assert fill['externalId'] == external_id
+    assert fill['ownership'] == 'UNKNOWN'
+
+
+@pytest.mark.parametrize('kind', [0, 2])
+@pytest.mark.parametrize('field,value', [
+    ('reason',float('nan')), ('reason',float('inf')), ('reason',-1),
+    ('reason',None), ('reason',True), ('reason',4.0), ('reason','4'),
+    ('external_id',None), ('external_id',float('inf')), ('external_id',float('nan')),
+    ('external_id',42), ('external_id',False),
+])
+def test_malformed_provenance_fails_closed_for_filtered_and_omitted_rows(client, fake, kind, field, value):
+    fake.deals = (deal(type=kind, **{field:value}),)
+    assert read(client, ticket='12').status_code == 503
+
+
+@pytest.mark.parametrize('field', ['reason', 'external_id'])
+def test_missing_provenance_fails_closed_even_when_filtered(client, fake, field):
+    delattr(fake.deals[0], field)
+    assert read(client, ticket='12').status_code == 503
+
+
+@pytest.mark.parametrize('field,value', [('reason',4), ('external_id','corrected')])
+def test_conflicting_duplicate_provenance_fails_closed(client, fake, field, value):
+    fake.deals = (deal(), deal(**{field:value}))
+    assert read(client).status_code == 503
+
+
+@pytest.mark.parametrize('field,value', [('reason',4), ('external_id','corrected')])
+def test_corrected_provenance_between_pages_expires_cursor(client, fake, field, value):
+    paged(fake)
+    cursor = read(client, limit=1).json()['nextCursor']
+    setattr(fake.deals[3], field, value)
+    result = read(client, cursor=cursor)
+    assert result.status_code == 410
+    assert result.json()['detail']['code'] == 'CURSOR_INVALID_OR_EXPIRED'
