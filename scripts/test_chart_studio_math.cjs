@@ -1,0 +1,16 @@
+"use strict";
+const assert=require("node:assert/strict"),vm=require("node:vm"),fs=require("node:fs");
+const code=fs.readFileSync("static/chart-studio-beta.js","utf8");
+const window={};vm.runInNewContext(code,{window,document:{},localStorage:{},navigator:{},console});
+const math=window.ChartStudioBeta.calculations;
+const candles=Array.from({length:30},(_,i)=>({time:100+i,close:100+i}));
+const a=math.sma(candles,20);
+assert.equal(a.length,11);assert.equal(a[0].value,109.5);
+assert.equal(a.at(-1).value,119.5);
+const b=math.bollinger(candles,20);
+assert.equal(b.upper.length,11);assert.equal(b.lower.length,11);
+assert.ok(Math.abs((b.upper[0].value+b.lower[0].value)/2-109.5)<1e-8);
+const flat=math.bollinger(Array.from({length:25},(_,i)=>({time:i+1,close:2500})),20);
+assert.equal(flat.upper[0].value,2500);assert.equal(flat.lower[0].value,2500);
+assert.ok(!code.includes("order_send")&&!code.includes("/api/modify_position"));
+console.log("Chart Studio beta indicator/source tests PASS");
