@@ -18,6 +18,7 @@ Date: 2026-10-09. Baseline main: `3032426f5749a4600c0e8d1198a3ac0dc46ff2bc`. Thi
 - Local live Chromium: twenty UI account switches, then sixty seconds idle; no page errors or mutation requests. Account/chart identities matched. Slowest switch: 544 ms.
 - CDP JS heap: 3,304,640 bytes before switches; 11,548,408 after switches; 4,905,160 after idle. No forced-GC comparison, long-term leak conclusion, actual-mobile or 150% desktop-DPI acceptance follows from these samples.
 - Eleven long tasks observed: 301, 311, 80, 56, 64, 172, 54, 54, 63, 58, 63 ms. These provide a current baseline; they do not establish that all performance budgets pass.
+- A separate five-minute visible/low-motion idle run (300.44 seconds, 31 samples) had no page errors. JS heap ranged from 4,194,236 to 4,962,660 bytes (first 4,333,808; last 4,860,780), DOM nodes from 3,581 to 5,318 (first 3,582; last 5,148). CDP task-duration delta was 29.027 seconds; eight long tasks were 140, 172, 109, 123, 162, 56, 56 and 56 ms. This is one mode on desktop Chromium, not Off/Full/celebration, CPU/FPS, forced-GC or 30/60-minute acceptance.
 - Clean code baseline: 302 pytest tests plus 245 subtests passed; browser checks above exercise real demo data read-only.
 
 ## Remaining findings at this baseline
