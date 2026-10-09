@@ -77,9 +77,30 @@ function deleteProfile(){
 function updateMessage(x){if(s?.status)s.status.textContent=x}
 function sma(c,n){const out=[];let sum=0;for(let i=0;i<c.length;i++){sum+=Number(c[i].close);if(i>=n)sum-=Number(c[i-n].close);if(i>=n-1)out.push({time:c[i].time,value:sum/n})}return out}
 function bollinger(c,n=20,k=2){const hi=[],lo=[];let sum=0,sq=0;for(let i=0;i<c.length;i++){let v=Number(c[i].close);sum+=v;sq+=v*v;if(i>=n){v=Number(c[i-n].close);sum-=v;sq-=v*v}if(i>=n-1){const mid=sum/n,sd=Math.sqrt(Math.max(0,sq/n-mid*mid));hi.push({time:c[i].time,value:mid+k*sd});lo.push({time:c[i].time,value:mid-k*sd})}}return {upper:hi,lower:lo}}
-function safeDraw(list){if(!Array.isArray(list))return [];return list.slice(0,500).filter(o=>window.ChartStudioDrawingGeometry?.validDrawing(o)).map(o=>({kind:o.kind,anchors:o.anchors.map(p=>({time:p.time,price:p.price}))}))}
+function safeDraw(list){
+ if(!Array.isArray(list))return [];
+ const reserved=new Set(list.filter(o=>o&&typeof o.id==="string"&&/^[A-Za-z0-9_-]{1,32}$/.test(o.id)).map(o=>o.id));
+ const used=new Set(),allowed=new Set(["kind","anchors","id","label","visible","locked"]);
+ let serial=1;const result=[];
+ for(const o of list.slice(0,500)){
+  if(!window.ChartStudioDrawingGeometry?.validDrawing(o)||
+   Object.keys(o).some(k=>!allowed.has(k)))continue;
+  if(o.id!==undefined&&(typeof o.id!=="string"||
+   !/^[A-Za-z0-9_-]{1,32}$/.test(o.id)||used.has(o.id)))continue;
+  if(o.label!==undefined&&(typeof o.label!=="string"||o.label.length>40||
+   /[\u0000-\u001f]/.test(o.label)))continue;
+  if(o.visible!==undefined&&typeof o.visible!=="boolean")continue;
+  if(o.locked!==undefined&&typeof o.locked!=="boolean")continue;
+  let id=o.id;
+  if(!id){do{id="obj_"+serial++}while(reserved.has(id)||used.has(id))}
+  used.add(id);
+  result.push({kind:o.kind,anchors:o.anchors.map(p=>({time:p.time,price:p.price})),
+   id,label:o.label||"",visible:o.visible!==false,locked:o.locked===true});
+ }
+ return result;
+}
 function snapshot(){s.undo.push(json(s.draw));if(s.undo.length>50)s.undo.shift();s.redo=[]}
-function persist(){save(drawKey(),s.draw);requestDraw()}
+function persist(){s.draw=safeDraw(s.draw);save(drawKey(),s.draw);window.ChartStudioObjectManager?.render();requestDraw()}
 function undo(){if(!s?.undo.length)return;s.redo.push(json(s.draw));s.draw=s.undo.pop();s.selected=null;persist()}
 function redo(){if(!s?.redo.length)return;s.undo.push(json(s.draw));s.draw=s.redo.pop();s.selected=null;persist()}
 function setTool(kind){
@@ -90,6 +111,7 @@ function setTool(kind){
  s.canvas.style.cursor=kind==="edit"?"grab":kind==="plan"?"ns-resize":"crosshair";
  s.panel.querySelector('[data-cmd="drag-plan"]')?.setAttribute("aria-pressed",String(kind==="plan"));
  s.panel.querySelectorAll("[data-tool]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.tool===kind)));
+ window.ChartStudioObjectManager?.render();
  updateMessage(kind==="cursor"?"Navigation":kind==="edit"?"Griff anklicken und ziehen":kind==="horizontal"?"Preislinie: einmal klicken":kind==="plan"?"PLAN: SL oder TP am Chart ziehen · nur Broker-Vorschau":"Zwei Anker setzen · Esc abbrechen");
  requestDraw();
 }
@@ -127,8 +149,39 @@ function removeSelected(){
  if(!s||!Number.isInteger(s.selected)||s.selected<0||s.selected>=s.draw.length){
   updateMessage("Erst einen Zeichnungsgriff auswählen.");return;
  }
+ if(s.draw[s.selected].locked){updateMessage("Objekt gesperrt: zuerst entsperren.");return}
  snapshot();s.draw.splice(s.selected,1);s.selected=null;persist();
  updateMessage("Ausgewählte Zeichnung gelöscht. Undo möglich.");
+}
+function operateObject(i,action,value){
+ if(!s||!Number.isInteger(i)||i<0||i>=s.draw.length)return false;
+ if(action==="select"){
+  setTool("edit");s.selected=i;window.ChartStudioObjectManager?.render();requestDraw();return true;
+ }
+ const obj=s.draw[i];
+ if(obj.locked&&!["visibility","lock","duplicate"].includes(action)){
+  updateMessage("Zeichnung gesperrt: zum Bearbeiten erst entsperren.");return false;
+ }
+ if(action==="rename"&&
+  (typeof value!=="string"||value.length>40||/[\u0000-\u001f]/.test(value))){
+  updateMessage("Ungültiger Name (maximal 40 Zeichen).");return false;
+ }
+ if(action==="duplicate"&&s.draw.length>=500){updateMessage("Maximal 500 Objekte.");return false}
+ if(action==="up"&&i===s.draw.length-1)return false;
+ if(action==="down"&&i===0)return false;
+ if(!["rename","visibility","lock","duplicate","remove","up","down"].includes(action))return false;
+ snapshot();
+ if(action==="rename")obj.label=value.trim();
+ if(action==="visibility"){obj.visible=obj.visible===false;if(!obj.visible&&s.selected===i)s.selected=null}
+ if(action==="lock"){obj.locked=!obj.locked;if(obj.locked&&s.selected===i)s.selected=null}
+ if(action==="remove"){s.draw.splice(i,1);s.selected=null}
+ if(action==="duplicate"){const dup=json(obj);delete dup.id;s.draw.push(dup);s.selected=null}
+ if(action==="up"||action==="down"){
+  const next=i+(action==="up"?1:-1);
+  [s.draw[i],s.draw[next]]=[s.draw[next],s.draw[i]];
+  if(s.selected===i)s.selected=next;else if(s.selected===next)s.selected=i;
+ }
+ persist();return true;
 }
 function unproject(x,y){
  const time=s.chart.timeScale().coordinateToTime(x),price=s.series.coordinateToPrice(y);
@@ -143,14 +196,15 @@ function dims(){
 }
 function requestDraw(){if(!s||requestId)return;requestId=requestAnimationFrame(()=>{requestId=0;render()})}
 function drawObject(ctx,o,d){
+ if(o.visible===false)return;
  const a=project(o.anchors[0]),b=o.anchors.length>1?project(o.anchors[1]):null;if(!a)return;
- ctx.save();ctx.lineWidth=1.5;ctx.strokeStyle=o.preview?"#f7e1af":"#6fe6ed";ctx.fillStyle="rgba(48,190,230,.12)";
+ ctx.save();ctx.lineWidth=o.selected?2.5:1.5;ctx.strokeStyle=o.preview?"#f7e1af":o.locked?"#8b9aa3":o.selected?"#ffe3a5":"#6fe6ed";ctx.fillStyle="rgba(48,190,230,.12)";
  if(o.kind==="horizontal"){ctx.setLineDash([5,4]);ctx.beginPath();ctx.moveTo(0,a.y);ctx.lineTo(d.w,a.y);ctx.stroke()}
  if(b&&o.kind==="trend"){ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
  if(b&&o.kind==="rect"){ctx.fillRect(a.x,a.y,b.x-a.x,b.y-a.y);ctx.strokeRect(a.x,a.y,b.x-a.x,b.y-a.y)}
  if(b&&o.kind==="fib"){for(const k of ratios){const y=a.y+(b.y-a.y)*k;ctx.strokeStyle=k===.618?"#f7c874":"#8da8f9";
  ctx.beginPath();ctx.moveTo(Math.min(a.x,b.x),y);ctx.lineTo(d.w-2,y);ctx.stroke();ctx.fillStyle="#f7f8ff";ctx.font="11px monospace";ctx.fillText(String(k),Math.max(3,d.w-45),y-3)}}
- if(s.tool==="edit")for(const p of o.anchors.map(project).filter(Boolean)){ctx.fillStyle="#f3faff";ctx.fillRect(p.x-5,p.y-5,10,10);ctx.strokeRect(p.x-5,p.y-5,10,10)}
+ if(s.tool==="edit"&&!o.locked)for(const p of o.anchors.map(project).filter(Boolean)){ctx.fillStyle="#f3faff";ctx.fillRect(p.x-5,p.y-5,10,10);ctx.strokeRect(p.x-5,p.y-5,10,10)}
 
  if(b&&o.kind==="ray"){
   const segment=window.ChartStudioDrawingGeometry?.clipRay(a,b,d.w);
@@ -237,7 +291,7 @@ function render(){
  const ctx=c.getContext("2d");ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,d.w,d.h);
  if(s.opts.positions)drawPositions(ctx,d);
  if(s.scenario)drawScenario(ctx,d);
- for(const o of s.draw)drawObject(ctx,o,d);
+ for(let i=0;i<s.draw.length;i++)drawObject(ctx,{...s.draw[i],selected:i===s.selected},d);
  if(s.pending.length&&s.preview)drawObject(ctx,{kind:s.tool,anchors:[...s.pending,s.preview],preview:true},d);
 }
 function xy(e){const r=s.canvas.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top}}
@@ -273,7 +327,7 @@ function findPlanGrip(x,y){
  if(Math.min(dsl,dtp)>19)return null;
  return dsl<=dtp?"slPrice":"tpPrice";
 }
-function closestHandle(x,y){for(let i=s.draw.length-1;i>=0;i--)for(let j=0;j<s.draw[i].anchors.length;j++){const p=project(s.draw[i].anchors[j]);if(p&&Math.hypot(p.x-x,p.y-y)<11)return {i,j}}return null}
+function closestHandle(x,y){for(let i=s.draw.length-1;i>=0;i--){if(s.draw[i].locked||s.draw[i].visible===false)continue;for(let j=0;j<s.draw[i].anchors.length;j++){const p=project(s.draw[i].anchors[j]);if(p&&Math.hypot(p.x-x,p.y-y)<11)return {i,j}}}return null}
 function pointerdown(e){
  if(!s||s.tool==="cursor"||e.button!==0)return;
  const {x,y}=xy(e),raw=unproject(x,y);if(!raw)return;
@@ -287,7 +341,7 @@ function pointerdown(e){
  }
  if(s.tool==="edit"){
   const hit=closestHandle(x,y);if(!hit){s.selected=null;updateMessage("Griff wählen.");return}
-  s.selected=hit.i;snapshot();s.drag=hit;s.canvas.setPointerCapture(e.pointerId);e.preventDefault();return;
+  s.selected=hit.i;window.ChartStudioObjectManager?.render();snapshot();s.drag=hit;s.canvas.setPointerCapture(e.pointerId);e.preventDefault();return;
  }
  if(s.tool==="horizontal"){snapshot();s.draw.push({kind:s.tool,anchors:[p]});persist();return}
  const required=window.ChartStudioDrawingGeometry?.expected(s.tool)||2;
@@ -338,7 +392,7 @@ function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.draw=safeDr
  window.ChartStudioOscillators?.switchAccount(id);
  window.ChartStudioChartTypes?.switchAccount(id);
  window.ChartStudioServerSync?.account(id);
- showOpts();refreshProfiles();updateSeries();requestDraw()}
+ showOpts();refreshProfiles();updateSeries();window.ChartStudioObjectManager?.render();requestDraw()}
 function timeframe(tf){if(s){cancelPlanPreview();s.tf=tf;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");
  window.ChartStudioIndicators?.updateBars([]);
   window.ChartStudioOscillators?.updateBars([]);
@@ -402,6 +456,9 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  catch(err){console.warn("Chart oscillator instances unavailable:",err);}
  try{window.ChartStudioChartTypes?.mount({chart,candleSeries,panel,account:accountId});}
  catch(err){console.warn("Chart type editor unavailable:",err);}
+ try{window.ChartStudioObjectManager?.mount({panel,
+  getItems:()=>s?.draw||[],getSelected:()=>s?.selected,
+  operate:operateObject})}catch(err){console.warn("Chart object manager unavailable:",err)}
  account(accountId);
  try{window.ChartStudioServerSync?.mount({panel,account:accountId,
    exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,

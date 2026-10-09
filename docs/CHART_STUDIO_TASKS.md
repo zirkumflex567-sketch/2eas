@@ -12,7 +12,7 @@
 - [x] 0.4 Add pure broker-money validation and read-only P0 scenario/quote/capabilities endpoints.
 - [x] 0.5 Add initial isolated regression tests + Windows CI config (CI status must still be independently confirmed).
 - [~] 0.6 GitHub Actions Windows test run: 46 Python tests and Chromium desktop beta smoke PASS (run 37881702809). Further responsive/MT5-connected browser verification remains open.
-- [ ] 0.7 Audit all exposed trading POSTs and reverse tunnel for auth/CSRF/permissions before enabling mutations.
+- [~] 0.7 Static audit of MT5 write handlers identifies unauthenticated legacy `/api/modify_position`, `/api/close_position` and dashboard-only `/api/reset_drawdown`; these DO NOT use the separate token-protected Chart Studio layout API. Reverse-tunnel origin/CSRF analysis, auth architecture and any write-mode enablement remain BLOCKED pending deployment review. See `docs/CHART_STUDIO_SECURITY_GATE.md`.
 - [ ] 0.8 Lock target v5 version, review API/license and publish migration adapter RFC/PoC.
 
 ## Task 1 — Functional opt-in Chart Studio prototype (CURRENT)
@@ -30,7 +30,7 @@
 
 - [ ] 2.1 V5 plugin/primitives and own drawing registry, drag states, snapping and hit-test priorities.
 - [~] 2.2 Configurable indicator instances: EMA/SMA/WMA multi-instance price overlays (up to 16); separate multiple RSI/MACD/ATR/ADX oscillator instances (up to 8), independent periods, panes, color/width/label/visibility, duplicates and deletion, saved in local+SQLite profiles; prior volume + UTC VWAP remain. Native v5 plugin migration and advanced pane manager still open.
-- [~] 2.3 Drawing tool catalog: horizontal, trend, rectangle, Fibonacci, ray, price/time ruler, 3-anchor parallel channel, third-anchor editing, OHLC magnet, selected delete and undo; full advanced Fibos, text annotations, mobile gestures, v5 primitives and snap priority remain open.
+- [~] 2.3 Drawing tool catalog and **object manager**: horizontal, trend, rectangle, Fibonacci, ray, price/time ruler, 3-anchor parallel channel, handles/OHLC snap, Undo, object tree with names, visibility, lock, stacking, duplicates and deletion. Advanced fibs, mobile gestures, v5 primitives, hit-test priorities and annotation styles remain open.
 - [~] 2.4 Drawing SQLite store, schema migration, revision conflicts, server layout/indicator profiles, import/export. **Implemented on branch:** private schema-v1 SQLite workspace store, optimistic revisions, account-scoped layout JSON, authenticated opt-in REST plus existing browser toolbar server save/load/delete; multi-user ACL, full v5 profile migration and remote conflict merge remain open.
 - [~] 2.5 Chart appearance plus optional Candle/OHLC Bar/Line/Area chart types with account-scoped local+SQLite layouts. Symbol watchlist, synced multi-chart workspaces, additional chart types and native pane/layout management remain open.
 - [ ] 2.6 Optimized paging, streaming and incremental calculations; performance budgets AT-025/031.
@@ -119,3 +119,9 @@ CI acceptance requires Python contract tests, standalone JS schema checks and Ch
 ### Price series display modes (next iteration)
 
 Branch `test/chart-studio-chart-types`, based on merged multi-oscillator main. Adds chart-type switcher (Candles, OHLC Bars, Close Line, Area), keeping the *original candle series* as a permanent but optionally hidden pricing/drawing anchor reference, with non-writing alternative series created and safely disposed on switch. Existing view-only open positions, What-if plan and drawings keep their own price/time coordinates. Link line/area color/price-line to the account's visual theme settings. Type is account-scoped localStorage and preserved in local named/opt-in SQLite layouts with strict optional version-one field `chartType`. No MT5 writes, no trade strategy changes. Acceptance: Python whitelist, Node read-only validation and Chromium switching/anchor/visual/persistence test, plus full preexisting suite. Heikin-Ashi, Renko, Kagi and other derived types remain open; avoid implying that candle transformations are exchange-provided.
+
+### Goal tracking — Object Manager package
+
+Branch `test/chart-studio-object-manager`: live selectable drawing list, safe labels, hidden/locked selection safeguards, up/down stacking, copies, deletion and Undo with account-scoped metadata stored in local profiles and revision-controlled SQLite layouts. Legacy v1 drawing documents remain compatible. Real MT5 orders and the legacy trading routes are untouched. Python/Chromium tests are required before this checkbox can be fully marked complete.
+
+**Goal status:** the overall /plan remains IN PROGRESS. Do not equate successful incremental PRs with acceptance of FR-001–FR-035 or AT-001–AT-056. Unfinished gated tasks: 0.7/0.8, 1.8, 2.1/2.6, 3.1–3.6, all 4.x and 5.x. Real MT5 demo identity/authoritative pricing, secured tunnel and broker-write approval cannot be simulated.
