@@ -149,3 +149,9 @@ Branch `test/chart-studio-incremental-render`: shared dual-32-bit OHLCV fingerpr
 - Chart Studio panels, indicator catalog, multi-MA editor, scenario form and replay controls use flex wrapping and bounded widths on 320/390/768/1440 viewports rather than cutting off controls.
 - Browser smoke checks a real EMA add, searchable catalog, chart zoom/resize, absence of document-wide horizontal scroll, touch-capable contexts and CSS `prefers-reduced-motion` at 320 px. Four screenshots are saved by the Chart CI workflow.
 - Responsive viewport emulation is **not** the same as physical mobile/hardware touch and does not satisfy broker-connected two-account release gates. Task 1.7 remains partial pending green CI and complete mobile/fullscreen acceptance.
+
+### Browser-only chart image export (PR #26; CI pending)
+
+- The current v4 chart can create a PNG from its own real `takeScreenshot()` canvas. A separate local-only composition includes the Chart Studio drawing overlay aligned to the plot, SL/TP display if enabled, and TradingView/Lightweight Charts attribution in the exported bitmap.
+- Explicit user-click download only; generated files are not uploaded or persisted on the server. Filenames include account and timeframe, never credentials.
+- Chromium validates PNG format, file delivery, account switching and absence of non-GET broker requests. Full v5 multi-pane composite export remains future work.
