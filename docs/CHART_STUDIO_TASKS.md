@@ -39,7 +39,7 @@
 
 - [ ] 3.1 Broker-authoritative positions/pending/history/quote revisions and all symbol metadata.
 - [ ] 3.2 Move the beta zones into native renderer with labels and correct USD/account conversion; hedging/netting.
-- [ ] 3.3 Fully interactive SL/TP drafts (zero writes) with broker-authoritative quote/risk preview.
+- [~] 3.3 Fully interactive SL/TP drafts (zero writes) with broker-authoritative quote/risk preview. **Started:** draggable *virtual What-if plan* SL/TP grips, tick-size snapping and debounced MT5 profit/margin recalculation; **real ticket-bound stop preview remains open**.
 - [ ] 3.4 A/B What-if extended with lot sizing, guard, margin, currency conversion and correlation.
 - [ ] 3.5 Decision event schema, true EA telemetry, Decision Inspector; recorded vs unavailable semantics.
 - [ ] 3.6 Trade Lifecycle and MFE/MAE provenance, immutable entry/exit snapshots and all-strategy journal links.
@@ -78,3 +78,7 @@
 - New `ChartStudioIndicators` module: Wilder RSI, ATR, MACD, real/tick volume and separate resizable panes, parameters persisted per account, local profile roundtrip.
 - Static math checks prepared. Chromium CI and final validation must pass before marking this phase green and proposing a PR.
 - All broker mutations remain out of scope for this work package; main and EAs are untouched until acceptance.
+
+### Next test package — virtual stop/target grip
+
+Branch `test/chart-studio-drag-preview` from merged main `8bbbb74`. New What-if PLAN mode visually drags its SL or TP with read-only broker preview at most once after a 260 ms debounce, plus final drop. Attempts to use a real order/position mutation route are forbidden and asserted by Chromium tests. Preserving last validated scenario, canceling on account/timeframe switch, Broker rejection fallback, and returning tickSize from real symbol_info are part of this gate. This is **not** the actual broker stop/target editor in FR-006/FR-007, which remains blocked pending security/MT5 conflict tests.

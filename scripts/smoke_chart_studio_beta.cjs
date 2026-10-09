@@ -24,9 +24,13 @@ const fs=require("node:fs"),path=require("node:path");
     const req=route.request().postDataJSON();
     assert.equal(req.account,"titan");
     assert.equal(req.symbol,"XAUUSD");
+    const sign=req.side==="BUY"?1:-1;
+    const risk=Number(((req.slPrice-req.entryPrice)*req.volumeLots*100*sign).toFixed(2));
+    const reward=Number(((req.tpPrice-req.entryPrice)*req.volumeLots*100*sign).toFixed(2));
     await route.fulfill({status:200,contentType:"application/json",
-      body:JSON.stringify({account:"titan",canExecute:false,pnlAtSl:{amount:-80,currency:"USD"},
-      pnlAtTp:{amount:160,currency:"USD"},margin:{amount:95,currency:"USD"},riskRewardRatio:2})});
+      body:JSON.stringify({account:"titan",canExecute:false,pnlAtSl:{amount:risk,currency:"USD"},
+      pnlAtTp:{amount:reward,currency:"USD"},margin:{amount:95,currency:"USD"},
+      riskRewardRatio:Number((reward/-risk).toFixed(3)),tickSize:0.01})});
   });
   await page.goto("http://127.0.0.1:8864/static/chart-studio-fixture.html",{waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartSmokeReady===true);
@@ -79,8 +83,42 @@ const fs=require("node:fs"),path=require("node:path");
   await page.locator('[name="tpPrice"]').fill("4120");
   await page.locator('#cs-scenario-form button[type="submit"]').click();
   await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER"));
-  assert.equal(requests.length,1);
-  assert.ok(requests.every(url=>url.includes("/api/chart/v1/scenarios/preview")));
+  // Drag only a VIRTUAL plan stop: the scenario API remains read-only.
+  const beforePlan=await page.evaluate(()=>ChartStudioBeta.getState().scenario.slPrice);
+  const planY=await page.evaluate(()=>candleSeries.priceToCoordinate(4100-10));
+  await page.locator('[data-cmd="drag-plan"]').click();
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().tool),"plan");
+  // Keep the target visible after the open What-if panel increases document height.
+  await page.locator("canvas.cs-beta-canvas").scrollIntoViewIfNeeded();
+  // Toolbar click may scroll document. Re-measure the chart AFTER the click.
+  const pbox=await page.locator("canvas.cs-beta-canvas").boundingBox();
+  assert.ok(Number.isFinite(planY)&&pbox&&planY>=0&&planY<pbox.height,
+    "Plan stop handle must be inside visible price pane");
+  const px=pbox.x+pbox.width*.45,py=pbox.y+planY;
+  await page.mouse.move(px,py);
+  await page.mouse.down();
+  await page.mouse.move(px,py-27,{steps:5});
+  await page.mouse.up();
+  const draftDebug=await page.evaluate(()=>({
+    state:ChartStudioBeta.getState().scenario,
+    output:document.querySelector("#cs-scenario-result").textContent,
+    pointer:document.elementFromPoint(window.innerWidth*.45,Math.max(0,window.innerHeight*.45))?.tagName
+  }));
+  console.log("Chart Studio plan drag observed:",JSON.stringify({draftDebug,requests:requests.length}));
+  await page.waitForFunction(()=>{
+    const state=ChartStudioBeta.getState();
+    return state.scenario&&state.scenario.slPrice!==4090&&
+      document.querySelector("#cs-scenario-result").textContent.startsWith("PLAN · Stop ")&&
+      document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER");
+  },{timeout:15000});
+  const afterPlan=await page.evaluate(()=>ChartStudioBeta.getState().scenario.slPrice);
+  assert.notEqual(afterPlan,beforePlan);
+  assert.ok(requests.length>=2);
+  const money=await page.locator("#cs-scenario-result").textContent();
+  assert.ok(money.includes("Stop "+Number(((afterPlan-4100)*0.1*100).toFixed(2))+" USD"),
+    "USD risk must reflect the broker-priced new stop rather than old UI value");
+  assert.ok(requests.every(url=>url.includes("/api/chart/v1/scenarios/preview")),
+    "No broker modify/order-send request may be used during drag");
   assert.deepEqual(consoleErrors,[]);
   const output=path.join("output","visual-smoke");
   fs.mkdirSync(output,{recursive:true});

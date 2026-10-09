@@ -69,5 +69,12 @@ class ChartStudioFoundationTests(unittest.TestCase):
         self.assertIn("ChartStudioBeta?.updatePositions",app)
         self.assertIn("ChartStudioBeta?.updateCandles",app)
         self.assertIn("acc = verify_identity(mt5, selected())",app)
+        self.assertIn('result["tickSize"] = float(sym.trade_tick_size)',app)
+        ui=(ROOT/"static"/"chart-studio-beta.js").read_text(encoding="utf-8")
+        self.assertIn('data-cmd="drag-plan"',ui)
+        self.assertIn("scenarioGeneration++",ui)
+        self.assertIn("validScenario(next)",ui)
+        self.assertNotIn("/api/modify_position",ui)
+        self.assertNotIn("/api/close_position",ui)
 
 if __name__=="__main__":unittest.main()
