@@ -23,6 +23,55 @@ Routes: `GET /api/chart/v1/capabilities`,
 `GET /api/chart/v1/quotes`,
 `POST /api/chart/v1/scenarios/preview`.
 
+## Verified broker reads
+
+`GET /api/chart/v1/symbols?account=titan&q=USD&limit=50` searches actual MT5
+symbol names (case insensitive, `q` at most 64 characters, `limit` 1–200).
+Results retain the broker `tradeMode`, including disabled instruments. Search
+does not select symbols in Market Watch. `GET /api/chart/v1/symbol-info` requires
+an explicit `account` and `symbol` and returns actual digits, point, tick size,
+stop/freeze levels, volume limits/step, currencies and trade mode. Empty broker
+currency metadata remains empty; it is never replaced with USD.
+
+`GET /api/chart/v1/positions?account=titan&symbol=XAUUSD` returns separate
+`positions` and pending `orders`, actual account `currency`/`marginMode`, and a
+verified quote. Both broker fetches run under the account gateway's shared lock,
+with login/server/terminal identity checked on every request. A stopped terminal
+is refused. Optional decimal string `ticket`, `magic` and boolean `manual`
+filters apply **after** broker fetch and validation. A broker `None`, malformed
+row or invalid quote returns 503; an empty tuple remains an honest empty array.
+Unknown symbols return 404; missing or malformed query fields return 422 and
+unknown account scopes return 400. Reads send `Cache-Control: no-store`.
+
+Prices, volumes, profit/swap and identifiers use canonical decimal strings.
+Position profit/swap are in the actual account currency, with no FX conversion.
+Broker SL/TP zero becomes `null`. Every hedged ticket and pending order type is
+retained. Magic zero means `MANUAL`; all other rows are `UNKNOWN` because no
+verified ownership map exists. Comments remain provenance, never EA identity.
+All read models expose `source: MT5_VERIFIED` and `canExecute: false`.
+
+Position and order `revision` values are SHA-256 of compact, sorted-key JSON;
+all schema values are canonical strings, including raw zero SL/TP. Both include
+account ID (`account`), verified `login`/`server` and broker `symbol`.
+Positions additionally use `ticket, identifier, type, volume, price_open, sl,
+tp, time_update_msc`. Orders use their distinct real schema: `ticket,
+position_id, type, volume_current, volume_initial, price_open, price_stoplimit,
+sl, tp, time_setup_msc, time_expiration, type_time, type_filling, state`.
+Live quotes, current prices, profit and comments do not affect revisions.
+
+Creation/update/expiration clocks retain raw broker milliseconds alongside
+normalized `utcEpochMs`, the configured `brokerUtcOffsetSeconds` and
+`offsetSource: ACCOUNT_CONFIG`. Zero order expiration stays unset (`null`).
+Quotes expose `rawBrokerEpoch`/`rawBrokerEpochMs`, corrected `quoteTimeUtc`/
+`quoteTimeUtcMs`, `ageSeconds`, and `freshness` (`FRESH`, `STALE` after 30 seconds,
+or `FUTURE` when more than one second ahead). Valid stale quotes retain the
+broker book and explicitly disable execution. Invalid or absent clock policies
+fail closed. The legacy XAUUSD quote endpoint keeps numeric `bid`, `ask`, and
+`tickSize` for the existing UI while using the same clock and quote validation.
+
+These endpoints supply backend read contracts. Native symbol UI, broker history,
+FX normalization and chart trading remain later work.
+
 ## Opt-in serverseitige Chart-Workspaces (SQLite)
 
 Die Layouts liegen nun **zusätzlich** in der privaten SQLite-Datenbank.
