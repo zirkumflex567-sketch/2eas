@@ -24,7 +24,7 @@
 - [x] 1.5 Toggle genuine account-scoped MT5 open-position Entry/SL/TP overlays (**view-only**).
 - [x] 1.6 Read-only What-if scenario form + optional verified Bid/Ask fill + backend broker PnL/margin preview; distinct PLAN zones, no trade execution.
 - [~] 1.7 Chromium desktop smoke PASS; responsive 320/390/768/1440 browser matrix, simulated touch, zoom and reduced-motion is in PR #23 pending CI. Real mobile hardware, expanded layout acceptance and broker-connected proof remain open.
-- [ ] 1.8 Replace experimental v4 wrapper with correctly tested v5 TypeScript chart adapter + dedicated panes.
+- [~] 1.8 v5 TypeScript adapter/isolated renderer PoC merged in #19; PR #25 adds native oscillator pane line APIs, resize/move and account reset (CI pending). **Existing production v4 chart is not replaced**; parity, drawing primitives, real MT5 demo and full rollout remain open.
 
 ## Task 2 — Full chart, drawings and storage
 
