@@ -1231,3 +1231,16 @@ body.theme-stone .stone-asset-panel--chart::after {
 @media(prefers-reduced-motion:reduce){
  .stone-event-toast,.stone-event-spark {animation:none !important;display:none !important;}
 }
+
+/* FX-Off also silences idle ambience. Normal Stone keeps its bionic finish. */
+body.theme-stone.stone-fx-off .stone-ambience { display: none !important; }
+body.theme-stone.stone-fx-off .stone-cockpit-crest,
+body.theme-stone.stone-fx-off .stone-theme-dock button,
+body.theme-stone.stone-fx-off #vp-histogram-container .vp-bar { animation: none !important; }
+body.theme-stone #matrix-tbody .stone-target-row td .text-sub {
+  font-size: 11px !important; line-height: 1.45;
+}
+body.theme-stone #positions-list input:focus-visible,
+body.theme-stone #stone-fx-panel button:focus-visible {
+  outline: 2px solid #88eeff !important; outline-offset: 2px;
+}

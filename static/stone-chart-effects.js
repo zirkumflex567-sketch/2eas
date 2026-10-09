@@ -11,7 +11,8 @@
   "use strict";
 
   let instance = null;
-  let animationTimer = null;
+  let animationTimer = null; // event wake-up timeout, not perpetual polling
+  let frameTimer = null;
   const motionPreference = window.matchMedia
     ? window.matchMedia("(prefers-reduced-motion: reduce)")
     : { matches: false };
@@ -278,12 +279,30 @@
     ctx.restore();
   }
 
+  function armNextFrame(state, now) {
+    if (animationTimer !== null) clearTimeout(animationTimer);
+    if (!enabled()) return;
+    // Sleep until next irregular effect, repaint during bursts at <=20 fps.
+    const delay = state.effects.length ? 50 : Math.max(100, state.nextEffectAt - now);
+    animationTimer = setTimeout(() => {
+      animationTimer = null;
+      frameTimer = requestAnimationFrame(() => {
+        frameTimer = null;
+        render();
+      });
+    }, delay);
+  }
+
   function render() {
     const state = instance;
     if (!state) return;
     const active = enabled();
     state.canvas.hidden = !active;
     if (!active) {
+      if (animationTimer !== null) {
+        clearTimeout(animationTimer);
+        animationTimer = null;
+      }
       if (!state.wasInactive) {
         state.wasInactive = true;
         state.effects = [];
@@ -310,6 +329,7 @@
       if (effect.kind === "candle") drawCandleEffect(state,effect,now);
       else drawEmaEffect(state,effect,now);
     }
+    armNextFrame(state, now);
   }
 
   function configure(options = {}) {
@@ -373,8 +393,14 @@
       clearInterval(animationTimer);
       animationTimer = null;
     }
+    if (frameTimer !== null) {
+      cancelAnimationFrame(frameTimer);
+      frameTimer = null;
+    }
     if (!instance) return;
     const state = instance;
+    document.removeEventListener("visibilitychange", state.visibilityHandler);
+    motionPreference.removeEventListener?.("change", state.visibilityHandler);
     if (state.observer) state.observer.disconnect();
     if (state.rangeHandler) {
       try { state.chart.timeScale().unsubscribeVisibleLogicalRangeChange(state.rangeHandler); }
@@ -412,7 +438,9 @@
     instance.rangeHandler = render;
     try { chart.timeScale().subscribeVisibleLogicalRangeChange(render); }
     catch (_) { instance.rangeHandler = null; }
-    animationTimer = setInterval(render, 100);
+    instance.visibilityHandler = render;
+    document.addEventListener("visibilitychange", render);
+    motionPreference.addEventListener?.("change", render);
     render();
   }
 

@@ -144,7 +144,7 @@
       const layer = document.createElement("div");
       layer.className = "stone-ambience";
       layer.setAttribute("aria-hidden", "true");
-      const number = group === 0 ? 9 : group <= 2 ? 12 : 7;
+      const number = group === 0 ? 4 : group <= 2 ? 6 : 3;
       for (let i = 0; i < number; i++) {
         const spark = document.createElement("i");
         spark.className = "stone-spark" + (i % 3 === 0 ? " stone-spark--amber" : "");
@@ -158,7 +158,7 @@
         spark.style.setProperty("--spark-duration", (4.4 + (i % 4) * 1.43) + "s");
         layer.append(spark);
       }
-      for (let side = 0; side < 2; side++) {
+      for (let side = group % 2; side < 2; side += 2) {
         const vapor = document.createElement("span");
         vapor.className = "stone-vapor stone-vapor--" + (side ? "right" : "left");
         vapor.style.animationDelay = -(group * 1.9 + side * 3.3) + "s";

@@ -14,7 +14,10 @@ const byId=id=>document.getElementById(id);
 let panel=null,toggle=null,emaStrip=null,status=null,emaState=null;
 const save=()=>{try{localStorage.setItem(key,JSON.stringify(settings));}catch(_){}};
 function allowed(){return settings.mode!=="off"&&!motion.matches&&!document.hidden&&document.body.classList.contains("theme-stone");}
-function configureFX(){try{window.StoneChartFX?.configure({enabled:settings.mode!=="off",ambient:settings.mode!=="off"});}catch(_){}}
+function configureFX(){
+  document.body.classList.toggle("stone-fx-off",settings.mode==="off");
+  try{window.StoneChartFX?.configure({enabled:settings.mode!=="off",ambient:settings.mode!=="off"});}catch(_){}
+}
 function info(s){if(status)status.textContent=s;}
 function updateEMAs(values){
  emaState=values;
