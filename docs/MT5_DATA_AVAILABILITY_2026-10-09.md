@@ -1,0 +1,24 @@
+# MT5-Datenverfügbarkeit für Recording und Analytics
+
+Stand: 09.10.2026, letzter read-only Nachweis 19:50 UTC. Dies ist die Phase-0-Matrix aus Master-Spec §24; sie erklärt vorhandene Quellen und echte Datenlücken. Sie ersetzt keine vollständige Abnahme von FR-026–035.
+
+Beide konfigurierten Demo-Terminals laufen unverändert. Der Account-Gateway prüft Login, Server, Terminalpfad und Verbindung, bevor die Broker-Readmodelle zugreifen. Die Namen Titan/GoldM15 und Dashboard-Versionslabels beweisen keine aktuell geladene EA-Binary oder Parameterdatei. Quellen im Repository: XAU_Titan_Pro.mq5 Version 7.10 und goldm15/GoldM15_Reconstruction.mq5 Version 1.22; aktive Binary-/Preset-Identität bleibt ungeprüft.
+
+| Quelle / Daten | Tatsächlicher Stand beider Konten | Grenze und nächste Lieferung |
+|---|---|---|
+| Offene Positionen | Verifizierte OPEN_POSITION mit echten Tickets, Position-Identifiern, Seite, Volumen, Entry, SL/TP und Brokerrevision | Momentaufnahme; kein Beleg für historische Änderungsgründe oder den ausführenden Akteur |
+| Pending Orders | Verifizierte PENDING_ORDER mit eigenem TradeOrder-Schema; aktuell echte leere Listen | Positive Brokerfälle sind in Tests gemockt, native Darstellung/Guard-Abnahme offen |
+| Ausgeführte Deals | HISTORY_DEAL aus history_deals_get, actual Reason/External-ID, Entry/Exit-Kategorie, Gebühren/Swap/Profit und Brokerzeit | Zwei echte Seiten je Konto lokal/öffentlich geprüft; historische intended price/EA-Entscheidung nicht daraus erfinden |
+| Quote / Broker-Metadaten | Echte Bid/Ask, Symbol-/Tick-/Stop-/Freeze-/Volumenparameter, explizite Zeitkonversion | Konto-UTC+3 ist konfigurierte Demopolitik, keine allgemeine Offseterkennung oder DST-Abnahme |
+| Historische Candles / Indikatoren | Vorhandene MT5-Rates und nachberechnete Indikatoren | Volle Pagination/Warmups und immutable MarketDataVersion fehlen; Recompute ist kein damaliges EA-Feature-Snapshot |
+| EA-DecisionEvent / ReasonCodes | In den beiden aktuellen Repository-EA-Quellen kein versionierter Decision-Event-Kanal | Historische Originalreihe NOT_RECORDED. Neue Hook-Instrumentierung mit unveränderten Handelsregeln, Compiler- und Signalregression erforderlich |
+| Orderversuch / IntendedPrice / Brokerantwort-Korrelation | Nicht als unveränderliche, vollständig verknüpfte Eventreihe vorhanden | Nicht aus Zeitnähe/Dealpreis rekonstruieren; stabile Decision-/Attempt-/Order-/Deal-Kette aufzeichnen |
+| SL/TP-Lifecycle / Akteur / MFE/MAE | Broker-Read-Snapshots und Dealhistory vorhanden, kein vollständiger OnTradeTransaction-Recorder in diesen EA-Quellen | Polling kann Zwischenzustände verpassen. Exakter Akteur/MFE/MAE ohne instrumentierte Quelle UNKNOWN; OHLC-Schätzung separat markieren |
+| EA-Guard-Autorität | GoldM15 persistiert Risk-State, jedoch ohne belegten aktuellen Heartbeat; Titan ebenfalls kein verifiziertes Action-Policy-Snapshot | UNKNOWN/source NONE für neue Vorschläge. Datei-Mtime, erfolgreiche Berechnung und UI-Version geben keine Handelsfreigabe |
+| Wirtschaftsnews | GoldM15_Risk.mqh verwendet CalendarValueHistory für USD, nicht als versionierten Dashboard-Datenkanal | Read-only MQL5-Kalenderbrücke mit Coverage/Zeit/Stale/Änderungsprovenienz liefern; UI-Event und echter EA-News-Guard bleiben getrennt |
+| Ausgeführter Bid/Ask-Orderflow | Fünf-Minuten-XAUUSD-Sample: Titan 1264 Ticks, GoldM15 1260; kein Tick mit eindeutiger BUY/SELL-Ausführungsseite plus positivem Last und volume_real | Capability nicht nachgewiesen. Keine Quote-/Tickzahl als ausgeführtes Volumen oder Footprint darstellen; echte Ausführungsfeed-Provenienz nötig |
+| Automatische Entry-/Exit-Snapshots | Noch kein immutable automatisches TradeSnapshot-Recording; manueller Browser-PNG-Export vorhanden | Neues serverseitiges Recording mit Idempotenz/As-of/Journal-Link und ausdrücklich fehlender historischer Aufzeichnung |
+
+Die Tick-Stichprobe erfolgte über COPY_TICKS_ALL aus bereits laufenden Terminals, ohne Symbolauswahl oder Handelsmutation. Neuester normalisierter Tick war je Konto etwa 0,6 Sekunden alt. Positive Felder allein wären noch kein vollständiger Ausführungsfeed-Nachweis; das Ergebnis ist ausdrücklich auf dieses Symbol/Zeitfenster begrenzt. Private Rohdaten bleiben außerhalb der Git-Dokumentation; die ignorierte tick-capability-proof.json enthält nur Zähler und Zeit-/Capability-Provenienz.
+
+Offizielle Verträge: [MT5 copy_ticks_range](https://www.mql5.com/en/docs/python_metatrader5/mt5copyticksrange_py), [MqlTick-Felder und Flags](https://www.mql5.com/en/docs/constants/structures/mqltick), [Deal-Properties](https://www.mql5.com/en/docs/constants/tradingconstants/dealproperties). Native MT5-Dokumentation beschreibt UTC; die tatsächlich verwendete explizite Kontokonversion ist zusätzlich im Broker-Clock-Ledger dokumentiert und darf nicht als universelle Plattformregel ausgegeben werden.

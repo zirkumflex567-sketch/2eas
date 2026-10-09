@@ -27,6 +27,7 @@ from goldm15_dashboard import GUARD_FILE, metrics as gold_metrics, parameters as
 from chart_studio.money import PreviewError, preview_scenario
 from chart_studio.broker_reads import legacy_quote
 from chart_studio.read_api import install_read_routes
+from chart_studio.preview_api import install_preview_routes
 from dashboard_security import install_control_security
 from chart_studio.workspaces import WorkspaceStore, StoreError, WorkspaceMissing, RevisionConflict
 from functools import lru_cache
@@ -37,6 +38,7 @@ install_control_security(app)
 BASE_DIR = Path(__file__).resolve().parent
 install_runtime(app, BASE_DIR)
 install_read_routes(app, mt5)
+install_preview_routes(app, mt5)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / 'static')), name="static")
 
@@ -1006,7 +1008,7 @@ def api_chart_capabilities():
         "features": {
             "historicalCandles": True, "emaToggles": True,
             "experimentalDrawings": True, "readOnlyPositionOverlays": True,
-            "scenarioPreview": True,
+            "scenarioPreview": True, "brokerPositionStopPreview": True,
             "brokerSymbolSearch": True, "brokerSymbolInfo": True,
             "brokerPositionOrderReads": True,
             "brokerTradeHistoryReads": True,

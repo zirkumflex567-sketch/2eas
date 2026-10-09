@@ -188,3 +188,52 @@ Keine echte SL-/TP-Bearbeitung, Positionseröffnung, Replay oder
 EA-Entscheidungshistorie wird durch diese Speicherfunktion freigeschaltet.
 Die vollständig neue v5-Engine und weitere Master-Spezifikationstasks sind offen.
 
+
+## Read-only actual position stop preview
+
+`POST /api/chart/v1/position/preview-stop` requires the middleware-verified identity,
+explicit account/symbol/ticket, current semantic `expectedRevision`, UUID request ID,
+and at least one candidate `slPrice`/`tpPrice`. Prices are plain decimal strings;
+omitted legs preserve the broker level, explicit null removes it (never a zero zone).
+
+Actual MT5 quotes, tick size, volume step, stop/freeze levels, order-mode SL/TP flags,
+position side/open price/volume and `order_calc_profit` drive the calculation. Both
+initial and final signed server-observed quote ages must be within -500..5000 ms.
+The account gateway lock covers identity checks, full symbol position/order book
+validation, calculations and readback. Final revisions and geometry are checked again.
+Existing levels at or inside a nonzero freeze distance conservatively block changing
+or removing that leg; brokers may have less restrictive policies.
+
+Money is estimated gross in the actual account currency; fees, swap, gaps and
+slippage are excluded. No USD or FX conversion and no contract-size fallback exist.
+Unset money is null. Risk/reward is unavailable unless SL gross is negative and TP
+gross is positive; profitable trailing stops remain valid geometry.
+
+Guard and market-session sources remain UNKNOWN/NONE. Geometry validity is never
+permission: every preview has `canExecute=false` and `canCommit=false`. Persisted EA
+files without a live heartbeat do not authorize anything. Native dragging and commit
+remain unavailable; there is no commit route.
+
+Random preview IDs live only in a locked process-local registry (maximum 256), expire
+at a monotonic 10-second deadline, and disappear on restart or eviction. Internal
+lookup binds the middleware principal/role/channel/raw peer plus actual account,
+terminal, symbol, ticket and revision; returned snapshots are independent copies.
+Displayed expiry/as-of use server UTC, while broker clock provenance retains raw
+clock, configured offset, normalized UTC and permitted skew. An ID is never a write
+capability: any future write gate needs separate live authorization, confirmation,
+CSRF and fresh broker/guard reads. A monotonic per-principal 4/s burst-8 limiter and
+one global in-flight preview reject excess work before entering the gateway.
+
+The canonical result exposes `valid`, `positionRevision`, `brokerPreview` with
+`slPrice`/`tpPrice`, nullable `pnlAtSl`/`pnlAtTp` estimated-gross money objects,
+`ratioRiskReward`, UTC `quoteTimeUtc`, and `expiresAtUtc`. Symbol contract size,
+calculation mode, monetary currencies and tick-value variants are included in the
+actual initial/final calculation-context comparison when exposed by the adapter;
+a correction conflicts instead of returning stale money. Account currency is also
+verified before and after calculation and at final readback.
+
+Trade-mode provenance reports the actual MT5 integer. Mode 0 is disabled; modes
+1/2/3 are long-only/short-only/close-only and conservatively block proposal validity
+with distinct reasons. Unknown modes fail explicitly. Rate-limit quota follows the
+verified authentication channel and subject across peer/role changes; registry
+bindings continue to include the full role and raw peer.
