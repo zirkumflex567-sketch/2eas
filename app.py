@@ -18,6 +18,7 @@ import uvicorn
 from pathlib import Path
 from account_gateway import ACCOUNTS, config_path, public_account, scoped, selected, verify_identity, writes_titan_reset
 from goldm15_dashboard import GUARD_FILE, metrics as gold_metrics, parameters as gold_parameters, read_guard, wilder_rsi
+from chart_studio.money import PreviewError, preview_scenario
 
 app = FastAPI(title="XAU Titan Pro - Institutional Live Cockpit")
 BASE_DIR = Path(__file__).resolve().parent
@@ -47,6 +48,16 @@ class ModifyPositionRequest(BaseModel):
     tp_usd: Optional[float] = None
     sl_price: Optional[float] = None
     tp_price: Optional[float] = None
+
+class ChartScenarioPreviewRequest(BaseModel):
+    account: str
+    symbol: str
+    side: str
+    volumeLots: float
+    entryPrice: float
+    slPrice: float
+    tpPrice: float
+
 
 class ClosePositionRequest(BaseModel):
     ticket: int
@@ -780,6 +791,70 @@ def api_candles(count: int = 150, account: str = 'titan', tf: str = 'M15'):
         "sr_levels": sr_levels
     }
 
+# --- Chart Studio opt-in foundation: read-only safe endpoints only ---
+# WARNING: Do not add real order_send or SL/TP commit logic to these routes.
+@app.get("/api/chart/v1/capabilities")
+def api_chart_capabilities():
+    return {
+        "version": "0.1.0-foundation",
+        "accountScopes": list(ACCOUNTS.keys()),
+        "symbols": [SYMBOL],
+        "timeframes": list(TIMEFRAME_MAP.keys()),
+        "library": "lightweight-charts-v4-legacy-adapter",
+        "chartStudioStage": "P0-progressive-enhancement",
+        "features": {
+            "historicalCandles": True, "emaToggles": True,
+            "experimentalDrawings": True, "readOnlyPositionOverlays": True,
+            "scenarioPreview": True, "persistentServerDrawings": False,
+            "realStopDragging": False, "brokerMutations": False,
+            "eaDecisionHistory": False, "immutableSnapshots": False
+        }
+    }
+
+
+@app.get("/api/chart/v1/quotes")
+@scoped(mt5)
+def api_chart_quotes(account: str, symbol: str = SYMBOL):
+    if symbol != SYMBOL:
+        raise HTTPException(status_code=400, detail="Dieses Chart-Modul unterstützt noch ausschließlich XAUUSD.")
+    acc = verify_identity(mt5, selected())
+    tick = mt5.symbol_info_tick(symbol)
+    sym = mt5.symbol_info(symbol)
+    if tick is None or sym is None:
+        raise HTTPException(status_code=503, detail="Broker-Quote oder Symbolinformationen fehlen.")
+    return {
+        "account": selected()["id"], "symbol": symbol,
+        "currency": str(getattr(acc, "currency", "") or ""),
+        "bid": float(tick.bid), "ask": float(tick.ask),
+        "quoteTimeUtc": int(tick.time),
+        "tickSize": float(getattr(sym, "trade_tick_size", 0) or 0),
+        "source": "MT5_VERIFIED"
+    }
+
+
+@app.post("/api/chart/v1/scenarios/preview")
+@scoped(mt5)
+def api_chart_preview(req: ChartScenarioPreviewRequest, account: str):
+    if req.account != account:
+        raise HTTPException(status_code=409, detail="Szenario gehört nicht zum angefragten Konto.")
+    if req.symbol != SYMBOL:
+        raise HTTPException(status_code=400, detail="Symbol derzeit nicht freigegeben.")
+    acc = verify_identity(mt5, selected())
+    sym = mt5.symbol_info(req.symbol)
+    if sym is None:
+        raise HTTPException(status_code=503, detail="MT5-Symbolinformationen nicht verfügbar.")
+    try:
+        result = preview_scenario(
+            mt5, acc, sym, symbol=req.symbol, side=req.side,
+            volume=req.volumeLots, entry=req.entryPrice,
+            stop=req.slPrice, target=req.tpPrice
+        )
+    except PreviewError as exc:
+        raise HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)}) from exc
+    result["account"] = account
+    return result
+
+
 @app.post("/api/modify_position")
 @scoped(mt5)
 def api_modify_position(req: ModifyPositionRequest, account: str = 'titan'):
@@ -909,6 +984,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <link rel="stylesheet" href="static/tailwind.generated.css">
   <script src="static/lightweight-charts.js"></script>
   <script src="static/stone-chart-effects.js"></script>
+  <script src="static/chart-studio-beta.js"></script>
   <script src="static/stone-celebrations.js"></script>
   <style>
     html, body {
@@ -1418,6 +1494,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     function switchTimeframe(tf) {
       if (activeTimeframe === tf) return;
       activeTimeframe = tf;
+      try { window.ChartStudioBeta?.timeframe(tf); } catch (_) {}
 
       AVAILABLE_TFS.forEach(t => {
         const btn = document.getElementById('tf-btn-' + t);
@@ -1499,6 +1576,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     async function switchAccount(account) {
       if (!accounts[account]) return;
       activeAccount = account;
+      try { window.ChartStudioBeta?.account(account); } catch (_) {}
       accountGeneration++;
       localStorage.setItem('gold_dashboard_account', account);
       document.querySelectorAll('.account-tab').forEach(tab => tab.setAttribute('aria-pressed', String(tab.dataset.account===account)));
@@ -1651,6 +1729,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       ema200Series = chart.addLineSeries({ color: '#a55eea', lineWidth: 2, title: 'EMA200' });
       try { window.StoneChartFX?.attach({chart, host:container, candleSeries, emaSeries:[ema20Series,ema50Series,ema200Series]}); } catch (_) {}
       try { window.StoneCelebration?.applyChartSettings(); } catch (_) {}
+      try { window.ChartStudioBeta?.mount({chart,host:container,candleSeries,emaSeries:[ema20Series,ema50Series,ema200Series],account:activeAccount,timeframe:activeTimeframe}); } catch (err) { console.warn("Chart Studio Beta konnte nicht gestartet werden:",err); }
 
       // Robust ResizeObserver
       let chartInitiallySized = false;
@@ -1854,6 +1933,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           updateChartSRLines(data.sr_levels, curPrice);
         }
 
+        try { window.ChartStudioBeta?.updateCandles(data.candles); } catch (_) {}
         currentChartMarkers = data.markers || [];
         candleSeries.setMarkers(showEAStatusText ? currentChartMarkers : []);
         try {
@@ -1888,6 +1968,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (generation !== accountGeneration) throw staleRequest();
         const needsCharts = currentData === null;
         currentData = data;
+        try { window.ChartStudioBeta?.updatePositions(data.account.id, data.positions); } catch (_) {}
         try { window.StoneCelebration?.observeTrades(data.account.id,data.journal,data.positions); }
         catch (_) { /* Visual event detection must not affect trading. */ }
         document.getElementById('account-content').dataset.connected = 'true';
