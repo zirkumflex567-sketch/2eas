@@ -228,6 +228,7 @@ def build_trade_journal(account_id, server_time, local_time):
             'close_price': close_price,
             'points': round(float(points), 2),
             'profit_usd': round(float(d.profit), 2),
+            'net_profit_usd': round(float(d.profit + d.swap + d.commission), 2),
             'time_server': d_time.strftime('%H:%M:%S'),
             'time_de': (d_time.replace(hour=(d_time.hour - 3) % 24)).strftime('%H:%M:%S'),
             'why_triggered': why,
@@ -883,6 +884,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="static/lightweight-charts.js"></script>
   <script src="static/stone-chart-effects.js"></script>
+  <script src="static/stone-celebrations.js"></script>
   <style>
     html, body {
       min-height: 100vh;
@@ -1408,6 +1410,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
       isInitialLoad = true;
       lastCandleTime = 0;
+      try {window.StoneCelebration?.clearEMAs();}catch(_){}
       loadCandles();
     }
 
@@ -1426,6 +1429,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
     function clearAccountView() {
       currentData = null;
+      try {window.StoneCelebration?.clearEMAs();}catch(_){};
       document.getElementById('account-content').dataset.connected = 'false';
       document.getElementById('dd-reset-button').disabled = true;
       closeDrawdownResetModal();
@@ -1623,6 +1627,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       ema50Series  = chart.addLineSeries({ color: '#ff9f43', lineWidth: 2, title: 'EMA50' });
       ema200Series = chart.addLineSeries({ color: '#a55eea', lineWidth: 2, title: 'EMA200' });
       try { window.StoneChartFX?.attach({chart, host:container, candleSeries, emaSeries:[ema20Series,ema50Series,ema200Series], glowSeries:emaGlowSeries}); } catch (_) {}
+      try { window.StoneCelebration?.applyChartSettings(); } catch (_) {}
 
       // Robust ResizeObserver
       let chartInitiallySized = false;
@@ -1850,6 +1855,13 @@ HTML_CONTENT = """<!DOCTYPE html>
             context: activeAccount + '/' + activeTimeframe + '/' + accountGeneration
           });
         } catch (_) { /* Never let decorative effects interfere with MT5 polling. */ }
+        try {
+          const last = items => Array.isArray(items)&&items.length?items[items.length-1].value:null;
+          window.StoneCelebration?.updateEMAs({
+            timeframe:activeTimeframe,
+            ema20:last(data.ema20),ema50:last(data.ema50),ema200:last(data.ema200)
+          });
+        } catch (_) { /* Read-only EMA display is optional. */ }
       } catch (err) {
         reportAccountError(err, generation);
       } finally { if (candlesBusy === generation) candlesBusy = null; }
@@ -1866,6 +1878,8 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (generation !== accountGeneration) throw staleRequest();
         const needsCharts = currentData === null;
         currentData = data;
+        try { window.StoneCelebration?.observeTrades(data.account.id,data.journal,data.positions); }
+        catch (_) { /* Visual event detection must not affect trading. */ }
         document.getElementById('account-content').dataset.connected = 'true';
         document.getElementById('dd-reset-button').disabled = false;
         document.getElementById('account-connection').textContent = 'LIVE · Konto '+data.account.login+' bestätigt';
@@ -2173,6 +2187,8 @@ HTML_CONTENT = """<!DOCTYPE html>
           journalErrors.push((accounts[result.id]?.name || result.id) + ': ' + result.error);
         } else {
           fresh[result.id] = result.entries;
+          try { window.StoneCelebration?.observeTrades(result.id,result.entries); }
+          catch (_) { /* Never impact the journal on visual failures. */ }
         }
       }
       journalEntriesByAccount = fresh;

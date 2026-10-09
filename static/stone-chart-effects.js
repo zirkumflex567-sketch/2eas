@@ -28,7 +28,7 @@
     "rgba(" + c.r + "," + c.g + "," + c.b + "," + clamp(a, 0, 1).toFixed(3) + ")";
 
   function enabled() {
-    return !!instance && document.body.classList.contains("theme-stone")
+    return !!instance && instance.effectsEnabled !== false && document.body.classList.contains("theme-stone")
       && !document.hidden && !motionPreference.matches;
   }
 
@@ -302,7 +302,7 @@
     ctx.clearRect(0,0,state.width,state.height);
 
     state.effects = state.effects.filter(effect => now < effect.until);
-    if (!state.effects.length && now >= state.nextEffectAt) {
+    if (state.ambientEnabled !== false && !state.effects.length && now >= state.nextEffectAt) {
       spawnEffect(state,now);
       scheduleNext(state,now);
     }
@@ -310,6 +310,62 @@
       if (effect.kind === "candle") drawCandleEffect(state,effect,now);
       else drawEmaEffect(state,effect,now);
     }
+  }
+
+  function configure(options = {}) {
+    const state = instance;
+    if (!state) return;
+    state.effectsEnabled = options.enabled !== false;
+    state.ambientEnabled = options.ambient !== false;
+    if (!state.effectsEnabled) {
+      state.effects = [];
+      state.ctx.clearRect(0,0,state.width,state.height);
+    }
+    render();
+  }
+
+  function trigger(kind, level = 3) {
+    const state = instance;
+    if (!state || !enabled() || !prepareSize(state)) return false;
+    const now = performance.now();
+    const strength = clamp(Number(level) || 3, 1, 5);
+    const isProfit = kind === "profit";
+    const count = isProfit ? 22 + strength * 4 : 10 + strength * 3;
+    const duration = isProfit ? 5200 + strength * 650 : 2300 + strength * 360;
+    const candles = visibleCandles(state);
+    const validEma = [0,1,2].filter(i => visibleEmaPoints(state,i).length > 9);
+    if (!candles.length && !validEma.length) return false;
+    state.effects = []; // a confirmed event takes priority over idle accents
+    for (let i=0; i<count; i++) {
+      const start = now + random(0, duration * .83);
+      const roll = Math.random();
+      if (roll < .40 && candles.length) {
+        const c = candles[Math.floor(random(0, candles.length))];
+        state.effects.push({
+          kind:"candle", candle:c, at:start, until:start+random(430,990),
+          power:Math.min(1.65,random(.85,1.1)+strength*.12)
+        });
+      } else if (validEma.length) {
+        const emaIndex = validEma[Math.floor(random(0,validEma.length))];
+        if (roll > .87) {
+          state.effects.push({
+            kind:"ema-sweep",emaIndex,at:start,until:start+random(900,1600),
+            power:Math.min(1.6,random(.85,1.2)+strength*.1),widthPx:random(48,135)
+          });
+        } else {
+          const pts=visibleEmaPoints(state,emaIndex);
+          state.effects.push({
+            kind:"ema-pulse",emaIndex,timeX:pts[Math.floor(random(0,pts.length))].x,
+            radiusPx:random(22,90),at:start,until:start+random(430,1050),
+            power:Math.min(1.65,random(.85,1.2)+strength*.1)
+          });
+        }
+      }
+    }
+    // No idle animation interrupts this finite, irregular burst.
+    state.nextEffectAt = now + duration + random(4600,10000);
+    render();
+    return true;
   }
 
   function stop() {
@@ -345,6 +401,7 @@
       chart,host,candleSeries,emaSeries,glowSeries,canvas,ctx,
       width:0,height:0,candles:[],emaData:[[],[],[]],
       context:null,effects:[],nextEffectAt:0,wasInactive:true,
+      effectsEnabled:true,ambientEnabled:true,
       observer:null,rangeHandler:null
     };
     hideNativeGlow(instance); // no persistent glow from old paired native lines
@@ -376,5 +433,5 @@
     render();
   }
 
-  window.StoneChartFX = Object.freeze({ attach, update, reset: stop });
+  window.StoneChartFX = Object.freeze({ attach, update, trigger, configure, reset: stop });
 })();
