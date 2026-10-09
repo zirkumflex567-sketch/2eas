@@ -6,14 +6,14 @@ Reviewed 2026-10-09 during backlog execution. All five existing contact sheets a
 
 | ID | Actual PNG dimensions | Result |
 |---|---|---|
-| 11 | 1086Ã—1448 | Solid portrait panel preserved on both backgrounds. This is the user-supplied replacement, not the old multi-panel artwork in pack_02. No gross matte/checker artifact visible in browser compositing. |
-| 12 | 1329Ã—741 | **Not approved as a general transparent frame.** Central opening is transparent, but broad dark material sections in the left/right/top/bottom frame also become holes. The pale background exposes white fragmented sections inside the artwork; dark background masks the problem. Repair the material mask before cross-background approval. |
-| 13 | 724Ã—1321 | **Not approved as a general transparent frame.** The central opening works; light-background compositing also exposes erased dark frame material in the sides/corners. Repair the material mask before approval. |
-| 17 | 1336Ã—549 | Solid ticket body preserved; outer clearance tight and even. No gross baked checker/background block observed on either background. |
-| 18 | 1304Ã—620 | Solid journal plate preserved, including dark internal texture. No gross matte/checker artifact visible. |
-| 19 | 1672Ã—941 | User-supplied wide frame replacement; central opening is clear. Orange particles and cyan highlights remain attached to the ornamental edge. Colored RGB outside the shape is hidden by zero alpha in the browser; do not diagnose that hidden RGB as a visible fringe. |
-| 26 | 776Ã—813 | Rivet retains its solid face/rim and clears the gray background correctly in browser compositing. Corner RGB remains gray but alpha is zero, not a visible gray square. |
-| 35 | 1292Ã—466 | Warning body and orange artwork remain solid. Outer white/checker RGB is transparent in the browser; no baked checker block observed. |
+| 11 | 1086×1448 | Solid portrait panel preserved on both backgrounds. This is the user-supplied replacement, not the old multi-panel artwork in pack_02. No gross matte/checker artifact visible in browser compositing. |
+| 12 | 1329×741 | **Not approved as a general transparent frame.** Central opening is transparent, but broad dark material sections in the left/right/top/bottom frame also become holes. The pale background exposes white fragmented sections inside the artwork; dark background masks the problem. Repair the material mask before cross-background approval. |
+| 13 | 724×1321 | **Not approved as a general transparent frame.** The central opening works; light-background compositing also exposes erased dark frame material in the sides/corners. Repair the material mask before approval. |
+| 17 | 1336×549 | Solid ticket body preserved; outer clearance tight and even. No gross baked checker/background block observed on either background. |
+| 18 | 1304×620 | Solid journal plate preserved, including dark internal texture. No gross matte/checker artifact visible. |
+| 19 | 1672×941 | User-supplied wide frame replacement; central opening is clear. Orange particles and cyan highlights remain attached to the ornamental edge. Colored RGB outside the shape is hidden by zero alpha in the browser; do not diagnose that hidden RGB as a visible fringe. |
+| 26 | 776×813 | Rivet retains its solid face/rim and clears the gray background correctly in browser compositing. Corner RGB remains gray but alpha is zero, not a visible gray square. |
+| 35 | 1292×466 | Warning body and orange artwork remain solid. Outer white/checker RGB is transparent in the browser; no baked checker block observed. |
 
 These are visual inspection outcomes, not pixel-perfect color/contrast or every-size production acceptance. Browser review used 1400 px width with previews up to 265 px high; native PNGs were also opened at original resolution. UI derivative WebP/resizing, actual device/DPI and in-context control contrast remain separate gates.
 
