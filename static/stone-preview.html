@@ -215,7 +215,7 @@ h2{font-size:13px;letter-spacing:.045em;color:#67d4f6;margin:0 0 9px}
    }
    return cs;
  }
- let chart=null;let candle=null;let emas=[];let emaGlowSeries=[];
+ let chart=null;let candle=null;let emas=[];
  function sma(cs,n){
    return cs.map((c,i)=>({time:c.time,value:cs.slice(Math.max(0,i-n+1),i+1).reduce((a,b)=>a+b.close,0)/Math.min(i+1,n)}));
  }
@@ -231,17 +231,15 @@ h2{font-size:13px;letter-spacing:.045em;color:#67d4f6;margin:0 0 9px}
        handleScale:{mouseWheel:true,pinch:true},handleScroll:{mouseWheel:true,pressedMouseMove:true}
      });
      candle=chart.addCandlestickSeries({upColor:'#2cea98',downColor:'#ff6654',borderUpColor:'#3cedaa',borderDownColor:'#f66c57',wickUpColor:'#45eda3',wickDownColor:'#ff6a54'});
-     const glowOpts={color:'rgba(0,0,0,0)',lineWidth:4,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false};
-      emaGlowSeries=Array.from({length:3},()=>[chart.addLineSeries({...glowOpts}),chart.addLineSeries({...glowOpts,lineWidth:3})]);
       emas=[chart.addLineSeries({color:'#5edcf1',lineWidth:2}),chart.addLineSeries({color:'#f0a753',lineWidth:2}),chart.addLineSeries({color:'#b277d1',lineWidth:2})];
      const ro=new ResizeObserver(()=>chart.applyOptions({width:div.clientWidth||700,height:div.clientHeight||520}));ro.observe(div);
    }
    const cs=candleData(tf);
    candle.setData(cs);
    const demoEmas=[20,50,80].map(n=>sma(cs,n));
-   demoEmas.forEach((points,i)=>{emas[i].setData(points);emaGlowSeries[i].forEach(line=>line.setData(points));});
+   demoEmas.forEach((points,i)=>{emas[i].setData(points);});
    try {
-     window.StoneChartFX?.attach({chart,host:document.getElementById('tv-chart'),candleSeries:candle,emaSeries:emas,glowSeries:emaGlowSeries});
+     window.StoneChartFX?.attach({chart,host:document.getElementById('tv-chart'),candleSeries:candle,emaSeries:emas});
      window.StoneChartFX?.update({candles:cs,emas:demoEmas,markers:[],context:'demo/'+tf,newBar:false});
    } catch (_) { /* Demo chart remains usable even if decoration fails. */ }
    chart.timeScale().fitContent();
