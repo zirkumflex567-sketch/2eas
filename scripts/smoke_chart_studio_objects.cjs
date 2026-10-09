@@ -50,6 +50,7 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process");
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),2);
   const manager=page.locator(".cs-object-manager");
   await manager.locator("summary").click();
+  await manager.locator(".cs-object-row").first().waitFor({state:"visible"});
   assert.equal(await manager.locator(".cs-object-row").count(),2);
   assert.ok((await manager.locator(".cs-object-count").textContent()).includes("2"));
   const row=()=>manager.locator('.cs-object-row[data-index="0"]');
