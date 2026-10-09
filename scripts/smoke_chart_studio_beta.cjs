@@ -82,16 +82,23 @@ const fs=require("node:fs"),path=require("node:path");
   // Drag only a VIRTUAL plan stop: the scenario API remains read-only.
   const beforePlan=await page.evaluate(()=>ChartStudioBeta.getState().scenario.slPrice);
   const planY=await page.evaluate(()=>candleSeries.priceToCoordinate(4100-10));
+  await page.locator('[data-cmd="drag-plan"]').click();
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().tool),"plan");
+  // Toolbar click may scroll document. Re-measure the chart AFTER the click.
   const pbox=await page.locator("canvas.cs-beta-canvas").boundingBox();
   assert.ok(Number.isFinite(planY)&&pbox&&planY>=0&&planY<pbox.height,
     "Plan stop handle must be inside visible price pane");
-  await page.locator('[data-cmd="drag-plan"]').click();
-  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().tool),"plan");
   const px=pbox.x+pbox.width*.45,py=pbox.y+planY;
   await page.mouse.move(px,py);
   await page.mouse.down();
   await page.mouse.move(px,py-27,{steps:5});
   await page.mouse.up();
+  const draftDebug=await page.evaluate(()=>({
+    state:ChartStudioBeta.getState().scenario,
+    output:document.querySelector("#cs-scenario-result").textContent,
+    pointer:document.elementFromPoint(window.innerWidth*.45,Math.max(0,window.innerHeight*.45))?.tagName
+  }));
+  console.log("Chart Studio plan drag observed:",JSON.stringify({draftDebug,requests:requests.length}));
   await page.waitForFunction(()=>{
     const state=ChartStudioBeta.getState();
     return state.scenario&&state.scenario.slPrice!==4090&&
