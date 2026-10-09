@@ -120,7 +120,17 @@ def session(mt5, account='titan'):
             raise HTTPException(503, f"{spec['name']}: MT5-Terminal läuft nicht. Bitte selbst öffnen.")
         token = _selected.set(account)
         try:
-            if _attached_mt5 is not mt5 or _attached_account != account:
+            # A cached handle may have been detached externally (terminal restart
+            # or test adapter swap). Reattach once, then verify identity anew.
+            reused = _attached_mt5 is mt5 and _attached_account == account
+            if reused:
+                try:
+                    attached = bool(mt5.account_info()) and bool(mt5.terminal_info())
+                except (TypeError, AttributeError):
+                    attached = False
+            else:
+                attached = False
+            if not attached:
                 _disconnect(mt5)
                 if not mt5.initialize(spec['terminal'], portable=spec['portable'], timeout=5000):
                     raise HTTPException(503, f"{spec['name']}: MT5-Verbindung fehlgeschlagen.")

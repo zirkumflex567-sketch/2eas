@@ -1,5 +1,6 @@
 """Read-only diagnostics for the deployed GoldM15 v1.21 preset, M15 close shift 1."""
 import json
+import os
 import math
 import struct
 from pathlib import Path
@@ -7,7 +8,7 @@ from pathlib import Path
 import numpy as np
 
 EA_ROOT = Path(r'C:\Users\zirku\Documents\goldm5')
-PRESET = EA_ROOT / '.mt5-demo' / 'MQL5' / 'Presets' / 'GoldM15_Demo_Guarded.set'
+PRESET = Path(os.environ.get('GOLDM15_PRESET', str(EA_ROOT / '.mt5-demo' / 'MQL5' / 'Presets' / 'GoldM15_Demo_Guarded.set')))
 GUARD_FILE = Path.home() / 'AppData/Roaming/MetaQuotes/Terminal/Common/Files/GoldM15Risk_573369822.state'
 
 

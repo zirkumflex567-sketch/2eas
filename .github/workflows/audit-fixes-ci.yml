@@ -36,6 +36,8 @@ jobs:
           node --check static/stone-cockpit.js
           python scripts/check_frontend_syntax.py
       - name: Run isolated unit and contract suite
+        env:
+          GOLDM15_PRESET: ${{ github.workspace }}\goldm15\GoldM15_Reconstruction.set
         run: python -m unittest discover -s tests -v
 
   optimize-stone-assets:

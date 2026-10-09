@@ -166,6 +166,7 @@ def get_cached_trade_journal(account_id, server_time, local_time):
             now - JOURNAL_CACHE_AT.get(account_id, -1e12) < JOURNAL_CACHE_TTL_SEC):
         return JOURNAL_CACHE[account_id]
     entries = build_trade_journal(account_id, server_time, local_time)
+    JOURNAL_CACHE[account_id] = entries
     JOURNAL_CACHE_AT[account_id] = now
     return entries
 

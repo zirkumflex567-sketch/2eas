@@ -273,7 +273,7 @@ class MultiAccountTests(unittest.TestCase):
                 data=app.get_live_market_data()
         for field in ['daily_vp','weekly_vp','sr_levels','positions','indicators','daily_drawdown','rules_matrix','buy_readiness','sell_readiness']:
             self.assertIn(field,data)
-        self.assertEqual(len(data['rules_matrix']),5)
+        self.assertEqual(len(data['rules_matrix']),8)  # 5 champion rules + 3 anti-trap guards
         self.assertEqual(data['account']['login'],53087839)
         from datetime import datetime,timezone
         self.assertEqual(data['times']['server'],datetime.fromtimestamp(tick_time,timezone.utc).strftime('%H:%M:%S'))
