@@ -228,3 +228,10 @@ def test_adversarial_shapes_raise_validation_errors():
     for invalid in [None,[],True]:
         with pytest.raises(ValueError):api().lifecycle_hash(invalid,context=context())
     with pytest.raises(ValueError):api().AccountContext.from_config([])
+
+
+def test_direct_context_rejects_arbitrary_terminal_identity():
+    m=api();configured=context()
+    with pytest.raises(ValueError):
+        m.AccountContext(configured.account_id,configured.broker_server,'f'*64)
+    assert m.AccountContext(configured.account_id,configured.broker_server,configured.terminal_identity_hash)==configured

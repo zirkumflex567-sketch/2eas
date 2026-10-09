@@ -170,6 +170,10 @@ class AccountContext:
         if self.account_id not in gateway.ACCOUNTS or self.broker_server != gateway.ACCOUNTS[self.account_id]['server']:
             _fail()
         hash_string(self.terminal_identity_hash)
+        spec = gateway.ACCOUNTS[self.account_id]
+        expected = scoped_identity_hash(self.account_id, str(spec['login']), spec['server'], spec['terminal'])
+        if self.terminal_identity_hash != expected:
+            _fail()
 
     @classmethod
     def from_config(cls, account_id):
