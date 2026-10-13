@@ -5,7 +5,7 @@ on:
       - feature/titan-prime-risk-profit-20261013
   pull_request:
     paths:
-      - "XAU_Titan_Pro.mq5"
+      - "XAU_PrimeTitan_Challenge_M15.mq5"
       - "TitanChallengeGuard.mqh"
       - "tests/test_titan_challenge_guard.py"
       - ".github/workflows/titan-risk-research.yml"
