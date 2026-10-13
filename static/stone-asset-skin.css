@@ -118,8 +118,7 @@ body.theme-stone .stone-asset-panel .font-black {
   letter-spacing: .025em;
 }
 body.theme-stone .stone-asset-panel--chart {
-  border: 22px solid transparent !important;
-  border-image: url("stone-assets/ready/12_chart_frame_wide.webp") 140 170 150 170 / 25px / 0 stretch !important;
+  border: 22px solid #3f6878 !important;
   padding: 16px 18px 20px !important;
   background:
     linear-gradient(rgba(6, 12, 18, .94), rgba(8, 20, 24, .95)),
@@ -135,8 +134,7 @@ body.theme-stone .stone-chart-stage > div:first-child {
   box-shadow: inset 0 0 25px rgba(0,0,0,.75), 0 0 10px rgba(15, 170, 207, .10);
 }
 body.theme-stone .stone-side-volume {
-  border: 17px solid transparent !important;
-  border-image: url("stone-assets/ready/13_volume_frame_tall.webp") 160 130 160 130 / 21px / 0 stretch !important;
+  border: 17px solid #405e6a !important;
   border-radius: 0 !important;
   background:
     linear-gradient(rgba(5, 12, 16, .86),rgba(6, 15, 19, .93)),

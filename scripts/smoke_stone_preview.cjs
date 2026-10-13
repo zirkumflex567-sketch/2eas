@@ -7,12 +7,14 @@ const {pathToFileURL} = require('node:url');
 
 (async () => {
   const root = path.resolve(__dirname, '..');
-  const out = path.join(root, 'output', 'visual-smoke');
+  const out = path.join(root, 'output', 'stone-ui-assets', 'visual-smoke');
   fs.mkdirSync(out, {recursive:true});
   const browser = await chromium.launch({headless:true});
   try {
     const errors = [];
+    const requests = [];
     const page = await browser.newPage({viewport:{width:1440,height:900}, deviceScaleFactor:1});
+    page.on('request', request=>requests.push(request.url()));
     page.on('pageerror', err=>errors.push(err.message));
     page.on('console', msg=>{if(msg.type()==='error') errors.push(msg.text());});
     await page.goto(pathToFileURL(path.join(root,'static','stone-preview.html')).href,{waitUntil:'load'});
@@ -33,8 +35,9 @@ const {pathToFileURL} = require('node:url');
           const el = document.querySelector(selector);
           if (!el) return {selector,missing:true};
           const rect = el.getBoundingClientRect();
+          const style = getComputedStyle(el);
           return {selector,left:rect.left,right:rect.right,
-            borderImage:getComputedStyle(el).borderImageSource};
+            borderImage:style.borderImageSource,borderColor:style.borderTopColor};
         });
         return {leftRail:leftRail?.right,rightRail:rightRail?.left,cards};
       });
@@ -46,7 +49,12 @@ const {pathToFileURL} = require('node:url');
           label+': '+card.selector+' left frame hidden by side rail: '+JSON.stringify(frameCheck));
         assert.ok(card.right <= frameCheck.rightRail-2,
           label+': '+card.selector+' right frame hidden by side rail: '+JSON.stringify(frameCheck));
-        assert.notEqual(card.borderImage,'none',label+': '+card.selector+' image frame');
+        if (card.selector === '.stone-asset-panel--chart') {
+          assert.equal(card.borderImage,'none',label+': chart uses opaque fallback');
+          assert.equal(card.borderColor,'rgb(63, 104, 120)',label+': chart edge color');
+        } else {
+          assert.notEqual(card.borderImage,'none',label+': '+card.selector+' image frame');
+        }
       }
       console.log('STONE FRAME CLEARANCE',label,JSON.stringify(frameCheck));
     }
@@ -70,6 +78,8 @@ const {pathToFileURL} = require('node:url');
     }));
     console.log('MOBILE OVERFLOW DIAGNOSTICS',JSON.stringify(overflow));
     assert.equal(overflow.scroll > overflow.width+4,false,'Unexpected page-level horizontal overflow at mobile width');
+    assert.equal(requests.some(url=>/\/(?:12_chart_frame_wide|13_volume_frame_tall)\./.test(url)),false,
+      'Quarantined frame assets must not be requested');
     assert.deepEqual(errors,[],'Browser console and page errors');
     console.log('STONE VISUAL SMOKE PASSED: canvas, demo-only controls, responsive viewport, browser errors');
   } finally {
