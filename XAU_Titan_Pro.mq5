@@ -8,7 +8,7 @@
 #property link        "https://www.mql5.com"
 #property version     "7.20"
 #property description "High-Profit Institutional Trend-Pullback Scaling EA for Gold with Anti-Trap Guard"
-#property description "Exakt 1:1 die Architektur aus dem Rekord-Backtest 'guter5er' (+6.068 $ Gewinn)"
+#property description "Original Titan trend engine, stricter risk and opt-in research; test before live trading."
 #property description "RESEARCH until verified by broker MT5 real-tick test; risk controls do not guarantee prop compliance."
 
 #include <Trade\Trade.mqh>
@@ -222,7 +222,8 @@ double TitanOpenPortfolioStopRisk()
       ENUM_ORDER_TYPE type=PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY?
                            ORDER_TYPE_BUY:ORDER_TYPE_SELL;
       double current=type==ORDER_TYPE_BUY?t.bid:t.ask;
-      if(current<=0) return DBL_MAX;
+      if(current<=0 || (type==ORDER_TYPE_BUY && stop>=current) ||
+         (type==ORDER_TYPE_SELL && stop<=current)) return DBL_MAX;
       double future=0;
       if(!OrderCalcProfit(type,sym,lots,current,stop,future)) return DBL_MAX;
       double remaining=MathMax(0.0,-future);
@@ -391,6 +392,13 @@ int OnInit()
       PrintFormat("Error initializing symbol %s", _Symbol);
       return INIT_FAILED;
    }
+   if(StringFind(_Symbol,"XAUUSD")!=0 ||
+      (InpMaxOpenPositions>1 &&
+       AccountInfoInteger(ACCOUNT_MARGIN_MODE)!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING))
+   {
+      Print("Require XAUUSD* and MT5 hedging account for stacked positions");
+      return INIT_PARAMETERS_INCORRECT;
+   }
    m_symbol.RefreshRates();
 
    if(!InpEnablePropProtection || !InpTotalDDBasedOnInitial ||
@@ -447,7 +455,11 @@ int OnInit()
    m_last_m15_bar_time = iTime(_Symbol, m_calc_timeframe, 0);
    m_last_entry_time   = GetLastEntryTimeForMagic();
 
-   EventSetTimer(1);
+   if(!EventSetTimer(1))
+   {
+      Print("FAIL CLOSED: could not arm 1-second equity safety timer");
+      return INIT_FAILED;
+   }
    PrintFormat("XAU_Titan_Pro GUARD v7.20: static floor %.2f, day floor %.2f, day known %s, configured server reset %02d:%02d",
                m_challenge.StaticFloor(),m_challenge.DailyFloor(),
                m_challenge.Valid()?"YES":"NO",InpDailyResetHourServer,
@@ -727,7 +739,8 @@ void CheckSignalAndTrade()
 
             if(m_trade.Buy(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment) &&
                (m_trade.ResultRetcode()==TRADE_RETCODE_DONE ||
-                m_trade.ResultRetcode()==TRADE_RETCODE_DONE_PARTIAL))
+                m_trade.ResultRetcode()==TRADE_RETCODE_DONE_PARTIAL ||
+                m_trade.ResultRetcode()==TRADE_RETCODE_PLACED))
             {
                m_last_entry_time = iTime(_Symbol, m_calc_timeframe, 0);
                PrintFormat("BUY SUCCESS: Lot=%.2f, Price=%.2f, SL=%.2f, TP=%.2f (Attempt %d)", lot_size, entry_price, sl_price, tp_price, attempt);
@@ -770,7 +783,8 @@ void CheckSignalAndTrade()
 
             if(m_trade.Sell(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment) &&
                (m_trade.ResultRetcode()==TRADE_RETCODE_DONE ||
-                m_trade.ResultRetcode()==TRADE_RETCODE_DONE_PARTIAL))
+                m_trade.ResultRetcode()==TRADE_RETCODE_DONE_PARTIAL ||
+                m_trade.ResultRetcode()==TRADE_RETCODE_PLACED))
             {
                m_last_entry_time = iTime(_Symbol, m_calc_timeframe, 0);
                PrintFormat("SELL SUCCESS: Lot=%.2f, Price=%.2f, SL=%.2f, TP=%.2f (Attempt %d)", lot_size, entry_price, sl_price, tp_price, attempt);
