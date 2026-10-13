@@ -15,7 +15,7 @@ import MetaTrader5 as mt5
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, FiniteFloat, Field, StrictBool, model_validator
+from pydantic import BaseModel, FiniteFloat, Field, StrictBool, field_validator, model_validator
 import uvicorn
 import dd_persistence
 import journal_accounting
@@ -83,10 +83,25 @@ class ChartScenarioPreviewRequest(BaseModel):
     account: str
     symbol: str
     side: str
-    volumeLots: float
+    volumeLots: Optional[FiniteFloat] = None
     entryPrice: float
     slPrice: float
     tpPrice: float
+    riskBudget: Optional[FiniteFloat] = None
+    riskPercent: Optional[FiniteFloat] = None
+
+    @field_validator('volumeLots', 'riskBudget', 'riskPercent', 'entryPrice', 'slPrice', 'tpPrice', mode='before')
+    @classmethod
+    def numeric_not_boolean(cls, value):
+        if value is not None and (isinstance(value, bool) or type(value) not in (int, float)):
+            raise ValueError('Numerische Werte müssen JSON-Zahlen sein.')
+        return value
+
+    @model_validator(mode='after')
+    def exactly_one_sizing_mode(self):
+        if sum(value is not None for value in (self.volumeLots, self.riskBudget, self.riskPercent)) != 1:
+            raise ValueError('Genau Lots, Risikobudget oder Equity-Prozent angeben.')
+        return self
 
 
 class ChartWorkspaceWriteRequest(BaseModel):
@@ -1048,7 +1063,8 @@ def api_chart_preview(req: ChartScenarioPreviewRequest, account: str):
         result = preview_scenario(
             mt5, acc, sym, symbol=req.symbol, side=req.side,
             volume=req.volumeLots, entry=req.entryPrice,
-            stop=req.slPrice, target=req.tpPrice
+            stop=req.slPrice, target=req.tpPrice,
+            risk_budget=req.riskBudget, risk_percent=req.riskPercent,
         )
     except PreviewError as exc:
         raise HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)}) from exc

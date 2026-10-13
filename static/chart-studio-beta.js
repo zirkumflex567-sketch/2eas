@@ -487,6 +487,9 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  '<form id="cs-scenario-form">'+
  '<label>Seite <select name="side"><option>BUY</option><option>SELL</option></select></label>'+
  '<label>Lots <input type="number" name="volumeLots" min="0.01" step="0.01" value="0.01" required></label>'+
+ '<label>Lots aus <select name="lotMode"><option value="FIXED">fester Größe</option><option value="BUDGET">Risikobudget</option><option value="PERCENT">Equity-%</option></select></label>'+
+ '<label>Risiko in Kontowährung <input type="number" name="riskBudget" min="0.01" step="any" value="25" disabled></label>'+
+ '<label>Equity-Risiko (%) <input type="number" name="riskPercent" min="0.01" max="100" step="any" value="0.5" disabled></label>'+
  '<label>Entry <input type="number" name="entryPrice" step="any" required></label>'+
  '<label>SL <input type="number" name="slPrice" step="any" required></label>'+
  '<label>TP <input type="number" name="tpPrice" step="any" required></label>'+
@@ -594,7 +597,12 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  const form=panel.querySelector("#cs-scenario-form");
  const output=panel.querySelector("#cs-scenario-result");
  function scope(){return window.location.pathname.startsWith("/stt")?"/stt":""}
- const fields={};for(const name of ["side","volumeLots","entryPrice","slPrice","tpPrice"])fields[name]=form.elements.namedItem(name);
+ const fields={};for(const name of ["side","volumeLots","lotMode","riskBudget","riskPercent","entryPrice","slPrice","tpPrice"])fields[name]=form.elements.namedItem(name);
+ fields.lotMode.addEventListener("change",()=>{
+  fields.volumeLots.disabled=fields.lotMode.value!=="FIXED";
+  fields.riskBudget.disabled=fields.lotMode.value!=="BUDGET";
+  fields.riskPercent.disabled=fields.lotMode.value!=="PERCENT";
+ });
  form.querySelector('[data-cmd="quote"]').addEventListener("click",async()=>{
   const acc=s.account,nonce=++scenarioGeneration;
   output.textContent="Verifizierte MT5-Quote wird geladen ...";
@@ -611,10 +619,13 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  form.addEventListener("submit",async e=>{
   e.preventDefault();const account=s.account,nonce=++scenarioGeneration;
   const payload={account,symbol:"XAUUSD",side:fields.side.value,
-   volumeLots:Number(fields.volumeLots.value),entryPrice:Number(fields.entryPrice.value),
-   slPrice:Number(fields.slPrice.value),tpPrice:Number(fields.tpPrice.value)};
+   volumeLots:fields.lotMode.value==="FIXED"?Number(fields.volumeLots.value):null,
+   riskBudget:fields.lotMode.value==="BUDGET"?Number(fields.riskBudget.value):null,
+   riskPercent:fields.lotMode.value==="PERCENT"?Number(fields.riskPercent.value):null,
+   entryPrice:Number(fields.entryPrice.value),slPrice:Number(fields.slPrice.value),tpPrice:Number(fields.tpPrice.value)};
   output.textContent="Broker-Vorschau wird berechnet ...";
-  if(![payload.volumeLots,payload.entryPrice,payload.slPrice,payload.tpPrice].every(v=>Number.isFinite(v)&&v>0)){
+  const sizeValue=payload.volumeLots??payload.riskBudget??payload.riskPercent;
+  if(![sizeValue,payload.entryPrice,payload.slPrice,payload.tpPrice].every(v=>Number.isFinite(v)&&v>0)){
    output.textContent="Bitte gültige Preise und Lotgröße eingeben.";return;
   }
   try{
@@ -630,7 +641,9 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
    requestDraw();
    const loss=result.pnlAtSl.amount,reward=result.pnlAtTp.amount,cur=result.pnlAtSl.currency;
    output.textContent="PLAN · Stop "+loss+" "+cur+" / Ziel +"+reward+" "+cur+
-    " · R:R "+result.riskRewardRatio+" · Margin "+result.margin.amount+" "+cur+
+    " · R:R "+result.riskRewardRatio+" · Lots "+result.positionSizing.volumeLots+
+    (result.positionSizing.mode==="FIXED_LOTS"?"":" · Budget "+result.positionSizing.riskBudget+" "+cur+" · Bruttorisiko "+result.positionSizing.grossStopRisk+" "+cur)+
+    " · Margin "+result.margin.amount+" "+cur+
     (cur==="USD"?"":" · USD-Konversion nicht verfügbar")+
     " · GROSS vor Gebühren/Slippage · KEINE ORDER";
   }catch(err){if(nonce===scenarioGeneration){

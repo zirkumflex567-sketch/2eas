@@ -16,6 +16,10 @@ Current features:
   **without any trading mutation**.
 - Read-only What-if plan and JSON API endpoints for a verified MT5 XAUUSD
   quote and `order_calc_profit`/`order_calc_margin` broker pricing.
+- Read-only What-if sizing can use fixed lots, a cash risk budget in account
+  currency, or an equity percentage. Automatic lot size is rounded down across
+  broker volume steps using MT5 stop-profit calculations; missing equity,
+  currency, or broker pricing fails closed.
 - No USD exchange-rate fabrication: previews for non-USD accounts are in
   account currency, with USD explicitly unavailable.
 

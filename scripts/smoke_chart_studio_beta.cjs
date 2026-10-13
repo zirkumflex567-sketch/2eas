@@ -15,22 +15,26 @@ const fs=require("node:fs"),path=require("node:path");
    await new Promise(r=>setTimeout(r,300));
    if(i===59)throw Error("fixture server timed out");
   }
-  browser=await chromium.launch({headless:true});
+  browser=await chromium.launch({headless:true,executablePath:process.env.CHART_STUDIO_CHROMIUM_PATH||undefined});
   const page=await browser.newPage({viewport:{width:1280,height:850},deviceScaleFactor:1.5});
   const consoleErrors=[];page.on("pageerror",e=>consoleErrors.push(e.message));
-  let requests=[];
+  let requests=[],scenarioPayloads=[];
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
   await page.route("**/api/chart/v1/scenarios/preview*",async route=>{
     const req=route.request().postDataJSON();
+    scenarioPayloads.push(req);
     assert.equal(req.account,"titan");
     assert.equal(req.symbol,"XAUUSD");
+    const budget=req.riskBudget??(req.riskPercent==null?null:10000*req.riskPercent/100);
+    const volume=req.volumeLots??Math.floor(budget/Math.abs(req.slPrice-req.entryPrice)*100/100)/100;
     const sign=req.side==="BUY"?1:-1;
-    const risk=Number(((req.slPrice-req.entryPrice)*req.volumeLots*100*sign).toFixed(2));
-    const reward=Number(((req.tpPrice-req.entryPrice)*req.volumeLots*100*sign).toFixed(2));
+    const risk=Number(((req.slPrice-req.entryPrice)*volume*100*sign).toFixed(2));
+    const reward=Number(((req.tpPrice-req.entryPrice)*volume*100*sign).toFixed(2));
     await route.fulfill({status:200,contentType:"application/json",
       body:JSON.stringify({account:"titan",canExecute:false,pnlAtSl:{amount:risk,currency:"USD"},
       pnlAtTp:{amount:reward,currency:"USD"},margin:{amount:95,currency:"USD"},
-      riskRewardRatio:Number((reward/-risk).toFixed(3)),tickSize:0.01})});
+      riskRewardRatio:Number((reward/-risk).toFixed(3)),tickSize:0.01,
+      positionSizing:req.volumeLots==null?{mode:req.riskBudget==null?"EQUITY_PERCENT":"RISK_BUDGET",volumeLots:volume,riskBudget:budget,grossStopRisk:-risk,currency:"USD"}:{mode:"FIXED_LOTS",volumeLots:volume,currency:"USD"}})});
   });
   const serverLayouts=new Map(),storageToken="fixture-chart-workspace-token-123456789-abcdef";
   let credentialLeak=false,serverWrites=0;
@@ -165,6 +169,16 @@ const fs=require("node:fs"),path=require("node:path");
   await page.locator('[name="entryPrice"]').fill("4100");
   await page.locator('[name="slPrice"]').fill("4090");
   await page.locator('[name="tpPrice"]').fill("4120");
+  await page.locator('#cs-scenario-form button[type="submit"]').click();
+  await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER"));
+  await page.locator('[name="lotMode"]').selectOption("BUDGET");
+  await page.locator('[name="riskBudget"]').fill("50");
+  await page.locator('#cs-scenario-form button[type="submit"]').click();
+  await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("Budget 50 USD"));
+  assert.equal(scenarioPayloads.at(-1).volumeLots,null);
+  assert.equal(scenarioPayloads.at(-1).riskBudget,50);
+  await page.locator('[name="lotMode"]').selectOption("FIXED");
+  await page.locator('[name="volumeLots"]').fill("0.1");
   await page.locator('#cs-scenario-form button[type="submit"]').click();
   await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER"));
   // Drag only a VIRTUAL plan stop: the scenario API remains read-only.
