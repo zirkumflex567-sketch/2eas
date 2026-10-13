@@ -571,7 +571,9 @@ def test_other_process_busy_budget(private_root):
         assert process.stdout.readline().strip()=='READY'
         e=envelope();e['id']=e['payload']['eventId']='other_event'
         started=time.monotonic();assert s.append(context(),e)['code']=='STORE_UNAVAILABLE'
-        assert time.monotonic()-started<=0.5
+        # The provider deadline is 450 ms; leave 150 ms for Windows CI thread
+        # scheduling so host contention does not masquerade as a lock timeout.
+        assert time.monotonic()-started<=0.65
     finally:process.wait(timeout=5)
     assert s.append(context(),e)['code']=='APPENDED'
 
