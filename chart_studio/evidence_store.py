@@ -239,7 +239,11 @@ class EvidenceStore:
             raise StoreUnavailable()
         return True
 
-    def _connect(self, initialize=False, deadline=None):
+    def _quick_check(self, db):
+        if db.execute('PRAGMA quick_check').fetchone()[0] != 'ok' or db.execute('PRAGMA foreign_key_check').fetchone():
+            raise StoreUnavailable()
+
+    def _connect(self, initialize=False, deadline=None, known_good=False):
         if not self.root:
             return None
         try:
@@ -285,8 +289,8 @@ class EvidenceStore:
                 if self._generation and self._generation != generation:
                     raise StoreReplaced()
                 self._generation = generation
-                if db.execute('PRAGMA quick_check').fetchone()[0] != 'ok' or db.execute('PRAGMA foreign_key_check').fetchone():
-                    raise StoreUnavailable()
+                if not known_good:
+                    self._quick_check(db)
                 self._verify_path()
                 return db
             except BaseException:
@@ -401,11 +405,12 @@ class EvidenceStore:
                 if not self.root:
                     raise StoreUnavailable()
                 deadline = time.monotonic() + 0.45
+                known_good = self._append_verified
                 for attempt in range(3):
                     try:
                         if time.monotonic() >= deadline:
                             raise StoreUnavailable()
-                        db = self._connect(True, deadline=deadline)
+                        db = self._connect(True, deadline=deadline, known_good=known_good)
                         db.execute(f'PRAGMA busy_timeout={max(0,min(100,int((deadline-time.monotonic())*1000)))}')
                         db.execute('BEGIN IMMEDIATE')
                         break
@@ -421,6 +426,8 @@ class EvidenceStore:
                 file_state = self._file_state()
                 if (not self._append_verified or monitor_version != self._monitor_version or
                         file_state != self._append_file_state):
+                    if known_good:
+                        self._quick_check(db)
                     self._verify_contents(db)
                     if self._file_state() != file_state:
                         raise StoreUnavailable()
