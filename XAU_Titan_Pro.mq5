@@ -400,7 +400,10 @@ int OnInit()
       InpMaxBasketSLRiskUSD>150.0 || InpMaxOneEntrySLRiskUSD>50.0 ||
       InpExecutionRiskMultiplier<1.0 || InpMaxSyntheticMarginFraction<=0 ||
       InpMaxSyntheticMarginFraction>1.0 || InpGuardSafetyBufferUSD<25 ||
-      InpHighImpactNewsBufferSec<120 ||
+      InpHighImpactNewsBufferSec<120 || InpMaxSpreadPriceUSD<=0 ||
+      InpMinFreeMarginBufferPct<5 || InpMinFreeMarginBufferPct>90 ||
+      InpMinPyramidMoveATR<0 || InpATRRunnerMult<=0 ||
+      InpMaxSnapshotDelaySeconds<0 || InpMaxSnapshotDelaySeconds>600 ||
       (InpRequireBrokerNewsGuard==false && !MQLInfoInteger(MQL_TESTER)) ||
       (!InpServerResetConfirmed && !MQLInfoInteger(MQL_TESTER)) ||
       AccountInfoString(ACCOUNT_CURRENCY)!="USD")
@@ -441,6 +444,11 @@ int OnInit()
    m_last_m15_bar_time = iTime(_Symbol, m_calc_timeframe, 0);
    m_last_entry_time   = GetLastEntryTimeForMagic();
 
+   EventSetTimer(1);
+   PrintFormat("XAU_Titan_Pro GUARD v7.20: static floor %.2f, day floor %.2f, day known %s, configured server reset %02d:%02d",
+               m_challenge.StaticFloor(),m_challenge.DailyFloor(),
+               m_challenge.Valid()?"YES":"NO",InpDailyResetHourServer,
+               InpDailyResetMinuteServer);
    PrintFormat("XAU_Titan_Pro initialized. Daily Start: $%.2f | Last Entry: %s | Current Bar: %s | Anti-Trap: %s",
                m_day_start_balance,
                (m_last_entry_time > 0) ? TimeToString(m_last_entry_time, TIME_DATE|TIME_MINUTES|TIME_SECONDS) : "None",
@@ -454,6 +462,7 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
+   EventKillTimer();
    if(m_trend_ema_handle != INVALID_HANDLE) IndicatorRelease(m_trend_ema_handle);
    if(m_fast_ema_handle  != INVALID_HANDLE) IndicatorRelease(m_fast_ema_handle);
    if(m_slow_ema_handle  != INVALID_HANDLE) IndicatorRelease(m_slow_ema_handle);
@@ -543,6 +552,12 @@ void OnTick()
 
    // 4. Update HUD Dashboard
    UpdateDashboard(dt);
+}
+
+void OnTimer()
+{
+   // A stopped or sleeping symbol must not entirely disable the risk watchdog.
+   TitanSafetyCheck(true);
 }
 
 //+------------------------------------------------------------------+
@@ -958,12 +973,8 @@ void UpdateDashboard(const MqlDateTime &dt)
    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
    double equity  = AccountInfoDouble(ACCOUNT_EQUITY);
 
-   double daily_dd_pct = 0.0;
-   if(m_day_start_balance > 0.0)
-   {
-      double daily_ref = (balance > m_day_start_balance) ? balance : m_day_start_balance;
-      daily_dd_pct = MathMax(0.0, ((daily_ref - equity) / daily_ref) * 100.0);
-   }
+   double daily_dd_pct = m_challenge.DailyReference()>0 ?
+      MathMax(0.0,(m_challenge.DailyReference()-equity)/InpOriginalAccountUSD*100.0):0.0;
 
    double total_dd_pct = 0.0;
    if(m_peak_equity > 0.0)
@@ -983,12 +994,13 @@ void UpdateDashboard(const MqlDateTime &dt)
    int german_hour = (dt.hour >= 3) ? (dt.hour - 3) : (dt.hour + 21);
 
    string state_str = "Aktiv - Scannt jede M15 Kerze";
+   if(!m_challenge.Valid()) state_str="LOCKED / NO VERIFIED RISK DAY";
    if(m_target_reached)
-      state_str = "BLUEBERRY TARGET ERREICHT! (Bestanden)";
-   else if(m_total_lockout)
-      state_str = "NOT-HALT (Gesamt-Drawdown Limit erreicht)";
-   else if(m_daily_lockout)
-      state_str = "TAGES-SPERRE (Tages-Drawdown Limit erreicht)";
+      state_str = "CHALLENGE PHASE TARGET - LOCKED";
+   else if(m_challenge.HardLocked())
+      state_str = "HARD LOCK: STATIC FLOOR";
+   else if(m_challenge.DailyLocked())
+      state_str = "DAILY LOCK / UNKNOWN RESET";
    else if(!in_window)
       state_str = "Warten auf Handelsfenster (07:00-18:00 oder 22:00-02:00 DE)";
 
@@ -996,14 +1008,19 @@ void UpdateDashboard(const MqlDateTime &dt)
 
    string dash = "";
    dash += "========================================================\n";
-   dash += "   XAU TITAN PRO v7.1 (ANTI-TRAP & HIGH-PROFIT EDITION)  \n";
+   dash += "   XAU TITAN PRO v7.20 | 10K STATIC PRIME RESEARCH  \n";
    dash += "========================================================\n";
    dash += StringFormat("Zeit:           Server %02d:%02d | DEUTSCHLAND %02d:%02d\n", dt.hour, dt.min, german_hour, dt.min);
    dash += StringFormat("Account Balance: $%.2f | Equity: $%.2f (P/L: %+.2f%%)\n", balance, equity, profit_pct);
    dash += StringFormat("Target Progress: %+.2f%% / %.1f%% (Blueberry Target)\n", profit_pct, InpPhaseProfitTargetPct);
    dash += StringFormat("Positionsgröße: %s | Max Positionen: %d\n", lot_display, InpMaxOpenPositions);
-   dash += StringFormat("Tages DD:       %.2f%% / 4.00%% Max (EA-Notaus: %.1f%%)\n", daily_dd_pct, InpMaxDailyDrawdownPercent);
-   dash += StringFormat("Gesamt DD:      %.2f%% / 10.00%% Max (EA-Notaus: %.1f%%)\n", total_dd_pct, InpMaxTotalDrawdownPercent);
+   dash += StringFormat("Daily DD: %.2f%% | daily floor $%.2f | $%.2f headroom\n",
+                        daily_dd_pct,m_challenge.DailyFloor(),m_challenge.Headroom());
+   dash += StringFormat("Static floor $%.2f | historical peak DD %.2f%% (non-fatal)\n",
+                        m_challenge.StaticFloor(),total_dd_pct);
+   dash += StringFormat("Reset (broker server) %02d:%02d | Lock %s | global SL budget $%.2f\n",
+                        InpDailyResetHourServer,InpDailyResetMinuteServer,
+                        m_challenge.Valid()?"CLEAR":"ACTIVE",InpMaxBasketSLRiskUSD);
    dash += "--------------------------------------------------------\n";
    dash += StringFormat("Handelsfenster: %s (07:00-18:00 & 22:00-02:00 DE)\n", in_window ? "OFFEN (Trades erlaubt)" : "GESCHLOSSEN");
    dash += "Berechnung:     STRIKT M15 | Execution: Auto Filling & Retry Loop\n";
