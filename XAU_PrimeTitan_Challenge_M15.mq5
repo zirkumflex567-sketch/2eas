@@ -392,6 +392,11 @@ int OnInit()
       PrintFormat("Error initializing symbol %s", _Symbol);
       return INIT_FAILED;
    }
+   if(_Period!=PERIOD_M15)
+   {
+      Print("PrimeTitan requires XAUUSD* with chart period M15, not another chart timeframe");
+      return INIT_PARAMETERS_INCORRECT;
+   }
    if(StringFind(_Symbol,"XAUUSD")!=0 ||
       (InpMaxOpenPositions>1 &&
        AccountInfoInteger(ACCOUNT_MARGIN_MODE)!=ACCOUNT_MARGIN_MODE_RETAIL_HEDGING))
