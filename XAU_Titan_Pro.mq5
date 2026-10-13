@@ -670,7 +670,7 @@ void CheckSignalAndTrade()
       if(InpUseTakeProfit && InpTPRatio > 0.0)
          tp_price = NormalizeDouble(entry_price + (InpTPRatio * sl_dist), m_symbol.Digits());
 
-      double lot_size = CalculateLotSize(sl_dist);
+      double lot_size = CalculateLotSize(1,entry_price,sl_price);
 
       if(lot_size > 0)
       {
@@ -678,10 +678,17 @@ void CheckSignalAndTrade()
          {
             m_symbol.RefreshRates();
             entry_price = m_symbol.Ask();
+            if(!TitanSafetyCheck(false) || !TitanNewsSafe()) break;
+            lot_size=CalculateLotSize(1,entry_price,sl_price);
+            if(lot_size<=0) break;
+            double stopPoints=(entry_price-sl_price)/m_symbol.Point();
+            if(stopPoints<(double)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL)+2) break;
             if(tp_price > 0.0)
-               tp_price = NormalizeDouble(entry_price + (InpTPRatio * sl_dist), m_symbol.Digits());
+               tp_price = NormalizeDouble(entry_price + (InpTPRatio * (entry_price-sl_price)), m_symbol.Digits());
 
-            if(m_trade.Buy(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment))
+            if(m_trade.Buy(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment) &&
+               (m_trade.ResultRetcode()==TRADE_RETCODE_DONE ||
+                m_trade.ResultRetcode()==TRADE_RETCODE_DONE_PARTIAL))
             {
                m_last_entry_time = iTime(_Symbol, m_calc_timeframe, 0);
                PrintFormat("BUY SUCCESS: Lot=%.2f, Price=%.2f, SL=%.2f, TP=%.2f (Attempt %d)", lot_size, entry_price, sl_price, tp_price, attempt);
@@ -706,7 +713,7 @@ void CheckSignalAndTrade()
       if(InpUseTakeProfit && InpTPRatio > 0.0)
          tp_price = NormalizeDouble(entry_price - (InpTPRatio * sl_dist), m_symbol.Digits());
 
-      double lot_size = CalculateLotSize(sl_dist);
+      double lot_size = CalculateLotSize(-1,entry_price,sl_price);
 
       if(lot_size > 0)
       {
@@ -714,10 +721,17 @@ void CheckSignalAndTrade()
          {
             m_symbol.RefreshRates();
             entry_price = m_symbol.Bid();
+            if(!TitanSafetyCheck(false) || !TitanNewsSafe()) break;
+            lot_size=CalculateLotSize(-1,entry_price,sl_price);
+            if(lot_size<=0) break;
+            double stopPoints=(sl_price-entry_price)/m_symbol.Point();
+            if(stopPoints<(double)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL)+2) break;
             if(tp_price > 0.0)
-               tp_price = NormalizeDouble(entry_price - (InpTPRatio * sl_dist), m_symbol.Digits());
+               tp_price = NormalizeDouble(entry_price - (InpTPRatio * (sl_price-entry_price)), m_symbol.Digits());
 
-            if(m_trade.Sell(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment))
+            if(m_trade.Sell(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment) &&
+               (m_trade.ResultRetcode()==TRADE_RETCODE_DONE ||
+                m_trade.ResultRetcode()==TRADE_RETCODE_DONE_PARTIAL))
             {
                m_last_entry_time = iTime(_Symbol, m_calc_timeframe, 0);
                PrintFormat("SELL SUCCESS: Lot=%.2f, Price=%.2f, SL=%.2f, TP=%.2f (Attempt %d)", lot_size, entry_price, sl_price, tp_price, attempt);
@@ -844,51 +858,62 @@ void ManageOpenPositions(const MqlDateTime &dt)
 //+------------------------------------------------------------------+
 //| Lot Sizing (Normalized for Live Broker Constraints)              |
 //+------------------------------------------------------------------+
-double CalculateLotSize(double sl_dist_price)
+double CalculateLotSize(const int side,const double entry,const double stop)
 {
-   if(InpFixedLot > 0.0)
-      return InpFixedLot;
+   if(!TitanSafetyCheck(false) || !TitanNoExternalOrdersOrPositions()) return 0;
+   if(entry<=0 || stop<=0 || (side>0 && stop>=entry) ||
+      (side<0 && stop<=entry)) return 0;
+   if(!m_symbol.RefreshRates() ||
+      m_symbol.Ask()-m_symbol.Bid()>InpMaxSpreadPriceUSD) return 0;
+   double currentEQ=AccountInfoDouble(ACCOUNT_EQUITY);
+   double floor=m_challenge.SafeFloor();
+   double already=TitanOpenPortfolioStopRisk();
+   if(already==DBL_MAX || already>InpMaxBasketSLRiskUSD) return 0;
+   ENUM_ORDER_TYPE kind=side>0?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
+   double oneLotPnL=0;
+   if(!OrderCalcProfit(kind,_Symbol,1.0,entry,stop,oneLotPnL) ||
+      oneLotPnL>=0) return 0;
+   double worstLotRisk=-oneLotPnL*InpExecutionRiskMultiplier;
+   if(worstLotRisk<=0 || !MathIsValidNumber(worstLotRisk)) return 0;
 
-   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
-   double risk_cash = equity * (InpRiskPercent / 100.0);
-
-   double point_val = 0.0;
-   if(!m_symbol.RefreshRates() || !SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE, point_val) || point_val <= 0.0)
+   // In addition to a nominal 0.5% cap, restrict every entry to USD 50
+   // from original capital. Never let accumulated stops eat the day buffer.
+   double cashRisk=MathMin(InpOriginalAccountUSD*InpRiskPercent/100.0,
+                           InpMaxOneEntrySLRiskUSD);
+   double totalAvailable=MathMax(0,InpMaxBasketSLRiskUSD-already);
+   double floorAvailable=MathMax(0,currentEQ-floor-already);
+   cashRisk=MathMin(cashRisk,MathMin(totalAvailable,floorAvailable));
+   if(cashRisk<=0) return 0;
+   double preferred=InpFixedLot>0 ?
+                    MathMin(InpFixedLot,cashRisk/worstLotRisk):
+                    cashRisk/worstLotRisk;
+   double step=m_symbol.LotsStep();
+   double minLot=m_symbol.LotsMin();
+   double maxLot=m_symbol.LotsMax();
+   double contract=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_CONTRACT_SIZE);
+   if(step<=0 || minLot<=0 || maxLot<minLot || contract<=0) return 0;
+   double lot=NormalizeDouble(MathFloor(MathMin(preferred,maxLot)/step+1e-8)*step,8);
+   // Never promote min lot when its calculated loss breaches limits.
+   double used=TitanSyntheticMarginUsed();
+   if(used==DBL_MAX) return 0;
+   double freeMargin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   for(int n=0;n<1000 && lot>=minLot-1e-8;n++)
    {
-      point_val = 1.0; // Standard fallback for 1 lot Gold (1 pt = 1 USD on 100oz)
+      double planned=lot*worstLotRisk;
+      double required=0;
+      if(!OrderCalcMargin(kind,_Symbol,lot,entry,required)) return 0;
+      double additionalSynthetic=entry*contract*lot/10.0;
+      bool exposureOK=used+additionalSynthetic<=
+                      currentEQ*InpMaxSyntheticMarginFraction;
+      bool brokerMarginOK=required>0 &&
+                          required<=freeMargin*(1.0-InpMinFreeMarginBufferPct/100.0);
+      if(TitanRiskAllowed(currentEQ,floor,already,planned,
+                          InpMaxBasketSLRiskUSD) &&
+         planned<=InpMaxOneEntrySLRiskUSD && exposureOK && brokerMarginOK)
+         return lot;
+      lot=NormalizeDouble(lot-step,8);
    }
-
-   double tick_size = m_symbol.TickSize();
-   if(tick_size <= 0.0) tick_size = m_symbol.Point();
-
-   double loss_per_lot = (sl_dist_price / tick_size) * point_val;
-   if(loss_per_lot <= 0.0)
-      return m_symbol.LotsMin();
-
-   double raw_lot = risk_cash / loss_per_lot;
-   double step    = m_symbol.LotsStep();
-   double min_lot = m_symbol.LotsMin();
-   double max_lot = m_symbol.LotsMax();
-
-   if(step <= 0.0) step = 0.01;
-   double lot = MathFloor((raw_lot + 1e-7) / step) * step;
-
-   // Broker Free Margin Safety Check (Prevents error 10019 on low leverage like 1:10 / 1:20)
-   double free_margin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
-   double margin_req_one = 0.0;
-   if(OrderCalcMargin(ORDER_TYPE_BUY, _Symbol, 1.0, m_symbol.Ask(), margin_req_one) && margin_req_one > 0.0)
-   {
-      double max_lot_by_margin = (free_margin * 0.70) / (margin_req_one * MathMax(1, InpMaxOpenPositions));
-      if(lot > max_lot_by_margin && max_lot_by_margin >= min_lot)
-      {
-         lot = MathFloor((max_lot_by_margin + 1e-7) / step) * step;
-      }
-   }
-
-   if(lot < min_lot) lot = min_lot;
-   if(lot > max_lot) lot = max_lot;
-
-   return NormalizeDouble(lot, 2);
+   return 0;
 }
 
 //+------------------------------------------------------------------+
