@@ -23,6 +23,64 @@ Routes: `GET /api/chart/v1/capabilities`,
 `GET /api/chart/v1/quotes`,
 `POST /api/chart/v1/scenarios/preview`.
 
+## Immutable evidence Phase 0
+
+`GET /api/chart/v1/decisions`, `/decisions/{id}`, `/lifecycle`,
+`/snapshots`, and `/snapshots/{id}` read immutable schema-v1 evidence.
+Every request requires an explicit `account`; lists require `fromUtc` and
+`toUtc` in explicit UTC, at most 31 days apart, and `limit` of 1–200.
+Decision lists support `symbol` and `strategyId`; snapshot lists support
+`symbol` and `positionIdentifier`; lifecycle lists support `positionIdentifier`.
+Details accept an optional integer `revision`, otherwise returning the latest
+revision. Lists include all immutable revisions ordered by event time, ID, and
+revision. Continuations use `nextCursor` as the next request's `cursor`, keeping
+the same range, filters, account, and limit. They expire after 15 minutes and
+are invalid after process restart or identity/scope/generation changes.
+
+Recording is disabled by default. Both `CHART_STUDIO_EVIDENCE_ROOT` and
+`CHART_STUDIO_EVIDENCE_DB` must be explicitly configured before application
+startup. The root must already exist, be private, and be outside every Git
+worktree and mounted static directory. The DB must be an immediate-child
+regular `.sqlite` file; an absent DB can only be initialized by the internal
+trusted-provider append entry point, never by GET. A partial configuration
+remains disabled. Invalid complete configuration or damaged existing storage
+fails closed. No launcher environment allowlist was expanded.
+
+Windows ACLs permit only the current user, SYSTEM, and Administrators; POSIX
+requires owner-only root mode 0700 and file mode 0600. Symlinks, reparse points,
+multilink files, replacement, WAL storage, and unsupported permission verifiers
+are refused. The current OS user is a trusted boundary: these checks do not
+promise protection against races or modification by that same user. SQLite
+uses DELETE journaling, synchronous FULL, a 96 MiB database cap, a 100,000
+record cap, and a 256 MiB aggregate database/journal ceiling.
+
+`EvidenceStore.append(configured_context, envelope)` is an internal API for a
+reviewed trusted provider, with transactional correction/reference validation
+and immutable originals. There is no HTTP ingestion endpoint, EA recorder,
+automatic snapshot capture, current original decision history, or renderer in
+this phase. `renderAssetRef` remains null and no rendered files are invented.
+Recorded versus reconstructed availability follows the validated records on
+the returned page; an empty page, uninitialized store, or disabled store returns
+`NOT_RECORDED`. Every read verifies store-wide canonical bytes, stored hashes,
+indexed metadata, and reference edges before trusting query filters. A single
+cached digest avoids repeating semantic validation only for an identical,
+previously fully verified snapshot; every read still hashes actual contents,
+and changes or process restart require full validation. Coverage is always
+`UNKNOWN`, history may be unrecorded, and the loss counter is bounded,
+process-only, and resets on restart. It makes no durable gap guarantee.
+
+The existing middleware authenticates local, bearer, and proxy identities;
+`read`, `layout`, and `trade` roles can read both configured demo account
+aliases for this single operator. This is not a per-account ACL. Responses
+have `Cache-Control: no-store` and `canExecute: false`; these routes make no
+MT5 calls and never choose a default/selected account or restart a terminal.
+The synthetic benchmark in ignored `output/platform` exercises fake evidence
+only; its cold/warm timings and memory/DB/journal observations are not a
+production performance or recording claim. Cold means the first read pass
+with a fresh store object; the OS cache is not flushed. Warm means the second
+pass, and both open fresh SQLite connections. The memory figure is the OS
+whole-process lifetime peak working set, not incremental evidence allocations.
+
 ## Verified broker reads
 
 `GET /api/chart/v1/symbols?account=titan&q=USD&limit=50` searches actual MT5

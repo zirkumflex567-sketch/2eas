@@ -25,6 +25,8 @@ Next asset package must create current hash/dimension-bound evidence and current
 
 Private working evidence: `output/integration-live/runtime-20261009/current-asset-alpha-review.png`. No asset pixels were changed by this review. AUD-03 is partially completed (inspection), with the above repairs/current-evidence gate still open.
 
+Current main aa6bf085 file hashes, dimensions and sizes are recorded in [CURRENT_ASSET_INVENTORY.json](CURRENT_ASSET_INVENTORY.json). This read-only inventory supersedes stale dimension metadata for file identification; it does not approve frame masks or production rendering. No asset pixels were modified.
+
 ## Production quarantine, 2026-10-13
 
 The two reviewed masks remain unapproved. `static/stone-asset-skin.css` now paints opaque Stone-colored borders for the chart panel and side-volume panel, preserving their existing border widths, padding, responsive rules, chart canvas, and expanded layout. Production CSS no longer references `12_chart_frame_wide.webp` or `13_volume_frame_tall.webp`; both original PNGs, WebP derivatives, and source JPGs remain available for later mask repair. The two omitted WebP files total 2,089,428 bytes on disk; this is a frame-only reduction, not an all-page transfer-budget claim.
