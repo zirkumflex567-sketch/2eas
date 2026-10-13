@@ -18,7 +18,7 @@ const fs=require("node:fs"),path=require("node:path");
   browser=await chromium.launch({headless:true,executablePath:process.env.CHART_STUDIO_CHROMIUM_PATH||undefined});
   const page=await browser.newPage({viewport:{width:1280,height:850},deviceScaleFactor:1.5});
   const consoleErrors=[];page.on("pageerror",e=>consoleErrors.push(e.message));
-  let requests=[],scenarioPayloads=[],brokerReadRequests=[],failBrokerReads=false,cursorExpired=false,deferTitanPositions=false,releaseTitanPositions=null;
+  let requests=[],scenarioPayloads=[],scenarioResponses=[],brokerReadRequests=[],failBrokerReads=false,cursorExpired=false,deferTitanPositions=false,releaseTitanPositions=null;
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
   await page.route("**/api/chart/v1/scenarios/preview*",async route=>{
     const req=route.request().postDataJSON();
@@ -30,11 +30,16 @@ const fs=require("node:fs"),path=require("node:path");
     const sign=req.side==="BUY"?1:-1;
     const risk=Number(((req.slPrice-req.entryPrice)*volume*100*sign).toFixed(2));
     const reward=Number(((req.tpPrice-req.entryPrice)*volume*100*sign).toFixed(2));
-    await route.fulfill({status:200,contentType:"application/json",
-      body:JSON.stringify({account:"titan",canExecute:false,pnlAtSl:{amount:risk,currency:"USD"},
+    const preview={account:"titan",canExecute:false,pnlAtSl:{amount:risk,currency:"USD"},
       pnlAtTp:{amount:reward,currency:"USD"},margin:{amount:95,currency:"USD"},
       riskRewardRatio:Number((reward/-risk).toFixed(3)),tickSize:0.01,
-      positionSizing:req.volumeLots==null?{mode:req.riskBudget==null?"EQUITY_PERCENT":"RISK_BUDGET",volumeLots:volume,riskBudget:budget,grossStopRisk:-risk,currency:"USD"}:{mode:"FIXED_LOTS",volumeLots:volume,currency:"USD"}})});
+      positionSizing:req.volumeLots==null?{mode:req.riskBudget==null?"EQUITY_PERCENT":"RISK_BUDGET",volumeLots:volume,riskBudget:budget,grossStopRisk:-risk,currency:"USD"}:{mode:"FIXED_LOTS",volumeLots:volume,currency:"USD"}};
+    scenarioResponses.push(preview);
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(preview)});
+  });
+  await page.route("**/api/chart/v1/quotes?*",async route=>{
+    const url=new URL(route.request().url());
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),symbol:"XAUUSD",bid:"4100.00",ask:"4100.25",tickSize:0.01,source:"MT5_VERIFIED",canExecute:false})});
   });
   await page.route("**/api/chart/v1/positions?*",async route=>{
     const url=new URL(route.request().url());brokerReadRequests.push({path:url.pathname,url:url.pathname,params:Object.fromEntries(url.searchParams)});
@@ -241,6 +246,8 @@ const fs=require("node:fs"),path=require("node:path");
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
   assert.equal(await page.evaluate(()=>ChartStudioIndicators.settings().rsi.enabled),true);
   await page.locator(".cs-scenario summary").click();
+  await page.locator("#cs-scenario-save-a").click();
+  assert.match(await page.locator("#cs-scenario-ab-status").textContent(),/erst eine erfolgreiche Broker-Vorschau/);
   await page.locator('[name="volumeLots"]').fill("0.1");
   await page.locator('[name="entryPrice"]').fill("4100");
   await page.locator('[name="slPrice"]').fill("4090");
@@ -253,8 +260,40 @@ const fs=require("node:fs"),path=require("node:path");
   await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("Budget 50 USD"));
   assert.equal(scenarioPayloads.at(-1).volumeLots,null);
   assert.equal(scenarioPayloads.at(-1).riskBudget,50);
+  await page.locator("#cs-scenario-save-a").click();
+  assert.match(await page.locator("#cs-scenario-ab-status").textContent(),/A gespeichert/);
   await page.locator('[name="lotMode"]').selectOption("FIXED");
   await page.locator('[name="volumeLots"]').fill("0.1");
+  await page.locator('#cs-scenario-form button[type="submit"]').click();
+  await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER"));
+  await page.locator("#cs-scenario-save-b").click();
+  assert.match(await page.locator("#cs-scenario-ab-status").textContent(),/B gespeichert/);
+  assert.match(await page.locator("#cs-scenario-ab").textContent(),/A · Budget 50 USD/);
+  assert.match(await page.locator("#cs-scenario-ab").textContent(),/B · FIXED_LOTS/);
+  const [scenarioDownload]=await Promise.all([
+    page.waitForEvent("download"),page.locator("#cs-scenario-export").click()
+  ]);
+  assert.equal(scenarioDownload.suggestedFilename(),"chartstudio-whatif-titan.json");
+  const scenarioExport=JSON.parse(fs.readFileSync(await scenarioDownload.path(),"utf8"));
+  assert.equal(scenarioExport.schemaVersion,1);assert.equal(scenarioExport.account,"titan");
+  assert.deepEqual(scenarioExport.snapshots.A.request,scenarioPayloads.find(p=>p.riskBudget===50));
+  assert.deepEqual(scenarioExport.snapshots.A.result,scenarioResponses.find(r=>r.positionSizing.mode==="RISK_BUDGET"));
+  assert.deepEqual(scenarioExport.snapshots.B.request,scenarioPayloads.at(-1));
+  assert.deepEqual(scenarioExport.snapshots.B.result,scenarioResponses.at(-1));
+  await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
+  assert.match(await page.locator("#cs-scenario-ab").textContent(),/Keine A\/B-Snapshots für GoldM15/);
+  await page.evaluate(()=>{const key="2eas:studio:beta:titan:whatif-snapshots:XAUUSD",saved=JSON.parse(localStorage.getItem(key));saved.A.schemaVersion=99;localStorage.setItem(key,JSON.stringify(saved));ChartStudioBeta.account("titan")});
+  assert.doesNotMatch(await page.locator("#cs-scenario-ab").textContent(),/A · Budget 50 USD/);
+  assert.match(await page.locator("#cs-scenario-ab").textContent(),/B · FIXED_LOTS/);
+  await page.locator('#cs-scenario-form button[type="submit"]').click();
+  await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER"));
+  await page.locator("#cs-scenario-save-a").click();
+  assert.match(await page.locator("#cs-scenario-ab").textContent(),/A · FIXED_LOTS/);
+  await page.locator('#cs-scenario-form [data-cmd="quote"]').click();
+  await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("MT5-Quote übernommen"));
+  await page.locator("#cs-scenario-save-a").click();
+  assert.match(await page.locator("#cs-scenario-ab-status").textContent(),/erst eine erfolgreiche Broker-Vorschau/);
+  await page.locator('[name="entryPrice"]').fill("4100");
   await page.locator('#cs-scenario-form button[type="submit"]').click();
   await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER"));
   // Drag only a VIRTUAL plan stop: the scenario API remains read-only.

@@ -12,6 +12,7 @@ const save=(k,v)=>{try{localStorage.setItem(prefix+k,JSON.stringify(v))}catch(_)
 const optsDefault=()=>({ema20:true,ema50:true,ema200:true,sma20:false,sma50:false,bb:false,positions:false});
 const drawKey=()=>s.account+":draw:XAUUSD",optKey=()=>s.account+":opts:XAUUSD";
 const profileKey=()=>s.account+":profiles:XAUUSD",magnetKey=()=>s.account+":magnet:XAUUSD",fibKey=()=>s.account+":fibLevels:XAUUSD";
+const scenarioSnapshotsKey=account=>account+":whatif-snapshots:XAUUSD";
 function profiles(){const p=get(profileKey(),{});return p&&typeof p==="object"&&!Array.isArray(p)?p:{}}
 function refreshProfiles(){
  if(!s)return;const sel=s.panel.querySelector("#cs-beta-profile");
@@ -75,6 +76,42 @@ function deleteProfile(){
  const all=profiles();delete all[name];save(profileKey(),all);refreshProfiles();updateMessage("Layout gelöscht.");
 }
 function updateMessage(x){if(s?.status)s.status.textContent=x}
+function validSavedPreview(item,account){return item?.schemaVersion===1&&item.account===account&&item.symbol==="XAUUSD"&&item.request?.account===account&&item.request?.symbol==="XAUUSD"&&item.result?.account===account&&item.result?.canExecute===false;}
+function renderScenarioSnapshots(){
+ if(!s)return;
+ const account=s.account,label=account==="goldm15"?"GoldM15":account,host=s.panel.querySelector("#cs-scenario-ab");if(!host)return;
+ const stored=get(scenarioSnapshotsKey(account),{}),snapshots={A:null,B:null};
+ for(const slot of ["A","B"])if(validSavedPreview(stored?.[slot],account))snapshots[slot]=stored[slot];
+ host.replaceChildren();let count=0;
+ for(const slot of ["A","B"]){const item=snapshots[slot];if(!item)continue;count++;
+  const section=document.createElement("section"),title=document.createElement("h4"),detail=document.createElement("p");
+  const mode=item.result.positionSizing?.mode||"UNKNOWN",budget=item.result.positionSizing?.riskBudget;
+  title.textContent=""+slot+" · "+(budget==null?mode:"Budget "+budget+" "+(item.result.pnlAtSl?.currency||""));
+  detail.textContent="Lots "+(item.result.positionSizing?.volumeLots??"UNKNOWN")+" · Stop "+(item.result.pnlAtSl?.amount??"UNKNOWN")+" · Ziel "+(item.result.pnlAtTp?.amount??"UNKNOWN")+" · R:R "+(item.result.riskRewardRatio??"UNKNOWN")+" · Margin "+(item.result.margin?.amount??"UNKNOWN")+" "+(item.result.margin?.currency||"")+" · "+item.savedAtUtc;
+  section.append(title,detail);host.append(section);
+ }
+ if(!count){const empty=document.createElement("p");empty.textContent="Keine A/B-Snapshots für "+label+". Erst eine erfolgreiche Broker-Vorschau speichern.";host.append(empty)}
+ const exportButton=s.panel.querySelector("#cs-scenario-export");if(exportButton)exportButton.disabled=count===0;
+}
+function saveScenarioSnapshot(slot){
+ const status=s?.panel.querySelector("#cs-scenario-ab-status"),latest=s?.lastScenarioPreview;
+ if(!latest||latest.account!==s.account||latest.result?.canExecute!==false){if(status)status.textContent="Bitte erst eine erfolgreiche Broker-Vorschau für dieses Konto berechnen.";return}
+ const key=scenarioSnapshotsKey(s.account),stored=get(key,{}),snapshots={A:null,B:null};
+ for(const name of ["A","B"])if(validSavedPreview(stored?.[name],s.account))snapshots[name]=stored[name];
+ snapshots[slot]={schemaVersion:1,account:s.account,symbol:"XAUUSD",savedAtUtc:latest.savedAtUtc,request:latest.request,result:latest.result};
+ try{localStorage.setItem(prefix+key,JSON.stringify(snapshots));if(status)status.textContent=slot+" gespeichert · "+s.account+" · Nur lokaler Snapshot, keine Order.";renderScenarioSnapshots();}
+ catch(_){if(status)status.textContent="Lokales Speichern fehlgeschlagen.";}
+}
+function exportScenarioSnapshots(){
+ if(!s)return;
+ const account=s.account,key=scenarioSnapshotsKey(account),stored=get(key,{}),snapshots={};
+ for(const slot of ["A","B"])if(validSavedPreview(stored?.[slot],account))snapshots[slot]=stored[slot];
+ if(!Object.keys(snapshots).length)return;
+ const blob=new Blob([JSON.stringify({schemaVersion:1,account,symbol:"XAUUSD",exportedAtUtc:new Date().toISOString(),snapshots},null,2)],{type:"application/json"});
+ const url=URL.createObjectURL(blob),anchor=document.createElement("a");
+ anchor.href=url;anchor.download="chartstudio-whatif-"+account.replace(/[^A-Za-z0-9_-]/g,"_")+".json";anchor.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
 function sma(c,n){const out=[];let sum=0;for(let i=0;i<c.length;i++){sum+=Number(c[i].close);if(i>=n)sum-=Number(c[i-n].close);if(i>=n-1)out.push({time:c[i].time,value:sum/n})}return out}
 function bollinger(c,n=20,k=2){const hi=[],lo=[];let sum=0,sq=0;for(let i=0;i<c.length;i++){let v=Number(c[i].close);sum+=v;sq+=v*v;if(i>=n){v=Number(c[i-n].close);sum-=v;sq-=v*v}if(i>=n-1){const mid=sum/n,sd=Math.sqrt(Math.max(0,sq/n-mid*mid));hi.push({time:c[i].time,value:mid+k*sd});lo.push({time:c[i].time,value:mid-k*sd})}}return {upper:hi,lower:lo}}
 function safeDraw(list){
@@ -389,6 +426,7 @@ function pointermove(e){
  const {x,y}=xy(e),raw=unproject(x,y);if(!raw)return;
  const p=s.tool==="plan"?raw:snapAnchor(raw);
  if(s.tool==="plan"&&s.planDrag&&s.scenario){
+  scenarioGeneration++;s.lastScenarioPreview=null;
   const tick=s.planTickSize;
   const value=Number((Math.round(p.price/tick)*tick).toFixed(8));
   const next={...s.scenario,[s.planDrag]:value};
@@ -413,6 +451,7 @@ function pointerup(e){
  if(!s.drag)return;s.drag=null;persist();try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){}
 }
 function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
+ s.lastScenarioPreview=null;
   s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
   const fibInput=s.panel.querySelector("#cs-fib-levels");if(fibInput)fibInput.value=window.ChartStudioFib?.display(s.fibLevels)||"";
   scenarioGeneration++;if(s.tool==="plan")setTool("cursor");
@@ -426,6 +465,8 @@ function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.candleSigna
  window.ChartStudioServerSync?.account(id);
  window.ChartStudioBrokerPanel?.setAccount(id);
  window.ChartStudioReplay?.switchContext(id,s.tf);
+ renderScenarioSnapshots();
+ const scenarioStatus=s.panel.querySelector("#cs-scenario-ab-status");if(scenarioStatus)scenarioStatus.textContent="A/B-Snapshots für "+id+" · lokal · nur verifizierte Vorschauen.";
  showOpts();refreshProfiles();updateSeries();window.ChartStudioObjectManager?.render();requestDraw()}
 function timeframe(tf){if(s){cancelPlanPreview();s.tf=tf;s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");
  window.ChartStudioIndicators?.updateBars([]);
@@ -498,12 +539,13 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  '<button type="submit">Broker-Vorschau berechnen</button>'+
  '<button type="button" data-cmd="drag-plan" aria-pressed="false">↕ SL/TP-Plan am Chart ziehen</button>'+
  '<button type="button" data-cmd="clear-plan">Plan ausblenden</button>'+
- '</form><output id="cs-scenario-result" role="status" aria-live="polite">Nur Schätzung. Keine Brokeränderungen.</output></details>';
+ '</form><output id="cs-scenario-result" role="status" aria-live="polite">Nur Schätzung. Keine Brokeränderungen.</output><div class="cs-scenario-ab-actions"><button type="button" id="cs-scenario-save-a">Vorschau in A speichern</button><button type="button" id="cs-scenario-save-b">Vorschau in B speichern</button><button type="button" id="cs-scenario-export" disabled>A/B als JSON exportieren</button></div><p id="cs-scenario-ab-status" role="status" aria-live="polite">Nur lokal gespeicherte, verifizierte Broker-Vorschauen.</p><div id="cs-scenario-ab" aria-label="Gespeicherte What-if A/B-Vergleiche"></div></details>';
  host.parentElement.insertAdjacentElement("beforebegin",panel);
  const canvas=document.createElement("canvas");canvas.className="cs-beta-canvas";canvas.style.pointerEvents="none";canvas.setAttribute("aria-hidden","true");
  host.style.position="relative";host.appendChild(canvas);
  s={chart,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
   account:accountId,tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,
+  lastScenarioPreview:null,
   draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null,fibLevels:[...ratios]};
  try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}
  catch (err) {console.warn("Chart Studio indicator pane could not load:",err);}
@@ -553,6 +595,9 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  toggle.addEventListener("click",()=>{panel.hidden=!panel.hidden;toggle.setAttribute("aria-expanded",String(!panel.hidden));maOpen.setAttribute("aria-expanded",String(!panel.hidden));requestDraw()});
  panel.addEventListener("click",e=>{
   const b=e.target.closest("button");if(!b)return;
+  if(b.id==="cs-scenario-save-a"){saveScenarioSnapshot("A");return}
+  if(b.id==="cs-scenario-save-b"){saveScenarioSnapshot("B");return}
+  if(b.id==="cs-scenario-export"){exportScenarioSnapshots();return}
   if(b.dataset.tool){setTool(b.dataset.tool);return}
   if(b.dataset.opt){s.opts[b.dataset.opt]=!s.opts[b.dataset.opt];save(optKey(),s.opts);showOpts();updateSeries();requestDraw();return}
   if(b.dataset.cmd==="fib-default"||b.dataset.cmd==="fib-selected"){
@@ -601,6 +646,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  const output=panel.querySelector("#cs-scenario-result");
  function scope(){return window.location.pathname.startsWith("/stt")?"/stt":""}
  const fields={};for(const name of ["side","volumeLots","lotMode","riskBudget","riskPercent","entryPrice","slPrice","tpPrice"])fields[name]=form.elements.namedItem(name);
+ form.addEventListener("input",()=>{scenarioGeneration++;s.lastScenarioPreview=null});
  fields.lotMode.addEventListener("change",()=>{
   fields.volumeLots.disabled=fields.lotMode.value!=="FIXED";
   fields.riskBudget.disabled=fields.lotMode.value!=="BUDGET";
@@ -608,6 +654,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  });
  form.querySelector('[data-cmd="quote"]').addEventListener("click",async()=>{
   const acc=s.account,nonce=++scenarioGeneration;
+  s.lastScenarioPreview=null;
   output.textContent="Verifizierte MT5-Quote wird geladen ...";
   try{
    const response=await fetch(scope()+"/api/chart/v1/quotes?account="+encodeURIComponent(acc)+"&symbol=XAUUSD",{cache:"no-store"});
@@ -621,6 +668,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  });
  form.addEventListener("submit",async e=>{
   e.preventDefault();const account=s.account,nonce=++scenarioGeneration;
+  s.lastScenarioPreview=null;
   const payload={account,symbol:"XAUUSD",side:fields.side.value,
    volumeLots:fields.lotMode.value==="FIXED"?Number(fields.volumeLots.value):null,
    riskBudget:fields.lotMode.value==="BUDGET"?Number(fields.riskBudget.value):null,
@@ -639,7 +687,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
    if(!response.ok||result.account!==account||result.canExecute!==false){
     const detail=result.detail;throw Error(typeof detail==="string"?detail:detail?.message||"Broker-Rechenfehler");
    }
-   s.scenario=payload;s.validatedScenario=json(payload);s.planOriginal=null;
+   s.scenario=payload;s.validatedScenario=json(payload);s.lastScenarioPreview={account,symbol:"XAUUSD",savedAtUtc:new Date().toISOString(),request:json(payload),result:json(result)};s.planOriginal=null;
    if(Number.isFinite(Number(result.tickSize))&&Number(result.tickSize)>0)s.planTickSize=Number(result.tickSize);
    requestDraw();
    const loss=result.pnlAtSl.amount,reward=result.pnlAtTp.amount,cur=result.pnlAtSl.currency;

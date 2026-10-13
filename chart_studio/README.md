@@ -22,6 +22,10 @@ Current features:
   currency, or broker pricing fails closed.
 - No USD exchange-rate fabrication: previews for non-USD accounts are in
   account currency, with USD explicitly unavailable.
+- Two broker-verified What-if previews can be saved as account-scoped local A/B
+  snapshots and exported as JSON. Snapshots retain the exact preview request,
+  response, currency, and capture time; they are not executable orders and are
+  not synced to the server.
 
 Routes: `GET /api/chart/v1/capabilities`,
 `GET /api/chart/v1/quotes`,
