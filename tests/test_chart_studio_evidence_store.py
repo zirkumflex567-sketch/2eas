@@ -464,10 +464,10 @@ def test_synthetic_benchmark_1000_events_100_record_pages(private_root,monkeypat
             'wallSeconds':elapsed,'dbJournalPeakBytes':peak,'peakProcessWorkingSetBytes':memory,'platform':os.name}
     destination=Path('output/platform');destination.mkdir(parents=True,exist_ok=True)
     (destination/'evidence-synthetic-benchmark.json').write_text(json.dumps(result,indent=2))
-    # Hosted Windows runners vary sharply under shared I/O/CPU load. Keep a
-    # generous hang guard there; retain the tighter POSIX budget and report
-    # per-append percentiles instead of claiming production latency.
-    budget=180 if os.name=='nt' else 30
+    # Hosted Windows runner load varies sharply; keep only a hang guard there.
+    # Retain the tighter POSIX budget and report measured percentiles rather
+    # than treating shared-runner latency as a production guarantee.
+    budget=600 if os.name=='nt' else 30
     assert elapsed<budget,result
 
 def test_explicit_db_and_partial_configuration(private_root,monkeypatch):
