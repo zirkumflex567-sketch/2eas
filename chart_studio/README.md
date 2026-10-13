@@ -52,7 +52,17 @@ worktree and mounted static directory. The DB must be an immediate-child
 regular `.sqlite` file; an absent DB can only be initialized by the internal
 trusted-provider append entry point, never by GET. A partial configuration
 remains disabled. Invalid complete configuration or damaged existing storage
-fails closed. No launcher environment allowlist was expanded.
+fails closed. The runtime private-environment allowlist explicitly permits the
+spool-root setting; the data path is never included in public runtime identity.
+
+The local spool reader is also disabled by default. Enabling it requires an
+explicit `CHART_STUDIO_EVIDENCE_SPOOL_ROOT` pointing to a pre-existing private
+directory outside Git worktrees and static mounts, with a private pre-created
+`archive/` child. It tails `<producerId>.active.ndjson` and archives only closed
+`<producerId>.<first>-<last>.ready.ndjson` segments. Startup and shutdown own its
+polling task; records are processed in bounded batches outside the event loop.
+Internal `app.state.evidence_spool_status` reports importer gaps and failures.
+The spool setting does not verify a loaded EA identity or prove file authorship.
 
 Windows ACLs permit only the current user, SYSTEM, and Administrators; POSIX
 requires owner-only root mode 0700 and file mode 0600. Symlinks, reparse points,

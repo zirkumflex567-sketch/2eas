@@ -1,5 +1,6 @@
 """Authenticated, account-explicit evidence reads; deliberately no write route."""
 import base64
+import asyncio
 import hashlib
 import hmac
 import json
@@ -15,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette._utils import get_route_path
 from chart_studio import evidence_models as models
 from chart_studio.evidence_store import EvidenceStore, StoreUnavailable, StoreReplaced
+from chart_studio.evidence_spool_service import SpoolFileConsumer, run_spool_service
 
 
 class CursorInvalid(Exception):
@@ -62,12 +64,12 @@ class CursorCodec:
 def install_evidence_routes(app, *, store=None, clock=time.time):
     """Configure only from explicit private root. GET never initializes files."""
     configuration_error = False
+    excluded = [Path(__file__).resolve().parents[1]]
+    for route in app.routes:
+        mounted = getattr(route, 'app', None)
+        if isinstance(mounted, StaticFiles):
+            excluded.extend(mounted.all_directories)
     if store is None:
-        excluded = [Path(__file__).resolve().parents[1]]
-        for route in app.routes:
-            mounted = getattr(route, 'app', None)
-            if isinstance(mounted, StaticFiles):
-                excluded.extend(mounted.all_directories)
         try:
             root, db_path = os.environ.get('CHART_STUDIO_EVIDENCE_ROOT'), os.environ.get('CHART_STUDIO_EVIDENCE_DB')
             store = EvidenceStore(root if root and db_path else None, db_path=db_path if root and db_path else None, excluded_roots=excluded)
@@ -75,6 +77,33 @@ def install_evidence_routes(app, *, store=None, clock=time.time):
             configuration_error = True
             store = EvidenceStore(None)
     app.state.evidence_store = store
+    app.state.evidence_spool_service = None
+    app.state.evidence_spool_status = {}
+    app.state.evidence_spool_task = None
+    spool_root = os.environ.get('CHART_STUDIO_EVIDENCE_SPOOL_ROOT')
+    if spool_root:
+        try:
+            if not store.root:
+                raise ValueError('evidence store is not configured')
+            app.state.evidence_spool_service = SpoolFileConsumer(
+                store, spool_root, producers={'titan':'titan_demo','goldm15':'goldm15_demo'}, excluded_roots=excluded)
+        except (OSError, ValueError, StoreUnavailable):
+            # Keep the dashboard available but expose only a generic internal state.
+            app.state.evidence_spool_status = {'service': {'code':'CONFIG_INVALID'}}
+        else:
+            async def start_spool_service():
+                app.state.evidence_spool_task = asyncio.create_task(run_spool_service(app, app.state.evidence_spool_service))
+
+            async def stop_spool_service():
+                task = app.state.evidence_spool_task
+                if task is None: return
+                task.cancel()
+                try: await task
+                except asyncio.CancelledError: pass
+                app.state.evidence_spool_task = None
+
+            app.add_event_handler('startup', start_spool_service)
+            app.add_event_handler('shutdown', stop_spool_service)
     codec = CursorCodec(clock)
     app.state.evidence_cursors = codec
     paths = ('/api/chart/v1/decisions','/api/chart/v1/lifecycle','/api/chart/v1/snapshots')

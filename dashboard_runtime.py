@@ -27,7 +27,8 @@ _FALLBACK_ROOT = {'app.py', 'dashboard_runtime.py', 'dashboard_security.py',
 _FALLBACK_DIRS = {'static', 'chart_studio', 'chart_studio_v5'}
 _ENV_KEYS = {'DASHBOARD_ALLOWED_HOSTS', 'DASHBOARD_PROXY_SECRET', 'DASHBOARD_PROXY_USERS',
              'DASHBOARD_PROXY_PREFIX', 'DASHBOARD_CONTROL_TOKEN', 'DASHBOARD_QUOTE_MAX_AGE_SECONDS',
-             'CHART_STUDIO_STORAGE_TOKEN', 'CHART_STUDIO_STORAGE_ENABLED', 'CHART_STUDIO_DB'}
+             'CHART_STUDIO_STORAGE_TOKEN', 'CHART_STUDIO_STORAGE_ENABLED', 'CHART_STUDIO_DB',
+             'CHART_STUDIO_EVIDENCE_SPOOL_ROOT'}
 
 
 def validate_environment_file(root, private_path):
@@ -50,6 +51,10 @@ def validate_environment_file(root, private_path):
             raise ValueError('invalid environment')
         if 'DASHBOARD_PROXY_SECRET' in values and len(values['DASHBOARD_PROXY_SECRET']) < 32:
             raise ValueError('short secret')
+        if 'CHART_STUDIO_EVIDENCE_SPOOL_ROOT' in values:
+            spool_root = Path(values['CHART_STUDIO_EVIDENCE_SPOOL_ROOT'])
+            if not spool_root.is_absolute() or not spool_root.is_dir() or spool_root.resolve().is_relative_to(Path(root).resolve()):
+                raise ValueError('invalid spool root')
         users = json.loads(values.get('DASHBOARD_PROXY_USERS', '{}'), object_pairs_hook=unique)
         if not isinstance(users, dict) or any(not k or not all(32 < ord(c) < 127 and c != ',' for c in k)
                                               or v not in ('read', 'layout', 'trade')
