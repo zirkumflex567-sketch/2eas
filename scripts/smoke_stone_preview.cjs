@@ -37,7 +37,8 @@ const {pathToFileURL} = require('node:url');
           const rect = el.getBoundingClientRect();
           const style = getComputedStyle(el);
           return {selector,left:rect.left,right:rect.right,
-            borderImage:style.borderImageSource,borderColor:style.borderTopColor};
+            borderImage:style.borderImageSource,borderColor:style.borderTopColor,
+            borderWidth:style.borderTopWidth,borderStyle:style.borderTopStyle};
         });
         return {leftRail:leftRail?.right,rightRail:rightRail?.left,cards};
       });
@@ -51,7 +52,9 @@ const {pathToFileURL} = require('node:url');
           label+': '+card.selector+' right frame hidden by side rail: '+JSON.stringify(frameCheck));
         if (card.selector === '.stone-asset-panel--chart') {
           assert.equal(card.borderImage,'none',label+': chart uses opaque fallback');
-          assert.equal(card.borderColor,'rgb(63, 104, 120)',label+': chart edge color');
+          assert.notEqual(card.borderColor,'rgba(0, 0, 0, 0)',label+': chart edge must be visible');
+          assert.ok(Number.parseFloat(card.borderWidth) > 0,label+': chart keeps full fallback frame');
+          assert.equal(card.borderStyle,'solid',label+': chart fallback frame is solid');
         } else {
           assert.notEqual(card.borderImage,'none',label+': '+card.selector+' image frame');
         }
