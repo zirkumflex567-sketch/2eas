@@ -1,0 +1,33 @@
+name: Titan 10k challenge risk research
+on:
+  push:
+    branches:
+      - main
+      - feature/titan-prime-risk-profit-20261013
+    paths:
+      - 'XAU_PrimeTitan_Challenge_M15.mq5'
+      - 'TitanChallengeGuard.mqh'
+      - 'tests/test_titan_challenge_guard.py'
+      - 'presets/PrimeTitan_M15_*.set'
+      - '.github/workflows/titan-risk-research.yml'
+  pull_request:
+    paths:
+      - "XAU_PrimeTitan_Challenge_M15.mq5"
+      - "TitanChallengeGuard.mqh"
+      - "tests/test_titan_challenge_guard.py"
+      - ".github/workflows/titan-risk-research.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  challenge-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check exact challenge guard formulae and EA integration
+        run: python -m unittest discover -s tests -p 'test_titan_challenge_guard.py' -v
+      - name: Explain limitations
+        run: echo "Static source and unit contract passed; this is NOT a MetaEditor compile or MT5 real-tick test."
