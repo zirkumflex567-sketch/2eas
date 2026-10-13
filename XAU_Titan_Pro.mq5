@@ -6,14 +6,15 @@
 //+------------------------------------------------------------------+
 #property copyright   "Copyright 2026, Quantitative Systems"
 #property link        "https://www.mql5.com"
-#property version     "7.10"
+#property version     "7.20"
 #property description "High-Profit Institutional Trend-Pullback Scaling EA for Gold with Anti-Trap Guard"
 #property description "Exakt 1:1 die Architektur aus dem Rekord-Backtest 'guter5er' (+6.068 $ Gewinn)"
-#property description "Certified for Live-Trading & Blueberry Funded 2-Step Prime Protection"
+#property description "RESEARCH until verified by broker MT5 real-tick test; risk controls do not guarantee prop compliance."
 
 #include <Trade\Trade.mqh>
 #include <Trade\SymbolInfo.mqh>
 #include <Trade\PositionInfo.mqh>
+#include "TitanChallengeGuard.mqh"
 
 //--- Input Parameters
 input group "=== 01 / Risikomanagement & Positionsgröße ==="
@@ -52,10 +53,34 @@ input int      InpTradeEndMinute          = 45;          // Handelsende Minute
 input group "=== 04 / Blueberry Funded Prop-Firm Schutz ==="
 input bool     InpEnablePropProtection    = true;        // Harter Prop-Firm Notaus aktiv (Standard: true für maximalen Kontoschutz)
 input double   InpMaxDailyDrawdownPercent = 3.5;         // Max. Tagesverlust % (Notbremse vor 4.0% Regel)
-input double   InpMaxTotalDrawdownPercent = 9.0;         // Max. Gesamtverlust % (Notbremse vor 10.0% Regel)
-input bool     InpTotalDDBasedOnInitial   = true;        // Max Drawdown Basis (true = Statisch vom Startkapital wie Blueberry; false = Trailing)
-input bool     InpDailyLockoutUntilMidnight = true;      // Nach Tagesverlust (true = Pause bis Mitternacht; false = Sofort weiter traden)
-input double   InpPhaseProfitTargetPct    = 0.0;         // Phasen-Ziel % (0.0 = Deaktiviert / Fortlaufend traden)
+input double   InpMaxTotalDrawdownPercent = 8.0;          // 9200 USD static internal hard equity floor         // Max. Gesamtverlust % (Notbremse vor 10.0% Regel)
+input bool     InpTotalDDBasedOnInitial   = true;        // MANDATORY static hard floor        // Max Drawdown Basis (true = Statisch vom Startkapital wie Blueberry; false = Trailing)
+input bool     InpDailyLockoutUntilMidnight = true;      // Deprecated: always lock until correct day-reset      // Nach Tagesverlust (true = Pause bis Mitternacht; false = Sofort weiter traden)
+input double   InpPhaseProfitTargetPct    = 0.0;
+input group "=== 04b / Absolute Challenge Risk Budget (10k USD) ==="
+input double   InpOriginalAccountUSD       = 10000.0;   // Original account; NEVER reset to grown balance
+input double   InpGuardSafetyBufferUSD     = 35.0;      // Emergency floor above official internal limit
+input int      InpDailyResetHourServer     = 0;         // SET to server equivalent of 5pm New York
+input int      InpDailyResetMinuteServer   = 0;
+input int      InpMaxSnapshotDelaySeconds  = 120;       // Missed reset -> fail CLOSED
+input bool     InpServerResetConfirmed     = false;     // LIVE requires explicit broker-time verification
+input bool     InpTesterAssumeFirstDay     = true;      // Tester only: first partial day approximation
+input double   InpMaxBasketSLRiskUSD       = 150.0;     // Cumulative all-open + proposed SL risk
+input double   InpMaxOneEntrySLRiskUSD     = 50.0;      // Per position even if lot fixed
+input double   InpMaxSyntheticMarginFraction = 0.90;   // 1:10 leverage with 10% free buffer
+input double   InpMinFreeMarginBufferPct   = 30.0;
+input double   InpExecutionRiskMultiplier  = 1.25;     // Worst-case slippage/fees headroom, not gap guarantee
+input double   InpMaxSpreadPriceUSD        = 0.75;
+input bool     InpRequireBrokerNewsGuard   = true;     // Fail closed live on calendar read errors
+input bool     InpTesterSkipCalendar       = true;     // Backtest only; news-rule NOT verified
+input int      InpHighImpactNewsBufferSec  = 150;
+input group "=== 06b / Optional research profit improvements ==="
+input bool     InpProfitSelectivePyramiding= false;     // Require favorable move before extra positions
+input double   InpMinPyramidMoveATR       = 0.70;
+input double   InpMinBasketFloatingUSD    = 25.0;
+input bool     InpUseTrendRunnerATRStop   = false;     // EMA21/ATR-based profit protection
+input double   InpATRRunnerStartProfitUSD = 90.0;
+input double   InpATRRunnerMult           = 1.70;         // Phasen-Ziel % (0.0 = Deaktiviert / Fortlaufend traden)
 
 input group "=== 05 / Trend-Momentum Indikatoren (M15 Basis) ==="
 input int      InpTrendEMAPeriod          = 50;          // Übergeordneter Trendfilter (M15 EMA50)
@@ -77,6 +102,7 @@ input int      InpATRPeriod               = 14;          // ATR Periode für Vol
 CTrade         m_trade;
 CSymbolInfo    m_symbol;
 CPositionInfo  m_position;
+CTitanChallengeGuard m_challenge;
 
 // Hardcode calculation strictly to PERIOD_M15 to match the original architecture
 ENUM_TIMEFRAMES m_calc_timeframe = PERIOD_M15;
@@ -116,6 +142,163 @@ void SetupLiveExecution()
       m_trade.SetTypeFilling(ORDER_FILLING_RETURN);
 }
 
+//+------------------------------------------------------------------+
+//| Firm-wide protective close: every position and pending order    |
+//+------------------------------------------------------------------+
+void TitanFlattenAccount(const string reason)
+{
+   for(int i=OrdersTotal()-1;i>=0;i--)
+   {
+      ulong id=OrderGetTicket(i);
+      if(id!=0 && !m_trade.OrderDelete(id))
+         PrintFormat("GUARD %s failed pending order delete #%I64u: %s",
+                     reason,id,m_trade.ResultRetcodeDescription());
+   }
+   for(int i=PositionsTotal()-1;i>=0;i--)
+   {
+      ulong id=PositionGetTicket(i);
+      if(id!=0 && !m_trade.PositionClose(id))
+         PrintFormat("GUARD %s failed close position #%I64u: %s",
+                     reason,id,m_trade.ResultRetcodeDescription());
+   }
+}
+bool TitanSafetyCheck(const bool flatten)
+{
+   datetime now=TimeTradeServer();
+   if(now<=0) now=TimeCurrent();
+   bool observed=m_challenge.Observe(now,InpTesterAssumeFirstDay);
+   if(m_challenge.MustFlatten() && flatten)
+      TitanFlattenAccount(m_challenge.HardLocked()?"STATIC":"DAILY");
+   return observed && m_challenge.Valid();
+}
+bool TitanNoExternalOrdersOrPositions()
+{
+   if(OrdersTotal()>0) return false;
+   for(int i=PositionsTotal()-1;i>=0;i--)
+   {
+      if(PositionGetTicket(i)==0) return false;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol ||
+         PositionGetInteger(POSITION_MAGIC)!=(long)InpMagicNumber) return false;
+   }
+   return true;
+}
+bool TitanNewsSafe()
+{
+   if(!InpRequireBrokerNewsGuard) return true;
+   if(MQLInfoInteger(MQL_TESTER) && InpTesterSkipCalendar) return true;
+   datetime now=TimeTradeServer();
+   if(now<=0) return false;
+   MqlCalendarValue values[];
+   ResetLastError();
+   int cnt=CalendarValueHistory(values,now-InpHighImpactNewsBufferSec,
+                              now+InpHighImpactNewsBufferSec,NULL,"USD");
+   if(cnt<0)
+   {
+      PrintFormat("Fail-closed: news calendar unavailable, error %d",GetLastError());
+      return false;
+   }
+   for(int i=0;i<cnt;i++)
+   {
+      MqlCalendarEvent ev;
+      if(!CalendarEventById(values[i].event_id,ev)) return false;
+      if(ev.importance==CALENDAR_IMPORTANCE_HIGH) return false;
+   }
+   return true;
+}
+double TitanOpenPortfolioStopRisk()
+{
+   double total=0;
+   for(int i=PositionsTotal()-1;i>=0;i--)
+   {
+      if(PositionGetTicket(i)==0) return DBL_MAX;
+      string sym=PositionGetString(POSITION_SYMBOL);
+      double lots=PositionGetDouble(POSITION_VOLUME);
+      double stop=PositionGetDouble(POSITION_SL);
+      MqlTick t;
+      if(stop<=0 || lots<=0 || !SymbolInfoTick(sym,t)) return DBL_MAX;
+      ENUM_ORDER_TYPE type=PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY?
+                           ORDER_TYPE_BUY:ORDER_TYPE_SELL;
+      double current=type==ORDER_TYPE_BUY?t.bid:t.ask;
+      if(current<=0) return DBL_MAX;
+      double future=0;
+      if(!OrderCalcProfit(type,sym,lots,current,stop,future)) return DBL_MAX;
+      double remaining=MathMax(0.0,-future);
+      total+=remaining*InpExecutionRiskMultiplier;
+   }
+   return total;
+}
+double TitanSyntheticMarginUsed()
+{
+   double total=0;
+   for(int i=PositionsTotal()-1;i>=0;i--)
+   {
+      if(PositionGetTicket(i)==0) return DBL_MAX;
+      string sym=PositionGetString(POSITION_SYMBOL);
+      double contract=SymbolInfoDouble(sym,SYMBOL_TRADE_CONTRACT_SIZE);
+      double open=PositionGetDouble(POSITION_PRICE_OPEN);
+      double lots=PositionGetDouble(POSITION_VOLUME);
+      // Strict only for the single XAUUSD instrument with USD quote.
+      if(sym!=_Symbol || contract<=0 || open<=0) return DBL_MAX;
+      total+=lots*contract*open/10.0;
+   }
+   return total;
+}
+bool TitanPyramidOK()
+{
+   if(!InpProfitSelectivePyramiding || CountOpenPositions()==0) return true;
+   double basket=0;
+   double newestPrice=0;
+   long direction=0;
+   datetime last=0;
+   for(int i=PositionsTotal()-1;i>=0;i--)
+   {
+      if(PositionGetTicket(i)==0) return false;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol ||
+         PositionGetInteger(POSITION_MAGIC)!=(long)InpMagicNumber) return false;
+      basket+=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
+      datetime t=(datetime)PositionGetInteger(POSITION_TIME);
+      if(t>=last)
+      {
+         last=t;
+         newestPrice=PositionGetDouble(POSITION_PRICE_OPEN);
+         direction=PositionGetInteger(POSITION_TYPE);
+      }
+   }
+   if(basket<InpMinBasketFloatingUSD) return false;
+   double atr[];
+   if(CopyBuffer(m_atr_handle,0,1,1,atr)!=1 || atr[0]<=0) return false;
+   if(direction==POSITION_TYPE_BUY)
+      return m_symbol.Bid()-newestPrice>=InpMinPyramidMoveATR*atr[0];
+   return newestPrice-m_symbol.Ask()>=InpMinPyramidMoveATR*atr[0];
+}
+void TitanProfitRunnerStop()
+{
+   if(!InpUseTrendRunnerATRStop) return;
+   double ema[],atr[];
+   if(CopyBuffer(m_slow_ema_handle,0,1,1,ema)!=1 ||
+      CopyBuffer(m_atr_handle,0,1,1,atr)!=1 || atr[0]<=0) return;
+   for(int i=PositionsTotal()-1;i>=0;i--)
+   {
+      if(!m_position.SelectByIndex(i) ||
+         m_position.Symbol()!=_Symbol || m_position.Magic()!=InpMagicNumber) continue;
+      if(m_position.Profit()+m_position.Swap()<InpATRRunnerStartProfitUSD) continue;
+      double oldSL=m_position.StopLoss();
+      double target=m_position.PositionType()==POSITION_TYPE_BUY?
+                    ema[0]-atr[0]*InpATRRunnerMult:
+                    ema[0]+atr[0]*InpATRRunnerMult;
+      target=NormalizeDouble(target,m_symbol.Digits());
+      double minDist=(double)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL)*_Point +
+                     2*m_symbol.Point();
+      bool can=m_position.PositionType()==POSITION_TYPE_BUY?
+               (target>oldSL+2*m_symbol.Point() &&
+                target<m_symbol.Bid()-minDist):
+               (oldSL<=0 || target<oldSL-2*m_symbol.Point()) &&
+                target>m_symbol.Ask()+minDist;
+      if(can && !m_trade.PositionModify(m_position.Ticket(),target,m_position.TakeProfit()))
+         PrintFormat("ATR runner trail refused %I64u: %s",
+                     m_position.Ticket(),m_trade.ResultRetcodeDescription());
+   }
+}
 //+------------------------------------------------------------------+
 //| Calculate True Daily Starting Balance (Live Restart Safe)        |
 //+------------------------------------------------------------------+
@@ -207,6 +390,29 @@ int OnInit()
    }
    m_symbol.RefreshRates();
 
+   if(!InpEnablePropProtection || !InpTotalDDBasedOnInitial ||
+      !InpDailyLockoutUntilMidnight || InpOriginalAccountUSD!=10000.0 ||
+      InpMaxDailyDrawdownPercent<=0 || InpMaxDailyDrawdownPercent>3.5 ||
+      InpMaxTotalDrawdownPercent<=0 || InpMaxTotalDrawdownPercent>8.0 ||
+      InpRiskPercent<=0 || InpRiskPercent>0.5 ||
+      InpMaxOpenPositions<1 || InpMaxOpenPositions>3 ||
+      InpMaxOneEntrySLRiskUSD<=0 || InpMaxBasketSLRiskUSD<=0 ||
+      InpMaxBasketSLRiskUSD>150.0 || InpMaxOneEntrySLRiskUSD>50.0 ||
+      InpExecutionRiskMultiplier<1.0 || InpMaxSyntheticMarginFraction<=0 ||
+      InpMaxSyntheticMarginFraction>1.0 || InpGuardSafetyBufferUSD<25 ||
+      InpHighImpactNewsBufferSec<120 ||
+      (InpRequireBrokerNewsGuard==false && !MQLInfoInteger(MQL_TESTER)) ||
+      (!InpServerResetConfirmed && !MQLInfoInteger(MQL_TESTER)) ||
+      AccountInfoString(ACCOUNT_CURRENCY)!="USD")
+   {
+      Print("INVALID / UNSAFE CHALLENGE CONFIGURATION: live use requires verified server reset & mandatory risk rules.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   if(!m_challenge.Init(InpOriginalAccountUSD,InpMaxDailyDrawdownPercent,
+                        InpMaxTotalDrawdownPercent,InpGuardSafetyBufferUSD,
+                        InpDailyResetHourServer,InpDailyResetMinuteServer,
+                        InpMaxSnapshotDelaySeconds,InpTesterAssumeFirstDay))
+      return INIT_FAILED;
    SetupLiveExecution();
 
    // Create indicator handles strictly on M15
@@ -227,8 +433,8 @@ int OnInit()
    MqlDateTime dt;
    TimeCurrent(dt);
    m_current_day_date        = StringToTime(StringFormat("%04d.%02d.%02d", dt.year, dt.mon, dt.day));
-   m_initial_account_balance = AccountInfoDouble(ACCOUNT_BALANCE);
-   m_day_start_balance       = CalculateDailyStartBalance(m_current_day_date);
+   m_initial_account_balance = InpOriginalAccountUSD;
+   m_day_start_balance       = m_challenge.DailyReference();
    m_peak_equity             = AccountInfoDouble(ACCOUNT_EQUITY);
 
    // Live Restart Protection: Synchronize bar time and last entry time from history/positions
@@ -293,95 +499,25 @@ void OnTick()
 
    MqlDateTime dt;
    TimeCurrent(dt);
-   datetime today_date = StringToTime(StringFormat("%04d.%02d.%02d", dt.year, dt.mon, dt.day));
-
-   // Daily reset at midnight (Live robust)
-   if(today_date != m_current_day_date)
+   if(!TitanSafetyCheck(true))
    {
-      m_current_day_date  = today_date;
-      m_day_start_balance = CalculateDailyStartBalance(m_current_day_date);
-      if(m_daily_lockout)
-      {
-         m_daily_lockout = false;
-         PrintFormat("NEW DAY UNLOCK: Daily Lockout reset for %04d.%02d.%02d. Start Balance: $%.2f. Trading resumed.",
-                     dt.year, dt.mon, dt.day, m_day_start_balance);
-      }
+      m_day_start_balance=m_challenge.DailyReference();
+      UpdateDashboard(dt);
+      return;
    }
-
-   double current_equity  = AccountInfoDouble(ACCOUNT_EQUITY);
-   double current_balance = AccountInfoDouble(ACCOUNT_BALANCE);
-   if(current_equity > m_peak_equity)
-      m_peak_equity = current_equity;
-
-   // 1. Hard Blueberry Funded Prop-Firm Drawdown Protection
-   if(InpEnablePropProtection)
+   m_day_start_balance=m_challenge.DailyReference();
+   double current_equity=AccountInfoDouble(ACCOUNT_EQUITY);
+   if(current_equity>m_peak_equity) m_peak_equity=current_equity;
+   if(InpPhaseProfitTargetPct>0 &&
+      (current_equity-InpOriginalAccountUSD)/InpOriginalAccountUSD*100.0 >=
+      InpPhaseProfitTargetPct)
    {
-      // Daily Drawdown Protection (Calculated against true day start balance)
-      if(InpMaxDailyDrawdownPercent > 0.0 && m_day_start_balance > 0.0)
-      {
-         double daily_ref = (current_balance > m_day_start_balance) ? current_balance : m_day_start_balance;
-         double daily_dd_pct = (current_equity < daily_ref) ? (((daily_ref - current_equity) / daily_ref) * 100.0) : 0.0;
-
-         if(daily_dd_pct >= InpMaxDailyDrawdownPercent && !m_daily_lockout)
-         {
-            PrintFormat("BLUEBERRY RISK BREACH: Daily DD %.2f%% >= Limit %.2f%%. Closing all positions.",
-                        daily_dd_pct, InpMaxDailyDrawdownPercent);
-            CloseAllPositionsForMagic();
-            if(InpDailyLockoutUntilMidnight)
-            {
-               m_daily_lockout = true;
-               Print("Daily trading locked until 00:00 midnight to protect broker rules.");
-            }
-            else
-            {
-               // Resumes immediately for next signal
-               m_day_start_balance = AccountInfoDouble(ACCOUNT_BALANCE);
-               Print("Positions closed for daily cut. Resuming search for new trades.");
-            }
-         }
-      }
-
-      // Total Drawdown Protection
-      if(InpMaxTotalDrawdownPercent > 0.0)
-      {
-         double total_dd_pct = 0.0;
-         if(InpTotalDDBasedOnInitial)
-         {
-            // Blueberry Funded Official Rule: Static relative to initial deposit ($10,000 -> Stop at $9,100)
-            if(m_initial_account_balance > 0.0 && current_equity < m_initial_account_balance)
-               total_dd_pct = ((m_initial_account_balance - current_equity) / m_initial_account_balance) * 100.0;
-         }
-         else
-         {
-            // Trailing Drawdown from Peak Equity
-            if(m_peak_equity > 0.0 && current_equity < m_peak_equity)
-               total_dd_pct = ((m_peak_equity - current_equity) / m_peak_equity) * 100.0;
-         }
-
-         if(total_dd_pct >= InpMaxTotalDrawdownPercent && !m_total_lockout)
-         {
-            PrintFormat("BLUEBERRY RISK BREACH: Total DD %.2f%% >= Limit %.2f%%. Closing all positions and halting EA permanently.",
-                        total_dd_pct, InpMaxTotalDrawdownPercent);
-            CloseAllPositionsForMagic();
-            m_total_lockout = true;
-         }
-      }
-
-      // Profit Target Protection (Lock Phase Pass)
-      if(InpPhaseProfitTargetPct > 0.0)
-      {
-         double profit_pct = ((current_equity - m_initial_account_balance) / m_initial_account_balance) * 100.0;
-         if(profit_pct >= InpPhaseProfitTargetPct && !m_target_reached)
-         {
-            PrintFormat("BLUEBERRY GOAL REACHED! Profit reached %.2f%% >= Target %.2f%%. Halting EA.",
-                        profit_pct, InpPhaseProfitTargetPct);
-            CloseAllPositionsForMagic();
-            m_target_reached = true;
-         }
-      }
+      m_target_reached=true;
+      TitanFlattenAccount("PHASE TARGET");
+      UpdateDashboard(dt);
+      return;
    }
-
-   if(m_daily_lockout || m_total_lockout || m_target_reached)
+   if(m_target_reached)
    {
       UpdateDashboard(dt);
       return;
@@ -389,9 +525,11 @@ void OnTick()
 
    // 2. Manage Active Positions (Dynamic Momentum & Session Exit & Optional BE)
    ManageOpenPositions(dt);
+   TitanProfitRunnerStop();
 
    // 3. Check for New Entry on M15 Bar Close (Live Race Condition Protected)
-   if(is_new_m15_bar && IsWithinTradingWindow(dt))
+   if(is_new_m15_bar && IsWithinTradingWindow(dt) &&
+      TitanNoExternalOrdersOrPositions() && TitanNewsSafe() && TitanPyramidOK())
    {
       int open_count = CountOpenPositions();
       if(open_count < InpMaxOpenPositions)
