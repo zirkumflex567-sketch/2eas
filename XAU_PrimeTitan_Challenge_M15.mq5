@@ -460,9 +460,12 @@ int OnInit()
    m_last_m15_bar_time = iTime(_Symbol, m_calc_timeframe, 0);
    m_last_entry_time   = GetLastEntryTimeForMagic();
 
-   if(!EventSetTimer(1))
+   // Real-time live watchdog; strategy tester checks at each generated tick
+   // and uses a coarser timer to avoid millions of unnecessary timer events.
+   int timerSeconds=MQLInfoInteger(MQL_TESTER)?60:1;
+   if(!EventSetTimer(timerSeconds))
    {
-      Print("FAIL CLOSED: could not arm 1-second equity safety timer");
+      Print("FAIL CLOSED: could not arm equity safety timer");
       return INIT_FAILED;
    }
    PrintFormat("XAU_PrimeTitan_M15 GUARD v1.00: static floor %.2f, day floor %.2f, day known %s, configured server reset %02d:%02d",
