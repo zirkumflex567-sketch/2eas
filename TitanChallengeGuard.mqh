@@ -135,7 +135,7 @@ public:
    double DailyReference(){return day_ref;}
    datetime DayId(){return day_id;}
    bool Valid(){return known && day_ref>0 && !hard_lock && !day_lock;}
-   bool MustFlatten(){return hard_lock || (known && day_lock);}
+   bool MustFlatten(){return hard_lock || day_lock;} // Unknown reset also liquidates: fail closed
    bool HardLocked(){return hard_lock;}
    bool DailyLocked(){return day_lock;}
    double Headroom()
