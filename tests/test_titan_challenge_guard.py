@@ -5,7 +5,7 @@ import unittest
 import re
 HERE=Path(__file__).resolve().parents[1]
 CORE=(HERE/"TitanChallengeGuard.mqh").read_text(encoding="utf-8")
-EA=(HERE/"XAU_Titan_Pro.mq5").read_text(encoding="utf-8")
+EA=(HERE/"XAU_PrimeTitan_Challenge_M15.mq5").read_text(encoding="utf-8")
 
 def static_floor(initial,pct):
     return initial*(1-pct/100)
