@@ -5,7 +5,7 @@
   "resize": "full-image proportional LANCZOS; no cropping; no upscaling",
   "original_sha256": {
     "app.py": "77809a35f9794bbe00c4e698463810ddb29a726540da0c1a3131e964a85a99cd",
-    "static/stone-asset-skin.css": "0f2dac63782435d916b436f5a0c9874de0fb74b05a1049c11aa59d596d40e7ca",
+    "static/stone-asset-skin.css": "9632f4668d47c17eb25989a01ee9df2e41bd095d0a52f3ded57628c6c2ece453",
     "static/stone-assets/ready/01_basalt_dark_tile.webp": "6e17e4aa33348857b93d600141071b44d9f204da122e2ec951b8e25b3bd457e1",
     "static/stone-assets/ready/02_slate_fractured_tile.webp": "796ae9731cf7f6a975b7813bec3d4653a3e7df21060ddb1a2c961e1351f95ed7",
     "static/stone-assets/ready/03_obsidian_smoked_tile.webp": "32c91ff2be0d4c2df413c7caa57d052acd024c2f38c069ce017d50e30769f82b",
