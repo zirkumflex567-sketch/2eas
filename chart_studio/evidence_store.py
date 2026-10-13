@@ -148,6 +148,9 @@ class EvidenceStore:
         self._root_identity = None
         self._generation = None
         self._verified_contents = None
+        self._monitor = None
+        self._monitor_version = None
+        self._append_verified = False
         self._loss = {}
         self._lock = threading.RLock()
         if self.root:
@@ -172,8 +175,7 @@ class EvidenceStore:
                                 if self.root == p or self.root.is_relative_to(p):
                                     raise StoreUnavailable()
                         break
-                if self.path.exists():
-                    self._verify_path()
+                self._verify_path()
             except (OSError, ValueError, subprocess.SubprocessError) as exc:
                 raise StoreUnavailable() from exc
 
@@ -181,11 +183,18 @@ class EvidenceStore:
         with self._lock:
             return {'knownLossSinceStart':self._loss.get(account, 0), 'lifetime':'PROCESS_ONLY', 'unrecordedHistory':True}
 
+    def _close_monitor(self):
+        if self._monitor is not None:
+            self._monitor.close()
+            self._monitor = None
+        self._monitor_version = None
+        self._append_verified = False
+
     def _verify_path(self):
         if _physical(self.root) != self._root_identity:
             raise StoreReplaced()
         _private(self.root, True)
-        if not self.path.exists():
+        if not os.path.lexists(self.path):
             if self._file_identity is not None:
                 raise StoreReplaced()
             return False
@@ -197,10 +206,10 @@ class EvidenceStore:
             raise StoreReplaced()
         self._file_identity = identity
         for suffix in ('-wal', '-shm'):
-            if Path(str(self.path) + suffix).exists():
+            if os.path.lexists(str(self.path) + suffix):
                 raise StoreUnavailable()
         journal = Path(str(self.path) + '-journal')
-        if journal.exists():
+        if os.path.lexists(journal):
             _physical(journal)
             _private(journal, False)
             if journal.stat().st_size + self.path.stat().st_size > 256 * 1024 * 1024:
@@ -311,6 +320,21 @@ class EvidenceStore:
             raise StoreUnavailable()
         return record
 
+    def _monitor_data_version(self):
+        """Detect SQLite commits since append's last full validation.
+
+        Raw same-user file edits bypass this counter; reads always hash stored
+        bytes, and a new store process performs full append validation.
+        """
+        try:
+            if self._monitor is None:
+                self._monitor = sqlite3.connect(self.path.as_uri() + '?mode=ro', uri=True,
+                                                timeout=0.1, isolation_level=None, check_same_thread=False)
+            return self._monitor.execute('PRAGMA data_version').fetchone()[0]
+        except sqlite3.Error as exc:
+            self._close_monitor()
+            raise StoreUnavailable() from exc
+
     def _verify_contents(self, db):
         """Verify before trusting any filtering column, across the read snapshot.
 
@@ -372,6 +396,11 @@ class EvidenceStore:
                         if 'locked' not in str(cause).lower() or attempt == 2:
                             raise StoreUnavailable() from exc
                         time.sleep(0.05)
+                monitor_version = self._monitor_data_version()
+                if not self._append_verified or monitor_version != self._monitor_version:
+                    self._verify_contents(db)
+                    self._append_verified = True
+                    self._monitor_version = monitor_version
                 scope = (account, context.terminal_identity_hash, record['type'], record['id'])
                 existing = db.execute('SELECT * FROM records WHERE account=? AND terminal=? AND kind=? AND id=? AND revision=?', (*scope, record['dataRevision'])).fetchone()
                 if existing:
@@ -407,6 +436,14 @@ class EvidenceStore:
                     db.executemany('INSERT INTO refs VALUES(?,?)', [(seq, target) for target in set(refs)])
                     code = 'APPENDED'
                 db.commit()
+                try:
+                    committed_version = self._monitor_data_version()
+                except StoreUnavailable:
+                    self._append_verified = False
+                else:
+                    expected_version = monitor_version + 1 if code == 'APPENDED' else monitor_version
+                    self._append_verified = committed_version == expected_version
+                    self._monitor_version = committed_version
                 ref = {'type':record['type'], 'id':record['id'], 'dataRevision':record['dataRevision']}
             except Conflict:
                 code = 'CONFLICT'

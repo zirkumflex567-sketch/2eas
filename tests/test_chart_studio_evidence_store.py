@@ -92,6 +92,123 @@ def test_append_correction_corrupt_latest_metadata_is_unavailable(private_root, 
         assert db.execute('SELECT COUNT(*) FROM refs').fetchone()[0] == 0
 
 
+@pytest.mark.parametrize('idempotent', [False, True])
+def test_append_verifies_unrelated_existing_records(private_root, idempotent):
+    s = store(private_root)
+    first = envelope()
+    assert s.append(context(), first)['code'] == 'APPENDED'
+    second = envelope()
+    second['id'] = second['payload']['eventId'] = 'event_2'
+    assert s.append(context(), second)['code'] == 'APPENDED'
+    with sqlite3.connect(s.path) as db:
+        db.execute("UPDATE records SET sha256='bad' WHERE id=?", (first['id'],))
+
+    candidate = second if idempotent else envelope()
+    if not idempotent:
+        candidate['id'] = candidate['payload']['eventId'] = 'event_3'
+    result = s.append(context(), candidate)
+    assert result == {'ok': False, 'code': 'STORE_UNAVAILABLE', 'recordRef': None,
+                      'gapObserved': True, 'lostCount': 1}
+    with sqlite3.connect(s.path) as db:
+        assert db.execute('SELECT COUNT(*) FROM records').fetchone()[0] == 2
+        assert db.execute('SELECT COUNT(*) FROM refs').fetchone()[0] == 0
+
+
+def test_append_verifies_unrelated_reference_edges(private_root):
+    s = store(private_root)
+    assert s.append(context(), envelope())['code'] == 'APPENDED'
+    assert s.append(context(), envelope(snapshot(), 'SNAPSHOT'))['code'] == 'APPENDED'
+    with sqlite3.connect(s.path) as db:
+        db.execute('DELETE FROM refs')
+
+    candidate = envelope()
+    candidate['id'] = candidate['payload']['eventId'] = 'event_2'
+    result = s.append(context(), candidate)
+    assert result['code'] == 'STORE_UNAVAILABLE'
+    assert result['lostCount'] == 1
+    with sqlite3.connect(s.path) as db:
+        assert db.execute('SELECT COUNT(*) FROM records').fetchone()[0] == 2
+        assert db.execute('SELECT COUNT(*) FROM refs').fetchone()[0] == 0
+
+
+def test_append_detects_external_commit_after_rollback(private_root):
+    s = store(private_root)
+    assert s.append(context(), envelope())['code'] == 'APPENDED'
+    missing = envelope(snapshot(), 'SNAPSHOT')
+    missing['payload']['decisionEventIds'][0]['id'] = 'missing'
+    assert s.append(context(), missing)['code'] == 'CONFLICT'
+    with sqlite3.connect(s.path) as db:
+        db.execute("UPDATE records SET sha256='bad' WHERE kind='DECISION'")
+
+    candidate = envelope()
+    candidate['id'] = candidate['payload']['eventId'] = 'event_2'
+    result = s.append(context(), candidate)
+    assert result['code'] == 'STORE_UNAVAILABLE'
+    assert result['lostCount'] == 2
+    with sqlite3.connect(s.path) as db:
+        assert db.execute('SELECT COUNT(*) FROM records').fetchone()[0] == 1
+
+
+def test_append_accepts_verified_external_store_commit(private_root):
+    s = store(private_root)
+    assert s.append(context(), envelope())['code'] == 'APPENDED'
+    other = store(private_root)
+    second = envelope()
+    second['id'] = second['payload']['eventId'] = 'event_2'
+    assert other.append(context(), second)['code'] == 'APPENDED'
+    third = envelope()
+    third['id'] = third['payload']['eventId'] = 'event_3'
+    assert s.append(context(), third)['code'] == 'APPENDED'
+    assert len(s.read(context(), kind='DECISION')['records']) == 3
+
+
+def _dangling_symlink(path):
+    try:
+        os.symlink(path.with_name('missing-target'), path)
+    except (OSError, NotImplementedError) as exc:
+        if os.name != 'nt':
+            pytest.skip(f'File symlinks unavailable: {exc}')
+        target = path.with_name(path.name + '-target')
+        target.mkdir()
+        subprocess.run(['cmd', '/c', 'mklink', '/J', str(path), str(target)],
+                       check=True, capture_output=True)
+        target.rmdir()
+    assert os.path.lexists(path) and not path.exists()
+
+
+def test_dangling_store_path_fails_closed(private_root, monkeypatch):
+    s = store(private_root)
+    _dangling_symlink(s.path)
+    with pytest.raises(api().StoreUnavailable):
+        s.read(context(), kind='DECISION')
+    response = client(s).get('/api/chart/v1/decisions', params=RANGE)
+    assert response.status_code == 503
+    assert response.json()['detail']['code'] == 'STORE_UNAVAILABLE'
+    with pytest.raises(api().StoreUnavailable):
+        store(private_root)
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from chart_studio.evidence_api import install_evidence_routes
+    from dashboard_security import install_control_security
+    monkeypatch.setenv('CHART_STUDIO_EVIDENCE_ROOT', str(private_root))
+    monkeypatch.setenv('CHART_STUDIO_EVIDENCE_DB', str(s.path))
+    app = FastAPI()
+    install_control_security(app)
+    install_evidence_routes(app)
+    response = TestClient(app).get('/api/chart/v1/decisions', params=RANGE)
+    assert response.status_code == 503
+    assert response.json()['detail']['code'] == 'STORE_UNAVAILABLE'
+
+
+@pytest.mark.parametrize('suffix', ['-wal', '-shm', '-journal'])
+def test_dangling_store_sidecar_fails_closed(private_root, suffix):
+    s = store(private_root)
+    assert s.append(context(), envelope())['code'] == 'APPENDED'
+    _dangling_symlink(Path(str(s.path) + suffix))
+    with pytest.raises(api().StoreUnavailable):
+        s.read(context(), kind='DECISION')
+
+
 def test_replacement_wal_and_capacity_busy(private_root):
     s=store(private_root);assert s.append(context(),envelope())['ok']
     other=store(private_root)
@@ -105,6 +222,8 @@ def test_replacement_wal_and_capacity_busy(private_root):
     Path(str(s.path)+'-wal').write_bytes(b'x')
     with pytest.raises(api().StoreUnavailable):s.read(context(),kind='DECISION')
     Path(str(s.path)+'-wal').unlink()
+    # Windows keeps the monitored SQLite file open, so release it to exercise replacement detection.
+    s._close_monitor()
     s.path.rename(private_root/'old.sqlite');s.path.write_bytes(b'bad')
     with pytest.raises(api().StoreUnavailable):s.read(context(),kind='DECISION')
 
