@@ -14,6 +14,14 @@ function clear(){
  table(state.orders,["Ticket","Typ","Lots","Preis","Stop-Limit","SL","TP"],[]);
  table(state.trades,["Deal","Seite","Entry","Preis","Lots","P/L","Kosten","Währung"],[]);
 }
+function clearBrokerMarkers(){window.ChartStudioBeta?.updateBrokerDeals(state?.account,[])}
+function markerSummary(counts){
+ if(!state?.historyBaseStatus)return;
+ state.markerCounts=counts||{plotted:0,unplotted:0};
+ const {plotted,unplotted}=state.markerCounts;
+ const suffix=plotted+unplotted?" · Chart: "+plotted+" Deal-Marker, "+unplotted+" nicht darstellbar (keine exakte Kerzenzeit)":" · Keine darstellbaren Deal-Marker";
+ state.historyStatus.textContent=state.historyBaseStatus+suffix;
+}
 function queryFilters(){
  const ticket=state.fields.ticket.value.trim(),magic=state.fields.magic.value.trim(),ownership=state.fields.ownership.value;
  return {ticket,magic,manual:ownership==="ANY"?null:ownership==="MANUAL"};
@@ -50,21 +58,24 @@ function utcRange(){
 async function loadTrades(cursor=null){
  if(!state)return;
  if(!cursor)table(state.trades,["Deal","Seite","Entry","Preis","Lots","P/L","Kosten","Währung"],[]);
- let range;try{range=utcRange();}catch(error){state.historyStatus.textContent=error.message;state.next.disabled=true;return;}
- const token=++state.historyToken,account=state.account;
+ if(!cursor)clearBrokerMarkers();
+ let range;try{range=utcRange();}catch(error){state.historyBaseStatus=null;clearBrokerMarkers();state.historyStatus.textContent=error.message;state.next.disabled=true;return;}
+ const token=++state.historyToken,account=state.account;state.historyBaseStatus=null;
  state.historyStatus.textContent="Deal-Historie wird gelesen …";state.next.disabled=true;
  const params=new URLSearchParams({account,symbol:"XAUUSD",...range,limit:"50"});filterParams(params);if(cursor)params.set("cursor",cursor);
  try{
   const response=await fetch(apiScope()+"/api/chart/v1/trades?"+params.toString(),{cache:"no-store"});
   if(token!==state.historyToken||account!==state.account)return;
-  if(response.status===410){state.cursor=null;state.historyStatus.textContent="Historiencursor ungültig oder abgelaufen · Abfrage bitte neu starten.";return;}
+  if(response.status===410){state.cursor=null;clearBrokerMarkers();state.historyStatus.textContent="Historiencursor ungültig oder abgelaufen · Abfrage bitte neu starten.";return;}
   if(!response.ok)throw new Error(response.status===503?"Deal-Historie ist nicht verfügbar.":response.status===422?"UTC-Zeitraum oder Filter ungültig (HTTP 422).":"Deal-Historie konnte nicht geladen werden (HTTP "+response.status+").");
   const data=await response.json();
   if(data.account!==account||data.symbol!=="XAUUSD"||data.source!=="MT5_VERIFIED"||data.canExecute!==false)throw new Error("Historienantwort hat keinen gültigen Read-only-Scope.");
   table(state.trades,["Deal","Seite","Entry","Preis","Lots","P/L","Kosten","Währung"],(data.trades||[]).map(x=>[x.ticket,x.side,x.entry,x.price,x.volume,x.profit,(Number(x.commission)+Number(x.swap)+Number(x.fee)).toFixed(2),x.currency]));
+  const markerCounts=window.ChartStudioBeta?.updateBrokerDeals(account,data.trades||[])||{plotted:0,unplotted:0};
   state.cursor=data.nextCursor||null;state.next.disabled=!state.cursor;
-  state.historyStatus.textContent="Quelle MT5_VERIFIED · "+(data.trades.length||0)+" Deal(s) · "+data.fromUtc+" bis "+data.toUtc+" UTC · Nur lesen";
- }catch(error){if(token===state.historyToken){state.cursor=null;state.historyStatus.textContent=error.message;}}
+  state.historyBaseStatus="Quelle MT5_VERIFIED · "+(data.trades.length||0)+" Deal(s) · "+data.fromUtc+" bis "+data.toUtc+" UTC · Nur lesen";
+  markerSummary(markerCounts);
+ }catch(error){if(token===state.historyToken){state.cursor=null;clearBrokerMarkers();state.historyStatus.textContent=error.message;}}
 }
 function mount({panel,account}){
  if(state||!panel)return;
@@ -78,12 +89,12 @@ function mount({panel,account}){
  details.querySelector("#cs-broker-positions-refresh").addEventListener("click",loadPositions);
  details.querySelector("#cs-broker-history-load").addEventListener("click",()=>{state.cursor=null;loadTrades(null)});
  state.next.addEventListener("click",()=>{if(state.cursor)loadTrades(state.cursor)});
- for(const field of [fields.ticket,fields.magic,fields.ownership])field.addEventListener("change",()=>{state.cursor=null;state.historyToken++;table(state.trades,["Deal","Seite","Entry","Preis","Lots","P/L","Kosten","Währung"],[]);state.historyStatus.textContent="Filter geändert · Historie ab Seite eins neu laden.";state.next.disabled=true;loadPositions()});
- for(const field of [fields.from,fields.to])field.addEventListener("change",()=>{state.cursor=null;state.historyToken++;table(state.trades,["Deal","Seite","Entry","Preis","Lots","P/L","Kosten","Währung"],[]);state.historyStatus.textContent="Zeitraum geändert · Historie ab Seite eins neu laden.";state.next.disabled=true});
+ for(const field of [fields.ticket,fields.magic,fields.ownership])field.addEventListener("change",()=>{state.cursor=null;state.historyToken++;state.historyBaseStatus=null;clearBrokerMarkers();table(state.trades,["Deal","Seite","Entry","Preis","Lots","P/L","Kosten","Währung"],[]);state.historyStatus.textContent="Filter geändert · Historie ab Seite eins neu laden.";state.next.disabled=true;loadPositions()});
+ for(const field of [fields.from,fields.to])field.addEventListener("change",()=>{state.cursor=null;state.historyToken++;state.historyBaseStatus=null;clearBrokerMarkers();table(state.trades,["Deal","Seite","Entry","Preis","Lots","P/L","Kosten","Währung"],[]);state.historyStatus.textContent="Zeitraum geändert · Historie ab Seite eins neu laden.";state.next.disabled=true});
  loadPositions();
 }
-function setAccount(account){if(!state||typeof account!=="string")return;state.account=account;state.positionToken++;state.historyToken++;state.cursor=null;state.fields.ticket.value="";state.fields.magic.value="";state.fields.ownership.value="ANY";clear();state.positionStatus.textContent="Konto gewechselt · Brokerbuch wird neu geladen …";state.historyStatus.textContent="Konto gewechselt · Historie erneut laden.";state.next.disabled=true;loadPositions();}
-window.ChartStudioBrokerPanel=Object.freeze({mount,setAccount});
+function setAccount(account){if(!state||typeof account!=="string")return;state.account=account;state.positionToken++;state.historyToken++;state.historyBaseStatus=null;state.cursor=null;state.fields.ticket.value="";state.fields.magic.value="";state.fields.ownership.value="ANY";clear();clearBrokerMarkers();state.positionStatus.textContent="Konto gewechselt · Brokerbuch wird neu geladen …";state.historyStatus.textContent="Konto gewechselt · Historie erneut laden.";state.next.disabled=true;loadPositions();}
+window.ChartStudioBrokerPanel=Object.freeze({mount,setAccount,updateMarkerAvailability:markerSummary});
 })();
 
 

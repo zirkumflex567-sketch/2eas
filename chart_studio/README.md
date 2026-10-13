@@ -77,9 +77,12 @@ reviewed trusted provider, with transactional correction/reference validation
 and immutable originals. There is no HTTP ingestion endpoint, EA recorder,
 automatic snapshot capture, current original decision history, or renderer in
 this phase. `renderAssetRef` remains null and no rendered files are invented.
-`chart_studio.evidence_spool.SpoolImporter` is a tested local-line validation
-and append helper with a private atomic cursor, but no file worker or EA
-producer is wired or running; it does not enable automatic recording.
+`chart_studio.evidence_spool.SpoolImporter` validates local lines and appends
+with a private atomic cursor. `chart_studio.evidence_spool_service.SpoolFileConsumer`
+is wired to application startup/shutdown only when the explicit private spool
+root is valid; it remains disabled by default and no worker is running unless
+configured. There is still no EA producer, verified loaded EA identity, or
+automatic event source, so this does not establish live recording.
 Recorded versus reconstructed availability follows the validated records on
 the returned page; an empty page, uninitialized store, or disabled store returns
 `NOT_RECORDED`. Every read verifies store-wide canonical bytes, stored hashes,

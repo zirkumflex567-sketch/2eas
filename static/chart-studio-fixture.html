@@ -26,6 +26,8 @@ const host=document.getElementById("tv-chart");
 const chart=LightweightCharts.createChart(host,{width:host.clientWidth,height:host.clientHeight,
  layout:{background:{color:"#071721"},textColor:"#c3dbe4"},
  timeScale:{timeVisible:true,rightOffset:7,barSpacing:7}});
+const scale=chart.timeScale(),timeToCoordinate=scale.timeToCoordinate.bind(scale);
+window.__chartTimeLookups=[];scale.timeToCoordinate=time=>{window.__chartTimeLookups.push(time);return timeToCoordinate(time)};
 const candleSeries=chart.addCandlestickSeries({upColor:"#1acc92",downColor:"#ef6781"});
 const emas=[
  chart.addLineSeries({color:"#2dddfb"}),
@@ -38,6 +40,7 @@ const candles=Array.from({length:120},(_,i)=>{
  return {time:base+i*900,open:price-1,high:price+3,low:price-4,close:price+1,
   tick_volume:800+i*2,real_volume:0};
 });
+window.__chartSmokeCandles=candles;
 candleSeries.setData(candles);
 emas.forEach((series,j)=>series.setData(candles.map(c=>({time:c.time,value:c.close-2+j}))));
 chart.timeScale().fitContent();
