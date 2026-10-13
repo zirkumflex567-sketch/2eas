@@ -74,7 +74,7 @@ class TitanChallengeContract(unittest.TestCase):
             "TitanRiskAllowed(",
             "OrderCalcProfit(kind,_Symbol,1.0,entry,stop,oneLotPnL)",
             "return 0;",
-            "if(!EventSetTimer(1))",
+            "if(!EventSetTimer(timerSeconds))",
             "InpOriginalAccountUSD!=10000.0",
             "InpMaxDailyDrawdownPercent>3.5",
             "InpMaxTotalDrawdownPercent>8.0",
