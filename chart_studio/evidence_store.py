@@ -396,9 +396,11 @@ class EvidenceStore:
                     if record['type'] == 'SNAPSHOT':
                         for reference in p['decisionEventIds']:
                             row = db.execute('SELECT * FROM records WHERE account=? AND terminal=? AND kind=? AND id=? AND revision=?', (account, context.terminal_identity_hash, reference['type'], reference['id'], reference['dataRevision'])).fetchone()
-                            if not row or row['symbol'] != symbol or row['event_us'] > models.utc_microseconds(p['asOfUtc']):
+                            if not row:
                                 raise Conflict()
                             self._checked_record(db, row)
+                            if row['symbol'] != symbol or row['event_us'] > models.utc_microseconds(p['asOfUtc']):
+                                raise Conflict()
                             refs.append(row['seq'])
                     meta = models.event_metadata(record, context=context)
                     seq = db.execute('INSERT INTO records(account,terminal,kind,id,revision,event_us,symbol,strategy,position_id,canonical_json,sha256) VALUES(?,?,?,?,?,?,?,?,?,?,?)', (*scope, record['dataRevision'], meta['eventTimeUs'], symbol, p.get('strategyId'), p.get('positionIdentifier'), raw, digest)).lastrowid
@@ -410,7 +412,7 @@ class EvidenceStore:
                 code = 'CONFLICT'
             except Capacity:
                 code = 'RECORDING_CAPACITY'
-            except (StoreUnavailable, sqlite3.Error, ValueError, OSError):
+            except (StoreUnavailable, sqlite3.Error, ValueError, TypeError, OSError):
                 code = 'STORE_UNAVAILABLE'
             finally:
                 if db:

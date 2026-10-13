@@ -54,6 +54,44 @@ def test_references_rollback_and_loss_lifetime(private_root):
     assert s.read(context(),kind='DECISION')['gaps']['knownLossSinceStart']==1
     assert store(private_root).read(context(),kind='DECISION')['gaps']['knownLossSinceStart']==0
 
+@pytest.mark.parametrize('bad_value', [sqlite3.Binary(b'bad'), 'bad'])
+def test_append_snapshot_corrupt_reference_time_is_unavailable(private_root, bad_value):
+    s = store(private_root)
+    assert s.append(context(), envelope())['code'] == 'APPENDED'
+    with sqlite3.connect(s.path) as db:
+        db.execute('UPDATE records SET event_us=? WHERE kind=?', (bad_value, 'DECISION'))
+
+    result = s.append(context(), envelope(snapshot(), 'SNAPSHOT'))
+    assert result == {'ok': False, 'code': 'STORE_UNAVAILABLE', 'recordRef': None,
+                      'gapObserved': True, 'lostCount': 1}
+    with sqlite3.connect(s.path) as db:
+        assert db.execute('SELECT COUNT(*) FROM records').fetchone()[0] == 1
+        assert db.execute('SELECT COUNT(*) FROM refs').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('column,bad_value', [
+    ('revision', sqlite3.Binary(b'bad')),
+    ('revision', 'bad'),
+    ('event_us', sqlite3.Binary(b'bad')),
+    ('event_us', 'bad'),
+])
+def test_append_correction_corrupt_latest_metadata_is_unavailable(private_root, column, bad_value):
+    s = store(private_root)
+    assert s.append(context(), envelope())['code'] == 'APPENDED'
+    with sqlite3.connect(s.path) as db:
+        db.execute(f'UPDATE records SET {column}=? WHERE kind=?', (bad_value, 'DECISION'))
+
+    correction = envelope()
+    correction['dataRevision'] = correction['payload']['dataRevision'] = 2
+    correction['supersedes'] = {'type': 'DECISION', 'id': correction['id'], 'dataRevision': 1}
+    result = s.append(context(), correction)
+    assert result == {'ok': False, 'code': 'STORE_UNAVAILABLE', 'recordRef': None,
+                      'gapObserved': True, 'lostCount': 1}
+    with sqlite3.connect(s.path) as db:
+        assert db.execute('SELECT COUNT(*) FROM records').fetchone()[0] == 1
+        assert db.execute('SELECT COUNT(*) FROM refs').fetchone()[0] == 0
+
+
 def test_replacement_wal_and_capacity_busy(private_root):
     s=store(private_root);assert s.append(context(),envelope())['ok']
     other=store(private_root)
