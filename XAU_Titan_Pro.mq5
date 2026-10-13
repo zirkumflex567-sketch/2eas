@@ -78,6 +78,9 @@ input group "=== 06b / Optional research profit improvements ==="
 input bool     InpProfitSelectivePyramiding= false;     // Require favorable move before extra positions
 input double   InpMinPyramidMoveATR       = 0.70;
 input double   InpMinBasketFloatingUSD    = 25.0;
+input bool     InpUseM15VolumeConfirm     = false;     // Research: filter weak momentum candles
+input double   InpM15VolumeFactor        = 1.15;      // Current closed tick-volume / previous 20 average
+input bool     InpUseEMA50SlopeConfirm   = false;     // Research: need rising/falling EMA50 (4 bars)
 input bool     InpUseTrendRunnerATRStop   = false;     // EMA21/ATR-based profit protection
 input double   InpATRRunnerStartProfitUSD = 90.0;
 input double   InpATRRunnerMult           = 1.70;         // Phasen-Ziel % (0.0 = Deaktiviert / Fortlaufend traden)
@@ -402,7 +405,7 @@ int OnInit()
       InpMaxSyntheticMarginFraction>1.0 || InpGuardSafetyBufferUSD<25 ||
       InpHighImpactNewsBufferSec<120 || InpMaxSpreadPriceUSD<=0 ||
       InpMinFreeMarginBufferPct<5 || InpMinFreeMarginBufferPct>90 ||
-      InpMinPyramidMoveATR<0 || InpATRRunnerMult<=0 ||
+      InpMinPyramidMoveATR<0 || InpATRRunnerMult<=0 || InpM15VolumeFactor<=0 ||
       InpMaxSnapshotDelaySeconds<0 || InpMaxSnapshotDelaySeconds>600 ||
       (InpRequireBrokerNewsGuard==false && !MQLInfoInteger(MQL_TESTER)) ||
       (!InpServerResetConfirmed && !MQLInfoInteger(MQL_TESTER)) ||
@@ -667,8 +670,29 @@ void CheckSignalAndTrade()
                   sell_sr_ok ? "JA" : "Blockiert (Nahe Support)");
    }
 
-   bool buy_signal  = base_buy && buy_not_overextended && buy_run_ok && buy_sr_ok;
-   bool sell_signal = base_sell && sell_not_overextended && sell_run_ok && sell_sr_ok;
+   // These filters are OFF by default: original Titan entries remain
+   // unchanged unless the separate research preset enables them.
+   bool volume_ok=true;
+   if(InpUseM15VolumeConfirm)
+   {
+      double avg=0;
+      for(int k=1;k<=20;k++) avg+=(double)rates[k].tick_volume;
+      avg/=20;
+      volume_ok=avg>0 && (double)rates[0].tick_volume>=avg*InpM15VolumeFactor;
+   }
+   bool slope_buy=true,slope_sell=true;
+   if(InpUseEMA50SlopeConfirm)
+   {
+      double past[1];
+      if(CopyBuffer(m_trend_ema_handle,0,5,1,past)!=1) return;
+      slope_buy=trend_ema[1]>past[0];
+      slope_sell=trend_ema[1]<past[0];
+   }
+
+   bool buy_signal  = base_buy && buy_not_overextended && buy_run_ok && buy_sr_ok &&
+                      volume_ok && slope_buy;
+   bool sell_signal = base_sell && sell_not_overextended && sell_run_ok && sell_sr_ok &&
+                      volume_ok && slope_sell;
 
    if(buy_signal)
    {
