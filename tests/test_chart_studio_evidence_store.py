@@ -19,7 +19,12 @@ def private_root(tmp_path):
     root=tmp_path/'private';root.mkdir()
     if os.name=='nt':
         user=subprocess.check_output(['whoami','/user','/fo','csv','/nh'],text=True).strip().split(',')[-1].strip('"')
-        subprocess.run(['icacls',str(root),'/inheritance:r','/grant:r',f'*{user}:(OI)(CI)F','*S-1-5-18:(OI)(CI)F','*S-1-5-32-544:(OI)(CI)F'],check=True,capture_output=True)
+        # Replace the inherited temp-directory ACL wholesale. Some hosted
+        # Windows runners add an explicit runner/service trustee that remains
+        # after icacls /inheritance:r and correctly makes the store fail closed.
+        script = r'''$p=$env:CHART_STUDIO_PRIVATE_ROOT;$sids=@($env:CHART_STUDIO_TEST_SID,'S-1-5-18','S-1-5-32-544');$acl=[System.Security.AccessControl.DirectorySecurity]::new();$acl.SetAccessRuleProtection($true,$false);foreach($sid in $sids){$id=[System.Security.Principal.SecurityIdentifier]::new($sid);$rule=[System.Security.AccessControl.FileSystemAccessRule]::new($id,'FullControl','ContainerInherit,ObjectInherit','None','Allow');$acl.AddAccessRule($rule)};([System.IO.DirectoryInfo]::new($p)).SetAccessControl($acl)'''
+        env={**os.environ,'CHART_STUDIO_PRIVATE_ROOT':str(root),'CHART_STUDIO_TEST_SID':user}
+        subprocess.run(['powershell','-NoProfile','-NonInteractive','-Command',script],check=True,env=env)
     else:root.chmod(0o700)
     return root
 
