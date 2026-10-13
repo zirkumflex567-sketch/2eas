@@ -151,6 +151,7 @@ class EvidenceStore:
         self._monitor = None
         self._monitor_version = None
         self._append_verified = False
+        self._append_file_state = None
         self._loss = {}
         self._lock = threading.RLock()
         if self.root:
@@ -189,6 +190,26 @@ class EvidenceStore:
             self._monitor = None
         self._monitor_version = None
         self._append_verified = False
+        self._append_file_state = None
+
+    def _file_state(self):
+        """Invalidate append's cache for ordinary file writes outside SQLite.
+
+        A same-user edit that preserves stat fields or races the final sample
+        can evade this check; every read still hashes actual stored bytes.
+        """
+        try:
+            current = self.path.lstat()
+        except OSError as exc:
+            raise StoreUnavailable() from exc
+        identity = (current.st_dev, current.st_ino)
+        if identity != self._file_identity:
+            raise StoreReplaced()
+        if (not stat.S_ISREG(current.st_mode) or current.st_nlink != 1 or
+                getattr(current, 'st_file_attributes', 0) & 0x400 or
+                current.st_size > 96 * 1024 * 1024):
+            raise StoreUnavailable()
+        return identity, current.st_size, current.st_mtime_ns, current.st_ctime_ns
 
     def _verify_path(self):
         if _physical(self.root) != self._root_identity:
@@ -397,10 +418,15 @@ class EvidenceStore:
                             raise StoreUnavailable() from exc
                         time.sleep(0.05)
                 monitor_version = self._monitor_data_version()
-                if not self._append_verified or monitor_version != self._monitor_version:
+                file_state = self._file_state()
+                if (not self._append_verified or monitor_version != self._monitor_version or
+                        file_state != self._append_file_state):
                     self._verify_contents(db)
+                    if self._file_state() != file_state:
+                        raise StoreUnavailable()
                     self._append_verified = True
                     self._monitor_version = monitor_version
+                    self._append_file_state = file_state
                 scope = (account, context.terminal_identity_hash, record['type'], record['id'])
                 existing = db.execute('SELECT * FROM records WHERE account=? AND terminal=? AND kind=? AND id=? AND revision=?', (*scope, record['dataRevision'])).fetchone()
                 if existing:
@@ -431,10 +457,14 @@ class EvidenceStore:
                             if row['symbol'] != symbol or row['event_us'] > models.utc_microseconds(p['asOfUtc']):
                                 raise Conflict()
                             refs.append(row['seq'])
+                    if self._file_state() != file_state:
+                        raise StoreUnavailable()
                     meta = models.event_metadata(record, context=context)
                     seq = db.execute('INSERT INTO records(account,terminal,kind,id,revision,event_us,symbol,strategy,position_id,canonical_json,sha256) VALUES(?,?,?,?,?,?,?,?,?,?,?)', (*scope, record['dataRevision'], meta['eventTimeUs'], symbol, p.get('strategyId'), p.get('positionIdentifier'), raw, digest)).lastrowid
                     db.executemany('INSERT INTO refs VALUES(?,?)', [(seq, target) for target in set(refs)])
                     code = 'APPENDED'
+                if code == 'IDEMPOTENT' and self._file_state() != file_state:
+                    raise StoreUnavailable()
                 db.commit()
                 try:
                     committed_version = self._monitor_data_version()
@@ -444,6 +474,11 @@ class EvidenceStore:
                     expected_version = monitor_version + 1 if code == 'APPENDED' else monitor_version
                     self._append_verified = committed_version == expected_version
                     self._monitor_version = committed_version
+                try:
+                    self._append_file_state = self._file_state()
+                except StoreUnavailable:
+                    self._append_verified = False
+                    self._append_file_state = None
                 ref = {'type':record['type'], 'id':record['id'], 'dataRevision':record['dataRevision']}
             except Conflict:
                 code = 'CONFLICT'

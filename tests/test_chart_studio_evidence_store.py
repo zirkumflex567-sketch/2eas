@@ -131,6 +131,33 @@ def test_append_verifies_unrelated_reference_edges(private_root):
         assert db.execute('SELECT COUNT(*) FROM refs').fetchone()[0] == 0
 
 
+def test_append_detects_direct_byte_edit_to_unrelated_hash(private_root):
+    s = store(private_root)
+    assert s.append(context(), envelope())['code'] == 'APPENDED'
+    with sqlite3.connect(s.path) as db:
+        original_hash = db.execute('SELECT sha256 FROM records WHERE id=?', ('event_1',)).fetchone()[0]
+    before = s.path.stat()
+    with s.path.open('r+b') as handle:
+        offset = handle.read().find(original_hash.encode('ascii'))
+        assert offset >= 0
+        handle.seek(offset)
+        handle.write(b'0' if original_hash[0] != '0' else b'1')
+        handle.flush()
+        os.fsync(handle.fileno())
+    assert s.path.stat().st_mtime_ns != before.st_mtime_ns
+    with sqlite3.connect(s.path) as db:
+        assert db.execute('SELECT sha256 FROM records WHERE id=?', ('event_1',)).fetchone()[0] != original_hash
+
+    candidate = envelope()
+    candidate['id'] = candidate['payload']['eventId'] = 'event_2'
+    result = s.append(context(), candidate)
+    assert result == {'ok': False, 'code': 'STORE_UNAVAILABLE', 'recordRef': None,
+                      'gapObserved': True, 'lostCount': 1}
+    with sqlite3.connect(s.path) as db:
+        assert db.execute('SELECT COUNT(*) FROM records').fetchone()[0] == 1
+        assert db.execute('SELECT COUNT(*) FROM refs').fetchone()[0] == 0
+
+
 def test_append_detects_external_commit_after_rollback(private_root):
     s = store(private_root)
     assert s.append(context(), envelope())['code'] == 'APPENDED'
