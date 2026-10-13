@@ -424,6 +424,7 @@ function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.candleSigna
  window.ChartStudioOscillators?.switchAccount(id);
  window.ChartStudioChartTypes?.switchAccount(id);
  window.ChartStudioServerSync?.account(id);
+ window.ChartStudioBrokerPanel?.setAccount(id);
  window.ChartStudioReplay?.switchContext(id,s.tf);
  showOpts();refreshProfiles();updateSeries();window.ChartStudioObjectManager?.render();requestDraw()}
 function timeframe(tf){if(s){cancelPlanPreview();s.tf=tf;s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");
@@ -525,6 +526,8 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  try{window.ChartStudioServerSync?.mount({panel,account:accountId,
    exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,
    getAccount:()=>s?.account})}catch(err){console.warn("Chart-Workspace-Sync nicht verfügbar:",err)}
+ try{window.ChartStudioBrokerPanel?.mount({panel,account:accountId})}
+ catch(err){console.warn("Broker-Readpanel nicht verfügbar:",err)}
  const openAverages=()=>{
   if(panel.hidden){panel.hidden=false;toggle.setAttribute("aria-expanded","true");}
   maOpen.setAttribute("aria-expanded","true");

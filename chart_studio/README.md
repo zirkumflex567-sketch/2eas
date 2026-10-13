@@ -115,6 +115,15 @@ retained. Magic zero means `MANUAL`; all other rows are `UNKNOWN` because no
 verified ownership map exists. Comments remain provenance, never EA identity.
 All read models expose `source: MT5_VERIFIED` and `canExecute: false`.
 
+The Chart Studio beta's Brokerbuch panel consumes these routes for XAUUSD open
+positions and pending orders, and `/trades` for a paginated list of actual deals.
+Ticket, magic and manual/unknown filters are preserved in the UTC history cursor
+scope; changing a filter or date range restarts at page one. A 410 cursor error
+clears pagination and asks the user to reload history. The panel validates
+`MT5_VERIFIED` and `canExecute: false`, clears tables on account changes, and
+renders all broker strings as text. Deal rows are not joined into reconstructed
+positions, and no EA owner is inferred from comments or magic values.
+
 Position and order `revision` values are SHA-256 of compact, sorted-key JSON;
 all schema values are canonical strings, including raw zero SL/TP. Both include
 account ID (`account`), verified `login`/`server` and broker `symbol`.

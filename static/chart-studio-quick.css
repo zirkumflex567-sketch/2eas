@@ -84,3 +84,23 @@
   animation-duration:0.01ms!important;transition-duration:0.01ms!important;
   scroll-behavior:auto!important}
 }
+
+
+/* Verified broker book and deal history stay in a bounded, horizontally scrollable panel. */
+.cs-broker-read-panel{margin:12px 0;padding:10px;border:1px solid rgba(103,194,211,.45);
+ border-radius:8px;background:rgba(8,26,36,.92);color:#e4f5fa;box-sizing:border-box;max-width:100%}
+.cs-broker-read-panel summary{cursor:pointer;font-weight:700;padding:7px 0}
+.cs-broker-read-content label{display:inline-flex;flex-direction:column;gap:4px;margin:5px 8px 5px 0;font-size:12px}
+.cs-broker-read-panel input,.cs-broker-read-panel select,.cs-broker-read-panel button{min-height:34px;max-width:100%;box-sizing:border-box}
+.cs-broker-read-panel input,.cs-broker-read-panel select{background:#102e3b;color:#fff;border:1px solid #7fa9b7;border-radius:5px;padding:5px}
+.cs-broker-read-panel button{background:#153747;color:#effcff;border:1px solid #6bb7c5;border-radius:5px;padding:6px 10px;cursor:pointer}
+.cs-broker-read-panel button:hover:not(:disabled){background:#20546a;border-color:#8be4f2}
+.cs-broker-read-panel button:focus-visible,.cs-broker-read-panel input:focus-visible,.cs-broker-read-panel select:focus-visible{outline:2px solid #65dded;outline-offset:2px}
+.cs-broker-read-panel button:disabled{opacity:.55;cursor:not-allowed}
+.cs-broker-read-panel [role=status]{font-size:12px;min-height:1.2em;color:#bde0e9;overflow-wrap:anywhere}
+.cs-broker-table-wrap{max-width:100%;overflow-x:auto;margin:6px 0 12px}
+.cs-broker-read-panel table{border-collapse:collapse;white-space:nowrap;width:100%;font-size:12px}
+.cs-broker-read-panel th,.cs-broker-read-panel td{padding:5px 8px;border-bottom:1px solid rgba(130,183,197,.24);text-align:left}
+.cs-broker-read-panel th{color:#bdeaf3}
+.cs-broker-read-panel button,.cs-broker-read-panel summary{touch-action:manipulation}
+@media(max-width:480px){.cs-broker-read-content label{flex:1 1 125px;min-width:0}.cs-broker-read-panel fieldset{padding:7px}}
