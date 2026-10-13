@@ -3,6 +3,7 @@
 from pathlib import Path
 import unittest
 import re
+import hashlib
 HERE=Path(__file__).resolve().parents[1]
 CORE=(HERE/"TitanChallengeGuard.mqh").read_text(encoding="utf-8")
 EA=(HERE/"XAU_PrimeTitan_Challenge_M15.mq5").read_text(encoding="utf-8")
@@ -86,6 +87,23 @@ class TitanChallengeContract(unittest.TestCase):
         self.assertIn("InpUseEMA50SlopeConfirm   = false",EA)
         self.assertIn("InpProfitSelectivePyramiding= false",EA)
         self.assertIn("InpUseTrendRunnerATRStop   = false",EA)
+
+    def test_original_titan_source_remains_byte_identical(self):
+        # Git blob ID for original main before this feature.
+        original=(HERE/"XAU_Titan_Pro.mq5").read_bytes()
+        sha=hashlib.sha1(b"blob "+str(len(original)).encode()+b"\0"+original).hexdigest()
+        self.assertEqual(sha,"299b0de98abba156e9d966422cce1353b61c9e10")
+
+    def test_independent_ea_magic_and_source_name(self):
+        self.assertIn('#property version     "1.00"',EA)
+        self.assertIn("InpMagicNumber             = 882720;",EA)
+        self.assertIn('XAU_PrimeTitan_Challenge_M15.mq5',EA)
+        self.assertIn('if(_Period!=PERIOD_M15)',EA)
+        for name in ["PrimeTitan_M15_Guarded_Baseline.set","PrimeTitan_M15_ProfitResearch.set"]:
+            content=(HERE/"presets"/name).read_text(encoding="utf-8")
+            self.assertIn("InpMagicNumber=882720",content)
+            self.assertIn("InpMaxDailyDrawdownPercent=3.5",content)
+            self.assertIn("InpMaxTotalDrawdownPercent=8.0",content)
 
     def test_delimiters_seem_balanced_static_only(self):
         def strip(text):
