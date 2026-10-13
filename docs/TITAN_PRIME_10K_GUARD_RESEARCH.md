@@ -1,6 +1,6 @@
 # Titan Pro 7.20 – 10k Prime Research: Challenge Guard + Profit Experiments
 
-**Scope:** This branch changes the **original** `XAU_Titan_Pro.mq5` in `2eas`. It is NOT the rewritten EMAGPT imitation. Default Titan EMA9/21/50 / RSI14 / anti-trap entries and open-ended EMA9 runner remain intact. Two .set profiles compare protected baseline versus opt-in enhancements.
+**Scope:** The original `XAU_Titan_Pro.mq5` is NEVER changed. This is an INDEPENDENT EA called `XAU_PrimeTitan_Challenge_M15.mq5` with dedicated `InpMagicNumber=882720`. Its EMA9/21/50 / RSI14 / anti-trap and EMA9 runner follow the original Titan design but include new risk gates. Two dedicated `.set` profiles compare protected baseline vs optional enhancements.
 
 **CURRENT RELEASE STATUS: TEST BRANCH / NOT LIVE APPROVED.** The Python CI only validates risk mathematics and the structure of the MQL5 source. The original and modified MQL5 need separate MetaEditor compilation and broker **Every tick based on real ticks** strategy tests. Claims of consistent 15–20% monthly net profit are **not demonstrated**.
 
@@ -26,13 +26,13 @@
 
 The daily reset is officially **17:00 New York time**. This must be mapped to MT5 **broker server time** with the user's actual server timezone and checked again during U.S./European DST transitions. Inputs: `InpDailyResetHourServer`, `InpDailyResetMinuteServer`. **`InpServerResetConfirmed=false` is intentionally required until the trader verifies the correct mapping.** After a restart mid-day without persisted reference, the EA fails closed until a reliably captured reset. Do not bypass by entering an invented reference.
 
-Original Titan 7.10 used a day-start balance estimate and 3.5% of the dynamically grown daily balance, which may permit over $350 loss as balance rises. It also used 9% static DD ($9100), not the requested $9200. Those behaviors have been replaced for execution risk. The old historical helper is no longer called.
+The original Titan 7.10 used a day-start balance estimate and 3.5% of the dynamically grown daily balance, which may permit over $350 loss as balance rises. It also used 9% static DD ($9100), not the requested $9200. Those behaviors have been replaced for execution risk. The old historical helper is no longer called.
 
 ## Profitability research variants
 
-**Baseline:** `presets/Titan_10k_Challenge_Guarded_Baseline.set` – the original Titan trend entries, 3 slots, 0.5% nominal per entry, EMA9 basket exit, unchanged anti-trap filters, but all strict new risk gates active.
+**Baseline:** `presets/PrimeTitan_M15_Guarded_Baseline.set` – the original Titan trend entries, 3 slots, 0.5% nominal per entry, EMA9 basket exit, unchanged anti-trap filters, but all strict new risk gates active.
 
-**Profit experiment:** `presets/Titan_10k_Challenge_ProfitResearch.set` – additionally enables:
+**Profit experiment:** `presets/PrimeTitan_M15_ProfitResearch.set` – additionally enables:
 1. **M15 tick-volume confirmation** ≥1.15× average of the **previous** 20 M15 candles.
 2. **EMA50 directional slope** relative to an earlier completed EMA50 candle (shift 5).
 3. **Selective pyramiding:** only add a second/third entry if existing group has ≥$25 unrealized profit and price has moved ≥0.7×ATR in favor since the most recent entry.
@@ -48,7 +48,7 @@ The **LANGERGUTER.xlsx** legacy Titan report with roughly +62% Jan–Oct 2026 is
 
 ## Backtesting release checklist
 
-1. In Windows MetaEditor copy `XAU_Titan_Pro.mq5` and `TitanChallengeGuard.mqh` into the same directory; compile with F7. Verify 0 errors; any warnings require review.
+1. In Windows MetaEditor copy `XAU_PrimeTitan_Challenge_M15.mq5` and `TitanChallengeGuard.mqh` into the same directory; compile with F7. Verify 0 errors; any warnings require review.
 2. Run both presets on XAUUSD M15 in the same MT5 broker, hedging account, USD currency, reference start $10,000, leverage 1:10; real ticks, realistic spread/commission/swap and modeling of slippage.
 3. Verify each test's **minimum tick equity and balance**, peak-to-valley DD (not a hard violation), **maximum fixed-$ daily drawdown** relative to `max(balance,equity)` sampled at correct 17:00 New York reset, and max synthetic exposure/margin.
 4. Test US/EU DST mismatch weeks, 17:00 reset with a floating winner, account restarts during a trade, weekend gaps, and late ticks. Fail closed if day ref cannot be proved.
