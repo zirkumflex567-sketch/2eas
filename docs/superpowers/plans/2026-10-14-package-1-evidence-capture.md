@@ -1,0 +1,41 @@
+# Package 1 plan: EA event capture and broker lifecycle evidence
+
+Date: 2026-10-14. Parent: [Open Tasks completion plan](2026-10-14-open-tasks-completion.md).
+
+## Scope
+
+FR-026/033/035, AUD-09/11/12, AT-036–038/049–050/055–056. Strategy Tester, backtests and any trade-rule or preset edits are excluded. The initial release is opt-in and read-only. Existing EvidenceStore remains the only immutable database writer; there is no HTTP append route.
+
+## Evidence and blockers
+
+`docs/EA_RUNTIME_IDENTITY_2026-10-14.md` is the identity ledger. It distinguishes visible chart identity from installed files and journal observations. Titan runtime source differs from the clean main source. GoldM15 has multiple installed source/binary candidates and no visible chart. Therefore no source replacement, EA attach, auto-trading toggle or demo trade is allowed in this package until a fresh, chart-bound identity record is collected. The recorder work must not claim events from those existing charts.
+
+## Vertical-slice sequence
+
+1. Define a strict local spool record contract: bounded line size/count, schema version, explicit configured account, opaque terminal identity, producer identity, monotonic sequence, UTC observation time, event kind, and payload. Reject malformed, oversized, cross-account, duplicate-conflicting and out-of-order records; keep duplicate identical records idempotent. Preserve a visible loss/gap count; never infer events across gaps.
+2. Add a private spool consumer that reads complete newline-terminated records only, validates configured account/terminal context, maps only supported decision and lifecycle facts to existing schema-v1 envelopes, and calls `EvidenceStore.append`. Persist its cursor atomically outside the Git checkout; recover by replaying idempotently. Do not expose it as an HTTP route. It must not launch/connect to MT5 or block trade functions.
+3. Add deterministic unit/integration tests first for malformed input, account isolation, duplicate/restart handling, partial final line, sequence gaps, importer crash/restart, append idempotency and logger/store failure. Use a temporary private root outside the repository. Verify there is no mutation call in the importer path.
+4. Instrument EA hooks only after source and preset identity are verified. Use short `OnTradeTransaction` enqueue callbacks; no SQLite, network, sleep or disk flush inside tick/transaction hot paths. Decision hooks must record exact observed feature/predicate values and stable parameter/source hashes without changing branch conditions or order calls. Logger failure sets a bounded loss marker and returns immediately.
+5. Compile the exact source copies and compare decision/order-call semantics against the pre-instrumented sources. Attach only to explicitly authorized demo charts after reviewing exact account, source, compiled binary and preset. Observe fresh events, broker transactions, partial fills and trailing changes read-only. Snapshot capture is independent of browser state; historical unrecorded periods remain `NOT_RECORDED`.
+6. Add inspector/journal/snapshot UI only after the event pipe is proved. Render exact vs OHLC-estimated MFE/MAE distinctly and never infer intrabar order from bars alone.
+7. Review, merge, CI, deploy a clean exact-main build, verify authenticated local and `/stt` runtime identity, then update every mapped FR/AUD/AT status with evidence.
+
+## Files to evaluate
+
+- New `chart_studio/evidence_spool.py` for bounded local record validation and cursor/importer logic.
+- New tests under `tests/test_chart_studio_evidence_spool.py`.
+- `chart_studio/evidence_models.py` validators and `EvidenceStore.append` are reused, not weakened.
+- EA sources and preset files are excluded until runtime identity gate passes; no file from the dirty root checkout is overwritten or copied implicitly.
+- UI files are out of the first vertical slice.
+
+## Acceptance and stop conditions
+
+A package milestone may close only with independent test/review evidence and an observed demo capture from a verified EA build. If identity, MQL5 compiler, MT5 event coverage, private spool location or chart-bound demo evidence cannot be obtained, preserve the safe read-only behavior and leave associated IDs open. Never mark synthetic fixtures or installed-file inspection as live capture evidence.
+
+## Progress
+
+- [x] Bounded schema-v1 line validation, configured account/terminal/producer binding, atomic private write-ahead cursor, idempotent replay, sequence conflict rejection, first/interior gap counts, and store-loss reporting implemented in `chart_studio/evidence_spool.py`.
+- [x] Unit tests first observed the missing-module failure; reviewer findings for first-sequence gaps, lost cursor state across restarts, and parser recursion were reproduced before fixes.
+- [ ] Add the single-consumer file reader/rotation protocol and application lifecycle wiring. The helper is not yet operational or started by `app.py`.
+- [ ] Add actual Titan/GoldM15 EA producers after resolving runtime identities; compile and verify without strategy changes.
+- [ ] Add capture inspector/snapshot UI and demo evidence; all related acceptance IDs remain open.
