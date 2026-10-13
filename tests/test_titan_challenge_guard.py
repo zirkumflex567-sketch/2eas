@@ -89,9 +89,11 @@ class TitanChallengeContract(unittest.TestCase):
 
     def test_delimiters_seem_balanced_static_only(self):
         def strip(text):
+            # Strip quoted URLs BEFORE the //-comment pass; otherwise
+            # a quoted https:// destroys the remainder of the source.
+            text=re.sub(r'"(?:\\.|[^"\\])*"',"",text)
             text=re.sub(r"/\*[\s\S]*?\*/","",text)
             text=re.sub(r"//[^\n]*","",text)
-            text=re.sub(r'"(?:\\.|[^"\\])*"',"",text)
             return text
         for c in [EA,CORE]:
             z=strip(c)
