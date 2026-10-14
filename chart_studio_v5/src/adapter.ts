@@ -458,6 +458,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  const readoutIndicators=new Map<string,ReadoutIndicator>();
  // Independent native chart panes, not separate chart instances or duplicated time axes.
  const paneLines=new Map<string,LineApi>();
+ const paneHeightOverrides=new Map<number,number>();
  type OscillatorGroup={options:OscillatorOptions;paneIndex:number;series:Map<string,ReturnType<typeof newLine>|ReturnType<typeof newHistogram>>;values:Map<string,Map<number,number>>};
  const oscillators=new Map<string,OscillatorGroup>();
  const priceLevels=new Map<string,{primitive:PriceLevelPrimitive;options:PriceLevelOptions}>();
@@ -736,6 +737,15 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    ...[...measurements.values()].map(({options})=>({kind:"MEASURE" as const,options:{...options}})),
   ];
  }
+ function viewSnapshots(){
+  const visibleRange=chart.timeScale().getVisibleLogicalRange();
+  return {movingAverages:[...managedMovingAverages.values()].map(({options})=>({...options})),
+   oscillators:[...oscillators.values()].map(group=>({options:{...group.options,settings:{...group.options.settings}},paneIndex:group.paneIndex})),
+   paneLines:[...paneLines.entries()].map(([id,series])=>{const paneIndex=chart.panes().findIndex(pane=>pane.getSeries().includes(series));const readout=readoutIndicators.get(id);return {options:{id,color:series.options().color as string,lineWidth:series.options().lineWidth,title:series.options().title,visible:series.options().visible},data:readout?[...readout.values].map(([time,value])=>({time,value})):[],paneIndex}}),
+   paneHeights:chart.panes().map((pane,index)=>{const actual=Math.round(pane.getHeight());return actual>=80&&actual<=600?actual:(paneHeightOverrides.get(index)??Math.min(600,Math.max(80,Math.round(host.clientHeight/(chart.panes().length||1)))))}),volumeVisible:!!volume,
+   volumePaneIndex:volume?chart.panes().findIndex(pane=>pane.getSeries().includes(volume!)):null,
+   displayTimeZone,visibleRange:visibleRange?{from:visibleRange.from,to:visibleRange.to}:null};
+ }
  function persistDrawings(){
   if(!drawingScope||!drawingsHydrated||hydratingDrawings||persistenceStatus==="CONFLICT"||persistenceStatus==="UNAVAILABLE")return;
   const storage=localStorageApi(),key=persistenceKey();
@@ -743,8 +753,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   try{
    if(storage.getItem(key)!==lastPersistedSnapshot){persistenceStatus="CONFLICT";persistenceError="EXTERNAL_CHANGE";return}
    const drawings=drawingSnapshots();
-   const envelope=()=>JSON.stringify({schemaVersion:2,account:activeAccount,symbol:drawingScope.symbol,
-    timeframe:drawingScope.timeframe,drawings,undoStack,redoStack});
+   const envelope=()=>JSON.stringify({schemaVersion:3,account:activeAccount,symbol:drawingScope.symbol,
+   timeframe:drawingScope.timeframe,drawings,undoStack,redoStack,...viewSnapshots()});
    let serialized=envelope();
    while(utf8ByteLength(serialized)>persistenceLimit&&undoStack.length){undoStack.shift();serialized=envelope()}
    while(utf8ByteLength(serialized)>persistenceLimit&&redoStack.length){redoStack.shift();serialized=envelope()}
@@ -766,12 +776,56 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   try{parsed=JSON.parse(raw)}catch(_){persistenceStatus="UNAVAILABLE";persistenceError="INVALID_SNAPSHOT";return}
   if(!parsed||typeof parsed!=="object") {persistenceStatus="UNAVAILABLE";persistenceError="INVALID_SNAPSHOT";return}
   const root=parsed as Record<string,unknown>;
-  if(!root||Array.isArray(parsed)||!new Set(["account,drawings,schemaVersion,symbol,timeframe","account,drawings,redoStack,schemaVersion,symbol,timeframe,undoStack"]).has(Object.keys(root).sort().join(","))||
-   (root.schemaVersion!==1&&root.schemaVersion!==2)||root.account!==activeAccount||root.symbol!==drawingScope.symbol||root.timeframe!==drawingScope.timeframe||!Array.isArray(root.drawings)||root.drawings.length>maxNativeDrawings){
+  const schemaKeys=Object.keys(root).sort().join(",");
+  if(!root||Array.isArray(parsed)||!new Set(["account,drawings,schemaVersion,symbol,timeframe","account,drawings,redoStack,schemaVersion,symbol,timeframe,undoStack","account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,redoStack,schemaVersion,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible"]).has(schemaKeys)||
+   (root.schemaVersion!==1&&root.schemaVersion!==2&&root.schemaVersion!==3)||root.account!==activeAccount||root.symbol!==drawingScope.symbol||root.timeframe!==drawingScope.timeframe||!Array.isArray(root.drawings)||root.drawings.length>maxNativeDrawings){
    persistenceStatus="UNAVAILABLE";persistenceError="INVALID_OR_MISMATCHED_SNAPSHOT";return;
   }
-  const isV2=root.schemaVersion===2;
+  const isV2=root.schemaVersion===2||root.schemaVersion===3,isV3=root.schemaVersion===3;
   const restoredUndo:DrawingHistory[]=[],restoredRedo:DrawingHistory[]=[];
+  let restoredAverages:MovingAverageOptions[]=[],restoredOscillators:Array<{options:OscillatorOptions;paneIndex:number}>=[],restoredPaneLines:Array<{options:AverageOptions;data:AveragePoint[];paneIndex:number}>=[],restoredPaneHeights:number[]=[],restoredVolume=false,restoredVolumePane:number|null=null,restoredTimeZone="UTC",restoredRange:LogicalRange|null=null;
+  if(isV3){
+   try{
+    if(!Array.isArray(root.movingAverages)||root.movingAverages.length>16||!Array.isArray(root.oscillators)||root.oscillators.length>8||!Array.isArray(root.paneLines)||root.paneLines.length>8||
+       !Array.isArray(root.paneHeights)||root.paneHeights.length<1||root.paneHeights.length>10||typeof root.volumeVisible!=="boolean"||
+       (root.volumePaneIndex!==null&&(!Number.isInteger(root.volumePaneIndex)||Number(root.volumePaneIndex)<1||Number(root.volumePaneIndex)>=root.paneHeights.length))||
+       (root.volumeVisible!==(root.volumePaneIndex!==null))||typeof root.displayTimeZone!=="string")throw Error();
+    const savedPaneHeights=root.paneHeights as unknown[];
+    restoredAverages=root.movingAverages.map(raw=>{
+     if(!raw||typeof raw!=="object"||Array.isArray(raw))throw Error();const options=raw as Record<string,unknown>;
+     const keys=Object.keys(options).sort().join(","),allowed=new Set(["color,displayShift,id,period,source,title,type","color,displayShift,id,lineWidth,period,source,title,type","color,displayShift,id,period,source,title,type,visible","color,displayShift,id,lineWidth,period,source,title,type,visible","color,id,period,source,type","color,id,lineWidth,period,source,type","color,id,period,source,type,visible","color,id,lineWidth,period,source,type,visible","color,id,period,type","color,id,lineWidth,period,type","color,id,period,type,visible","color,id,lineWidth,period,type,visible"]);
+     if(!allowed.has(keys)||typeof options.id!=="string"||!/^[-_a-zA-Z0-9]{1,32}$/.test(options.id)||typeof options.color!=="string"||!colorPattern.test(options.color)||
+        (options.lineWidth!==undefined&&![1,2,3,4].includes(options.lineWidth as number))||(options.visible!==undefined&&typeof options.visible!=="boolean")||
+        (options.title!==undefined&&(typeof options.title!=="string"||options.title.length>80||/[\u0000-\u001f\u007f]/.test(options.title))))throw Error();
+     const value={...options,source:options.source??"close",displayShift:options.displayShift??0} as unknown as MovingAverageOptions;
+     movingAverageData(bars,value);return value;
+    });
+    restoredOscillators=root.oscillators.map(raw=>{
+     if(!raw||typeof raw!=="object"||Array.isArray(raw))throw Error();const entry=raw as Record<string,unknown>;
+     if(Object.keys(entry).sort().join(",")!=="options,paneIndex"||!entry.options||typeof entry.options!=="object"||Array.isArray(entry.options)||!Number.isInteger(entry.paneIndex))throw Error();
+     const options=entry.options as Record<string,unknown>,keys=Object.keys(options).sort().join(","),allowed=new Set(["color,id,kind,settings","color,id,kind,lineWidth,settings","color,id,kind,settings,title","color,id,kind,lineWidth,settings,title","color,id,kind,settings,visible","color,id,kind,lineWidth,settings,visible","color,id,kind,settings,title,visible","color,id,kind,lineWidth,settings,title,visible"]);
+     if(!allowed.has(keys)||typeof options.id!=="string"||!/^[-_a-zA-Z0-9]{1,32}$/.test(options.id)||typeof options.color!=="string"||!colorPattern.test(options.color)||
+        !( ["rsi","atr","macd","adx"] as unknown[]).includes(options.kind)||(options.lineWidth!==undefined&&![1,2,3,4].includes(options.lineWidth as number))||
+        (options.visible!==undefined&&typeof options.visible!=="boolean")||(options.title!==undefined&&(typeof options.title!=="string"||options.title.length>80||/[\u0000-\u001f\u007f]/.test(options.title)))||
+        !Number.isInteger(entry.paneIndex)||Number(entry.paneIndex)<1||Number(entry.paneIndex)>=savedPaneHeights.length)throw Error();
+     const oscillatorOptions=options as unknown as OscillatorOptions;calculateOscillator(bars,oscillatorOptions.kind,oscillatorOptions.settings);
+     return {options:{...oscillatorOptions,settings:{...oscillatorOptions.settings}},paneIndex:Number(entry.paneIndex)};
+    });
+    restoredPaneLines=root.paneLines.map(raw=>{
+     if(!raw||typeof raw!=="object"||Array.isArray(raw))throw Error();const entry=raw as Record<string,unknown>;
+     if(Object.keys(entry).sort().join(",")!=="data,options,paneIndex"||!entry.options||typeof entry.options!=="object"||Array.isArray(entry.options)||!Array.isArray(entry.data)||entry.data.length>150000||!Number.isInteger(entry.paneIndex))throw Error();
+     const options=entry.options as Record<string,unknown>,keys=Object.keys(options).sort().join(","),allowed=new Set(["color,id","color,id,lineWidth","color,id,title","color,id,visible","color,id,lineWidth,title","color,id,lineWidth,visible","color,id,title,visible","color,id,lineWidth,title,visible"]);
+     if(!allowed.has(keys)||typeof options.id!=="string"||!/^[-_a-zA-Z0-9]{1,32}$/.test(options.id)||typeof options.color!=="string"||!colorPattern.test(options.color)||(options.lineWidth!==undefined&&![1,2,3,4].includes(options.lineWidth as number))||(options.visible!==undefined&&typeof options.visible!=="boolean")||(options.title!==undefined&&(typeof options.title!=="string"||options.title.length>80||/[\u0000-\u001f\u007f]/.test(options.title)))||!Number.isInteger(entry.paneIndex)||Number(entry.paneIndex)<1||Number(entry.paneIndex)>=savedPaneHeights.length)throw Error();
+     return {options:options as unknown as AverageOptions,data:validSeriesData(entry.data as AveragePoint[]),paneIndex:Number(entry.paneIndex)};
+    });
+    if(restoredAverages.length+restoredOscillators.length+restoredPaneLines.length>maxIndicatorInstances||new Set([...restoredAverages.map(item=>item.id),...restoredOscillators.map(item=>item.options.id),...restoredPaneLines.map(item=>item.options.id)]).size!==restoredAverages.length+restoredOscillators.length+restoredPaneLines.length)throw Error();
+    restoredPaneHeights=savedPaneHeights.map(value=>{if(!Number.isInteger(value)||Number(value)<80||Number(value)>600)throw Error();return Number(value)});
+    if(root.volumePaneIndex!==null)restoredVolumePane=Number(root.volumePaneIndex);restoredVolume=root.volumeVisible;
+    const zone=root.displayTimeZone;const canonical=new Intl.DateTimeFormat("en-US",{timeZone:zone}).resolvedOptions().timeZone;if(canonical!==zone)throw Error();restoredTimeZone=canonical;
+    if(root.visibleRange!==null){if(!root.visibleRange||typeof root.visibleRange!=="object"||Array.isArray(root.visibleRange)||Object.keys(root.visibleRange).sort().join(",")!=="from,to")throw Error();const range=root.visibleRange as Record<string,unknown>;
+     if(typeof range.from!=="number"||!Number.isFinite(range.from)||Math.abs(range.from)>1_000_000||typeof range.to!=="number"||!Number.isFinite(range.to)||Math.abs(range.to)>1_000_000||range.from>=range.to)throw Error();restoredRange={from:range.from,to:range.to} as unknown as LogicalRange}
+   }catch(_){persistenceStatus="UNAVAILABLE";persistenceError="INVALID_VIEW_STATE";return}
+  }
   const parseSnapshot=(raw:unknown,expectedId:string):DrawingSnapshot|null=>{
    if(raw===null)return null;
    if(!raw||typeof raw!=="object"||Array.isArray(raw))throw Error();
@@ -853,9 +907,29 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
     }else throw Error();
    }
   }catch(_){persistenceStatus="UNAVAILABLE";persistenceError="INVALID_OR_UNAVAILABLE_DRAWING";return}
+  if(isV3){
+   const drawingIds=snapshots.map(snapshot=>snapshot.options.id),indicatorIds=[...restoredAverages.map(item=>item.id),...restoredOscillators.map(item=>item.options.id)];
+   const paneIds=new Set([...restoredOscillators.map(item=>item.paneIndex),...restoredPaneLines.map(item=>item.paneIndex),...(restoredVolumePane===null?[]:[restoredVolumePane])]);
+   if(new Set([...drawingIds,...indicatorIds]).size!==drawingIds.length+indicatorIds.length||
+      paneIds.size!==restoredPaneHeights.length-1||Array.from({length:restoredPaneHeights.length-1},(_,i)=>i+1).some(index=>!paneIds.has(index))||
+      (restoredAverages.length+restoredOscillators.length>0&&(managedMovingAverages.size>0||oscillators.size>0))){
+    persistenceStatus="CONFLICT";persistenceError="VIEW_ALREADY_PRESENT";return;
+   }
+  }
   hydratingDrawings=true;
   try{
    for(const snapshot of snapshots){if(snapshot.kind==="PRICE")addPriceLevel(snapshot.options);else if(snapshot.kind==="TIME")addTimeMarker(snapshot.options,false);else if(snapshot.kind==="TEXT")addTextAnnotation(snapshot.options,false);else if(snapshot.kind==="TREND")addTrendLine(snapshot.options,false);else if(snapshot.kind==="RECT")addRectangle(snapshot.options,false);else if(snapshot.kind==="RAY")addRay(snapshot.options,false);else if(snapshot.kind==="CHANNEL")addChannel(snapshot.options,false);else addFibonacci(snapshot.options,false)}
+   if(isV3){
+    for(const options of restoredAverages)addMovingAverage(options);
+    for(const item of restoredOscillators)addOscillator(item.options);
+    for(const item of restoredPaneLines){addPaneLine(item.options,item.data);const series=paneLines.get(item.options.id)!;series.moveToPane(item.paneIndex)}
+    if(restoredVolume)showVolume(true);
+    for(const item of restoredOscillators)if(oscillators.get(item.options.id)?.paneIndex!==item.paneIndex)moveOscillator(item.options.id,item.paneIndex);
+    if(restoredVolume&&volume&&restoredVolumePane!==null){const current=chart.panes().findIndex(pane=>pane.getSeries().includes(volume!));if(current!==restoredVolumePane)volume.moveToPane(restoredVolumePane)}
+    if(chart.panes().length!==restoredPaneHeights.length)throw Error();
+    for(let index=1;index<restoredPaneHeights.length;index++){chart.panes()[index].setHeight(restoredPaneHeights[index]);paneHeightOverrides.set(index,restoredPaneHeights[index])}
+    setDisplayTimeZone(restoredTimeZone);if(restoredRange)setVisibleLogicalRange(restoredRange);
+   }
    undoStack.splice(0,undoStack.length,...restoredUndo);redoStack.splice(0,redoStack.length,...restoredRedo);persistenceStatus="READY";persistenceError=null;
   }catch(_){
    for(const item of priceLevels.values())price.detachPrimitive(item.primitive);priceLevels.clear();
@@ -866,9 +940,13 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    for(const item of rays.values())price.detachPrimitive(item.primitive);rays.clear();
     for(const item of fibonacci.values())price.detachPrimitive(item.primitive);fibonacci.clear();
     for(const item of channels.values())price.detachPrimitive(item.primitive);channels.clear();
+   for(const item of averages.values())chart.removeSeries(item);averages.clear();managedMovingAverages.clear();
+   for(const group of oscillators.values())for(const series of group.series.values())chart.removeSeries(series);oscillators.clear();readoutIndicators.clear();
+   for(const series of paneLines.values())chart.removeSeries(series);paneLines.clear();
+   if(volume){chart.removeSeries(volume);volume=null}
    undoStack.length=0;redoStack.length=0;persistenceStatus="UNAVAILABLE";persistenceError="RESTORE_FAILED";
   }finally{hydratingDrawings=false}
-  if(!isV2)persistDrawings();
+  if(!isV3)persistDrawings();
  }
  function selectDrawing(id:string|null){
   selectDrawings(id===null?[]:[id]);
@@ -1034,6 +1112,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   guard();const calculation=movingAverageData(bars,options),normalized={...options,source:options.source??"close",displayShift:options.displayShift??0};
   applyAverageData({id:options.id,color:options.color,lineWidth:options.lineWidth,visible:options.visible,title:options.title??`${options.type} ${options.period}`},calculation.points);
   managedMovingAverages.set(options.id,{options:normalized,base:new Map(calculation.base.map(point=>[point.time,point.value]))});
+  persistDrawings();
  }
  function refreshManagedMovingAverages(){
   for(const [id,state] of managedMovingAverages){
@@ -1461,13 +1540,14 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    visible:opts.visible??true,title:opts.title??opts.id});
   series.setData(values);
   readoutIndicators.set(opts.id,{id:opts.id,title:opts.title??opts.id,kind:"PANE",values:new Map(values.map(v=>[v.time,v.value]))});
+  persistDrawings();
  }
  function movePaneLine(id:string,paneIndex:number){
   guard();
   if(!Number.isInteger(paneIndex)||paneIndex<1||paneIndex>=chart.panes().length)
    throw Error("Invalid native pane index");
   const series=paneLines.get(id);if(!series)throw Error("Unknown native pane line");
-  series.moveToPane(paneIndex);
+  series.moveToPane(paneIndex);persistDrawings();
  }
  const oscillatorComponents=(kind:OscillatorKind):string[]=>kind==="rsi"?["rsi"]:kind==="atr"?["atr"]:kind==="macd"?["macd","signal","histogram"]:["adx","plusDi","minusDi"];
  const oscillatorTitles=(kind:OscillatorKind):Record<string,string>=>kind==="macd"?{macd:"MACD",signal:"Signal",histogram:"Histogram"}:kind==="adx"?{adx:"ADX",plusDi:"+DI",minusDi:"−DI"}:kind==="rsi"?{rsi:"RSI"}:{atr:"ATR"};
@@ -1503,27 +1583,28 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const normalized={...options,settings:{...options.settings}} as OscillatorOptions;
   const rows=calculateOscillator(bars,normalized.kind,normalized.settings);
   const group:OscillatorGroup={options:normalized,paneIndex:chart.panes().length,series:new Map(),values:new Map()};oscillators.set(options.id,group);
-  try{chart.panes()[chart.panes().length-1]?.setHeight(150);replaceOscillatorData(group)}catch(error){oscillators.delete(options.id);for(const series of group.series.values())chart.removeSeries(series);for(const key of oscillatorComponents(normalized.kind))readoutIndicators.delete(normalized.id+":"+key);throw error}
+  try{const paneIndex=chart.panes().length-1;chart.panes()[paneIndex]?.setHeight(150);paneHeightOverrides.set(paneIndex,150);replaceOscillatorData(group);persistDrawings()}catch(error){oscillators.delete(options.id);for(const series of group.series.values())chart.removeSeries(series);for(const key of oscillatorComponents(normalized.kind))readoutIndicators.delete(normalized.id+":"+key);throw error}
  }
  function updateOscillator(id:string,patch:Partial<Pick<OscillatorOptions,"settings"|"color"|"lineWidth"|"visible"|"title">>){
   guard();const group=oscillators.get(id);if(!group)throw Error("Unknown oscillator");const next={...group.options,...patch,settings:patch.settings?{...patch.settings}:group.options.settings};
   if(!colorPattern.test(next.color)||(next.lineWidth!==undefined&&![1,2,3,4].includes(next.lineWidth)))throw Error("Invalid oscillator style");
-  calculateOscillator(bars,next.kind,next.settings);group.options=next;replaceOscillatorData(group);
+  calculateOscillator(bars,next.kind,next.settings);group.options=next;replaceOscillatorData(group);persistDrawings();
  }
  function oscillatorOptions(id:string){guard();const group=oscillators.get(id);return group?{...group.options,settings:{...group.options.settings}}:null}
- function moveOscillator(id:string,paneIndex:number){guard();const group=oscillators.get(id);if(!group||!Number.isInteger(paneIndex)||paneIndex<1||paneIndex>=chart.panes().length)throw Error("Invalid oscillator pane");for(const series of group.series.values())series.moveToPane(paneIndex);group.paneIndex=paneIndex}
+ function moveOscillator(id:string,paneIndex:number){guard();const group=oscillators.get(id);if(!group||!Number.isInteger(paneIndex)||paneIndex<1||paneIndex>=chart.panes().length)throw Error("Invalid oscillator pane");for(const series of group.series.values())series.moveToPane(paneIndex);group.paneIndex=paneIndex;persistDrawings()}
  function oscillatorPaneLayout(){guard();return chart.panes().map((pane,index)=>({index,titles:pane.getSeries().map(series=>series.options().title)}))}
- function removeOscillator(id:string){guard();const group=oscillators.get(id);if(!group)return false;for(const series of group.series.values())chart.removeSeries(series);for(const key of oscillatorComponents(group.options.kind))readoutIndicators.delete(id+":"+key);oscillators.delete(id);return true}
+ function removeOscillator(id:string){guard();const group=oscillators.get(id);if(!group)return false;for(const series of group.series.values())chart.removeSeries(series);for(const key of oscillatorComponents(group.options.kind))readoutIndicators.delete(id+":"+key);oscillators.delete(id);persistDrawings();return true}
  function resizePane(index:number,height:number){
   guard();
   if(!Number.isInteger(index)||index<1||index>=chart.panes().length||
    !Number.isInteger(height)||height<80||height>600)throw Error("Invalid pane height");
-  chart.panes()[index].setHeight(height);
+  chart.panes()[index].setHeight(height);paneHeightOverrides.set(index,height);
+  persistDrawings();
  }
  function paneHeights(){guard();return chart.panes().map(pane=>pane.getHeight())}
  function removePaneLine(id:string){
   guard();const series=paneLines.get(id);if(!series)return false;
-  chart.removeSeries(series);paneLines.delete(id);readoutIndicators.delete(id);return true;
+  chart.removeSeries(series);paneLines.delete(id);readoutIndicators.delete(id);persistDrawings();return true;
  }
  function moveAverage(id:string,pane:number){
   guard();if(!averages.has(id)||!Number.isInteger(pane)||pane<0||pane>8)throw Error("Invalid pane request");
@@ -1534,9 +1615,10 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   if(show&&!volume){
    volume=newVolume();
    volume.setData(volumeRows());
-   const pane=chart.panes()[chart.panes().length-1];
-   if(pane)pane.setHeight(140);
+   const paneIndex=chart.panes().length-1,pane=chart.panes()[paneIndex];
+   if(pane)pane.setHeight(140);paneHeightOverrides.set(paneIndex,140);
   }else if(!show&&volume){chart.removeSeries(volume);volume=null}
+  persistDrawings();
  }
  function visibleLogicalRange():LogicalRange|null{
   guard();const range=chart.timeScale().getVisibleLogicalRange();
@@ -1547,6 +1629,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   if(!range||!Number.isFinite(range.from)||!Number.isFinite(range.to)||range.from>=range.to)
    throw Error("Invalid visible logical range");
   chart.timeScale().setVisibleLogicalRange({from:range.from,to:range.to});
+  persistDrawings();
  }
  function setDisplayTimeZone(timeZone:string){
   guard();if(typeof timeZone!=="string"||timeZone.length<1||timeZone.length>100)throw Error("Invalid IANA display timezone");
@@ -1556,6 +1639,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   if(!canonical)throw Error("Invalid IANA display timezone");
   displayTimeZone=canonical;timeFormatters=nextFormatters!;
   chart.applyOptions({localization:{timeFormatter:formatCrosshairTime},timeScale:{tickMarkFormatter:formatTimeLabel}});
+  persistDrawings();
   return displayTimeZone;
  }
  function formatDisplayTime(time:Time,tickType:TickMarkType=TickMarkType.Time){guard();return formatTimeLabel(time,tickType)}
@@ -1576,6 +1660,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   chart.removeSeries(s);averages.delete(id);managedMovingAverages.delete(id);readoutIndicators.delete(id);return true;
  }
  function averageOptions(id:string){guard();return averages.get(id)?.options()??null}
+ function movingAverageOptions(id:string){guard();const value=managedMovingAverages.get(id)?.options;return value?{...value}:null}
  function readDataWindow(time:number):DataWindowReadout{
   guard();
   if(!Number.isSafeInteger(time)||time<=0||!Number.isFinite(new Date(time*1000).getTime()))throw Error("Invalid UTC candle time");
@@ -1619,7 +1704,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
     averageCount:averages.size,nativePaneLines:paneLines.size,oscillatorCount:oscillators.size,oscillatorPaneCount:new Set(Array.from(oscillators.values(),group=>{const series=group.series.values().next().value;return series?chart.panes().findIndex(pane=>pane.getSeries().includes(series)):-1}).filter(index=>index>=0)).size,nativePrimitives:drawingCount(),selectedDrawingId,selectedDrawingIds:[...selectedDrawingIds],hoveredDrawingId,
   paneCount:chart.panes().length,volumeVisible:!!volume,persistenceStatus,persistenceError}}
  function destroy(){if(destroyed)return;finishDrag(true);destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();managedMovingAverages.clear();paneLines.clear();oscillators.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();measurements.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
- return Object.freeze({setCandles,addAverage,addMovingAverage,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,addPriceLevel,updatePriceLevel,removePriceLevel,
+  return Object.freeze({setCandles,addAverage,addMovingAverage,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,drawingPosition,drawingAnchorPosition,readDrawing,exportDrawings,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,
   addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,addOscillator,updateOscillator,removeOscillator,moveOscillator,oscillatorOptions,oscillatorPaneLayout,resizePane,paneHeights,showVolume,visibleLogicalRange,setVisibleLogicalRange,setDisplayTimeZone,displayTimeZone:()=>displayTimeZone,formatTimeLabel:formatDisplayTime,formatCrosshairTime,readDataWindow,
   updateLast,changeAccount,averageOptions,inspect,destroy});

@@ -156,6 +156,38 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.destroy();host.remove();
    return {times,before,after,crosshairBefore,crosshairAfter,markerBefore,markerAfter,readoutBefore,readoutAfter,storedBefore,storedAfter,invalidRejected,timezoneAfterInvalid,afterInvalid};
   });
+  const viewPersistenceProbe=await page.evaluate(()=>{
+   const bars=Array.from({length:60},(_,i)=>{const close=100+i*.15;return {time:1700200000+i*900,open:close-.2,high:close+1,low:close-1,close}});
+   const scope={symbol:"XAUUSD",timeframe:"M15"},host=document.createElement("div");host.style.cssText="width:900px;height:520px;position:absolute;left:-1800px;top:0";document.body.append(host);
+   let engine=ChartStudioV5.createStudioV5(host,"view-persistence",scope);engine.setCandles(bars);
+   engine.addMovingAverage({id:"view-ema",type:"EMA",period:9,source:"hlc3",color:"#55ccaa",lineWidth:3,displayShift:2,title:"EMA nine"});
+   engine.addOscillator({id:"view-rsi",kind:"rsi",settings:{period:14},color:"#bb66dd",title:"RSI saved"});
+   engine.addOscillator({id:"view-macd",kind:"macd",settings:{fast:12,slow:26,signal:9},color:"#66bbdd",title:"MACD saved"});
+   engine.moveOscillator("view-macd",1);engine.addPaneLine({id:"view-signal",color:"#f7c774",lineWidth:3,title:"Saved signal"},bars.slice(14).map((bar,i)=>({time:bar.time,value:40+Math.sin(i/5)*10})));engine.movePaneLine("view-signal",1);engine.showVolume(true);engine.resizePane(1,190);engine.setDisplayTimeZone("Europe/Berlin");engine.setVisibleLogicalRange({from:12,to:42});
+   const expected={ema:engine.movingAverageOptions("view-ema"),rsi:engine.oscillatorOptions("view-rsi"),macd:engine.oscillatorOptions("view-macd"),layout:engine.oscillatorPaneLayout().map(pane=>({...pane,titles:[...pane.titles].sort()})),heights:engine.paneHeights(),volume:engine.inspect().volumeVisible,zone:engine.displayTimeZone(),range:engine.visibleLogicalRange(),paneLines:engine.inspect().nativePaneLines};
+   const validSnapshot=JSON.parse(localStorage.getItem("2eas.chartstudio.v5.drawings:view-persistence:XAUUSD:M15"));
+   engine.destroy();engine=ChartStudioV5.createStudioV5(host,"view-persistence",scope);engine.setCandles(bars);
+   const restored={ema:engine.movingAverageOptions("view-ema"),rsi:engine.oscillatorOptions("view-rsi"),macd:engine.oscillatorOptions("view-macd"),layout:engine.oscillatorPaneLayout().map(pane=>({...pane,titles:[...pane.titles].sort()})),heights:engine.paneHeights(),volume:engine.inspect().volumeVisible,zone:engine.displayTimeZone(),range:engine.visibleLogicalRange(),status:engine.inspect().persistenceStatus,error:engine.inspect().persistenceError,paneLines:engine.inspect().nativePaneLines};
+   engine.destroy();host.remove();
+   validSnapshot.account="invalidview";validSnapshot.displayTimeZone="Mars/Olympus_Mons";localStorage.setItem("2eas.chartstudio.v5.drawings:invalidview:XAUUSD:M15",JSON.stringify(validSnapshot));
+   const invalidHost=document.createElement("div");invalidHost.style.cssText="width:900px;height:520px;position:absolute;left:-1800px;top:0";document.body.append(invalidHost);
+   const invalid=ChartStudioV5.createStudioV5(invalidHost,"invalidview",scope);invalid.setCandles(bars);const invalidView={status:invalid.inspect().persistenceStatus,error:invalid.inspect().persistenceError,drawings:invalid.inspect().nativePrimitives,averages:invalid.inspect().averageCount,oscillators:invalid.inspect().oscillatorCount,volume:invalid.inspect().volumeVisible};invalid.destroy();invalidHost.remove();
+   const otherHost=document.createElement("div");otherHost.style.cssText="width:900px;height:520px;position:absolute;left:-1800px;top:0";document.body.append(otherHost);
+   const other=ChartStudioV5.createStudioV5(otherHost,"view-persistence",{symbol:"XAUUSD",timeframe:"H1"});other.setCandles(bars);const otherScope={count:other.inspect().averageCount+other.inspect().oscillatorCount,volume:other.inspect().volumeVisible,zone:other.displayTimeZone()};other.destroy();otherHost.remove();
+   return {expected,restored,otherScope,invalidView};
+  });
+  assert.deepEqual(viewPersistenceProbe.restored.ema,viewPersistenceProbe.expected.ema);
+  assert.deepEqual(viewPersistenceProbe.restored.rsi,viewPersistenceProbe.expected.rsi);
+  assert.deepEqual(viewPersistenceProbe.restored.macd,viewPersistenceProbe.expected.macd);
+  assert.deepEqual(viewPersistenceProbe.restored.layout,viewPersistenceProbe.expected.layout);
+  assert.deepEqual(viewPersistenceProbe.restored.heights,viewPersistenceProbe.expected.heights);
+  assert.equal(viewPersistenceProbe.restored.volume,true);
+  assert.equal(viewPersistenceProbe.restored.zone,"Europe/Berlin");
+  assert.deepEqual(viewPersistenceProbe.restored.range,viewPersistenceProbe.expected.range);
+  assert.equal(viewPersistenceProbe.restored.paneLines,1,"custom native pane lines restore with the view layout");
+  assert.equal(viewPersistenceProbe.restored.status,"READY");
+  assert.deepEqual(viewPersistenceProbe.otherScope,{count:0,volume:false,zone:"UTC"});
+  assert.deepEqual(viewPersistenceProbe.invalidView,{status:"UNAVAILABLE",error:"INVALID_VIEW_STATE",drawings:0,averages:0,oscillators:0,volume:false},"invalid v3 state is rejected before any renderer mutation");
   const paneResizeSetup=await page.evaluate(async()=>{
    const host=document.createElement("div");host.style.cssText="width:900px;height:420px";document.body.append(host);
    const engine=ChartStudioV5.createStudioV5(host,"at003-pane-resize"),bars=Array.from({length:80},(_,i)=>{
@@ -947,6 +979,9 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const legacyKey="2eas.chartstudio.v5.drawings:migrationtest:XAUUSD:M15",legacy=JSON.stringify({schemaVersion:1,account:"migrationtest",symbol:"XAUUSD",timeframe:"M15",drawings:[{kind:"PRICE",options:{id:"legacy-price",price:4001,color:"#ffffff",visible:true,locked:false}}]});localStorage.setItem(legacyKey,legacy);
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"migrationtest",scope);e.setCandles(rows);
    const migrated={status:e.inspect().persistenceStatus,drawing:e.readDrawing("legacy-price"),stored:JSON.parse(localStorage.getItem(legacyKey))};e.destroy();
+   const legacyV2Key="2eas.chartstudio.v5.drawings:migrationv2:XAUUSD:M15",legacyV2=JSON.stringify({schemaVersion:2,account:"migrationv2",symbol:"XAUUSD",timeframe:"M15",drawings:[{kind:"PRICE",options:{id:"legacy-v2-price",price:4002,color:"#ffffff",visible:true,locked:false}}],undoStack:[],redoStack:[]});localStorage.setItem(legacyV2Key,legacyV2);
+   e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"migrationv2",scope);e.setCandles(rows);
+   const migratedV2={status:e.inspect().persistenceStatus,drawing:e.readDrawing("legacy-v2-price"),stored:JSON.parse(localStorage.getItem(legacyV2Key))};e.destroy();
    const badHistoryKey="2eas.chartstudio.v5.drawings:badhistory:XAUUSD:M15",badHistory=JSON.stringify({schemaVersion:2,account:"badhistory",symbol:"XAUUSD",timeframe:"M15",drawings:[{kind:"PRICE",options:{id:"must-not-restore",price:4001,color:"#ffffff",visible:true,locked:false}}],undoStack:[{id:"wrong-id",before:null,after:{kind:"PRICE",options:{id:"other-id",price:4001,color:"#ffffff",visible:true,locked:false}}}],redoStack:[]});localStorage.setItem(badHistoryKey,badHistory);
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"badhistory",scope);e.setCandles(rows);
    const malformedHistory={status:e.inspect().persistenceStatus,error:e.inspect().persistenceError,count:e.inspect().nativePrimitives,stored:localStorage.getItem(badHistoryKey)};e.destroy();
@@ -970,14 +1005,14 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const capacitySeed=capacityEnvelope(),capacitySeedBytes=new TextEncoder().encode(capacitySeed).byteLength,capacitySeedHistory=capacityHistory.length,capacitySeedOldest=capacityHistory[0]?.id;
    localStorage.setItem(capacityHistoryKey,capacitySeed);
    const capacityHost=document.createElement("div");capacityHost.style.cssText="width:2px;height:2px;position:absolute;left:-2000px;top:0";document.body.append(capacityHost);
-   e=ChartStudioV5.createStudioV5(capacityHost,"capacityhistory",scope);e.setCandles(rows);const capacityHydrated={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives};
+   e=ChartStudioV5.createStudioV5(capacityHost,"capacityhistory",scope);e.setCandles(rows);const capacityHydrated={status:e.inspect().persistenceStatus,error:e.inspect().persistenceError,count:e.inspect().nativePrimitives};
    e.updateFibonacci("capacity-fibo-000000000000000000",{color:"#ffffff"});
-   const capacityStored=JSON.parse(localStorage.getItem(capacityHistoryKey)),capacityHistoryBound={seedBytes:capacitySeedBytes,storedBytes:new TextEncoder().encode(localStorage.getItem(capacityHistoryKey)).byteLength,seedHistoryCount:capacitySeedHistory,storedHistoryCount:capacityStored.undoStack.length,seedOldest:capacitySeedOldest,storedOldest:capacityStored.undoStack[0]?.id,drawingCount:e.inspect().nativePrimitives,status:e.inspect().persistenceStatus};e.destroy();capacityHost.remove();
+   const capacityStored=JSON.parse(localStorage.getItem(capacityHistoryKey)),capacityHistoryBound={seedBytes:capacitySeedBytes,storedBytes:new TextEncoder().encode(localStorage.getItem(capacityHistoryKey)).byteLength,seedHistoryCount:capacitySeedHistory,storedHistoryCount:capacityStored.undoStack.length,seedOldest:capacitySeedOldest,storedOldest:capacityStored.undoStack[0]?.id,drawingCount:e.inspect().nativePrimitives,status:e.inspect().persistenceStatus,error:e.inspect().persistenceError};e.destroy();capacityHost.remove();
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",scope);e.setCandles(rows);
    e.addAverage({id:"ema21",color:"#61ddf2"},rows.slice(20).map(c=>({time:c.time,value:c.close-1.2})));
    e.addPaneLine({id:"rsi14",color:"#f7c774"},rows.slice(14).map((c,i)=>({time:c.time,value:45+18*Math.sin(i/8)})));
    e.showVolume(true);window.__v5Screenshot=e;
-   return {restored,otherAccount,returned,otherTimeframe,conflict,externalSnapshot,corrupt,unicodeOversizeSnapshot,unicodeOversizeImport,migrated,legacy,badHistory,malformedHistory,migrationFailure,failedMigration,sizeBound,capacityHydrated,capacityHistoryBound};
+   return {restored,otherAccount,returned,otherTimeframe,conflict,externalSnapshot,corrupt,unicodeOversizeSnapshot,unicodeOversizeImport,migrated,migratedV2,legacy,badHistory,malformedHistory,migrationFailure,failedMigration,sizeBound,capacityHydrated,capacityHistoryBound};
   });
   assert.equal(persistenceProbe.restored.status,"READY");
   assert.equal(persistenceProbe.restored.count,11);
@@ -1008,9 +1043,12 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(persistenceProbe.unicodeOversizeImport.error,"Invalid drawing import size","portable import enforces the UTF-8 byte limit before parsing");
   assert.equal(persistenceProbe.migrated.status,"READY");
   assert.equal(persistenceProbe.migrated.drawing.price,4001);
-  assert.equal(persistenceProbe.migrated.stored.schemaVersion,2);
+  assert.equal(persistenceProbe.migrated.stored.schemaVersion,3);
   assert.deepEqual(persistenceProbe.migrated.stored.undoStack,[]);
   assert.deepEqual(persistenceProbe.migrated.stored.redoStack,[]);
+  assert.equal(persistenceProbe.migratedV2.status,"READY");
+  assert.equal(persistenceProbe.migratedV2.drawing.price,4002);
+  assert.equal(persistenceProbe.migratedV2.stored.schemaVersion,3);
   assert.equal(persistenceProbe.malformedHistory.status,"UNAVAILABLE");
   assert.equal(persistenceProbe.malformedHistory.count,0);
   assert.equal(persistenceProbe.malformedHistory.stored,persistenceProbe.badHistory);
@@ -1315,5 +1353,5 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   }finally{await touchContext.close()}
   await page.screenshot({path:path.join(folder,"chart-studio-v5-poc.png"),fullPage:true});
   console.log("PASS native v5 chart, configurable oscillator panes, move/resize, averages, volume, account isolation, no writes");
- }finally{if(browser)await browser.close();server.kill()}
-})().catch(err=>{console.error(err);process.exitCode=1});
+ }finally{if(browser)await Promise.race([browser.close(),new Promise(resolve=>setTimeout(resolve,3000))]);if(server.exitCode===null){server.kill();await Promise.race([new Promise(resolve=>server.once("exit",resolve)),new Promise(resolve=>setTimeout(resolve,1000))])}}
+})().then(()=>process.exit(0)).catch(err=>{console.error(err);process.exitCode=1});
