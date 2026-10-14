@@ -59,9 +59,12 @@ Current features:
   pair direction. Missing, stale, invalid, or ambiguous symbols leave USD
   amounts unavailable; the broker's original account-currency PnL stays primary.
 - Two broker-verified What-if previews can be saved as account-scoped local A/B
-  snapshots and exported as JSON. Snapshots retain the exact preview request,
-  response, currency, and capture time; they are not executable orders and are
-  not synced to the server.
+  snapshots and exported as JSON. Schema v2 retains the exact preview request
+  and response plus the same-account portfolio exposure, stop risk and
+  descriptive What-if-symbol correlations as read at capture time. Exported
+  portfolio context omits broker login/server identity. Schema-v1 snapshots
+  remain readable with their portfolio context marked unavailable. These are
+  not executable orders and are not synced to the server.
 
 Routes: `GET /api/chart/v1/capabilities`,
 `GET /api/chart/v1/quotes`,
