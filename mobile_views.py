@@ -580,15 +580,42 @@ ASCII_HTML = """<!DOCTYPE html>
       font-family: "Courier New", Courier, Lucida Console, Monaco, ui-monospace, monospace;
       font-size: 13px;
       line-height: 1.25;
-      padding: 10px;
+      padding: 16px 12px 60px;
       overflow-x: auto;
       text-shadow: 0 0 4px rgba(51,255,102,0.35);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
     }
     body.theme-amber { text-shadow: 0 0 4px rgba(255,176,0,0.35); }
     body.theme-cyan { text-shadow: 0 0 4px rgba(0,229,255,0.35); }
+    .terminal-container {
+      width: fit-content;
+      max-width: 100%;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+    }
+    @media (max-width: 800px) {
+      body {
+        font-size: 11px;
+        padding: 10px 6px 30px;
+      }
+    }
+    @media (max-width: 500px) {
+      body {
+        font-size: 9.5px;
+        padding: 6px 4px 20px;
+      }
+    }
     pre {
       font-family: inherit;
       white-space: pre;
+      line-height: 1.25;
+      display: block;
+      margin: 0 auto;
     }
     .top-bar {
       margin-bottom: 8px;
@@ -684,24 +711,26 @@ ASCII_HTML = """<!DOCTYPE html>
 <body>
   <div class="scanlines"></div>
 
-  <!-- NAVIGATION -->
-  <div class="top-bar">
-    <span>[ANSICHT]:</span>
-    <a id="link-ascii" href="/ascii" class="active-btn">[📟 ASCII]</a>
-    <a id="link-mobile" href="/mobile">[📱 NORMAL MOBILE]</a>
-    <a id="link-desktop" href="/">[🖥️ DESKTOP VOLL]</a>
-    <span style="margin-left:8px;">[FARBE]:</span>
-    <button onclick="setTheme('green')">[GRÜN]</button>
-    <button onclick="setTheme('amber')">[AMBER]</button>
-    <button onclick="setTheme('cyan')">[CYAN]</button>
+  <div class="terminal-container">
+    <!-- NAVIGATION -->
+    <div class="top-bar">
+      <span>[ANSICHT]:</span>
+      <a id="link-ascii" href="/ascii" class="active-btn">[📟 ASCII]</a>
+      <a id="link-mobile" href="/mobile">[📱 NORMAL MOBILE]</a>
+      <a id="link-desktop" href="/">[🖥️ DESKTOP VOLL]</a>
+      <span style="margin-left:8px;">[FARBE]:</span>
+      <button onclick="setTheme('green')">[GRÜN]</button>
+      <button onclick="setTheme('amber')">[AMBER]</button>
+      <button onclick="setTheme('cyan')">[CYAN]</button>
+    </div>
+
+    <div id="account-buttons" class="top-bar"></div>
+
+    <pre id="terminal-screen">INITIALISIERE TITAN ASCII TERMINAL ...</pre>
   </div>
 
-  <div id="account-buttons" class="top-bar"></div>
-
-  <pre id="terminal-screen">INITIALISIERE TITAN ASCII TERMINAL ...</pre>
-
   <script>
-    const W = 82;
+    const W = 96;
     const BASE_PATH = window.location.pathname.startsWith('/stt') ? '/stt' : '';
 
     let activeAccount = 'xau5m_m5';
@@ -734,6 +763,7 @@ ASCII_HTML = """<!DOCTYPE html>
       const plain = c.replace(/<[^>]+>/g, '');
       const diff = (W - 4) - plain.length;
       if (diff > 0) return '│ ' + c + ' '.repeat(diff) + ' │\\n';
+      if (diff < 0 && c === plain) return '│ ' + c.slice(0, W - 4) + ' │\\n';
       return '│ ' + c + ' │\\n';
     }
 
@@ -764,6 +794,7 @@ ASCII_HTML = """<!DOCTYPE html>
       const plain = c.replace(/<[^>]+>/g, '');
       const diff = (W - 4) - plain.length;
       if (diff > 0) return '║ ' + c + ' '.repeat(diff) + ' ║\\n';
+      if (diff < 0 && c === plain) return '║ ' + c.slice(0, W - 4) + ' ║\\n';
       return '║ ' + c + ' ║\\n';
     }
 
@@ -925,10 +956,10 @@ ASCII_HTML = """<!DOCTYPE html>
         else if (r === 2) rightSide = '  ZEITFENSTER: ' + tf;
         else if (r === 1) rightSide = '  █ = BULLISCH';
         else if (r === 0) rightSide = '  ░ = BÄRISCH / │ = DOCHT';
-        line += fit(rightSide, 35);
+        line += fit(rightSide, 50);
         out += row(line);
       }
-      const botAxis = '        └' + '──'.repeat(last.length) + fit('  [JÜNGSTE KERZEN RECHTS]', 35);
+      const botAxis = '        └' + '──'.repeat(last.length) + fit('  [JÜNGSTE KERZEN RECHTS]', 51);
       out += row(botAxis);
       return out;
     }
@@ -960,14 +991,14 @@ ASCII_HTML = """<!DOCTYPE html>
 
         // 1. TERMINAL HEADER
         let screen = hTop('TITAN PRO INSTITUTIONAL GOLD TERMINAL [ASCII EDITION v7.10]');
-        screen += hRow(`KONTO: ${fit(accName, 42)} SERVER/DE: ${deTime} (${tf})`);
+        screen += hRow(`KONTO: ${fit(accName, 44)} SERVER/DE: ${deTime} (${tf})`);
         screen += hBot();
         screen += '\\n';
 
         // 2. LIVE MARKT
         screen += bTop('LIVE MARKT (XAUUSD)');
-        screen += row(`BID: $${fit(bid, 9)} │ ASK: $${fit(ask, 9)} │ SPREAD: ${fit(String(spread), 4)} │ KERZE (${tf}): ${remaining}`);
-        screen += row(`TREND: [${fit(trend, 8)}] │ EMA9: ${fit(ema9Global, 9)} │ RSI(14): ${fit(rsi, 5)} │ STATUS: LIVE TICK FREIGABE`);
+        screen += row(`BID: $${fit(bid, 9)} │ ASK: $${fit(ask, 9)} │ SPREAD: ${fit(String(spread), 4)} │ KERZE (${tf}): ${remaining} │ DE-ZEIT: ${deTime}`);
+        screen += row(`TREND: [${fit(trend, 8)}] │ EMA9: ${fit(ema9Global, 9)} │ RSI(14): ${fit(rsi, 5)} │ STATUS: [● LIVE TICK AKTIV]`);
         screen += bBot();
         screen += '\\n';
 
@@ -993,14 +1024,14 @@ ASCII_HTML = """<!DOCTYPE html>
         if (positions.length === 0) {
           screen += row('KEINE OFFENEN POSITIONEN IM MARKT AUF DIESEM KONTO');
         } else if (!posDetailMode) {
-          screen += row('#TICKET     TYP   LOT   OPEN      LIVE      EMA9-ABST   P&L (USD)  AKTION');
+          screen += row('#TICKET     TYP   LOT    OPEN       LIVE       EMA9-ABST  P&L (USD)   AKTION');
           screen += bDiv();
           for (const p of positions) {
             const tick = fit('#' + p.ticket, 11);
             const typ = fit(p.type, 5);
-            const lot = fit(Number(p.volume).toFixed(2), 5);
-            const op = fit('$' + p.open_price.toFixed(2), 9);
-            const cp = fit('$' + p.current_price.toFixed(2), 9);
+            const lot = fit(Number(p.volume).toFixed(2), 6);
+            const op = fit('$' + p.open_price.toFixed(2), 10);
+            const cp = fit('$' + p.current_price.toFixed(2), 10);
             const dist = fit(p.dist_to_ema9 !== null && p.dist_to_ema9 !== undefined ? (p.dist_to_ema9.toFixed(1) + 'pt') : '—', 10);
             const pnl = fit((p.profit_usd >= 0 ? '+' : '') + '$' + p.profit_usd.toFixed(2), 10, 'right');
             const clBtn = btn('[X SCHLIESSEN]', `closePos(${p.ticket})`, 'danger');
@@ -1012,11 +1043,11 @@ ASCII_HTML = """<!DOCTYPE html>
             if (i > 0) screen += bDiv();
             const tick = fit('#' + p.ticket, 11);
             const typ = fit(p.type, 5);
-            const lot = fit(Number(p.volume).toFixed(2) + ' Lot', 9);
-            const op = fit('OPEN: $' + p.open_price.toFixed(2), 16);
-            const cp = fit('LIVE: $' + p.current_price.toFixed(2), 16);
+            const lot = fit(Number(p.volume).toFixed(2) + ' Lot', 10);
+            const op = fit('OPEN: $' + p.open_price.toFixed(2), 17);
+            const cp = fit('LIVE: $' + p.current_price.toFixed(2), 17);
             const pnlSign = p.profit_usd >= 0 ? '+' : '';
-            const pnlStr = fit(`${pnlSign}$${p.profit_usd.toFixed(2)} (${p.profit_pct >= 0 ? '+' : ''}${p.profit_pct.toFixed(1)}%)`, 18, 'right');
+            const pnlStr = fit(`${pnlSign}$${p.profit_usd.toFixed(2)} (${p.profit_pct >= 0 ? '+' : ''}${p.profit_pct.toFixed(1)}%)`, 20, 'right');
             screen += row(`${tick} ${typ} ${lot} ${op} ${cp} ${pnlStr}`);
 
             const ema9Val = p.ema9 ? '$' + Number(p.ema9).toFixed(2) : (ema9Global !== '—' ? ema9Global : '—');
@@ -1026,15 +1057,15 @@ ASCII_HTML = """<!DOCTYPE html>
               distText = `${Number(p.dist_to_ema9).toFixed(2)} Pkt ${rel ? '(' + rel + ')' : ''}`;
             }
             const targetUsd = p.target_usd || 28.0;
-            screen += row(`  [EMA9-ZIEL]: ${fit(ema9Val, 9)} │ ABSTAND: ${fit(distText, 25)} │ MIN-ZIEL: $${targetUsd.toFixed(0)}`);
+            screen += row(`  [EMA9-ZIEL]: ${fit(ema9Val, 10)} │ ABSTAND: ${fit(distText, 28)} │ MIN-ZIEL: $${targetUsd.toFixed(0)}`);
 
             const isReady = p.profit_usd >= targetUsd;
             let exitStatus = '';
             if (isReady) {
-              exitStatus = `AUSSTIEG: [✅ MIN-GEWINN ERREICHT (+$${p.profit_usd.toFixed(2)} >= $${targetUsd.toFixed(0)}) · SCHLIESST BEI EMA9]`;
+              exitStatus = `AUSSTIEG: [BEREIT: MIN-GEWINN ERREICHT (+$${p.profit_usd.toFixed(2)} >= $${targetUsd.toFixed(0)}) · SCHLIESST BEI EMA9]`;
             } else {
               const diff = (targetUsd - p.profit_usd).toFixed(2);
-              exitStatus = `AUSSTIEG: [⏳ MIN-GEWINN OFFEN: +$${p.profit_usd.toFixed(2)} / $${targetUsd.toFixed(0)} · NOCH $${diff} BIS ZIEL]`;
+              exitStatus = `AUSSTIEG: [OFFEN: MIN-GEWINN +$${p.profit_usd.toFixed(2)} / $${targetUsd.toFixed(0)} · NOCH $${diff} BIS ZIEL]`;
             }
             screen += row('  ' + exitStatus);
 
@@ -1043,7 +1074,7 @@ ASCII_HTML = """<!DOCTYPE html>
             const btnSL = btn('[SL -50$]', `quickSL(${p.ticket}, -50)`);
             const btnTP = btn('[TP +50$]', `quickTP(${p.ticket}, 50)`);
             const btnClose = btn('[X SCHLIESSEN]', `closePos(${p.ticket})`, 'danger');
-            screen += row(`  ${fit(slStr, 25)} │ AKTIONEN: ${btnBE} ${btnSL} ${btnTP} ${btnClose}`);
+            screen += row(`  ${fit(slStr, 25)} │ AKTIONEN: ${btnBE}  ${btnSL}  ${btnTP}  ${btnClose}`);
           }
         }
         screen += bBot();
@@ -1066,30 +1097,30 @@ ASCII_HTML = """<!DOCTYPE html>
         const btnLAll = btn(journalLimit === 0 ? '[● ALLE]' : '[○ ALLE]', 'setJournalLimit(0)');
 
         screen += bTop('TRADE JOURNAL & PORTFOLIO-HISTORIE');
-        screen += row(`FILTER: ${btnScopeAll} ${btnScopeSingle} │ LIMIT: ${btnL10} ${btnL25} ${btnLAll}`);
+        screen += row(`FILTER: ${btnScopeAll}  ${btnScopeSingle} │ LIMIT: ${btnL10} ${btnL25} ${btnLAll}`);
         screen += bDiv();
 
         const totStr = (totPnL >= 0 ? '+' : '') + '$' + totPnL.toFixed(2);
         const liveStr = (livePnL >= 0 ? '+' : '') + '$' + livePnL.toFixed(2);
         const histStr = (histPnL >= 0 ? '+' : '') + '$' + histPnL.toFixed(2);
-        screen += row(`GESAMT: ${fit(totStr, 12)} │ LIVE: ${fit(liveStr, 12)} │ HISTORISCH: ${fit(histStr, 12)}`);
-        screen += row(`TRADES: ${fit(entries.length + ' GELADEN', 12)} │ KONTEN: ${fit(okAccs + '/' + Object.keys(accounts).length + ' ONLINE', 12)} │ MODUS: ${journalScope === 'all' ? 'ALLE KONTEN' : accName}`);
+        screen += row(`GESAMT: ${fit(totStr, 14)} │ LIVE: ${fit(liveStr, 14)} │ HISTORISCH: ${fit(histStr, 14)}`);
+        screen += row(`TRADES: ${fit(entries.length + ' GELADEN', 14)} │ KONTEN: ${fit(okAccs + '/' + Object.keys(accounts).length + ' ONLINE', 14)} │ MODUS: ${journalScope === 'all' ? 'ALLE KONTEN' : accName}`);
         screen += bDiv('GELISTETE TRADES');
 
         if (entries.length === 0) {
           screen += row('KEINE TRADES IM GEWÄHLTEN JOURNAL VERZEICHNET');
         } else {
-          screen += row('#TICKET     KONTO      TYP  LOT   OPEN       CLOSE/AKT  P&L (USD)  STATUS');
+          screen += row('#TICKET      KONTO       TYP  LOT    OPEN       CLOSE/AKT  P&L (USD)   STATUS');
           screen += bDiv();
           const displayList = journalLimit > 0 ? entries.slice(0, journalLimit) : entries;
           for (const it of displayList) {
-            const tick = fit('#' + it.ticket, 11);
-            const accTag = fit(it.account || activeAccount, 10);
+            const tick = fit('#' + it.ticket, 12);
+            const accTag = fit(it.account || activeAccount, 11);
             const typ = fit(it.type, 4);
-            const lot = fit(Number(it.volume).toFixed(2), 5);
+            const lot = fit(Number(it.volume).toFixed(2), 6);
             const op = fit('$' + Number(it.open_price).toFixed(2), 10);
             const cp = fit('$' + Number(it.close_price || it.current_price).toFixed(2), 10);
-            const pnl = fit((it.profit_usd >= 0 ? '+' : '') + '$' + Number(it.profit_usd).toFixed(2), 10, 'right');
+            const pnl = fit((it.profit_usd >= 0 ? '+' : '') + '$' + Number(it.profit_usd).toFixed(2), 11, 'right');
             const st = fit(it.status, 6);
             screen += row(`${tick} ${accTag} ${typ} ${lot} ${op} ${cp} ${pnl}  ${st}`);
           }

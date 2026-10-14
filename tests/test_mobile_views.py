@@ -30,6 +30,9 @@ def test_ascii_endpoint():
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     assert "terminal-screen" in response.text
+    assert "terminal-container" in response.text
+    assert "align-items: center" in response.text
+    assert "const W = 96" in response.text
     assert "TITAN ASCII TERMINAL" in response.text
     assert "EMA9-ZIEL" in response.text
     assert "GESAMT (ALLE KONTEN)" in response.text
