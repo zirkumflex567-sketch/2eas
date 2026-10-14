@@ -237,6 +237,21 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.ok(Number.isFinite(trendPoint.x)&&Number.isFinite(trendPoint.y));
   const rectanglePoint=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-zone"));
   assert.ok(Number.isFinite(rectanglePoint.x)&&Number.isFinite(rectanglePoint.y));
+  await page.evaluate(()=>window.__v5Screenshot.addFibonacci({id:"visual-fibo",startTime:1700100000+20*900,startPrice:4000+20*.4+Math.sin(2)*16,endTime:1700100000+35*900,endPrice:4000+35*.4+Math.sin(3.5)*16,color:"#a78bfa"}));
+  let duplicateFiboRay="";try{await page.evaluate(()=>window.__v5Screenshot.addRay({id:"visual-fibo",startTime:1700100000+20*900,startPrice:4001,endTime:1700100000+35*900,endPrice:4002,color:"#fb7185"}))}catch(error){duplicateFiboRay=error.message}
+  assert.ok(duplicateFiboRay);
+  const fibo=await page.evaluate(()=>({options:window.__v5Screenshot.readDrawing("visual-fibo"),levels:window.__v5Screenshot.fibonacciLevels("visual-fibo")}));
+  assert.deepEqual(fibo.levels.map(level=>level.ratio),[0,0.236,0.382,0.5,0.618,0.786,1,1.272,1.618,2.618]);
+  assert.equal(fibo.levels[0].price,fibo.options.startPrice);
+  assert.equal(fibo.levels[6].price,fibo.options.endPrice);
+  assert.ok(fibo.levels.every(level=>Math.abs(level.price-(fibo.options.startPrice+(fibo.options.endPrice-fibo.options.startPrice)*level.ratio))<1e-9));
+  await page.evaluate(()=>{const options=window.__v5Screenshot.readDrawing("visual-fibo");window.__v5Screenshot.addFibonacci({...options,endPrice:options.endPrice+1})});
+  assert.equal((await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-fibo"))).endPrice,fibo.options.endPrice+1);
+  await page.evaluate(()=>window.__v5Screenshot.addFibonacci({id:"visual-fibo-rising",startTime:1700100000+35*900,startPrice:4000+35*.4+Math.sin(3.5)*16,endTime:1700100000+20*900,endPrice:4000+20*.4+Math.sin(2)*16,color:"#a78bfa"}));
+  const risingFibo=await page.evaluate(()=>window.__v5Screenshot.fibonacciLevels("visual-fibo-rising"));
+  assert.equal(risingFibo[0].price,4000+35*.4+Math.sin(3.5)*16);
+  assert.equal(risingFibo[6].price,4000+20*.4+Math.sin(2)*16);
+  await page.evaluate(()=>window.__v5Screenshot.removeFibonacci("visual-fibo-rising"));
   await page.keyboard.press("Control+d");
   const duplicateId=await page.evaluate(()=>window.__v5Screenshot.inspect().selectedDrawingId);
   assert.ok(duplicateId&&duplicateId!=="visual-time");
@@ -257,14 +272,14 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await page.evaluate(()=>window.__v5Screenshot.removeRay("visual-ray-reverse"));
   await page.mouse.move(10,10);
   await page.waitForTimeout(150);
-  const persistedBeforeReload=await page.evaluate(()=>({price:window.__v5Screenshot.readDrawing("visual-level"),time:window.__v5Screenshot.readDrawing("visual-time"),text:window.__v5Screenshot.readDrawing("visual-note"),trend:window.__v5Screenshot.readDrawing("visual-trend"),rectangle:window.__v5Screenshot.readDrawing("visual-zone"),ray:window.__v5Screenshot.readDrawing("visual-ray")}));
+  const persistedBeforeReload=await page.evaluate(()=>({price:window.__v5Screenshot.readDrawing("visual-level"),time:window.__v5Screenshot.readDrawing("visual-time"),text:window.__v5Screenshot.readDrawing("visual-note"),trend:window.__v5Screenshot.readDrawing("visual-trend"),rectangle:window.__v5Screenshot.readDrawing("visual-zone"),ray:window.__v5Screenshot.readDrawing("visual-ray"),fibo:window.__v5Screenshot.readDrawing("visual-fibo")}));
   await page.reload({waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartV5Ready===true);
   const persistenceProbe=await page.evaluate(()=>{
    const rows=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2,tick_volume:100+i*3}});
    const scope={symbol:"XAUUSD",timeframe:"M15"};
    let e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",scope);e.setCandles(rows);
-   const restored={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives,price:e.readDrawing("visual-level"),time:e.readDrawing("visual-time"),text:e.readDrawing("visual-note"),trend:e.readDrawing("visual-trend"),rectangle:e.readDrawing("visual-zone"),ray:e.readDrawing("visual-ray")};
+   const restored={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives,price:e.readDrawing("visual-level"),time:e.readDrawing("visual-time"),text:e.readDrawing("visual-note"),trend:e.readDrawing("visual-trend"),rectangle:e.readDrawing("visual-zone"),ray:e.readDrawing("visual-ray"),fibo:e.readDrawing("visual-fibo")};
    e.changeAccount("goldm15");e.setCandles(rows);const otherAccount=e.inspect().nativePrimitives;
    e.changeAccount("titan");e.setCandles(rows);const returned=e.inspect().nativePrimitives;
    e.destroy();
@@ -286,15 +301,16 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    return {restored,otherAccount,returned,otherTimeframe,conflict,externalSnapshot,corrupt};
   });
   assert.equal(persistenceProbe.restored.status,"READY");
-  assert.equal(persistenceProbe.restored.count,6);
+  assert.equal(persistenceProbe.restored.count,7);
   assert.deepEqual(persistenceProbe.restored.price,persistedBeforeReload.price);
   assert.deepEqual(persistenceProbe.restored.time,persistedBeforeReload.time);
   assert.deepEqual(persistenceProbe.restored.text,persistedBeforeReload.text);
   assert.deepEqual(persistenceProbe.restored.trend,persistedBeforeReload.trend);
   assert.deepEqual(persistenceProbe.restored.rectangle,persistedBeforeReload.rectangle);
   assert.deepEqual(persistenceProbe.restored.ray,persistedBeforeReload.ray);
+  assert.deepEqual(persistenceProbe.restored.fibo,persistedBeforeReload.fibo);
   assert.equal(persistenceProbe.otherAccount,0);
-  assert.equal(persistenceProbe.returned,6);
+  assert.equal(persistenceProbe.returned,7);
   assert.equal(persistenceProbe.otherTimeframe,0);
   assert.equal(persistenceProbe.conflict.status,"CONFLICT");
   assert.equal(persistenceProbe.conflict.stored,persistenceProbe.externalSnapshot);
@@ -306,7 +322,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const scope={symbol:"XAUUSD",timeframe:"M15"};
    const source=window.__v5Screenshot.exportDrawings();
    const target=ChartStudioV5.createStudioV5(document.getElementById("chart"),"importtest",scope);target.setCandles(rows);
-   const imported=target.importDrawings(source),restored={count:target.inspect().nativePrimitives,price:target.readDrawing("visual-level"),time:target.readDrawing("visual-time"),text:target.readDrawing("visual-note"),trend:target.readDrawing("visual-trend"),rectangle:target.readDrawing("visual-zone"),ray:target.readDrawing("visual-ray")};
+   const imported=target.importDrawings(source),restored={count:target.inspect().nativePrimitives,price:target.readDrawing("visual-level"),time:target.readDrawing("visual-time"),text:target.readDrawing("visual-note"),trend:target.readDrawing("visual-trend"),rectangle:target.readDrawing("visual-zone"),ray:target.readDrawing("visual-ray"),fibo:target.readDrawing("visual-fibo")};
+   let fiboPaneCollision="";try{target.addPaneLine({id:"visual-fibo",color:"#ffffff"},rows.map(c=>({time:c.time,value:c.close})))}catch(error){fiboPaneCollision=error.message}
    target.updateTextAnnotation("visual-note",{text:"Edited note"});const edited=target.readDrawing("visual-note");
    target.removeTextAnnotation("visual-note");const removed=target.readDrawing("visual-note");target.undo();
    const restoredByUndo=target.readDrawing("visual-note");let invalidText="";try{target.addTextAnnotation({id:"invalid-note",time:rows[52].time,price:4000,text:"\u00e4",color:"#ffffff"})}catch(error){invalidText=error.message}
@@ -326,6 +343,9 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    target.updateRay("visual-ray",{endPrice:restored.ray.endPrice+2});const editedRay=target.readDrawing("visual-ray");
    target.removeRay("visual-ray");const removedRay=target.readDrawing("visual-ray");target.undo();const restoredRayByUndo=target.readDrawing("visual-ray");
    const rayApi={editedRay,removedRay,restoredRayByUndo};
+   target.updateFibonacci("visual-fibo",{endPrice:restored.fibo.endPrice+2});const editedFibo=target.readDrawing("visual-fibo");
+   target.removeFibonacci("visual-fibo");const removedFibo=target.readDrawing("visual-fibo");target.undo();const restoredFiboByUndo=target.readDrawing("visual-fibo");
+   const fiboApi={editedFibo,removedFibo,restoredFiboByUndo};
    const annotationApi={edited,removed,restoredByUndo,invalidText};
    target.destroy();
    const malformedTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"malformedtest",scope);malformedTarget.setCandles(rows);
@@ -336,10 +356,13 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const afterMalformedTrend=malformedTarget.inspect().nativePrimitives;
    const invalidRectangleEnvelope={...sourceEnvelope,drawings:[{kind:"RECT",options:{...sourceEnvelope.drawings.find(item=>item.kind==="RECT").options,extra:true}}]};
    let malformedRectangle="";try{malformedTarget.importDrawings(JSON.stringify(invalidRectangleEnvelope))}catch(error){malformedRectangle=error.message}
-   const afterMalformedRectangle=malformedTarget.inspect().nativePrimitives;malformedTarget.destroy();
+   const afterMalformedRectangle=malformedTarget.inspect().nativePrimitives;
+   const invalidFiboEnvelope={...sourceEnvelope,drawings:[{kind:"FIBO",options:{...sourceEnvelope.drawings.find(item=>item.kind==="FIBO").options,extra:true}}]};
+   let malformedFibo="";try{malformedTarget.importDrawings(JSON.stringify(invalidFiboEnvelope))}catch(error){malformedFibo=error.message}
+   const afterMalformedFibo=malformedTarget.inspect().nativePrimitives;malformedTarget.destroy();
    const capTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"captest",scope);capTarget.setCandles(rows);
    for(let i=0;i<99;i++)capTarget.addTrendLine({id:`trend${i}`,startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[40].time,endPrice:rows[40].close,color:"#ffffff"});
-   capTarget.addRectangle({id:"last-drawing",startTime:rows[30].time,startPrice:rows[30].close+1,endTime:rows[40].time,endPrice:rows[40].close-1,color:"#ffffff",fill:false});
+   capTarget.addFibonacci({id:"last-drawing",startTime:rows[30].time,startPrice:rows[30].close+1,endTime:rows[40].time,endPrice:rows[40].close-1,color:"#ffffff"});
    let capError="";try{capTarget.addTrendLine({id:"trend-over-cap",startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[40].time,endPrice:rows[40].close,color:"#ffffff"})}catch(error){capError=error.message}
    const capCount=capTarget.inspect().nativePrimitives;capTarget.destroy();
    const conflictTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"conflicttest",scope);conflictTarget.setCandles(rows);conflictTarget.addPriceLevel({id:"existing",price:4000,color:"#ffffff"});
@@ -350,19 +373,20 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const storageConflict={error:storageConflictError,status:storageConflictTarget.inspect().persistenceStatus,count:storageConflictTarget.inspect().nativePrimitives,stored:localStorage.getItem(conflictKey)};storageConflictTarget.destroy();
    const wrongScope=ChartStudioV5.createStudioV5(document.getElementById("chart"),"goldm15",{symbol:"EURUSD",timeframe:"M15"});wrongScope.setCandles(rows);
    let scopeError="";try{wrongScope.importDrawings(source)}catch(error){scopeError=error.message}const wrongScopeCount=wrongScope.inspect().nativePrimitives;wrongScope.destroy();
-   return {source,imported,restored,annotationApi,trendApi,rectangleApi,rayApi,malformed,afterMalformed,malformedTrend,afterMalformedTrend,malformedRectangle,afterMalformedRectangle,capError,capCount,conflictError,conflictCount,storageConflict,scopeError,wrongScopeCount};
+   return {source,imported,restored,annotationApi,trendApi,rectangleApi,rayApi,fiboApi,fiboPaneCollision,malformed,afterMalformed,malformedTrend,afterMalformedTrend,malformedRectangle,afterMalformedRectangle,malformedFibo,afterMalformedFibo,capError,capCount,conflictError,conflictCount,storageConflict,scopeError,wrongScopeCount};
   });
   const transferEnvelope=JSON.parse(drawingTransfer.source);
   assert.equal(transferEnvelope.schemaVersion,1);
   assert.equal(transferEnvelope.account,undefined);
-  assert.deepEqual(drawingTransfer.imported,{imported:6});
-  assert.equal(drawingTransfer.restored.count,6);
+  assert.deepEqual(drawingTransfer.imported,{imported:7});
+  assert.equal(drawingTransfer.restored.count,7);
   assert.deepEqual(drawingTransfer.restored.price,persistedBeforeReload.price);
   assert.deepEqual(drawingTransfer.restored.time,persistedBeforeReload.time);
   assert.deepEqual(drawingTransfer.restored.text,persistedBeforeReload.text);
   assert.deepEqual(drawingTransfer.restored.trend,persistedBeforeReload.trend);
   assert.deepEqual(drawingTransfer.restored.rectangle,persistedBeforeReload.rectangle);
   assert.deepEqual(drawingTransfer.restored.ray,persistedBeforeReload.ray);
+  assert.deepEqual(drawingTransfer.restored.fibo,persistedBeforeReload.fibo);
   assert.equal(drawingTransfer.annotationApi.edited.text,"Edited note");
   assert.equal(drawingTransfer.annotationApi.removed,null);
   assert.deepEqual(drawingTransfer.annotationApi.restoredByUndo,drawingTransfer.annotationApi.edited);
@@ -383,12 +407,18 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(drawingTransfer.rayApi.editedRay.endPrice,persistedBeforeReload.ray.endPrice+2);
   assert.equal(drawingTransfer.rayApi.removedRay,null);
   assert.deepEqual(drawingTransfer.rayApi.restoredRayByUndo,drawingTransfer.rayApi.editedRay);
+  assert.equal(drawingTransfer.fiboApi.editedFibo.endPrice,persistedBeforeReload.fibo.endPrice+2);
+  assert.equal(drawingTransfer.fiboApi.removedFibo,null);
+  assert.deepEqual(drawingTransfer.fiboApi.restoredFiboByUndo,drawingTransfer.fiboApi.editedFibo);
+  assert.ok(drawingTransfer.fiboPaneCollision);
   assert.ok(drawingTransfer.malformed);
   assert.equal(drawingTransfer.afterMalformed,0);
   assert.ok(drawingTransfer.malformedTrend);
   assert.equal(drawingTransfer.afterMalformedTrend,0);
   assert.ok(drawingTransfer.malformedRectangle);
   assert.equal(drawingTransfer.afterMalformedRectangle,0);
+  assert.ok(drawingTransfer.malformedFibo);
+  assert.equal(drawingTransfer.afterMalformedFibo,0);
   assert.ok(drawingTransfer.capError);
   assert.equal(drawingTransfer.capCount,100);
   assert.ok(drawingTransfer.conflictError);

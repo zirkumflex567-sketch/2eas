@@ -29,7 +29,7 @@ Pin must be reviewed for a security update with an explicit PR rather than `late
 ## Acceptance evidence
 
 - Task 0.8: version and API/license decision plus isolated proof source exist; CI results must be recorded before treating 0.8 as complete.
-- Task 1.8, 2.1: **not completed**. The isolated renderer proves native price/time lines, anchored text annotations, two-point trend lines, filled rectangle zones and a ray projected to the plot edge, along with scoped drawing persistence/transfer, hit testing, text pointer-capture movement, candle snap and Escape rollback. It does not replace the production wrapper; full drawing gestures, parity and target-hardware acceptance remain open.
+- Task 1.8, 2.1: **not completed**. The isolated renderer proves native price/time lines, anchored text annotations, two-point trend lines, filled rectangle zones, a ray projected to the plot edge and standard Fibonacci retracement levels, along with scoped drawing persistence/transfer, hit testing, text pointer-capture movement, candle snap and Escape rollback. It does not replace the production wrapper; full drawing gestures, parity and target-hardware acceptance remain open.
 
 ## Follow-up: native pane lifecycle package (PR #25)
 
