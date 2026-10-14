@@ -42,7 +42,7 @@
 - [ ] 3.1 Broker-authoritative positions/pending/history/quote revisions and all symbol metadata.
 - [ ] 3.2 Move the beta zones into native renderer with labels and correct USD/account conversion; hedging/netting.
 - [~] 3.3 Fully interactive SL/TP drafts (zero writes) with broker-authoritative quote/risk preview. **Started:** draggable *virtual What-if plan* SL/TP grips, tick-size snapping and debounced MT5 profit/margin recalculation; **real ticket-bound stop preview remains open**.
-- [~] 3.4 A/B What-if has broker lot sizing, margin, gross MT5 PnL, explicit per-lot fee/adverse-slippage assumptions with separate net estimates, and a fresh dashboard DD-distance projection with EA guard still UNKNOWN; authoritative cross-currency conversion and portfolio correlation remain open.
+- [~] 3.4 A/B What-if has broker lot sizing, margin, gross MT5 PnL, explicit per-lot fee/adverse-slippage assumptions with separate net estimates, a fresh dashboard DD-distance projection with EA guard still UNKNOWN, and descriptive portfolio H1 correlations from aligned completed MT5 bars. Correlations do not reduce the gross-additive risk estimate; correlation-aware scenario modeling, authoritative cross-currency conversion and demo acceptance remain open.
 - [ ] 3.5 Decision event schema, true EA telemetry, Decision Inspector; recorded vs unavailable semantics.
 - [ ] 3.6 Trade Lifecycle and MFE/MAE provenance, immutable entry/exit snapshots and all-strategy journal links.
 

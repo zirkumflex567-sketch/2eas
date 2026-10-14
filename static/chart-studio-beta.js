@@ -156,6 +156,13 @@ function exportScenarioSnapshots(){
 function validPortfolio(value,account){
  const amount=(v,signed=false)=>typeof v==="string"&&v.length<=32&&
   (signed?/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]{1,12})?$/:/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,12})?$/).test(v)&&v!=="-0";
+ const correlation=value?.correlation,symbolNames=new Set(value?.symbols?.map(row=>row?.symbol)||[]);
+ const correlationValid=correlation?.state==="AVAILABLE"?
+  correlation.timeframe==="H1"&&correlation.source==="MT5_COMPLETED_BARS"&&Array.isArray(correlation.pairs)&&correlation.pairs.length<=66&&
+  correlation.pairs.every(pair=>Array.isArray(pair?.symbols)&&pair.symbols.length===2&&pair.symbols[0]<pair.symbols[1]&&symbolNames.has(pair.symbols[0])&&symbolNames.has(pair.symbols[1])&&
+   typeof pair.coefficient==="string"&&/^-?(?:0|1)(?:\.\d{1,6})?$/.test(pair.coefficient)&&Number(pair.coefficient)>=-1&&Number(pair.coefficient)<=1&&
+   Number.isInteger(pair.observations)&&pair.observations>=60&&pair.observations<=256):
+  correlation?.state==="UNAVAILABLE"&&["NO_SYMBOL_PAIRS","SYMBOL_LIMIT_EXCEEDED","HISTORY_UNAVAILABLE","INSUFFICIENT_ALIGNED_HISTORY","INVALID_CORRELATION_SERIES"].includes(correlation.reason);
  return value&&value.account===account&&value.source==="MT5_VERIFIED"&&value.canExecute===false&&
   Number.isInteger(value.positionCount)&&value.positionCount>=0&&value.positionCount<=500&&
   /^[A-Z]{3,12}$/.test(value.currency||"")&&Array.isArray(value.symbols)&&value.symbols.length<=500&&
@@ -166,9 +173,7 @@ function validPortfolio(value,account){
   amount(value.margin.used)&&amount(value.margin.free,true)&&amount(value.margin.equity,true)&&amount(value.margin.balance,true)&&
   value.margin.currency===value.currency&&
   (value.stopRisk?.state==="AVAILABLE"?amount(value.stopRisk.lossAtStops)&&value.stopRisk.currency===value.currency&&value.stopRisk.source==="MT5_ORDER_CALC_PROFIT":
-   value.stopRisk?.state==="UNAVAILABLE"&&["MISSING_STOP","BROKER_CALCULATION_UNAVAILABLE"].includes(value.stopRisk.reason))&&
-  value.correlation?.state==="UNAVAILABLE"&&
-  value.correlation.reason==="NO_ALIGNED_HISTORY";
+  value.stopRisk?.state==="UNAVAILABLE"&&["MISSING_STOP","BROKER_CALCULATION_UNAVAILABLE"].includes(value.stopRisk.reason))&&correlationValid;
 }
 function renderPortfolio(){
  if(!s)return;
@@ -187,7 +192,9 @@ function renderPortfolio(){
    " Lots · P/L "+row.floatingPnl+" · Swap "+row.swap+" "+row.currency;host.append(line);
  }
  const correlation=document.createElement("p");
- correlation.textContent="Korrelation nicht verfügbar · gemeinsame Historie fehlt.";host.append(correlation);
+ correlation.textContent=data.correlation.state==="AVAILABLE"?
+  "H1-Korrelation (abgeschlossene MT5-Bars; deskriptiv, kein Hedge-Kredit): "+data.correlation.pairs.map(pair=>pair.symbols.join(" ↔ ")+" "+pair.coefficient+" · n="+pair.observations).join("; "):
+  "Korrelation UNAVAILABLE · "+data.correlation.reason+".";host.append(correlation);
 }
 function renderPortfolioImpact(preview){
  if(!s)return;

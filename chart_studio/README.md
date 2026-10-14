@@ -168,6 +168,17 @@ retained. Magic zero means `MANUAL`; all other rows are `UNKNOWN` because no
 verified ownership map exists. Comments remain provenance, never EA identity.
 All read models expose `source: MT5_VERIFIED` and `canExecute: false`.
 
+`GET /api/chart/v1/portfolio?account=titan` returns a bounded account-wide
+position aggregate, margin/equity context, and the sum of broker-calculated loss
+at actual position stop levels. A missing SL or failed calculation makes stop
+risk explicitly unavailable. For 2–12 held symbols, the route also requests at
+most 257 completed H1 bars per symbol and returns pairwise Pearson correlations
+using at least 60 exact shared close-to-close UTC intervals. It starts at MT5
+bar index 1 to omit the current unfinished bar. Missing, invalid or insufficient
+history is `UNAVAILABLE`; the UI labels correlations descriptive and does not
+apply hedge credit to its gross-additive What-if stop risk. All calls execute
+under the shared verified account lock and issue no broker writes.
+
 The Chart Studio beta's Brokerbuch panel consumes these routes for verified
 account-scoped symbol search and selection, selected-symbol positions and pending
 orders, and `/trades` for a paginated list of actual deals. It requests up to 200

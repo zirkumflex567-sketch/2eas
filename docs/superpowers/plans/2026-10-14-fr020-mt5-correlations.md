@@ -1,0 +1,24 @@
+# FR-020 aligned MT5 correlation snapshot
+
+## Scope
+
+Extend the read-only portfolio snapshot with a bounded, explicitly time-aligned correlation matrix from verified MT5 H1 bars. Use only completed bars and exact shared UTC timestamps; report `UNAVAILABLE` when there are too few symbols/bars, excessive symbols, invalid rates, or a history API failure. This is descriptive context only: do not infer hedging credit or modify the gross-additive stop-risk estimate.
+
+## Files and contract
+
+- `chart_studio/broker_reads.py`: fetch a bounded H1 history per distinct open-position symbol from start position 1; validate timestamps/positive closes; calculate Pearson correlations over aligned close-to-close returns. Cap symbols and bars; fail closed.
+- `static/chart-studio-beta.js`: strictly validate and render pairwise correlation rows. Keep scenario risk additive and state that the matrix is descriptive, not a hedge credit.
+- `tests/test_chart_studio_broker_reads.py`: red/green contracts for alignment, current-bar exclusion, constant series, malformed/missing rates, caps and API absence.
+- `scripts/smoke_chart_studio_beta.cjs`: render a verified pair and unavailable history through the account-scoped What-if UI.
+- `docs/OPEN_TASKS.md`: update only FR-020's tested slice; demo acceptance remains open.
+
+## Steps
+
+1. Add failing tests with deterministic fake rates and strict UTC alignment.
+2. Implement pure correlation calculation and bounded MT5 rate collection inside the existing verified account lock.
+3. Validate response shapes in the UI and add a small accessible matrix to the portfolio card.
+4. Run focused tests, beta Chromium smoke and `git diff --check`; review the lock/runtime budget and all unavailable paths.
+
+## Limits
+
+No Strategy Tester/backtest, no MT5 write operation, no deployment or EA change. MT5 history availability depends on terminal chart history and broker data; official `copy_rates_from_pos` semantics use index 0 for the current bar, so the request starts at index 1. The result does not establish causation or guarantee portfolio diversification.

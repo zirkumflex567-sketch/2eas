@@ -50,6 +50,10 @@ def symbol(name='XAUUSD', **changes):
     return NS(**fields)
 
 
+def correlated_rates(scale=1):
+    return [NS(time=1000+i*3600, close=(100+i*i)*scale) for i in range(64)]
+
+
 class MT5Fake:
     def __init__(self):
         self.current = None
@@ -60,6 +64,7 @@ class MT5Fake:
         self.tick = NS(time=RAW, time_msc=RAW*1000+123, bid=4000., ask=4000.05)
         self.symbols = (symbol(), symbol('EURUSD.a', digits=5, point=.00001, trade_tick_size=.00001, trade_mode=1))
         self.wrong = None
+        self.rates = {}
 
     def initialize(self, path, **kwargs):
         self.calls.append(('initialize', path))
@@ -109,6 +114,11 @@ class MT5Fake:
         self.calls.append(('calc_profit', name, action))
         direction = 1 if action == 0 else -1
         return (price_close-price_open)*volume*100*direction
+
+    def copy_rates_from_pos(self, name, timeframe, start_pos, count):
+        assert gateway._lock._is_owned()
+        self.calls.append(('rates', name, timeframe, start_pos, count))
+        return self.rates.get(name)
 
     def order_send(self, *args, **kwargs):
         self.writes += 1
@@ -221,6 +231,7 @@ def test_portfolio_is_account_scoped_aggregated_and_never_invents_correlation(cl
     fake.positions = (position(), position(ticket=22, identifier=23, type=1, volume=.2,
         price_open=4000., sl=4010., profit=4., swap=.5), position(ticket=24, identifier=25, type=1, volume=.2,
         symbol='EURUSD.a', price_open=1.1, price_current=1.2, sl=1.2, profit=3., swap=-.5))
+    fake.rates = {'XAUUSD':correlated_rates(), 'EURUSD.a':correlated_rates(.01)}
     response = client.get('/api/chart/v1/portfolio', params={'account':'titan'})
     assert response.status_code == 200
     body = response.json()
@@ -233,7 +244,11 @@ def test_portfolio_is_account_scoped_aggregated_and_never_invents_correlation(cl
         {'symbol':'XAUUSD', 'buyLots':'0.1', 'sellLots':'0.2', 'netLots':'-0.1',
          'floatingPnl':'14', 'swap':'-0.5', 'currency':'EUR'},
     ]
-    assert body['correlation'] == {'state':'UNAVAILABLE', 'reason':'NO_ALIGNED_HISTORY'}
+    assert body['correlation']['state'] == 'AVAILABLE'
+    assert body['correlation']['timeframe'] == 'H1'
+    assert body['correlation']['pairs'] == [{'symbols':['EURUSD.a','XAUUSD'], 'coefficient':'1', 'observations':63}]
+    assert ('rates','EURUSD.a',16385,1,257) in fake.calls
+    assert ('rates','XAUUSD',16385,1,257) in fake.calls
     assert body['margin'] == {'state':'AVAILABLE', 'used':'50', 'free':'1000', 'equity':'1050',
                               'balance':'1000', 'currency':'EUR', 'scope':'ACCOUNT'}
     assert body['stopRisk'] == {'state':'AVAILABLE', 'lossAtStops':'302', 'currency':'EUR', 'source':'MT5_ORDER_CALC_PROFIT'}
@@ -241,12 +256,32 @@ def test_portfolio_is_account_scoped_aggregated_and_never_invents_correlation(cl
     assert fake.writes == 0
 
 
+def test_portfolio_correlation_fails_closed_when_history_is_unavailable(client, fake):
+    fake.positions = (position(), position(symbol='EURUSD.a'))
+    body = client.get('/api/chart/v1/portfolio', params={'account':'titan'}).json()
+    assert body['correlation'] == {'state':'UNAVAILABLE', 'reason':'HISTORY_UNAVAILABLE'}
+
+
+def test_portfolio_correlation_requires_aligned_nonconstant_returns(client, fake):
+    fake.positions = (position(), position(symbol='EURUSD.a'))
+    fake.rates['XAUUSD'] = [NS(time=1000+i*3600, close=100+i*i) for i in range(64)]
+    fake.rates['EURUSD.a'] = [NS(time=1000+i*3600+36000, close=2+i*i) for i in range(64)]
+    body = client.get('/api/chart/v1/portfolio', params={'account':'titan'}).json()
+    assert body['correlation'] == {'state':'UNAVAILABLE', 'reason':'INSUFFICIENT_ALIGNED_HISTORY'}
+    fake.rates['EURUSD.a'] = [NS(time=1000+i*3600, close=2+i*i) for i in range(64)]
+    body = client.get('/api/chart/v1/portfolio', params={'account':'titan'}).json()
+    assert body['correlation']['state'] == 'AVAILABLE'
+    fake.rates['EURUSD.a'] = [NS(time=1000+i*3600, close=2.) for i in range(64)]
+    body = client.get('/api/chart/v1/portfolio', params={'account':'titan'}).json()
+    assert body['correlation'] == {'state':'UNAVAILABLE', 'reason':'INVALID_CORRELATION_SERIES'}
+
+
 def test_portfolio_distinguishes_empty_from_unavailable_and_validates_all_rows(client, fake):
     fake.positions = []
     response = client.get('/api/chart/v1/portfolio', params={'account':'titan'})
     assert response.status_code == 200 and response.json()['positionCount'] == 0
     assert response.json()['symbols'] == []
-    assert response.json()['correlation']['state'] == 'UNAVAILABLE'
+    assert response.json()['correlation'] == {'state':'UNAVAILABLE', 'reason':'NO_SYMBOL_PAIRS'}
     fake.positions = None
     assert client.get('/api/chart/v1/portfolio', params={'account':'titan'}).status_code == 503
     fake.positions = (position(), position(symbol='UNVERIFIED'))
