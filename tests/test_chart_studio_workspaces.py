@@ -232,6 +232,24 @@ class SqliteLayoutTests(unittest.TestCase):
         with self.assertRaises(StoreError):
             validate_document({**old,"movingAverages":"no"})
 
+    def test_bollinger_settings_are_backward_compatible_strict_and_scoped(self):
+        old = example()
+        self.assertEqual(validate_document(old)["options"], old["options"])
+        options = {**old["options"], "bbPeriod": 34, "bbStdDev": 1.5, "bbFill": False}
+        document = {**old, "options": options}
+        self.assertEqual(validate_document(document)["options"], options)
+        saved = self.store.put("local-owner", "titan", "XAUUSD", "Bands", document, 0)
+        self.assertEqual(saved["revision"], 1)
+        self.assertEqual(self.store.get("local-owner", "titan", "XAUUSD", "Bands")["document"]["options"], options)
+        for invalid in [
+            {**options, "bbPeriod": True}, {**options, "bbPeriod": 1},
+            {**options, "bbPeriod": 301}, {**options, "bbStdDev": 0},
+            {**options, "bbStdDev": 10.1}, {**options, "bbStdDev": float("nan")},
+            {**options, "bbFill": 0}, {**options, "bbUnknown": True},
+        ]:
+            with self.subTest(invalid=invalid), self.assertRaises(StoreError):
+                validate_document({**old, "options": invalid})
+
     def test_chart_appearance_document_is_optional_strict_and_scoped(self):
         before = example()
         self.assertNotIn("chartAppearance", validate_document(before))

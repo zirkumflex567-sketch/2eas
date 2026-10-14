@@ -19,6 +19,7 @@ SYMBOL_RE = re.compile(r"^[A-Z0-9._-]{1,32}$")
 DRAWING_TYPES = frozenset({"horizontal", "vertical", "text", "trend", "rect", "fib", "ray", "ruler", "channel"})
 UI_FLAGS = frozenset({"ema20", "ema50", "ema200", "sma20", "sma50",
                       "bb", "positions"})
+UI_NUMBERS = frozenset({"bbPeriod", "bbStdDev"})
 INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap"})
 PERIOD_FIELDS = frozenset({"period", "fast", "slow", "signal"})
 TIMEFRAMES = frozenset({"M1", "M5", "M15", "M30", "H1", "H4", "D1"})
@@ -137,10 +138,16 @@ def validate_document(raw: Any) -> dict:
                 normalized[field] = drawing[field]
         out.append(normalized)
     options = raw["options"]
-    if not isinstance(options, dict) or any(k not in UI_FLAGS for k in options):
+    if not isinstance(options, dict) or any(k not in UI_FLAGS | UI_NUMBERS | {"bbFill"} for k in options):
         raise StoreError("Nicht unterstützte Chart-Option.")
-    if any(type(v) is not bool for v in options.values()):
+    if any(type(v) is not bool for k, v in options.items() if k in UI_FLAGS | {"bbFill"}):
         raise StoreError("Chart-Optionen müssen boolesch sein.")
+    if "bbPeriod" in options and (type(options["bbPeriod"]) is not int or not 2 <= options["bbPeriod"] <= 300):
+        raise StoreError("Bollinger-Periode muss zwischen 2 und 300 liegen.")
+    if "bbStdDev" in options:
+        deviation = _number(options["bbStdDev"], "Bollinger-StdDev")
+        if not 0.1 <= deviation <= 10:
+            raise StoreError("Bollinger-StdDev muss zwischen 0.1 und 10 liegen.")
     indicators = raw["indicators"]
     if not isinstance(indicators, dict) or any(k not in INDICATORS for k in indicators):
         raise StoreError("Unbekannter Indikator.")

@@ -9,7 +9,11 @@ let s=null,requestId=0,scenarioGeneration=0,planTimer=null;
 const json=v=>JSON.parse(JSON.stringify(v));
 const get=(k,df)=>{try{const v=JSON.parse(localStorage.getItem(prefix+k));return v??df}catch(_){return df}};
 const save=(k,v)=>{try{localStorage.setItem(prefix+k,JSON.stringify(v))}catch(_){}};
-const optsDefault=()=>({ema20:true,ema50:true,ema200:true,sma20:false,sma50:false,bb:false,positions:false});
+const optsDefault=()=>({ema20:true,ema50:true,ema200:true,sma20:false,sma50:false,bb:false,bbPeriod:20,bbStdDev:2,bbFill:true,positions:false});
+function cleanOptions(raw){const out=optsDefault();if(!raw||typeof raw!=="object"||Array.isArray(raw))return out;
+ for(const key of ["ema20","ema50","ema200","sma20","sma50","bb","bbFill","positions"])if(typeof raw[key]==="boolean")out[key]=raw[key];
+ if(Number.isInteger(raw.bbPeriod)&&raw.bbPeriod>=2&&raw.bbPeriod<=300)out.bbPeriod=raw.bbPeriod;
+ if(typeof raw.bbStdDev==="number"&&Number.isFinite(raw.bbStdDev)&&raw.bbStdDev>=.1&&raw.bbStdDev<=10)out.bbStdDev=raw.bbStdDev;return out}
 const drawKey=()=>s.account+":draw:XAUUSD",optKey=()=>s.account+":opts:XAUUSD";
 const profileKey=()=>s.account+":profiles:XAUUSD",magnetKey=()=>s.account+":magnet:XAUUSD",fibKey=()=>s.account+":fibLevels:XAUUSD";
 const scenarioSnapshotsKey=account=>account+":whatif-snapshots:XAUUSD";
@@ -70,7 +74,7 @@ function resetChart(){
 function loadProfile(){
  const name=s.panel.querySelector("#cs-beta-profile")?.value;const item=profiles()[name];
  if(!item)return;snapshot();s.draw=safeDraw(item.draw);s.selected=null;
- s.opts={...optsDefault(),...(item.opts||{})};persist();save(optKey(),s.opts);showOpts();updateSeries();
+ s.opts=cleanOptions(item.opts);persist();save(optKey(),s.opts);showOpts();updateSeries();
  if(item.indicators)window.ChartStudioIndicators?.applySettings(item.indicators);
  window.ChartStudioAverages?.applySettings(item.movingAverages||[]);
  window.ChartStudioAppearance?.applySettings(item.chartAppearance||{});
@@ -94,7 +98,7 @@ function importWorkspaceDocument(document){
  // Do not import scenarios, order tickets, account identity or executable text.
  const drawings=safeDraw(document.drawings);
  if(drawings.length!==document.drawings.length)return false;
- snapshot();s.draw=drawings;s.selected=null;s.opts={...optsDefault(),...(document.options||{})};
+ snapshot();s.draw=drawings;s.selected=null;s.opts=cleanOptions(document.options);
  persist();save(optKey(),s.opts);showOpts();updateSeries();
  window.ChartStudioIndicators?.applySettings(document.indicators||{});
  window.ChartStudioAverages?.applySettings(document.movingAverages||[]);
@@ -147,7 +151,7 @@ function exportScenarioSnapshots(){
  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function sma(c,n){const out=[];let sum=0;for(let i=0;i<c.length;i++){sum+=Number(c[i].close);if(i>=n)sum-=Number(c[i-n].close);if(i>=n-1)out.push({time:c[i].time,value:sum/n})}return out}
-function bollinger(c,n=20,k=2){const hi=[],lo=[];let sum=0,sq=0;for(let i=0;i<c.length;i++){let v=Number(c[i].close);sum+=v;sq+=v*v;if(i>=n){v=Number(c[i-n].close);sum-=v;sq-=v*v}if(i>=n-1){const mid=sum/n,sd=Math.sqrt(Math.max(0,sq/n-mid*mid));hi.push({time:c[i].time,value:mid+k*sd});lo.push({time:c[i].time,value:mid-k*sd})}}return {upper:hi,lower:lo}}
+function bollinger(c,n=20,k=2){const hi=[],midline=[],lo=[];if(!Number.isInteger(n)||n<1||!Number.isFinite(k)||k<0)return {upper:hi,middle:midline,lower:lo};let sum=0,sq=0;for(let i=0;i<c.length;i++){let v=Number(c[i].close);sum+=v;sq+=v*v;if(i>=n){v=Number(c[i-n].close);sum-=v;sq-=v*v}if(i>=n-1){const mid=sum/n,sd=Math.sqrt(Math.max(0,sq/n-mid*mid));midline.push({time:c[i].time,value:mid});hi.push({time:c[i].time,value:mid+k*sd});lo.push({time:c[i].time,value:mid-k*sd})}}return {upper:hi,middle:midline,lower:lo}}
 function safeDraw(list){
  if(!Array.isArray(list))return [];
  const reserved=new Set(list.filter(o=>o&&typeof o.id==="string"&&/^[A-Za-z0-9_-]{1,32}$/.test(o.id)).map(o=>o.id));
@@ -194,18 +198,20 @@ function setTool(kind){
 }
 function showOpts(){
  s.panel.querySelectorAll("[data-opt]").forEach(b=>b.setAttribute("aria-pressed",String(!!s.opts[b.dataset.opt])));
+ const period=s.panel.querySelector("[data-bb-setting='bbPeriod']"),deviation=s.panel.querySelector("[data-bb-setting='bbStdDev']"),fill=s.panel.querySelector("[data-bb-setting='bbFill']");
+ if(period)period.value=String(s.opts.bbPeriod);if(deviation)deviation.value=String(s.opts.bbStdDev);if(fill)fill.checked=s.opts.bbFill;
 }
 function updateSeries(){
  if(!s)return;
  s.emas.forEach((ser,i)=>{if(ser)ser.applyOptions({visible:!!s.opts[["ema20","ema50","ema200"][i]]})});
  if(!s.candles.length)return;
- const conf=[["sma20","SMA20","#76e9a8"],["sma50","SMA50","#ffb675"],["bbUpper","BB+","#b9a1ff"],["bbLower","BB-","#b9a1ff"]];
+ const conf=[["sma20","SMA20","#76e9a8"],["sma50","SMA50","#ffb675"],["bbUpper","BB+","#b9a1ff"],["bbMiddle","BB Mitte","#9f8be0"],["bbLower","BB-","#b9a1ff"]];
  for(const [id,name,color] of conf)if(!s.extras[id])s.extras[id]=s.chart.addLineSeries({title:name,color,lineWidth:1,lastValueVisible:false,priceLineVisible:false});
  const latest=s.candles[s.candles.length-1];
- const optionKey=[s.opts.sma20,s.opts.sma50,s.opts.bb].join(":");
+ const optionKey=[s.opts.sma20,s.opts.sma50,s.opts.bb,s.opts.bbPeriod,s.opts.bbStdDev,s.opts.bbFill].join(":");
  const prefix=window.ChartStudioDataSignature?.signature(s.candles.slice(0,-1));
  const increment=!!prefix&&prefix===s.extraPrefix&&
-  latest.time===s.extraTime&&optionKey===s.extraOptions&&s.candles.length>=50;
+  latest.time===s.extraTime&&optionKey===s.extraOptions&&s.candles.length>=Math.max(50,s.opts.bbPeriod);
  if(increment){
   const lastSma=n=>{
    let sum=0;for(let i=s.candles.length-n;i<s.candles.length;i++)sum+=Number(s.candles[i].close);
@@ -214,24 +220,36 @@ function updateSeries(){
   if(s.opts.sma20)s.extras.sma20.update({time:latest.time,value:lastSma(20)});
   if(s.opts.sma50)s.extras.sma50.update({time:latest.time,value:lastSma(50)});
   if(s.opts.bb){
-   const mid=lastSma(20);let variance=0;
-   for(let i=s.candles.length-20;i<s.candles.length;i++)
+   const n=s.opts.bbPeriod,mid=lastSma(n);let variance=0;
+   for(let i=s.candles.length-n;i<s.candles.length;i++)
     variance+=(Number(s.candles[i].close)-mid)**2;
-   const deviation=Math.sqrt(variance/20);
-   s.extras.bbUpper.update({time:latest.time,value:mid+2*deviation});
-   s.extras.bbLower.update({time:latest.time,value:mid-2*deviation});
+   const deviation=Math.sqrt(variance/n),width=s.opts.bbStdDev;
+   s.extras.bbUpper.update({time:latest.time,value:mid+width*deviation});
+   s.extras.bbMiddle.update({time:latest.time,value:mid});
+   s.extras.bbLower.update({time:latest.time,value:mid-width*deviation});
+   if(s.bbData?.upper?.length){s.bbData.upper[s.bbData.upper.length-1]={time:latest.time,value:mid+width*deviation};s.bbData.middle[s.bbData.middle.length-1]={time:latest.time,value:mid};s.bbData.lower[s.bbData.lower.length-1]={time:latest.time,value:mid-width*deviation}}
   }
   return;
  }
  s.extraPrefix=prefix;s.extraTime=latest.time;s.extraOptions=optionKey;
- const bb=s.opts.bb?bollinger(s.candles):null;
+ const bb=s.opts.bb?bollinger(s.candles,s.opts.bbPeriod,s.opts.bbStdDev):null;s.bbData=bb;
  for(const [key,option,data] of [
   ["sma20","sma20",s.opts.sma20?sma(s.candles,20):[]],
   ["sma50","sma50",s.opts.sma50?sma(s.candles,50):[]],
-  ["bbUpper","bb",bb?bb.upper:[]],["bbLower","bb",bb?bb.lower:[]]]){
+  ["bbUpper","bb",bb?bb.upper:[]],["bbMiddle","bb",bb?bb.middle:[]],["bbLower","bb",bb?bb.lower:[]]]){
   s.extras[key].applyOptions({visible:!!s.opts[option]});
   s.extras[key].setData(data);
  }
+}
+function drawBollingerFill(ctx){
+ const points=s?.bbData;if(!s?.opts.bb||!s.opts.bbFill||!points?.upper?.length)return;
+ const visible=s.chart.timeScale().getVisibleLogicalRange?.(),offset=s.candles.length-points.upper.length;
+ const start=Math.max(0,Math.floor(visible?.from??0)-offset-1),end=Math.min(points.upper.length-1,Math.ceil(visible?.to??s.candles.length)+1-offset);
+ const upper=[],lower=[];for(let i=start;i<=end;i++){
+  const x=s.chart.timeScale().timeToCoordinate(points.upper[i].time),yu=s.series.priceToCoordinate(points.upper[i].value),yl=s.series.priceToCoordinate(points.lower[i].value);
+  if(Number.isFinite(x)&&Number.isFinite(yu)&&Number.isFinite(yl)){upper.push([x,yu]);lower.push([x,yl])}
+ }
+ if(upper.length<2)return;ctx.save();ctx.beginPath();ctx.moveTo(...upper[0]);for(let i=1;i<upper.length;i++)ctx.lineTo(...upper[i]);for(let i=lower.length-1;i>=0;i--)ctx.lineTo(...lower[i]);ctx.closePath();ctx.fillStyle="rgba(185,161,255,.10)";ctx.fill();ctx.restore();
 }
 function project(anchor){
  let x=null,y=null;
@@ -435,6 +453,7 @@ function render(){
  c.style.left=d.left+"px";c.style.top=d.top+"px";c.style.width=d.w+"px";c.style.height=d.h+"px";
  const pw=Math.ceil(d.w*ratio),ph=Math.ceil(d.h*ratio);if(c.width!==pw||c.height!==ph){c.width=pw;c.height=ph}
  const ctx=c.getContext("2d");ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,d.w,d.h);
+ drawBollingerFill(ctx);
  if(s.opts.positions)drawPositions(ctx,d);
  drawPositionDraft(ctx,d);
  drawBrokerDeals(ctx,d);
@@ -556,7 +575,7 @@ function pointerup(e){
  if(s.positionDraftDrag){s.positionDraftDrag=null;try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){};return}
  if(!s.drag)return;s.drag=null;persist();try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){}
 }
-function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
+function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
  s.lastScenarioPreview=null;s.marketQuote=null;clearDataWindowPin();
   s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
   const fibInput=s.panel.querySelector("#cs-fib-levels");if(fibInput)fibInput.value=window.ChartStudioFib?.display(s.fibLevels)||"";
@@ -715,6 +734,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   '<div class="cs-beta-buttons cs-fib-settings"><label>Fibonacci-Level (%) <input type="text" id="cs-fib-levels" aria-label="Fibonacci-Level in Prozent" placeholder="0; 23,6; 38,2; 50; 61,8; 78,6; 100" maxlength="240"></label><button type="button" data-cmd="fib-default">Fibo-Vorlage speichern</button><button type="button" data-cmd="fib-selected">Ausgewählte Fibo ändern</button></div>'+
   '<div class="cs-beta-buttons"><button type="button" data-cmd="magnet" aria-pressed="false">Magnet: AUS · Kerzen-OHLC</button></div>'+
  '<div class="cs-beta-buttons">'+optLabels.map(([id,label])=>'<button type="button" data-opt="'+id+'">'+label+'</button>').join("")+'</div>'+
+ '<div class="cs-beta-buttons cs-bollinger-settings" role="group" aria-label="Bollinger-Einstellungen"><label>Periode <input type="number" min="2" max="300" step="1" data-bb-setting="bbPeriod" aria-label="Bollinger-Periode"></label><label>StdDev <input type="number" min="0.1" max="10" step="0.1" data-bb-setting="bbStdDev" aria-label="Bollinger-Standardabweichung"></label><label><input type="checkbox" data-bb-setting="bbFill"> Bandfläche anzeigen</label></div>'+
   '<div class="cs-beta-profiles"><strong>Lokale Layouts</strong> <select id="cs-beta-profile" aria-label="Gespeichertes Chartlayout"></select>'+
  '<button type="button" data-cmd="save-profile">Speichern</button>'+
  '<button type="button" data-cmd="load-profile">Laden</button>'+
@@ -793,6 +813,14 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  maPeriod.addEventListener("input",()=>maPeriod.setCustomValidity(""));
  maPeriod.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();maAdd.click()}});
  toggle.addEventListener("click",()=>{panel.hidden=!panel.hidden;toggle.setAttribute("aria-expanded",String(!panel.hidden));maOpen.setAttribute("aria-expanded",String(!panel.hidden));requestDraw()});
+ panel.addEventListener("change",e=>{
+  const input=e.target.closest("[data-bb-setting]");if(!input)return;
+  const key=input.dataset.bbSetting,value=key==="bbFill"?input.checked:input.valueAsNumber;
+  const valid=key==="bbFill"?typeof value==="boolean":key==="bbPeriod"?Number.isInteger(value)&&value>=2&&value<=300:Number.isFinite(value)&&value>=.1&&value<=10;
+  if(!valid){input.setCustomValidity(key==="bbPeriod"?"Periode muss eine Ganzzahl zwischen 2 und 300 sein.":"Wert muss zwischen 0,1 und 10 liegen.");input.reportValidity();showOpts();return}
+  input.setCustomValidity("");s.opts[key]=value;save(optKey(),s.opts);showOpts();updateSeries();requestDraw();
+ });
+ panel.addEventListener("input",e=>{if(e.target.matches("[data-bb-setting]"))e.target.setCustomValidity("")});
  panel.addEventListener("click",e=>{
   const b=e.target.closest("button");if(!b)return;
   if(b.id==="cs-scenario-save-a"){saveScenarioSnapshot("A");return}
@@ -945,6 +973,6 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();
 }
-window.ChartStudioBeta=Object.freeze({mount,account,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
+window.ChartStudioBeta=Object.freeze({mount,account,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
  scenario:s.scenario?json(s.scenario):null,tool:s.tool,magnet:s.magnet,selected:s.selected}:null});
 })();
