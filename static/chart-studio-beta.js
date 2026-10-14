@@ -5,7 +5,7 @@
 "use strict";
 const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","vertical","text","trend","rect","fib","ray","ruler","channel","plan","position-draft"];
 const ratios=[0,.236,.382,.5,.618,.786,1];
-let s=null,requestId=0,scenarioGeneration=0,planTimer=null;
+let s=null,requestId=0,scenarioGeneration=0,portfolioGeneration=0,planTimer=null;
 const json=v=>JSON.parse(JSON.stringify(v));
 const get=(k,df)=>{try{const v=JSON.parse(localStorage.getItem(prefix+k));return v??df}catch(_){return df}};
 const save=(k,v)=>{try{localStorage.setItem(prefix+k,JSON.stringify(v))}catch(_){}};
@@ -152,6 +152,49 @@ function exportScenarioSnapshots(){
  const url=URL.createObjectURL(blob),anchor=document.createElement("a");
  anchor.href=url;anchor.download="chartstudio-whatif-"+account.replace(/[^A-Za-z0-9_-]/g,"_")+".json";anchor.click();
  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function validPortfolio(value,account){
+ const amount=(v,signed=false)=>typeof v==="string"&&v.length<=32&&
+  (signed?/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]{1,12})?$/:/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,12})?$/).test(v)&&v!=="-0";
+ return value&&value.account===account&&value.source==="MT5_VERIFIED"&&value.canExecute===false&&
+  Number.isInteger(value.positionCount)&&value.positionCount>=0&&value.positionCount<=500&&
+  /^[A-Z]{3,12}$/.test(value.currency||"")&&Array.isArray(value.symbols)&&value.symbols.length<=500&&
+  value.symbols.length<=value.positionCount&&new Set(value.symbols.map(row=>row?.symbol)).size===value.symbols.length&&
+  value.symbols.every(row=>row&&typeof row.symbol==="string"&&/^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$/.test(row.symbol)&&
+   amount(row.buyLots)&&amount(row.sellLots)&&amount(row.netLots,true)&&amount(row.floatingPnl,true)&&amount(row.swap,true)&&
+   row.currency===value.currency)&&value.correlation?.state==="UNAVAILABLE"&&
+  value.correlation.reason==="NO_ALIGNED_HISTORY";
+}
+function renderPortfolio(){
+ if(!s)return;
+ const host=s.panel.querySelector("#cs-portfolio-summary");if(!host)return;
+ host.replaceChildren();const data=s.portfolio;
+ const status=document.createElement("p");status.setAttribute("role","status");status.setAttribute("aria-live","polite");
+ if(!data){status.textContent=s.portfolioLoading?"Portfolio wird aus MT5 geladen …":s.portfolioError||"Portfolio noch nicht verfügbar.";host.append(status);return}
+ status.textContent=data.account+" · "+data.positionCount+" offene Positionen · "+data.currency+" · nur lesend";host.append(status);
+ for(const row of data.symbols){
+  const line=document.createElement("p");
+  line.textContent=row.symbol+" · Long "+row.buyLots+" · Short "+row.sellLots+" · Netto "+row.netLots+
+   " Lots · P/L "+row.floatingPnl+" · Swap "+row.swap+" "+row.currency;host.append(line);
+ }
+ const correlation=document.createElement("p");
+ correlation.textContent="Korrelation nicht verfügbar · gemeinsame Historie fehlt.";host.append(correlation);
+}
+async function loadPortfolio(account){
+ const nonce=++portfolioGeneration;s.portfolio=null;s.portfolioError="";s.portfolioLoading=true;renderPortfolio();
+ try{
+  const response=await fetch((window.location.pathname.startsWith("/stt")?"/stt":"")+
+   "/api/chart/v1/portfolio?account="+encodeURIComponent(account),{cache:"no-store"});
+  const data=await response.json();
+  if(nonce!==portfolioGeneration||account!==s?.account)return;
+  if(!response.ok||!validPortfolio(data,account))throw Error("MT5-Portfolio ungültig oder nicht verfügbar.");
+  s.portfolio=json(data);s.portfolioError="";
+ }catch(error){
+  if(nonce!==portfolioGeneration||account!==s?.account)return;
+  s.portfolio=null;s.portfolioError="Portfolio UNAVAILABLE · "+(error?.message||"Lesefehler");
+ }finally{
+  if(nonce===portfolioGeneration&&account===s?.account){s.portfolioLoading=false;renderPortfolio()}
+ }
 }
 function sma(c,n){const out=[];let sum=0;for(let i=0;i<c.length;i++){sum+=Number(c[i].close);if(i>=n)sum-=Number(c[i-n].close);if(i>=n-1)out.push({time:c[i].time,value:sum/n})}return out}
 function bollinger(c,n=20,k=2){const hi=[],midline=[],lo=[];if(!Number.isInteger(n)||n<1||!Number.isFinite(k)||k<0)return {upper:hi,middle:midline,lower:lo};let sum=0,sq=0;for(let i=0;i<c.length;i++){let v=Number(c[i].close);sum+=v;sq+=v*v;if(i>=n){v=Number(c[i-n].close);sum-=v;sq-=v*v}if(i>=n-1){const mid=sum/n,sd=Math.sqrt(Math.max(0,sq/n-mid*mid));midline.push({time:c[i].time,value:mid});hi.push({time:c[i].time,value:mid+k*sd});lo.push({time:c[i].time,value:mid-k*sd})}}return {upper:hi,middle:midline,lower:lo}}
@@ -578,11 +621,11 @@ function pointerup(e){
  if(s.positionDraftDrag){s.positionDraftDrag=null;try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){};return}
  if(!s.drag)return;s.drag=null;persist();try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){}
 }
-function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
+function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.portfolio=null;s.portfolioLoading=false;s.portfolioError="";if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
  s.lastScenarioPreview=null;s.marketQuote=null;clearDataWindowPin();
   s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
   const fibInput=s.panel.querySelector("#cs-fib-levels");if(fibInput)fibInput.value=window.ChartStudioFib?.display(s.fibLevels)||"";
-  scenarioGeneration++;if(s.tool==="plan")setTool("cursor");
+ scenarioGeneration++;portfolioGeneration++;if(s.tool==="plan")setTool("cursor");
  s.panel.querySelector('[data-cmd="magnet"]')?.setAttribute("aria-pressed",String(s.magnet));
  const mag=s.panel.querySelector('[data-cmd="magnet"]');if(mag)mag.textContent="Magnet: "+(s.magnet?"AN":"AUS")+" · Kerzen-OHLC";
  window.ChartStudioIndicators?.switchAccount(id);
@@ -593,7 +636,7 @@ function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.verifiedPos
  window.ChartStudioServerSync?.account(id);
  window.ChartStudioBrokerPanel?.setAccount(id);
  window.ChartStudioReplay?.switchContext(id,s.tf);
- renderScenarioSnapshots();
+ renderScenarioSnapshots();loadPortfolio(id);
  const scenarioStatus=s.panel.querySelector("#cs-scenario-ab-status");if(scenarioStatus)scenarioStatus.textContent="A/B-Snapshots für "+id+" · lokal · nur verifizierte Vorschauen.";
  showOpts();refreshProfiles();updateSeries();window.ChartStudioObjectManager?.render();requestDraw()}
 function timeframe(tf){if(s){cancelPlanPreview();if(s.positionDraft)window.ChartStudioBrokerPanel?.invalidateDraft("Timeframe geändert · Positionsentwurf verworfen.");s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.tf=tf;s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");
@@ -746,7 +789,8 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   '<button type="button" data-cmd="reset-profile">Zurücksetzen</button>'+
  '<button type="button" data-cmd="delete-profile">Löschen</button></div>'+
  '<p id="cs-beta-message" role="status" aria-live="polite">Dies ist die sichere Beta-Chartansicht. Alle Brokerpositionen sind nur lesbar.</p>'+
- '<details class="cs-scenario"><summary>What-if · Broker-Risiko &amp; Margin (kein Orderversand)</summary>'+
+  '<details class="cs-scenario"><summary>What-if · Broker-Risiko &amp; Margin (kein Orderversand)</summary>'+
+ '<section aria-label="MT5 Portfolio-Exposure"><h4>Portfolio-Exposure · MT5</h4><button type="button" id="cs-portfolio-refresh">Portfolio aktualisieren</button><div id="cs-portfolio-summary" aria-live="polite"><p>Portfolio wird geladen …</p></div></section>'+
  '<form id="cs-scenario-form">'+
  '<label>Seite <select name="side"><option>BUY</option><option>SELL</option></select></label>'+
  '<label>Lots <input type="number" name="volumeLots" min="0.01" step="0.01" value="0.01" required></label>'+
@@ -768,9 +812,10 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  host.style.position="relative";host.appendChild(canvas);
  s={chart,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
   account:accountId,tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,positionDraft:null,positionDraftDrag:null,verifiedPositions:[],positionContext:null,
-  lastScenarioPreview:null,dataWindow:{snapshot:null,pinned:false},marketQuote:null,
+  lastScenarioPreview:null,portfolio:null,portfolioLoading:false,portfolioError:"",dataWindow:{snapshot:null,pinned:false},marketQuote:null,
   draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],brokerMarkers:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null,fibLevels:[...ratios]};
  panel.querySelector("#cs-data-window-pin").addEventListener("click",()=>setDataWindowPin(!s.dataWindow.pinned));
+ panel.querySelector("#cs-portfolio-refresh").addEventListener("click",()=>loadPortfolio(s.account));
  chart.subscribeCrosshairMove(handleCrosshair);
  try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}
  catch (err) {console.warn("Chart Studio indicator pane could not load:",err);}
@@ -985,6 +1030,6 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();
 }
-window.ChartStudioBeta=Object.freeze({mount,account,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
+window.ChartStudioBeta=Object.freeze({mount,account,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),portfolio:s.portfolio?json(s.portfolio):null,positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
  scenario:s.scenario?json(s.scenario):null,tool:s.tool,magnet:s.magnet,selected:s.selected}:null});
 })();

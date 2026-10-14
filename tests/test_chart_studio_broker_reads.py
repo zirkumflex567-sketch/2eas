@@ -212,18 +212,19 @@ def test_real_symbol_contract(client):
 
 def test_portfolio_is_account_scoped_aggregated_and_never_invents_correlation(client, fake):
     fake.positions = (position(), position(ticket=22, identifier=23, type=1, volume=.2,
+        profit=4., swap=.5), position(ticket=24, identifier=25, type=1, volume=.2,
         symbol='EURUSD.a', price_open=1.1, price_current=1.2, profit=3., swap=-.5))
     response = client.get('/api/chart/v1/portfolio', params={'account':'titan'})
     assert response.status_code == 200
     body = response.json()
     assert body['account'] == 'titan' and body['source'] == 'MT5_VERIFIED'
     assert body['canExecute'] is False
-    assert body['positionCount'] == 2
+    assert body['positionCount'] == 3
     assert body['symbols'] == [
         {'symbol':'EURUSD.a', 'buyLots':'0', 'sellLots':'0.2', 'netLots':'-0.2',
          'floatingPnl':'3', 'swap':'-0.5', 'currency':'EUR'},
-        {'symbol':'XAUUSD', 'buyLots':'0.1', 'sellLots':'0', 'netLots':'0.1',
-         'floatingPnl':'10', 'swap':'-1', 'currency':'EUR'},
+        {'symbol':'XAUUSD', 'buyLots':'0.1', 'sellLots':'0.2', 'netLots':'-0.1',
+         'floatingPnl':'14', 'swap':'-0.5', 'currency':'EUR'},
     ]
     assert body['correlation'] == {'state':'UNAVAILABLE', 'reason':'NO_ALIGNED_HISTORY'}
     assert ('positions', 'titan', {}) in fake.calls
