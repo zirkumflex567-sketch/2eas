@@ -1,0 +1,931 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><title>Dashboard-Audit · ohne Chart-System</title><style>@page{size:A4;margin:17mm 14mm;}*{box-sizing:border-box}body{font-family:Arial,Segoe UI,sans-serif;color:#152337;background:#fff;margin:0;padding:30px;line-height:1.48;font-size:15px;max-width:1100px;}h1{font-size:32px;color:#123b55;border-bottom:4px solid #11868a;padding-bottom:12px}h2{margin-top:34px;color:#123b55;border-bottom:1px solid #ccd9e1;padding-bottom:7px}h3{color:#174660;margin-top:25px}blockquote{border-left:5px solid #aa3d15;background:#fff3e8;padding:12px;margin:15px 0;}table{border-collapse:collapse;width:100%;font-size:12px;margin:15px 0;}td,th{border:1px solid #cbd5df;padding:7px;vertical-align:top;overflow-wrap:anywhere}th{background:#e9f1f6;text-align:left}tr:nth-child(even){background:#f8fafc}code{font-size:12px;overflow-wrap:anywhere;background:#edf2f6;padding:2px}pre{background:#edf2f6;padding:14px;white-space:pre-wrap;overflow-wrap:anywhere}a{color:#075d83}img{display:block;max-width:100%;max-height:380px;object-fit:contain;object-position:left top;border:1px solid #cbd5df;margin:8px 0;}@media print{body{padding:0;max-width:none;font-size:10px;}h1{font-size:25px;}h2{font-size:18px;}h3{font-size:14px;break-after:avoid;}p,li{orphans:3;widows:3;}table{font-size:8px;}img{max-height:85mm;break-inside:avoid;}pre,blockquote{break-inside:avoid;}a{color:#124b69;}thead{display:table-header-group;}}</style></head><body><h1>Dashboard-Audit · Nicht-Chart-Bereiche</h1>
+<blockquote>
+<p><strong>Ergebnis: funktionsfähig, aber noch nicht visuell und betrieblich abnahmefähig.</strong> Insbesondere Hell-Theme, mobile Header/Matrix, Datenfrische und kritische Validierungen benötigen Nacharbeit. Keine Reparaturen durchgeführt.</p>
+</blockquote>
+<h2>Stand und Grenzen</h2>
+<ul>
+<li>Audit erstellt: <strong>2026-10-09T06:30:41+02:00</strong>. Repository: <code>C:/Users/zirku/Downloads/testing</code>.</li>
+<li>Erst <code>git pull --ff-only</code>: <code>b7153cb</code> → <strong><code>b7cabcd3a1eb103eccf02451eb6a8ebf6d612b16</code></strong>, <code>main</code>. Bestehende unversionierte Dateien beibehalten; kein Stash/Reset/Commit/Push.</li>
+<li>Separate Testinstanz gestartet: <strong>http://127.0.0.1:8057</strong> mit <code>DASHBOARD_PORT=8057 C:/Python314/python.exe app.py</code>. Bereits belegten Port 8050 nicht beendet oder ersetzt.</li>
+<li>Laufzeit: Windows, Python <strong>3.14.3</strong>, Chromium <strong>145.0.7632.6</strong>. Beide konfigurierte Demo-Konten lieferten echte Status-GETs: Titan 3, Gold 2 offene Positionen im Snapshot.</li>
+<li><strong>Chart-System ausdrücklich ausgeschlossen:</strong> keine Chart-Funktionsprüfung, kein Chart-Studio-/Money-Audit, keine Reparatur daran. Vollseitenbilder enthalten den unveränderten Chart nur als Umgebung. Vorhandene Contracttests enthalten vereinzelte Chart-Textasserts; daraus wird keine Chart-Abnahme abgeleitet.</li>
+<li><strong>Keine echten Handelsaktionen, SL/TP-Änderungen oder Resets.</strong> Alle Browserrequests außer GET/HEAD wurden vor dem Backend abgefangen oder abgebrochen. Drei abgefangene POSTs (ungültige Baseline, Quick-TP, Close) wurden mit ausdrücklich simulierten Antworten beantwortet. Backend-Fehlerfälle liefen isoliert mit Mock-MT5 und Mock-Dateizugriffen.</li>
+<li>Nur neue Dokumentation, Bilder, Evidenz und reproduzierbare Audit-Harnesses im Auditordner geschrieben. Nach dem Pull keine Anwendung/Styles/Handelslogik geändert.</li>
+<li>Screenshots/JSON enthalten Konto-, Ticket- und Finanzdaten: <strong>lokale vertrauliche Dokumentation</strong>, nicht unredigiert veröffentlichen.</li>
+</ul>
+<h2>Kurzbilanz</h2>
+<table>
+<thead>
+<tr>
+<th>Prüfung</th>
+<th>Verifiziertes Ergebnis</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bestehende relevante pytest-Suite</td>
+<td><strong>40 Tests + 10 Subtests bestanden</strong>, 12,52 s; JUnit und Textprotokoll vorhanden</td>
+</tr>
+<tr>
+<td>Browser-Verhaltensprüfungen</td>
+<td><strong>35/39 bestanden</strong>; 4 bewusst aufgedeckte Fehler, keine Laufzeitausnahme des Harnesses</td>
+</tr>
+<tr>
+<td>Visuelle Hauptmatrix</td>
+<td><strong>18 Ansichten</strong> = 2 Konten × 3 Themes × 3 Größen (1440×1000, 768×1024, 390×844)</td>
+</tr>
+<tr>
+<td>Ergänzende Reflow-Proben</td>
+<td>Titan: 320 px und 720 px für alle drei Themes. 720 px ist nur 200%-Zoom-Layoutäquivalent, kein vollwertiger Browserzoom-Test</td>
+</tr>
+<tr>
+<td>Browserfehler</td>
+<td><strong>0 pageerror</strong>, <strong>0 requestfailed</strong> im Hauptlauf; Fehlerzustände gesondert injiziert</td>
+</tr>
+<tr>
+<td>Accessibility</td>
+<td>axe-core 4.10.3 für 6 Nicht-Chart-Desktop-Sichten; Kontrast + Feldnamen + manuelle Fokus-/Escape-Proben</td>
+</tr>
+<tr>
+<td>Lese-API-Mikrobenchmark</td>
+<td>Je 10 Samples für Status/Journal × 2 Konten = 40 serielle GETs; 4 weitere parallele Status-GETs</td>
+</tr>
+<tr>
+<td>Konsolidierte Befunde</td>
+<td><strong>20</strong>: P1: 11, P2: 8, P3: 1; kein P0-Schaden oder realer Tradefehler provoziert</td>
+</tr>
+</tbody>
+</table>
+<p><strong>P1</strong> = vor sicherer breiter Nutzung / Freigabe beheben; <strong>P2</strong> = mittlere Verbesserung/Datengenauigkeit; <strong>P3</strong> = Optimierung. axe-Impact wie „critical“ beschreibt die Regel, nicht automatisch einen P0-Vorfall.</p>
+<h2>Was bereits funktioniert</h2>
+<ul>
+<li>Kontoidentität wird auf dem Backend pro Request gegen Login, Server, Terminalpfad und Verbindung geprüft. Globaler Lock schützt vor Accountwechsel mitten im Request; Tests decken parallele Konten ab.</li>
+<li>Derselbe Account nutzt die verifizierte MT5-Verbindung wieder. Die alte Auditbehauptung „jede Anfrage verbindet neu“ trifft auf diesen Stand nicht mehr zu.</li>
+<li>Geschwindigkeitsfixes vorhanden: vektorisiertes Volumenprofil, kontospezifischer Journal-TTL, lokale kompilierten Tailwind-CSS und lokale Scriptdateien; kein Tailwind Play-CDN im aktuellen Lauf.</li>
+<li>Normale Statusupdates bewahren geänderte SL-Eingaben auch nach Blur; Fokus bleibt erhalten. Der verbleibende Fehler betrifft Strukturänderungen.</li>
+<li>Späte Titan-Antwort überschreibt nach Wechsel nicht Gold. Journalfilter ändern nicht das aktive Handelskonto.</li>
+<li>Expliziter Status-503 leert alte Kontodaten und sperrt Reset; echte GETs erholen sich nach Aufheben der Teststörung.</li>
+<li>Gold zeigt 6 Einstiegskriterien und 3 Momentum-Ausstiegsziele. Baseline- und Reservehinweise sind vorhanden; Resetbeschreibung weist auf reine Anzeigewirkung hin.</li>
+<li>Stone-Deko berücksichtigt in den gesampelten Elementen Reduced Motion. Theme/Kontowahl übersteht Reload.</li>
+</ul>
+<h2>Visueller Überblick und Kontraste</h2>
+<h3>M15-SCHLUSS – der Screenshot-Hinweis ist berechtigt</h3>
+<p>Der Countdown nutzt <code>rgb(59,130,246)</code> für Label und Wert. Gemessene Schrift: Label <strong>11 px</strong>, Zeit <strong>12 px</strong>, beide fett. Dark-Kontrast <strong>4,42:1</strong> auf <code>#111f3f</code> – knapp unter 4,5:1. Light <strong>2,98:1</strong> auf <code>#dee8fc</code> – klar zu schwach. Stone hat Texturen/Gradienten: axe markiert die Kontrastprüfung als unvollständig; hier kein erfundener exakter Wert. Bilder zeigen dennoch kleine, wenig priorisierte Schrift.</p>
+<p><img src="screenshots/titan-dark-header.png" alt="M15/Status – Dark" />
+<img src="screenshots/titan-light-header.png" alt="M15/Status – Light" />
+<img src="screenshots/titan-stone-header.png" alt="M15/Status – Stone" /></p>
+<h3>Messbare kritische Textkontraste</h3>
+<table>
+<thead>
+<tr>
+<th>Element</th>
+<th>Theme</th>
+<th style="text-align:right">Kontrast</th>
+<th style="text-align:right">Ziel für kleinen Text</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>M15-Label/Zeit</td>
+<td>Dark</td>
+<td style="text-align:right">4,42:1</td>
+<td style="text-align:right">4,5:1</td>
+</tr>
+<tr>
+<td>M15-Label/Zeit</td>
+<td>Light</td>
+<td style="text-align:right">2,98:1</td>
+<td style="text-align:right">4,5:1</td>
+</tr>
+<tr>
+<td>Tages-DD/Puffer</td>
+<td>Light</td>
+<td style="text-align:right">1,75:1</td>
+<td style="text-align:right">4,5:1</td>
+</tr>
+<tr>
+<td>Reset-Tag</td>
+<td>Light</td>
+<td style="text-align:right">1,32:1</td>
+<td style="text-align:right">4,5:1</td>
+</tr>
+<tr>
+<td>Bid</td>
+<td>Light</td>
+<td style="text-align:right">2,31:1</td>
+<td style="text-align:right">4,5:1</td>
+</tr>
+<tr>
+<td>Ask</td>
+<td>Light</td>
+<td style="text-align:right">3,35:1</td>
+<td style="text-align:right">4,5:1</td>
+</tr>
+<tr>
+<td>LIVE-Kontobestätigung</td>
+<td>Light</td>
+<td style="text-align:right">2,53:1</td>
+<td style="text-align:right">4,5:1</td>
+</tr>
+<tr>
+<td>BUY-Badge weiß/grün</td>
+<td>Dark</td>
+<td style="text-align:right">3,76:1</td>
+<td style="text-align:right">4,5:1</td>
+</tr>
+</tbody>
+</table>
+<p>Die dargestellten axe-Zahlen gelten für diesen DOM/Snapshot, nicht für alle Zustände. Weiß-auf-Weiß bei Journalpreisen ist zusätzlich im Screenshot und Quellcode nachgewiesen. Stone kann wegen Texturen nicht automatisch als kontrastkonform bezeichnet werden.</p>
+<h2>Befundübersicht</h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Priorität</th>
+<th>Befund</th>
+<th>Nachweis</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="#vis-01">VIS-01</a></td>
+<td>P1</td>
+<td>Helles Theme: Preise verschwinden und Risikowerte sind zu blass</td>
+<td>Browser + Screenshot + axe-core</td>
+</tr>
+<tr>
+<td><a href="#vis-02">VIS-02</a></td>
+<td>P1</td>
+<td>Mobile Header verliert Countdown und Reset; Matrix wird abgeschnitten</td>
+<td>Browser-Geometrie + Screenshots + Scrollprobe</td>
+</tr>
+<tr>
+<td><a href="#rel-01">REL-01</a></td>
+<td>P1</td>
+<td>Hängender Status-GET bleibt LIVE und blockiert Aktualisierung</td>
+<td>Injizierter Browser-Netzwerkfehler, keine Backendänderung</td>
+</tr>
+<tr>
+<td><a href="#rel-02">REL-02</a></td>
+<td>P1</td>
+<td>Positionsänderung verwirft auch unbetroffene SL/TP-Entwürfe</td>
+<td>Browser-Test, zusätzliche Position nur im Speicher</td>
+</tr>
+<tr>
+<td><a href="#safe-01">SAFE-01</a></td>
+<td>P1</td>
+<td>Ungültige Stops und Reset-Eingaben werden nicht strikt abgewiesen</td>
+<td>Intercepted Browser-POST + isolierter Mock-Backend-Test</td>
+</tr>
+<tr>
+<td><a href="#safe-02">SAFE-02</a></td>
+<td>P1</td>
+<td>Reset meldet Erfolg selbst wenn beide Dateischreibungen scheitern</td>
+<td>Isolierter Mock-Test, Diskwrites vollständig ersetzt</td>
+</tr>
+<tr>
+<td><a href="#safe-03">SAFE-03</a></td>
+<td>P1</td>
+<td>Manueller Tagesreset läuft nicht automatisch am Folgetag aus</td>
+<td>Code + isolierter Tageswechsel-Mock</td>
+</tr>
+<tr>
+<td><a href="#safe-04">SAFE-04</a></td>
+<td>P1</td>
+<td>Historienfehler wird als null Tagesverlust behandelt</td>
+<td>Isolierter Mock-Test + Codeanalyse</td>
+</tr>
+<tr>
+<td><a href="#sec-01">SEC-01</a></td>
+<td>P1</td>
+<td>Mutations-APIs ohne Aufruferauthentisierung; Zielprüfung ist keine Berechtigung</td>
+<td>Codeanalyse, Mock fremdes Symbol; kein Angriff ausgeführt</td>
+</tr>
+<tr>
+<td><a href="#a11y-01">A11Y-01</a></td>
+<td>P1</td>
+<td>Reset-Modal ohne Fokusführung und Escape; SL/TP-Felder unbeschriftet</td>
+<td>Browser-Fokus-/Escape-Test + axe-core + Code</td>
+</tr>
+<tr>
+<td><a href="#perf-01">PERF-01</a></td>
+<td>P1</td>
+<td>Stone-Dekoration überträgt viele Megabyte für kleine Ornamente</td>
+<td>Frischer Browserkontext, echte Resource-Timing-Werte</td>
+</tr>
+<tr>
+<td><a href="#data-01">DATA-01</a></td>
+<td>P2</td>
+<td>Journal-Begründungen sind teils fest codiert und widersprechen Trades</td>
+<td>Echter GET + Screenshot + Codeanalyse</td>
+</tr>
+<tr>
+<td><a href="#data-02">DATA-02</a></td>
+<td>P2</td>
+<td>Titan-Matrix ist laufende Vorschau, nicht bestätigtes Schlusskerzensignal</td>
+<td>Code + isolierter Open-Bar-Mock + echte UI</td>
+</tr>
+<tr>
+<td><a href="#rel-03">REL-03</a></td>
+<td>P2</td>
+<td>Journal-Ausfall zeigt $0,00 statt unbekannt; Startfehler erholt sich nur teilweise</td>
+<td>Injizierte Browser-503 Tests</td>
+</tr>
+<tr>
+<td><a href="#perf-02">PERF-02</a></td>
+<td>P2</td>
+<td>Vollständiger Status und Journal-Cache belasten gemeinsame Kontosperre</td>
+<td>Echte GET-Latenzproben + Codeanalyse</td>
+</tr>
+<tr>
+<td><a href="#ux-01">UX-01</a></td>
+<td>P2</td>
+<td>Nebeninformationen und Handelsfelder sind sehr klein</td>
+<td>Computed styles + Bounding boxes + Screenshots</td>
+</tr>
+<tr>
+<td><a href="#vis-03">VIS-03</a></td>
+<td>P2</td>
+<td>Diagnose-Poll entfernt Stone-Panelklassen</td>
+<td>Echter Browser DOM-Readback + Code</td>
+</tr>
+<tr>
+<td><a href="#ops-01">OPS-01</a></td>
+<td>P2</td>
+<td>Start-/Testumgebung nicht eindeutig festgelegt</td>
+<td>Echte Interpreter-/pytest-Ausgaben + Manifest-/Workflowprüfung</td>
+</tr>
+<tr>
+<td><a href="#data-03">DATA-03</a></td>
+<td>P2</td>
+<td>Bestätigte Tagesbasis ist kein Heartbeat des EA-Schutzes</td>
+<td>Statische Codeanalyse, kein EA-Ausfall provoziert</td>
+</tr>
+<tr>
+<td><a href="#perf-03">PERF-03</a></td>
+<td>P3</td>
+<td>Dekorative Effekte und Journal-Rebuild noch ohne Budget</td>
+<td>Codeanalyse; reduzierte Stone-Deko im Browser geprüft</td>
+</tr>
+</tbody>
+</table>
+<h2>Einzelbefunde</h2>
+<p><a id="vis-01"></a></p>
+<h3>VIS-01 · Helles Theme: Preise verschwinden und Risikowerte sind zu blass</h3>
+<p><strong>P1 · Kontrast / Lesbarkeit</strong> · Nachweis: Browser + Screenshot + axe-core</p>
+<p><strong>Quelle:</strong> <code>app.py:1029–1038,1366,2014–2023,2400,2479–2484</code></p>
+<p><strong>Reproduktion:</strong> Design Hell wählen; Header und Journal betrachten. Im DOM stehen Einstieg/Ausstieg, im Screenshot wirken diese Felder leer.</p>
+<p><strong>Ist:</strong> Weiß auf Weiß bei Journalpreisen und Aufnahmebeginn. Gemessen: Tages-DD/Puffer 1,75:1; Bid 2,31:1; Reset-Tag 1,32:1. axe meldet je Konto 161 betroffene Kontrastknoten im geprüften Desktop-Scope.</p>
+<p><strong>Soll:</strong> Alle Konten- und Risikodaten sind in jedem Theme lesbar; kleiner Text mindestens 4,5:1.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> Semantische Farb-Tokens statt festem text-white/text-emerald-400; in Light dunklere Statusfarben. Eingangs-/Ausgangspreise, Zeit und Puffer zuerst korrigieren.</p>
+<p><strong>Abnahme:</strong> axe-Kontrastbefunde für die Nicht-Chart-Bereiche beseitigt; Screenshotvergleich bestätigt sichtbare Journalpreise.</p>
+<p><img src="screenshots/titan-light-header.png" alt="VIS-01 – Original-Screenshot/Nahaufnahme" /></p>
+<p><img src="screenshots/titan-light-journal-top.png" alt="VIS-01 – Original-Screenshot/Nahaufnahme" /></p>
+<p><a id="vis-02"></a></p>
+<h3>VIS-02 · Mobile Header verliert Countdown und Reset; Matrix wird abgeschnitten</h3>
+<p><strong>P1 · Responsive</strong> · Nachweis: Browser-Geometrie + Screenshots + Scrollprobe</p>
+<p><strong>Quelle:</strong> <code>app.py:1085–1091,1300–1333; static/stone-asset-skin.css:918–920</code></p>
+<p><strong>Reproduktion:</strong> Titan bei 390 px und 320 px in Dark/Light öffnen; Header und Matrix prüfen. Stone-Matrix nach rechts wischen.</p>
+<p><strong>Ist:</strong> Bei 320 px liegt das rechte Ende des Countdown bei x=394,14 (Dark/Light) bzw. 397,14 (Stone), außerhalb des Viewports. Titan-Matrix bei 390 px: 359,23 px Tabelle in 336 px Container, overflow-x:hidden. In Stone: 530 px Tabelle in 322 px Container; sie ist tatsächlich um 208 px scrollbar, aber ohne klaren Hinweis. Ein sichtbarer Ausschnitt ist keine vollständige Regelübersicht.</p>
+<p><strong>Soll:</strong> Countdown und wichtige Buttons vollständig sichtbar; jede Matrixspalte erreichbar, ohne versteckte Daten.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> Headerchips dürfen umbrechen. Mobile Matrix als Regelkarten oder zugänglichen horizontalen Scrollbereich mit Wischhinweis gestalten. Nicht einfach Body-Overflow verstecken.</p>
+<p><strong>Abnahme:</strong> 320/390/768 px und 200%-Reflow: kein Beschnitt wichtiger Daten; Fokus-/Touch-Scroll erreicht alle Matrixwerte.</p>
+<p><img src="screenshots/titan-dark-narrow320-header.png" alt="VIS-02 – Original-Screenshot/Nahaufnahme" /></p>
+<p><img src="screenshots/titan-dark-mobile-matrix-initial.png" alt="VIS-02 – Original-Screenshot/Nahaufnahme" /></p>
+<p><img src="screenshots/titan-stone-mobile-matrix-scrolled.png" alt="VIS-02 – Original-Screenshot/Nahaufnahme" /></p>
+<p><a id="rel-01"></a></p>
+<h3>REL-01 · Hängender Status-GET bleibt LIVE und blockiert Aktualisierung</h3>
+<p><strong>P1 · Stabilität / Aktualität</strong> · Nachweis: Injizierter Browser-Netzwerkfehler, keine Backendänderung</p>
+<p><strong>Quelle:</strong> <code>app.py:1521–1526,1961–1966,1974–1977,2089–2091,2696</code></p>
+<p><strong>Reproduktion:</strong> Nach bestätigtem Gold-Status den Status-fetch als nicht auflösende Promise simulieren; updateStatus aufrufen; 6,5 s warten.</p>
+<p><strong>Ist:</strong> statusBusy bleibt gesetzt; currentData bleibt vorhanden; Label bleibt LIVE · Konto 53090070 bestätigt; Reset bleibt aktiviert. Keine Deadline, kein sichtbarer Datenalter-Wert.</p>
+<p><strong>Soll:</strong> Unfrische Daten nicht als LIVE deklarieren; Handelsaktionen nur bei nachweislich frischem Status.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> AbortController mit Deadline, last-success/age und Stale-Zustand, Backoff und Wiederanlauf. Auf Kontoänderung alte Requests wirklich abbrechen; Generation-Prüfung beibehalten.</p>
+<p><strong>Abnahme:</strong> Blackhole/Timeout-Test: binnen definierter Frist STALE/OFFLINE, Aktionen gesperrt, nach Erholung selbstständiger Wiederanlauf.</p>
+<p><img src="screenshots/injected-hung-status.png" alt="REL-01 – Original-Screenshot/Nahaufnahme" /></p>
+<p><a id="rel-02"></a></p>
+<h3>REL-02 · Positionsänderung verwirft auch unbetroffene SL/TP-Entwürfe</h3>
+<p><strong>P1 · Editierzustand</strong> · Nachweis: Browser-Test, zusätzliche Position nur im Speicher</p>
+<p><strong>Quelle:</strong> <code>app.py:2192–2200,2210–2250,2264–2269</code></p>
+<p><strong>Reproduktion:</strong> Bestehendes SL-Feld auf -37,00 ändern; unveränderte Positionen plus eine nur im Browser erzeugte neue Zeile rendern.</p>
+<p><strong>Ist:</strong> Normale Live-Polls bewahren Fokus und Dirty-Wert korrekt. Sobald sich die Struktur ändert, wird die ganze Liste ersetzt: Wert fiel im Test auf -30,41 zurück, Fokus ging verloren.</p>
+<p><strong>Soll:</strong> Ungespeicherte Änderungen bestehender Tickets bleiben bei neuen/geschlossenen anderen Positionen erhalten.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> Ticketbasierte DOM-Updates; Entwurfsspeicher pro Konto/Ticket und sichtbarer Dirty-Zustand. Bei eigenem Ticketverlust klar informieren.</p>
+<p><strong>Abnahme:</strong> Tests für neue Position, Fremdposition geschlossen, Reihenfolge und Teilvolumen; unbetroffene Eingaben/Fokus bleiben erhalten.</p>
+<p><img src="screenshots/titan-stone-positions.png" alt="REL-02 – Original-Screenshot/Nahaufnahme" /></p>
+<p><a id="safe-01"></a></p>
+<h3>SAFE-01 · Ungültige Stops und Reset-Eingaben werden nicht strikt abgewiesen</h3>
+<p><strong>P1 · Mutation / Validierung</strong> · Nachweis: Intercepted Browser-POST + isolierter Mock-Backend-Test</p>
+<p><strong>Quelle:</strong> <code>app.py:44–56,875–891,946–960,2636–2643</code></p>
+<p><strong>Reproduktion:</strong> Nur isoliert: ModifyPositionRequest(sl_price=-1) durch Mock-Endpunkt; Reset(action='garbage'); Browser-Baseline -100 bei abgefangenen Writes.</p>
+<p><strong>Ist:</strong> Negativer Stoppreis erzeugte Mock-Auftrag sl=0.0 (Stop entfernen). Ungültige Aktion aktivierte Reset; negative Baseline fiel still auf Balance zurück. Infinity wurde im direkten Modell/Handler akzeptiert. Browser sendet -100 statt den Wert abzulehnen. Kein echter Order- oder Resetversand.</p>
+<p><strong>Soll:</strong> Ungültige Zahlen/Aktionen verursachen 422/verständliche Validierungsfehler; Entfernung eines Stops nur ausdrücklich.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> FiniteFloat/Bounds, Enum für action, positive Ticketprüfung, klare Remove-Operation; USD und Preis gegenseitig ausschließen. Schutzpreisvalidierung gegen Tickgröße/Stops-Level vor Versand.</p>
+<p><strong>Abnahme:</strong> Mock-Tests für negative Preise, NaN/Infinity, leere/negative Baseline, falsche Aktion, Konfliktfelder. Bei Fehler nie order_send/save aufrufen.</p>
+<p><a id="safe-02"></a></p>
+<h3>SAFE-02 · Reset meldet Erfolg selbst wenn beide Dateischreibungen scheitern</h3>
+<p><strong>P1 · Persistenz</strong> · Nachweis: Isolierter Mock-Test, Diskwrites vollständig ersetzt</p>
+<p><strong>Quelle:</strong> <code>app.py:62–100,953–957,968–973</code></p>
+<p><strong>Reproduktion:</strong> builtins.open mit PermissionError mocken; MT5 vollständig fake; Reset-Handler direkt ausführen.</p>
+<p><strong>Ist:</strong> Beide Schreibzugriffe protokollieren Fehler, API-Ergebnis trotzdem success:true. Writes sind nicht atomar. Konfigurationsloader prüft kein Schema; gültiges JSON falscher Struktur kann später scheitern.</p>
+<p><strong>Soll:</strong> Erfolg erst bei überprüfter Persistenz; Teilfehler offen melden; kein beschädigter JSON-Zustand.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> Validiertes Schema, atomarer Ersatz der jeweiligen Datei, klare Strategie für zwei Ziele; bei Schreibfehler kein success:true. Readback und explizite Fehlerzustände.</p>
+<p><strong>Abnahme:</strong> Read-only/mock Tests für Schreibschutz, fehlendes Verzeichnis, beschädigtes JSON, [] statt Objekt, Ausfall zwischen Zielen.</p>
+<p><a id="safe-03"></a></p>
+<h3>SAFE-03 · Manueller Tagesreset läuft nicht automatisch am Folgetag aus</h3>
+<p><strong>P1 · Drawdown / Tageswechsel</strong> · Nachweis: Code + isolierter Tageswechsel-Mock</p>
+<p><strong>Quelle:</strong> <code>app.py:558–580,654–657,963–966</code></p>
+<p><strong>Reproduktion:</strong> Mock-Config manual_reset_active=true mit Reset einen Tag vor aktuellem Tick; Status berechnen.</p>
+<p><strong>Ist:</strong> Alte 10000-Baseline bleibt aktiv: bei Balance/Equity 9700 wird 3% DD angezeigt. reset_date wird zwar gespeichert, aber nicht geprüft. Bei Gold unterdrückt manual_active zudem die bestätigte EA-Tagesbasis.</p>
+<p><strong>Soll:</strong> Tagesbezogene manuelle Baseline hat einen expliziten Risikotag und Ablauf; kein stilles Fortschreiben.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> Expiry nach Kontorisikotag, dokumentierte Zeitzone, kontrollierter Wechsel zur Auto-/EA-Basis. Anzeige-Reset strikt vom EA-Reset trennen.</p>
+<p><strong>Abnahme:</strong> Mitternacht, Neustart, Sommerzeit und Folgetag als Regression testen; Nutzer sieht wirksamen Baseline-Tag.</p>
+<p><a id="safe-04"></a></p>
+<h3>SAFE-04 · Historienfehler wird als null Tagesverlust behandelt</h3>
+<p><strong>P1 · Datenqualität / Risiko</strong> · Nachweis: Isolierter Mock-Test + Codeanalyse</p>
+<p><strong>Quelle:</strong> <code>app.py:186–187,566–580,582–605</code></p>
+<p><strong>Reproduktion:</strong> history_deals_get gibt None statt einer leeren erfolgreichen Liste zurück; Status mit Balance=Equity=9700 berechnen.</p>
+<p><strong>Ist:</strong> Ergebnis: Tagesstart 9700, realized_today=0, DD=0%, Puffer 339,50. Die API unterscheidet fehlgeschlagene Historienabfrage nicht von keinen Deals. Test zeigt die Fallbackwirkung, nicht einen realen Verlustfall.</p>
+<p><strong>Soll:</strong> Unbekannte Historie führt zu unverifiziertem Risiko-/Journalstatus, nicht zu Nullverlust.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> None/Fehler getrennt von [] behandeln, MT5-Fehlercode erfassen, validierte letzte Baseline verwenden oder Werte als unbekannt ausgeben.</p>
+<p><strong>Abnahme:</strong> MT5-None, Teilhistorie, Wiederherstellung und realisierte Tagesverluste unter Mocks prüfen.</p>
+<p><a id="sec-01"></a></p>
+<h3>SEC-01 · Mutations-APIs ohne Aufruferauthentisierung; Zielprüfung ist keine Berechtigung</h3>
+<p><strong>P1 · API-Sicherheit</strong> · Nachweis: Codeanalyse, Mock fremdes Symbol; kein Angriff ausgeführt</p>
+<p><strong>Quelle:</strong> <code>app.py:858–860,901–903,936–938,2713; account_gateway.py:92–102,148–154</code></p>
+<p><strong>Reproduktion:</strong> Codeprüfung: kein Auth-/Rollen-Dependency an Mutationen; account hat Titan-Default. Isolierter Mock liefert EURUSD-Ticket an close_position.</p>
+<p><strong>Ist:</strong> Handler erzeugte EURUSD-Schließauftrag im Mock, ohne Symbol/Magic-Scope. Konto-/Terminalidentität wird korrekt geprüft, Clientidentität nicht. Serverstart nur Loopback; externe Erreichbarkeit wurde nicht nachgewiesen.</p>
+<p><strong>Soll:</strong> Nur autorisierte Nutzer dürfen explizit gewählte, freigegebene Positionen ändern; kein stiller Titan-Default bei Writes.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> Vor Proxy/Tunnel-Zugang Auth, Host-/Origin-Schutz, explizites Pflichtkonto und Positionsberechtigung/Symbol-Magic-Policy. Idempotenz und Audit-Log für kritische Aktionen.</p>
+<p><strong>Abnahme:</strong> Unautorisiert/falscher Host/fehlendes Konto/fremde Strategie schlagen vor order_send fehl; Loopback-Bindung bleibt Default.</p>
+<p><a id="a11y-01"></a></p>
+<h3>A11Y-01 · Reset-Modal ohne Fokusführung und Escape; SL/TP-Felder unbeschriftet</h3>
+<p><strong>P1 · Tastatur / Screenreader</strong> · Nachweis: Browser-Fokus-/Escape-Test + axe-core + Code</p>
+<p><strong>Quelle:</strong> <code>app.py:1382–1440,2228–2239,2597–2625</code></p>
+<p><strong>Reproduktion:</strong> Reset öffnen; document.activeElement ansehen; Escape drücken; SL/TP mit axe prüfen.</p>
+<p><strong>Ist:</strong> role und aria-modal fehlen, Fokus bleibt auf dem Resetbutton außerhalb; Escape schließt nicht. Je Titan 6, je Gold 4 SL/TP-Felder ohne zugänglichen Namen. axe am Modal allein fand keine Verletzung – das ersetzt den manuellen Dialogtest nicht.</p>
+<p><strong>Soll:</strong> Dialogrolle, beschriftete Eingaben, initialer Fokus, Fokusfalle, Escape und Rückgabe; Offline-Sperre auch für Tastatur.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> dialog bzw. vollständiges ARIA-Dialogmuster; label for/id; sprechender Close-Name. account-content im Offlinezustand inert oder alle relevanten Controls disabled statt nur pointer-events:none.</p>
+<p><strong>Abnahme:</strong> Kompletter Reset-Dialog allein per Tastatur; Fokus nie hinter Modal; Felder mit Konto/Ticket/Einheit vorgelesen.</p>
+<p><img src="screenshots/titan-dark-reset-modal.png" alt="A11Y-01 – Original-Screenshot/Nahaufnahme" /></p>
+<p><img src="screenshots/titan-dark-mobile-reset-modal.png" alt="A11Y-01 – Original-Screenshot/Nahaufnahme" /></p>
+<p><a id="perf-01"></a></p>
+<h3>PERF-01 · Stone-Dekoration überträgt viele Megabyte für kleine Ornamente</h3>
+<p><strong>P1 · Asset-Budget</strong> · Nachweis: Frischer Browserkontext, echte Resource-Timing-Werte</p>
+<p><strong>Quelle:</strong> <code>static/stone-asset-skin.css:82–87,192–195; supplement-results.json:cold_load.resources</code></p>
+<p><strong>Reproduktion:</strong> Frischen Browserkontext ohne Cache öffnen, Standard Stone; Resource Timing auslesen.</p>
+<p><strong>Ist:</strong> 35 stone-assets Ressourcen: 22391976 Byte (21,35 MiB). Konservativ ohne master_dashboard_panel und chart_frame_wide: 33 Ressourcen mit 19311744 Byte (18,42 MiB). Emblem 1186368 Byte für ca. 42×42 CSS-px. Gesamter erfasster Resource-Transfer 21,75 MiB, inklusive Chartressourcen; kein isolierter Nicht-Chart-Ladezeitwert.</p>
+<p><strong>Soll:</strong> Decorative UI darf mobile Ladezeit/RAM nicht dominieren.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> Responsive klein exportierte Embleme/Reliefs, vereinfachte SVG/CSS-Rahmen, nicht sichtbare Assets später laden. WebP ist bereits vorhanden; bloßer Formatwechsel löst die übergroßen Dimensionen nicht.</p>
+<p><strong>Abnahme:</strong> Vorgeschlagenes Budget: Nicht-Chart-Dekoration &lt;=3 MiB bei Erstaufruf; optischer Screenshotvergleich und echtes Netzwerkprofil.</p>
+<p><img src="screenshots/titan-stone-header.png" alt="PERF-01 – Original-Screenshot/Nahaufnahme" /></p>
+<p><a id="data-01"></a></p>
+<h3>DATA-01 · Journal-Begründungen sind teils fest codiert und widersprechen Trades</h3>
+<p><strong>P2 · Journal / Zeit / PnL</strong> · Nachweis: Echter GET + Screenshot + Codeanalyse</p>
+<p><strong>Quelle:</strong> <code>app.py:184–204,220–221,245–249,265–268,1366,2392–2396</code></p>
+<p><strong>Reproduktion:</strong> Historische Gold-BUY-Karten und Titan-Live-Karten vergleichen; Preise/Zeit/Begründung lesen.</p>
+<p><strong>Ist:</strong> Gold BUY wird als Mean-Reversion Short-Bounce erklärt; Titan-Trades teilen fixe Preis-/RSI-/SL-Begründung. UI sagt Heute 20:00, Backend hat festen Cutoff 2026-10-08. Journal nutzt lokalen fromtimestamp plus pauschal -3h, Header lokale Zeit: im sichtbaren Snapshot Server-DE Header 1h, Journal 3h. Summen verwenden profit_usd statt vorhandenes net_profit_usd; Manager zählt Swap, Live-Journal nicht. Historische Entry-/Exit-Verknüpfung filtert nicht zwingend Entry-In oder Magic/Symbol.</p>
+<p><strong>Soll:</strong> Begründungen nur aus belegten Ereignisdaten; konsistente Zeitzone, Datum, Strategy-Scope und Netto-PnL.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> Unbekannte Gründe als unbekannt kennzeichnen; echte EA-Ereignisse speichern, symbol/magic/position_id filtern, Teilabschlüsse/Kosten aggregieren. UTC plus explizite Europe/Berlin-Darstellung; Snapshot-Alter je Journalquelle.</p>
+<p><strong>Abnahme:</strong> Long/Short, S3, ältere Entry, Einstiegskommission, Swap, Teilclose und Sommerzeitfixtures; Header-/Journalzeit stimmen für denselben Zeitstempel.</p>
+<p><img src="screenshots/titan-stone-journal-top.png" alt="DATA-01 – Original-Screenshot/Nahaufnahme" /></p>
+<p><a id="data-02"></a></p>
+<h3>DATA-02 · Titan-Matrix ist laufende Vorschau, nicht bestätigtes Schlusskerzensignal</h3>
+<p><strong>P2 · Signalstatus / Beschriftung</strong> · Nachweis: Code + isolierter Open-Bar-Mock + echte UI</p>
+<p><strong>Quelle:</strong> <code>app.py:302–310,347–362,1589–1591,1978–1979</code></p>
+<p><strong>Reproduktion:</strong> Nur laufende letzte Kerze im Mock ändern, abgeschlossene Kerzen unverändert lassen.</p>
+<p><strong>Ist:</strong> Readiness änderte sich 87% auf 25%. Dashboard verwendet laufende Kerze und rollierenden RSI, Kommentar behauptet 1:1 EA-Schlusslogik. Titel zählt 5 Regeln, obwohl 8 Zeilen/Readiness-Nenner vorhanden sind. HANDEL OFFEN basiert bei Titan nur auf server_time.hour !=0, während daneben Golden Hours stehen.</p>
+<p><strong>Soll:</strong> Vorschau, bestätigte Schlusskriterien und tatsächliche EA-Freigabe klar getrennt; Regelzahl dynamisch.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> Aktuelle Vorschau ausdrücklich labeln; bestätigte Shift-1-Werte separat. EA-Indikatorreferenzen und Freigabegates prüfen; keine Ausführungsfreigabe nur aus Uhrzeit ableiten.</p>
+<p><strong>Abnahme:</strong> Titan-Open-Bar-Invarianz für bestätigte Signale; Referenz-RSI; Readiness immer konsistent zur Matrix.</p>
+<p><img src="screenshots/titan-dark-matrix.png" alt="DATA-02 – Original-Screenshot/Nahaufnahme" /></p>
+<p><a id="rel-03"></a></p>
+<h3>REL-03 · Journal-Ausfall zeigt $0,00 statt unbekannt; Startfehler erholt sich nur teilweise</h3>
+<p><strong>P2 · Fehlerzustände</strong> · Nachweis: Injizierte Browser-503 Tests</p>
+<p><strong>Quelle:</strong> <code>app.py:2291–2329,2369–2385,2685–2698</code></p>
+<p><strong>Reproduktion:</strong> Beide Journalquellen auf 503 setzen. Separat nur erste /api/accounts-Antwort 503, danach Netz wiederherstellen.</p>
+<p><strong>Ist:</strong> Journal warnt korrekt, zeigt daneben dennoch 0 Aufgezeichnet / PnL: $0.00. Nach anfänglichem Kontolistenfehler holen Statusintervalle Titan-Daten und zeigen LIVE, accounts bleibt nach 7 s leer; Kontowechsel/Journalinitialisierung bleiben unvollständig. Kein kompletter Datenstart-Blackout, sondern partielle Erholung.</p>
+<p><strong>Soll:</strong> Unbekannte Summen als —; Kontoliste/Journale/Wechsel erholen sich vollständig.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> Last-known-good je Quelle plus Stale-Kennzeichnung, unvollständige Summen nicht als Gesamt-PnL präsentieren. Bootstrap wiederholen und Zustände pro Feature trennen.</p>
+<p><strong>Abnahme:</strong> Start-/Teilausfall-/Totalausfalltests mit Erholung ohne Reload; Warnung plus — statt Nullsummen.</p>
+<p><img src="screenshots/injected-all-journals-failed.png" alt="REL-03 – Original-Screenshot/Nahaufnahme" /></p>
+<p><img src="screenshots/injected-accounts-start-failure-top.png" alt="REL-03 – Original-Screenshot/Nahaufnahme" /></p>
+<p><a id="perf-02"></a></p>
+<h3>PERF-02 · Vollständiger Status und Journal-Cache belasten gemeinsame Kontosperre</h3>
+<p><strong>P2 · Backend / Polling</strong> · Nachweis: Echte GET-Latenzproben + Codeanalyse</p>
+<p><strong>Quelle:</strong> <code>account_gateway.py:116–143; app.py:288–331,644–676,2696–2698</code></p>
+<p><strong>Reproduktion:</strong> Je Konto 10 Status-/Journal-GETs seriell, dann 4 Status-GETs parallel; keine Candles im Benchmark.</p>
+<p><strong>Ist:</strong> Statusmedian Titan 82,65 ms, Gold 166,99 ms; parallele vier Requests 72,68–577,38 ms. Vollständige Marktdaten/Indikatoren bleiben pro Status unter einem globalen Lock; Gold liest 5000 Bars. Status liefert Journal und kompletten cache obwohl Frontend Journal separat lädt. Lock schützt Konten und darf nicht unbedacht entfernt werden.</p>
+<p><strong>Soll:</strong> Schnelle frische Snapshots; teure Analysen nur bei relevanten Änderungen; kein unnötiger kontenübergreifender Payload.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> Light-Status separat, account-scoped Snapshot/TTL, barbasierte Berechnungscaches, Journal aus Status entkoppeln. Dedicated Workers pro Terminal nur mit strengen Isolationstests. Backgroundtabs drosseln; kein unsicheres Entfernen des MT5-Locks.</p>
+<p><strong>Abnahme:</strong> Vorgeschlagen: Status-p95 &lt;200 ms im repräsentativen Betrieb; gesonderte Messung bei Kontowechsel; identische Daten/Risk-Gates unter Paralleltests.</p>
+<p><a id="ux-01"></a></p>
+<h3>UX-01 · Nebeninformationen und Handelsfelder sind sehr klein</h3>
+<p><strong>P2 · Schrift / Touch</strong> · Nachweis: Computed styles + Bounding boxes + Screenshots</p>
+<p><strong>Quelle:</strong> <code>app.py:2109–2119,2177–2181,2228–2246</code></p>
+<p><strong>Reproduktion:</strong> Matrixbedingungen, Spread und Positionsinputs bei Originalgröße/Desktop und 390 px betrachten.</p>
+<p><strong>Ist:</strong> Countdownlabel 11 px, Wert 12 px; Matrixbedingungen 9 px, Live-Werte 10 px. Je Titan-Desktop 10, Gold 8 Nicht-Chart-Controls haben eine Dimension unter 24 px; mobile 8/6. Anzahl ist Geometrieindikator, keine pauschale WCAG-Target-Failure (Abstands-/Ausnahmeregeln nicht geprüft). SL-Felder sind schmal; Theme-Texturen konkurrieren mit Ziffern.</p>
+<p><strong>Soll:</strong> Schnelles fehlerarmes Lesen/Bedienen ohne Zoom, vor allem bei finanziellen Aktionen.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> Sekundärtext mindestens 12–14 px als Designziel, wichtige Werte 14–16 px; Zahleneingaben breiter; Touch-Controls möglichst 44 px. SL/TP als Ziel-P/L in USD erklären, TP=0 als Kein fixer TP markieren, Schnellaktionen Wirkung beschriften.</p>
+<p><strong>Abnahme:</strong> Manueller Originalgrößen-/Touch-Review, keine abgeschnittenen Zahleneingaben; klare Einheiten und Set-Wirkung.</p>
+<p><img src="screenshots/titan-stone-positions.png" alt="UX-01 – Original-Screenshot/Nahaufnahme" /></p>
+<p><img src="screenshots/goldm15-light-matrix.png" alt="UX-01 – Original-Screenshot/Nahaufnahme" /></p>
+<p><a id="vis-03"></a></p>
+<h3>VIS-03 · Diagnose-Poll entfernt Stone-Panelklassen</h3>
+<p><strong>P2 · Theme-Konsistenz</strong> · Nachweis: Echter Browser DOM-Readback + Code</p>
+<p><strong>Quelle:</strong> <code>static/stone-cockpit.js:116–130; app.py:2060–2063</code></p>
+<p><strong>Reproduktion:</strong> Stone wählen, Status erfolgreich laden, diagnose-card.className lesen.</p>
+<p><strong>Ist:</strong> Klassen nur glass-card rounded-xl p-3.5 border-l-4 border-l-emerald-500; stone-asset-panel/stone-asset-panel--diagnostic wurden durch komplettes className-Ersetzen entfernt.</p>
+<p><strong>Soll:</strong> State-/Trendänderung verändert nur zuständige Zustandsklassen, nicht Theme-Struktur.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> classList.toggle für Trendfarben, Theme-Klassen bewahren; auch andere dynamische Badge-/Card-Updates prüfen.</p>
+<p><strong>Abnahme:</strong> Theme-Klassen nach zehn Updates und Accountwechsel unverändert; Golden Screenshot für Diagnosekarte.</p>
+<p><a id="ops-01"></a></p>
+<h3>OPS-01 · Start-/Testumgebung nicht eindeutig festgelegt</h3>
+<p><strong>P2 · Reproduzierbarkeit / CI</strong> · Nachweis: Echte Interpreter-/pytest-Ausgaben + Manifest-/Workflowprüfung</p>
+<p><strong>Quelle:</strong> <code>README.md:54–62; DASHBOARD_ACCOUNTS.md:19–21; .github/workflows/audit-fixes-ci.yml:4–10,23–41</code></p>
+<p><strong>Reproduktion:</strong> README python-Befehl in beliebiger Umgebung vs. explizit C:/Python314/python.exe ausführen; Testsammlung vergleichen.</p>
+<p><strong>Ist:</strong> Früherer unspezifischer python -m pytest endete mit 19 Collection-Fehlern (falsche Umgebung/Rootscripts). Kontrollierter relevanter tests/-Scope mit Python314 bestanden. Kein Dependency-Lock/pyproject/pytest-Testpfad-Manifest im Root; lokale absolute Gold-Preset-Pfade. CI hat PR-main-Trigger, nicht generischen push-main; Doku zählt noch 20/18 alte Tests.</p>
+<p><strong>Soll:</strong> Ein reproduzierbarer Install-/Start-/Testweg; Forschungsskripte nicht automatisch live ausführen.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> Venv + versionierte Dependencies, pytest testpaths=tests, Brokerfreie Fixtures, GOLDM15_PRESET dokumentieren. Nicht-Chart Visual/A11y/Error-Recovery-Gates auf PRs/main, Doku aus CI-Testzahlen aktualisieren.</p>
+<p><strong>Abnahme:</strong> Frische Windows-Installation startet reproduzierbar; Testlauf greift nie echte Orders/Resetfiles an.</p>
+<p><a id="data-03"></a></p>
+<h3>DATA-03 · Bestätigte Tagesbasis ist kein Heartbeat des EA-Schutzes</h3>
+<p><strong>P2 · Guard / Frische</strong> · Nachweis: Statische Codeanalyse, kein EA-Ausfall provoziert</p>
+<p><strong>Quelle:</strong> <code>goldm15_dashboard.py:97–117; app.py:649–658</code></p>
+<p><strong>Reproduktion:</strong> Codeprüfung: gültige Same-Day-Datei bleibt gültig ohne Alter-/Heartbeat-Prüfung.</p>
+<p><strong>Ist:</strong> baseline_verified prüft Version/Tag/Werte, nicht Frische oder laufenden EA. Persistierte Lockwerte können nach EA-Stopp veraltet sein. Live-MT5-Verbindung bestätigt keinen aktiven EA.</p>
+<p><strong>Soll:</strong> Baselinevalidität und aktueller EA-Schutz/Heartbeat getrennt benennen; keine ungeprüfte Handelsfreigabe.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> Timestamp/Heartbeat und Konsistenzquellen hinzufügen; stale Schutzstatus explizit unbekannt anzeigen. Hinweis auf Baseline statt Vollfreigabe behalten.</p>
+<p><strong>Abnahme:</strong> EA-stopped/Same-Day-old/inkonsistente Statusquellen unter Fixtures abdecken; kein echter Stop/Trade nötig.</p>
+<p><a id="perf-03"></a></p>
+<h3>PERF-03 · Dekorative Effekte und Journal-Rebuild noch ohne Budget</h3>
+<p><strong>P3 · Animation / DOM</strong> · Nachweis: Codeanalyse; reduzierte Stone-Deko im Browser geprüft</p>
+<p><strong>Quelle:</strong> <code>static/stone-cockpit.js:136–168; static/stone-asset-skin.css:582–645; app.py:2441–2531</code></p>
+<p><strong>Reproduktion:</strong> CSS-Animationen und Journal-Rebuild bei Refresh prüfen; reduced-motion aktivieren.</p>
+<p><strong>Ist:</strong> Daueranimationen/Filter und ganzer Journal-innerHTML-Rebuild bleiben. Sampled Stone-Deko respektiert reduced-motion, Dark/Light pulse/ping nicht überall abgesichert. Keine isolierte Nicht-Chart-FPS/CPU/GPU-Messung; ganze Seite enthält Chart und darf nicht diesem Scope zugerechnet werden.</p>
+<p><strong>Soll:</strong> Deko verursacht keinen Leerlauf-/Akkubudget-Ausreißer; keine unnötigen DOM-Ersetzungen.</p>
+<p><strong>Empfehlung (noch nicht umgesetzt):</strong> Off/Low/Full-Deko-Modus, außerhalb Viewport/hinter Tab pausieren; reduced-motion auf alle Themes. Journal diffen, Begründungen einklappbar. Erst danach Profiler-Vergleich.</p>
+<p><strong>Abnahme:</strong> Vorgeschlagenes Frame-Budget &lt;16,7 ms auf Zielgerät; nachprüfbare Trace-Messung getrennt vom Chartteam.</p>
+<h2>Performance: gemessen, nicht geschätzt</h2>
+<h3>Lokale GET-Latenzen</h3>
+<p>10 Samples pro Zelle, seriell, kein Timeout/HTTP-Fehler. Uvicorn auf demselben Rechner; bereits laufende andere Dashboardinstanz und Brokerlast sind nicht kontrolliert. Kein isolierter CPU-Benchmark, keine SLA-Abnahme, keine Aussage über Internet-/VPS-Leistung. Statusantworten enthalten derzeit Journalcaches. Chart-/Candles-Endpunkte nicht im Benchmark.</p>
+<table>
+<thead>
+<tr>
+<th>Konto</th>
+<th>Endpoint</th>
+<th style="text-align:right">Min ms</th>
+<th style="text-align:right">Median ms</th>
+<th style="text-align:right">Max ms</th>
+<th style="text-align:right">Payload Byte</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>titan</td>
+<td>status</td>
+<td style="text-align:right">70.30</td>
+<td style="text-align:right">82.65</td>
+<td style="text-align:right">160.63</td>
+<td style="text-align:right">17973–18022</td>
+</tr>
+<tr>
+<td>titan</td>
+<td>journal_summary</td>
+<td style="text-align:right">25.26</td>
+<td style="text-align:right">40.96</td>
+<td style="text-align:right">55.41</td>
+<td style="text-align:right">11055–11055</td>
+</tr>
+<tr>
+<td>goldm15</td>
+<td>status</td>
+<td style="text-align:right">151.84</td>
+<td style="text-align:right">166.99</td>
+<td style="text-align:right">282.56</td>
+<td style="text-align:right">21412–21412</td>
+</tr>
+<tr>
+<td>goldm15</td>
+<td>journal_summary</td>
+<td style="text-align:right">35.55</td>
+<td style="text-align:right">39.16</td>
+<td style="text-align:right">49.52</td>
+<td style="text-align:right">13635–13635</td>
+</tr>
+</tbody>
+</table>
+<p>Vier parallele Statusrequests: 72.68 ms (titan), 290.91 ms (goldm15), 577.38 ms (titan), 511.44 ms (goldm15). Das passt zur gemeinsamen MT5-Sperre, belegt aber allein nicht deren isolierten Anteil.</p>
+<h3>Erstlade- und Assetmessung</h3>
+<ul>
+<li>Frischer Chromiumkontext, Standard Stone: <strong>48 Resource-Einträge</strong>, <strong>22.801.806 Byte Transfer</strong> (21,75 MiB). HTML-Dokument ist nicht in dieser Resource-Summe enthalten. Enthält Chart-JS/-APIs und geteilte Rahmen; kein isolierter Nicht-Chart-Seitenwert.</li>
+<li>Stone-Assets: <strong>35 Requests, 22.391.976 Body-Byte</strong> (21,35 MiB). Konservative Teilmenge ohne <code>11_master_dashboard_panel</code> und <code>12_chart_frame_wide</code>: <strong>33 Requests, 19.311.744 Byte</strong> (18,42 MiB). Geteilte Assets bleiben in dieser Teilmenge möglich.</li>
+<li>Größtes Asset 2.025.248 Byte; Emblem 1.186.368 Byte. WebP-Konvertierung schon vorhanden. Dimensionen/Mehrfachrahmen sind der nächste Hebel.</li>
+<li>Dokument <code>DOMContentLoaded</code> <strong>92,3 ms</strong>, <code>loadEventEnd</code> <strong>488,3 ms</strong>. Gesamte Harness-Wartezeit bis networkidle/Account bestätigt <strong>2310,89 ms</strong>, enthält künstliche networkidle-Wartezeit. <strong>Nicht</strong> als Nutzer-Ladezeit oder Nicht-Chart-Speedup verkaufen.</li>
+<li>Gelesene Uvicorn-Header: kein <code>Content-Encoding</code> bei HTML/CSS/Status; CSS bietet ETag/Last-Modified. Reverse-Proxy-Kompression gesondert prüfen; WebP komprimiert ohnehin.</li>
+<li>Ganze Seiten enthalten Chart-Rendering: gesammelte Long-Task-Daten bleiben Rohdaten ohne Nicht-Chart-FPS/CPU-Zuordnung. Keine CPU-, RAM-, GPU- oder Akkuprozentwerte erfunden.</li>
+</ul>
+<h3>Priorisierte Optimierungsreihenfolge</h3>
+<ol>
+<li><strong>Korrektheit/Frische vor mehr Tempo:</strong> Timeouts, Stale-Alter, sichere Persistenz, Validierung und Baseline-Tagesgrenzen.</li>
+<li><strong>Lesbarkeit:</strong> Theme-Tokens, M15-Countdown, alle White-on-white-Stellen, mobile Header/Matrix. Datenflächen ruhig halten, Stone nur als Rahmen.</li>
+<li><strong>Weniger Arbeit pro Poll:</strong> Light-Status ohne Journale/Cross-Cache, Indikatoren/Snapshots barbasiert cachen. Kontoisolation nicht für Geschwindigkeit opfern.</li>
+<li><strong>Weniger Transfer:</strong> kleine Embleme/Texturen, responsive Größen, offscreen Deko verzögert laden; Nicht-Chart-Deko-Budget ≤3 MiB als Ziel.</li>
+<li><strong>Weniger Renderarbeit:</strong> Ticket-/Journal-Deltas, Deko nur sichtbar/aktiv, Reduced Motion für alle Themes; Profiling vor/nach Änderung.</li>
+</ol>
+<h2>Testmatrix und Rohbelege</h2>
+<h3>18 visuelle Hauptsichten</h3>
+<table>
+<thead>
+<tr>
+<th>Ansicht</th>
+<th>Viewport</th>
+<th style="text-align:right">Kontrastknoten (axe)</th>
+<th style="text-align:right">Unbenannte SL/TP-Felder</th>
+<th>Bild</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>titan-stone-desktop</td>
+<td>1440×1000</td>
+<td style="text-align:right">unvollständig (Texturen)</td>
+<td style="text-align:right">6</td>
+<td><a href="screenshots/titan-stone-desktop.png">PNG</a></td>
+</tr>
+<tr>
+<td>titan-stone-tablet</td>
+<td>768×1024</td>
+<td style="text-align:right">nicht separat automatisiert</td>
+<td style="text-align:right">siehe Desktop</td>
+<td><a href="screenshots/titan-stone-tablet.png">PNG</a></td>
+</tr>
+<tr>
+<td>titan-stone-mobile</td>
+<td>390×844</td>
+<td style="text-align:right">nicht separat automatisiert</td>
+<td style="text-align:right">siehe Desktop</td>
+<td><a href="screenshots/titan-stone-mobile.png">PNG</a></td>
+</tr>
+<tr>
+<td>titan-dark-desktop</td>
+<td>1440×1000</td>
+<td style="text-align:right">15</td>
+<td style="text-align:right">6</td>
+<td><a href="screenshots/titan-dark-desktop.png">PNG</a></td>
+</tr>
+<tr>
+<td>titan-dark-tablet</td>
+<td>768×1024</td>
+<td style="text-align:right">nicht separat automatisiert</td>
+<td style="text-align:right">siehe Desktop</td>
+<td><a href="screenshots/titan-dark-tablet.png">PNG</a></td>
+</tr>
+<tr>
+<td>titan-dark-mobile</td>
+<td>390×844</td>
+<td style="text-align:right">nicht separat automatisiert</td>
+<td style="text-align:right">siehe Desktop</td>
+<td><a href="screenshots/titan-dark-mobile.png">PNG</a></td>
+</tr>
+<tr>
+<td>titan-light-desktop</td>
+<td>1440×1000</td>
+<td style="text-align:right">161</td>
+<td style="text-align:right">6</td>
+<td><a href="screenshots/titan-light-desktop.png">PNG</a></td>
+</tr>
+<tr>
+<td>titan-light-tablet</td>
+<td>768×1024</td>
+<td style="text-align:right">nicht separat automatisiert</td>
+<td style="text-align:right">siehe Desktop</td>
+<td><a href="screenshots/titan-light-tablet.png">PNG</a></td>
+</tr>
+<tr>
+<td>titan-light-mobile</td>
+<td>390×844</td>
+<td style="text-align:right">nicht separat automatisiert</td>
+<td style="text-align:right">siehe Desktop</td>
+<td><a href="screenshots/titan-light-mobile.png">PNG</a></td>
+</tr>
+<tr>
+<td>goldm15-stone-desktop</td>
+<td>1440×1000</td>
+<td style="text-align:right">unvollständig (Texturen)</td>
+<td style="text-align:right">4</td>
+<td><a href="screenshots/goldm15-stone-desktop.png">PNG</a></td>
+</tr>
+<tr>
+<td>goldm15-stone-tablet</td>
+<td>768×1024</td>
+<td style="text-align:right">nicht separat automatisiert</td>
+<td style="text-align:right">siehe Desktop</td>
+<td><a href="screenshots/goldm15-stone-tablet.png">PNG</a></td>
+</tr>
+<tr>
+<td>goldm15-stone-mobile</td>
+<td>390×844</td>
+<td style="text-align:right">nicht separat automatisiert</td>
+<td style="text-align:right">siehe Desktop</td>
+<td><a href="screenshots/goldm15-stone-mobile.png">PNG</a></td>
+</tr>
+<tr>
+<td>goldm15-dark-desktop</td>
+<td>1440×1000</td>
+<td style="text-align:right">14</td>
+<td style="text-align:right">4</td>
+<td><a href="screenshots/goldm15-dark-desktop.png">PNG</a></td>
+</tr>
+<tr>
+<td>goldm15-dark-tablet</td>
+<td>768×1024</td>
+<td style="text-align:right">nicht separat automatisiert</td>
+<td style="text-align:right">siehe Desktop</td>
+<td><a href="screenshots/goldm15-dark-tablet.png">PNG</a></td>
+</tr>
+<tr>
+<td>goldm15-dark-mobile</td>
+<td>390×844</td>
+<td style="text-align:right">nicht separat automatisiert</td>
+<td style="text-align:right">siehe Desktop</td>
+<td><a href="screenshots/goldm15-dark-mobile.png">PNG</a></td>
+</tr>
+<tr>
+<td>goldm15-light-desktop</td>
+<td>1440×1000</td>
+<td style="text-align:right">161</td>
+<td style="text-align:right">4</td>
+<td><a href="screenshots/goldm15-light-desktop.png">PNG</a></td>
+</tr>
+<tr>
+<td>goldm15-light-tablet</td>
+<td>768×1024</td>
+<td style="text-align:right">nicht separat automatisiert</td>
+<td style="text-align:right">siehe Desktop</td>
+<td><a href="screenshots/goldm15-light-tablet.png">PNG</a></td>
+</tr>
+<tr>
+<td>goldm15-light-mobile</td>
+<td>390×844</td>
+<td style="text-align:right">nicht separat automatisiert</td>
+<td style="text-align:right">siehe Desktop</td>
+<td><a href="screenshots/goldm15-light-mobile.png">PNG</a></td>
+</tr>
+</tbody>
+</table>
+<p>axe zählt betroffene DOM-Knoten, nicht eindeutige Produktbugs. Keine Summierung desselben Fehlers über Themes/Konten. Mobile zusätzlich manuell/Geometrie geprüft.</p>
+<h3>39 Browser-Verhaltenschecks</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align:right">Nr.</th>
+<th>Prüfung</th>
+<th>Ergebnis</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right">1</td>
+<td>Live Titan GET confirmed</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">2</td>
+<td>titan identity confirmed</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">3</td>
+<td>titan/stone selected</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">4</td>
+<td>titan/dark selected</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">5</td>
+<td>titan/light selected</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">6</td>
+<td>goldm15 identity confirmed</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">7</td>
+<td>goldm15/stone selected</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">8</td>
+<td>goldm15/dark selected</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">9</td>
+<td>goldm15/light selected</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">10</td>
+<td>Titan matrix dynamic count</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">11</td>
+<td>Titan gold details hidden</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">12</td>
+<td>Dirty SL preserved after live status refresh</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">13</td>
+<td>Dirty SL focus preserved</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">14</td>
+<td>Dirty SL preserved after blur and refresh</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">15</td>
+<td>Existing edit preserved when position list changes (in-memory only)</td>
+<td><strong>FAIL</strong> – Ist -30.41 / Soll -37.00</td>
+</tr>
+<tr>
+<td style="text-align:right">16</td>
+<td>Journal titan does not switch trading account</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">17</td>
+<td>Journal titan entries scoped</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">18</td>
+<td>Journal goldm15 does not switch trading account</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">19</td>
+<td>Journal goldm15 entries scoped</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">20</td>
+<td>Journal all does not switch trading account</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">21</td>
+<td>Reset modal opens</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">22</td>
+<td>Reset modal closes with Escape</td>
+<td><strong>FAIL</strong> – Ist False / Soll True</td>
+</tr>
+<tr>
+<td style="text-align:right">23</td>
+<td>Negative reset prevented by UI (intercepted, no write)</td>
+<td><strong>FAIL</strong> – Ist 1 / Soll 0</td>
+</tr>
+<tr>
+<td style="text-align:right">24</td>
+<td>Position action routing account=titan (intercepted)</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">25</td>
+<td>Late account response exercised</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">26</td>
+<td>Late Titan response cannot overwrite Gold</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">27</td>
+<td>Gold six rules</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">28</td>
+<td>Gold three exit goals</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">29</td>
+<td>503 clears current account data</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">30</td>
+<td>503 disables reset</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">31</td>
+<td>503 clears matrix</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">32</td>
+<td>503 clears positions</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">33</td>
+<td>Live recovery from injected 503</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">34</td>
+<td>Partial journal failure visible</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">35</td>
+<td>Hung status ceases to claim LIVE after 6.5s</td>
+<td><strong>FAIL</strong> – Ist False / Soll True</td>
+</tr>
+<tr>
+<td style="text-align:right">36</td>
+<td>Selected account survives reload</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">37</td>
+<td>Selected theme survives reload</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">38</td>
+<td>Reduced motion disables sampled decoration</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td style="text-align:right">39</td>
+<td>No browser pageerror observed (whole page, not chart diagnosis)</td>
+<td>PASS</td>
+</tr>
+</tbody>
+</table>
+<h3>Zusätzliche Fehler-/Sicherheitsproben</h3>
+<ul>
+<li><strong>Live:</strong> Accountwechsel, verspätete Antworten, Journalfilter, Reloadpersistenz, Fokus/Dirty-Polling, status/account-GETs, unbekannter Account → 400, unbekannter Pfad → 404.</li>
+<li><strong>Browserinjiziert:</strong> Status-503 mit Recovery; Journal-Teil-/Totalausfall; hängender Fetch; Kontolisten-Bootstrap-503; leere Positionsliste; künstliche zusätzliche Position. Kein MT5-Terminal gestoppt.</li>
+<li><strong>Backendmock:</strong> negative Stoppreise, ungültige Aktion/negative/Infinity-Baseline, PermissionError bei Persistenz, anderer Symbolticket, Historie=None, alter Baseline-Tag und geänderte laufende Titan-Kerze. Direkte Modell/Handlerproben sind keine Behauptung identischer HTTP-Serialisierung von Infinity.</li>
+<li><strong>Kein destruktiver Live-Test:</strong> echte Orderausführung/SLTP/Reset, EAs starten/stoppen, Broker-SL-/Fill-Verhalten, Tageswechsel an echtem Konto, Crash/Restart während echter Writes.</li>
+</ul>
+<h3>Reproduzieren (nur mit unverändertem Auditstand)</h3>
+<pre><code class="language-bash"># Separates Terminal im Repository; Port 8050 nicht übernehmen
+DASHBOARD_PORT=8057 C:/Python314/python.exe app.py
+
+# Relevante brokerisolierte Suite (kein root-level pytest über Forschungsskripte)
+C:/Python314/python.exe -m pytest tests/test_multi_account.py tests/test_performance_regressions.py tests/test_stone_theme_contract.py tests/test_stone_celebrations_contract.py tests/test_journal_multi_strategy_contract.py -v
+
+# Audit-Harnesses überschreiben nur ihre Evidenz im Auditordner
+C:/Python314/python.exe docs/audits/2026-10-09-dashboard-live/run_audit.py
+PYTHONPATH=. C:/Python314/python.exe docs/audits/2026-10-09-dashboard-live/run_supplement.py
+PYTHONPATH=. C:/Python314/python.exe docs/audits/2026-10-09-dashboard-live/run_reliability.py
+</code></pre>
+<p>Voraussetzungen: Python314 mit vorhandenen numpy/pandas/MetaTrader5/FastAPI/httpx/pytest/Playwright, Chromium und lokaler axe.min.js. Echte GET-Screenshots benötigen die bereits angemeldeten konfigurierte Demo-Terminals. Keine Login-/Terminal-Autostart-Automatik hinzugefügt.</p>
+<h3>Artefakte</h3>
+<ul>
+<li><code>report.html</code>: lesbarer Bildreport mit Verweisen; <code>report.pdf</code>: druckbare Fassung mit eingebetteten Bildern.</li>
+<li><code>README.md</code>: dieselbe Dokumentation als Markdown; <code>findings.json</code> und <code>findings.csv</code>: priorisierbare Befunde.</li>
+<li><code>browser-results.json</code>: alle 18 Ansichten/axe/39 Checks/GET-Messungen; <code>supplement-results.json</code>: Cold-Load, Reflow, erste Mockproben.</li>
+<li><code>reliability-results.json</code>: weitere reproduzierte Fehler; <code>live-status-*.json</code>: echte GET-Snapshots (vertraulich).</li>
+<li><code>pytest.txt</code>, <code>pytest.xml</code>: reale Testausgaben; <code>audit-manifest.json</code>: Commit/Zeit/Hashes. <code>verification.json</code>: Abschlusskontrolle der Artefakte.</li>
+<li><code>screenshots/</code>: Originalbilder und eindeutig benannte Nahaufnahmen; kein erfundenes Vorher/Nachher.</li>
+</ul>
+<h2>Noch offene Abnahmen / keine Vollständigkeitsbehauptung</h2>
+<ul>
+<li>Nur Chromium/Windows automatisiert. Firefox/WebKit/Safari, reale Android-/iOS-Geräte, echte Touch-/Screenreaderprüfung und Browserzoom offen.</li>
+<li>Kein Chart-Audit, kein EA-Profitabilitäts-/Strategiebacktest und keine Aussage, dass die Strategie sicher/profitabel ist.</li>
+<li>Kein stundenlanger Soak-/Lasttest; API-Messungen sind 10er-Stichproben. Kontolock-Anteil, Speicher-/GPU-/Akkukosten benötigen getrennte Profiler-Messung.</li>
+<li>Kein öffentlicher Sicherheitsangriff/Proxy-Tunnel geprüft. Loopback-Dashboard ist nicht automatisch für externe Nutzung abgesichert.</li>
+<li>Kein Golden-Screenshot-Diff gegen historischen Stand: geprüft wurde der gezogene aktuelle Stand. Alte statische Auditbefunde wurden nicht ungeprüft wiederholt.</li>
+<li>Bei Paralleländerungen nach dem gezogenen Commit muss vor Umsetzung erneut abgeglichen werden. Alle Empfehlungen sind <strong>noch nicht umgesetzt</strong>.</li>
+</ul>
+<h2>Referenzen</h2>
+<ul>
+<li>WCAG Kontrast: https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html</li>
+<li>Dialog-/Fokusmuster: https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/</li>
+<li>Fetch-Abbruch: https://developer.mozilla.org/en-US/docs/Web/API/AbortController</li>
+<li>Größenbudget/Responsive Bilder: https://web.dev/learn/images/</li>
+<li>Rohdaten-Axe: https://github.com/dequelabs/axe-core (lokal verwendete Version 4.10.3).</li>
+</ul>
+</body></html>

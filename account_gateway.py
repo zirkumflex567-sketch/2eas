@@ -11,14 +11,46 @@ from pathlib import Path
 from fastapi import HTTPException
 
 ACCOUNTS = {
-    'titan': dict(id='titan', name='XAU Titan Pro', login=53087839,
-                  server='ICMarketsEU-Demo', terminal=r'C:\Program Files\PU Prime MT5 Terminal\terminal64.exe',
-                  portable=False, version='v6.0 LIVE', capacity=3, broker_utc_offset_seconds=10800),
+    'blueberry': dict(id='blueberry', name='Blueberry Funded (Prop-Firma)', login=5120620,
+                      server='BlueberryMarketsSVG-Live', company='Blueberry Markets (SVG) LLC',
+                      terminal=r'C:\Users\zirku\Documents\goldm5\.mt5-puprime-700194619\terminal64.exe',
+                      portable=True, version='Phase 1 LIVE PROP', capacity=3, broker_utc_offset_seconds=10800,
+                      symbol='XAUUSD.pi', timeframe='M15', initial_balance=10000.0, leverage='1:30',
+                      account_type='PROPFIRMA', is_demo=False, badge='PROPFIRMA',
+                      daily_loss_limit_pct=4.0, max_loss_limit_pct=10.0, max_loss_floor=9000.0,
+                      challenge_protection=True),
+    'titan': dict(id='titan', name='XAU Titan Pro (10k)', login=53087839,
+                  server='ICMarketsEU-Demo', company='IC Markets (EU) Ltd',
+                  terminal=r'C:\Program Files\PU Prime MT5 Terminal\terminal64.exe',
+                  portable=False, version='v7.10 LIVE', capacity=3, broker_utc_offset_seconds=10800,
+                  symbol='XAUUSD', timeframe='M15', initial_balance=10000.0, leverage='1:10',
+                  account_type='DEMO', is_demo=True, badge='DEMO 10k',
+                  challenge_protection=True),
+    'xau5m_m5': dict(id='xau5m_m5', name='XAUUSD 5 Minute (M5 $250)', login=700194619,
+                     server='PUPrime-Demo', company='PU Prime Ltd',
+                     terminal=r'C:\Users\zirku\Downloads\mt5_strategy_research\rev\hermes_ea_work\portable\terminal64.exe',
+                     portable=True, version='v7.3 M5 (250$)', capacity=3, broker_utc_offset_seconds=10800,
+                     symbol='XAUUSD.p', timeframe='M5', initial_balance=250.0, leverage='1:500',
+                     account_type='DEMO', is_demo=True, badge='DEMO 250$',
+                     challenge_protection=False),
+    'titan_m5': dict(id='titan_m5', name='XAU Titan Pro (M5 $500)', login=700184986,
+                     server='PUPrime-Demo', company='PU Prime Ltd',
+                     terminal=r'C:\Users\zirku\Documents\goldm5\.mt5-puprime\terminal64.exe',
+                     portable=True, version='v7.1 M5 (500$)', capacity=3, broker_utc_offset_seconds=10800,
+                     symbol='XAUUSD.p', timeframe='M5', initial_balance=500.0, leverage='1:500',
+                     account_type='DEMO', is_demo=True, badge='DEMO 500$',
+                     challenge_protection=False),
     'goldm15': dict(id='goldm15', name='GoldM15 Reconstruction', login=53090070,
-                    server='ICMarketsEU-Demo', terminal=r'C:\Users\zirku\Documents\goldm5\.mt5-demo\terminal64.exe',
-                    portable=True, version='v1.21 GUARDED', capacity=3, broker_utc_offset_seconds=10800),
+                    server='ICMarketsEU-Demo', company='IC Markets (EU) Ltd',
+                    terminal=r'C:\Users\zirku\Documents\goldm5\.mt5-demo\terminal64.exe',
+                    portable=True, version='v1.21 GUARDED', capacity=3, broker_utc_offset_seconds=10800,
+                    symbol='XAUUSD', timeframe='M15', initial_balance=10000.0, leverage='1:10',
+                    account_type='DEMO', is_demo=True, badge='DEMO 10k',
+                    challenge_protection=True),
 }
-_selected = ContextVar('dashboard_account', default='titan')
+ACCOUNTS['xau5m_m15'] = ACCOUNTS['xau5m_m5']  # Compatibility alias
+ACCOUNTS['titan_25k'] = ACCOUNTS['xau5m_m5']  # Compatibility alias
+_selected = ContextVar('dashboard_account', default='blueberry')
 _lock = threading.RLock()
 _attached_mt5 = None
 _attached_account = None
@@ -103,7 +135,7 @@ def verify_identity(mt5, account):
 
 
 @contextmanager
-def session(mt5, account='titan'):
+def session(mt5, account='blueberry'):
     """Reuse a verified terminal between reads; isolate every account under one lock.
 
     Switching terminals always reattaches. Every request re-verifies login,
@@ -122,19 +154,23 @@ def session(mt5, account='titan'):
         try:
             # A cached handle may have been detached externally (terminal restart
             # or test adapter swap). Reattach once, then verify identity anew.
-            reused = _attached_mt5 is mt5 and _attached_account == account
-            if reused:
-                try:
-                    attached = bool(mt5.account_info()) and bool(mt5.terminal_info())
-                except (TypeError, AttributeError):
-                    attached = False
-            else:
-                attached = False
-            if not attached:
+            reused = False
+            if _attached_mt5 is mt5 and _attached_account in ACCOUNTS:
+                curr = ACCOUNTS[_attached_account]
+                if (curr['terminal'] == spec['terminal'] and
+                    curr['login'] == spec['login'] and
+                    curr['server'] == spec['server']):
+                    try:
+                        reused = bool(mt5.account_info()) and bool(mt5.terminal_info())
+                    except (TypeError, AttributeError):
+                        reused = False
+            if not reused:
                 _disconnect(mt5)
                 if not mt5.initialize(spec['terminal'], portable=spec['portable'], timeout=5000):
                     raise HTTPException(503, f"{spec['name']}: MT5-Verbindung fehlgeschlagen.")
                 _attached_mt5, _attached_account = mt5, account
+            else:
+                _attached_account = account
             try:
                 verify_identity(mt5, spec)
             except Exception:
@@ -149,7 +185,7 @@ def scoped(mt5):
     def decorate(func):
         @wraps(func)
         def wrapped(*args, **kwargs):
-            with session(mt5, kwargs.get('account', 'titan')):
+            with session(mt5, kwargs.get('account', 'blueberry')):
                 return func(*args, **kwargs)
         return wrapped
     return decorate

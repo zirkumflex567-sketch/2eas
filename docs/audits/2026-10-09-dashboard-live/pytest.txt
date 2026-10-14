@@ -1,0 +1,53 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.3, pytest-9.0.2, pluggy-1.6.0 -- C:\Python314\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\zirku\Downloads\testing
+plugins: anyio-4.12.1, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 40 items
+
+tests/test_multi_account.py::MultiAccountTests::test_account_list_and_routes_are_scoped PASSED [  2%]
+tests/test_multi_account.py::MultiAccountTests::test_config_and_common_reset_are_isolated PASSED [  5%]
+tests/test_multi_account.py::MultiAccountTests::test_each_slot_uses_correct_exit_threshold_and_period PASSED [  7%]
+tests/test_multi_account.py::MultiAccountTests::test_entry_matrix_does_not_count_exit_goals PASSED [ 10%]
+tests/test_multi_account.py::MultiAccountTests::test_explicit_paths_and_default_titan PASSED [ 12%]
+tests/test_multi_account.py::MultiAccountTests::test_gold_reset_cannot_write_titan_or_guard_files PASSED [ 15%]
+tests/test_multi_account.py::MultiAccountTests::test_guard_fixed_initial_daily_limit_and_reserves PASSED [ 17%]
+tests/test_multi_account.py::MultiAccountTests::test_guard_floating_gain_cannot_hide_balance_floor PASSED [ 20%]
+tests/test_multi_account.py::MultiAccountTests::test_guard_invalid_state_or_reset_hour_is_not_verified PASSED [ 22%]
+tests/test_multi_account.py::MultiAccountTests::test_guard_unknown_or_old_day_cannot_report_verified PASSED [ 25%]
+tests/test_multi_account.py::MultiAccountTests::test_http_mutations_cannot_use_wrong_account_or_ticket PASSED [ 27%]
+tests/test_multi_account.py::MultiAccountTests::test_open_bar_cannot_change_entry_or_exit_goals PASSED [ 30%]
+tests/test_multi_account.py::MultiAccountTests::test_parallel_sessions_cannot_cross_accounts PASSED [ 32%]
+tests/test_multi_account.py::MultiAccountTests::test_position_change_preserves_conversion_and_account PASSED [ 35%]
+tests/test_multi_account.py::MultiAccountTests::test_same_account_reuses_verified_terminal_and_switch_reconnects PASSED [ 37%]
+tests/test_multi_account.py::MultiAccountTests::test_status_keeps_existing_titan_contract_and_broker_time PASSED [ 40%]
+tests/test_multi_account.py::MultiAccountTests::test_terminal_absent_never_initializes PASSED [ 42%]
+tests/test_multi_account.py::MultiAccountTests::test_unknown_account_never_initializes PASSED [ 45%]
+tests/test_multi_account.py::MultiAccountTests::test_wilder_rsi_known_values_and_flat_case PASSED [ 47%]
+tests/test_multi_account.py::MultiAccountTests::test_wrong_account_fails_before_body PASSED [ 50%]
+tests/test_multi_account.py::MultiAccountTests::test_wrong_terminal_fails PASSED [ 52%]
+tests/test_performance_regressions.py::PerformanceRegressionTests::test_cache_is_account_scoped_and_expires PASSED [ 55%]
+tests/test_performance_regressions.py::PerformanceRegressionTests::test_vectorized_volume_profile_matches_legacy_reference PASSED [ 57%]
+tests/test_stone_theme_contract.py::StoneThemeContractTests::test_app_includes_skin_without_replacing_api 
+tests/test_stone_theme_contract.py::StoneThemeContractTests::test_app_includes_skin_without_replacing_api PASSED [ 60%]
+tests/test_stone_theme_contract.py::StoneThemeContractTests::test_assets_exist 
+tests/test_stone_theme_contract.py::StoneThemeContractTests::test_assets_exist PASSED [ 62%]
+tests/test_stone_theme_contract.py::StoneThemeContractTests::test_css_is_scoped_and_proxy_safe PASSED [ 65%]
+tests/test_stone_theme_contract.py::StoneThemeContractTests::test_demo_is_explicitly_simulated PASSED [ 67%]
+tests/test_stone_theme_contract.py::StoneThemeContractTests::test_frontend_does_not_call_trading_endpoints PASSED [ 70%]
+tests/test_stone_theme_contract.py::StoneThemeContractTests::test_live_chart_labels_and_glow_regression PASSED [ 72%]
+tests/test_stone_theme_contract.py::StoneThemeContractTests::test_mythic_chart_effects_are_sparse_and_visual_only PASSED [ 75%]
+tests/test_stone_theme_contract.py::StoneThemeContractTests::test_stone_svg_is_valid_xml PASSED [ 77%]
+tests/test_stone_celebrations_contract.py::CelebrationContracts::test_genuine_mt5_fills_only PASSED [ 80%]
+tests/test_stone_celebrations_contract.py::CelebrationContracts::test_no_order_or_execution_calls PASSED [ 82%]
+tests/test_stone_celebrations_contract.py::CelebrationContracts::test_real_time_ema_values_and_motion_support PASSED [ 85%]
+tests/test_stone_celebrations_contract.py::CelebrationContracts::test_toolbar_and_manual_demo_controls PASSED [ 87%]
+tests/test_journal_multi_strategy_contract.py::CombinedJournalContractTests::test_filter_is_visible_and_includes_all_strategies PASSED [ 90%]
+tests/test_journal_multi_strategy_contract.py::CombinedJournalContractTests::test_journal_queries_explicit_account_not_active_order_context PASSED [ 92%]
+tests/test_journal_multi_strategy_contract.py::CombinedJournalContractTests::test_partial_failures_are_not_hidden_or_counted_as_success PASSED [ 95%]
+tests/test_journal_multi_strategy_contract.py::CombinedJournalContractTests::test_separate_refresh_does_not_override_trading_account PASSED [ 97%]
+tests/test_journal_multi_strategy_contract.py::CombinedJournalContractTests::test_timestamp_sorting_and_accurate_scope PASSED [100%]
+
+- generated xml file: C:\Users\zirku\Downloads\testing\docs\audits\2026-10-09-dashboard-live\pytest.xml -
+=================== 40 passed, 10 subtests passed in 12.52s ===================

@@ -1,0 +1,10 @@
+{
+  "commit": "b7cabcd3a1eb103eccf02451eb6a8ebf6d612b16",
+  "time": "2026-10-09T06:23:20.497653+02:00",
+  "hashes": {
+    "app.py": "b86b26048e587f33d593b9141a1784d71033b21ff2f4b3e640cc7cccc45b7ba5",
+    "account_gateway.py": "dcdb57496c9635f92a5292e7b1db5e2b016148526bff6b408539c3fbb81f2a14",
+    "goldm15_dashboard.py": "ed2f7a82fcc7cd5b4b38a377deb7a5bfcf0483f21f70935c5657d0ed410d5112",
+    "drawdown_config.json": "8e04b1263e56b4c9f8e1873072b3badb85a98b5d1ae292b23425e6afe93f6732"
+  }
+}

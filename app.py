@@ -34,6 +34,16 @@ from chart_studio.workspaces import WorkspaceStore, StoreError, WorkspaceMissing
 from functools import lru_cache
 from dashboard_runtime import install_runtime
 
+_dashboard_env = Path.home() / '.dashboard-env.json'
+if _dashboard_env.is_file():
+    try:
+        with open(_dashboard_env, 'r', encoding='utf-8-sig') as _f:
+            for _k, _v in json.load(_f).items():
+                if _k not in os.environ and isinstance(_v, str):
+                    os.environ[_k] = _v
+    except Exception:
+        pass
+
 app = FastAPI(title="XAU Titan Pro - Institutional Live Cockpit")
 install_control_security(app)
 BASE_DIR = Path(__file__).resolve().parent
@@ -289,21 +299,28 @@ def journal_metadata(account_id):
 
 
 def journal_magics(account_id):
-    if account_id == 'titan':
+    if account_id in ('titan', 'titan_m5'):
         return {881122}  # XAU_Titan_Pro.mq5 and committed .set reference
-    base = int(gold_parameters()['MagicBase'])
-    return {base+1, base+2, base+3}
+    elif account_id == 'titan_25k':
+        return {881125, 881122}
+    elif account_id == 'goldm15':
+        base = int(gold_parameters()['MagicBase'])
+        return {base+1, base+2, base+3}
+    elif account_id in ('blueberry', 'xau5m_m5', 'xau5m_m15'):
+        return lambda m: True  # Dedicated Blueberry Prop-Firm account: all trades belong to Blueberry
+    return set()
 
 
 def build_trade_journal(account_id, server_time, local_time):
     if server_time.tzinfo is None:
         server_time = server_time.replace(tzinfo=timezone.utc)
+    sym_name = ACCOUNTS.get(account_id, {}).get('symbol', 'XAUUSD')
     deals = require_mt5_data(mt5.history_deals_get(
         journal_accounting.CUTOFF+timedelta(seconds=broker_clock.offset_seconds(selected())),
         server_time+timedelta(seconds=broker_clock.offset_seconds(selected()))), 'journal_history')
-    positions = require_mt5_data(mt5.positions_get(symbol=SYMBOL), 'journal_positions')
+    positions = require_mt5_data(mt5.positions_get(symbol=sym_name), 'journal_positions')
     magics = journal_magics(account_id)
-    slot_by_magic = {m:i+1 for i,m in enumerate(sorted(magics))} if account_id=='goldm15' else {}
+    slot_by_magic = {m:i+1 for i,m in enumerate(sorted(magics))} if (account_id=='goldm15' and isinstance(magics, (set, list))) else {}
     strategy = ACCOUNTS[account_id]['name']
     entries = []
     for p in positions:
@@ -328,7 +345,7 @@ def build_trade_journal(account_id, server_time, local_time):
         })
     by_position = {}
     for d in {int(d.ticket):d for d in deals}.values():
-        if getattr(d,'symbol',None)==SYMBOL and d.entry != mt5.DEAL_ENTRY_IN:
+        if getattr(d, 'symbol', None) in (sym_name, 'XAUUSD', 'XAUUSD.p', 'XAUUSD.pi') and d.entry != mt5.DEAL_ENTRY_IN:
             by_position.setdefault(d.position_id, []).append(d)
     for position_id, exits in by_position.items():
         lifecycle = require_mt5_data(mt5.history_deals_get(position=position_id), 'journal_position_history')
@@ -358,12 +375,19 @@ def get_live_market_data(include_journal=True):
     if not ensure_mt5_init():
         return None
     
-    sym = mt5.symbol_info(SYMBOL)
-    tick = mt5.symbol_info_tick(SYMBOL)
+    current_acc = selected()
+    acc_id = current_acc['id']
+    sym_name = current_acc.get('symbol', 'XAUUSD')
+    acc_tf_str = current_acc.get('timeframe', 'M15')
+    acc_tf = TIMEFRAME_MAP.get(acc_tf_str, getattr(mt5, 'TIMEFRAME_M15', 15))
+    init_bal = float(current_acc.get('initial_balance', 10000.0))
+
+    sym = mt5.symbol_info(sym_name)
+    tick = mt5.symbol_info_tick(sym_name)
     acc = mt5.account_info()
     now = time.time()
-    params = gold_parameters() if selected()['id']=='goldm15' else None
-    reset_hour = int(params['RiskResetHourServer']) if params else 0
+    params = gold_parameters() if acc_id == 'goldm15' else None
+    reset_hour = int(params['RiskResetHourServer']) if (params and 'RiskResetHourServer' in params) else 0
     dd_cfg = load_dd_config()
     risk_context, midnight_dt = risk_day_context(now, reset_hour, dd_cfg)
     source_meta = require_fresh_quote(tick, now, risk_context)
@@ -374,7 +398,7 @@ def get_live_market_data(include_journal=True):
     if not all(math.isfinite(v) and v > 0 for v in (acc.balance, acc.equity)):
         raise HTTPException(503, 'Kontorisikodaten sind ungültig/unbekannt.')
         
-    rates = mt5.copy_rates_from_pos(SYMBOL, TIMEFRAME, 0, 5000 if selected()['id']=='goldm15' else 1000)
+    rates = mt5.copy_rates_from_pos(sym_name, acc_tf, 0, 5000 if acc_id == 'goldm15' else 1000)
     if rates is None or len(rates) < 200:
         return None
         
@@ -398,13 +422,13 @@ def get_live_market_data(include_journal=True):
     cur_bar = df.iloc[-2]  # Shift 1: closed-bar reference criteria.
     
     server_time = datetime.fromtimestamp(tick.time, timezone.utc)
-    local_time = datetime.fromtimestamp(broker_clock.to_utc_epoch(tick.time, selected()), timezone.utc).astimezone(journal_accounting.BERLIN)
+    local_time = datetime.fromtimestamp(broker_clock.to_utc_epoch(tick.time, current_acc), timezone.utc).astimezone(journal_accounting.BERLIN)
 
     
     # Time/config alone cannot prove EA activity or execution permission.
     in_window = None
                  
-    bar_duration = 15 * 60
+    bar_duration = 5 * 60 if acc_tf_str == 'M5' else 15 * 60
     bar_start = int(open_bar['time'])
     bar_elapsed = tick.time - bar_start
     bar_remaining = max(0, bar_duration - bar_elapsed)
@@ -513,7 +537,7 @@ def get_live_market_data(include_journal=True):
         },
         {
             "id": "candle",
-            "name": "5. Kerzen-Farbe (M15-Bestätigung)",
+            "name": f"5. Kerzen-Farbe ({acc_tf_str}-Bestätigung)",
             "current_val": f"Grüne Kerze (+${cur_bar['close']-cur_bar['open']:.2f})" if buy_c5_green else f"Rote Kerze (-${cur_bar['open']-cur_bar['close']:.2f})",
             "short_met": bool(sell_c5_red),
             "long_met": bool(buy_c5_green),
@@ -602,19 +626,21 @@ def get_live_market_data(include_journal=True):
         elif not sell_c8_sr_ok:
             trend_diagnosis = f"ANTI-TRAP AKTIV: Zu nah am Support (${recent_sup:.2f}). Verkauf in Demand gesperrt!"
         else:
-            trend_diagnosis = "ALLE REGELN ERFÜLLT INKL. ANTI-TRAP SCHUTZ! Bereit für M15-Schluss."
+            trend_diagnosis = f"ALLE REGELN ERFÜLLT INKL. ANTI-TRAP SCHUTZ! Bereit für {acc_tf_str}-Schluss."
 
-    trend_diagnosis = 'M15-Schluss · Referenzkriterien: ' + trend_diagnosis + ' Live-EA-Freigabe unbekannt.'
+    trend_diagnosis = f'{acc_tf_str}-Schluss · Referenzkriterien: ' + trend_diagnosis + ' Live-EA-Freigabe unbekannt.'
     short_missing = trend_diagnosis
 
     # Positions
-    pos_objects = mt5.positions_get(symbol=SYMBOL)
+    pos_objects = mt5.positions_get(symbol=sym_name)
     if pos_objects is None:
         raise HTTPException(503, 'MT5-Positionen derzeit nicht verfügbar.')
     positions = []
     contract_size = sym.trade_contract_size
     
     for p in pos_objects:
+        if acc_id == 'titan_m5' and getattr(p, 'magic', 0) != 881122:
+            continue
         p_type = "BUY" if p.type == mt5.ORDER_TYPE_BUY else "SELL"
         vol = p.volume
         op = p.price_open
@@ -649,24 +675,28 @@ def get_live_market_data(include_journal=True):
     manual_requested = dd_cfg.get('manual_reset_active', False)
     reset_ts = dd_cfg.get("reset_timestamp")
     manual_active = risk_context['manual_active']
-    reset_bal = dd_cfg.get("reset_balance", 10000.0)
+    reset_bal = dd_cfg.get("reset_balance", init_bal)
 
     if manual_active and reset_ts:
         reset_dt = datetime.fromtimestamp(reset_ts, timezone.utc)
         from_dt = max(midnight_dt, reset_dt)
-        deals = require_mt5_data(mt5.history_deals_get(from_dt+timedelta(seconds=broker_clock.offset_seconds(selected())), wall_time+timedelta(seconds=broker_clock.offset_seconds(selected()))), 'daily_history')
+        deals = require_mt5_data(mt5.history_deals_get(from_dt+timedelta(seconds=broker_clock.offset_seconds(current_acc)), wall_time+timedelta(seconds=broker_clock.offset_seconds(current_acc))), 'daily_history')
         realized_today = 0.0
         if deals:
             for d in deals:
                 if d.type in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL):
+                    if acc_id == 'titan_m5' and getattr(d, 'magic', 0) != 881122:
+                        continue
                     realized_today += (d.profit + d.swap + d.commission + getattr(d, 'fee', 0.))
         day_start_bal = float(reset_bal)
     else:
-        deals = require_mt5_data(mt5.history_deals_get(midnight_dt+timedelta(seconds=broker_clock.offset_seconds(selected())), wall_time+timedelta(seconds=broker_clock.offset_seconds(selected()))), 'daily_history')
+        deals = require_mt5_data(mt5.history_deals_get(midnight_dt+timedelta(seconds=broker_clock.offset_seconds(current_acc)), wall_time+timedelta(seconds=broker_clock.offset_seconds(current_acc))), 'daily_history')
         realized_today = 0.0
         if deals:
             for d in deals:
                 if d.type in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL):
+                    if acc_id == 'titan_m5' and getattr(d, 'magic', 0) != 881122:
+                        continue
                     realized_today += (d.profit + d.swap + d.commission + getattr(d, 'fee', 0.))
         day_start_bal = acc.balance - realized_today
 
@@ -676,18 +706,19 @@ def get_live_market_data(include_journal=True):
     daily_loss_usd = max(0.0, daily_ref - acc.equity)
     daily_dd_pct = (daily_loss_usd / daily_ref) * 100.0 if daily_ref > 0 else 0.0
 
-    ea_limit_pct = 3.5
-    broker_limit_pct = 4.0
-    buffer_ea_usd = max(0.0, (daily_ref * (ea_limit_pct / 100.0)) - daily_loss_usd)
-    buffer_broker_usd = max(0.0, (daily_ref * (broker_limit_pct / 100.0)) - daily_loss_usd)
+    has_challenge = bool(current_acc.get('challenge_protection', True))
+    ea_limit_pct = 3.5 if has_challenge else None
+    broker_limit_pct = 4.0 if has_challenge else None
+    buffer_ea_usd = max(0.0, (daily_ref * (ea_limit_pct / 100.0)) - daily_loss_usd) if has_challenge else None
+    buffer_broker_usd = max(0.0, (daily_ref * (broker_limit_pct / 100.0)) - daily_loss_usd) if has_challenge else None
 
     daily_drawdown = {
         "loss_usd": round(daily_loss_usd, 2),
         "pct": round(daily_dd_pct, 2),
         "limit_pct": ea_limit_pct,
         "broker_limit_pct": broker_limit_pct,
-        "buffer_usd": round(buffer_ea_usd, 2),
-        "buffer_broker_usd": round(buffer_broker_usd, 2),
+        "buffer_usd": round(buffer_ea_usd, 2) if buffer_ea_usd is not None else None,
+        "buffer_broker_usd": round(buffer_broker_usd, 2) if buffer_broker_usd is not None else None,
         "day_start_bal": round(day_start_bal, 2),
         "daily_ref": round(daily_ref, 2),
         "balance": round(acc.balance, 2),
@@ -699,13 +730,48 @@ def get_live_market_data(include_journal=True):
         "risk_timezone": risk_context['risk_timezone'],
         "risk_reset_hour": reset_hour,
         "reset_balance": round(float(reset_bal), 2) if manual_active else None,
-        "reset_time_str": datetime.fromtimestamp(reset_ts, timezone.utc).strftime("%H:%M:%S") if (manual_active and reset_ts) else None
+        "reset_time_str": datetime.fromtimestamp(reset_ts, timezone.utc).strftime("%H:%M:%S") if (manual_active and reset_ts) else None,
+        "challenge_protection": has_challenge
     }
+
+    exit_goals = []
+    if acc_id in ('blueberry', 'xau5m_m5', 'xau5m_m15'):
+        exit_goals = [
+            {'title': 'Prop-Firm Status', 'target': 'Blueberry Funded Prime Phase 1', 'note': 'LIVE PROPFIRMA KONTO (#5120620) · Kein Demo-Konto!', 'status': 'PROPFIRMA'},
+            {'title': 'Tages-Verlustgrenze (Daily DD)', 'target': 'Max 4.0% ($400) / EA-Notbremse $350 (3.5%)', 'note': 'Hard stop bei $400 Tages-DD relativ zur Mitternachts-Balance', 'status': 'Aktiv'},
+            {'title': 'Maximaler Gesamt-DD', 'target': 'Max 10.0% ($1,000) / Notbremse $9,100', 'note': 'Konto darf niemals unter $9,000.00 Equity fallen (Hebel 1:30)', 'status': 'Aktiv'},
+            {'title': 'Struktureller Swing-SL', 'target': '48 M15 Kerzen Lookback', 'note': 'SL-Buffer: 250 pt | Min SL $15.00 | Max SL $150.00', 'status': 'Aktiv'},
+            {'title': 'Weekend Protection', 'target': 'Freitag 21:00 UTC Schließung', 'note': 'Automatischer EA-Positionsschluss vor Wochenende (Blueberry Regel)', 'status': 'Aktiv'}
+        ]
+    elif acc_id == 'titan_25k':
+        exit_goals = [
+            {'title': 'Dynamic Runner Target', 'target': 'Min $70.00 Profit', 'note': 'Dynamic Runner Ausstieg skaliert für 25k Account', 'status': 'Aktiv'},
+            {'title': 'Struktureller Swing-SL', 'target': '48 M15 Kerzen Lookback', 'note': 'SL-Buffer: 250 pt | Min SL $35.00 | Max SL $350.00', 'status': 'Aktiv'},
+            {'title': 'Break-Even Trailing', 'target': 'Trigger $100 / Lock $35', 'note': 'Sichert Gewinn bei $100 auf $35 ab', 'status': 'Standby'},
+            {'title': 'Tages-DD Überwachung', 'target': 'Max 4.0% ($1,000.00)', 'note': 'ICMarketsEU Demo 25k (Hebel 1:10)', 'status': 'Aktiv'},
+            {'title': 'Handelsfenster (DE)', 'target': '05:00-12:00 & 15:00-18:00', 'note': 'Golden Hours aktiv', 'status': 'Aktiv'}
+        ]
+    elif acc_id == 'titan_m5':
+        exit_goals = [
+            {'title': 'Dynamic Runner Target', 'target': 'Min $28.00 Profit', 'note': 'Dynamic Runner Ausstieg ab $28.00 (5.6% auf 500$ Konto)', 'status': 'Aktiv'},
+            {'title': 'Struktureller Swing-SL', 'target': '48 M5 Kerzen Lookback', 'note': 'SL-Buffer: 250 pt | Min SL $15.00 | Max SL $150.00', 'status': 'Aktiv'},
+            {'title': 'Break-Even Trailing', 'target': 'Trigger $40 / Lock $15', 'note': 'Sichert Gewinn bei $40 auf $15 ab', 'status': 'Standby'},
+            {'title': 'Handelsfenster (Server)', 'target': '01:00 - 23:45', 'note': 'Elite-Hours Filter aktiv (Montag-Freitag)', 'status': 'Aktiv'},
+            {'title': 'Challenge-Schutz', 'target': 'Deaktiviert (Normales Konto)', 'note': 'Keine Prop-Firm Beschränkungen oder Notbremsen aktiv', 'status': 'Frei'}
+        ]
+    elif acc_id == 'titan':
+        exit_goals = [
+            {'title': 'Dynamic Runner Target', 'target': 'Min $28.00 Profit', 'note': 'Dynamic Runner Ausstieg ab $28.00', 'status': 'Aktiv'},
+            {'title': 'Struktureller Swing-SL', 'target': '48 M15 Kerzen Lookback', 'note': 'SL-Buffer: 250 pt | Min SL $15.00 | Max SL $150.00', 'status': 'Aktiv'},
+            {'title': 'Break-Even Trailing', 'target': 'Trigger $40 / Lock $15', 'note': 'Sichert Gewinn bei $40 auf $15 ab', 'status': 'Standby'},
+            {'title': 'Tages-DD Überwachung', 'target': 'Max 4.0% ($400.00)', 'note': 'ICMarketsEU Demo 10k (Hebel 1:10)', 'status': 'Aktiv'},
+            {'title': 'Handelsfenster (DE)', 'target': '05:00-12:00 & 15:00-18:00', 'note': 'Golden Hours aktiv', 'status': 'Aktiv'}
+        ]
 
     result = {
         **source_meta,
         "risk_status": "available",
-        "symbol": SYMBOL,
+        "symbol": sym_name,
         "bid": tick.bid,
         "ask": tick.ask,
         "spread": sym.spread,
@@ -742,25 +808,25 @@ def get_live_market_data(include_journal=True):
         "daily_drawdown": daily_drawdown
     }
     if include_journal:
-        account_id = selected()['id']
+        account_id = current_acc['id']
         entries = get_cached_trade_journal(account_id, wall_time, local_time)
         result.update(journal=entries, journal_cache={account_id: entries}, journal_meta=journal_metadata(account_id))
-    result.update(account=public_account(selected()), rule_count=len(rules_matrix), exit_goals=[], ea_guard=None)
+    result.update(account=public_account(current_acc), rule_count=len(rules_matrix), exit_goals=exit_goals, ea_guard=None)
     preview = df.iloc[-1]
     result.update(
-        signal_mode='closed_bar_reference', signal_label='M15-Schluss · Referenzrekonstruktion, keine EA-Freigabe',
+        signal_mode='closed_bar_reference', signal_label=f'{acc_tf_str}-Schluss · Referenzrekonstruktion, keine EA-Freigabe',
         signal_bar_time=datetime.fromtimestamp(int(cur_bar['time']), timezone.utc).strftime('%H:%M'),
-        signal_bar_time_utc=datetime.fromtimestamp(broker_clock.to_utc_epoch(int(cur_bar['time']), selected()), timezone.utc).isoformat(),
+        signal_bar_time_utc=datetime.fromtimestamp(broker_clock.to_utc_epoch(int(cur_bar['time']), current_acc), timezone.utc).isoformat(),
         ea_execution_verified=False, ea_execution_status='unknown',
-        signal_preview={'mode': 'forming_bar_preview', 'label': 'Laufende M15-Kerze · unverbindliche Vorschau',
+        signal_preview={'mode': 'forming_bar_preview', 'label': f'Laufende {acc_tf_str}-Kerze · unverbindliche Vorschau',
                         'close': float(preview['close']), 'rsi14': float(preview['rsi14']),
                         'ema9': float(preview['ema9']), 'ema21': float(preview['ema21']), 'ema50': float(preview['ema50'])})
-    if selected()['id']=='goldm15':
-        result.update(GOLD_METRICS_CACHE.get(selected(), SYMBOL, TIMEFRAME, cur_bar['time'],
+    if acc_id == 'goldm15':
+        result.update(GOLD_METRICS_CACHE.get(current_acc, sym_name, acc_tf, cur_bar['time'],
                                             df['close'].to_numpy(), params, gold_metrics))
-        guard = read_guard(GUARD_FILE, broker_clock.to_broker_epoch(now, selected()), acc.equity, params, balance=acc.balance)
-        result['ea_guard'] = guard
         result['signal_bar_time'] = datetime.fromtimestamp(int(df.iloc[-2]['time']), timezone.utc).strftime('%H:%M')
+        guard = read_guard(GUARD_FILE, broker_clock.to_broker_epoch(now, current_acc), acc.equity, params, balance=acc.balance)
+        result['ea_guard'] = guard
         if guard['baseline_verified'] and not manual_active:
             daily_loss = max(0, guard['baseline'] - min(acc.balance, acc.equity))
             daily_drawdown.update(loss_usd=round(daily_loss, 2), pct=round(100*daily_loss/params['InitialBalanceUSD'], 2),
@@ -770,12 +836,19 @@ def get_live_market_data(include_journal=True):
 
 @app.get('/api/accounts')
 def api_accounts():
-    return {'default': 'titan', 'accounts': [public_account(a) for a in ACCOUNTS.values()]}
+    seen = set()
+    unique_accounts = []
+    for a in ACCOUNTS.values():
+        if a['id'] not in seen:
+            seen.add(a['id'])
+            unique_accounts.append(public_account(a))
+    return {'default': 'blueberry', 'accounts': unique_accounts}
 
 @app.get('/api/journal_summary')
 @scoped(mt5)
-def api_journal_summary(account: str = 'titan'):
-    tick = require_mt5_data(mt5.symbol_info_tick(SYMBOL), 'journal_tick')
+def api_journal_summary(account: str = 'blueberry'):
+    sym_name = selected().get('symbol', 'XAUUSD')
+    tick = require_mt5_data(mt5.symbol_info_tick(sym_name), 'journal_tick')
     server_time = datetime.fromtimestamp(broker_clock.to_utc_epoch(tick.time, selected()), timezone.utc)
     local_time = datetime.fromtimestamp(broker_clock.to_utc_epoch(tick.time, selected()), timezone.utc).astimezone(journal_accounting.BERLIN)
     entries = get_cached_trade_journal(account, server_time, local_time)
@@ -789,7 +862,7 @@ def api_journal_summary(account: str = 'titan'):
 
 @app.get("/api/status")
 @scoped(mt5)
-def api_status(account: str = 'titan', include_journal: bool = True, light: bool = False):
+def api_status(account: str = 'blueberry', include_journal: bool = True, light: bool = False):
     data = get_live_market_data(include_journal=include_journal and not light)
     if data is None:
         raise HTTPException(status_code=500, detail="MT5 nicht verbunden")
@@ -797,14 +870,18 @@ def api_status(account: str = 'titan', include_journal: bool = True, light: bool
 
 @app.get("/api/candles")
 @scoped(mt5)
-def api_candles(count: int = 150, account: str = 'titan', tf: str = 'M15'):
+def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] = None):
     if not ensure_mt5_init():
         raise HTTPException(status_code=500, detail="MT5 Fehler")
+    current_acc = selected()
+    sym_name = current_acc.get('symbol', 'XAUUSD')
+    if tf is None:
+        tf = current_acc.get('timeframe', 'M15')
     tf_upper = tf.upper()
     tf_val = TIMEFRAME_MAP.get(tf_upper, mt5.TIMEFRAME_M15)
     count = min(1000, max(10, count))
-    fetch_count = max(5000, count+250) if (account=='goldm15' and tf_val==mt5.TIMEFRAME_M15) else (count+250)
-    rates = mt5.copy_rates_from_pos(SYMBOL, tf_val, 0, fetch_count)
+    fetch_count = max(5000, count+250) if (account == 'goldm15' and tf_val==mt5.TIMEFRAME_M15) else (count+250)
+    rates = mt5.copy_rates_from_pos(sym_name, tf_val, 0, fetch_count)
     if rates is None or len(rates)<2:
         raise HTTPException(status_code=500, detail="Konnte Kerzen nicht laden")
         
@@ -817,7 +894,7 @@ def api_candles(count: int = 150, account: str = 'titan', tf: str = 'M15'):
     g = diff.clip(lower=0).rolling(14).mean()
     l = (-diff.clip(upper=0)).rolling(14).mean()
     df['rsi14'] = 100 - (100 / (1 + g / (l + 1e-9)))
-    if account=='goldm15' and tf_val==mt5.TIMEFRAME_M15:
+    if account == 'goldm15' and tf_val==mt5.TIMEFRAME_M15:
         params = gold_parameters()
         for n in {int(params[f'S{s}_{key}']) for s in range(1,4) for key in ('FastRSI','BuyTrendRSI','SellTrendRSI')}:
             df[f'gold_rsi{n}'] = wilder_rsi(df['close'].to_numpy(), n)
@@ -849,13 +926,13 @@ def api_candles(count: int = 150, account: str = 'titan', tf: str = 'M15'):
         ema50_pts.append({'time': t, 'value': round(row['ema50'], 2)})
         ema200_pts.append({'time': t, 'value': round(row['ema200'], 2)})
         
-        if tf_val == mt5.TIMEFRAME_M15:
+        if tf_val in (mt5.TIMEFRAME_M15, mt5.TIMEFRAME_M5):
             prev = df.loc[idx - 1]
             c1, o1 = prev['close'], prev['open']
             e20_1, e50_1, e200_1 = prev['ema20'], prev['ema50'], prev['ema200']
             rsi1 = prev['rsi14']
             
-            if account=='goldm15':
+            if account == 'goldm15' and tf_val==mt5.TIMEFRAME_M15:
                 new_long, new_short = [], []
                 for s in range(1,4):
                     p = lambda key: params[f'S{s}_{key}']
@@ -871,12 +948,13 @@ def api_candles(count: int = 150, account: str = 'titan', tf: str = 'M15'):
                         markers.append({'time': t, 'position': 'belowBar' if buys else 'aboveBar', 'color': '#10b981' if buys else '#f43f5e', 'shape': 'arrowUp' if buys else 'arrowDown', 'text': 'S'+'/'.join(systems)+(' L' if buys else ' S')})
                 continue
             
-            buy = (c1 > e20_1) and (e20_1 > e50_1) and (c1 > e200_1) and (rsi1 >= 50.0) and (c1 > o1)
-            sell = (c1 < e20_1) and (e20_1 < e50_1) and (c1 < e200_1) and (rsi1 <= 50.0) and (c1 < o1)
-            if buy:
-                markers.append({'time': t, 'position': 'belowBar', 'color': '#10b981', 'shape': 'arrowUp', 'text': 'BUY'})
-            elif sell:
-                markers.append({'time': t, 'position': 'aboveBar', 'color': '#f43f5e', 'shape': 'arrowDown', 'text': 'SELL'})
+            if account in ('blueberry', 'titan', 'titan_25k', 'titan_m5', 'xau5m_m5', 'xau5m_m15'):
+                buy = (c1 > e20_1) and (e20_1 > e50_1) and (c1 > e200_1) and (rsi1 >= 50.0) and (c1 > o1)
+                sell = (c1 < e20_1) and (e20_1 < e50_1) and (c1 < e200_1) and (rsi1 <= 50.0) and (c1 < o1)
+                if buy:
+                    markers.append({'time': t, 'position': 'belowBar', 'color': '#10b981', 'shape': 'arrowUp', 'text': 'BUY'})
+                elif sell:
+                    markers.append({'time': t, 'position': 'aboveBar', 'color': '#f43f5e', 'shape': 'arrowDown', 'text': 'SELL'})
             
     # Support & Resistance for drawing
     today_date = df['dt'].iloc[-1].date()
@@ -1066,7 +1144,8 @@ def api_modify_position(req: ModifyPositionRequest, account: str):
     if not positions:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")
     pos = positions[0]
-    if pos.symbol != SYMBOL:
+    sym_name = selected().get('symbol', 'XAUUSD')
+    if pos.symbol not in (sym_name, 'XAUUSD', 'XAUUSD.p', 'XAUUSD.pi'):
         raise HTTPException(403, 'Nur XAUUSD-Positionen sind freigegeben.')
     sym = mt5.symbol_info(pos.symbol)
     if sym is None:
@@ -1157,7 +1236,8 @@ def api_close_position(req: ClosePositionRequest, account: str):
     if not positions:
         raise HTTPException(status_code=404, detail="Position nicht gefunden")
     pos = positions[0]
-    if pos.symbol != SYMBOL:
+    sym_name = selected().get('symbol', 'XAUUSD')
+    if pos.symbol not in (sym_name, 'XAUUSD', 'XAUUSD.p', 'XAUUSD.pi'):
         raise HTTPException(403, 'Nur XAUUSD-Positionen sind freigegeben.')
     sym = mt5.symbol_info(pos.symbol)
     tick = mt5.symbol_info_tick(pos.symbol)
@@ -1196,7 +1276,9 @@ def api_close_position(req: ClosePositionRequest, account: str):
 def api_reset_drawdown(req: ResetDrawdownRequest, account: str):
     if not ensure_mt5_init():
         raise HTTPException(status_code=500, detail="MT5 nicht verbunden")
-    tick = mt5.symbol_info_tick(SYMBOL)
+    sym_name = selected().get('symbol', 'XAUUSD')
+    init_bal = float(selected().get('initial_balance', 10000.0))
+    tick = mt5.symbol_info_tick(sym_name)
     acc = mt5.account_info()
     now = time.time()
     require_fresh_quote(tick, now)
@@ -1206,7 +1288,7 @@ def api_reset_drawdown(req: ResetDrawdownRequest, account: str):
     if req.action == "auto":
         cfg = {
             "manual_reset_active": False,
-            "reset_balance": 10000.0,
+            "reset_balance": init_bal,
             "reset_timestamp": None,
             "reset_date": None
         }
@@ -1349,8 +1431,41 @@ HTML_CONTENT = """<!DOCTYPE html>
   <nav class="glass-card rounded-xl px-4 py-3 mb-3" aria-label="Konto und Strategie">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div class="account-switcher" id="account-switcher">
-        <button class="account-tab" data-account="titan" aria-pressed="true" onclick="switchAccount('titan')"><strong>XAU Titan Pro</strong><small>53087839 · ICMarketsEU-Demo</small></button>
-        <button class="account-tab" data-account="goldm15" aria-pressed="false" onclick="switchAccount('goldm15')"><strong>GoldM15 Reconstruction</strong><small>53090070 · ICMarketsEU-Demo</small></button>
+        <button class="account-tab border-amber-500/50 bg-amber-500/10" data-account="blueberry" aria-pressed="true" onclick="switchAccount('blueberry')">
+          <div class="flex items-center justify-between gap-1.5">
+            <strong class="text-amber-400">Blueberry Funded</strong>
+            <span class="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/30 text-amber-200 font-black border border-amber-500/50 tracking-wider">PROPFIRMA</span>
+          </div>
+          <small class="text-amber-200/70">5120620 · BlueberryMarketsSVG-Live · $10k · 1:30</small>
+        </button>
+        <button class="account-tab" data-account="titan" aria-pressed="false" onclick="switchAccount('titan')">
+          <div class="flex items-center justify-between gap-1.5">
+            <strong>XAU Titan Pro (10k)</strong>
+            <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 font-bold border border-slate-600">DEMO</span>
+          </div>
+          <small>53087839 · ICMarketsEU-Demo · $10k</small>
+        </button>
+        <button class="account-tab" data-account="xau5m_m5" aria-pressed="false" onclick="switchAccount('xau5m_m5')">
+          <div class="flex items-center justify-between gap-1.5">
+            <strong>XAUUSD 5 Minute (M5)</strong>
+            <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 font-bold border border-slate-600">DEMO</span>
+          </div>
+          <small>700194619 · PUPrime-Demo · $250</small>
+        </button>
+        <button class="account-tab" data-account="titan_m5" aria-pressed="false" onclick="switchAccount('titan_m5')">
+          <div class="flex items-center justify-between gap-1.5">
+            <strong>XAU Titan Pro (M5)</strong>
+            <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 font-bold border border-slate-600">DEMO</span>
+          </div>
+          <small>700184986 · PUPrime-Demo · $500</small>
+        </button>
+        <button class="account-tab" data-account="goldm15" aria-pressed="false" onclick="switchAccount('goldm15')">
+          <div class="flex items-center justify-between gap-1.5">
+            <strong>GoldM15 Reconstruction</strong>
+            <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 font-bold border border-slate-600">DEMO</span>
+          </div>
+          <small>53090070 · ICMarketsEU-Demo · $10k</small>
+        </button>
       </div>
       <div class="text-right"><span id="account-connection" role="status" aria-live="polite" class="text-amber-500 font-bold">Verbindung wird geprüft …</span><div id="account-detail" class="text-sub text-[10px] mt-1">Separate Konten · Live-Daten</div></div>
     </div>
@@ -1361,10 +1476,10 @@ HTML_CONTENT = """<!DOCTYPE html>
     <div class="flex items-center gap-3">
       <div class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></div>
       <h1 class="font-black text-sm tracking-wider flex items-center gap-2">
-        <span id="strategy-title">XAU TITAN PRO</span> <span id="strategy-version" class="text-[10px] px-2 py-0.5 rounded bg-blue-600 text-white font-bold tracking-normal">v6.0 LIVE</span>
+        <span id="strategy-title">BLUEBERRY FUNDED (PROP-FIRMA)</span> <span id="strategy-version" class="text-[10px] px-2 py-0.5 rounded bg-amber-600 text-white font-bold tracking-normal">Phase 1 LIVE PROP</span>
       </h1>
       <span class="opacity-40">|</span>
-      <span class="text-sub font-medium">Gold (XAUUSD) M15 Cockpit</span>
+      <span class="text-sub font-medium">Gold (XAUUSD) Cockpit</span>
     </div>
 
     <!-- Live Prices, Timers & Theme Toggle -->
@@ -1449,13 +1564,21 @@ HTML_CONTENT = """<!DOCTYPE html>
               <span class="text-purple-400 font-bold">● EMA200</span>
               <span class="text-amber-500 font-semibold">-- Daily POC</span>
               <span class="text-cyan-400 font-semibold">-- Weekly POC</span>
+              <span id="chart-pos-legend" class="hidden items-center gap-1.5 font-bold">
+                <span class="text-emerald-400">● Entry</span>
+                <span class="text-rose-400">-- SL</span>
+                <span class="text-emerald-400">-- TP</span>
+              </span>
             </div>
           </div>
           
-          <!-- Chart Controls: EA-Text toggle, Runterziehen, Hochziehen, Zoom, Reset -->
+          <!-- Chart Controls: EA-Text toggle, Positionen toggle, Runterziehen, Hochziehen, Zoom, Reset -->
           <div class="flex items-center gap-1 text-[10px] font-sans">
             <button id="toggle-ea-status-btn" onclick="toggleEAStatusText()" class="px-2 py-1 rounded ticker-bg border font-bold cursor-pointer transition flex items-center gap-1 bg-blue-600/30 text-blue-300 border-blue-500/40" title="EA-Statustext & Signal-Pfeile auf dem Chart ein-/ausblenden">
               <span id="toggle-ea-status-icon">🏷️</span> <span id="toggle-ea-status-label">EA-Text: AN</span>
+            </button>
+            <button id="toggle-positions-btn" onclick="toggleChartPositions()" class="px-2 py-1 rounded ticker-bg border font-bold cursor-pointer transition flex items-center gap-1 bg-emerald-600/30 text-emerald-300 border-emerald-500/50 shadow-sm" title="Offene Positionen, SL und TP im Chart ein-/ausblenden">
+              <span id="toggle-positions-icon">🎯</span> <span id="toggle-positions-label">Positionen: AN</span>
             </button>
             <button onclick="adjustChartMargin(0.08)" class="px-2 py-1 rounded ticker-bg border hover:bg-blue-600 hover:text-white font-bold cursor-pointer" title="Kurs nach oben schieben / mehr Platz unten">
               ⬇️ Platz (+)
@@ -1549,10 +1672,10 @@ HTML_CONTENT = """<!DOCTYPE html>
 
       <!-- 2.4 TARGET-MATRIX CARD (Full Extended Height - All 5 Rules Visible!) -->
       <section id="gold-details" class="glass-card rounded-xl p-3.5 hidden">
-        <div class="flex justify-between gap-2 mb-2"><strong>Momentum-Ausstiegsziele</strong><span class="text-sub text-[10px]">Letzte abgeschlossene M15-Kerze</span></div>
+        <div class="flex justify-between gap-2 mb-2"><strong>Momentum-Ausstiegsziele</strong><span id="goals-timeframe-sub" class="text-sub text-[10px]">Letzte abgeschlossene M15-Kerze</span></div>
         <div id="exit-goals" class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px]"></div>
         <div class="mt-3 pt-2 border-t table-border"><span id="guard-status" class="font-bold"></span><p id="guard-detail" class="font-mono text-[10px] mt-1 leading-relaxed"></p><p id="guard-note" class="text-sub text-[10px] mt-1"></p></div>
-        <p class="text-sub text-[10px] mt-2">RSI-Ziele zeigen das Setup; Slot-Belegung und Schutzfilter werden zusätzlich im EA geprüft. Chartpfeile markieren neue RSI-Setups. Basis: eingesetztes v1.21-Preset.</p>
+        <p id="goals-footer-note" class="text-sub text-[10px] mt-2">RSI-Ziele zeigen das Setup; Slot-Belegung und Schutzfilter werden zusätzlich im EA geprüft. Chartpfeile markieren neue RSI-Setups. Basis: eingesetztes v1.21-Preset.</p>
       </section>
       <div class="glass-card rounded-xl p-3.5 flex flex-col flex-1">
         <div class="flex items-center justify-between mb-2">
@@ -1628,7 +1751,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       <div class="flex flex-wrap items-center gap-2">
         <span class="text-base">📖</span>
         <span class="font-black text-sm">Trade-Journal & PnL</span>
-        <span id="journal-strat-badge" class="px-2 py-0.5 rounded font-mono text-[10px] ticker-bg border font-black uppercase text-cyan-400">XAU TITAN PRO</span>
+        <span id="journal-strat-badge" class="px-2 py-0.5 rounded font-mono text-[10px] ticker-bg border font-black uppercase text-amber-400">BLUEBERRY FUNDED (PROP)</span>
         <span id="journal-count-badge" class="px-2 py-0.5 rounded font-mono text-[10px] ticker-bg border font-bold text-sub">0 Trades</span>
         <span id="journal-total-pnl" class="px-2.5 py-0.5 rounded-md font-mono text-[11px] font-black border bg-black/30 text-sub">PnL: —</span>
         <span id="journal-live-pnl" class="px-2 py-0.5 rounded-md font-mono text-[10px] font-bold border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 hidden">Live: —</span>
@@ -1639,11 +1762,13 @@ HTML_CONTENT = """<!DOCTYPE html>
         <select id="journal-strategy-filter" onchange="setJournalFilter(this.value)"
           class="ticker-bg border rounded-lg px-2.5 py-1.5 font-bold font-mono text-[11px] cursor-pointer"
           aria-label="Strategien im Trade-Journal auswählen">
-          <option value="all">Alle Strategien</option>
-          <option value="titan">XAU Titan Pro</option>
+          <option value="all">Alle Konten / Strategien</option>
+          <option value="blueberry">Blueberry Funded (Prop-Firma)</option>
+          <option value="titan">XAU Titan Pro (10k Demo)</option>
+          <option value="titan_m5">XAU Titan Pro (M5 $500 Demo)</option>
+          <option value="xau5m_m5">XAUUSD 5 Minute (M5 $250 Demo)</option>
           <option value="goldm15">GoldM15 Reconstruction</option>
         </select>
-        <div class="text-[11px] text-sub font-mono">
         <div class="text-[11px] text-sub font-mono">
           <span id="journal-recording-start">Historie ab: <strong class="text-white">08.10.2026 23:00 UTC · Offene Positionen unabhängig vom Einstiegstag</strong></span>
         </div>
@@ -1668,7 +1793,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           <span class="text-xl">🔄</span>
           <div>
             <h3 id="dd-reset-title" class="font-black text-sm tracking-wide">Tages-Drawdown Reset</h3>
-            <p class="text-[10px] text-sub">Konto-Reset auf 0.00% Drawdown (Blueberry Funded)</p>
+            <p id="dd-reset-subtitle" class="text-[10px] text-sub">Konto-Reset auf 0.00% Drawdown</p>
           </div>
         </div>
         <button aria-label="Reset-Dialog schließen" onclick="closeDrawdownResetModal()" class="text-sub hover:text-white text-lg font-bold px-2 py-0.5 rounded cursor-pointer">&times;</button>
@@ -1699,7 +1824,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           </label>
           <div class="flex items-center gap-2">
             <input type="number" id="dd-reset-input" min="0.01" required aria-describedby="reset-help dd-reset-error" step="0.01" class="w-full rounded-lg px-3 py-2 ticker-bg border font-mono font-bold text-sm text-emerald-400 focus:outline-none focus:border-blue-500" placeholder="10000.00">
-            <button onclick="setModalInputBal(10000)" class="px-2.5 py-2 rounded-lg ticker-bg border hover:bg-slate-700 text-[10px] font-mono font-bold cursor-pointer whitespace-nowrap">$10k</button>
+            <button id="modal-preset-init-btn" onclick="setModalInputBalInit()" class="px-2.5 py-2 rounded-lg ticker-bg border hover:bg-slate-700 text-[10px] font-mono font-bold cursor-pointer whitespace-nowrap">$10k</button>
             <button onclick="setModalInputBalCurrent()" class="px-2.5 py-2 rounded-lg ticker-bg border hover:bg-slate-700 text-[10px] font-mono font-bold cursor-pointer whitespace-nowrap">Aktuell</button>
           </div>
           <span id="reset-help" class="text-[10px] text-sub mt-1 block">Die Baseline, ab der die 3.5% EA- und 4.0% Broker-Notbremse gerechnet wird.</span>
@@ -1730,20 +1855,22 @@ HTML_CONTENT = """<!DOCTYPE html>
     let chart, candleSeries, ema20Series, ema50Series, ema200Series;
     // Sparse overlay FX no longer allocates six transparent chart series.
     let srLines = {};
+    let positionLines = {};
+    let lastKnownPositions = [];
     let isInitialLoad = true;
     let lastCandleTime = 0;
     let currentCandlesCount = 0;
     let currentVPTab = 'daily';
     let currentData = null;
     const BASE_PATH = window.location.pathname.startsWith('/stt') ? '/stt' : '';
-    let activeAccount = 'titan';
+    let activeAccount = 'blueberry';
     let activeTimeframe = 'M15';
     const AVAILABLE_TFS = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'];
     let accountGeneration = 0;
     let accounts = {};
     const savedJournalFilter = localStorage.getItem('two_eas_journal_filter');
-    let journalFilter = ['all','titan','goldm15'].includes(savedJournalFilter) ? savedJournalFilter : 'all';
-    let journalEntriesByAccount = { titan: [], goldm15: [] };
+    let journalFilter = ['all','blueberry','titan','titan_25k','goldm15','titan_m5','xau5m_m5','xau5m_m15'].includes(savedJournalFilter) ? savedJournalFilter : 'all';
+    let journalEntriesByAccount = { blueberry: [], titan: [], titan_25k: [], goldm15: [], titan_m5: [] };
     let journalErrors = [];
     let journalLoadedMode = null;
     let journalBusyMode = null;
@@ -1809,6 +1936,28 @@ HTML_CONTENT = """<!DOCTYPE html>
       if (candleSeries) {
         candleSeries.setMarkers(showEAStatusText ? currentChartMarkers : []);
       }
+    }
+
+    let showChartPositions = localStorage.getItem('chart_show_positions') !== 'false';
+
+    function updateChartPositionsButtonUI() {
+      const btn = document.getElementById('toggle-positions-btn');
+      const lbl = document.getElementById('toggle-positions-label');
+      if (lbl) lbl.textContent = showChartPositions ? 'Positionen: AN' : 'Positionen: AUS';
+      if (btn) {
+        if (showChartPositions) {
+          btn.className = 'px-2 py-1 rounded ticker-bg border font-bold cursor-pointer transition flex items-center gap-1 bg-emerald-600/30 text-emerald-300 border-emerald-500/50 shadow-sm';
+        } else {
+          btn.className = 'px-2 py-1 rounded ticker-bg border font-bold cursor-pointer transition flex items-center gap-1 text-sub hover:text-white opacity-60';
+        }
+      }
+    }
+
+    function toggleChartPositions() {
+      showChartPositions = !showChartPositions;
+      localStorage.setItem('chart_show_positions', String(showChartPositions));
+      updateChartPositionsButtonUI();
+      updateChartPositionLines(lastKnownPositions);
     }
 
     function switchTimeframe(tf) {
@@ -1906,6 +2055,8 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (levelLegend) { levelLegend.replaceChildren(); levelLegend.hidden = true; }
         for (const series of [candleSeries,ema20Series,ema50Series,ema200Series]) series.setData([]);
       }
+      removeAllPositionLines();
+      lastKnownPositions = [];
       isInitialLoad = true;
       lastCandleTime = 0;
     }
@@ -1929,16 +2080,59 @@ HTML_CONTENT = """<!DOCTYPE html>
       document.getElementById('strategy-title').textContent = meta.name.toUpperCase();
       document.getElementById('strategy-version').textContent = meta.version;
       document.title = meta.name + ' · ' + meta.login + ' · Live Cockpit';
-      document.getElementById('account-detail').textContent = meta.login + ' · ' + meta.server + ' · XAUUSD / M15';
+      document.getElementById('account-detail').textContent = meta.login + ' · ' + meta.server + ' · ' + (meta.symbol || 'XAUUSD') + ' / ' + (meta.timeframe || 'M15');
       document.getElementById('account-connection').textContent = 'Verbindung wird geprüft …';
       document.getElementById('account-connection').className = 'text-amber-500 font-bold';
-      document.getElementById('matrix-title').textContent = account==='goldm15' ? '🎯 Einstiegsziele · Systeme 1–3' : '🎯 Target-Matrix (Alle 5 Regeln im Direktvergleich)';
-      for (const side of ['sell','buy']) document.getElementById(side+'-readiness-label').textContent = (side==='sell'?'SHORT':'LONG')+(account==='goldm15'?' · ERFÜLLTE ZIELE':'-BEREITSCHAFT');
-      document.getElementById('session-label').textContent = account==='goldm15' ? 'Handelsfreigabe:' : 'Handelsfenster (DE):';
-      document.getElementById('session-description').textContent = account==='goldm15' ? 'EA prüft News, Feiertage, Spread und Risiko' : '05:00-12:00 & 15:00-18:00 (Golden Hours)';
-      document.getElementById('dd-source-label').textContent = account==='goldm15' ? 'Tages-DD (EA-Basis / Anzeige):' : 'Tages-Drawdown (Blueberry):';
-      document.getElementById('dd-reset-button').textContent = account==='goldm15' ? 'Anzeige-Reset' : '🔄 Reset';
-      document.getElementById('dd-badge').title = account==='goldm15' ? 'EA-Grenze: 3,5% vom Startkapital ($350). Dashboard-Reset ändert keine Sperre.' : 'Blueberry Funded Tages-Drawdown (Tages-Start / High-Water Mark)';
+
+      const isRsiSub = (account === 'goldm15');
+      document.getElementById('matrix-title').textContent = isRsiSub ? '🎯 Einstiegsziele · Systeme 1–3 (Decoded M15)' : `🎯 Target-Matrix (Alle 8 Regeln & Anti-Trap auf ${meta.timeframe || 'M15'})`;
+      for (const side of ['sell','buy']) {
+        document.getElementById(side+'-readiness-label').textContent = (side==='sell'?'SHORT':'LONG')+(isRsiSub?' · ERFÜLLTE ZIELE':'-BEREITSCHAFT');
+      }
+
+      if (account === 'blueberry' || account === 'xau5m_m5' || account === 'xau5m_m15') {
+        document.getElementById('session-label').textContent = 'Prop-Firm Handelsfenster:';
+        document.getElementById('session-description').textContent = 'Weekend Close Fr 21:00 UTC · Elite Hours';
+        document.getElementById('dd-source-label').textContent = 'Tages-Drawdown (Blueberry Funded):';
+        document.getElementById('dd-reset-button').textContent = '🔄 Reset';
+        document.getElementById('dd-badge').title = 'Blueberry Funded PROPFIRMA (Phase 1): Max 4.0% Daily DD ($400) / Notbremse $350 (3.5%) · Max 10% Gesamt-DD ($1,000 / Floor $9,000)';
+      } else if (account === 'titan_25k') {
+        document.getElementById('session-label').textContent = 'Handelsfenster (DE):';
+        document.getElementById('session-description').textContent = '05:00-12:00 & 15:00-18:00 (Golden Hours)';
+        document.getElementById('dd-source-label').textContent = 'Tages-Drawdown (Titan 25k Demo):';
+        document.getElementById('dd-reset-button').textContent = '🔄 Reset';
+        document.getElementById('dd-badge').title = 'ICMarketsEU Demo 25k (Hebel 1:10) · Max 4% Daily DD ($1,000)';
+      } else if (account === 'titan_m5') {
+        document.getElementById('session-label').textContent = 'Handelsfenster (Server):';
+        document.getElementById('session-description').textContent = '01:00-23:45 (Elite Hours Active)';
+        document.getElementById('dd-source-label').textContent = 'Tages-Drawdown (500$ Demo):';
+        document.getElementById('dd-reset-button').textContent = '🔄 Reset';
+        document.getElementById('dd-badge').title = 'Standard 500$ Demokonto - Kein Challenge-Schutz / unbegrenzter Puffer';
+      } else if (account === 'goldm15') {
+        document.getElementById('session-label').textContent = 'Handelsfreigabe:';
+        document.getElementById('session-description').textContent = 'EA prüft News, Feiertage, Spread und Risiko';
+        document.getElementById('dd-source-label').textContent = 'Tages-DD (EA-Basis / Anzeige):';
+        document.getElementById('dd-reset-button').textContent = 'Anzeige-Reset';
+        document.getElementById('dd-badge').title = 'EA-Grenze: 3,5% vom Startkapital ($350). Dashboard-Reset ändert keine Sperre.';
+      } else {
+        document.getElementById('session-label').textContent = 'Handelsfenster (DE):';
+        document.getElementById('session-description').textContent = '05:00-12:00 & 15:00-18:00 (Golden Hours)';
+        document.getElementById('dd-source-label').textContent = 'Tages-Drawdown (Titan 10k Demo):';
+        document.getElementById('dd-reset-button').textContent = '🔄 Reset';
+        document.getElementById('dd-badge').title = 'Titan Pro 10k Demokonto (Hebel 1:10) · Max 4% Daily DD ($400)';
+      }
+
+      // Automatically switch chart timeframe to strategy native timeframe
+      activeTimeframe = meta.timeframe || 'M15';
+      document.querySelectorAll('[id^="tf-btn-"]').forEach(btn => {
+        const isCurrent = (btn.id === 'tf-btn-' + activeTimeframe);
+        btn.className = isCurrent 
+          ? 'px-2 py-0.5 rounded cursor-pointer transition bg-blue-600 text-white font-black shadow' 
+          : 'px-2 py-0.5 rounded cursor-pointer transition text-sub hover:text-white';
+      });
+      const chartTitle = document.getElementById('chart-title-text');
+      if (chartTitle) chartTitle.textContent = (meta.symbol || 'XAUUSD') + ' ' + activeTimeframe + ' Chart';
+
       clearAccountView();
       await Promise.all([updateStatus(),loadCandles()]);
     }
@@ -1949,16 +2143,87 @@ HTML_CONTENT = """<!DOCTYPE html>
 
     function renderGoldDetails(data) {
       const container = document.getElementById('gold-details');
-      container.classList.toggle('hidden', !data.ea_guard);
-      if (!data.ea_guard) return;
-      const guard = data.ea_guard;
-      const money = value => value === null ? 'unbekannt' : '$'+value.toFixed(2);
-      const locked = guard.hard_lock || guard.daily_lock;
-      document.getElementById('guard-status').textContent = locked ? 'EA-SPERRE AKTIV' : guard.baseline_verified ? 'TAGESBASIS BESTÄTIGT' : 'SCHUTZSTATUS UNBEKANNT';
-      document.getElementById('guard-status').className = locked || !guard.baseline_verified ? 'text-rose-500 font-bold' : 'text-emerald-500 font-bold';
-      document.getElementById('guard-detail').textContent = 'Basis '+money(guard.baseline)+' · Puffer bis $350: '+money(guard.daily_buffer_usd)+' · Mit Tagesreserve: '+money(guard.daily_protected_buffer_usd)+' · Geschützte Untergrenze '+money(guard.hard_protected_floor_usd)+' · Rest '+money(guard.hard_buffer_usd);
-      document.getElementById('guard-note').textContent = (guard.note || '') + ' · EA-Heartbeat unbekannt; Quellfrische ist keine EA-Bestätigung.';
-      document.getElementById('exit-goals').innerHTML = data.exit_goals.map(goal => `<div class="ticker-bg border rounded-lg p-2"><div class="font-bold mb-1">System ${escapeHTML(goal.slot)}</div><div class="text-rose-500">Short: ${escapeHTML(goal.short_note)} · ${goal.short_value.toFixed(3)}% ${goal.short_met?'✓ erreicht':'offen'}</div><div class="text-emerald-500">Long: ${escapeHTML(goal.long_note)} · ${goal.long_value.toFixed(3)}% ${goal.long_met?'✓ erreicht':'offen'}</div></div>`).join('');
+      const hasGoals = Array.isArray(data.exit_goals) && data.exit_goals.length > 0;
+      const hasGuard = !!data.ea_guard;
+      container.classList.toggle('hidden', !hasGoals && !hasGuard);
+      if (!hasGoals && !hasGuard) return;
+
+      const titleSpan = container.querySelector('strong');
+      if (titleSpan) {
+        titleSpan.textContent = (activeAccount === 'blueberry' || activeAccount === 'titan_25k' || activeAccount === 'titan_m5' || activeAccount === 'titan' || activeAccount === 'xau5m_m5' || activeAccount === 'xau5m_m15') 
+          ? '🎯 Ausstiegsregeln & Gewinnziele (' + (accounts[activeAccount]?.name || '') + ')' 
+          : '🎯 Momentum-Ausstiegsziele & Schutz';
+      }
+
+      const subTitle = document.getElementById('goals-timeframe-sub');
+      if (subTitle) {
+        subTitle.textContent = 'Letzte abgeschlossene ' + (accounts[activeAccount]?.timeframe || 'M15') + '-Kerze';
+      }
+      const noteEl = document.getElementById('goals-footer-note');
+      if (noteEl) {
+        if (activeAccount === 'blueberry' || activeAccount === 'xau5m_m5' || activeAccount === 'xau5m_m15') {
+          noteEl.textContent = 'Blueberry Funded PROPFIRMA (Phase 1): Hebel 1:30. Strenges 4.0% Daily DD ($400) und 10.0% Max DD ($1,000 / Floor $9,000). Notbremse bei $350 (3.5%). Positionsschluss vor Wochenende (Fr 21:00 UTC).';
+        } else if (activeAccount === 'titan_25k') {
+          noteEl.textContent = 'Titan Pro 25k (ICMarketsEU Demo): M15-Chart, Hebel 1:10. Dynamischer Runner-Ausstieg ($70), struktureller Swing-SL ($35-$350) und Break-Even Trailing ($100 / $35).';
+        } else if (activeAccount === 'titan' || activeAccount === 'titan_m5') {
+          noteEl.textContent = 'Titan-Regeln werden bei Kerzenschluss geprüft. Ausstiege erfolgen über dynamische Runner-Ziele, strukturellen Swing-SL und Break-Even Trailing.';
+        } else {
+          noteEl.textContent = 'RSI-Ziele zeigen das Setup; Slot-Belegung und Schutzfilter werden zusätzlich im EA geprüft. Chartpfeile markieren neue RSI-Setups. Basis: eingesetztes v1.21-Preset.';
+        }
+      }
+
+      if (hasGoals) {
+        document.getElementById('exit-goals').innerHTML = data.exit_goals.map(goal => {
+          if (goal.slot !== undefined && goal.short_value !== undefined) {
+            return `
+              <div class="ticker-bg border rounded-lg p-2.5">
+                <div class="font-bold mb-1 flex items-center justify-between">
+                  <span>${escapeHTML(goal.title || ('System ' + goal.slot))}</span>
+                  <span class="text-[9px] px-1.5 py-0.5 rounded ${goal.long_met || goal.short_met ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40':'bg-slate-500/20 text-sub'}">
+                    ${goal.long_met || goal.short_met ? '✓ Erreicht' : 'Offen'}
+                  </span>
+                </div>
+                <div class="text-rose-400 font-mono text-[10px]">Short: ${escapeHTML(goal.short_note)} · ${goal.short_value.toFixed(2)}% ${goal.short_met ? '✓' : ''}</div>
+                <div class="text-emerald-400 font-mono text-[10px] mt-0.5">Long: ${escapeHTML(goal.long_note)} · ${goal.long_value.toFixed(2)}% ${goal.long_met ? '✓' : ''}</div>
+              </div>
+            `;
+          } else {
+            const badgeClass = (goal.status === 'PROPFIRMA')
+              ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50 font-black'
+              : (goal.status === 'Frei' || goal.status === 'Deaktiviert')
+              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+              : goal.status === 'Standby'
+              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+              : 'bg-blue-500/20 text-blue-300 border border-blue-500/40';
+            return `
+              <div class="ticker-bg border rounded-lg p-2.5">
+                <div class="font-bold mb-1 flex items-center justify-between">
+                  <span>${escapeHTML(goal.title)}</span>
+                  <span class="text-[9px] px-1.5 py-0.5 rounded ${badgeClass}">${escapeHTML(goal.status || 'Aktiv')}</span>
+                </div>
+                <div class="text-white font-mono font-bold text-xs">${escapeHTML(goal.target)}</div>
+                <div class="text-sub text-[10px] mt-0.5">${escapeHTML(goal.note)}</div>
+              </div>
+            `;
+          }
+        }).join('');
+      } else {
+        document.getElementById('exit-goals').replaceChildren();
+      }
+
+      const guardBox = container.querySelector('.border-t.table-border');
+      if (guardBox) {
+        guardBox.classList.toggle('hidden', !hasGuard);
+        if (hasGuard) {
+          const guard = data.ea_guard;
+          const money = value => value === null ? 'unbekannt' : '$'+value.toFixed(2);
+          const locked = guard.hard_lock || guard.daily_lock;
+          document.getElementById('guard-status').textContent = locked ? 'EA-SPERRE AKTIV' : guard.baseline_verified ? 'TAGESBASIS BESTÄTIGT' : 'SCHUTZSTATUS UNBEKANNT';
+          document.getElementById('guard-status').className = locked || !guard.baseline_verified ? 'text-rose-500 font-bold' : 'text-emerald-500 font-bold';
+          document.getElementById('guard-detail').textContent = 'Basis '+money(guard.baseline)+' · Puffer bis $350: '+money(guard.daily_buffer_usd)+' · Mit Tagesreserve: '+money(guard.daily_protected_buffer_usd)+' · Geschützte Untergrenze '+money(guard.hard_protected_floor_usd)+' · Rest '+money(guard.hard_buffer_usd);
+          document.getElementById('guard-note').textContent = (guard.note || '') + ' · EA-Heartbeat unbekannt; Quellfrische ist keine EA-Bestätigung.';
+        }
+      }
     }
     let currentBottomMargin = 0.10;
 
@@ -2098,6 +2363,10 @@ HTML_CONTENT = """<!DOCTYPE html>
       });
       ro.observe(container);
       updateEAStatusButtonUI();
+      updateChartPositionsButtonUI();
+      if (lastKnownPositions && lastKnownPositions.length > 0) {
+        try { updateChartPositionLines(lastKnownPositions); } catch (_) {}
+      }
     }
 
     // --- CHART CONTROLS (Runterziehen, Zoom, Reset, Optimal View) ---
@@ -2229,6 +2498,98 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
     }
 
+    // --- POSITION, SL & TP LINES ON CHART ---
+    function removeAllPositionLines() {
+      if (typeof candleSeries !== 'undefined' && candleSeries) {
+        for (const key of Object.keys(positionLines)) {
+          try { candleSeries.removePriceLine(positionLines[key]); } catch (_) {}
+        }
+      }
+      positionLines = {};
+      const posLegend = document.getElementById('chart-pos-legend');
+      if (posLegend) { posLegend.classList.add('hidden'); posLegend.classList.remove('inline-flex'); }
+    }
+
+    function updateChartPositionLines(positions) {
+      if (typeof candleSeries === 'undefined' || !candleSeries) return;
+      if (!showChartPositions || !positions || !positions.length) {
+        removeAllPositionLines();
+        return;
+      }
+
+      const activeKeys = new Set();
+      const posLegend = document.getElementById('chart-pos-legend');
+      let hasVisibleLines = false;
+
+      function setPosLine(key, price, color, title, lineStyle = 0) {
+        const p = Number(price);
+        if (!Number.isFinite(p) || p <= 0) return;
+        activeKeys.add(key);
+        hasVisibleLines = true;
+
+        if (positionLines[key]) {
+          positionLines[key].applyOptions({ price: p, color, title, lineStyle });
+        } else {
+          positionLines[key] = candleSeries.createPriceLine({
+            price: p,
+            color: color,
+            lineWidth: 1,
+            lineStyle: lineStyle,
+            axisLabelVisible: true,
+            title: title,
+          });
+        }
+      }
+
+      for (const pos of positions) {
+        const ticket = pos.ticket;
+        const isBuy = pos.type === 'BUY';
+        const vol = pos.volume !== undefined ? pos.volume : '';
+
+        // 1. Einstiegslinie (Entry Price)
+        if (pos.open_price && pos.open_price > 0) {
+          const entryKey = 'pos_' + ticket + '_entry';
+          const entryColor = isBuy ? '#10b981' : '#f43f5e';
+          const entryTitle = `${pos.type} ${vol} #${ticket}`;
+          setPosLine(entryKey, pos.open_price, entryColor, entryTitle, 0); // 0 = Solid
+        }
+
+        // 2. Stop-Loss-Linie (SL)
+        if (pos.sl_price && pos.sl_price > 0) {
+          const slKey = 'pos_' + ticket + '_sl';
+          const slColor = '#ef4444';
+          const slTitle = `SL #${ticket}`;
+          setPosLine(slKey, pos.sl_price, slColor, slTitle, 2); // 2 = Dashed
+        }
+
+        // 3. Take-Profit-Linie (TP) nur wenn vorhanden (> 0)
+        if (pos.tp_price && pos.tp_price > 0) {
+          const tpKey = 'pos_' + ticket + '_tp';
+          const tpColor = '#10b981';
+          const tpTitle = `TP #${ticket}`;
+          setPosLine(tpKey, pos.tp_price, tpColor, tpTitle, 2); // 2 = Dashed
+        }
+      }
+
+      // Verwaiste Linien entfernen
+      for (const key of Object.keys(positionLines)) {
+        if (!activeKeys.has(key)) {
+          try { candleSeries.removePriceLine(positionLines[key]); } catch (_) {}
+          delete positionLines[key];
+        }
+      }
+
+      if (posLegend) {
+        if (hasVisibleLines) {
+          posLegend.classList.remove('hidden');
+          posLegend.classList.add('inline-flex');
+        } else {
+          posLegend.classList.add('hidden');
+          posLegend.classList.remove('inline-flex');
+        }
+      }
+    }
+
     // --- SMOOTH CANDLES LOAD (NO JUMPING & PRESERVES ZOOM) ---
     async function loadCandles() {
       const generation = accountGeneration;
@@ -2347,7 +2708,9 @@ HTML_CONTENT = """<!DOCTYPE html>
         document.getElementById('bar-countdown').innerText = data.times.bar_remaining_fmt;
 
         // Daily Drawdown & Account Update
-        if (data.daily_drawdown && ['pct','loss_usd','buffer_usd','balance','equity'].every(key => Number.isFinite(data.daily_drawdown[key]))) {
+        const isChallenge = data.account?.challenge_protection !== false;
+        const hasValidDD = data.daily_drawdown && ['pct','loss_usd','balance','equity'].every(key => Number.isFinite(data.daily_drawdown[key])) && (!isChallenge || Number.isFinite(data.daily_drawdown.buffer_usd));
+        if (hasValidDD) {
           const dd = data.daily_drawdown;
           const ddPctElem = document.getElementById('dd-pct');
           const ddUsdElem = document.getElementById('dd-usd');
@@ -2359,27 +2722,39 @@ HTML_CONTENT = """<!DOCTYPE html>
           if (ddPctElem) {
             ddPctElem.innerText = `${dd.pct.toFixed(2)}%`;
             ddUsdElem.innerText = `(-$${dd.loss_usd.toFixed(2)})`;
-            ddBufferElem.innerText = `$${dd.buffer_usd.toFixed(2)}`;
 
-            if (dd.pct >= 3.0) {
-              ddDotElem.className = 'w-2 h-2 rounded-full bg-rose-500 animate-ping';
-              ddPctElem.className = 'font-bold text-rose-500 font-black';
-              ddBufferElem.className = 'font-bold text-rose-500';
-            } else if (dd.pct >= 2.0) {
-              ddDotElem.className = 'w-2 h-2 rounded-full bg-amber-500';
-              ddPctElem.className = 'font-bold text-amber-400';
-              ddBufferElem.className = 'font-bold text-amber-400';
-            } else {
+            if (!isChallenge) {
+              ddBufferElem.innerText = 'Kein Limit';
+              ddBufferElem.className = 'font-bold text-slate-400 text-[10px]';
               ddDotElem.className = 'w-2 h-2 rounded-full bg-emerald-500';
               ddPctElem.className = 'font-bold text-emerald-400';
-              ddBufferElem.className = 'font-bold text-emerald-400';
+            } else {
+              ddBufferElem.innerText = `$${Number(dd.buffer_usd || 0).toFixed(2)}`;
+              if (dd.pct >= 3.0) {
+                ddDotElem.className = 'w-2 h-2 rounded-full bg-rose-500 animate-ping';
+                ddPctElem.className = 'font-bold text-rose-500 font-black';
+                ddBufferElem.className = 'font-bold text-rose-500';
+              } else if (dd.pct >= 2.0) {
+                ddDotElem.className = 'w-2 h-2 rounded-full bg-amber-500';
+                ddPctElem.className = 'font-bold text-amber-400';
+                ddBufferElem.className = 'font-bold text-amber-400';
+              } else {
+                ddDotElem.className = 'w-2 h-2 rounded-full bg-emerald-500';
+                ddPctElem.className = 'font-bold text-emerald-400';
+                ddBufferElem.className = 'font-bold text-emerald-400';
+              }
             }
           }
 
           if (ddMatrixDetail) {
-            const colorClass = dd.pct >= 3.0 ? 'text-rose-400' : (dd.pct >= 2.0 ? 'text-amber-400' : 'text-emerald-400');
-            ddMatrixDetail.className = `font-bold font-mono ${colorClass}`;
-            ddMatrixDetail.innerText = `${dd.pct.toFixed(2)}% / -$${dd.loss_usd.toFixed(2)} (Puffer: $${dd.buffer_usd.toFixed(2)})`;
+            if (!isChallenge) {
+              ddMatrixDetail.className = 'font-bold font-mono text-emerald-400';
+              ddMatrixDetail.innerText = `${dd.pct.toFixed(2)}% / -$${dd.loss_usd.toFixed(2)} (Kein Challenge-Schutz)`;
+            } else {
+              const colorClass = dd.pct >= 3.0 ? 'text-rose-400' : (dd.pct >= 2.0 ? 'text-amber-400' : 'text-emerald-400');
+              ddMatrixDetail.className = `font-bold font-mono ${colorClass}`;
+              ddMatrixDetail.innerText = `${dd.pct.toFixed(2)}% / -$${dd.loss_usd.toFixed(2)} (Puffer: $${Number(dd.buffer_usd || 0).toFixed(2)})`;
+            }
           }
 
           if (accMatrixBal) {
@@ -2405,7 +2780,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         }
 
         const posCountElem = document.getElementById('pos-matrix-count');
-        if (!data.daily_drawdown || !['pct','loss_usd','buffer_usd','balance','equity'].every(key => Number.isFinite(data.daily_drawdown[key]))) {
+        if (!hasValidDD) {
           for (const id of ['dd-pct','dd-buffer','dd-matrix-detail']) document.getElementById(id).textContent = 'unbekannt';
           document.getElementById('dd-usd').textContent = '(Historie / Risiko nicht bestätigt)';
           document.getElementById('acc-matrix-bal').textContent = '—';
@@ -2567,6 +2942,8 @@ HTML_CONTENT = """<!DOCTYPE html>
     for (const id of ['vp-histogram-container','diagnose-card','gold-details','matrix-title','positions-list','journal-list']) document.getElementById(id).closest('.glass-card').classList.add('dashboard-panel');
     DashboardRuntime.initPresentation();
     function renderPositions(positions) {
+      lastKnownPositions = Array.isArray(positions) ? positions : [];
+      try { updateChartPositionLines(lastKnownPositions); } catch (_) {}
       const list = document.getElementById('positions-list');
       const badge = document.getElementById('pos-count-badge');
       badge.innerText = `${positions.length} Aktiv`;
@@ -2682,7 +3059,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     // Journal selection is independent from the account that controls orders.
     // Each source is queried under its own verified MT5 session on the server.
     function setJournalFilter(value) {
-      if (!['all', 'titan', 'goldm15'].includes(value)) return;
+      if (!['all', 'titan', 'goldm15', 'titan_m5', 'xau5m_m5', 'xau5m_m15'].includes(value)) return;
       journalFilter = value;
       localStorage.setItem('two_eas_journal_filter', value);
       const selector = document.getElementById('journal-strategy-filter');
@@ -2721,7 +3098,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         }
       }));
       if (requestVersion !== journalRequestVersion || mode !== journalFilter) return;
-      const fresh = {titan: [], goldm15: []};
+      const fresh = {};
       journalErrors = [];
       for (const result of results) {
         if (result.error) {
@@ -2745,9 +3122,17 @@ HTML_CONTENT = """<!DOCTYPE html>
       const itemsToRender = wanted.flatMap(id => journalEntriesByAccount[id] || [])
         .sort((a,b) => (Number(b.time_ts) || 0) - (Number(a.time_ts) || 0));
       const stratName = journalFilter === 'all' ? 'ALLE STRATEGIEN'
-        : journalFilter === 'titan' ? 'XAU TITAN PRO' : 'GOLDM15 RECONSTRUCTION';
+        : (journalFilter === 'blueberry' || journalFilter === 'xau5m_m5' || journalFilter === 'xau5m_m15') ? 'BLUEBERRY FUNDED (PROP-FIRMA)'
+        : journalFilter === 'titan' ? 'XAU TITAN PRO (10K)'
+        : journalFilter === 'titan_25k' ? 'XAU TITAN PRO (25K)'
+        : journalFilter === 'titan_m5' ? 'XAU TITAN PRO (M5)'
+        : 'GOLDM15 RECONSTRUCTION';
       const stratColor = journalFilter === 'all' ? 'text-sky-300'
-        : journalFilter === 'titan' ? 'text-cyan-400' : 'text-amber-400';
+        : (journalFilter === 'blueberry' || journalFilter === 'xau5m_m5' || journalFilter === 'xau5m_m15') ? 'text-amber-400'
+        : journalFilter === 'titan' ? 'text-cyan-400'
+        : journalFilter === 'titan_25k' ? 'text-emerald-400'
+        : journalFilter === 'titan_m5' ? 'text-blue-400'
+        : 'text-purple-400';
 
       const stratEl = document.getElementById('journal-strat-badge');
       if (stratEl) {
@@ -2889,9 +3274,15 @@ HTML_CONTENT = """<!DOCTYPE html>
           : item.type === 'SELL' ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30">SELL</span>`
           : `<span class="px-2 py-0.5 rounded text-[10px] font-black ticker-bg border text-sub">UNBEKANNT</span>`;
 
-        const stratBadge = item.account === 'titan'
-          ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">XAU TITAN PRO</span>`
-          : `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/40">GOLDM15 RECONSTRUCTION</span>`;
+        const stratBadge = (item.account === 'blueberry' || item.account === 'xau5m_m5' || item.account === 'xau5m_m15')
+          ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/40">BLUEBERRY [PROPFIRMA]</span>`
+          : item.account === 'titan'
+          ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">TITAN 10k [DEMO]</span>`
+          : item.account === 'titan_25k'
+          ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">TITAN 25k [DEMO]</span>`
+          : item.account === 'titan_m5'
+          ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-blue-500/20 text-blue-300 border border-blue-500/40">TITAN M5 [DEMO]</span>`
+          : `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-purple-500/20 text-purple-300 border border-purple-500/40">GOLDM15 [DEMO]</span>`;
 
         const priceDetails = isOpen
           ? `<span class="text-sub font-mono">Einstieg: <strong class="text-white">$${Number.isFinite(item.open_price) ? item.open_price.toFixed(2) : '— (unbekannt)'}</strong> · Aktuell: <strong class="${isProfit ? 'text-emerald-400':'text-rose-400'}">$${Number.isFinite(item.current_price) ? item.current_price.toFixed(2) : '— (unbekannt)'}</strong></span>`
@@ -3070,11 +3461,29 @@ HTML_CONTENT = """<!DOCTYPE html>
     }
     function openDrawdownResetModal() {
       if (!accountActionsReady()) return;
-      document.getElementById('reset-description').textContent = activeAccount==='goldm15' ? 'Konto '+accounts[activeAccount].login+': Dieser Reset betrifft ausschließlich die Dashboard-Anzeige. Er verändert weder die feste $350-Tagesgrenze noch die EA-Baseline oder bestehende Handelssperren.' : 'Setzt den Tagesverlust und die High-Water-Mark auf 0.00% zurück. Trades vor dem Reset werden für die heutige Drawdown-Berechnung ignoriert.';
-      document.getElementById('reset-help').textContent = activeAccount==='goldm15' ? 'Referenzwert nur für die Anzeige; der tatsächliche EA-Schutzstatus steht separat im Dashboard.' : 'Die Baseline, ab der die 3.5% EA- und 4.0% Broker-Notbremse gerechnet wird.';
+      const acc = accounts[activeAccount];
+      const isChallenge = acc?.challenge_protection !== false;
+      document.getElementById('reset-description').textContent = activeAccount==='goldm15' 
+        ? 'Konto '+acc.login+': Dieser Reset betrifft ausschließlich die Dashboard-Anzeige. Er verändert weder die feste $350-Tagesgrenze noch die EA-Baseline oder bestehende Handelssperren.' 
+        : !isChallenge
+        ? 'Konto '+acc.login+' ('+acc.name+'): Setzt den Tagesverlust und die High-Water-Mark auf 0.00% zurück. Normales Trading-Konto ohne Challenge-Notbremsen.'
+        : 'Setzt den Tagesverlust und die High-Water-Mark auf 0.00% zurück. Trades vor dem Reset werden für die heutige Drawdown-Berechnung ignoriert.';
+      document.getElementById('reset-help').textContent = activeAccount==='goldm15' 
+        ? 'Referenzwert nur für die Anzeige; der tatsächliche EA-Schutzstatus steht separat im Dashboard.' 
+        : !isChallenge
+        ? 'Die Baseline (' + (acc?.initial_balance ? '$'+acc.initial_balance : '$500') + ') zur Berechnung des relativen Tages-Drawdowns (keine Notbremsen aktiv).'
+        : 'Die Baseline, ab der die 3.5% EA- und 4.0% Broker-Notbremse gerechnet wird.';
       const modal = document.getElementById('dd-reset-modal');
       const input = document.getElementById('dd-reset-input');
-      const currentBal = (currentData && currentData.daily_drawdown) ? currentData.daily_drawdown.balance : 10000.0;
+      const initBal = acc?.initial_balance || 10000.0;
+      const currentBal = (currentData && currentData.daily_drawdown && Number.isFinite(currentData.daily_drawdown.balance)) 
+        ? currentData.daily_drawdown.balance 
+        : initBal;
+      
+      const initBtn = document.getElementById('modal-preset-init-btn');
+      if (initBtn) {
+        initBtn.textContent = '$' + (initBal >= 1000 ? (initBal / 1000) + 'k' : initBal);
+      }
       
       refreshResetModalValues();
       
@@ -3098,8 +3507,15 @@ HTML_CONTENT = """<!DOCTYPE html>
       document.getElementById('dd-reset-input').value = val.toFixed(2);
     }
 
+    function setModalInputBalInit() {
+      const initBal = accounts[activeAccount]?.initial_balance || 10000.0;
+      setModalInputBal(initBal);
+    }
+
     function setModalInputBalCurrent() {
-      const currentBal = (currentData && currentData.daily_drawdown) ? currentData.daily_drawdown.balance : 10000.0;
+      const currentBal = (currentData && currentData.daily_drawdown && Number.isFinite(currentData.daily_drawdown.balance)) 
+        ? currentData.daily_drawdown.balance 
+        : (accounts[activeAccount]?.initial_balance || 10000.0);
       document.getElementById('dd-reset-input').value = currentBal.toFixed(2);
     }
 
@@ -3182,6 +3598,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     window.onload = async () => {
       clearAccountView(); // Unknown state also when the first accounts request fails.
       initTheme();
+      updateChartPositionsButtonUI();
       try { initChart(); }
       catch (error) { console.warn('Optionale Chartinitialisierung fehlgeschlagen:', error); }
       // Apply theme to freshly created chart instance

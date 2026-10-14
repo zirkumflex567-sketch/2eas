@@ -1,0 +1,11 @@
+InpMaxDailyDrawdownPercent=3.50
+InpMinAccountBalance=9100.00
+InpInitialBalance=10000.00
+InpWarningThresholdPercent=2.50
+InpClosePositionsOnBreach=true
+InpCancelPendingOrders=true
+InpBlockNewOrders=true
+InpPlaySoundAlert=true
+InpShowHUDByDefault=true
+InpXOffset=20
+InpYOffset=35

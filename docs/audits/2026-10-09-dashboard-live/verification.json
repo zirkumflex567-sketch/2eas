@@ -1,0 +1,33 @@
+{
+  "time": "2026-10-09T06:30:41+02:00",
+  "commit": "b7cabcd3a1eb103eccf02451eb6a8ebf6d612b16",
+  "findings": 20,
+  "priorities": {
+    "P1": 11,
+    "P2": 8,
+    "P3": 1
+  },
+  "browser_checks": 39,
+  "browser_pass": 35,
+  "browser_fail": 4,
+  "visual_states": 18,
+  "screenshots": 75,
+  "report_images": 19,
+  "all_report_images_loaded": true,
+  "html_errors": [],
+  "pdf_pages": 17,
+  "pdf_bytes": 5084228,
+  "pdf_all_finding_ids": true,
+  "tracked_diff": "",
+  "source_unchanged_normalized_line_endings": {
+    "app.py": true,
+    "account_gateway.py": true,
+    "goldm15_dashboard.py": true,
+    "drawdown_config.json": true,
+    "static/stone-asset-skin.css": true,
+    "static/stone-cockpit.js": true
+  },
+  "pdf_visual_review": "All 17 pages rasterized; contact sheet and page 1 reviewed: no visible table truncation or text/image overlap. Narrow mobile screenshots are small in PDF; HTML links preserve original resolution.",
+  "final_time": "2026-10-09T06:33:45+02:00",
+  "status": "?? ChallengeGuardian.ex5\n?? ChallengeGuardian.mq5\n?? ChallengeGuardian_Prop_10k.set\n?? Connect_VPS.bat\n?? Open_Dashboard.bat\n?? analyze_tester_report_dd.py\n?? audit_prop_breach.py\n?? auto_sync_github.py\n?? docs/audits/2026-10-09-dashboard-live/\n?? inspect_worst_days.py\n"
+}
