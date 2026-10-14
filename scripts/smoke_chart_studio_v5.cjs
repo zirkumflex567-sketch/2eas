@@ -35,6 +35,13 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.resizePane(2,175);
    engine.movePaneLine("rsi14",1);
    engine.showVolume(true);
+   engine.addPriceLevel({id:"risk-stop",price:4100,color:"#ff6677",title:"Demo stop"});
+   const withPrimitive=engine.inspect();
+   engine.updatePriceLevel("risk-stop",{price:4110,color:"#ffaa66"});
+   const updatedPrimitive=engine.inspect();
+   const removedPrimitive=engine.removePriceLevel("risk-stop");
+   const withoutPrimitive=engine.inspect();
+   let invalidPrimitiveRejected=false;try{engine.addPriceLevel({id:"bad",price:0,color:"red"})}catch(_){invalidPrimitiveRejected=true}
    const warmupReadout=engine.readDataWindow(bars[10].time);
    const alignedReadout=engine.readDataWindow(bars[40].time);
    const noVolumeReadout=engine.readDataWindow(bars[42].time);
@@ -52,12 +59,14 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    let badPaneRejected=false;try{engine.resizePane(0,10)}catch(_){badPaneRejected=true}
    engine.setCandles([bars[79]]);
    const replacementReadout=engine.readDataWindow(bars[79].time);
+   engine.addPriceLevel({id:"account-local-level",price:bars[79].close,color:"#62deeb"});
    engine.changeAccount("goldm15");
    const isolated=engine.inspect();
    const removed=engine.removeAverage("ema34");
    engine.destroy();
    let disposed=false;try{engine.setCandles(bars)}catch(_){disposed=true}
    return {first,updated,staleRejected,invalidRejected,isolated,removed,disposed,badPaneRejected,
+    withPrimitive,updatedPrimitive,removedPrimitive,withoutPrimitive,invalidPrimitiveRejected,
     warmupReadout,alignedReadout,noVolumeReadout,missingBarReadout,formingReadout,
     replacementReadout,badVolumeRejected,invalidReadoutTimeRejected,
     expectedWarmupOpen:bars[10].open,expectedWarmupUtc:new Date(bars[10].time*1000).toISOString()};
@@ -67,6 +76,11 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(result.first.averageCount,1);
   assert.equal(result.first.nativePaneLines,1);
   assert.equal(result.first.volumeVisible,true);
+  assert.equal(result.withPrimitive.nativePrimitives,1);
+  assert.equal(result.updatedPrimitive.nativePrimitives,1);
+  assert.equal(result.removedPrimitive,true);
+  assert.equal(result.withoutPrimitive.nativePrimitives,0);
+  assert.equal(result.invalidPrimitiveRejected,true);
   assert.ok(result.first.paneCount>=2);
   assert.equal(result.warmupReadout.state,"AVAILABLE");
   assert.equal(result.warmupReadout.source,"CHART_FEED");
@@ -94,6 +108,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(result.isolated.candleCount,0);
   assert.equal(result.isolated.averageCount,0);
   assert.equal(result.isolated.nativePaneLines,0);
+  assert.equal(result.isolated.nativePrimitives,0);
   assert.equal(result.badPaneRejected,true);
   assert.equal(result.removed,false);
   assert.equal(result.disposed,true);
@@ -109,6 +124,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    e.setCandles(rows);
    e.addAverage({id:"ema21",color:"#61ddf2"},rows.slice(20).map(c=>({time:c.time,value:c.close-1.2})));
    e.addPaneLine({id:"rsi14",color:"#f7c774"},rows.slice(14).map((c,i)=>({time:c.time,value:45+18*Math.sin(i/8)})));
+   e.addPriceLevel({id:"visual-level",price:rows[52].close,color:"#ffb86b",title:"Read-only level"});
    e.showVolume(true);window.__v5Screenshot=e;
   });
   await page.waitForTimeout(150);
