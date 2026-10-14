@@ -26,14 +26,18 @@ const fs=require("node:fs"),path=require("node:path");
     assert.equal(req.account,"titan");
     assert.equal(req.symbol,"XAUUSD");
     const budget=req.riskBudget??(req.riskPercent==null?null:10000*req.riskPercent/100);
-    const volume=req.volumeLots??Math.floor(budget/Math.abs(req.slPrice-req.entryPrice)*100/100)/100;
+    const slipPerLot=(req.slippageTicks||0)*0.01*100,feePerLot=req.feesPerLot||0;
+    const volume=req.volumeLots??Math.floor(budget/(Math.abs(req.slPrice-req.entryPrice)*100+slipPerLot+feePerLot)*100)/100;
     const sign=req.side==="BUY"?1:-1;
     const risk=Number(((req.slPrice-req.entryPrice)*volume*100*sign).toFixed(2));
     const reward=Number(((req.tpPrice-req.entryPrice)*volume*100*sign).toFixed(2));
+    const fees=Number((feePerLot*volume).toFixed(2)),netStop=Number((risk-slipPerLot*volume-fees).toFixed(2)),netTarget=Number((reward-slipPerLot*volume-fees).toFixed(2));
     const preview={account:"titan",canExecute:false,pnlAtSl:{amount:risk,currency:"USD"},
       pnlAtTp:{amount:reward,currency:"USD"},margin:{amount:95,currency:"USD"},
       riskRewardRatio:Number((reward/-risk).toFixed(3)),tickSize:0.01,
-      positionSizing:req.volumeLots==null?{mode:req.riskBudget==null?"EQUITY_PERCENT":"RISK_BUDGET",volumeLots:volume,riskBudget:budget,grossStopRisk:-risk,currency:"USD"}:{mode:"FIXED_LOTS",volumeLots:volume,currency:"USD"}};
+      estimatedCosts:{source:"USER_ASSUMPTION",currency:"USD",feesPerLot:feePerLot,feesTotal:fees,slippageTicks:req.slippageTicks||0,slippageAtStop:slipPerLot*volume,slippageAtTarget:slipPerLot*volume},
+      netEstimate:{kind:"userAssumptionsEstimate",pnlAtSl:{amount:netStop,currency:"USD"},pnlAtTp:{amount:netTarget,currency:"USD"},riskRewardRatio:netStop<0&&netTarget>0?Number((netTarget/-netStop).toFixed(3)):null},
+      positionSizing:req.volumeLots==null?{mode:req.riskBudget==null?"EQUITY_PERCENT":"RISK_BUDGET",volumeLots:volume,riskBudget:budget,grossStopRisk:Number((-risk+slipPerLot*volume).toFixed(2)),estimatedFees:fees,estimatedTotalStopRisk:Number((-netStop).toFixed(2)),currency:"USD"}:{mode:"FIXED_LOTS",volumeLots:volume,currency:"USD"}};
     scenarioResponses.push(preview);
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(preview)});
   });
@@ -508,17 +512,24 @@ const fs=require("node:fs"),path=require("node:path");
   await page.locator("#cs-scenario-save-a").click();
   assert.match(await page.locator("#cs-scenario-ab-status").textContent(),/erst eine erfolgreiche Broker-Vorschau/);
   await page.locator('[name="volumeLots"]').fill("0.1");
+  await page.locator('[name="feesPerLot"]').fill("3");
+  await page.locator('[name="slippageTicks"]').fill("2");
   await page.locator('[name="entryPrice"]').fill("4100");
   await page.locator('#cs-scenario-form [name="slPrice"]').fill("4090");
   await page.locator('#cs-scenario-form [name="tpPrice"]').fill("4120");
   await page.locator('#cs-scenario-form button[type="submit"]').click();
   await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER"));
+  assert.equal(scenarioPayloads.at(-1).feesPerLot,3);
+  assert.equal(scenarioPayloads.at(-1).slippageTicks,2);
+  assert.match(await page.locator("#cs-scenario-result").textContent(),/NETTO-Annahme SL .* Gebühren 3 USD\/Lot Roundtrip · adverse Slippage 2 Ticks/);
   await page.locator('[name="lotMode"]').selectOption("BUDGET");
   await page.locator('[name="riskBudget"]').fill("50");
   await page.locator('#cs-scenario-form button[type="submit"]').click();
   await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("Budget 50 USD"));
   assert.equal(scenarioPayloads.at(-1).volumeLots,null);
   assert.equal(scenarioPayloads.at(-1).riskBudget,50);
+  assert.equal(scenarioPayloads.at(-1).feesPerLot,3);
+  assert.equal(scenarioPayloads.at(-1).slippageTicks,2);
   await page.locator("#cs-scenario-save-a").click();
   assert.match(await page.locator("#cs-scenario-ab-status").textContent(),/A gespeichert/);
   const beforeBudgetPlan=await page.evaluate(()=>ChartStudioBeta.getState().scenario.slPrice);
@@ -531,9 +542,13 @@ const fs=require("node:fs"),path=require("node:path");
   assert.notEqual(await page.evaluate(()=>ChartStudioBeta.getState().scenario.slPrice),beforeBudgetPlan);
   assert.equal(scenarioPayloads.at(-1).riskBudget,50,"Dragging a budget-sized draft keeps its sizing mode");
   assert.equal(scenarioPayloads.at(-1).volumeLots,null);
+  assert.equal(scenarioPayloads.at(-1).feesPerLot,3,"Dragging a budget-sized draft preserves the fee assumption");
+  assert.equal(scenarioPayloads.at(-1).slippageTicks,2,"Dragging a budget-sized draft preserves slippage ticks");
   await page.locator('[data-cmd="drag-plan"]').click();
   await page.locator('[name="lotMode"]').selectOption("FIXED");
   await page.locator('[name="volumeLots"]').fill("0.1");
+  await page.locator('[name="feesPerLot"]').fill("0");
+  await page.locator('[name="slippageTicks"]').fill("0");
   await page.locator('#cs-scenario-form button[type="submit"]').click();
   await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER"));
   await page.locator("#cs-scenario-save-b").click();
@@ -597,7 +612,7 @@ const fs=require("node:fs"),path=require("node:path");
   await page.waitForFunction(()=>{
     const state=ChartStudioBeta.getState();
     return state.scenario&&state.scenario.slPrice!==4090&&
-      document.querySelector("#cs-scenario-result").textContent.startsWith("PLAN · Stop ")&&
+      document.querySelector("#cs-scenario-result").textContent.startsWith("PLAN · GROSS Stop ")&&
       document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER");
   },{timeout:15000});
   const afterPlan=await page.evaluate(()=>ChartStudioBeta.getState().scenario.slPrice);

@@ -44,6 +44,11 @@ Current features:
   currency, or an equity percentage. Automatic lot size is rounded down across
   broker volume steps using MT5 stop-profit calculations; missing equity,
   currency, or broker pricing fails closed.
+- What-if accepts a user assumption for round-trip fees per lot in account
+  currency and adverse exit slippage in broker ticks. MT5 prices the
+  slippage-adjusted exits; the UI keeps broker gross PnL separate from the estimated net
+  values and uses these assumptions in risk-budget sizing. They are not broker-
+reported costs; actual commission, swap and gaps may differ.
 - No USD exchange-rate fabrication: previews for non-USD accounts are in
   account currency, with USD explicitly unavailable.
 - Two broker-verified What-if previews can be saved as account-scoped local A/B

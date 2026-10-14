@@ -125,7 +125,8 @@ function renderScenarioSnapshots(){
   const section=document.createElement("section"),title=document.createElement("h4"),detail=document.createElement("p");
   const mode=item.result.positionSizing?.mode||"UNKNOWN",budget=item.result.positionSizing?.riskBudget;
   title.textContent=""+slot+" · "+(budget==null?mode:"Budget "+budget+" "+(item.result.pnlAtSl?.currency||""));
-  detail.textContent="Lots "+(item.result.positionSizing?.volumeLots??"UNKNOWN")+" · Stop "+(item.result.pnlAtSl?.amount??"UNKNOWN")+" · Ziel "+(item.result.pnlAtTp?.amount??"UNKNOWN")+" · R:R "+(item.result.riskRewardRatio??"UNKNOWN")+" · Margin "+(item.result.margin?.amount??"UNKNOWN")+" "+(item.result.margin?.currency||"")+" · "+item.savedAtUtc;
+  const net=item.result.netEstimate,costs=item.result.estimatedCosts,currency=costs?.currency||item.result.pnlAtSl?.currency||"";
+  detail.textContent="Lots "+(item.result.positionSizing?.volumeLots??"UNKNOWN")+" · GROSS SL/TP "+(item.result.pnlAtSl?.amount??"UNKNOWN")+" / "+(item.result.pnlAtTp?.amount??"UNKNOWN")+" · NETTO-Annahme SL/TP "+(net?.pnlAtSl?.amount??"UNKNOWN")+" / "+(net?.pnlAtTp?.amount??"UNKNOWN")+" · R:R "+(item.result.riskRewardRatio??"UNKNOWN")+" / Netto "+(net?.riskRewardRatio??"UNKNOWN")+" · Gebührannahme "+(costs?.feesPerLot??"UNKNOWN")+" "+currency+"/Lot; Slippage "+(costs?.slippageTicks??"UNKNOWN")+" Ticks · Margin "+(item.result.margin?.amount??"UNKNOWN")+" "+(item.result.margin?.currency||"")+" · "+item.savedAtUtc;
   section.append(title,detail);host.append(section);
  }
  if(!count){const empty=document.createElement("p");empty.textContent="Keine A/B-Snapshots für "+label+". Erst eine erfolgreiche Broker-Vorschau speichern.";host.append(empty)}
@@ -750,6 +751,8 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  '<label>Lots aus <select name="lotMode"><option value="FIXED">fester Größe</option><option value="BUDGET">Risikobudget</option><option value="PERCENT">Equity-%</option></select></label>'+
  '<label>Risiko in Kontowährung <input type="number" name="riskBudget" min="0.01" step="any" value="25" disabled></label>'+
  '<label>Equity-Risiko (%) <input type="number" name="riskPercent" min="0.01" max="100" step="any" value="0.5" disabled></label>'+
+ '<label>Roundtrip-Gebühren pro Lot (Kontowährung, Annahme) <input type="number" name="feesPerLot" min="0" max="10000" step="0.01" value="0"></label>'+
+ '<label>Adverse Slippage am Exit (Ticks, Annahme) <input type="number" name="slippageTicks" min="0" max="1000" step="1" value="0"></label>'+
  '<label>Entry <input type="number" name="entryPrice" step="any" required></label>'+
  '<label>SL <input type="number" name="slPrice" step="any" required></label>'+
  '<label>TP <input type="number" name="tpPrice" step="any" required></label>'+
@@ -876,7 +879,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  const form=panel.querySelector("#cs-scenario-form");
  const output=panel.querySelector("#cs-scenario-result");
  function scope(){return window.location.pathname.startsWith("/stt")?"/stt":""}
- const fields={};for(const name of ["side","volumeLots","lotMode","riskBudget","riskPercent","entryPrice","slPrice","tpPrice"])fields[name]=form.elements.namedItem(name);
+ const fields={};for(const name of ["side","volumeLots","lotMode","riskBudget","riskPercent","feesPerLot","slippageTicks","entryPrice","slPrice","tpPrice"])fields[name]=form.elements.namedItem(name);
  form.addEventListener("input",()=>{scenarioGeneration++;s.lastScenarioPreview=null});
  fields.lotMode.addEventListener("change",()=>{
   fields.volumeLots.disabled=fields.lotMode.value!=="FIXED";
@@ -905,6 +908,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
    volumeLots:fields.lotMode.value==="FIXED"?Number(fields.volumeLots.value):null,
    riskBudget:fields.lotMode.value==="BUDGET"?Number(fields.riskBudget.value):null,
    riskPercent:fields.lotMode.value==="PERCENT"?Number(fields.riskPercent.value):null,
+   feesPerLot:Number(fields.feesPerLot.value),slippageTicks:Number(fields.slippageTicks.value),
    entryPrice:Number(fields.entryPrice.value),slPrice:Number(fields.slPrice.value),tpPrice:Number(fields.tpPrice.value)};
   output.textContent="Broker-Vorschau wird berechnet ...";
   const sizeValue=payload.volumeLots??payload.riskBudget??payload.riskPercent;
@@ -925,12 +929,13 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
    if(Number.isFinite(Number(result.tickSize))&&Number(result.tickSize)>0)s.planTickSize=Number(result.tickSize);
    requestDraw();
    const loss=result.pnlAtSl.amount,reward=result.pnlAtTp.amount,cur=result.pnlAtSl.currency;
-   output.textContent="PLAN · Stop "+loss+" "+cur+" / Ziel +"+reward+" "+cur+
+   output.textContent="PLAN · GROSS Stop "+loss+" "+cur+" / Ziel +"+reward+" "+cur+
     " · R:R "+result.riskRewardRatio+" · Lots "+result.positionSizing.volumeLots+
-    (result.positionSizing.mode==="FIXED_LOTS"?"":" · Budget "+result.positionSizing.riskBudget+" "+cur+" · Bruttorisiko "+result.positionSizing.grossStopRisk+" "+cur)+
+    (result.positionSizing.mode==="FIXED_LOTS"?"":" · Budget "+result.positionSizing.riskBudget+" "+cur+" · GROSS-Risiko nach Slippage "+result.positionSizing.grossStopRisk+" "+cur+" · Gesamtrisiko-Annahme "+result.positionSizing.estimatedTotalStopRisk+" "+cur)+
+    " · NETTO-Annahme SL "+result.netEstimate.pnlAtSl.amount+" / TP "+result.netEstimate.pnlAtTp.amount+" "+cur+" · Gebühren "+result.estimatedCosts.feesPerLot+" "+cur+"/Lot Roundtrip · adverse Slippage "+result.estimatedCosts.slippageTicks+" Ticks (User-Annahme)"+
     " · Margin "+result.margin.amount+" "+cur+
     (cur==="USD"?"":" · USD-Konversion nicht verfügbar")+
-    " · GROSS vor Gebühren/Slippage · KEINE ORDER";
+    " · Brutto aus MT5, Netto aus User-Annahmen; tatsächliche Gebühren/Swap/Slippage/Gaps können abweichen · KEINE ORDER";
   }catch(err){if(nonce===scenarioGeneration){
     if(s.validatedScenario||s.planOriginal){
      s.scenario=json(s.validatedScenario||s.planOriginal);

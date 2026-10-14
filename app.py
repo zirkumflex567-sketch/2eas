@@ -89,8 +89,10 @@ class ChartScenarioPreviewRequest(BaseModel):
     tpPrice: float
     riskBudget: Optional[FiniteFloat] = None
     riskPercent: Optional[FiniteFloat] = None
+    feesPerLot: FiniteFloat = Field(default=0, ge=0, le=10_000)
+    slippageTicks: Annotated[int, Field(strict=True, ge=0, le=1000)] = 0
 
-    @field_validator('volumeLots', 'riskBudget', 'riskPercent', 'entryPrice', 'slPrice', 'tpPrice', mode='before')
+    @field_validator('volumeLots', 'riskBudget', 'riskPercent', 'feesPerLot', 'entryPrice', 'slPrice', 'tpPrice', mode='before')
     @classmethod
     def numeric_not_boolean(cls, value):
         if value is not None and (isinstance(value, bool) or type(value) not in (int, float)):
@@ -1065,6 +1067,7 @@ def api_chart_preview(req: ChartScenarioPreviewRequest, account: str):
             volume=req.volumeLots, entry=req.entryPrice,
             stop=req.slPrice, target=req.tpPrice,
             risk_budget=req.riskBudget, risk_percent=req.riskPercent,
+            fees_per_lot=req.feesPerLot, slippage_ticks=req.slippageTicks,
         )
     except PreviewError as exc:
         raise HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)}) from exc

@@ -41,6 +41,15 @@ class ChartStudioFoundationTests(unittest.TestCase):
         self.assertGreater(len(mt5.calls),0)
         self.assertTrue(all(call[0]=="profit" for call in mt5.calls))
 
+    def test_risk_budget_sizing_includes_fee_and_adverse_slippage_assumptions(self):
+        sized=size_for_risk_budget(MT5Fake(),SimpleNamespace(equity=10000,currency="USD"),SYMBOL,
+            symbol="XAUUSD",side="BUY",entry=4100,stop=4090,risk_budget=100,
+            fees_per_lot=3,slippage_ticks=2)
+        self.assertEqual(sized["volumeLots"],.09)
+        self.assertAlmostEqual(sized["grossStopRisk"],90.18)
+        self.assertAlmostEqual(sized["estimatedFees"],.27)
+        self.assertAlmostEqual(sized["estimatedTotalStopRisk"],90.45)
+
     def test_risk_sizing_fails_closed_on_non_monotonic_broker_curve(self):
         class NonMonotonicMT5(MT5Fake):
             def order_calc_profit(self, action, symbol, volume, entry, close):
@@ -128,6 +137,16 @@ class ChartStudioFoundationTests(unittest.TestCase):
             with self.subTest(sizing=sizing),self.assertRaises(ValidationError):
                 ChartScenarioPreviewRequest(**base,**sizing)
 
+    def test_preview_request_validates_cost_assumptions(self):
+        from pydantic import ValidationError
+        from app import ChartScenarioPreviewRequest
+        base=dict(account="titan",symbol="XAUUSD",side="BUY",volumeLots=.1,entryPrice=4100,slPrice=4090,tpPrice=4120)
+        self.assertEqual(ChartScenarioPreviewRequest(**base,feesPerLot=3.5,slippageTicks=4).slippageTicks,4)
+        for invalid in ({"feesPerLot":True},{"feesPerLot":-1},{"feesPerLot":10001},
+                        {"slippageTicks":True},{"slippageTicks":1.5},{"slippageTicks":1001}):
+            with self.subTest(invalid=invalid),self.assertRaises(ValidationError):
+                ChartScenarioPreviewRequest(**base,**invalid)
+
     def test_buy_rr_and_margin(self):
         mt5=MT5Fake()
         r=result(mt5=mt5)
@@ -138,6 +157,21 @@ class ChartStudioFoundationTests(unittest.TestCase):
         self.assertEqual(r["mode"],"READ_ONLY_DRAFT")
         self.assertFalse(r["canExecute"])
         self.assertEqual([x[0] for x in mt5.calls],["profit","profit","margin"])
+
+    def test_buy_cost_assumptions_show_gross_and_net_estimates(self):
+        r=result(fees_per_lot=3,slippage_ticks=2)
+        self.assertAlmostEqual(r["pnlAtSl"]["amount"],-100)
+        self.assertAlmostEqual(r["pnlAtTp"]["amount"],200)
+        self.assertAlmostEqual(r["netEstimate"]["pnlAtSl"]["amount"],-100.5)
+        self.assertAlmostEqual(r["netEstimate"]["pnlAtTp"]["amount"],199.5)
+        self.assertAlmostEqual(r["netEstimate"]["riskRewardRatio"],1.985)
+        self.assertEqual(r["estimatedCosts"]["source"],"USER_ASSUMPTION")
+
+    def test_sell_slippage_is_adverse_and_fees_are_subtracted_once(self):
+        r=result(side="SELL",fees_per_lot=2,slippage_ticks=3)
+        self.assertAlmostEqual(r["netEstimate"]["pnlAtSl"]["amount"],-100.5)
+        self.assertAlmostEqual(r["netEstimate"]["pnlAtTp"]["amount"],199.5)
+
     def test_sell_pnl(self):
         r=result(side="SELL")
         self.assertAlmostEqual(r["pnlAtSl"]["amount"],-100)

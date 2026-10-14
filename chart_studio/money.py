@@ -28,6 +28,14 @@ def finite_positive(value, label):
     return float(value)
 
 
+def cost_assumptions(fees_per_lot, slippage_ticks):
+    if isinstance(fees_per_lot, bool) or not isinstance(fees_per_lot, (int, float)) or not math.isfinite(fees_per_lot) or not 0 <= fees_per_lot <= 10_000:
+        raise PreviewError("INVALID_COST_ASSUMPTION", "Roundtrip-Gebühren pro Lot müssen zwischen 0 und 10000 liegen.")
+    if isinstance(slippage_ticks, bool) or not isinstance(slippage_ticks, int) or not 0 <= slippage_ticks <= 1000:
+        raise PreviewError("INVALID_COST_ASSUMPTION", "Slippage muss 0–1000 ganze Ticks betragen.")
+    return float(fees_per_lot), slippage_ticks
+
+
 def tick_aligned(value, tick_size):
     # Use integer distance, not textual digits or rounded percentage.
     ticks = round(value / tick_size)
@@ -61,14 +69,16 @@ def validate_plan(*, side, volume, entry, stop, target, info):
 
 
 def size_for_risk_budget(mt5, account_info, symbol_info, *, symbol, side, entry, stop,
-                         risk_budget=None, risk_percent=None):
-    """Find the largest broker lot step whose MT5 gross stop loss fits budget.
+                         risk_budget=None, risk_percent=None, fees_per_lot=0,
+                         slippage_ticks=0):
+    """Find the largest broker lot step whose assumed stop risk fits budget.
 
     A risk percentage uses the verified account equity. The returned currency
     is the account currency; no cross-currency conversion is inferred.
     """
     if side not in ("BUY", "SELL"):
         raise PreviewError("INVALID_DIRECTION", "Nur BUY oder SELL erlaubt.")
+    fees_per_lot, slippage_ticks = cost_assumptions(fees_per_lot, slippage_ticks)
     if (risk_budget is None) == (risk_percent is None):
         raise PreviewError("INVALID_INPUT", "Genau ein Risikobudget oder Equity-Prozent angeben.")
     entry = finite_positive(entry, "entry")
@@ -78,6 +88,9 @@ def size_for_risk_budget(mt5, account_info, symbol_info, *, symbol, side, entry,
         raise PreviewError("INVALID_PRICE_GRID", "Entry und SL müssen auf dem Broker-Tickraster liegen.")
     if (side == "BUY" and stop >= entry) or (side == "SELL" and stop <= entry):
         raise PreviewError("INVALID_STOP_SIDE", "Der SL muss auf der Verlustseite des Einstiegs liegen.")
+    adverse_stop = stop - slippage_ticks * tick * (1 if side == "BUY" else -1)
+    if (side == "BUY" and adverse_stop >= entry) or (side == "SELL" and adverse_stop <= entry):
+        raise PreviewError("SLIPPAGE_ASSUMPTION_TOO_LARGE", "Slippageannahme überschreitet die Stopdistanz.")
     currency = str(getattr(account_info, "currency", "") or "").upper()
     if not currency:
         raise PreviewError("ACCOUNT_CURRENCY_UNKNOWN", "MT5-Kontowährung nicht verfügbar.")
@@ -103,43 +116,50 @@ def size_for_risk_budget(mt5, account_info, symbol_info, *, symbol, side, entry,
 
     def loss_at(step_count):
         volume = round(minimum + step_count * step, 10)
-        result = mt5.order_calc_profit(action, symbol, volume, entry, stop)
+        result = mt5.order_calc_profit(action, symbol, volume, entry, adverse_stop)
         if result is None or isinstance(result, bool) or not isinstance(result, (float, int)) or not math.isfinite(result) or result >= 0:
             raise PreviewError("BROKER_CALC_UNAVAILABLE", "MT5-Risikoberechnung nicht verfügbar.")
-        return volume, -float(result)
+        gross_risk = -float(result)
+        estimated_fees = fees_per_lot * volume
+        return volume, gross_risk, estimated_fees, gross_risk + estimated_fees
 
     tolerance = max(1e-8, budget * 1e-10)
     selected = None
     previous_risk = None
     for step_count in range(max_steps + 1):
-        volume, candidate_risk = loss_at(step_count)
+        volume, gross_risk, estimated_fees, candidate_risk = loss_at(step_count)
         if previous_risk is not None and candidate_risk + max(1e-8, previous_risk * 1e-10) < previous_risk:
             raise PreviewError("BROKER_CALC_INVALID", "MT5-Risikokurve sinkt bei steigender Lotgröße.")
         previous_risk = candidate_risk
         if step_count == 0 and candidate_risk > budget + tolerance:
             raise PreviewError("RISK_BELOW_MINIMUM", "Das Risikobudget reicht nicht für die kleinste Broker-Lotgröße.")
         if candidate_risk <= budget + tolerance:
-            selected = (volume, candidate_risk)
+            selected = (volume, gross_risk, estimated_fees, candidate_risk)
     if selected is None:
         raise PreviewError("RISK_BELOW_MINIMUM", "Das Risikobudget reicht nicht für die kleinste Broker-Lotgröße.")
-    volume, actual_risk = selected
+    volume, gross_risk, estimated_fees, actual_risk = selected
     return {
         "mode": "RISK_BUDGET" if percent is None else "EQUITY_PERCENT",
         "volumeLots": volume,
         "riskBudget": round(budget, 8),
         "riskPercent": percent,
-        "grossStopRisk": round(actual_risk, 8),
+        "grossStopRisk": round(gross_risk, 8),
+        "estimatedFees": round(estimated_fees, 8),
+        "estimatedTotalStopRisk": round(actual_risk, 8),
+        "assumedSlippageTicks": slippage_ticks,
         "unusedRiskBudget": round(max(0.0, budget - actual_risk), 8),
         "currency": currency,
     }
 
 
 def preview_scenario(mt5, account_info, symbol_info, *, symbol, side, volume=None, entry, stop, target,
-                     risk_budget=None, risk_percent=None):
+                     risk_budget=None, risk_percent=None, fees_per_lot=0,
+                     slippage_ticks=0):
     """Compute broker authoritative prospective GROSS PnL in account currency.
 
     Scenario is strictly NOT a broker order and is NOT a stop-modification preview.
     """
+    fees_per_lot, slippage_ticks = cost_assumptions(fees_per_lot, slippage_ticks)
     sizing = None
     if volume is None:
         # Reject malformed geometry before making repeated broker calculation
@@ -148,7 +168,8 @@ def preview_scenario(mt5, account_info, symbol_info, *, symbol, side, volume=Non
                       entry=entry, stop=stop, target=target, info=symbol_info)
         sizing = size_for_risk_budget(mt5, account_info, symbol_info, symbol=symbol,
                                       side=side, entry=entry, stop=stop,
-                                      risk_budget=risk_budget, risk_percent=risk_percent)
+                                      risk_budget=risk_budget, risk_percent=risk_percent,
+                                      fees_per_lot=fees_per_lot, slippage_ticks=slippage_ticks)
         volume = sizing["volumeLots"]
     elif risk_budget is not None or risk_percent is not None:
         raise PreviewError("INVALID_INPUT", "Feste Lots und Risikobudget schließen sich aus.")
@@ -158,9 +179,15 @@ def preview_scenario(mt5, account_info, symbol_info, *, symbol, side, volume=Non
     action = mt5.ORDER_TYPE_BUY if side == "BUY" else mt5.ORDER_TYPE_SELL
     pnl_stop = mt5.order_calc_profit(action, symbol, volume, entry, stop)
     pnl_target = mt5.order_calc_profit(action, symbol, volume, entry, target)
+    tick = finite_positive(float(getattr(symbol_info, "trade_tick_size", 0) or 0), "trade_tick_size")
+    adverse_sign = 1 if side == "BUY" else -1
+    slipped_stop = stop - slippage_ticks * tick * adverse_sign
+    slipped_target = target - slippage_ticks * tick * adverse_sign
+    slipped_stop_pnl = pnl_stop if not slippage_ticks else mt5.order_calc_profit(action, symbol, volume, entry, slipped_stop)
+    slipped_target_pnl = pnl_target if not slippage_ticks else mt5.order_calc_profit(action, symbol, volume, entry, slipped_target)
     margin = mt5.order_calc_margin(action, symbol, volume, entry)
-    if any(v is None or not isinstance(v, (float, int)) or not math.isfinite(v)
-           for v in (pnl_stop, pnl_target, margin)):
+    if any(v is None or isinstance(v, bool) or not isinstance(v, (float, int)) or not math.isfinite(v)
+           for v in (pnl_stop, pnl_target, slipped_stop_pnl, slipped_target_pnl, margin)):
         raise PreviewError("BROKER_CALC_UNAVAILABLE", "MT5-Preis- oder Marginberechnung nicht verfügbar.")
     if pnl_stop >= 0 or pnl_target <= 0 or margin < 0:
         raise PreviewError("BROKER_CALC_INVALID", "MT5-Berechnung hat unplausible Vorzeichen.")
@@ -169,6 +196,10 @@ def preview_scenario(mt5, account_info, symbol_info, *, symbol, side, volume=Non
         raise PreviewError("ACCOUNT_CURRENCY_UNKNOWN", "MT5-Kontowährung nicht verfügbar.")
     # USD only if account itself denominates USD; conversion is future work.
     usd = currency == "USD"
+    assumed_fees = fees_per_lot * volume
+    net_stop = float(slipped_stop_pnl) - assumed_fees
+    net_target = float(slipped_target_pnl) - assumed_fees
+    net_ratio = round(net_target / -net_stop, 3) if net_stop < 0 < net_target else None
     return {
         "mode": "READ_ONLY_DRAFT",
         "symbol": symbol,
@@ -186,7 +217,20 @@ def preview_scenario(mt5, account_info, symbol_info, *, symbol, side, volume=Non
         "riskRewardRatio": round(float(pnl_target) / -float(pnl_stop), 3),
         "margin": {"amount": round(float(margin),2), "currency": currency},
         "positionSizing": sizing or {"mode": "FIXED_LOTS", "volumeLots": volume, "currency": currency},
-        "warnings": ["Schätzung ohne künftige Gebühren, Slippage oder Overnight-Gaps."],
+        "estimatedCosts": {
+            "source": "USER_ASSUMPTION", "currency": currency,
+            "feesPerLot": round(fees_per_lot, 8), "feesTotal": round(assumed_fees, 2),
+            "slippageTicks": slippage_ticks,
+            "slippageAtStop": round(float(pnl_stop) - float(slipped_stop_pnl), 2),
+            "slippageAtTarget": round(float(pnl_target) - float(slipped_target_pnl), 2),
+        },
+        "netEstimate": {
+            "kind": "userAssumptionsEstimate",
+            "pnlAtSl": {"amount": round(net_stop, 2), "currency": currency},
+            "pnlAtTp": {"amount": round(net_target, 2), "currency": currency},
+            "riskRewardRatio": net_ratio,
+        },
+        "warnings": ["Netto ist eine User-Annahme; tatsächliche Gebühren, Ausführung, Swap und Overnight-Gaps können abweichen."],
         "serverVerified": True,
         "canExecute": False,
     }
