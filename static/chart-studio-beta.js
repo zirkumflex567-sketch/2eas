@@ -5,6 +5,7 @@
 "use strict";
 const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","vertical","text","trend","rect","fib","ray","ruler","channel","plan","position-draft"];
 const MAX_DRAWINGS=1000;
+const MAX_EVIDENCE_ROWS=500;
 const ratios=[0,.236,.382,.5,.618,.786,1];
 let s=null,requestId=0,scenarioGeneration=0,portfolioGeneration=0,planTimer=null;
 const json=v=>JSON.parse(JSON.stringify(v));
@@ -128,6 +129,48 @@ function deleteProfile(){
  const all=profiles();delete all[name];saveProfiles(all);refreshProfiles();updateMessage("Layout gelöscht.");
 }
 function updateMessage(x){if(s?.status)s.status.textContent=x}
+function renderEvidence(){
+ if(!s?.panel)return;const state=s.evidence,list=s.panel.querySelector("#cs-evidence-list"),status=s.panel.querySelector("#cs-evidence-status"),more=s.panel.querySelector("#cs-evidence-more");
+ if(!list||!status||!more)return;list.replaceChildren();
+ const meta=state.meta;
+ status.textContent=state.loading?"Aufzeichnungen werden gelesen …":state.error|| (meta
+  ? "Verfügbarkeit: "+meta.availability+" · Store: "+meta.storeState+" · Abdeckung: "+meta.coverage+" · Lücken seit Prozessstart: "+(meta.gaps?.knownLossSinceStart??0)+" · Historie außerhalb des Zeitraums: nicht bewertet"+(state.truncated?" · Anzeige auf "+MAX_EVIDENCE_ROWS+" begrenzt; Zeitraum verkleinern.":"")
+  : "Keine Aufzeichnung abgefragt · Historie wird nicht rekonstruiert.");
+ if(!state.loading&&!state.error&&meta?.availability==="NOT_RECORDED"&&state.rows.length===0){const empty=document.createElement("li");empty.textContent="NOT_RECORDED · Keine Aufzeichnung im gewählten Zeitraum; daraus folgt keine Aussage über ältere Zeiträume.";list.append(empty)}
+ for(const record of state.rows){
+  const p=record.payload||{},type=record.type||"UNKNOWN";let label;
+  if(type==="DECISION")label=["DECISION",p.stage,p.outcome,p.symbol,p.timeframe,p.decisionTimeUtc,p.strategyId].filter(Boolean).join(" · ");
+  else if(type==="LIFECYCLE")label=["LIFECYCLE",p.eventType,p.positionIdentifier,p.asOfUtc,p.source,p.dataQuality].filter(Boolean).join(" · ");
+  else if(type==="SNAPSHOT")label=["SNAPSHOT",p.captureType,p.positionIdentifier,p.asOfUtc,p.renderStatus].filter(Boolean).join(" · ");
+  else label=type+" · "+record.id;
+  const li=document.createElement("li"),details=document.createElement("details"),summary=document.createElement("summary"),pre=document.createElement("pre");
+  summary.textContent=label;pre.textContent=JSON.stringify(record,null,2);details.append(summary,pre);li.append(details);list.append(li);
+ }
+ more.hidden=!state.cursor;more.disabled=state.loading;
+}
+function clearEvidence(){if(!s?.evidence)return;s.evidence.generation++;s.evidence={rows:[],cursor:null,query:null,meta:null,loading:false,error:"",truncated:false,generation:s.evidence.generation};renderEvidence()}
+async function loadEvidence(morePage=false){
+ if(!s?.evidence||s.evidence.loading)return;const selector=s.panel.querySelector("#cs-evidence-kind"),kind=selector?.value;
+ const paths={DECISION:"decisions",LIFECYCLE:"lifecycle",SNAPSHOT:"snapshots"};if(!paths[kind])return;
+ const account=s.account,generation=s.evidence.generation;
+ if(!morePage){const days=Number(s.panel.querySelector("#cs-evidence-days")?.value)||30,to=new Date(),from=new Date(to.getTime()-days*86400000);s.evidence.rows=[];s.evidence.cursor=null;s.evidence.meta=null;s.evidence.truncated=false;s.evidence.query={account,kind,fromUtc:from.toISOString(),toUtc:to.toISOString()};s.evidence.error=""}
+ const query=s.evidence.query;if(!query||query.account!==account||query.kind!==kind){clearEvidence();return}
+ const params=new URLSearchParams({account,fromUtc:query.fromUtc,toUtc:query.toUtc,limit:"100"});
+ if(kind!=="LIFECYCLE")params.set("symbol","XAUUSD");if(morePage&&s.evidence.cursor)params.set("cursor",s.evidence.cursor);
+ const url=(window.location.pathname.startsWith("/stt")?"/stt":"")+"/api/chart/v1/"+paths[kind]+"?"+params.toString();
+ s.evidence.loading=true;renderEvidence();
+ try{
+  let response;if(window.DashboardRuntime?.request)response=await window.DashboardRuntime.request(url,{method:"GET",cache:"no-store"},10000,false);
+  else{const raw=await fetch(url,{method:"GET",cache:"no-store",credentials:"same-origin"});const body=await raw.json();response={ok:raw.ok,status:raw.status,json:async()=>body}}
+  const data=await response.json();if(!response.ok)throw Error(data?.detail?.code||data?.detail||("HTTP "+response.status));
+  if(!s?.evidence||s.account!==account||s.evidence.generation!==generation)return;
+  if(data.accountId!==account||data.canExecute!==false||!Array.isArray(data.records))throw Error("Antwort ist keinem gültigen Read-Scope zugeordnet.");
+  const seen=new Set(s.evidence.rows.map(row=>row.type+":"+row.id+":"+row.dataRevision));
+  for(const row of data.records){const key=row?.type+":"+row?.id+":"+row?.dataRevision;if(!seen.has(key)&&s.evidence.rows.length<MAX_EVIDENCE_ROWS){s.evidence.rows.push(row);seen.add(key)}}
+  s.evidence.meta=data;s.evidence.truncated=Boolean(data.nextCursor)&&s.evidence.rows.length>=MAX_EVIDENCE_ROWS;s.evidence.cursor=s.evidence.truncated?null:(data.nextCursor||null);s.evidence.error="";
+ }catch(error){if(s?.evidence&&s.account===account&&s.evidence.generation===generation)s.evidence.error="Aufzeichnungen nicht verfügbar · "+String(error?.message||"Lesefehler")}
+ finally{if(s?.evidence&&s.account===account&&s.evidence.generation===generation){s.evidence.loading=false;renderEvidence()}}
+}
 function validSavedPortfolioContext(context,account){
  if(context?.schemaVersion!==1||context.account!==account)return false;
  if(context.state==="UNAVAILABLE")return Object.keys(context).every(key=>["schemaVersion","account","state","reason"].includes(key))&&context.reason==="PORTFOLIO_NOT_CURRENT";
@@ -724,7 +767,7 @@ function pointerup(e){
  if(s.positionDraftDrag){s.positionDraftDrag=null;try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){};return}
  if(!s.drag)return;s.drag=null;persist();try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){}
 }
-function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioLoading=false;s.portfolioError="";if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
+function account(id){if(!s)return;cancelPlanPreview();s.account=id;clearEvidence();s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioLoading=false;s.portfolioError="";if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
  s.lastScenarioPreview=null;s.marketQuote=null;clearDataWindowPin();
   s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
   const fibInput=s.panel.querySelector("#cs-fib-levels");if(fibInput)fibInput.value=window.ChartStudioFib?.display(s.fibLevels)||"";
@@ -877,6 +920,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  panel.innerHTML=
   '<div class="cs-beta-head"><strong>CHART STUDIO · EXPERIMENTELL</strong><span>Keine Handelsausführung</span></div>'+
   '<section id="cs-data-window" aria-label="Datenfenster"><div><strong>Datenfenster</strong> · <span id="cs-data-window-state">Crosshair</span> <button type="button" id="cs-data-window-pin">Crosshair anheften</button></div><dl><div><dt>Kerzenzeit (UTC)</dt><dd id="cs-data-window-time">—</dd></div><div><dt>Open</dt><dd id="cs-data-window-open">—</dd></div><div><dt>High</dt><dd id="cs-data-window-high">—</dd></div><div><dt>Low</dt><dd id="cs-data-window-low">—</dd></div><div><dt>Close</dt><dd id="cs-data-window-close">—</dd></div><div><dt>Indikatoren</dt><dd id="cs-data-window-indicators">—</dd></div><div><dt>Quelle</dt><dd id="cs-data-window-source">Chart-Feed · wartet auf Kerze</dd></div><div><dt>Bid</dt><dd id="cs-data-window-bid">—</dd></div><div><dt>Ask</dt><dd id="cs-data-window-ask">—</dd></div><div><dt>Spread (Preis)</dt><dd id="cs-data-window-spread">—</dd></div><div><dt>Quotezeit</dt><dd id="cs-data-window-quote-time">—</dd></div><div><dt>Quote-Status</dt><dd id="cs-data-window-quote-status">Noch keine verifizierte Quote</dd></div></dl></section>'+
+  '<details id="cs-evidence-panel" class="cs-evidence-panel"><summary>Aufzeichnungsnachweise · nur gespeicherte Read-Daten</summary><div class="cs-evidence-controls"><label for="cs-evidence-kind">Typ</label><select id="cs-evidence-kind"><option value="DECISION">Decisions</option><option value="LIFECYCLE">Broker-Lifecycle</option><option value="SNAPSHOT">Chart-Snapshots</option></select><label for="cs-evidence-days">Tage</label><select id="cs-evidence-days"><option value="1">1</option><option value="7">7</option><option value="30" selected>30</option></select><button type="button" id="cs-evidence-load">Zeitraum laden</button><button type="button" id="cs-evidence-more" hidden>Weitere Einträge</button></div><p id="cs-evidence-status" role="status" aria-live="polite">Keine Aufzeichnung abgefragt · Historie wird nicht rekonstruiert.</p><ol id="cs-evidence-list" aria-label="Aufgezeichnete Ereignisse"></ol><p>Read-only: keine MT5-Abfrage oder Handelsänderung. Fehlende Zeiträume bleiben NOT_RECORDED.</p></details>'+
   '<div class="cs-beta-buttons">'+toolLabels.map(([id,label])=>'<button type="button" data-tool="'+id+'">'+label+'</button>').join("")+
   ["undo","redo","delete-selected","export","save-png","clear"].map(id=>'<button type="button" data-cmd="'+id+'">'+({undo:"↶ Undo",redo:"↷ Redo","delete-selected":"Ausgewählte löschen",export:"JSON kopieren","save-png":"Bild (PNG) speichern",clear:"Alle Zeichnungen löschen"}[id])+'</button>').join("")+'</div>'+
   '<p class="cs-beta-keyboard-hint">Kürzel: V Navigation · E Bearbeiten · H Linie · T Trend · R Zone · F Fibonacci · C Kanal · M Messen · Strg+Z Rückgängig · Entf Löschen</p>'+
@@ -916,8 +960,13 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  s={chart,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
   account:accountId,tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,positionDraft:null,positionDraftDrag:null,verifiedPositions:[],positionContext:null,
   lastScenarioPreview:null,portfolio:null,portfolioCapturedAtUtc:null,portfolioLoading:false,portfolioError:"",dataWindow:{snapshot:null,pinned:false},marketQuote:null,
-  draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],brokerMarkers:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null,fibLevels:[...ratios]};
+  draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],brokerMarkers:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null,fibLevels:[...ratios],evidence:{rows:[],cursor:null,query:null,meta:null,loading:false,error:"",generation:0}};
  panel.querySelector("#cs-data-window-pin").addEventListener("click",()=>setDataWindowPin(!s.dataWindow.pinned));
+ panel.querySelector("#cs-evidence-load").addEventListener("click",()=>loadEvidence(false));
+ panel.querySelector("#cs-evidence-more").addEventListener("click",()=>loadEvidence(true));
+ panel.querySelector("#cs-evidence-kind").addEventListener("change",clearEvidence);
+ panel.querySelector("#cs-evidence-days").addEventListener("change",clearEvidence);
+ renderEvidence();
  panel.querySelector("#cs-portfolio-refresh").addEventListener("click",()=>loadPortfolio(s.account));
  chart.subscribeCrosshairMove(handleCrosshair);
  try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}

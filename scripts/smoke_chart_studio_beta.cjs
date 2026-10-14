@@ -18,7 +18,7 @@ const fs=require("node:fs"),path=require("node:path");
   browser=await chromium.launch({headless:true,executablePath:process.env.CHART_STUDIO_CHROMIUM_PATH||undefined});
   const page=await browser.newPage({viewport:{width:1280,height:850},deviceScaleFactor:1.5});
   const consoleErrors=[];page.on("pageerror",e=>consoleErrors.push(e.message));
-  let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,deferTitanPositions=false,releaseTitanPositions=null,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badDealRow=false,symbolCatalogTruncated=false;
+  let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,deferTitanPositions=false,releaseTitanPositions=null,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badDealRow=false,symbolCatalogTruncated=false,evidenceRequests=[];
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
   await page.route("**/api/chart/v1/scenarios/preview*",async route=>{
     const req=route.request().postDataJSON();
@@ -52,6 +52,22 @@ const fs=require("node:fs"),path=require("node:path");
   await page.route("**/api/chart/v1/quotes?*",async route=>{
     const url=new URL(route.request().url());
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),symbol:"XAUUSD",bid:"4100.00",ask:"4100.25",tickSize:0.01,currency:"USD",quoteTimeUtc:"2026-10-14T13:00:00.000000Z",ageSeconds:0,freshness:"FRESH",source:badQuote?"UNVERIFIED":"MT5_VERIFIED",canExecute:false})});
+  });
+  await page.route("**/api/chart/v1/decisions**",async route=>{
+    const url=new URL(route.request().url());evidenceRequests.push({path:url.pathname,params:Object.fromEntries(url.searchParams)});
+    const first={schemaVersion:1,type:"DECISION",id:"event_1",accountId:url.searchParams.get("account"),dataRevision:1,provenance:"RECORDED",payload:{eventId:"event_1",symbol:"XAUUSD",strategyId:"fixture_strategy",decisionTimeUtc:"2026-10-14T11:00:00Z",timeframe:"M5",stage:"SIGNAL",outcome:"PASS",reasonCodes:["<img src=x onerror=alert(1)>"]}};
+    const second={...first,id:"event_2",payload:{...first.payload,eventId:"event_2",decisionTimeUtc:"2026-10-14T12:00:00Z",outcome:"REJECT"}};
+    const cursor=url.searchParams.get("cursor"),body={schemaVersion:1,accountId:url.searchParams.get("account"),availability:"RECORDED",storeState:"INITIALIZED",coverage:"RECORDED",gaps:0,canExecute:false,records:cursor?[second]:[first],hasMore:!cursor,nextCursor:cursor?null:"fixture-next"};
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(body)});
+  });
+  await page.route("**/api/chart/v1/lifecycle**",async route=>{
+    const url=new URL(route.request().url());evidenceRequests.push({path:url.pathname,params:Object.fromEntries(url.searchParams)});
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({schemaVersion:1,accountId:url.searchParams.get("account"),availability:"NOT_RECORDED",storeState:"NOT_INITIALIZED",coverage:"UNKNOWN",gaps:0,canExecute:false,records:[],hasMore:false,nextCursor:null})});
+  });
+  await page.route("**/api/chart/v1/snapshots**",async route=>{
+    const url=new URL(route.request().url());evidenceRequests.push({path:url.pathname,params:Object.fromEntries(url.searchParams)});
+    const record={schemaVersion:1,type:"SNAPSHOT",id:"snap_1",accountId:url.searchParams.get("account"),dataRevision:1,provenance:"RECORDED",payload:{snapshotId:"snap_1",symbol:"XAUUSD",captureType:"ENTRY",asOfUtc:"2026-10-14T12:30:00Z",renderStatus:"DATA_ONLY"}};
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({schemaVersion:1,accountId:url.searchParams.get("account"),availability:"RECORDED",storeState:"INITIALIZED",coverage:"RECORDED",gaps:0,canExecute:false,records:[record],hasMore:false,nextCursor:null})});
   });
   await page.route("**/api/chart/v1/symbol-info?*",async route=>{
     const url=new URL(route.request().url());await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),symbol:"XAUUSD",source:"MT5_VERIFIED",canExecute:false,tickSize:"0.01",digits:2})});
@@ -119,6 +135,28 @@ const fs=require("node:fs"),path=require("node:path");
   await page.goto("http://127.0.0.1:8864/static/chart-studio-fixture.html",{waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartSmokeReady===true);
   await page.locator("#cs-beta-toggle").click();
+  await page.locator("#cs-evidence-panel > summary").click();
+  const chartBeforeEvidence=await page.evaluate(()=>JSON.stringify({drawings:ChartStudioBeta.getState().drawings,options:ChartStudioBeta.getState().options}));
+  await page.locator("#cs-evidence-load").click();
+  await page.waitForFunction(()=>document.querySelector("#cs-evidence-list")?.textContent.includes("event_1"));
+  assert.match(await page.locator("#cs-evidence-status").textContent(),/RECORDED.*Lücken seit Prozessstart: 0/);
+  assert.ok((await page.locator("#cs-evidence-list").textContent()).includes("<img"),"Untrusted record text is rendered inertly");
+  assert.equal(await page.locator("#cs-evidence-list img").count(),0,"Evidence payload cannot inject markup");
+  assert.deepEqual(evidenceRequests[0].params.account,"titan");assert.equal(evidenceRequests[0].params.limit,"100");assert.equal(evidenceRequests[0].params.symbol,"XAUUSD");
+  assert.ok(Date.parse(evidenceRequests[0].params.toUtc)-Date.parse(evidenceRequests[0].params.fromUtc)<=31*86400000,"Evidence query stays within API range cap");
+  await page.locator("#cs-evidence-more").click();await page.waitForFunction(()=>document.querySelector("#cs-evidence-list")?.textContent.includes("event_2"));
+  assert.equal(evidenceRequests[1].params.cursor,"fixture-next","Next page uses the server cursor");
+  await page.locator("#cs-evidence-kind").selectOption("LIFECYCLE");await page.locator("#cs-evidence-load").click();
+  await page.waitForFunction(()=>document.querySelector("#cs-evidence-status")?.textContent.includes("NOT_RECORDED"));
+  assert.match(await page.locator("#cs-evidence-list").textContent(),/Keine Aufzeichnung/);
+  assert.match(await page.locator("#cs-evidence-status").textContent(),/Historie außerhalb des Zeitraums: nicht bewertet/);
+  await page.locator("#cs-evidence-kind").selectOption("SNAPSHOT");await page.locator("#cs-evidence-load").click();
+  await page.waitForFunction(()=>document.querySelector("#cs-evidence-list")?.textContent.includes("snap_1"));
+  assert.ok((await page.locator("#cs-evidence-list").textContent()).includes("DATA_ONLY"));
+  assert.deepEqual(await page.evaluate(()=>JSON.stringify({drawings:ChartStudioBeta.getState().drawings,options:ChartStudioBeta.getState().options})),chartBeforeEvidence,"Evidence browsing does not mutate chart state");
+  assert.equal(requests.length,0,"Evidence browsing sends no POST or trade mutation");
+  await page.evaluate(()=>ChartStudioBeta.account("goldm15"));assert.equal(await page.locator("#cs-evidence-list li").count(),0,"Account switch clears prior-account evidence");
+  await page.evaluate(()=>ChartStudioBeta.account("titan"));
   const derivedCandleContract=await page.evaluate(()=>{
     const input=[
       {time:1701000000,open:10,high:14,low:8,close:12},

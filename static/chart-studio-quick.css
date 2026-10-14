@@ -56,6 +56,14 @@
 #cs-data-window>div{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:#d5edf3;font-size:12px}
 #cs-data-window dl{display:grid;grid-template-columns:repeat(6,minmax(70px,1fr));gap:3px 8px;margin:0;font:11px ui-monospace,Consolas,monospace}
 #cs-data-window dt{color:#a8c5cf}#cs-data-window dd{margin:0;color:#f2fbff;overflow-wrap:anywhere}
+.cs-evidence-panel{margin:8px 0;padding:8px;border:1px solid rgba(116,178,198,.35);border-radius:7px;background:rgba(8,25,35,.72);color:#d5edf3;font-size:12px}
+.cs-evidence-panel>summary{cursor:pointer;font-weight:700}
+.cs-evidence-controls{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:8px}
+.cs-evidence-panel #cs-evidence-status{margin:8px 0;color:#b8d3dd;overflow-wrap:anywhere}
+.cs-evidence-panel #cs-evidence-list{display:grid;gap:6px;padding-left:24px;max-height:340px;overflow:auto}
+.cs-evidence-panel #cs-evidence-list details{border:1px solid rgba(116,178,198,.22);border-radius:5px;padding:5px}
+.cs-evidence-panel #cs-evidence-list summary{cursor:pointer;overflow-wrap:anywhere}
+.cs-evidence-panel #cs-evidence-list pre{max-height:260px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:10px ui-monospace,Consolas,monospace}
 #cs-beta-panel .cs-beta-buttons,
 #cs-beta-panel .cs-beta-profiles,
 #cs-beta-panel .cs-ma-presets,

@@ -40,4 +40,5 @@ A package milestone may close only with independent test/review evidence and an 
 - [x] Add an opt-in single-consumer private file reader/rotation protocol and application startup/shutdown wiring; bounded reads run off the event loop and expose internal gap/loss diagnostics. It remains disabled without an explicit private spool root; it has not yet been enabled for live EA producers.
 - [x] Harden the committed reader for multiple preconstructed consumers, reject ready→active reversals, and bind archive completion to the imported file identity and content digest; focused and full-suite regressions plus independent review pass.
 - [ ] Add actual Titan/GoldM15 EA producers after resolving runtime identities; compile and verify without strategy changes.
-- [ ] Add capture inspector/snapshot UI and demo evidence; all related acceptance IDs remain open.
+- [x] Add an authenticated read-only Beta inspector for Decisions, Lifecycle, and Snapshots with bounded UTC range, account invalidation, cursor paging, explicit coverage/gap/`NOT_RECORDED` states, and inert JSON rendering. Chromium tests cover recorded/empty states, pagination, hostile text, chart immutability, and no POST/write path.
+- [ ] Collect verified Titan/GoldM15 demo records and complete the inspector/journal/snapshot acceptance; all related IDs remain open until then.
