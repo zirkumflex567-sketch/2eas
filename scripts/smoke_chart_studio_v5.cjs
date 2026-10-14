@@ -685,6 +685,16 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.ok((await page.locator("#chart canvas").count())>=1);
   const folder=path.join("output","visual-smoke");
   fs.mkdirSync(folder,{recursive:true});
+  await page.evaluate(()=>{
+   const context=CanvasRenderingContext2D.prototype,draw=context.arc;
+   window.__trendHandleArcs=0;
+   context.arc=function(x,y,radius,...rest){if(radius===6&&this.strokeStyle==="#9be564"&&this.fillStyle==="#f8fafc")window.__trendHandleArcs++;return draw.call(this,x,y,radius,...rest)};
+  });
+  const selectedTrendAnchor=await page.evaluate(()=>window.__v5Screenshot.drawingAnchorPosition("visual-trend","START"));
+  await page.mouse.move(selectedTrendAnchor.x,selectedTrendAnchor.y);await page.waitForTimeout(80);await page.mouse.click(selectedTrendAnchor.x,selectedTrendAnchor.y);await page.waitForTimeout(100);
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.inspect().selectedDrawingId),"visual-trend");
+  assert.ok(await page.evaluate(()=>window.__trendHandleArcs>=2),"Selected trend line renders two visible endpoint handles");
+  await page.screenshot({path:path.join(folder,"chart-studio-v5-selected-handles.png"),fullPage:true});
   await page.screenshot({path:path.join(folder,"chart-studio-v5-poc.png"),fullPage:true});
   console.log("PASS native v5 chart, configurable oscillator panes, move/resize, averages, volume, account isolation, no writes");
  }finally{if(browser)await browser.close();server.kill()}

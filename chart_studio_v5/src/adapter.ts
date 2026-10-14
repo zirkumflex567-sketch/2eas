@@ -23,6 +23,10 @@ export type DataWindowReadout = {
  volume?:{value:number|null;source:"REAL_VOLUME"|"TICK_VOLUME_PROXY"|"UNAVAILABLE"};
  indicators?:Array<{id:string;title:string;kind:"OVERLAY"|"PANE";value:number|null;state:"AVAILABLE"|"WARMUP_OR_MISSING"}>;
 };
+function drawAnchorHandle(context:CanvasRenderingContext2D,x:number,y:number,color:string){
+ context.save();context.fillStyle="#f8fafc";context.strokeStyle=color;context.lineWidth=2;
+ context.beginPath();context.arc(x,y,6,0,Math.PI*2);context.fill();context.stroke();context.restore();
+}
 class PriceLevelPrimitive implements ISeriesPrimitive {
  private y:number|null=null;
  private selected=false;
@@ -151,6 +155,7 @@ class TrendLinePrimitive implements ISeriesPrimitive {
   target.useMediaCoordinateSpace(({context})=>{
    context.save();context.strokeStyle=this.options.color;context.lineWidth=this.selected?2:1.5;
    context.beginPath();context.moveTo(p.x1,p.y1);context.lineTo(p.x2,p.y2);context.stroke();context.restore();
+   if(this.selected){drawAnchorHandle(context,p.x1,p.y1,this.options.color);drawAnchorHandle(context,p.x2,p.y2,this.options.color)}
   });
  }} }]}
  set(options:TrendLineOptions){this.options={...options};this.visible=options.visible??true;this.updateAllViews();this.requestUpdate?.()}
@@ -204,7 +209,7 @@ function fibonacciRatios(options:FibonacciOptions){
   options.levels.map(level=>({level,ratio:level/100}));
 }
 class FibonacciPrimitive implements ISeriesPrimitive {
- private geometry:{x1:number;x2:number;levels:Array<{ratio:number;price:number;y:number}>}|null=null;
+ private geometry:{x1:number;y1:number;x2:number;y2:number;levels:Array<{ratio:number;price:number;y:number}>}|null=null;
  private selected=false;
  private visible=true;
  private chart:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]["chart"]|null=null;
@@ -216,10 +221,11 @@ class FibonacciPrimitive implements ISeriesPrimitive {
  updateAllViews(){
   const chart=this.chart,x1=chart?.timeScale().timeToCoordinate(this.options.startTime)??null;
   const x2=chart?.timeScale().timeToCoordinate(this.options.endTime)??null;
-  if(!chart||x1===null||x2===null||!this.series){this.geometry=null;return}
+  const y1=this.series?.priceToCoordinate(this.options.startPrice)??null,y2=this.series?.priceToCoordinate(this.options.endPrice)??null;
+  if(!chart||x1===null||x2===null||y1===null||y2===null||!this.series){this.geometry=null;return}
   const levels=fibonacciRatios(this.options).map(({ratio})=>{const price=this.options.startPrice+(this.options.endPrice-this.options.startPrice)*ratio,y=this.series!.priceToCoordinate(price);return y===null?null:{ratio,price,y}});
   if(levels.some(level=>level===null)){this.geometry=null;return}
-  this.geometry={x1,x2,levels:levels as Array<{ratio:number;price:number;y:number}>};
+  this.geometry={x1,y1,x2,y2,levels:levels as Array<{ratio:number;price:number;y:number}>};
  }
  coordinates(){this.updateAllViews();return this.geometry}
  hitTest(x:number,y:number){
@@ -235,6 +241,7 @@ class FibonacciPrimitive implements ISeriesPrimitive {
    context.save();context.strokeStyle=this.options.color;context.lineWidth=this.selected?2:1;
    for(const level of g.levels){context.beginPath();context.moveTo(g.x1,level.y);context.lineTo(g.x2,level.y);context.stroke()}
    context.restore();
+   if(this.selected){drawAnchorHandle(context,g.x1,g.y1,this.options.color);drawAnchorHandle(context,g.x2,g.y2,this.options.color)}
   });
  }} }]}
  set(options:FibonacciOptions){this.options={...options};this.visible=options.visible??true;this.updateAllViews();this.requestUpdate?.()}
@@ -242,6 +249,7 @@ class FibonacciPrimitive implements ISeriesPrimitive {
 }
 class RectanglePrimitive implements ISeriesPrimitive {
  private rect:{left:number;top:number;right:number;bottom:number}|null=null;
+ private anchors:{x1:number;y1:number;x2:number;y2:number}|null=null;
  private selected=false;
  private visible=true;
  private chart:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]["chart"]|null=null;
@@ -251,13 +259,14 @@ class RectanglePrimitive implements ISeriesPrimitive {
  attached(param:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]){
   this.chart=param.chart;this.series=param.series;this.requestUpdate=param.requestUpdate;this.updateAllViews();
  }
- detached(){this.chart=null;this.series=null;this.requestUpdate=null;this.rect=null}
+ detached(){this.chart=null;this.series=null;this.requestUpdate=null;this.rect=null;this.anchors=null}
  updateAllViews(){
   const x1=this.chart?.timeScale().timeToCoordinate(this.options.startTime)??null;
   const y1=this.series?.priceToCoordinate(this.options.startPrice)??null;
   const x2=this.chart?.timeScale().timeToCoordinate(this.options.endTime)??null;
   const y2=this.series?.priceToCoordinate(this.options.endPrice)??null;
-  this.rect=x1===null||y1===null||x2===null||y2===null?null:{left:Math.min(x1,x2),top:Math.min(y1,y2),right:Math.max(x1,x2),bottom:Math.max(y1,y2)};
+  this.anchors=x1===null||y1===null||x2===null||y2===null?null:{x1,y1,x2,y2};
+  this.rect=this.anchors===null?null:{left:Math.min(x1!,x2!),top:Math.min(y1!,y2!),right:Math.max(x1!,x2!),bottom:Math.max(y1!,y2!)};
  }
  coordinates(){this.updateAllViews();return this.rect}
  hitTest(x:number,y:number){
@@ -273,6 +282,7 @@ class RectanglePrimitive implements ISeriesPrimitive {
   target.useMediaCoordinateSpace(({context})=>{
    context.save();if(this.options.fill){context.globalAlpha=0.14;context.fillStyle=this.options.color;context.fillRect(r.left,r.top,r.right-r.left,r.bottom-r.top);context.globalAlpha=1}
    context.strokeStyle=this.options.color;context.lineWidth=this.selected?2:1.5;context.strokeRect(r.left,r.top,r.right-r.left,r.bottom-r.top);context.restore();
+   if(this.selected&&this.anchors){drawAnchorHandle(context,this.anchors.x1,this.anchors.y1,this.options.color);drawAnchorHandle(context,this.anchors.x2,this.anchors.y2,this.options.color)}
   });
  }} }]}
  set(options:RectangleOptions){this.options={...options};this.visible=options.visible??true;this.updateAllViews();this.requestUpdate?.()}
