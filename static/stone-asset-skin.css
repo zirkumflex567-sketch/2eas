@@ -99,6 +99,9 @@ body.theme-stone .account-tab[aria-pressed="true"] {
   border-image-source: url("stone-assets/ready/38_tab_selected_cyan.webp") !important;
   color: #e6fbff; filter: drop-shadow(0 0 6px rgba(66,216,249,.35));
 }
+body.theme-stone nav.stone-asset-nav .account-tab:not([aria-pressed="true"]) strong {
+  color: #fff !important;
+}
 body.theme-stone .account-tab:hover { filter: brightness(1.16); }
 body.theme-stone .ticker-bg {
   background:
@@ -239,6 +242,9 @@ body.theme-stone .stone-asset-panel--journal {
   border: 18px solid transparent !important;
   border-image: url("stone-assets/ready/18_journal_stone_plate.webp") 135 160 130 160 / 21px / 0 stretch !important;
 }
+body.theme-stone .stone-asset-panel--journal .bg-black\/20 {
+  background: linear-gradient(rgba(4, 11, 16, .97), rgba(4, 11, 16, .97)) !important;
+}
 body.theme-stone .stone-asset-panel--positions input[type=number],
 body.theme-stone #dd-reset-input {
   background: #071218 url("stone-assets/ready/36_input_recessed_field.webp") center / 100% 100% no-repeat !important;
@@ -263,6 +269,14 @@ body.theme-stone #vp-tab-weekly.bg-blue-600 {
   background-image: url("stone-assets/ready/32_button_active_blue.webp") !important;
   color: #d4faff !important;
   box-shadow: 0 0 11px rgba(28, 192, 230, .22);
+}
+body.theme-stone #positions-list button.bg-blue-600 {
+  background-image: linear-gradient(rgba(4, 12, 18, .82), rgba(4, 12, 18, .82)),
+                    url("stone-assets/ready/32_button_active_blue.webp") !important;
+}
+body.theme-stone #positions-list button[onclick^="quickSL("] {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
 }
 body.theme-stone .stone-asset-panel button:hover:not([disabled]),
 body.theme-stone .stone-theme-dock button:hover {

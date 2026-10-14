@@ -12,7 +12,7 @@ from typing import Optional, Literal, Annotated
 import pandas as pd
 import numpy as np
 import MetaTrader5 as mt5
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, FiniteFloat, Field, StrictBool, field_validator, model_validator
@@ -20,6 +20,7 @@ import uvicorn
 import dd_persistence
 import journal_accounting
 import broker_clock
+import broker_telemetry
 from metrics_cache import ClosedBarMetricsCache
 from pathlib import Path
 from account_gateway import ACCOUNTS, config_path, public_account, scoped, selected, verify_identity, writes_titan_reset
@@ -80,6 +81,21 @@ TERMINAL_PATH = r"C:\Program Files\PU Prime MT5 Terminal\terminal64.exe"
 def ensure_mt5_init():
     # The request decorator holds the connection lock and explicitly attaches.
     return bool(verify_identity(mt5, selected()))
+
+
+_MT5_READ_SPANS = {
+    'copy_rates_from_pos': 'mt5_rates',
+    'history_deals_get': 'mt5_history',
+    'history_orders_get': 'mt5_history',
+}
+
+
+def _mt5_read(method, *args, **kwargs):
+    span_name = _MT5_READ_SPANS.get(method)
+    if span_name is None:
+        raise ValueError('unsupported MT5 read for telemetry')
+    with broker_telemetry.span(span_name):
+        return getattr(mt5, method)(*args, **kwargs)
 
 class ModifyPositionRequest(BaseModel):
     ticket: Annotated[int, Field(gt=0, strict=True)]
@@ -322,7 +338,7 @@ def current_daily_drawdown(mt5_client, account_info, tick, now, params=None, dd_
     reset_bal = dd_cfg.get('reset_balance', 10000.0)
     from_dt = max(midnight_dt, datetime.fromtimestamp(reset_ts, timezone.utc)) if manual_active and reset_ts else midnight_dt
     offset = broker_clock.offset_seconds(selected())
-    deals = require_mt5_data(mt5_client.history_deals_get(
+    deals = require_mt5_data(_mt5_read('history_deals_get',
         from_dt + timedelta(seconds=offset),
         datetime.fromtimestamp(now, timezone.utc) + timedelta(seconds=offset)), 'daily_history')
     realized_today = 0.0
@@ -525,13 +541,13 @@ def build_trade_journal(account_id, server_time, local_time, ema9=None):
     if ema9 is None:
         try:
             acc_tf = TIMEFRAME_MAP.get(acc_tf_str, getattr(mt5, 'TIMEFRAME_M15', 15))
-            rates = mt5.copy_rates_from_pos(sym_name, acc_tf, 0, 50)
+            rates = _mt5_read('copy_rates_from_pos', sym_name, acc_tf, 0, 50)
             if rates is not None and len(rates) >= 15:
                 closes = pd.Series([r['close'] for r in rates])
                 ema9 = float(closes.ewm(span=9, adjust=False).mean().iloc[-1])
         except Exception:
             ema9 = None
-    deals = require_mt5_data(mt5.history_deals_get(
+    deals = require_mt5_data(_mt5_read('history_deals_get',
         journal_accounting.CUTOFF+timedelta(seconds=broker_clock.offset_seconds(selected())),
         server_time+timedelta(seconds=broker_clock.offset_seconds(selected()))), 'journal_history')
     positions = require_mt5_data(mt5.positions_get(symbol=sym_name), 'journal_positions')
@@ -579,7 +595,7 @@ def build_trade_journal(account_id, server_time, local_time, ema9=None):
         if getattr(d, 'symbol', None) in (sym_name, 'XAUUSD', 'XAUUSD.p', 'XAUUSD.pi') and d.entry != mt5.DEAL_ENTRY_IN:
             by_position.setdefault(d.position_id, []).append(d)
     for position_id, exits in by_position.items():
-        lifecycle = require_mt5_data(mt5.history_deals_get(position=position_id), 'journal_position_history')
+        lifecycle = require_mt5_data(_mt5_read('history_deals_get', position=position_id), 'journal_position_history')
         lifecycle = [d for d in lifecycle if getattr(d,'position_id',None)==position_id]
         accounting = journal_accounting.close_accounting(lifecycle + exits, mt5, magics)
         for d in exits:
@@ -628,7 +644,7 @@ def get_live_market_data(include_journal=True):
     daily_drawdown, source_meta, guard = current_daily_drawdown(mt5, acc, tick, now, params, dd_cfg)
     wall_time = datetime.fromtimestamp(now, timezone.utc)
 
-    rates = mt5.copy_rates_from_pos(sym_name, acc_tf, 0, 5000 if acc_id == 'goldm15' else 1000)
+    rates = _mt5_read('copy_rates_from_pos', sym_name, acc_tf, 0, 5000 if acc_id == 'goldm15' else 1000)
     if rates is None or len(rates) < 200:
         return None
 
@@ -1024,6 +1040,17 @@ def api_status(account: str = 'blueberry', include_journal: bool = True, light: 
         raise HTTPException(status_code=500, detail="MT5 nicht verbunden")
     return data
 
+
+@app.get('/api/diagnostics/mt5-traces')
+def api_mt5_traces(request: Request, limit: int = 50):
+    identity = getattr(request.state, 'control_identity', None)
+    if not isinstance(identity, tuple) or len(identity) != 3 or identity[2] not in ('read', 'layout', 'trade'):
+        raise HTTPException(status_code=403, detail='Autorisierte Read-Identität erforderlich.')
+    if isinstance(limit, bool) or not 1 <= limit <= 50:
+        raise HTTPException(status_code=422, detail='Limit muss zwischen 1 und 50 liegen.')
+    return JSONResponse({'traces': broker_telemetry.recent_traces(limit)},
+                        headers={'Cache-Control': 'no-store'})
+
 @app.get("/api/candles")
 @scoped(mt5)
 def api_candles(count: int = 150, account: str = 'titan', tf: Optional[str] = None, symbol: Optional[Symbol] = None):
@@ -1043,7 +1070,7 @@ def api_candles(count: int = 150, account: str = 'titan', tf: Optional[str] = No
     tf_val = TIMEFRAME_MAP[tf_upper]
     count = min(1000, max(10, count))
     fetch_count = max(5000, count+250) if (account == 'goldm15' and sym_name == SYMBOL and tf_val == mt5.TIMEFRAME_M15) else (count+250)
-    rates = mt5.copy_rates_from_pos(sym_name, tf_val, 0, fetch_count)
+    rates = _mt5_read('copy_rates_from_pos', sym_name, tf_val, 0, fetch_count)
     if rates is None or len(rates)<2:
         raise HTTPException(status_code=500, detail="Konnte Kerzen nicht laden")
 

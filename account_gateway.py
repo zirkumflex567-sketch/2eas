@@ -9,6 +9,7 @@ from functools import wraps
 from pathlib import Path
 
 from fastapi import HTTPException
+import broker_telemetry
 
 ACCOUNTS = {
     'blueberry': dict(id='blueberry', name='Blueberry Funded (Prop-Firma)', login=5120620,
@@ -153,7 +154,7 @@ def session(mt5, account='blueberry'):
     if account not in ACCOUNTS:
         raise HTTPException(400, 'Unbekannter Account.')
     spec = ACCOUNTS[account]
-    with _lock:
+    with broker_telemetry.measured_lock(_lock):
         if not terminal_running(spec['terminal']):
             if _attached_mt5 is mt5:
                 _disconnect(mt5)
@@ -174,13 +175,16 @@ def session(mt5, account='blueberry'):
                         reused = False
             if not reused:
                 _disconnect(mt5)
-                if not mt5.initialize(spec['terminal'], portable=spec['portable'], timeout=5000):
+                with broker_telemetry.span('mt5_initialize'):
+                    initialized = mt5.initialize(spec['terminal'], portable=spec['portable'], timeout=5000)
+                if not initialized:
                     raise HTTPException(503, f"{spec['name']}: MT5-Verbindung fehlgeschlagen.")
                 _attached_mt5, _attached_account = mt5, account
             else:
                 _attached_account = account
             try:
-                verify_identity(mt5, spec)
+                with broker_telemetry.span('mt5_identity_verify'):
+                    verify_identity(mt5, spec)
             except Exception:
                 _disconnect(mt5)
                 raise
@@ -193,7 +197,16 @@ def scoped(mt5):
     def decorate(func):
         @wraps(func)
         def wrapped(*args, **kwargs):
-            with session(mt5, kwargs.get('account', 'blueberry')):
+            account = kwargs.get('account', 'blueberry')
+            with traced_session(mt5, account):
                 return func(*args, **kwargs)
         return wrapped
     return decorate
+
+
+@contextmanager
+def traced_session(mt5, account='blueberry'):
+    """Collect safe timing spans around one existing verified session."""
+    with broker_telemetry.request_trace(account):
+        with session(mt5, account) as spec:
+            yield spec

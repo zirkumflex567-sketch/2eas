@@ -8,6 +8,8 @@ const net = require("node:net");
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
+const { extractLoadedCssImageUrls, estimateRgbaSurfaceBytes } =
+  require("./dashboard_asset_measurement_helpers.cjs");
 
 async function freePort() {
   return new Promise((resolve, reject) => {
@@ -116,10 +118,53 @@ async function sample(page) {
     for (const image of document.images) {
       try { await image.decode(); decoded++; } catch (_) { failures++; }
     }
-    return { elements: document.images.length, decoded, failures,
-      cssBackgroundDecodeMeasured: false };
+    return { elements: document.images.length, decoded, failures };
   });
-  return { navigation, paints, imageElements, resources: summarize(resources) };
+  const cssSnapshot = await page.evaluate(() => {
+    const styleValues = [];
+    const nodes = document.querySelectorAll("*");
+    for (const element of nodes) {
+      for (const pseudo of [null, "::before", "::after"]) {
+        const style = getComputedStyle(element, pseudo);
+        if (pseudo && (style.content === "none" || style.content === "normal")) continue;
+        styleValues.push(style.backgroundImage, style.borderImageSource);
+      }
+    }
+    return { baseUrl: location.href, styleValues,
+      loadedUrls: performance.getEntriesByType("resource").map(entry => entry.name) };
+  });
+  const cssUrls = extractLoadedCssImageUrls(cssSnapshot.styleValues,
+    cssSnapshot.baseUrl, cssSnapshot.loadedUrls);
+  const decodedCss = await page.evaluate(async urls => {
+    const started = performance.now();
+    const images = await Promise.all(urls.map(async url => {
+      const image = new Image();
+      let timeout;
+      try {
+        image.src = url;
+        await Promise.race([image.decode(), new Promise((_, reject) => {
+          timeout = setTimeout(() => reject(new Error("decode timeout")), 5000);
+        })]);
+        return { url, width: image.naturalWidth, height: image.naturalHeight };
+      } catch (_) { return { url, width: 0, height: 0 }; }
+      finally { clearTimeout(timeout); }
+    }));
+    return { images, durationMs: Number((performance.now() - started).toFixed(3)) };
+  }, cssUrls.slice(0, 200));
+  const decodedCssImages = decodedCss.images;
+  const decodedCssBytes = decodedCssImages.map(image => estimateRgbaSurfaceBytes(image));
+  const cssBackgroundImages = {
+    uniqueLoadedSameOriginCssUrls: cssUrls.length,
+    decodeLimit: 200,
+    decoded: decodedCssImages.filter((_, index) => decodedCssBytes[index] !== null).length,
+    decodeDurationMs: decodedCss.durationMs,
+    failedOrInvalid: decodedCssImages.filter((_, index) => decodedCssBytes[index] === null).length,
+    omittedByLimit: Math.max(0, cssUrls.length - 200),
+    estimatedRgbaSurfaceBytes: decodedCssBytes.reduce((total, value) => total + (value || 0), 0),
+    estimate: "sum of intrinsic width × height × 4 for decoded unique same-origin CSS images; not actual GPU/paint memory",
+  };
+  return { navigation, paints, imageElements,
+    cssBackgroundImages, resources: summarize(resources) };
 }
 
 async function measure(browser, base, width) {
@@ -163,7 +208,7 @@ async function measure(browser, base, width) {
     const base = `http://127.0.0.1:${proxyPort}/`;
     browser = await chromium.launch({ headless: true,
       executablePath: process.env.CHART_STUDIO_CHROMIUM_PATH || undefined });
-    const result = { schemaVersion: 2,
+    const result = { schemaVersion: 3,
       mode: "isolated local app; all /api/ requests intercepted; no broker, evidence-store or MT5 access",
       measuredAtUtc: new Date().toISOString(), viewports: [] };
     for (const width of [390, 1440]) result.viewports.push(await measure(browser, base, width));

@@ -7,19 +7,22 @@ Measure the actual dashboard HTML and all browser-loaded resources at 390px/DPR2
 ## Files
 
 - `scripts/measure_dashboard_assets.cjs`: isolated local launcher, browser measurement and fail-closed API interception.
+- `scripts/dashboard_asset_measurement_helpers.cjs`: pure parsing/size-estimation helpers for loaded CSS image resources.
+- `tests/test_dashboard_asset_measurement.cjs`: URL-origin/cache membership and safe pixel-size contracts, run in audit-fixes CI.
 - `docs/aud-02-page-load-evidence.md`: method, measured results, interpretation, limits and still-open acceptance.
 - `docs/OPEN_TASKS.md`: update AUD-02 with evidence while retaining cold/warm network, decode/paint, cache, chart/volume and archive questions not proven.
 
 ## Verification
 
 - [x] `node --check scripts/measure_dashboard_assets.cjs`
+- [x] `node --test tests/test_dashboard_asset_measurement.cjs`
 - [x] `node scripts/measure_dashboard_assets.cjs`
 - [x] Both viewports/cold-warm passes recorded; API paths are answered at the proxy before the app, non-GET API count is zero, browser failures are zero, and warm asset transfer is zero in Resource Timing.
 - [x] `git diff --check`
 
 ## Progress
 
-- [x] Isolated proxy preserves Chromium cache while denying API access; report records complete-page measurements and the explicit CSS-background decode/deployment limitations.
+- [x] Isolated proxy preserves Chromium cache while denying API access; report records complete-page measurements, decoded loaded same-origin CSS image resources and their intrinsic RGBA surface estimate, plus the remaining deployment/paint limitations.
 - [x] `OPEN_TASKS.md` records AUD-02 as partial with evidence and remaining acceptance.
 
 Do not hit remote `/stt`, MT5, or deployment. Generated JSON stays ignored under `output/` and is not a committed evidence source; the committed markdown records reproducible summary only.

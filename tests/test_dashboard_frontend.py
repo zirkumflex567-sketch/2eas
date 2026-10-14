@@ -46,6 +46,148 @@ def journal(account):
         profit_usd=100., net_profit_usd=95., points=10., time_ts=100, time_de='11:00', time_server='12:00',
         why_triggered='Fixture-Begründung', profit_goal='Fixture-Ziel', sl_price=3990., tp_price=0.)])
 
+def measure_opaque_glyph_contrast(foreground, visible_png, hidden_png, rectangles=None, coverage_pngs=None, tolerance=1):
+    """Measure exact opaque foreground pixels against paired background pixels."""
+    import io
+    from PIL import Image
+    visible = Image.open(io.BytesIO(visible_png)).convert('RGB')
+    hidden = Image.open(io.BytesIO(hidden_png)).convert('RGB')
+    if visible.size != hidden.size:
+        raise ValueError('visible and hidden screenshots have different dimensions')
+    coverage_images = [Image.open(io.BytesIO(png)).convert('RGB') for png in (coverage_pngs or [])]
+    if any(mask.size != visible.size for mask in coverage_images):
+        raise ValueError('glyph-mask and visible screenshots have different dimensions')
+    def luminance(rgb):
+        channels = [value / 255 for value in rgb]
+        linear = [value / 12.92 if value <= .04045 else ((value + .055) / 1.055) ** 2.4 for value in channels]
+        return sum(value * weight for value, weight in zip(linear, (.2126, .7152, .0722)))
+    foreground_luminance = luminance(foreground)
+    visible_pixels = visible.get_flattened_data() if hasattr(visible, 'get_flattened_data') else visible.getdata()
+    hidden_pixels = hidden.get_flattened_data() if hasattr(hidden, 'get_flattened_data') else hidden.getdata()
+    coverage_pixels = [mask.get_flattened_data() if hasattr(mask, 'get_flattened_data') else mask.getdata()
+                       for mask in coverage_images]
+    if rectangles is None:
+        rectangles = [(0, 0, visible.width, visible.height)]
+    results = []
+    for left, top, right, bottom in rectangles:
+        ratios = []
+        x0, y0 = max(0, int(left)), max(0, int(top))
+        x1, y1 = min(visible.width, int(right + .999)), min(visible.height, int(bottom + .999))
+        for y in range(y0, y1):
+            for x in range(x0, x1):
+                index = y * visible.width + x
+                pixel, background = visible_pixels[index], hidden_pixels[index]
+                glyph_covered = (any(mask[index] != background for mask in coverage_pixels)
+                                 if coverage_pixels else pixel != background)
+                if (glyph_covered and
+                    all(abs(channel - expected) <= tolerance for channel, expected in zip(pixel, foreground))):
+                    background_luminance = luminance(background)
+                    ratios.append((max(foreground_luminance, background_luminance) + .05) /
+                                  (min(foreground_luminance, background_luminance) + .05))
+        results.append({'opaque_glyph_pixels': len(ratios), 'minimum_ratio': min(ratios) if ratios else None})
+    return results
+
+def probe_incomplete_text_target(page, selector, threshold=4.5):
+    """Conservatively pixel-probe one unique DOM target; unsupported styles stay unresolved."""
+    import re
+    from playwright.sync_api import Error as PlaywrightError
+    locator = page.locator(selector)
+    count = locator.count()
+    if count != 1:
+        return {'classification': 'unresolved', 'reason': f'target matched {count} elements'}
+    try:
+        locator.evaluate('el=>el.scrollIntoView({block:"center",inline:"nearest",behavior:"instant"})')
+        page.mouse.move(0, 0)
+        info = locator.evaluate('''el => {
+          const unsupported = new Set();
+          const elements = [el, ...el.querySelectorAll('*')];
+          const pseudos = elements.flatMap(node => ['::before','::after'].map(pseudo => getComputedStyle(node,pseudo).content));
+          if (pseudos.some(content => !['none','normal','""',''].includes(content))) unsupported.add('generated pseudo content');
+          const textNodes = [];
+          const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+          while (walker.nextNode()) {
+            const node = walker.currentNode;
+            if (!node.textContent.trim()) continue;
+            const parent = node.parentElement;
+            const style = getComputedStyle(parent);
+            const chain = [];
+            for (let current = parent; current; current = current.parentElement) chain.push(getComputedStyle(current));
+            if (chain.reduce((value, item) => value * Number(item.opacity || 1), 1) < .999999) unsupported.add('element/ancestor opacity');
+            if (chain.some(item => item.filter !== 'none' || item.backdropFilter !== 'none' || item.mixBlendMode !== 'normal' || item.transform !== 'none')) unsupported.add('filter/blend/transform effect');
+            if (style.webkitTextStrokeWidth && style.webkitTextStrokeWidth !== '0px') unsupported.add('text stroke');
+            const range = document.createRange(); range.selectNodeContents(node);
+            const rects = [...range.getClientRects()].map(rect => ({left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom}));
+            textNodes.push({color:style.webkitTextFillColor || style.color, rects});
+          }
+          return {unsupported:[...unsupported],textNodes,rect:el.getBoundingClientRect().toJSON()};
+        }''')
+        if not info['textNodes']:
+            return {'classification': 'non-text', 'reason': 'no rendered ordinary DOM text node'}
+        if info['unsupported']:
+            return {'classification': 'unresolved', 'reason': '; '.join(info['unsupported'])}
+        parsed = []
+        for text_node in info['textNodes']:
+            match = re.fullmatch(r'rgba?\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)(?:\s*,\s*(\d+(?:\.\d+)?))?\s*\)', text_node['color'])
+            if not match or (match.group(4) is not None and float(match.group(4)) < .999999):
+                return {'classification': 'unresolved', 'reason': f'unsupported foreground color: {text_node["color"]}'}
+            rectangles = [(r['left']-info['rect']['left'], r['top']-info['rect']['top'],
+                           r['right']-info['rect']['left'], r['bottom']-info['rect']['top']) for r in text_node['rects']]
+            if not rectangles:
+                return {'classification': 'non-text', 'reason': 'DOM text has no rendered fragments'}
+            parsed.append((tuple(round(float(match.group(i))) for i in (1,2,3)), rectangles))
+        visible_box = locator.bounding_box()
+        if not visible_box:
+            return {'classification': 'non-text', 'reason': 'target has no visible bounding box'}
+        original_attr = locator.get_attribute('data-codex-contrast-probe')
+        visible = locator.screenshot(animations='disabled', caret='hide', scale='css')
+        page.evaluate('''() => {
+          document.activeElement?.blur(); window.getSelection()?.removeAllRanges();
+          const style=document.createElement('style'); style.dataset.codexContrastProbeStyle='1';
+          style.textContent='[data-codex-contrast-probe="1"],[data-codex-contrast-probe="1"] *{-webkit-text-fill-color:transparent!important}';
+          document.head.append(style);
+        }''')
+        locator.evaluate("el=>el.setAttribute('data-codex-contrast-probe','1')")
+        try:
+            hidden = locator.screenshot(animations='disabled', caret='hide', scale='css')
+            hidden_box = locator.bounding_box()
+            page.evaluate('''() => document.querySelector('style[data-codex-contrast-probe-style]').textContent=
+              '[data-codex-contrast-probe="1"],[data-codex-contrast-probe="1"] *{-webkit-text-fill-color:rgb(255,0,255)!important}' ''')
+            sentinel_magenta = locator.screenshot(animations='disabled', caret='hide', scale='css')
+            page.evaluate('''() => document.querySelector('style[data-codex-contrast-probe-style]').textContent=
+              '[data-codex-contrast-probe="1"],[data-codex-contrast-probe="1"] *{-webkit-text-fill-color:rgb(0,255,0)!important}' ''')
+            sentinel_green = locator.screenshot(animations='disabled', caret='hide', scale='css')
+        finally:
+            locator.evaluate('''(el,hadValue) => {
+              if(hadValue===null)el.removeAttribute('data-codex-contrast-probe');
+              else el.setAttribute('data-codex-contrast-probe',hadValue);
+            }''', original_attr)
+            page.locator('style[data-codex-contrast-probe-style]').evaluate('el=>el.remove()')
+        if not hidden_box or any(abs(visible_box[key]-hidden_box[key]) > .1 for key in ('x','y','width','height')):
+            return {'classification': 'unresolved', 'reason': 'text hiding changed target geometry'}
+        from PIL import Image
+        import io
+        size = Image.open(io.BytesIO(visible)).size
+        scale_x, scale_y = size[0] / visible_box['width'], size[1] / visible_box['height']
+        if not (.5 <= scale_x <= 4 and .5 <= scale_y <= 4):
+            return {'classification': 'unresolved', 'reason': 'screenshot has unsupported pixel scale'}
+        measurements = []
+        for foreground, rectangles in parsed:
+            for rect in rectangles:
+                scaled_rect = (rect[0]*scale_x, rect[1]*scale_y, rect[2]*scale_x, rect[3]*scale_y)
+                result = measure_opaque_glyph_contrast(foreground, visible, hidden, [scaled_rect],
+                    coverage_pngs=[sentinel_magenta, sentinel_green])[0]
+                if not result['opaque_glyph_pixels']:
+                    return {'classification': 'unresolved', 'reason': 'no fully covered glyph pixels found'}
+                measurements.append(result)
+        minimum = min(item['minimum_ratio'] for item in measurements)
+        return {'classification': 'measured', 'foregroundColors': [list(color) for color, _ in parsed],
+                'fragments': len(measurements),
+                'opaqueGlyphPixels': sum(item['opaque_glyph_pixels'] for item in measurements),
+                'minimumRatio': minimum, 'threshold': threshold,
+                'result': 'pass' if minimum >= threshold else 'fail'}
+    except PlaywrightError as exc:
+        return {'classification': 'unresolved', 'reason': f'browser probe failed: {str(exc).splitlines()[0]}'}
+
 class FixtureHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if urlparse(self.path).path == '/':
@@ -297,8 +439,17 @@ class DashboardFrontendTests(unittest.TestCase):
         expect(self.page.locator('#diagnose-card')).to_have_class(__import__('re').compile(r'.*stone-asset-panel--diagnostic.*'))
     def test_nonchart_contrast_all_themes(self):
         self.load(); expect(self.page.locator('#journal-count-badge')).to_contain_text('2 Trades')
+        self.page.evaluate('''async () => {
+          await document.fonts.ready; document.activeElement?.blur(); window.getSelection()?.removeAllRanges();
+          Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});
+          document.body.classList.add('stone-fx-off');
+          const style=document.createElement('style');style.dataset.axeVisualFreeze='1';
+          style.textContent='*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}';
+          document.head.append(style);
+        }''')
         self.page.add_script_tag(path=str(ROOT/'tests/vendor/axe.min.js'))
         reports = {}
+        pixel_audit = {}
         for theme in ['dark', 'light', 'stone']:
             self.page.locator('.stone-theme-dock [data-mode="'+theme+'"]').click()
             self.page.locator('#matrix-scroll').evaluate('el=>el.scrollLeft=el.scrollWidth')
@@ -307,11 +458,120 @@ class DashboardFrontendTests(unittest.TestCase):
               const result = await axe.run({include:[['nav[aria-label="Konto und Strategie"]'],['header'],['.dashboard-panel']]}, {runOnly:['color-contrast']});
               return {violations:result.violations,incomplete:result.incomplete};
             }''')
+            pixel_audit[theme] = [
+                dict(rule=check.get('id'), target=node.get('target', []),
+                     classification='unresolved',
+                     reasons=[item.get('message', '') for item in node.get('any', []) + node.get('all', []) + node.get('none', [])])
+                for check in reports[theme]['incomplete'] for node in check.get('nodes', [])]
+            for item in pixel_audit[theme]:
+                targets = item['target']
+                if len(targets) != 1:
+                    item['probe'] = {'classification':'unresolved','reason':'Axe target has multiple selector steps'}
+                    continue
+                item['probe'] = probe_incomplete_text_target(self.page, targets[0])
+                item['classification'] = item['probe']['classification']
+            self.assertEqual(self.page.locator('[data-codex-contrast-probe="1"]').count(), 0,
+                             'pixel probe leaked its temporary target attribute')
+            self.assertEqual(self.page.locator('style[data-codex-contrast-probe-style]').count(), 0,
+                             'pixel probe leaked its temporary stylesheet')
             self.page.locator('#journal-list').screenshot(path=str(OUTPUT/f'{theme}-journal.png'))
         (OUTPUT/'contrast.json').write_text(json.dumps(reports, ensure_ascii=False, indent=2), encoding='utf-8')
+        audit_path = OUTPUT/'axe-incomplete-pixel.json'
+        pixel_audit_summary = {theme:dict(total=len(items),
+            measured=sum(item['classification']=='measured' for item in items),
+            unresolved=sum(item['classification']=='unresolved' for item in items),
+            non_text=sum(item['classification']=='non-text' for item in items))
+            for theme,items in pixel_audit.items()}
+        audit_path.write_text(json.dumps(dict(projectThreshold=4.5, method='paired opaque-glyph pixel probe',
+            measurementStatus='per-target; unsupported cases remain unresolved', summary=pixel_audit_summary,
+            themes=pixel_audit),
+            ensure_ascii=False, indent=2), encoding='utf-8')
         for theme, report in reports.items():
             with self.subTest(theme=theme):
                 self.assertEqual([n['target'] for v in report['violations'] for n in v['nodes']], [])
+                self.assertEqual(len(pixel_audit[theme]), sum(len(v.get('nodes', [])) for v in report['incomplete']))
+                failed_measurements = [item for item in pixel_audit[theme]
+                    if item.get('probe', {}).get('result') == 'fail']
+                self.assertEqual(failed_measurements, [], f'project 4.5:1 threshold failures: {failed_measurements}')
+    def test_contrast_text_fill_probe_preserves_currentcolor_pseudo_background(self):
+        self.load()
+        self.page.evaluate('''() => {
+          const fixture = document.createElement('div');
+          fixture.id = 'contrast-probe-fixture';
+          fixture.innerHTML = '<span id="contrast-probe-text">visible text</span>';
+          fixture.style.cssText = 'position:fixed;left:10px;top:10px;color:rgb(230, 180, 20);background:rgb(20, 24, 30);padding:8px';
+          const style = document.createElement('style');
+          style.textContent = '#contrast-probe-text::before{content:"pseudo label";display:inline-block;background:currentColor;color:rgb(20,24,30);padding:2px}';
+          document.head.append(style); document.body.append(fixture);
+        }''')
+        before = self.page.locator('#contrast-probe-text').evaluate('''el => ({
+          color:getComputedStyle(el).color,
+          pseudoColor:getComputedStyle(el,'::before').color,
+          pseudoBackground:getComputedStyle(el,'::before').backgroundColor,
+          pseudoContent:getComputedStyle(el,'::before').content
+        })''')
+        self.page.locator('#contrast-probe-text').evaluate("el=>el.style.setProperty('-webkit-text-fill-color','transparent','important')")
+        after = self.page.locator('#contrast-probe-text').evaluate('''el => ({
+          color:getComputedStyle(el).color,
+          pseudoColor:getComputedStyle(el,'::before').color,
+          pseudoBackground:getComputedStyle(el,'::before').backgroundColor,
+          pseudoContent:getComputedStyle(el,'::before').content
+        })''')
+        self.assertEqual(after, before)
+        self.assertEqual(after['color'], 'rgb(230, 180, 20)')
+        self.assertEqual(after['pseudoBackground'], after['pseudoColor'])
+        self.assertIn('pseudo label', after['pseudoContent'])
+        self.page.evaluate('''() => {
+          const target=document.createElement('span');target.id='contrast-probe-cleanup-fixture';
+          target.textContent='opaque text';target.style.cssText='position:fixed;left:10px;top:80px;font:24px Arial;color:#000;background:#fff';
+          document.body.append(target);
+        }''')
+        result = probe_incomplete_text_target(self.page, '#contrast-probe-cleanup-fixture')
+        self.assertEqual(result['classification'], 'measured', result)
+        self.assertEqual(result['result'], 'pass', result)
+        self.assertEqual(self.page.locator('[data-codex-contrast-probe="1"]').count(), 0)
+        self.assertEqual(self.page.locator('style[data-codex-contrast-probe-style]').count(), 0)
+        self.assertEqual(self.mutations, [])
+    def test_paired_pixel_probe_measures_known_gradient_contrast(self):
+        import re
+        self.load()
+        self.page.evaluate('''() => {
+          const fixture = document.createElement('div'); fixture.id = 'contrast-pixel-fixture';
+          fixture.style.cssText = 'position:fixed;left:10px;top:10px;display:grid;gap:8px;z-index:2147483647';
+          fixture.innerHTML = '<span id="contrast-high" style="display:inline-block;padding:4px;font:40px Arial;color:rgb(0,0,0);background:linear-gradient(90deg,rgb(255,255,255),rgb(238,238,238))">HIGH</span>' +
+            '<span id="contrast-low" style="display:inline-block;padding:4px;font:40px Arial;color:rgb(119,119,119);background:rgb(136,136,136)">LOW</span>' +
+            '<span id="contrast-equal" style="display:inline-block;padding:4px;font:40px Arial;color:rgb(0,0,0);background:linear-gradient(90deg,rgb(255,255,255) 0 12px,rgb(0,0,0) 12px 30px,rgb(255,255,255) 30px 100%)">HIGH</span>';
+          document.body.append(fixture);
+        }''')
+        for selector, should_pass in [('#contrast-high', True), ('#contrast-low', False)]:
+            element = self.page.locator(selector)
+            foreground = [int(value) for value in re.findall(r'[\d.]+', element.evaluate('el=>getComputedStyle(el).color'))[:3]]
+            visible = element.screenshot()
+            element.evaluate("el=>el.style.setProperty('-webkit-text-fill-color','transparent','important')")
+            hidden = element.screenshot()
+            element.evaluate("el=>el.style.setProperty('-webkit-text-fill-color','rgb(255,0,255)','important')")
+            mask_magenta = element.screenshot()
+            element.evaluate("el=>el.style.setProperty('-webkit-text-fill-color','rgb(0,255,0)','important')")
+            mask_green = element.screenshot()
+            element.evaluate("el=>el.style.removeProperty('-webkit-text-fill-color')")
+            result = measure_opaque_glyph_contrast(foreground, visible, hidden,
+                coverage_pngs=[mask_magenta, mask_green])[0]
+            self.assertGreater(result['opaque_glyph_pixels'], 0, (selector, result))
+            self.assertEqual(result['minimum_ratio'] >= 4.5, should_pass, (selector, result))
+        equal = self.page.locator('#contrast-equal')
+        foreground = [0, 0, 0]
+        visible = equal.screenshot()
+        equal.evaluate("el=>el.style.setProperty('-webkit-text-fill-color','transparent','important')")
+        hidden = equal.screenshot()
+        equal.evaluate("el=>el.style.setProperty('-webkit-text-fill-color','rgb(255,0,255)','important')")
+        mask_magenta = equal.screenshot()
+        equal.evaluate("el=>el.style.setProperty('-webkit-text-fill-color','rgb(0,255,0)','important')")
+        mask_green = equal.screenshot()
+        equal.evaluate("el=>el.style.removeProperty('-webkit-text-fill-color')")
+        result = measure_opaque_glyph_contrast(foreground, visible, hidden,
+            coverage_pngs=[mask_magenta, mask_green])[0]
+        self.assertEqual(result['minimum_ratio'], 1.0, ('foreground-matching background strip was omitted', result))
+        self.assertEqual(self.mutations, [])
     def test_journal_keyed_rows_and_expanded_details_survive_poll(self):
         self.load(); expect(self.page.locator('#journal-count-badge')).to_contain_text('2 Trades')
         self.page.evaluate("window.firstJournalRow = document.querySelector('[data-journal-key]'); window.rowChanges = 0; new MutationObserver(ms=>{window.rowChanges += ms.length}).observe(document.getElementById('journal-list'),{childList:true})")

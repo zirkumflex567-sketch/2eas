@@ -10,6 +10,7 @@ import time
 from fastapi import HTTPException
 import account_gateway as gateway
 import broker_clock
+import broker_telemetry
 from chart_studio import history_cursor
 
 SOURCE = 'MT5_VERIFIED'
@@ -207,7 +208,7 @@ def order_model(row, spec, symbol):
 def verified_read(mt5, account, operation):
     """Hold the shared gateway lock through fetching AND serializing broker rows."""
     try:
-        with gateway.session(mt5, account) as spec:
+        with gateway.traced_session(mt5, account) as spec:
             return operation(spec)
     except HTTPException:
         raise
@@ -274,7 +275,8 @@ def portfolio_correlations(mt5, symbols, scenario_symbol):
     series = {}
     try:
         for name in names:
-            raw = reader(name, timeframe, 1, CORRELATION_BAR_COUNT)
+            with broker_telemetry.span('mt5_rates', count=CORRELATION_BAR_COUNT):
+                raw = reader(name, timeframe, 1, CORRELATION_BAR_COUNT)
             if raw is None:
                 return unavailable('HISTORY_UNAVAILABLE')
             rows = list(raw)
@@ -460,9 +462,13 @@ def trades_read(mt5, spec, symbol, start, stop, *, limit=100, ticket=None,
     currency = text(required(gateway.verify_identity(mt5, spec), 'currency'))
     # Broker wall-clock epochs are offset from UTC by this account's policy.
     # Both datetimes carry UTC tzinfo so no machine-local conversion is possible.
-    rows = broker_rows(mt5.history_deals_get(
-        history_cursor.utc_datetime(start+offset*1000000),
-        history_cursor.utc_datetime(asof+offset*1000000))) if asof >= start else ()
+    if asof >= start:
+        with broker_telemetry.span('mt5_history'):
+            rows = broker_rows(mt5.history_deals_get(
+                history_cursor.utc_datetime(start+offset*1000000),
+                history_cursor.utc_datetime(asof+offset*1000000)))
+    else:
+        rows = ()
     if len(rows) > HISTORY_MAX_ROWS:
         raise HTTPException(503, {'code':'HISTORY_LIMIT',
                                  'message':'Broker history exceeds 50000 rows; narrow the UTC range.'})
