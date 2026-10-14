@@ -140,6 +140,23 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.destroy();host.remove();
    return {times,before,after,crosshairBefore,crosshairAfter,markerBefore,markerAfter,readoutBefore,readoutAfter,storedBefore,storedAfter,invalidRejected,timezoneAfterInvalid,afterInvalid};
   });
+  const paneResizeSetup=await page.evaluate(async()=>{
+   const host=document.createElement("div");host.style.cssText="width:900px;height:420px";document.body.append(host);
+   const engine=ChartStudioV5.createStudioV5(host,"at003-pane-resize"),bars=Array.from({length:80},(_,i)=>{
+    const close=100+Math.sin(i/5)*4;return {time:1700000000+i*60,open:close,high:close+1,low:close-1,close};
+   });
+   engine.setCandles(bars);engine.addPaneLine({id:"rsi-at003",color:"#b3d5ff",title:"RSI"},
+    bars.map((bar,i)=>({time:bar.time,value:50+20*Math.sin(i/7)})));
+   host.scrollIntoView({block:"center"});
+   await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+   const handle=[...host.querySelectorAll("*")].find(el=>getComputedStyle(el).cursor==="row-resize"&&el.getBoundingClientRect().height>0);
+   if(!handle)throw Error("Native pane resize handle is missing");
+   const rect=handle.getBoundingClientRect();window.__at003Engine=engine;window.__at003Host=host;
+   return {paneCount:engine.inspect().paneCount,heights:engine.paneHeights(),x:rect.left+rect.width/2,y:rect.top+rect.height/2};
+  });
+  await page.mouse.move(paneResizeSetup.x,paneResizeSetup.y);
+  await page.mouse.down();await page.mouse.move(paneResizeSetup.x,paneResizeSetup.y-45,{steps:6});await page.mouse.up();
+  const paneResizeAfter=await page.evaluate(()=>{const heights=window.__at003Engine.paneHeights();window.__at003Engine.destroy();window.__at003Host.remove();window.scrollTo(0,0);return heights});
   const panZoom=await page.evaluate(async()=>{
    const host=document.createElement("div");host.style.cssText="width:1000px;height:420px";document.body.append(host);
    const engine=ChartStudioV5.createStudioV5(host,"panzoom"),bars=Array.from({length:1200},(_,i)=>{
@@ -221,6 +238,10 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(timezoneProbe.markerAfter,timezoneProbe.markerBefore,"Changing display timezone preserves drawing pixel position");
   assert.deepEqual(timezoneProbe.storedAfter,timezoneProbe.storedBefore,"Changing display timezone preserves the exact UTC anchor");
   assert.equal(timezoneProbe.readoutAfter.timeUtc,timezoneProbe.readoutBefore.timeUtc,"Readout UTC timestamps never shift with display timezone");
+  assert.equal(paneResizeSetup.paneCount,2,"RSI is isolated in a native pane below price");
+  assert.equal(paneResizeSetup.heights.length,2);
+  assert.ok(paneResizeAfter[0]<paneResizeSetup.heights[0]-20,`Dragging the native separator shrinks the price pane (${JSON.stringify({before:paneResizeSetup.heights,after:paneResizeAfter,xy:[paneResizeSetup.x,paneResizeSetup.y]})})`);
+  assert.ok(paneResizeAfter[1]>paneResizeSetup.heights[1]+20,"Dragging the native separator expands the RSI pane");
   for(const measurement of panZoom.measurements){
    assert.deepEqual(measurement.anchor,panZoom.original,"Trend anchors remain exact during pan and zoom");
    assert.ok(measurement.midpointError<=1,"Trend geometry stays aligned with exact time/price anchors across 1,200 bars");

@@ -123,7 +123,7 @@ Die folgende Matrix enthält jede verbindliche AT-ID. `Offen (Gesamtabnahme)` be
 |---|---|---|
 | AT-001 | Indikatorsuche zeigt alle P0-Indikatoren, jede Instanz lässt sich konfigurieren | Offen (Gesamtabnahme) |
 | AT-002 | 2× EMA20 mit verschiedenen Farben/Parametern ohne gegenseitige Störung | Offen (Gesamtabnahme) |
-| AT-003 | RSI im separaten Pane, eigene Skala und Höhe per Drag einstellbar | Offen (Gesamtabnahme) |
+| AT-003 | RSI im separaten Pane, eigene Skala und Höhe per Drag einstellbar | Teilweise: Der isolierte v5-Renderer legt RSI als native Serie in ein eigenes Pane. Chromium prüft zwei getrennte Preis-/RSI-Panes und zieht den nativen Trenner per Maus um 45 CSS-Pixel; die Pane-Höhen ändern sich entsprechend. ChartStudio-Beta-Produktionsverdrahtung, weitere Indikatoren/Skalenoptionen, Touch/DPI und Zielhardware bleiben offen. |
 | AT-004 | 1000-Bar-Pan/Zoom: Trendlinie hält exakt ihre Anker | Teilweise: isolierter v5-Chromium-Smoke hält Zeit-/Preisanker bei 1.200 Kerzen und drei logischen Sichtbereichen; Produktions-v4/v5-Parität, Mobile/DPI und Zielhardware offen. |
 | AT-005 | Fibo Retracement 0.236/0.382/0.5/0.618/0.786/1 korrekt bei steigenden/fallenden Ankern | Teilweise: isolierter v5-Canvas-Primitiv-Smoke prüft alle sechs Preislevel bei auf- und absteigenden Ankern sowie scoped Reload/Transfer; Produktive Toolverdrahtung, Legacy-Parität und Zielhardware offen. |
 | AT-006 | 10 beliebige Zeichnungen bleiben nach Refresh/TF-/Kontowechsel korrekt im Scope | Teilweise: Chromium prüft zehn konkrete native v5-Zeichnungen mit exakter Objektoption nach Reload und JSON-Transfer sowie null Objekte im Fremdkonto und anderen Timeframe. Vollständige Produktionsobjekte/-Chartwechsel und Hardwareabnahme offen. |
