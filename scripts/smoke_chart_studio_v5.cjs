@@ -119,6 +119,27 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
     replacementReadout,badVolumeRejected,invalidReadoutTimeRejected,
     expectedWarmupOpen:bars[10].open,expectedWarmupUtc:new Date(bars[10].time*1000).toISOString()};
   });
+  const timezoneProbe=await page.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:900px;height:420px";document.body.append(host);
+   const engine=ChartStudioV5.createStudioV5(host,"timezone-at024"),times=[
+    Date.UTC(2024,2,31,0,30)/1000,Date.UTC(2024,2,31,1,30)/1000,
+    Date.UTC(2024,9,27,0,30)/1000,Date.UTC(2024,9,27,1,30)/1000
+   ];
+   const bars=times.map((time,index)=>({time,open:100+index,high:105+index,low:95+index,close:101+index}));
+   engine.setCandles(bars);engine.addTimeMarker({id:"dst-marker",time:times[0],color:"#ffffff"});
+   const markerBefore=engine.drawingPosition("dst-marker"),readoutBefore=engine.readDataWindow(times[0]),storedBefore=engine.readDrawing("dst-marker");
+   const before=times.map(time=>engine.formatTimeLabel(time,LightweightCharts.TickMarkType.Time));
+   const crosshairBefore=engine.formatCrosshairTime(times[0]);
+   engine.setDisplayTimeZone("Europe/Berlin");
+   const markerAfter=engine.drawingPosition("dst-marker"),readoutAfter=engine.readDataWindow(times[0]),storedAfter=engine.readDrawing("dst-marker");
+   const after=times.map(time=>engine.formatTimeLabel(time,LightweightCharts.TickMarkType.Time));
+   const crosshairAfter=engine.formatCrosshairTime(times[0]);
+   let invalidRejected=false;try{engine.setDisplayTimeZone("Mars/Olympus_Mons")}catch(_){invalidRejected=true}
+   const timezoneAfterInvalid=engine.displayTimeZone();
+   const afterInvalid=times.map(time=>engine.formatTimeLabel(time,LightweightCharts.TickMarkType.Time));
+   engine.destroy();host.remove();
+   return {times,before,after,crosshairBefore,crosshairAfter,markerBefore,markerAfter,readoutBefore,readoutAfter,storedBefore,storedAfter,invalidRejected,timezoneAfterInvalid,afterInvalid};
+  });
   const panZoom=await page.evaluate(async()=>{
    const host=document.createElement("div");host.style.cssText="width:1000px;height:420px";document.body.append(host);
    const engine=ChartStudioV5.createStudioV5(host,"panzoom"),bars=Array.from({length:1200},(_,i)=>{
@@ -191,6 +212,15 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(result.first.version,"5.2.1");
   assert.deepEqual(panZoom.measurements.map(item=>[item.range.from,item.range.to]),[[300,700],[400,530],[420,520]],"The chart traverses the requested 1,200-bar pan/zoom windows");
   assert.equal(panZoom.measurements.length,3);
+  assert.deepEqual(timezoneProbe.before,["00:30+00","01:30+00","00:30+00","01:30+00"]);
+  assert.deepEqual(timezoneProbe.after,["01:30+01","03:30+02","02:30+02","02:30+01"],"DST skips the missing spring hour and distinguishes repeated autumn local time by UTC offset");
+  assert.deepEqual(timezoneProbe.afterInvalid,timezoneProbe.after,"An invalid IANA timezone change is atomic");
+  assert.equal(timezoneProbe.invalidRejected,true);
+  assert.equal(timezoneProbe.timezoneAfterInvalid,"Europe/Berlin");
+  assert.notEqual(timezoneProbe.crosshairAfter,timezoneProbe.crosshairBefore,"Crosshair time formatting follows the selected display timezone");
+  assert.deepEqual(timezoneProbe.markerAfter,timezoneProbe.markerBefore,"Changing display timezone preserves drawing pixel position");
+  assert.deepEqual(timezoneProbe.storedAfter,timezoneProbe.storedBefore,"Changing display timezone preserves the exact UTC anchor");
+  assert.equal(timezoneProbe.readoutAfter.timeUtc,timezoneProbe.readoutBefore.timeUtc,"Readout UTC timestamps never shift with display timezone");
   for(const measurement of panZoom.measurements){
    assert.deepEqual(measurement.anchor,panZoom.original,"Trend anchors remain exact during pan and zoom");
    assert.ok(measurement.midpointError<=1,"Trend geometry stays aligned with exact time/price anchors across 1,200 bars");

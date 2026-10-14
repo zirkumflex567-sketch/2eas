@@ -3,7 +3,7 @@
  * No execution routes, broker writes, credentials or global MT5 state.
  * Rendering remains isolated until the v4 -> v5 migration acceptance gate.
  */
-import {createChart, CandlestickSeries, LineSeries, HistogramSeries, type ISeriesPrimitive, type LogicalRange, type UTCTimestamp} from "lightweight-charts";
+import {createChart, CandlestickSeries, LineSeries, HistogramSeries, TickMarkType, type ISeriesPrimitive, type LogicalRange, type Time, type UTCTimestamp} from "lightweight-charts";
 import type {CanvasRenderingTarget2D} from "fancy-canvas";
 export const VERSION = "5.2.1";
 export type Candle = {time:UTCTimestamp;open:number;high:number;low:number;close:number;tick_volume?:number;real_volume?:number};
@@ -25,6 +25,26 @@ export type DataWindowReadout = {
  volume?:{value:number|null;source:"REAL_VOLUME"|"TICK_VOLUME_PROXY"|"UNAVAILABLE"};
  indicators?:Array<{id:string;title:string;kind:"OVERLAY"|"PANE";value:number|null;state:"AVAILABLE"|"WARMUP_OR_MISSING"}>;
 };
+function utcDateForTime(time:Time):Date{
+ if(typeof time==="number")return new Date(time*1000);
+ if(typeof time==="string"){
+  const match=/^(\d{4})-(\d{2})-(\d{2})$/.exec(time);
+  if(!match)throw Error("Invalid chart time");
+  return new Date(Date.UTC(Number(match[1]),Number(match[2])-1,Number(match[3])));
+ }
+ return new Date(Date.UTC(time.year,time.month-1,time.day));
+}
+function timezoneParts(date:Date,formatter:Intl.DateTimeFormat){
+ if(!Number.isFinite(date.getTime()))throw Error("Invalid chart time");
+ const parts=formatter.formatToParts(date);
+ return Object.fromEntries(parts.filter(part=>part.type!=="literal").map(part=>[part.type,Number(part.value)])) as Record<"year"|"month"|"day"|"hour"|"minute"|"second",number>;
+}
+function utcOffsetSuffix(date:Date,local:Record<"year"|"month"|"day"|"hour"|"minute"|"second",number>){
+ const localAsUtc=Date.UTC(local.year,local.month-1,local.day,local.hour,local.minute,local.second);
+ const utcMinute=Math.floor(date.getTime()/60000)*60000,minutes=Math.round((localAsUtc-utcMinute)/60000);
+ const absolute=Math.abs(minutes),hours=Math.trunc(absolute/60),remainder=absolute%60;
+ return (minutes<0?"-":"+")+String(hours).padStart(2,"0")+(remainder?String(remainder).padStart(2,"0"):"");
+}
 function drawAnchorHandle(context:CanvasRenderingContext2D,x:number,y:number,color:string){
  context.save();context.fillStyle="#f8fafc";context.strokeStyle=color;context.lineWidth=2;
  context.beginPath();context.arc(x,y,6,0,Math.PI*2);context.fill();context.stroke();context.restore();
@@ -364,9 +384,29 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  if(!host || !accountId || !/^[a-zA-Z0-9_-]{1,50}$/.test(accountId))throw Error("Invalid chart host/account");
  if(scope&&(!/^[a-zA-Z0-9._-]{1,32}$/.test(scope.symbol)||!/^[a-zA-Z0-9_-]{1,24}$/.test(scope.timeframe)))throw Error("Invalid chart storage scope");
  const drawingScope=scope?Object.freeze({...scope}):null;
+ let displayTimeZone="UTC";
+ const timeLocale=document.documentElement.lang||navigator.language||"en-US";
+ const makeTimeFormatters=(timeZone:string)=>({
+  year:new Intl.DateTimeFormat(timeLocale,{timeZone,year:"numeric"}),
+  month:new Intl.DateTimeFormat(timeLocale,{timeZone,month:"short"}),
+  day:new Intl.DateTimeFormat(timeLocale,{timeZone,day:"2-digit"}),
+  parts:new Intl.DateTimeFormat("en-GB",{timeZone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}),
+  crosshair:new Intl.DateTimeFormat(timeLocale,{timeZone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",timeZoneName:"short",hourCycle:"h23"})
+ });
+ let timeFormatters=makeTimeFormatters(displayTimeZone);
+ const formatTimeLabel=(time:Time,tickType:TickMarkType)=>{
+  const date=utcDateForTime(time);
+  if(tickType===TickMarkType.Year)return timeFormatters.year.format(date);
+  if(tickType===TickMarkType.Month)return timeFormatters.month.format(date);
+  if(tickType===TickMarkType.DayOfMonth)return timeFormatters.day.format(date);
+  const parts=timezoneParts(date,timeFormatters.parts),clock=String(parts.hour).padStart(2,"0")+":"+String(parts.minute).padStart(2,"0");
+  return clock+utcOffsetSuffix(date,parts);
+ };
+ const formatCrosshairTime=(time:Time)=>timeFormatters.crosshair.format(utcDateForTime(time));
  const chart=createChart(host,{autoSize:true,layout:{background:{color:"#091923"},textColor:"#d0e7ee"},
   grid:{vertLines:{visible:false},horzLines:{color:"#233b48"}},
-  timeScale:{timeVisible:true,borderVisible:true,rightOffset:8},
+  localization:{timeFormatter:formatCrosshairTime},
+  timeScale:{timeVisible:true,borderVisible:true,rightOffset:8,tickMarkFormatter:formatTimeLabel},
   crosshair:{mode:0}});
  const price=chart.addSeries(CandlestickSeries,{upColor:"#1bca99",downColor:"#f16b8d",
   borderVisible:false,wickUpColor:"#1bca99",wickDownColor:"#f16b8d"});
@@ -1357,6 +1397,17 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    throw Error("Invalid visible logical range");
   chart.timeScale().setVisibleLogicalRange({from:range.from,to:range.to});
  }
+ function setDisplayTimeZone(timeZone:string){
+  guard();if(typeof timeZone!=="string"||timeZone.length<1||timeZone.length>100)throw Error("Invalid IANA display timezone");
+  let canonical:string,nextFormatters:ReturnType<typeof makeTimeFormatters>;
+  try{canonical=new Intl.DateTimeFormat("en-US",{timeZone}).resolvedOptions().timeZone;nextFormatters=makeTimeFormatters(canonical)}
+  catch{throw Error("Invalid IANA display timezone")}
+  if(!canonical)throw Error("Invalid IANA display timezone");
+  displayTimeZone=canonical;timeFormatters=nextFormatters!;
+  chart.applyOptions({localization:{timeFormatter:formatCrosshairTime},timeScale:{tickMarkFormatter:formatTimeLabel}});
+  return displayTimeZone;
+ }
+ function formatDisplayTime(time:Time,tickType:TickMarkType=TickMarkType.Time){guard();return formatTimeLabel(time,tickType)}
  function updateLast(c:Candle){
   guard();if(!validBar(c))throw Error("Invalid candle");
   const prev=bars[bars.length-1];
@@ -1407,12 +1458,13 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   paneLines.clear();readoutIndicators.clear();if(volume)volume.setData([]);
  }
  function inspect(){guard();return {version:VERSION,account:activeAccount,
+  displayTimeZone,
   candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
   averageCount:averages.size,nativePaneLines:paneLines.size,nativePrimitives:drawingCount(),selectedDrawingId,hoveredDrawingId,
   paneCount:chart.panes().length,volumeVisible:!!volume,persistenceStatus,persistenceError}}
  function destroy(){if(destroyed)return;finishDrag(true);destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();paneLines.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();measurements.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
  return Object.freeze({setCandles,addAverage,moveAverage,removeAverage,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,drawingPosition,drawingAnchorPosition,readDrawing,exportDrawings,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,
-  addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,resizePane,showVolume,visibleLogicalRange,setVisibleLogicalRange,readDataWindow,
+  addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,resizePane,showVolume,visibleLogicalRange,setVisibleLogicalRange,setDisplayTimeZone,displayTimeZone:()=>displayTimeZone,formatTimeLabel:formatDisplayTime,formatCrosshairTime,readDataWindow,
   updateLast,changeAccount,inspect,destroy});
 }
