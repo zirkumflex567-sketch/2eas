@@ -235,12 +235,50 @@ int OnInit()
    m_last_m15_bar_time = iTime(_Symbol, m_calc_timeframe, 0);
    m_last_entry_time   = GetLastEntryTimeForMagic();
 
+   // Live Chart Indicators: Automatically ensure EMA 9 is rendered and clean up TEMA 9
+   SetupChartIndicators();
+
    PrintFormat("XAU_Titan_Pro initialized. Daily Start: $%.2f | Last Entry: %s | Current Bar: %s | Anti-Trap: %s",
                m_day_start_balance,
                (m_last_entry_time > 0) ? TimeToString(m_last_entry_time, TIME_DATE|TIME_MINUTES|TIME_SECONDS) : "None",
                TimeToString(m_last_m15_bar_time, TIME_DATE|TIME_MINUTES),
                InpUseOverextensionFilter ? "Active" : "Disabled");
    return INIT_SUCCEEDED;
+}
+
+//+------------------------------------------------------------------+
+//| Setup Live Chart Indicators (Ensures EMA 9 is visible on charts) |
+//+------------------------------------------------------------------+
+void SetupChartIndicators()
+{
+   for(long cid = ChartFirst(); cid >= 0; cid = ChartNext(cid))
+   {
+      int total_inds = ChartIndicatorsTotal(cid, 0);
+      bool already_has_ma9 = false;
+      for(int i = total_inds - 1; i >= 0; i--)
+      {
+         string iname = ChartIndicatorName(cid, 0, i);
+         // Clean up misleading TEMA 9 if present
+         if(StringFind(iname, "Triple Exponential") >= 0 && StringFind(iname, "9") >= 0)
+         {
+            ChartIndicatorDelete(cid, 0, iname);
+         }
+         if(StringFind(iname, "Moving Average(9") >= 0 || StringFind(iname, "EMA(9") >= 0 || StringFind(iname, "EMA 9") >= 0)
+         {
+            already_has_ma9 = true;
+         }
+      }
+      
+      if(!already_has_ma9)
+      {
+         int h = (cid == ChartID()) ? m_fast_ema_handle : iMA(ChartSymbol(cid), ChartPeriod(cid), InpFastEMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
+         if(h != INVALID_HANDLE)
+         {
+            ChartIndicatorAdd(cid, 0, h);
+         }
+      }
+      ChartRedraw(cid);
+   }
 }
 
 //+------------------------------------------------------------------+
