@@ -118,6 +118,37 @@ const fs=require("node:fs"),path=require("node:path");
   });
   await page.goto("http://127.0.0.1:8864/static/chart-studio-fixture.html",{waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartSmokeReady===true);
+  await page.locator("#cs-beta-toggle").click();
+  const derivedCandleContract=await page.evaluate(()=>{
+    const input=[
+      {time:1701000000,open:10,high:14,low:8,close:12},
+      {time:1701000900,open:12,high:15,low:9,close:10},
+      {time:1701001800,open:10,high:13,low:7,close:8}
+    ];
+    const source=window.__chartSmokeCandles.at(-1);
+    return {input,sourceTime:source.time,sourceReadout:ChartStudioIndicators.readout(source.time),ha:ChartStudioChartTypes.transformBars("heikin",input),hollow:ChartStudioChartTypes.transformBars("hollow",input),invalid:ChartStudioChartTypes.transformBars("heikin",[{time:1701000000,open:1,high:3,low:0,close:NaN}]),types:ChartStudioChartTypes.TYPES};
+  });
+  assert.ok(derivedCandleContract.types.includes("heikin")&&derivedCandleContract.types.includes("hollow"),"Heikin Ashi and Hollow Candles are selectable chart modes");
+  assert.deepEqual(derivedCandleContract.ha.map(({time,open,high,low,close})=>({time,open,high,low,close})),[
+    {time:1701000000,open:11,high:14,low:8,close:11},
+    {time:1701000900,open:11,high:15,low:9,close:11.5},
+    {time:1701001800,open:11.25,high:13,low:7,close:9.5}
+  ],"Heikin Ashi uses recursive open and averaged OHLC display values");
+  assert.equal(derivedCandleContract.hollow[0].color,"rgba(0,0,0,0)","Bullish hollow candles have transparent bodies");
+  assert.ok(derivedCandleContract.hollow[0].borderColor&&derivedCandleContract.hollow[0].wickColor);
+  assert.equal(derivedCandleContract.hollow[1].color,derivedCandleContract.hollow[1].borderColor,"Bearish hollow candles retain a filled body");
+  assert.deepEqual(derivedCandleContract.invalid,[],"Invalid OHLC never produces derived chart rows");
+  await page.locator('button[data-chart-type="heikin"]').click();
+  assert.equal(await page.evaluate(()=>ChartStudioChartTypes.current()),"heikin");
+  assert.match(await page.locator(".cs-chart-type-editor [role=status]").textContent(),/abgeleitet/);
+  assert.equal(await page.evaluate(time=>ChartStudioIndicators.readout(time),derivedCandleContract.sourceTime),derivedCandleContract.sourceReadout,"Derived display modes keep broker/source OHLC and indicator readouts unchanged");
+  await page.locator('button[data-chart-type="hollow"]').click();
+  assert.equal(await page.evaluate(()=>ChartStudioChartTypes.current()),"hollow");
+  await page.evaluate(()=>{ChartStudioChartTypes.switchAccount("goldm15");const isolated=ChartStudioChartTypes.current();ChartStudioChartTypes.switchAccount("titan");window.__isolatedChartType=isolated});
+  assert.equal(await page.evaluate(()=>window.__isolatedChartType),"candles","Chart mode preferences do not cross accounts");
+  assert.equal(await page.evaluate(()=>ChartStudioChartTypes.current()),"hollow","The original account restores its chart mode");
+  await page.evaluate(()=>ChartStudioChartTypes.updateBars(window.__chartSmokeCandles));
+  await page.evaluate(()=>ChartStudioChartTypes.applySettings("candles"));
   const fxGeometry=await page.evaluate(()=>{
     document.body.classList.add("theme-stone");
     StoneChartFX.configure({enabled:true,ambient:false});
@@ -147,7 +178,6 @@ const fs=require("node:fs"),path=require("node:path");
   await page.evaluate(()=>{const host=document.querySelector("#tv-chart");host.style.height="520px";chart.applyOptions({width:host.clientWidth,height:host.clientHeight});chart.timeScale().setVisibleLogicalRange({from:5,to:50})});
   await page.waitForTimeout(40);
   await page.evaluate(()=>chart.timeScale().fitContent());
-  await page.locator("#cs-beta-toggle").click();
   assert.equal(await page.locator("#cs-beta-panel").isVisible(),true);
   assert.equal(await page.locator("#cs-data-window").count(),1,"FR-008 exposes the chart data window");
   assert.match(await page.locator("#cs-data-window-source").textContent(),/Chart-Feed/);

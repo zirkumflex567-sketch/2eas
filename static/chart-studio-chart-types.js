@@ -4,9 +4,9 @@
  */
 (()=>{
 "use strict";
-const TYPES=Object.freeze(["candles","bars","line","area"]);
+const TYPES=Object.freeze(["candles","hollow","heikin","bars","line","area"]);
 const PREFIX="2eas:studio:chart-type:v1:";
-const labels=Object.freeze({candles:"Kerzen",bars:"OHLC-Balken",line:"Linie",area:"Fläche"});
+const labels=Object.freeze({candles:"Kerzen",hollow:"Hollow-Kerzen",heikin:"Heikin Ashi (abgeleitet)",bars:"OHLC-Balken",line:"Linie",area:"Fläche"});
 let state=null;
 function valid(x){return typeof x==="string"&&TYPES.includes(x)}
 function restore(account){
@@ -28,6 +28,10 @@ function rgba(hex,opacity){
 }
 function makeSeries(type){
  const {upColor,downColor,lastPriceVisible}=style();
+ if(type==="hollow"||type==="heikin")
+  return state.chart.addCandlestickSeries({title:type==="heikin"?"XAUUSD · Heikin Ashi (abgeleitet)":"XAUUSD · Hollow-Kerzen",
+   upColor,downColor,borderVisible:true,wickVisible:true,wickUpColor:upColor,wickDownColor:downColor,
+   priceLineVisible:lastPriceVisible});
  if(type==="bars")
   return state.chart.addBarSeries({title:"XAUUSD · OHLC",upColor,downColor,
    openVisible:true,thinBars:false,priceLineVisible:lastPriceVisible});
@@ -40,10 +44,37 @@ function makeSeries(type){
    lineWidth:2,priceLineVisible:lastPriceVisible});
  return null;
 }
+function heikinAshiBars(bars){
+ let previousOpen=null,previousClose=null;
+ const {upColor,downColor}=style();
+ return bars.map(bar=>{
+  const close=(bar.open+bar.high+bar.low+bar.close)/4;
+  const open=previousOpen===null?(bar.open+bar.close)/2:(previousOpen+previousClose)/2;
+  const row={time:bar.time,open,high:Math.max(bar.high,open,close),low:Math.min(bar.low,open,close),close,
+   color:close>=open?upColor:downColor,borderColor:close>=open?upColor:downColor,wickColor:close>=open?upColor:downColor};
+  previousOpen=open;previousClose=close;return row;
+ });
+}
+function hollowCandleBars(bars){
+ const {upColor,downColor}=style();
+ return bars.map(bar=>{
+  const up=bar.close>=bar.open;
+  return {time:bar.time,open:bar.open,high:bar.high,low:bar.low,close:bar.close,
+   color:up?"rgba(0,0,0,0)":downColor,borderColor:up?upColor:downColor,wickColor:up?upColor:downColor};
+ });
+}
 function dataFor(type,bars){
+ if(type==="heikin")return heikinAshiBars(bars);
+ if(type==="hollow")return hollowCandleBars(bars);
  return type==="line"||type==="area"?
   bars.map(b=>({time:b.time,value:b.close})):
   bars.map(b=>({time:b.time,open:b.open,high:b.high,low:b.low,close:b.close}));
+}
+function transformBars(type,input){
+ if(!valid(type)||!Array.isArray(input)||input.length>10000)return [];
+ const bars=window.ChartStudioIndicators?.math.validateBars(input)||[];
+ if(bars.length!==input.length)return [];
+ return dataFor(type,bars);
 }
 function render(){
  if(!state)return;
@@ -58,7 +89,7 @@ function render(){
   const on=button.dataset.chartType===state.type;
   button.setAttribute("aria-pressed",String(on));
  }
- state.message.textContent="Darstellung: "+labels[state.type]+" · Positionen und Zeichenanker bleiben unverändert.";
+ state.message.textContent="Darstellung: "+labels[state.type]+(state.type==="heikin"?" · Berechnete OHLC-Anzeige; Originalfeed bleibt unverändert.":" · Originalfeed, Positionen und Zeichenanker bleiben unverändert.");
 }
 function current(){return state?.type||"candles"}
 function applySettings(type){
@@ -77,6 +108,8 @@ function applyAppearance(appearance){
  else if(state.type==="area")
   state.alternative.applyOptions({lineColor:upColor,topColor:rgba(upColor,.30),
    bottomColor:rgba(upColor,.025),priceLineVisible:enabled});
+ else if(state.type==="hollow"||state.type==="heikin")
+  state.alternative.setData(dataFor(state.type,state.bars));
 }
 function updateBars(input){
  if(!state||!Array.isArray(input))return;
@@ -114,6 +147,6 @@ function mount({chart,candleSeries,panel,account="titan"}){
  render();
 }
 window.ChartStudioChartTypes=Object.freeze({
- mount,updateBars,switchAccount,current,applySettings,applyAppearance,valid,TYPES
+ mount,updateBars,switchAccount,current,applySettings,applyAppearance,transformBars,valid,TYPES
 });
 })();
