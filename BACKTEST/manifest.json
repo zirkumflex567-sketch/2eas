@@ -1,0 +1,448 @@
+{
+  "schema": 1,
+  "study": "BasketGuard v7.20 — Drawdown reduzieren bei möglichst erhaltenem Profit",
+  "repo": "zirkumflex567-sketch/2eas",
+  "source_ea": "XAU_Titan_Pro_BasketGuard.mq5",
+  "compiled_ea": "XAU_Titan_Pro_BasketGuard.ex5",
+  "source_input_count": 65,
+  "reference_source": "output/blueberry-basket-research/sets/all-off.set",
+  "source_blob_sha": "c2d638654ebae1e570b2216a1e1881fd49051cbd",
+  "reference_blob_sha": "c53b28201e42f9dc4e9458a4da0bf7f85fd91c6f",
+  "tested_in_this_commit": false,
+  "required_test_environment": {
+    "broker": "Blueberry Markets (SVG) LLC",
+    "symbol": "XAUUSD.pi",
+    "timeframe": "M15",
+    "deposit_usd": 10000,
+    "leverage": "1:10",
+    "tick_model": "Every tick based on real ticks (MT5 Model=4) for actual selection; Model=1 data only preliminary",
+    "period": "all runs same user-defined range; use separate historical validation/forward"
+  },
+  "screening": {
+    "net_profit_retain_fraction_min": 0.8,
+    "equity_drawdown_fraction_max": 0.8,
+    "selection_rule": "Only compare same broker/symbol/period/costs/tick model; OOS required; never auto authorize live"
+  },
+  "tests": [
+    {
+      "id": "00",
+      "file": "sets/00_REF_ALL_OFF.set",
+      "phase": "0_reference",
+      "hypothesis": "Unveränderte 2026-Referenz mit sämtlichen neuen Basket-Guards aus.",
+      "changes": {}
+    },
+    {
+      "id": "01",
+      "file": "sets/01_GATE_300.set",
+      "phase": "1_risk",
+      "hypothesis": "Nur den kalkulierten Korb-SL vor neuen Einstiegen begrenzen; große Gewinner weiter laufen lassen.",
+      "changes": {
+        "InpUseBasketRiskGate": "true",
+        "InpBasketMaxRiskUSD": "300"
+      }
+    },
+    {
+      "id": "02",
+      "file": "sets/02_GATE_340.set",
+      "phase": "1_risk",
+      "hypothesis": "Nur den kalkulierten Korb-SL vor neuen Einstiegen begrenzen; große Gewinner weiter laufen lassen.",
+      "changes": {
+        "InpUseBasketRiskGate": "true",
+        "InpBasketMaxRiskUSD": "340"
+      }
+    },
+    {
+      "id": "03",
+      "file": "sets/03_GATE_380.set",
+      "phase": "1_risk",
+      "hypothesis": "Nur den kalkulierten Korb-SL vor neuen Einstiegen begrenzen; große Gewinner weiter laufen lassen.",
+      "changes": {
+        "InpUseBasketRiskGate": "true",
+        "InpBasketMaxRiskUSD": "380"
+      }
+    },
+    {
+      "id": "04",
+      "file": "sets/04_GATE_440.set",
+      "phase": "1_risk",
+      "hypothesis": "Nur den kalkulierten Korb-SL vor neuen Einstiegen begrenzen; große Gewinner weiter laufen lassen.",
+      "changes": {
+        "InpUseBasketRiskGate": "true",
+        "InpBasketMaxRiskUSD": "440"
+      }
+    },
+    {
+      "id": "05",
+      "file": "sets/05_GATE_500.set",
+      "phase": "1_risk",
+      "hypothesis": "Nur den kalkulierten Korb-SL vor neuen Einstiegen begrenzen; große Gewinner weiter laufen lassen.",
+      "changes": {
+        "InpUseBasketRiskGate": "true",
+        "InpBasketMaxRiskUSD": "500"
+      }
+    },
+    {
+      "id": "06",
+      "file": "sets/06_GATE_650.set",
+      "phase": "1_risk",
+      "hypothesis": "Nur den kalkulierten Korb-SL vor neuen Einstiegen begrenzen; große Gewinner weiter laufen lassen.",
+      "changes": {
+        "InpUseBasketRiskGate": "true",
+        "InpBasketMaxRiskUSD": "650"
+      }
+    },
+    {
+      "id": "07",
+      "file": "sets/07_SL_CAP_10000.set",
+      "phase": "1_risk",
+      "hypothesis": "Strukturelle Einzel-Stops kappen; weniger Stop-Schaden gegen Gefahr früherer Fehlausstiege testen.",
+      "changes": {
+        "InpMaxSLPoints": "10000"
+      }
+    },
+    {
+      "id": "08",
+      "file": "sets/08_SL_CAP_12000.set",
+      "phase": "1_risk",
+      "hypothesis": "Strukturelle Einzel-Stops kappen; weniger Stop-Schaden gegen Gefahr früherer Fehlausstiege testen.",
+      "changes": {
+        "InpMaxSLPoints": "12000"
+      }
+    },
+    {
+      "id": "09",
+      "file": "sets/09_SL_CAP_13500.set",
+      "phase": "1_risk",
+      "hypothesis": "Strukturelle Einzel-Stops kappen; weniger Stop-Schaden gegen Gefahr früherer Fehlausstiege testen.",
+      "changes": {
+        "InpMaxSLPoints": "13500"
+      }
+    },
+    {
+      "id": "10",
+      "file": "sets/10_SWING_LOOKBACK_32.set",
+      "phase": "2_entries",
+      "hypothesis": "Kürzerer Swing-Lookback verändert strukturelle Stops, ohne Gewinn-Exit explizit anzutasten.",
+      "changes": {
+        "InpSwingBarsLookback": "32"
+      }
+    },
+    {
+      "id": "11",
+      "file": "sets/11_SWING_LOOKBACK_72.set",
+      "phase": "2_entries",
+      "hypothesis": "Längerer Swing-Lookback erlaubt mehr Struktur-Atmung; DD-Auswirkung offen.",
+      "changes": {
+        "InpSwingBarsLookback": "72"
+      }
+    },
+    {
+      "id": "12",
+      "file": "sets/12_EXTENSION_2p2.set",
+      "phase": "2_entries",
+      "hypothesis": "Sanften ATR-Überdehnungsfilter getrennt testen; keine Profit-Exit-Änderung.",
+      "changes": {
+        "InpUseOverextensionFilter": "true",
+        "InpMaxATRExtension": "2.2"
+      }
+    },
+    {
+      "id": "13",
+      "file": "sets/13_EXTENSION_2p8.set",
+      "phase": "2_entries",
+      "hypothesis": "Sanften ATR-Überdehnungsfilter getrennt testen; keine Profit-Exit-Änderung.",
+      "changes": {
+        "InpUseOverextensionFilter": "true",
+        "InpMaxATRExtension": "2.8"
+      }
+    },
+    {
+      "id": "14",
+      "file": "sets/14_EXTENSION_3p5.set",
+      "phase": "2_entries",
+      "hypothesis": "Sanften ATR-Überdehnungsfilter getrennt testen; keine Profit-Exit-Änderung.",
+      "changes": {
+        "InpUseOverextensionFilter": "true",
+        "InpMaxATRExtension": "3.5"
+      }
+    },
+    {
+      "id": "15",
+      "file": "sets/15_CLIMAX_4.set",
+      "phase": "2_entries",
+      "hypothesis": "Späten Momentum-Einstieg nach langer gleichfarbiger Kerzenserie separat verhindern.",
+      "changes": {
+        "InpUseConsecutiveRunFilter": "true",
+        "InpMaxConsecutiveBars": "4"
+      }
+    },
+    {
+      "id": "16",
+      "file": "sets/16_CLIMAX_5.set",
+      "phase": "2_entries",
+      "hypothesis": "Späten Momentum-Einstieg nach langer gleichfarbiger Kerzenserie separat verhindern.",
+      "changes": {
+        "InpUseConsecutiveRunFilter": "true",
+        "InpMaxConsecutiveBars": "5"
+      }
+    },
+    {
+      "id": "17",
+      "file": "sets/17_SR_ROOM_200.set",
+      "phase": "2_entries",
+      "hypothesis": "Zu enge Distanz zum Swing-Support/Widerstand vermeiden; Wirkung separat messen.",
+      "changes": {
+        "InpUseSRDistanceFilter": "true",
+        "InpMinSRRoomPoints": "200"
+      }
+    },
+    {
+      "id": "18",
+      "file": "sets/18_SR_ROOM_400.set",
+      "phase": "2_entries",
+      "hypothesis": "Zu enge Distanz zum Swing-Support/Widerstand vermeiden; Wirkung separat messen.",
+      "changes": {
+        "InpUseSRDistanceFilter": "true",
+        "InpMinSRRoomPoints": "400"
+      }
+    },
+    {
+      "id": "19",
+      "file": "sets/19_LATE_BE_80_5.set",
+      "phase": "3_exits",
+      "hypothesis": "Breakeven-Sicherung erst nach deutlichem Trade-Gewinn, um Runner weniger zu begrenzen.",
+      "changes": {
+        "InpUseBreakEven": "true",
+        "InpBETriggerUSD": "80",
+        "InpBELockUSD": "5"
+      }
+    },
+    {
+      "id": "20",
+      "file": "sets/20_LATE_BE_120_10.set",
+      "phase": "3_exits",
+      "hypothesis": "Noch spätere Breakeven-Sicherung für starke Einzelrunner.",
+      "changes": {
+        "InpUseBreakEven": "true",
+        "InpBETriggerUSD": "120",
+        "InpBELockUSD": "10"
+      }
+    },
+    {
+      "id": "21",
+      "file": "sets/21_LATE_PYRAMID_90_10.set",
+      "phase": "3_exits",
+      "hypothesis": "Pyramiden-Gewinner spät absichern statt bei 45 USD wie im negativen bisherigen Test.",
+      "changes": {
+        "InpUsePyramidProfitLock": "true",
+        "InpPyramidLockTriggerUSD": "90",
+        "InpPyramidLockProfitUSD": "10"
+      }
+    },
+    {
+      "id": "22",
+      "file": "sets/22_LATE_PYRAMID_130_15.set",
+      "phase": "3_exits",
+      "hypothesis": "Sehr späte Pyramiden-Gewinnsicherung testen.",
+      "changes": {
+        "InpUsePyramidProfitLock": "true",
+        "InpPyramidLockTriggerUSD": "130",
+        "InpPyramidLockProfitUSD": "15"
+      }
+    },
+    {
+      "id": "23",
+      "file": "sets/23_LATE_TRAIL_180_120.set",
+      "phase": "3_exits",
+      "hypothesis": "Korbgewinn-Trail deutlich lockerer als bisher; Basket-Peak-Reset beachten.",
+      "changes": {
+        "InpUseBasketProfitTrail": "true",
+        "InpBasketTrailStartUSD": "180",
+        "InpBasketTrailGivebackUSD": "120",
+        "InpGuardCooldownBars": "2"
+      }
+    },
+    {
+      "id": "24",
+      "file": "sets/24_LATE_TRAIL_280_180.set",
+      "phase": "3_exits",
+      "hypothesis": "Korbgewinn-Trail erst auf großen Runner-Baskets.",
+      "changes": {
+        "InpUseBasketProfitTrail": "true",
+        "InpBasketTrailStartUSD": "280",
+        "InpBasketTrailGivebackUSD": "180",
+        "InpGuardCooldownBars": "2"
+      }
+    },
+    {
+      "id": "25",
+      "file": "sets/25_RUNNER_EXIT_20.set",
+      "phase": "3_exits",
+      "hypothesis": "EMA9-Dynamik-Exit früher bereits bei 20 USD je Position erlauben.",
+      "changes": {
+        "InpMinProfitUSDForExit": "20"
+      }
+    },
+    {
+      "id": "26",
+      "file": "sets/26_RUNNER_EXIT_40.set",
+      "phase": "3_exits",
+      "hypothesis": "EMA9-Dynamik-Exit später, um Runner mehr Spielraum zu geben.",
+      "changes": {
+        "InpMinProfitUSDForExit": "40"
+      }
+    },
+    {
+      "id": "27",
+      "file": "sets/27_RISK_PCT_0p50.set",
+      "phase": "3_exits",
+      "hypothesis": "Nur Positionsgrößen-Sensitivität (0.50 statt 0.55); Mindestlot kann Wirkung begrenzen.",
+      "changes": {
+        "InpRiskPercent": "0.5"
+      }
+    },
+    {
+      "id": "28",
+      "file": "sets/28_COMBO_GATE440_SL12000.set",
+      "phase": "4_combinations",
+      "hypothesis": "Moderater Korb-Gate mit Einzel-SL-Kappe.",
+      "changes": {
+        "InpUseBasketRiskGate": "true",
+        "InpBasketMaxRiskUSD": "440",
+        "InpMaxSLPoints": "12000"
+      }
+    },
+    {
+      "id": "29",
+      "file": "sets/29_COMBO_GATE500_SL12000.set",
+      "phase": "4_combinations",
+      "hypothesis": "Lockerere Korb-Gate mit Einzel-SL-Kappe.",
+      "changes": {
+        "InpUseBasketRiskGate": "true",
+        "InpBasketMaxRiskUSD": "500",
+        "InpMaxSLPoints": "12000"
+      }
+    },
+    {
+      "id": "30",
+      "file": "sets/30_COMBO_GATE440_EXT2p8.set",
+      "phase": "4_combinations",
+      "hypothesis": "Moderater Korb-Gate plus sanfter Entry-Überdehnungsfilter.",
+      "changes": {
+        "InpUseBasketRiskGate": "true",
+        "InpBasketMaxRiskUSD": "440",
+        "InpUseOverextensionFilter": "true",
+        "InpMaxATRExtension": "2.8"
+      }
+    },
+    {
+      "id": "31",
+      "file": "sets/31_COMBO_GATE500_EXT2p8.set",
+      "phase": "4_combinations",
+      "hypothesis": "Lockerer Korb-Gate plus sanfter Entry-Überdehnungsfilter.",
+      "changes": {
+        "InpUseBasketRiskGate": "true",
+        "InpBasketMaxRiskUSD": "500",
+        "InpUseOverextensionFilter": "true",
+        "InpMaxATRExtension": "2.8"
+      }
+    },
+    {
+      "id": "32",
+      "file": "sets/32_COMBO_SL12000_EXT2p8.set",
+      "phase": "4_combinations",
+      "hypothesis": "SL-Kappe plus sanfter Entry-Überdehnungsfilter.",
+      "changes": {
+        "InpMaxSLPoints": "12000",
+        "InpUseOverextensionFilter": "true",
+        "InpMaxATRExtension": "2.8"
+      }
+    },
+    {
+      "id": "33",
+      "file": "sets/33_COMBO_GATE500_LATE_BE120.set",
+      "phase": "4_combinations",
+      "hypothesis": "Korb-Gate plus spätes Trade-Breakeven.",
+      "changes": {
+        "InpUseBasketRiskGate": "true",
+        "InpBasketMaxRiskUSD": "500",
+        "InpUseBreakEven": "true",
+        "InpBETriggerUSD": "120",
+        "InpBELockUSD": "10"
+      }
+    },
+    {
+      "id": "34",
+      "file": "sets/34_COMBO_GATE500_LATE_TRAIL280.set",
+      "phase": "4_combinations",
+      "hypothesis": "Korb-Gate plus sehr spätes Basket-Profit-Trailing.",
+      "changes": {
+        "InpUseBasketRiskGate": "true",
+        "InpBasketMaxRiskUSD": "500",
+        "InpUseBasketProfitTrail": "true",
+        "InpBasketTrailStartUSD": "280",
+        "InpBasketTrailGivebackUSD": "180",
+        "InpGuardCooldownBars": "2"
+      }
+    },
+    {
+      "id": "35",
+      "file": "sets/35_COMBO_GATE440_RUNNER20.set",
+      "phase": "4_combinations",
+      "hypothesis": "Korb-Gate plus früher erlaubter profitabler EMA9-Ausstieg.",
+      "changes": {
+        "InpUseBasketRiskGate": "true",
+        "InpBasketMaxRiskUSD": "440",
+        "InpMinProfitUSDForExit": "20"
+      }
+    },
+    {
+      "id": "36",
+      "file": "sets/36_COMBO_GATE500_SL12000_EXT2p8.set",
+      "phase": "4_combinations",
+      "hypothesis": "Dreifach-Kombination ausschließlich nach Evidenz aus Einzeltests.",
+      "changes": {
+        "InpUseBasketRiskGate": "true",
+        "InpBasketMaxRiskUSD": "500",
+        "InpMaxSLPoints": "12000",
+        "InpUseOverextensionFilter": "true",
+        "InpMaxATRExtension": "2.8"
+      }
+    },
+    {
+      "id": "37",
+      "file": "sets/37_COMBO_GATE650_SL10000.set",
+      "phase": "4_combinations",
+      "hypothesis": "Fast ungebremste Einstiege bei begrenztem Einzel-SL als separates Gegenmodell.",
+      "changes": {
+        "InpUseBasketRiskGate": "true",
+        "InpBasketMaxRiskUSD": "650",
+        "InpMaxSLPoints": "10000"
+      }
+    },
+    {
+      "id": "38",
+      "file": "sets/38_COMBO_GATE440_CLIMAX4.set",
+      "phase": "4_combinations",
+      "hypothesis": "Korb-Gate plus spätes Kerzen-Climax-Signal filtern.",
+      "changes": {
+        "InpUseBasketRiskGate": "true",
+        "InpBasketMaxRiskUSD": "440",
+        "InpUseConsecutiveRunFilter": "true",
+        "InpMaxConsecutiveBars": "4"
+      }
+    },
+    {
+      "id": "39",
+      "file": "sets/39_COMBO_GATE500_SR200.set",
+      "phase": "4_combinations",
+      "hypothesis": "Korb-Gate plus Mindestabstand an lokalen Levels.",
+      "changes": {
+        "InpUseBasketRiskGate": "true",
+        "InpBasketMaxRiskUSD": "500",
+        "InpUseSRDistanceFilter": "true",
+        "InpMinSRRoomPoints": "200"
+      }
+    }
+  ]
+}
