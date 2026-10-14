@@ -31,4 +31,4 @@ data window or native v5 sidebar.
 - [x] Crosshair OHLC/time and accessible pin interaction work with explicit source.
 - [x] Verified quote bid/ask spread, time and freshness render; bad provenance clears it.
 - [x] Chromium smoke, Chart Studio foundation Python tests, syntax/diff checks pass for the quote extension.
-- [ ] Independent review passes for the quote extension.
+- [x] Independent review passes for the quote extension with no findings.
