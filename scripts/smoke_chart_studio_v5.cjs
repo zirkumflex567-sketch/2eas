@@ -247,16 +247,24 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.ok(await page.evaluate(id=>window.__v5Screenshot.readDrawing(id),duplicateId));
   await page.keyboard.press("Control+z");
   assert.equal(await page.evaluate(id=>window.__v5Screenshot.readDrawing(id),duplicateId),null);
+  await page.evaluate(()=>window.__v5Screenshot.addRay({id:"visual-ray",startTime:1700100000+20*900,startPrice:4000+20*.4+Math.sin(2)*16,endTime:1700100000+35*900,endPrice:4000+35*.4+Math.sin(3.5)*16,color:"#fb7185"}));
+  const rayPosition=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-ray"));
+  const chartBounds=await page.locator("#chart").boundingBox();
+  assert.ok(Number.isFinite(rayPosition.x)&&rayPosition.x>chartBounds.x+chartBounds.width*.5);
+  await page.evaluate(()=>window.__v5Screenshot.addRay({id:"visual-ray-reverse",startTime:1700100000+35*900,startPrice:4000+35*.4+Math.sin(3.5)*16,endTime:1700100000+20*900,endPrice:4000+20*.4+Math.sin(2)*16,color:"#fb7185"}));
+  const reverseRayPosition=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-ray-reverse"));
+  assert.ok(Number.isFinite(reverseRayPosition.x)&&reverseRayPosition.x<chartBounds.x+chartBounds.width*.5);
+  await page.evaluate(()=>window.__v5Screenshot.removeRay("visual-ray-reverse"));
   await page.mouse.move(10,10);
   await page.waitForTimeout(150);
-  const persistedBeforeReload=await page.evaluate(()=>({price:window.__v5Screenshot.readDrawing("visual-level"),time:window.__v5Screenshot.readDrawing("visual-time"),text:window.__v5Screenshot.readDrawing("visual-note"),trend:window.__v5Screenshot.readDrawing("visual-trend"),rectangle:window.__v5Screenshot.readDrawing("visual-zone")}));
+  const persistedBeforeReload=await page.evaluate(()=>({price:window.__v5Screenshot.readDrawing("visual-level"),time:window.__v5Screenshot.readDrawing("visual-time"),text:window.__v5Screenshot.readDrawing("visual-note"),trend:window.__v5Screenshot.readDrawing("visual-trend"),rectangle:window.__v5Screenshot.readDrawing("visual-zone"),ray:window.__v5Screenshot.readDrawing("visual-ray")}));
   await page.reload({waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartV5Ready===true);
   const persistenceProbe=await page.evaluate(()=>{
    const rows=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2,tick_volume:100+i*3}});
    const scope={symbol:"XAUUSD",timeframe:"M15"};
    let e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",scope);e.setCandles(rows);
-   const restored={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives,price:e.readDrawing("visual-level"),time:e.readDrawing("visual-time"),text:e.readDrawing("visual-note"),trend:e.readDrawing("visual-trend"),rectangle:e.readDrawing("visual-zone")};
+   const restored={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives,price:e.readDrawing("visual-level"),time:e.readDrawing("visual-time"),text:e.readDrawing("visual-note"),trend:e.readDrawing("visual-trend"),rectangle:e.readDrawing("visual-zone"),ray:e.readDrawing("visual-ray")};
    e.changeAccount("goldm15");e.setCandles(rows);const otherAccount=e.inspect().nativePrimitives;
    e.changeAccount("titan");e.setCandles(rows);const returned=e.inspect().nativePrimitives;
    e.destroy();
@@ -278,14 +286,15 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    return {restored,otherAccount,returned,otherTimeframe,conflict,externalSnapshot,corrupt};
   });
   assert.equal(persistenceProbe.restored.status,"READY");
-  assert.equal(persistenceProbe.restored.count,5);
+  assert.equal(persistenceProbe.restored.count,6);
   assert.deepEqual(persistenceProbe.restored.price,persistedBeforeReload.price);
   assert.deepEqual(persistenceProbe.restored.time,persistedBeforeReload.time);
   assert.deepEqual(persistenceProbe.restored.text,persistedBeforeReload.text);
   assert.deepEqual(persistenceProbe.restored.trend,persistedBeforeReload.trend);
   assert.deepEqual(persistenceProbe.restored.rectangle,persistedBeforeReload.rectangle);
+  assert.deepEqual(persistenceProbe.restored.ray,persistedBeforeReload.ray);
   assert.equal(persistenceProbe.otherAccount,0);
-  assert.equal(persistenceProbe.returned,5);
+  assert.equal(persistenceProbe.returned,6);
   assert.equal(persistenceProbe.otherTimeframe,0);
   assert.equal(persistenceProbe.conflict.status,"CONFLICT");
   assert.equal(persistenceProbe.conflict.stored,persistenceProbe.externalSnapshot);
@@ -297,7 +306,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const scope={symbol:"XAUUSD",timeframe:"M15"};
    const source=window.__v5Screenshot.exportDrawings();
    const target=ChartStudioV5.createStudioV5(document.getElementById("chart"),"importtest",scope);target.setCandles(rows);
-   const imported=target.importDrawings(source),restored={count:target.inspect().nativePrimitives,price:target.readDrawing("visual-level"),time:target.readDrawing("visual-time"),text:target.readDrawing("visual-note"),trend:target.readDrawing("visual-trend"),rectangle:target.readDrawing("visual-zone")};
+   const imported=target.importDrawings(source),restored={count:target.inspect().nativePrimitives,price:target.readDrawing("visual-level"),time:target.readDrawing("visual-time"),text:target.readDrawing("visual-note"),trend:target.readDrawing("visual-trend"),rectangle:target.readDrawing("visual-zone"),ray:target.readDrawing("visual-ray")};
    target.updateTextAnnotation("visual-note",{text:"Edited note"});const edited=target.readDrawing("visual-note");
    target.removeTextAnnotation("visual-note");const removed=target.readDrawing("visual-note");target.undo();
    const restoredByUndo=target.readDrawing("visual-note");let invalidText="";try{target.addTextAnnotation({id:"invalid-note",time:rows[52].time,price:4000,text:"\u00e4",color:"#ffffff"})}catch(error){invalidText=error.message}
@@ -314,6 +323,9 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const restoredRectangleByUndo=target.readDrawing("visual-zone");let invalidRectangle="";try{target.updateRectangle("visual-zone",{fill:"yes"})}catch(error){invalidRectangle=error.message}
    const afterInvalidRectangle=target.readDrawing("visual-zone");
    const rectangleApi={editedRectangle,removedRectangle,restoredRectangleByUndo,invalidRectangle,afterInvalidRectangle};
+   target.updateRay("visual-ray",{endPrice:restored.ray.endPrice+2});const editedRay=target.readDrawing("visual-ray");
+   target.removeRay("visual-ray");const removedRay=target.readDrawing("visual-ray");target.undo();const restoredRayByUndo=target.readDrawing("visual-ray");
+   const rayApi={editedRay,removedRay,restoredRayByUndo};
    const annotationApi={edited,removed,restoredByUndo,invalidText};
    target.destroy();
    const malformedTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"malformedtest",scope);malformedTarget.setCandles(rows);
@@ -338,18 +350,19 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const storageConflict={error:storageConflictError,status:storageConflictTarget.inspect().persistenceStatus,count:storageConflictTarget.inspect().nativePrimitives,stored:localStorage.getItem(conflictKey)};storageConflictTarget.destroy();
    const wrongScope=ChartStudioV5.createStudioV5(document.getElementById("chart"),"goldm15",{symbol:"EURUSD",timeframe:"M15"});wrongScope.setCandles(rows);
    let scopeError="";try{wrongScope.importDrawings(source)}catch(error){scopeError=error.message}const wrongScopeCount=wrongScope.inspect().nativePrimitives;wrongScope.destroy();
-   return {source,imported,restored,annotationApi,trendApi,rectangleApi,malformed,afterMalformed,malformedTrend,afterMalformedTrend,malformedRectangle,afterMalformedRectangle,capError,capCount,conflictError,conflictCount,storageConflict,scopeError,wrongScopeCount};
+   return {source,imported,restored,annotationApi,trendApi,rectangleApi,rayApi,malformed,afterMalformed,malformedTrend,afterMalformedTrend,malformedRectangle,afterMalformedRectangle,capError,capCount,conflictError,conflictCount,storageConflict,scopeError,wrongScopeCount};
   });
   const transferEnvelope=JSON.parse(drawingTransfer.source);
   assert.equal(transferEnvelope.schemaVersion,1);
   assert.equal(transferEnvelope.account,undefined);
-  assert.deepEqual(drawingTransfer.imported,{imported:5});
-  assert.equal(drawingTransfer.restored.count,5);
+  assert.deepEqual(drawingTransfer.imported,{imported:6});
+  assert.equal(drawingTransfer.restored.count,6);
   assert.deepEqual(drawingTransfer.restored.price,persistedBeforeReload.price);
   assert.deepEqual(drawingTransfer.restored.time,persistedBeforeReload.time);
   assert.deepEqual(drawingTransfer.restored.text,persistedBeforeReload.text);
   assert.deepEqual(drawingTransfer.restored.trend,persistedBeforeReload.trend);
   assert.deepEqual(drawingTransfer.restored.rectangle,persistedBeforeReload.rectangle);
+  assert.deepEqual(drawingTransfer.restored.ray,persistedBeforeReload.ray);
   assert.equal(drawingTransfer.annotationApi.edited.text,"Edited note");
   assert.equal(drawingTransfer.annotationApi.removed,null);
   assert.deepEqual(drawingTransfer.annotationApi.restoredByUndo,drawingTransfer.annotationApi.edited);
@@ -367,6 +380,9 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(drawingTransfer.rectangleApi.restoredRectangleByUndo,drawingTransfer.rectangleApi.editedRectangle);
   assert.ok(drawingTransfer.rectangleApi.invalidRectangle);
   assert.deepEqual(drawingTransfer.rectangleApi.afterInvalidRectangle,drawingTransfer.rectangleApi.editedRectangle);
+  assert.equal(drawingTransfer.rayApi.editedRay.endPrice,persistedBeforeReload.ray.endPrice+2);
+  assert.equal(drawingTransfer.rayApi.removedRay,null);
+  assert.deepEqual(drawingTransfer.rayApi.restoredRayByUndo,drawingTransfer.rayApi.editedRay);
   assert.ok(drawingTransfer.malformed);
   assert.equal(drawingTransfer.afterMalformed,0);
   assert.ok(drawingTransfer.malformedTrend);
