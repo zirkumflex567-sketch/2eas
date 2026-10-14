@@ -1624,6 +1624,17 @@ HTML_CONTENT = """<!DOCTYPE html>
     body.theme-light .hover-row:hover {
       background-color: #f1f5f9;
     }
+    body.theme-light #account-balance-badge {
+      background-color: #ffffff;
+      border-color: #cbd5e1;
+      color: #0f172a;
+    }
+    body.theme-light #live-balance {
+      color: #0284c7 !important;
+    }
+    body.theme-light #live-equity {
+      color: #334155 !important;
+    }
 
     #tv-chart {
       width: 100% !important;
@@ -1689,7 +1700,29 @@ HTML_CONTENT = """<!DOCTYPE html>
           <small>700194822 · PUPrime-Demo · $500</small>
         </button>
       </div>
-      <div class="text-right"><span id="account-connection" role="status" aria-live="polite" class="text-amber-500 font-bold">Verbindung wird geprüft …</span><div id="account-detail" class="text-sub text-[10px] mt-1">Separate Konten · Live-Daten</div></div>
+      <div class="flex flex-wrap items-center gap-3">
+        <!-- TOP NAV THEME & VIEW TOOLBAR -->
+        <div id="top-nav-theme-container" class="flex flex-wrap items-center gap-2 font-mono text-[11px]">
+          <!-- stone-theme-dock is injected here by addSwitcher() -->
+          <a id="nav-mobile-link" href="/mobile" target="_blank" class="px-2.5 py-1 rounded-lg ticker-bg border font-sans font-bold hover:bg-emerald-500/20 text-emerald-400 flex items-center gap-1 text-[11px] cursor-pointer" title="Lightweight Mobile Version fürs Smartphone (ohne Animationen)">
+            📱 Mobile
+          </a>
+          <a id="nav-ascii-link" href="/ascii" target="_blank" class="px-2.5 py-1 rounded-lg ticker-bg border font-mono font-bold hover:bg-amber-500/20 text-amber-400 flex items-center gap-1 text-[11px] cursor-pointer" title="Retro ASCII Art Terminal Cockpit">
+            📟 ASCII
+          </a>
+          <label class="text-sub text-[10px] ml-1" for="ui-motion">UI-Deko:</label>
+          <select id="ui-motion" aria-label="Nicht-Chart-Dekoration" class="ticker-bg border rounded-lg px-2 py-0.5 text-[11px]">
+            <option value="off">Aus</option><option value="low">Wenig</option><option value="full">Voll</option>
+          </select>
+          <button onclick="toggleTheme()" class="hidden" aria-hidden="true">
+            <span id="theme-icon">☀️</span> <span id="theme-label">Hell</span>
+          </button>
+        </div>
+        <div class="text-right border-l border-slate-700/40 pl-3">
+          <span id="account-connection" role="status" aria-live="polite" class="text-amber-500 font-bold">Verbindung wird geprüft …</span>
+          <div id="account-detail" class="text-sub text-[10px] mt-1">Separate Konten · Live-Daten</div>
+        </div>
+      </div>
     </div>
   </nav>
 
@@ -1704,7 +1737,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       <span class="text-sub font-medium">Gold (XAUUSD) Cockpit</span>
     </div>
 
-    <!-- Live Prices, Timers & Theme Toggle -->
+    <!-- Live Prices, Drawdown, Account & Timers -->
     <div class="flex flex-wrap items-center gap-3 font-mono">
       <div class="flex items-center gap-2 px-3 py-1 rounded-lg ticker-bg border">
         <span class="font-sans font-bold text-sub">XAUUSD:</span>
@@ -1731,6 +1764,19 @@ HTML_CONTENT = """<!DOCTYPE html>
         </button>
       </div>
 
+      <!-- LIVE ACCOUNT BALANCE & FLOATING PNL BADGE -->
+      <div id="account-balance-badge" class="flex items-center gap-2 px-3 py-1 rounded-lg ticker-bg border text-[11px]" title="Aktueller Kontostand, Equity und laufende offene PnL">
+        <span class="font-sans font-bold text-sub">KONTO:</span>
+        <span id="live-balance" class="font-bold text-sky-400">$----.--</span>
+        <span class="opacity-30">|</span>
+        <span class="text-sub">EQ:</span>
+        <span id="live-equity" class="font-bold text-slate-200">$----.--</span>
+        <span class="opacity-30">|</span>
+        <span class="text-sub">OFFEN:</span>
+        <span id="live-floating-pnl" class="font-bold text-emerald-400">+$0.00</span>
+        <span id="live-floating-pnl-pct" class="text-sub text-[10px]">(+0.00%)</span>
+      </div>
+
       <div class="flex items-center gap-3 px-3 py-1 rounded-lg ticker-bg border text-[11px]">
         <div><span class="text-sub">SERVER:</span> <span id="time-server" class="font-bold">--:--:--</span></div>
         <div><span class="text-sub">DE:</span> <span id="time-german" class="text-emerald-500 font-bold">--:--:--</span></div>
@@ -1740,21 +1786,6 @@ HTML_CONTENT = """<!DOCTYPE html>
         <span class="font-bold">⏳ M15-SCHLUSS:</span>
         <span id="bar-countdown" class="font-bold text-xs">--:--</span>
       </div>
-
-      <!-- THEME TOGGLE BUTTON -->
-      <label class="text-sub" for="ui-motion">UI-Deko:</label>
-      <select id="ui-motion" aria-label="Nicht-Chart-Dekoration" class="ticker-bg border rounded-lg px-2 py-1">
-        <option value="off">Aus</option><option value="low">Wenig</option><option value="full">Voll</option>
-      </select>
-      <button onclick="toggleTheme()" class="px-3 py-1 rounded-lg ticker-bg border font-sans font-bold hover:opacity-80 flex items-center gap-1.5 text-[11px] cursor-pointer">
-        <span id="theme-icon">☀️</span> <span id="theme-label">Hell</span>
-      </button>
-      <a id="nav-mobile-link" href="/mobile" target="_blank" class="px-2.5 py-1 rounded-lg ticker-bg border font-sans font-bold hover:bg-emerald-500/20 text-emerald-400 flex items-center gap-1 text-[11px] cursor-pointer" title="Lightweight Mobile Version fürs Smartphone (ohne Animationen)">
-        📱 Mobile
-      </a>
-      <a id="nav-ascii-link" href="/ascii" target="_blank" class="px-2.5 py-1 rounded-lg ticker-bg border font-mono font-bold hover:bg-amber-500/20 text-amber-400 flex items-center gap-1 text-[11px] cursor-pointer" title="Retro ASCII Art Terminal Cockpit">
-        📟 ASCII
-      </a>
     </div>
   </header>
 
@@ -2297,6 +2328,10 @@ HTML_CONTENT = """<!DOCTYPE html>
       closeDrawdownResetModal();
       document.getElementById('dd-reset-input').value = '';
       for (const id of ['live-bid','live-ask','time-server','time-german','bar-countdown','dd-pct','dd-usd','dd-buffer','dd-matrix-detail','acc-matrix-bal','pos-matrix-count','pos-count-badge','sell-pct','buy-pct','matrix-time']) document.getElementById(id).textContent = '—';
+      const balEl = document.getElementById('live-balance'); if (balEl) balEl.textContent = '$----.--';
+      const eqEl = document.getElementById('live-equity'); if (eqEl) eqEl.textContent = '$----.--';
+      const floatEl = document.getElementById('live-floating-pnl'); if (floatEl) floatEl.textContent = '+$0.00';
+      const floatPctEl = document.getElementById('live-floating-pnl-pct'); if (floatPctEl) floatPctEl.textContent = '(+0.00%)';
       document.getElementById('live-spread').textContent = 'Spr: —';
       document.getElementById('dd-reset-tag').classList.add('hidden');
       document.getElementById('positions-list').textContent = 'Positionen unbekannt · Kontodaten werden geladen …';
@@ -2686,7 +2721,18 @@ HTML_CONTENT = """<!DOCTYPE html>
           autoScale: true,
           scaleMargins: { top: 0.10, bottom: currentBottomMargin }
         });
-        applyOptimalChartView(currentCandlesCount || 150);
+        const r = chart.timeScale().getVisibleLogicalRange();
+        if (r && currentCandlesCount && currentCandlesCount > 10) {
+          const span = Math.max(15, r.to - r.from);
+          const rightOffset = 12;
+          chart.timeScale().setVisibleLogicalRange({
+            from: Math.max(0, currentCandlesCount + rightOffset - span),
+            to: currentCandlesCount + rightOffset
+          });
+        } else {
+          chart.timeScale().scrollToRealTime();
+        }
+        try { chart.timeScale().scrollToRealTime(); } catch (_) {}
         try { window.StoneCockpit?.requestSync?.(); } catch (_) {}
       }
     }
@@ -3221,6 +3267,29 @@ HTML_CONTENT = """<!DOCTYPE html>
         }
         if (posCountElem && data.positions) {
           posCountElem.innerText = `${data.positions.length} / ${data.account.capacity} Aktiv`;
+        }
+
+        // Live Balance & Floating PnL badge in header
+        const liveBalElem = document.getElementById('live-balance');
+        const liveEqElem = document.getElementById('live-equity');
+        const liveFloatElem = document.getElementById('live-floating-pnl');
+        const liveFloatPctElem = document.getElementById('live-floating-pnl-pct');
+        const curBalance = Number(data.daily_drawdown?.balance) || 0;
+        const curEquity = Number(data.daily_drawdown?.equity) || 0;
+        const positionsList = Array.isArray(data.positions) ? data.positions : [];
+        const floatingPnl = positionsList.reduce((sum, p) => sum + (Number(p.profit_usd) || 0), 0);
+        const floatPct = curBalance > 0 ? (floatingPnl / curBalance) * 100 : 0;
+        const floatSign = floatingPnl >= 0 ? '+' : '';
+
+        if (liveBalElem) liveBalElem.innerText = curBalance > 0 ? `$${curBalance.toFixed(2)}` : '$----.--';
+        if (liveEqElem) liveEqElem.innerText = curEquity > 0 ? `$${curEquity.toFixed(2)}` : '$----.--';
+        if (liveFloatElem) {
+          liveFloatElem.innerText = `${floatSign}$${floatingPnl.toFixed(2)}`;
+          liveFloatElem.className = `font-bold ${floatingPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+        }
+        if (liveFloatPctElem) {
+          liveFloatPctElem.innerText = `(${floatSign}${floatPct.toFixed(2)}%)`;
+          liveFloatPctElem.className = `text-[10px] ${floatingPnl >= 0 ? 'text-emerald-400/80' : 'text-rose-400/80'}`;
         }
 
         // Dynamic Trend & AI Diagnose

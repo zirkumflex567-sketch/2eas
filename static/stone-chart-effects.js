@@ -30,7 +30,7 @@
 
   function enabled() {
     return !!instance && instance.effectsEnabled !== false && document.body.classList.contains("theme-stone")
-      && !document.hidden && !motionPreference.matches;
+      && !document.body.classList.contains("stone-fx-off") && !document.hidden && !motionPreference.matches;
   }
 
   function hideNativeGlow(state) {

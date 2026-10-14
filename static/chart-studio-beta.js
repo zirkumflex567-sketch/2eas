@@ -534,6 +534,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  '<button type="button" data-cmd="clear-plan">Plan ausblenden</button>'+
  '</form><output id="cs-scenario-result" role="status" aria-live="polite">Nur Schätzung. Keine Brokeränderungen.</output></details>';
  host.parentElement.insertAdjacentElement("beforebegin",panel);
+ panel.addEventListener("wheel",e=>e.stopPropagation(),{passive:true});
  const canvas=document.createElement("canvas");canvas.className="cs-beta-canvas";canvas.style.pointerEvents="none";canvas.setAttribute("aria-hidden","true");
  host.style.position="relative";host.appendChild(canvas);
  s={chart,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
