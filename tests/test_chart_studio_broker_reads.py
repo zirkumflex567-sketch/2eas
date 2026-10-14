@@ -210,6 +210,44 @@ def test_real_symbol_contract(client):
     assert body['canExecute'] is False
 
 
+def test_portfolio_is_account_scoped_aggregated_and_never_invents_correlation(client, fake):
+    fake.positions = (position(), position(ticket=22, identifier=23, type=1, volume=.2,
+        symbol='EURUSD.a', price_open=1.1, price_current=1.2, profit=3., swap=-.5))
+    response = client.get('/api/chart/v1/portfolio', params={'account':'titan'})
+    assert response.status_code == 200
+    body = response.json()
+    assert body['account'] == 'titan' and body['source'] == 'MT5_VERIFIED'
+    assert body['canExecute'] is False
+    assert body['positionCount'] == 2
+    assert body['symbols'] == [
+        {'symbol':'EURUSD.a', 'buyLots':'0', 'sellLots':'0.2', 'netLots':'-0.2',
+         'floatingPnl':'3', 'swap':'-0.5', 'currency':'EUR'},
+        {'symbol':'XAUUSD', 'buyLots':'0.1', 'sellLots':'0', 'netLots':'0.1',
+         'floatingPnl':'10', 'swap':'-1', 'currency':'EUR'},
+    ]
+    assert body['correlation'] == {'state':'UNAVAILABLE', 'reason':'NO_ALIGNED_HISTORY'}
+    assert ('positions', 'titan', {}) in fake.calls
+    assert fake.writes == 0
+
+
+def test_portfolio_distinguishes_empty_from_unavailable_and_validates_all_rows(client, fake):
+    fake.positions = []
+    response = client.get('/api/chart/v1/portfolio', params={'account':'titan'})
+    assert response.status_code == 200 and response.json()['positionCount'] == 0
+    assert response.json()['symbols'] == []
+    assert response.json()['correlation']['state'] == 'UNAVAILABLE'
+    fake.positions = None
+    assert client.get('/api/chart/v1/portfolio', params={'account':'titan'}).status_code == 503
+    fake.positions = (position(), position(symbol='UNVERIFIED'))
+    assert client.get('/api/chart/v1/portfolio', params={'account':'titan'}).status_code == 404
+
+
+def test_portfolio_requires_known_account_before_mt5(client, fake):
+    assert client.get('/api/chart/v1/portfolio').status_code == 422
+    assert client.get('/api/chart/v1/portfolio', params={'account':'unknown'}).status_code == 400
+    assert fake.calls == []
+
+
 def test_symbol_search_accepts_sparse_actual_instruments(client, fake):
     fake.symbols = (NS(name='DE 40.cash', trade_mode=0),)
     response = read(client, 'symbols', q='DE 40')

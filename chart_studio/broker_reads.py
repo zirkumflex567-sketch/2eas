@@ -249,6 +249,47 @@ def positions_read(mt5, spec, symbol, *, ticket=None, magic=None, manual=None, n
             'orders': [r for r in pending if matches(r)]}
 
 
+PORTFOLIO_MAX_POSITIONS = 500
+
+
+def portfolio_read(mt5, spec):
+    """Read a bounded account-wide position snapshot; correlation needs history."""
+    info = gateway.verify_identity(mt5, spec)
+    currency = text(required(info, 'currency'))
+    rows = broker_rows(mt5.positions_get())
+    if len(rows) > PORTFOLIO_MAX_POSITIONS:
+        raise BrokerReadError('portfolio position limit exceeded')
+    totals = {}
+    checked_symbols = set()
+    for row in rows:
+        symbol = broker_symbol(required(row, 'symbol'))
+        if symbol not in checked_symbols:
+            require_symbol(mt5, symbol)
+            checked_symbols.add(symbol)
+        model = position_model(row, spec, symbol, currency)
+        total = totals.setdefault(symbol, {
+            'symbol': symbol, 'buyLots': Decimal(0), 'sellLots': Decimal(0),
+            'floatingPnl': Decimal(0), 'swap': Decimal(0), 'currency': currency,
+        })
+        side_key = 'buyLots' if model['side'] == 'BUY' else 'sellLots'
+        total[side_key] += Decimal(model['volume'])
+        total['floatingPnl'] += Decimal(model['profit'])
+        total['swap'] += Decimal(model['swap'])
+    symbols = []
+    for name in sorted(totals):
+        total = totals[name]
+        buy, sell = total['buyLots'], total['sellLots']
+        symbols.append({
+            'symbol': name, 'buyLots': decimal(buy), 'sellLots': decimal(sell),
+            'netLots': decimal(buy-sell, signed=True),
+            'floatingPnl': decimal(total['floatingPnl'], signed=True),
+            'swap': decimal(total['swap'], signed=True), 'currency': currency,
+        })
+    return {**provenance(spec), 'positionCount': len(rows), 'currency': currency,
+            'symbols': symbols,
+            'correlation': {'state':'UNAVAILABLE', 'reason':'NO_ALIGNED_HISTORY'}}
+
+
 # Official DEAL_TYPE values (BUY_CANCELED=13, SELL_CANCELED=14). Unknown newer
 # categories remain explicit omissions rather than guessed executions.
 DEAL_TYPES = {0:'BUY', 1:'SELL', 2:'BALANCE', 3:'CREDIT', 4:'CHARGE',
