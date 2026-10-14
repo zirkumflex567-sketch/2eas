@@ -184,6 +184,13 @@ UI labels correlations descriptive and does not apply hedge credit to its
 gross-additive What-if stop risk. All calls execute under the shared verified
 account lock and issue no broker writes.
 
+After a successful same-account What-if preview, the beta also projects gross
+long, gross short and net lots for the proposed symbol using the broker-returned
+final size, including server-sized budget lots. It displays matching completed-H1
+correlations as descriptive context only. These lots are not notional exposure,
+and correlations never reduce projected stop risk; missing preview or portfolio
+data remains unavailable.
+
 The Chart Studio beta's Brokerbuch panel consumes these routes for verified
 account-scoped symbol search and selection, selected-symbol positions and pending
 orders, and `/trades` for a paginated list of actual deals. It requests up to 200

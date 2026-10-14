@@ -234,10 +234,25 @@ function renderPortfolioImpact(preview){
  const host=s.panel.querySelector("#cs-scenario-portfolio-impact");if(!host)return;
  const portfolio=s.portfolio,result=preview?.result;
  if(!portfolio||!result||preview.account!==s.account||portfolio.account!==s.account){host.textContent="Portfolio-Gesamtrisiko UNAVAILABLE · Portfolio und Vorschau für dasselbe Konto erforderlich.";return}
- if(portfolio.stopRisk?.state!=="AVAILABLE"||portfolio.currency!==result.pnlAtSl?.currency){host.textContent="Portfolio-Gesamtrisiko UNAVAILABLE · Stop-Risiko oder gemeinsame Kontowährung fehlt.";return}
- const current=Number(portfolio.stopRisk.lossAtStops),proposed=Math.max(0,-Number(result.pnlAtSl?.amount));
- if(!Number.isFinite(current)||!Number.isFinite(proposed)){host.textContent="Portfolio-Gesamtrisiko UNAVAILABLE · Brokerwerte ungültig.";return}
- host.textContent="Portfolio-Stop-Risiko inkl. neuem Trade: "+String(Number((current+proposed).toPrecision(12)))+" "+portfolio.currency+" · Brutto additiv; keine Korrelation oder Hedging-Anrechnung.";
+ const summary=[];
+ if(portfolio.stopRisk?.state==="AVAILABLE"&&portfolio.currency===result.pnlAtSl?.currency){
+  const current=Number(portfolio.stopRisk.lossAtStops),proposed=Math.max(0,-Number(result.pnlAtSl?.amount));
+  if(Number.isFinite(current)&&Number.isFinite(proposed))summary.push("Portfolio-Stop-Risiko inkl. neuem Trade: "+String(Number((current+proposed).toPrecision(12)))+" "+portfolio.currency+" · Brutto additiv; keine Korrelation oder Hedging-Anrechnung.");
+  else summary.push("Portfolio-Stop-Risiko UNAVAILABLE · Brokerwerte ungültig.");
+ }else summary.push("Portfolio-Stop-Risiko UNAVAILABLE · "+(portfolio.stopRisk?.reason||"gemeinsame Kontowährung fehlt"));
+ const request=preview.request||{},symbol=request.symbol,side=request.side,volume=Number(result.positionSizing?.volumeLots);
+ const row=portfolio.symbols.find(item=>item.symbol===symbol),currentLong=Number(row?.buyLots||0),currentShort=Number(row?.sellLots||0);
+ if(typeof symbol==="string"&&(side==="BUY"||side==="SELL")&&Number.isFinite(volume)&&volume>0&&Number.isFinite(currentLong)&&Number.isFinite(currentShort)){
+  const long=currentLong+(side==="BUY"?volume:0),short=currentShort+(side==="SELL"?volume:0),net=long-short;
+  const format=value=>String(Number(value.toPrecision(12)));
+  summary.push("Projektion "+symbol+" · Long "+format(long)+" · Short "+format(short)+" · Netto "+format(net)+" Lots (nur Lots, kein Notional).");
+  const correlation=portfolio.correlation;
+  if(correlation?.state==="AVAILABLE"&&correlation.scenarioSymbol===symbol){
+   const pairs=correlation.pairs.filter(pair=>pair.symbols.includes(symbol));
+   summary.push("Korrelation deskriptiv · "+(pairs.length?pairs.map(pair=>pair.symbols.join(" ↔ ")+" "+pair.coefficient+" · n="+pair.observations).join("; "):"keine Paare")+"; kein Hedge-Kredit.");
+  }else summary.push("Korrelation deskriptiv UNAVAILABLE · "+(correlation?.reason||"kein passender Symbolkontext")+".");
+ }else summary.push("Symbol-Exposure-Projektion UNAVAILABLE · Brokerpreview oder Positionsgröße fehlt.");
+ host.textContent=summary.join(" ");
 }
 async function loadPortfolio(account){
  const nonce=++portfolioGeneration;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioError="";s.portfolioLoading=true;renderPortfolio();
