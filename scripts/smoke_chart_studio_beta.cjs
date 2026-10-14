@@ -387,10 +387,15 @@ const fs=require("node:fs"),path=require("node:path");
   assert.ok(brokerReadRequests.filter(r=>r.path.endsWith("/positions")).at(-1).url.startsWith("/stt/api/"));
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
   await page.waitForFunction(()=>document.querySelector("#cs-broker-positions tbody tr td")?.textContent==="9007199254740993");
+  const openPositionsBeforeDealMarkers=await page.evaluate(()=>ChartStudioBeta.getState().verifiedPositions.map(row=>({ticket:row.ticket,sl:row.sl,tp:row.tp})));
   await page.locator("#cs-broker-history-load").click();
   await page.waitForFunction(()=>document.querySelectorAll("#cs-broker-trades tbody tr").length===4);
   assert.equal(await page.locator("#cs-broker-trades tbody tr").first().locator("td").nth(0).textContent(),"9007199254740993");
   const markerState=await page.evaluate(()=>ChartStudioBeta.getState().brokerMarkers);
+  assert.deepEqual(await page.evaluate(()=>ChartStudioBeta.getState().verifiedPositions.map(row=>({ticket:row.ticket,sl:row.sl,tp:row.tp}))),openPositionsBeforeDealMarkers,
+    "historical deal markers remain separate from the verified open-position snapshot");
+  assert.equal(await page.locator("#cs-broker-positions tbody tr").count(),openPositionsBeforeDealMarkers.length,
+    "showing entry/exit markers never creates or removes open broker positions");
   assert.equal(markerState.length,3,"only broker executions with supported fill fields are considered");
   assert.equal(markerState[0].chartTimeSeconds,1700009000,"chart lookup uses UTC seconds while preserving raw fill milliseconds");
   assert.equal(markerState[0].fillTimeUtcMs,1700009000123);
