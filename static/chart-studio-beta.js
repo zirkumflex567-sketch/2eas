@@ -510,7 +510,7 @@ function pointerup(e){
  if(!s.drag)return;s.drag=null;persist();try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){}
 }
 function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
- s.lastScenarioPreview=null;clearDataWindowPin();
+ s.lastScenarioPreview=null;s.marketQuote=null;clearDataWindowPin();
   s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
   const fibInput=s.panel.querySelector("#cs-fib-levels");if(fibInput)fibInput.value=window.ChartStudioFib?.display(s.fibLevels)||"";
   scenarioGeneration++;if(s.tool==="plan")setTool("cursor");
@@ -558,11 +558,18 @@ function dataBar(param){
  const date=new Date(time*1000);if(!Number.isFinite(date.getTime()))return null;
  return {time,open:values[0],high:values[1],low:values[2],close:values[3],timeLabel:new Intl.DateTimeFormat("de-DE",{timeZone:"UTC",dateStyle:"medium",timeStyle:"medium"}).format(date)+" UTC",source:"Chart-Feed · geladene OHLC-Kerze"};
 }
+function setVerifiedMarketQuote(accountId,data){
+ if(!s||s.account!==accountId)return false;
+ const bid=Number(data?.bid),ask=Number(data?.ask),age=Number(data?.ageSeconds);
+ const valid=data?.account===accountId&&data?.symbol==="XAUUSD"&&data?.source==="MT5_VERIFIED"&&data?.canExecute===false&&/^[A-Z]{3,12}$/.test(data?.currency||"")&&Number.isFinite(bid)&&bid>0&&Number.isFinite(ask)&&ask>=bid&&Number.isFinite(age)&&age>=0&&typeof data?.quoteTimeUtc==="string"&&/(?:Z|\+00:00)$/.test(data.quoteTimeUtc)&&Number.isFinite(Date.parse(data.quoteTimeUtc))&&["FRESH","STALE","FUTURE"].includes(data?.freshness);
+ s.marketQuote=valid?{bid,ask,currency:data.currency,quoteTimeUtc:data.quoteTimeUtc,ageSeconds:age,freshness:data.freshness,source:data.source}:null;
+ renderDataWindow();return valid;
+}
 function renderDataWindow(){
  if(!s?.dataWindow)return;const view=s.dataWindow,panel=s.panel;
  panel.querySelector("#cs-data-window-state").textContent=view.pinned?"Angeheftet":"Crosshair";
  panel.querySelector("#cs-data-window-pin").textContent=view.pinned?"Crosshair lösen":"Crosshair anheften";
- const row=view.snapshot,values={time:row?.timeLabel||"—",open:row?row.open.toFixed(2):"—",high:row?row.high.toFixed(2):"—",low:row?row.low.toFixed(2):"—",close:row?row.close.toFixed(2):"—",source:row?.source||"Chart-Feed · wartet auf Kerze"};
+ const row=view.snapshot,q=s.marketQuote,values={time:row?.timeLabel||"—",open:row?row.open.toFixed(2):"—",high:row?row.high.toFixed(2):"—",low:row?row.low.toFixed(2):"—",close:row?row.close.toFixed(2):"—",source:row?.source||"Chart-Feed · wartet auf Kerze",bid:q?q.bid.toFixed(2):"—",ask:q?q.ask.toFixed(2):"—",spread:q?(q.ask-q.bid).toFixed(2):"—","quote-time":q?q.quoteTimeUtc:"—","quote-status":q?q.freshness+" beim Abruf · "+q.ageSeconds.toFixed(1)+"s Broker-Alter beim Abruf · "+q.source:"Noch keine verifizierte Quote"};
  for(const [key,value] of Object.entries(values))panel.querySelector("#cs-data-window-"+key).textContent=value;
 }
 function setDataWindowPin(pin){
@@ -642,7 +649,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  const optLabels=[["ema20","EMA20"],["ema50","EMA50"],["ema200","EMA200"],["sma20","SMA20"],["sma50","SMA50"],["bb","Bollinger20"],["positions","Positionen & SL/TP"]];
  panel.innerHTML=
   '<div class="cs-beta-head"><strong>CHART STUDIO · EXPERIMENTELL</strong><span>Keine Handelsausführung</span></div>'+
-  '<section id="cs-data-window" aria-label="Datenfenster"><div><strong>Datenfenster</strong> · <span id="cs-data-window-state">Crosshair</span> <button type="button" id="cs-data-window-pin">Crosshair anheften</button></div><dl><dt>Kerzenzeit</dt><dd id="cs-data-window-time">—</dd><dt>Open</dt><dd id="cs-data-window-open">—</dd><dt>High</dt><dd id="cs-data-window-high">—</dd><dt>Low</dt><dd id="cs-data-window-low">—</dd><dt>Close</dt><dd id="cs-data-window-close">—</dd><dt>Quelle</dt><dd id="cs-data-window-source">Chart-Feed · wartet auf Kerze</dd></dl></section>'+
+  '<section id="cs-data-window" aria-label="Datenfenster"><div><strong>Datenfenster</strong> · <span id="cs-data-window-state">Crosshair</span> <button type="button" id="cs-data-window-pin">Crosshair anheften</button></div><dl><div><dt>Kerzenzeit (UTC)</dt><dd id="cs-data-window-time">—</dd></div><div><dt>Open</dt><dd id="cs-data-window-open">—</dd></div><div><dt>High</dt><dd id="cs-data-window-high">—</dd></div><div><dt>Low</dt><dd id="cs-data-window-low">—</dd></div><div><dt>Close</dt><dd id="cs-data-window-close">—</dd></div><div><dt>Quelle</dt><dd id="cs-data-window-source">Chart-Feed · wartet auf Kerze</dd></div><div><dt>Bid</dt><dd id="cs-data-window-bid">—</dd></div><div><dt>Ask</dt><dd id="cs-data-window-ask">—</dd></div><div><dt>Spread (Preis)</dt><dd id="cs-data-window-spread">—</dd></div><div><dt>Quotezeit</dt><dd id="cs-data-window-quote-time">—</dd></div><div><dt>Quote-Status</dt><dd id="cs-data-window-quote-status">Noch keine verifizierte Quote</dd></div></dl></section>'+
   '<div class="cs-beta-buttons">'+toolLabels.map(([id,label])=>'<button type="button" data-tool="'+id+'">'+label+'</button>').join("")+
   ["undo","redo","delete-selected","export","save-png","clear"].map(id=>'<button type="button" data-cmd="'+id+'">'+({undo:"↶ Undo",redo:"↷ Redo","delete-selected":"Ausgewählte löschen",export:"JSON kopieren","save-png":"Bild (PNG) speichern",clear:"Alle Zeichnungen löschen"}[id])+'</button>').join("")+'</div>'+
   '<p class="cs-beta-keyboard-hint">Kürzel: V Navigation · E Bearbeiten · H Linie · T Trend · R Zone · F Fibonacci · C Kanal · M Messen · Strg+Z Rückgängig · Entf Löschen</p>'+
@@ -674,7 +681,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  host.style.position="relative";host.appendChild(canvas);
  s={chart,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
   account:accountId,tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,positionDraft:null,positionDraftDrag:null,verifiedPositions:[],positionContext:null,
-  lastScenarioPreview:null,dataWindow:{snapshot:null,pinned:false},
+  lastScenarioPreview:null,dataWindow:{snapshot:null,pinned:false},marketQuote:null,
   draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],brokerMarkers:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null,fibLevels:[...ratios]};
  panel.querySelector("#cs-data-window-pin").addEventListener("click",()=>setDataWindowPin(!s.dataWindow.pinned));
  chart.subscribeCrosshairMove(handleCrosshair);
@@ -786,16 +793,17 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  form.querySelector('[data-cmd="quote"]').addEventListener("click",async()=>{
   const acc=s.account,nonce=++scenarioGeneration;
   s.lastScenarioPreview=null;
+  setVerifiedMarketQuote(acc,null);
   output.textContent="Verifizierte MT5-Quote wird geladen ...";
   try{
    const response=await fetch(scope()+"/api/chart/v1/quotes?account="+encodeURIComponent(acc)+"&symbol=XAUUSD",{cache:"no-store"});
    const data=await response.json();
    if(nonce!==scenarioGeneration||acc!==s.account)return;
-   if(!response.ok||data.account!==acc)throw Error(typeof data.detail==="string"?data.detail:"MT5-Daten ungültig.");
+   if(!response.ok||data.account!==acc||!setVerifiedMarketQuote(acc,data))throw Error(typeof data.detail==="string"?data.detail:"MT5-Daten ungültig.");
    fields.entryPrice.value=fields.side.value==="BUY"?data.ask:data.bid;
    if(Number.isFinite(Number(data.tickSize))&&Number(data.tickSize)>0)s.planTickSize=Number(data.tickSize);
    output.textContent="MT5-Quote übernommen. SL/TP eingeben, Vorschau ist read-only.";
-  }catch(e){if(nonce===scenarioGeneration)output.textContent="Quote fehlt: "+e.message}
+  }catch(e){if(nonce===scenarioGeneration){setVerifiedMarketQuote(acc,null);output.textContent="Quote fehlt: "+e.message}}
  });
  form.addEventListener("submit",async e=>{
   e.preventDefault();const account=s.account,nonce=++scenarioGeneration;

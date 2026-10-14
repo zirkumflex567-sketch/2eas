@@ -19,7 +19,10 @@ Current features:
   conversion and no trading mutation.
 - The beta data window shows the hovered or pinned candle's UTC time and OHLC
   from the loaded chart series. It labels the source as the chart feed; live
-  indicator values and verified bid/ask spread are not part of this slice.
+  indicator values are not part of this slice. After an explicit verified MT5
+  quote read, it also shows bid/ask, price spread, quote time, and freshness
+  as of that read (including broker-reported quote age); invalid provenance
+  clears these values.
   Unpinning, Escape, account changes, and timeframe changes clear the pinned
   bar; hover resumes when the pointer selects a candle again.
 - Read-only What-if plan and JSON API endpoints for a verified MT5 XAUUSD

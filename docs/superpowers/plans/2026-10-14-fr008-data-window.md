@@ -17,12 +17,18 @@ data window or native v5 sidebar.
 3. Keep the displayed bar fixed after pinning; the accessible pin button or
    Escape clears the pinned bar and returns to hover behavior. Account/timeframe
    changes clear it.
-4. Run Chromium smoke, JS syntax checks, focused ChartStudio Python tests, and
-   independent review. Keep FR-008 partial until indicator/spread values and
+4. Add verified Bid/Ask spread only after the existing quote route returns
+   matching account/symbol, `MT5_VERIFIED`, `canExecute=false`, finite prices,
+   UTC timestamp and freshness. Show freshness and broker age explicitly as of
+   retrieval; invalid/error responses clear the quote display.
+5. Run Chromium smoke, JS syntax checks, focused ChartStudio Python tests, and
+   independent review. Keep FR-008 partial until indicator values and
    full v5/hardware acceptance are implemented.
 
 ## Progress
 
 - [x] Browser contract failed before implementation because the data window did not exist.
 - [x] Crosshair OHLC/time and accessible pin interaction work with explicit source.
-- [x] Chromium smoke, Chart Studio foundation Python tests, syntax/diff checks, and independent review pass.
+- [x] Verified quote bid/ask spread, time and freshness render; bad provenance clears it.
+- [x] Chromium smoke, Chart Studio foundation Python tests, syntax/diff checks pass for the quote extension.
+- [ ] Independent review passes for the quote extension.

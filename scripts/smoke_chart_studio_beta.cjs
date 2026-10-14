@@ -18,7 +18,7 @@ const fs=require("node:fs"),path=require("node:path");
   browser=await chromium.launch({headless:true,executablePath:process.env.CHART_STUDIO_CHROMIUM_PATH||undefined});
   const page=await browser.newPage({viewport:{width:1280,height:850},deviceScaleFactor:1.5});
   const consoleErrors=[];page.on("pageerror",e=>consoleErrors.push(e.message));
-  let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],failBrokerReads=false,cursorExpired=false,deferTitanPositions=false,releaseTitanPositions=null;
+  let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],failBrokerReads=false,cursorExpired=false,deferTitanPositions=false,releaseTitanPositions=null,badQuote=false;
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
   await page.route("**/api/chart/v1/scenarios/preview*",async route=>{
     const req=route.request().postDataJSON();
@@ -45,7 +45,7 @@ const fs=require("node:fs"),path=require("node:path");
   });
   await page.route("**/api/chart/v1/quotes?*",async route=>{
     const url=new URL(route.request().url());
-    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),symbol:"XAUUSD",bid:"4100.00",ask:"4100.25",tickSize:0.01,source:"MT5_VERIFIED",canExecute:false})});
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),symbol:"XAUUSD",bid:"4100.00",ask:"4100.25",tickSize:0.01,currency:"USD",quoteTimeUtc:"2026-10-14T13:00:00.000000Z",ageSeconds:0,freshness:"FRESH",source:badQuote?"UNVERIFIED":"MT5_VERIFIED",canExecute:false})});
   });
   await page.route("**/api/chart/v1/symbol-info?*",async route=>{
     const url=new URL(route.request().url());await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),symbol:"XAUUSD",source:"MT5_VERIFIED",canExecute:false,tickSize:"0.01",digits:2})});
@@ -429,6 +429,12 @@ const fs=require("node:fs"),path=require("node:path");
   assert.match(await page.locator("#cs-scenario-ab").textContent(),/A · FIXED_LOTS/);
   await page.locator('#cs-scenario-form [data-cmd="quote"]').click();
   await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("MT5-Quote übernommen"));
+  assert.equal(await page.locator("#cs-data-window-spread").textContent(),"0.25");
+  assert.match(await page.locator("#cs-data-window-quote-status").textContent(),/FRESH beim Abruf · 0\.0s Broker-Alter beim Abruf · MT5_VERIFIED/);
+  badQuote=true;await page.locator('#cs-scenario-form [data-cmd="quote"]').click();
+  await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("Quote fehlt"));
+  assert.equal(await page.locator("#cs-data-window-spread").textContent(),"—","Unverified quote data never remains visible as a valid spread");
+  badQuote=false;
   await page.locator("#cs-scenario-save-a").click();
   assert.match(await page.locator("#cs-scenario-ab-status").textContent(),/erst eine erfolgreiche Broker-Vorschau/);
   await page.locator('[name="entryPrice"]').fill("4100");
