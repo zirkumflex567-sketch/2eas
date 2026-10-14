@@ -1,0 +1,35 @@
+{
+  "terminal": "C:\\MT5-Research\\terminal64.exe",
+  "portable": true,
+  "broker_label": "broker-demo-verify-manually",
+  "output_dir": "output/mt5-backtests",
+  "timeout_seconds": 14400,
+  "jobs": [
+    {
+      "name": "Titan M15 2025 baseline",
+      "expert": "XAU_Titan_Pro.ex5",
+      "set_file": "XAU_Titan_Pro_guter5er_Champion_001Lot.set",
+      "symbol": "XAUUSD",
+      "period": "M15",
+      "from": "2025.01.01",
+      "to": "2025.12.31",
+      "deposit": 10000,
+      "currency": "USD",
+      "leverage": 100,
+      "execution_mode_ms": 0
+    },
+    {
+      "name": "GoldM15 2025 baseline",
+      "expert": "goldm15/GoldM15_Reconstruction.ex5",
+      "set_file": "goldm15/GoldM15_v122_FixedM15.set",
+      "symbol": "XAUUSD",
+      "period": "M15",
+      "from": "2025.01.01",
+      "to": "2025.12.31",
+      "deposit": 10000,
+      "currency": "USD",
+      "leverage": 100,
+      "execution_mode_ms": 0
+    }
+  ]
+}
