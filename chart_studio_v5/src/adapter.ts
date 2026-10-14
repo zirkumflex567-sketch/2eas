@@ -117,6 +117,10 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  const paneLines=new Map<string,LineApi>();
  const priceLevels=new Map<string,{primitive:PriceLevelPrimitive;options:PriceLevelOptions}>();
  const timeMarkers=new Map<string,{primitive:TimeMarkerPrimitive;options:TimeMarkerOptions}>();
+ type DrawingSnapshot={kind:"PRICE";options:PriceLevelOptions}|{kind:"TIME";options:TimeMarkerOptions};
+ type DrawingHistory={id:string;before:DrawingSnapshot|null;after:DrawingSnapshot|null};
+ const undoStack:DrawingHistory[]=[],redoStack:DrawingHistory[]=[];
+ const historyLimit=100;
  let selectedDrawingId:string|null=null,hoveredDrawingId:string|null=null;
  type ActiveDrag={pointerId:number;id:string;kind:"PRICE";original:PriceLevelOptions}|{pointerId:number;id:string;kind:"TIME";original:TimeMarkerOptions};
  let activeDrag:ActiveDrag|null=null;
@@ -156,6 +160,9 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   if(cancel){
    if(drag.kind==="PRICE"&&priceLevels.has(drag.id))updatePriceLevel(drag.id,{price:drag.original.price,color:drag.original.color});
    if(drag.kind==="TIME"&&timeMarkers.has(drag.id))updateTimeMarker(drag.id,{time:drag.original.time,color:drag.original.color});
+  }else{
+   const before:DrawingSnapshot=drag.kind==="PRICE"?{kind:"PRICE",options:{...drag.original}}:{kind:"TIME",options:{...drag.original}};
+   recordDrawingChange(drag.id,before,snapshotDrawing(drag.id));
   }
   activeDrag=null;
   if(host.hasPointerCapture(drag.pointerId))host.releasePointerCapture(drag.pointerId);
@@ -173,8 +180,15 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   finishDrag(true);
  };
  const onKeyDown=(event:KeyboardEvent)=>{
-  if(event.key!=="Escape"||!activeDrag)return;
-  event.preventDefault();event.stopImmediatePropagation();finishDrag(true);
+  if(event.key==="Escape"&&activeDrag){event.preventDefault();event.stopImmediatePropagation();finishDrag(true);return}
+  if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="z"){
+   event.preventDefault();event.stopImmediatePropagation();if(event.shiftKey)redo();else undo();return;
+  }
+  if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="y"){
+   event.preventDefault();event.stopImmediatePropagation();redo();return;
+  }
+  if((event.key==="Delete"||event.key==="Backspace")&&selectedDrawingId){event.preventDefault();event.stopImmediatePropagation();deleteSelectedDrawing();return}
+  if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="d"&&selectedDrawingId){event.preventDefault();event.stopImmediatePropagation();duplicateSelectedDrawing()}
  };
  host.addEventListener("pointerdown",onPointerDown,true);
  host.addEventListener("pointermove",onPointerMove,true);
@@ -193,13 +207,66 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  let bars:Candle[]=[],barsByTime=new Map<number,Candle>(),activeAccount=accountId,destroyed=false;
  function guard(){if(destroyed)throw Error("Chart was destroyed")}
  function selectDrawing(id:string|null){
-  if(selectedDrawingId===id)return;
+  if(selectedDrawingId===id){if(id){priceLevels.get(id)?.primitive.setSelected(true);timeMarkers.get(id)?.primitive.setSelected(true)}return}
   if(selectedDrawingId){priceLevels.get(selectedDrawingId)?.primitive.setSelected(false);timeMarkers.get(selectedDrawingId)?.primitive.setSelected(false)}
   selectedDrawingId=id;
   if(id){priceLevels.get(id)?.primitive.setSelected(true);timeMarkers.get(id)?.primitive.setSelected(true)}
  }
+ function snapshotDrawing(id:string):DrawingSnapshot|null{
+  const priceLevel=priceLevels.get(id);if(priceLevel)return {kind:"PRICE",options:{...priceLevel.options}};
+  const timeMarker=timeMarkers.get(id);if(timeMarker)return {kind:"TIME",options:{...timeMarker.options}};
+  return null;
+ }
+ function recordDrawingChange(id:string,before:DrawingSnapshot|null,after:DrawingSnapshot|null){
+  if(JSON.stringify(before)===JSON.stringify(after))return;
+  undoStack.push({id,before,after});if(undoStack.length>historyLimit)undoStack.shift();redoStack.length=0;
+ }
+ function restoreDrawing(id:string,snapshot:DrawingSnapshot|null):boolean{
+  if(snapshot&&(averages.has(id)||paneLines.has(id)))return false;
+  if(snapshot?.kind==="TIME"&&!barsByTime.has(snapshot.options.time))return false;
+  const wasSelected=selectedDrawingId===id;
+  if(wasSelected)selectDrawing(null);
+  const oldPrice=priceLevels.get(id);if(oldPrice){price.detachPrimitive(oldPrice.primitive);priceLevels.delete(id)}
+  const oldTime=timeMarkers.get(id);if(oldTime){price.detachPrimitive(oldTime.primitive);timeMarkers.delete(id)}
+  if(snapshot?.kind==="PRICE"){
+   if(priceLevels.size+timeMarkers.size>=100)return false;
+   const options={...snapshot.options};validatePriceLevel(options);
+   const primitive=new PriceLevelPrimitive(id,options.price,options.color);price.attachPrimitive(primitive);
+   priceLevels.set(id,{primitive,options});
+  }else if(snapshot?.kind==="TIME"){
+   if(priceLevels.size+timeMarkers.size>=100)return false;
+   const options={...snapshot.options};validateTimeMarker(options);
+   const primitive=new TimeMarkerPrimitive(id,options.time,options.color);price.attachPrimitive(primitive);
+   timeMarkers.set(id,{primitive,options});
+  }
+  if(wasSelected&&snapshot)selectDrawing(id);
+  return true;
+ }
+ function undo(){
+  guard();if(activeDrag){finishDrag(true);return true}
+  const change=undoStack[undoStack.length-1];if(!change||!restoreDrawing(change.id,change.before))return false;
+  undoStack.pop();redoStack.push(change);return true;
+ }
+ function redo(){
+  guard();if(activeDrag){finishDrag(true);return true}
+  const change=redoStack[redoStack.length-1];if(!change||!restoreDrawing(change.id,change.after))return false;
+  redoStack.pop();undoStack.push(change);return true;
+ }
+ function deleteSelectedDrawing(){
+  guard();if(!selectedDrawingId)return false;
+  return priceLevels.has(selectedDrawingId)?removePriceLevel(selectedDrawingId):removeTimeMarker(selectedDrawingId);
+ }
+ function duplicateSelectedDrawing(){
+  guard();if(!selectedDrawingId)return null;
+  const source=snapshotDrawing(selectedDrawingId);if(!source)return null;
+  const base=selectedDrawingId.slice(0,20);let suffix=1,id="";
+  do{id=`${base}-copy${suffix++}`}while(priceLevels.has(id)||timeMarkers.has(id)||averages.has(id)||paneLines.has(id));
+  if(source.kind==="PRICE")addPriceLevel({id,price:source.options.price,color:source.options.color});
+  else addTimeMarker({id,time:source.options.time,color:source.options.color});
+  selectDrawing(id);return id;
+ }
  function setCandles(data:readonly Candle[]){
-  guard();const next=normalizeCandles(data);finishDrag(true);bars=next;barsByTime=new Map(bars.map(c=>[c.time,c]));
+  guard();const next=normalizeCandles(data);finishDrag(true);undoStack.length=0;redoStack.length=0;bars=next;barsByTime=new Map(bars.map(c=>[c.time,c]));
   for(const series of averages.values())series.setData([]);
   for(const series of paneLines.values())series.setData([]);
   readoutIndicators.clear();price.setData(bars);
@@ -230,21 +297,22 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  function addPriceLevel(opts:PriceLevelOptions){
   guard();validatePriceLevel(opts);
   if(averages.has(opts.id)||paneLines.has(opts.id)||timeMarkers.has(opts.id))throw Error("Duplicate chart object identity");
-  if(priceLevels.size+timeMarkers.size>=100)throw Error("Native drawing limit");
   const existing=priceLevels.get(opts.id);
-  if(existing){existing.primitive.set(opts.price,opts.color);existing.options={...opts};return}
+  if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(opts.price,opts.color);existing.options={...opts};recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
+  if(priceLevels.size+timeMarkers.size>=100)throw Error("Native drawing limit");
   const primitive=new PriceLevelPrimitive(opts.id,opts.price,opts.color);price.attachPrimitive(primitive);
-  priceLevels.set(opts.id,{primitive,options:{...opts}});
+  priceLevels.set(opts.id,{primitive,options:{...opts}});recordDrawingChange(opts.id,null,snapshotDrawing(opts.id));
  }
  function updatePriceLevel(id:string,patch:Pick<PriceLevelOptions,"price"|"color">){
-  guard();const item=priceLevels.get(id);if(!item)throw Error("Unknown price level");
+  guard();const item=priceLevels.get(id);if(!item)throw Error("Unknown price level");const before=snapshotDrawing(id);
   validatePriceLevel({...item.options,...patch});item.primitive.set(patch.price,patch.color);
   item.options={...item.options,...patch};
+  if(activeDrag?.id!==id)recordDrawingChange(id,before,snapshotDrawing(id));
  }
  function removePriceLevel(id:string){
   guard();const item=priceLevels.get(id);if(!item)return false;
   if(activeDrag?.id===id)finishDrag(true);
-  price.detachPrimitive(item.primitive);priceLevels.delete(id);if(selectedDrawingId===id)selectDrawing(null);return true;
+  const before=snapshotDrawing(id);price.detachPrimitive(item.primitive);priceLevels.delete(id);if(selectedDrawingId===id)selectDrawing(null);recordDrawingChange(id,before,null);return true;
  }
  function validateTimeMarker(opts:TimeMarkerOptions){
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color)||
@@ -255,21 +323,22 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  function addTimeMarker(opts:TimeMarkerOptions){
   guard();validateTimeMarker(opts);
   if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id))throw Error("Duplicate chart object identity");
-  if(priceLevels.size+timeMarkers.size>=100)throw Error("Native drawing limit");
   const existing=timeMarkers.get(opts.id);
-  if(existing){existing.primitive.set(opts.time,opts.color);existing.options={...opts};return}
+  if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(opts.time,opts.color);existing.options={...opts};recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
+  if(priceLevels.size+timeMarkers.size>=100)throw Error("Native drawing limit");
   const primitive=new TimeMarkerPrimitive(opts.id,opts.time,opts.color);price.attachPrimitive(primitive);
-  timeMarkers.set(opts.id,{primitive,options:{...opts}});
+  timeMarkers.set(opts.id,{primitive,options:{...opts}});recordDrawingChange(opts.id,null,snapshotDrawing(opts.id));
  }
  function updateTimeMarker(id:string,patch:Pick<TimeMarkerOptions,"time"|"color">){
-  guard();const item=timeMarkers.get(id);if(!item)throw Error("Unknown time marker");
+  guard();const item=timeMarkers.get(id);if(!item)throw Error("Unknown time marker");const before=snapshotDrawing(id);
   validateTimeMarker({...item.options,...patch});item.primitive.set(patch.time,patch.color);
   item.options={...item.options,...patch};
+  if(activeDrag?.id!==id)recordDrawingChange(id,before,snapshotDrawing(id));
  }
  function removeTimeMarker(id:string){
   guard();const item=timeMarkers.get(id);if(!item)return false;
   if(activeDrag?.id===id)finishDrag(true);
-  price.detachPrimitive(item.primitive);timeMarkers.delete(id);if(selectedDrawingId===id)selectDrawing(null);return true;
+  const before=snapshotDrawing(id);price.detachPrimitive(item.primitive);timeMarkers.delete(id);if(selectedDrawingId===id)selectDrawing(null);recordDrawingChange(id,before,null);return true;
  }
  function drawingPosition(id:string){
   guard();const rect=host.getBoundingClientRect();const priceLevel=priceLevels.get(id);
@@ -360,6 +429,7 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  function changeAccount(next:string){
   guard();if(!/^[a-zA-Z0-9_-]{1,50}$/.test(next))throw Error("Invalid account");
   finishDrag(true);selectDrawing(null);hoveredDrawingId=null;
+  undoStack.length=0;redoStack.length=0;
   activeAccount=next;bars=[];barsByTime.clear();price.setData([]);
   for(const item of priceLevels.values())price.detachPrimitive(item.primitive);priceLevels.clear();
   for(const item of timeMarkers.values())price.detachPrimitive(item.primitive);timeMarkers.clear();selectedDrawingId=null;
@@ -374,7 +444,7 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   paneCount:chart.panes().length,volumeVisible:!!volume}}
  function destroy(){if(destroyed)return;finishDrag(true);destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();paneLines.clear();priceLevels.clear();timeMarkers.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
  return Object.freeze({setCandles,addAverage,moveAverage,removeAverage,addPriceLevel,updatePriceLevel,removePriceLevel,
-  addTimeMarker,updateTimeMarker,removeTimeMarker,drawingPosition,readDrawing,
+  addTimeMarker,updateTimeMarker,removeTimeMarker,drawingPosition,readDrawing,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,
   addPaneLine,movePaneLine,removePaneLine,resizePane,showVolume,readDataWindow,
   updateLast,changeAccount,inspect,destroy});
 }
