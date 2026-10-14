@@ -143,9 +143,13 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    e.addTimeMarker({id:"visual-time",time:rows[45].time,color:"#c18bff"});
    e.addTextAnnotation({id:"visual-note",time:rows[52].time,price:rows[52].close,text:"Plan is ready",color:"#7dd3fc"});
    e.addTrendLine({id:"visual-trend",startTime:rows[42].time,startPrice:rows[42].close,endTime:rows[64].time,endPrice:rows[64].close,color:"#9be564"});
+   e.addRectangle({id:"visual-zone",startTime:rows[25].time,startPrice:rows[25].close+10,endTime:rows[35].time,endPrice:rows[35].close-10,color:"#f59e0b",fill:true});
    e.showVolume(true);window.__v5Screenshot=e;
   });
   await page.waitForTimeout(150);
+  const initialRectanglePosition=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-zone"));
+  await page.mouse.move(initialRectanglePosition.x,initialRectanglePosition.y);await page.waitForTimeout(80);
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.inspect().hoveredDrawingId),"visual-zone");
   const priceXY=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-level"));
   const originalPrice=await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-level"));
   await page.mouse.move(priceXY.x,priceXY.y);
@@ -231,6 +235,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(restoredNote,originalNote);
   const trendPoint=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-trend"));
   assert.ok(Number.isFinite(trendPoint.x)&&Number.isFinite(trendPoint.y));
+  const rectanglePoint=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-zone"));
+  assert.ok(Number.isFinite(rectanglePoint.x)&&Number.isFinite(rectanglePoint.y));
   await page.keyboard.press("Control+d");
   const duplicateId=await page.evaluate(()=>window.__v5Screenshot.inspect().selectedDrawingId);
   assert.ok(duplicateId&&duplicateId!=="visual-time");
@@ -243,14 +249,14 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(await page.evaluate(id=>window.__v5Screenshot.readDrawing(id),duplicateId),null);
   await page.mouse.move(10,10);
   await page.waitForTimeout(150);
-  const persistedBeforeReload=await page.evaluate(()=>({price:window.__v5Screenshot.readDrawing("visual-level"),time:window.__v5Screenshot.readDrawing("visual-time"),text:window.__v5Screenshot.readDrawing("visual-note"),trend:window.__v5Screenshot.readDrawing("visual-trend")}));
+  const persistedBeforeReload=await page.evaluate(()=>({price:window.__v5Screenshot.readDrawing("visual-level"),time:window.__v5Screenshot.readDrawing("visual-time"),text:window.__v5Screenshot.readDrawing("visual-note"),trend:window.__v5Screenshot.readDrawing("visual-trend"),rectangle:window.__v5Screenshot.readDrawing("visual-zone")}));
   await page.reload({waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartV5Ready===true);
   const persistenceProbe=await page.evaluate(()=>{
    const rows=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2,tick_volume:100+i*3}});
    const scope={symbol:"XAUUSD",timeframe:"M15"};
    let e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",scope);e.setCandles(rows);
-   const restored={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives,price:e.readDrawing("visual-level"),time:e.readDrawing("visual-time"),text:e.readDrawing("visual-note"),trend:e.readDrawing("visual-trend")};
+   const restored={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives,price:e.readDrawing("visual-level"),time:e.readDrawing("visual-time"),text:e.readDrawing("visual-note"),trend:e.readDrawing("visual-trend"),rectangle:e.readDrawing("visual-zone")};
    e.changeAccount("goldm15");e.setCandles(rows);const otherAccount=e.inspect().nativePrimitives;
    e.changeAccount("titan");e.setCandles(rows);const returned=e.inspect().nativePrimitives;
    e.destroy();
@@ -272,13 +278,14 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    return {restored,otherAccount,returned,otherTimeframe,conflict,externalSnapshot,corrupt};
   });
   assert.equal(persistenceProbe.restored.status,"READY");
-  assert.equal(persistenceProbe.restored.count,4);
+  assert.equal(persistenceProbe.restored.count,5);
   assert.deepEqual(persistenceProbe.restored.price,persistedBeforeReload.price);
   assert.deepEqual(persistenceProbe.restored.time,persistedBeforeReload.time);
   assert.deepEqual(persistenceProbe.restored.text,persistedBeforeReload.text);
   assert.deepEqual(persistenceProbe.restored.trend,persistedBeforeReload.trend);
+  assert.deepEqual(persistenceProbe.restored.rectangle,persistedBeforeReload.rectangle);
   assert.equal(persistenceProbe.otherAccount,0);
-  assert.equal(persistenceProbe.returned,4);
+  assert.equal(persistenceProbe.returned,5);
   assert.equal(persistenceProbe.otherTimeframe,0);
   assert.equal(persistenceProbe.conflict.status,"CONFLICT");
   assert.equal(persistenceProbe.conflict.stored,persistenceProbe.externalSnapshot);
@@ -290,7 +297,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const scope={symbol:"XAUUSD",timeframe:"M15"};
    const source=window.__v5Screenshot.exportDrawings();
    const target=ChartStudioV5.createStudioV5(document.getElementById("chart"),"importtest",scope);target.setCandles(rows);
-   const imported=target.importDrawings(source),restored={count:target.inspect().nativePrimitives,price:target.readDrawing("visual-level"),time:target.readDrawing("visual-time"),text:target.readDrawing("visual-note"),trend:target.readDrawing("visual-trend")};
+   const imported=target.importDrawings(source),restored={count:target.inspect().nativePrimitives,price:target.readDrawing("visual-level"),time:target.readDrawing("visual-time"),text:target.readDrawing("visual-note"),trend:target.readDrawing("visual-trend"),rectangle:target.readDrawing("visual-zone")};
    target.updateTextAnnotation("visual-note",{text:"Edited note"});const edited=target.readDrawing("visual-note");
    target.removeTextAnnotation("visual-note");const removed=target.readDrawing("visual-note");target.undo();
    const restoredByUndo=target.readDrawing("visual-note");let invalidText="";try{target.addTextAnnotation({id:"invalid-note",time:rows[52].time,price:4000,text:"\u00e4",color:"#ffffff"})}catch(error){invalidText=error.message}
@@ -302,6 +309,11 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const editedTrend=target.readDrawing("visual-trend");target.removeTrendLine("visual-trend");const removedTrend=target.readDrawing("visual-trend");target.undo();
    const restoredTrendByUndo=target.readDrawing("visual-trend");
    const trendApi={unavailableAnchorLock,reverseError,reversedTrend,invalidTrend,afterInvalidTrend,editedTrend,removedTrend,restoredTrendByUndo};
+   target.updateRectangle("visual-zone",{fill:false});const editedRectangle=target.readDrawing("visual-zone");
+   target.removeRectangle("visual-zone");const removedRectangle=target.readDrawing("visual-zone");target.undo();
+   const restoredRectangleByUndo=target.readDrawing("visual-zone");let invalidRectangle="";try{target.updateRectangle("visual-zone",{fill:"yes"})}catch(error){invalidRectangle=error.message}
+   const afterInvalidRectangle=target.readDrawing("visual-zone");
+   const rectangleApi={editedRectangle,removedRectangle,restoredRectangleByUndo,invalidRectangle,afterInvalidRectangle};
    const annotationApi={edited,removed,restoredByUndo,invalidText};
    target.destroy();
    const malformedTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"malformedtest",scope);malformedTarget.setCandles(rows);
@@ -309,9 +321,13 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const afterMalformed=malformedTarget.inspect().nativePrimitives;
    const sourceEnvelope=JSON.parse(source),invalidTrendEnvelope={...sourceEnvelope,drawings:[{kind:"TREND",options:{...sourceEnvelope.drawings.find(item=>item.kind==="TREND").options,extra:true}}]};
    let malformedTrend="";try{malformedTarget.importDrawings(JSON.stringify(invalidTrendEnvelope))}catch(error){malformedTrend=error.message}
-   const afterMalformedTrend=malformedTarget.inspect().nativePrimitives;malformedTarget.destroy();
+   const afterMalformedTrend=malformedTarget.inspect().nativePrimitives;
+   const invalidRectangleEnvelope={...sourceEnvelope,drawings:[{kind:"RECT",options:{...sourceEnvelope.drawings.find(item=>item.kind==="RECT").options,extra:true}}]};
+   let malformedRectangle="";try{malformedTarget.importDrawings(JSON.stringify(invalidRectangleEnvelope))}catch(error){malformedRectangle=error.message}
+   const afterMalformedRectangle=malformedTarget.inspect().nativePrimitives;malformedTarget.destroy();
    const capTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"captest",scope);capTarget.setCandles(rows);
-   for(let i=0;i<100;i++)capTarget.addTrendLine({id:`trend${i}`,startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[40].time,endPrice:rows[40].close,color:"#ffffff"});
+   for(let i=0;i<99;i++)capTarget.addTrendLine({id:`trend${i}`,startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[40].time,endPrice:rows[40].close,color:"#ffffff"});
+   capTarget.addRectangle({id:"last-drawing",startTime:rows[30].time,startPrice:rows[30].close+1,endTime:rows[40].time,endPrice:rows[40].close-1,color:"#ffffff",fill:false});
    let capError="";try{capTarget.addTrendLine({id:"trend-over-cap",startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[40].time,endPrice:rows[40].close,color:"#ffffff"})}catch(error){capError=error.message}
    const capCount=capTarget.inspect().nativePrimitives;capTarget.destroy();
    const conflictTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"conflicttest",scope);conflictTarget.setCandles(rows);conflictTarget.addPriceLevel({id:"existing",price:4000,color:"#ffffff"});
@@ -322,17 +338,18 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const storageConflict={error:storageConflictError,status:storageConflictTarget.inspect().persistenceStatus,count:storageConflictTarget.inspect().nativePrimitives,stored:localStorage.getItem(conflictKey)};storageConflictTarget.destroy();
    const wrongScope=ChartStudioV5.createStudioV5(document.getElementById("chart"),"goldm15",{symbol:"EURUSD",timeframe:"M15"});wrongScope.setCandles(rows);
    let scopeError="";try{wrongScope.importDrawings(source)}catch(error){scopeError=error.message}const wrongScopeCount=wrongScope.inspect().nativePrimitives;wrongScope.destroy();
-   return {source,imported,restored,annotationApi,trendApi,malformed,afterMalformed,malformedTrend,afterMalformedTrend,capError,capCount,conflictError,conflictCount,storageConflict,scopeError,wrongScopeCount};
+   return {source,imported,restored,annotationApi,trendApi,rectangleApi,malformed,afterMalformed,malformedTrend,afterMalformedTrend,malformedRectangle,afterMalformedRectangle,capError,capCount,conflictError,conflictCount,storageConflict,scopeError,wrongScopeCount};
   });
   const transferEnvelope=JSON.parse(drawingTransfer.source);
   assert.equal(transferEnvelope.schemaVersion,1);
   assert.equal(transferEnvelope.account,undefined);
-  assert.deepEqual(drawingTransfer.imported,{imported:4});
-  assert.equal(drawingTransfer.restored.count,4);
+  assert.deepEqual(drawingTransfer.imported,{imported:5});
+  assert.equal(drawingTransfer.restored.count,5);
   assert.deepEqual(drawingTransfer.restored.price,persistedBeforeReload.price);
   assert.deepEqual(drawingTransfer.restored.time,persistedBeforeReload.time);
   assert.deepEqual(drawingTransfer.restored.text,persistedBeforeReload.text);
   assert.deepEqual(drawingTransfer.restored.trend,persistedBeforeReload.trend);
+  assert.deepEqual(drawingTransfer.restored.rectangle,persistedBeforeReload.rectangle);
   assert.equal(drawingTransfer.annotationApi.edited.text,"Edited note");
   assert.equal(drawingTransfer.annotationApi.removed,null);
   assert.deepEqual(drawingTransfer.annotationApi.restoredByUndo,drawingTransfer.annotationApi.edited);
@@ -345,10 +362,17 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(drawingTransfer.trendApi.editedTrend.endPrice,drawingTransfer.trendApi.reversedTrend.endPrice+1);
   assert.equal(drawingTransfer.trendApi.removedTrend,null);
   assert.deepEqual(drawingTransfer.trendApi.restoredTrendByUndo,drawingTransfer.trendApi.editedTrend);
+  assert.equal(drawingTransfer.rectangleApi.editedRectangle.fill,false);
+  assert.equal(drawingTransfer.rectangleApi.removedRectangle,null);
+  assert.deepEqual(drawingTransfer.rectangleApi.restoredRectangleByUndo,drawingTransfer.rectangleApi.editedRectangle);
+  assert.ok(drawingTransfer.rectangleApi.invalidRectangle);
+  assert.deepEqual(drawingTransfer.rectangleApi.afterInvalidRectangle,drawingTransfer.rectangleApi.editedRectangle);
   assert.ok(drawingTransfer.malformed);
   assert.equal(drawingTransfer.afterMalformed,0);
   assert.ok(drawingTransfer.malformedTrend);
   assert.equal(drawingTransfer.afterMalformedTrend,0);
+  assert.ok(drawingTransfer.malformedRectangle);
+  assert.equal(drawingTransfer.afterMalformedRectangle,0);
   assert.ok(drawingTransfer.capError);
   assert.equal(drawingTransfer.capCount,100);
   assert.ok(drawingTransfer.conflictError);
