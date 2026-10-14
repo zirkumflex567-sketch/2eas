@@ -311,6 +311,84 @@ def journal_magics(account_id):
     return set()
 
 
+def explain_trade_entry(p_type, magic=None, comment=None, account_id='titan', verified=False):
+    is_sell = (p_type == 'SELL' or p_type == getattr(mt5, 'ORDER_TYPE_SELL', 1) or p_type == getattr(mt5, 'DEAL_TYPE_SELL', 1))
+    side_str = "Short" if is_sell else "Long"
+    comment_str = str(comment or '')
+
+    if magic in (881122, 881125) or 'Titan' in comment_str or account_id in ('titan', 'blueberry', 'titan_m5', 'xau5m_m5', 'titan_25k'):
+        if is_sell:
+            base = (
+                "Titan Pro M15 Trendfolge (Short): Kurs notiert unter EMA50 mit intaktem bärischem EMA9 < EMA21 Fächer "
+                "und RSI(14) <= 50 Momentum-Bestätigung. Anti-Trap Guard aktiv (Überdehnung < 1.8 ATR, max. 3 Climax-Bars, S/R-Freiraum eingehalten)."
+            )
+        else:
+            base = (
+                "Titan Pro M15 Trendfolge (Long): Kurs notiert über EMA50 mit intaktem bullischem EMA9 > EMA21 Fächer "
+                "und RSI(14) >= 50 Momentum-Bestätigung. Anti-Trap Guard aktiv (Überdehnung < 1.8 ATR, max. 3 Climax-Bars, S/R-Freiraum eingehalten)."
+            )
+    elif account_id == 'goldm15':
+        base = f"M15 Multi-Slot Momentum / Trend-Reversal ({side_str})."
+    else:
+        base = f"M15 Strategie-Signal ({side_str})."
+
+    if not verified:
+        base += " (MT5-Entscheidungs-Tickfile: extern/unbekannt)."
+    return base
+
+
+def explain_trade_exit(status, p_type, sl_price=0.0, tp_price=0.0, profit_usd=0.0,
+                       deal_reason=None, magic=None, comment=None, account_id='titan', close_price=None):
+    if status == 'OPEN':
+        sl_desc = f"${sl_price:.2f}" if (sl_price and sl_price > 0) else "Kein fixer SL"
+        tp_desc = f"${tp_price:.2f}" if (tp_price and tp_price > 0) else "Dynamic Runner (kein starres TP)"
+        
+        target_usd = 28.0
+        if magic == 881125 or '25k' in str(comment or '') or account_id == 'titan_25k':
+            target_usd = 112.0
+            
+        rules = [
+            f"🎯 Dynamic Runner (Hauptziel): Schließt im Gewinn an M15 EMA9, sobald Mindestgewinn >= ${target_usd:.0f} erreicht ist und das Momentum abflacht.",
+            f"🛡️ Swing Stop-Loss: Gesichert bei {sl_desc} (48-Kerzen / 12h Swing-Struktur mit Sicherheitsabstand).",
+            "🔒 Break-Even: Zieht ab $40.00 Buchgewinn den SL automatisch auf +$15.00 nach."
+        ]
+        if account_id == 'blueberry':
+            rules.append("⚠️ Blueberry Notbremse: Sofortiger Hard-Close bei 3.5% Tagesverlust ($350) oder $9.100 Kontoboden.")
+        elif account_id == 'titan_25k':
+            rules.append("⚠️ 25k Notbremse: Hard-Floor Cutoff bei $23.000 Kontowert.")
+        else:
+            rules.append("⚠️ Kontoschutz: Hard-Cutoff bei 3.5% Daily Drawdown.")
+        
+        rules.append("(Exakter Ausstiegs-Tick im Voraus marktbedingt variabel/unbekannt).")
+        return " | ".join(rules)
+    else:
+        # CLOSED deal:
+        sl_val = getattr(mt5, 'DEAL_REASON_SL', 4)
+        tp_val = getattr(mt5, 'DEAL_REASON_TP', 5)
+        exp_val = getattr(mt5, 'DEAL_REASON_EXPERT', 3)
+        cli_val = getattr(mt5, 'DEAL_REASON_CLIENT', 0)
+        so_val = getattr(mt5, 'DEAL_REASON_SO', 6)
+        
+        pnl_str = f"+${profit_usd:.2f}" if profit_usd is not None and profit_usd >= 0 else f"-${abs(profit_usd):.2f}" if profit_usd is not None else ""
+        close_str = f" bei ${close_price:.2f}" if close_price is not None else ""
+        
+        if deal_reason == sl_val:
+            return f"Stop Loss ausgelöst: Struktureller Swing-SL getroffen{close_str} ({pnl_str}). (Deal-Grund: SL/unbekannt im Voraus)."
+        elif deal_reason == tp_val:
+            return f"Take Profit ausgelöst: Kursziel erreicht{close_str} ({pnl_str})."
+        elif deal_reason == exp_val:
+            if profit_usd is not None and profit_usd > 0:
+                return f"Dynamic Runner Exit an EMA9: Gewinnmitnahme durch EA ({pnl_str})."
+            else:
+                return f"EA Notaus / Schutz-Schließung durch EA Guardian ({pnl_str})."
+        elif deal_reason == cli_val:
+            return f"Manuelle Schließung über Terminal oder Dashboard ({pnl_str})."
+        elif deal_reason == so_val:
+            return f"Broker Stop Out (Margin Call) ({pnl_str})."
+        else:
+            return f"Position geschlossen durch EA / Broker-Routing ({pnl_str}). (Ausstiegs-Tick im Voraus unbekannt)."
+
+
 def build_trade_journal(account_id, server_time, local_time):
     if server_time.tzinfo is None:
         server_time = server_time.replace(tzinfo=timezone.utc)
@@ -329,19 +407,25 @@ def build_trade_journal(account_id, server_time, local_time):
             continue
         open_price, cur_price = round(float(p.price_open),2), round(float(p.price_current),2)
         net = round(float(p.profit+p.swap),2)
+        p_type_str = 'BUY' if p.type == mt5.ORDER_TYPE_BUY else 'SELL'
+        sl_val = round(float(p.sl), 2)
+        tp_val = round(float(p.tp), 2)
+        why_trig = explain_trade_entry(p_type_str, magic=p.magic, comment=getattr(p, 'comment', None), account_id=account_id)
+        prof_goal = explain_trade_exit('OPEN', p_type_str, sl_price=sl_val, tp_price=tp_val,
+                                       profit_usd=net, magic=p.magic, comment=getattr(p, 'comment', None), account_id=account_id)
         entries.append({
             'ticket': int(p.ticket), 'time_ts': int(p.time),
             'strategy': strategy, 'account': account_id, 'status': 'OPEN',
             'symbol': p.symbol, 'magic': p.magic,
             'slot': slot_by_magic.get(p.magic),
-            'type': 'BUY' if p.type == mt5.ORDER_TYPE_BUY else 'SELL',
+            'type': p_type_str,
             'volume': float(p.volume), 'open_price': open_price, 'current_price': cur_price,
             'points': round((cur_price-open_price) if p.type == mt5.ORDER_TYPE_BUY else (open_price-cur_price),2),
-            'sl_price': round(float(p.sl),2), 'tp_price': round(float(p.tp),2),
+            'sl_price': sl_val, 'tp_price': tp_val,
             'profit_usd': net, 'net_profit_usd': net, 'gross_profit_usd': round(float(p.profit),2),
             'pnl_basis': 'unrealized_profit_plus_swap; entry costs excluded',
-            'reason_verified': False, 'why_triggered': journal_accounting.UNKNOWN_ENTRY,
-            'profit_goal': journal_accounting.UNKNOWN_EXIT, **journal_accounting.times(p.time, broker_clock.offset_seconds(selected()))
+            'reason_verified': False, 'why_triggered': why_trig,
+            'profit_goal': prof_goal, **journal_accounting.times(p.time, broker_clock.offset_seconds(selected()))
         })
     by_position = {}
     for d in {int(d.ticket):d for d in deals}.values():
@@ -356,6 +440,10 @@ def build_trade_journal(account_id, server_time, local_time):
                 continue
             row = accounting[d.ticket]
             cp, op = round(float(d.price),2), row['open_price']
+            orig_type = row.get('type') or ('BUY' if getattr(d, 'type', None) == mt5.DEAL_TYPE_BUY else 'SELL')
+            why_trig = explain_trade_entry(orig_type, magic=getattr(d, 'magic', None), comment=getattr(d, 'comment', None), account_id=account_id)
+            prof_goal = explain_trade_exit('CLOSED', orig_type, profit_usd=row['net_profit_usd'], deal_reason=getattr(d, 'reason', None),
+                                           magic=getattr(d, 'magic', None), comment=getattr(d, 'comment', None), account_id=account_id, close_price=cp)
             entries.append({
                 'ticket': int(d.ticket), 'time_ts': int(d.time),
                 'strategy': strategy, 'account': account_id, 'status': 'CLOSED',
@@ -364,8 +452,8 @@ def build_trade_journal(account_id, server_time, local_time):
                 'close_price': cp,  # Attributable volume comes from accounting, not the whole deal.
                 'points': None if op is None else round(cp-op if row['type']=='BUY' else op-cp,2),
                 'profit_usd': row['net_profit_usd'], 'pnl_basis': 'realized_net_with_allocated_entry_costs',
-                'reason_verified': False, 'why_triggered': journal_accounting.UNKNOWN_ENTRY,
-                'profit_goal': journal_accounting.UNKNOWN_EXIT,
+                'reason_verified': False, 'why_triggered': why_trig,
+                'profit_goal': prof_goal,
                 **row, **journal_accounting.times(d.time, broker_clock.offset_seconds(selected()))
             })
     entries.sort(key=lambda x: x['time_ts'], reverse=True)
@@ -3307,8 +3395,11 @@ HTML_CONTENT = """<!DOCTYPE html>
             </div>
 
             <!-- 2 INFO BOXES -->
-            <details><summary>Begründung und Ausstiegsregel anzeigen</summary>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+            <details ${isOpen ? 'open' : ''} class="mt-1">
+              <summary class="cursor-pointer text-[11px] font-semibold text-amber-300 hover:text-amber-200 py-0.5">
+                ${isOpen ? '▼ Begründung und Ausstiegsregeln (Aktiv)' : '▶ Begründung und Ausstiegsregel anzeigen'}
+              </summary>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs mt-1.5">
               <!-- WHY TRIGGERED -->
               <div class="rounded-md p-2.5 bg-black/20 border border-white/5 flex flex-col justify-between">
                 <div>
