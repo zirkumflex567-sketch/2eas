@@ -8,6 +8,95 @@ const MAX_DRAWINGS=1000;
 const MAX_EVIDENCE_ROWS=500;
 const ratios=[0,.236,.382,.5,.618,.786,1];
 let s=null,requestId=0,scenarioGeneration=0,portfolioGeneration=0,planTimer=null;
+function createChartCoordinates({apiVersion,chart,series,scope}){
+ if(![4,5].includes(apiVersion)||!chart||typeof chart.timeScale!=="function"||
+  typeof chart.subscribeCrosshairMove!=="function"||typeof chart.unsubscribeCrosshairMove!=="function"||
+  !series||typeof series.priceToCoordinate!=="function"||typeof series.coordinateToPrice!=="function")
+  throw new TypeError("Unsupported chart coordinate API");
+ const timeScale=chart.timeScale();
+ for(const method of ["timeToCoordinate","coordinateToTime","getVisibleLogicalRange","setVisibleLogicalRange","subscribeVisibleLogicalRangeChange","unsubscribeVisibleLogicalRangeChange"])
+  if(typeof timeScale?.[method]!=="function")throw new TypeError("Incomplete chart time-scale API");
+ if(typeof series.coordinateToPrice!=="function")throw new TypeError("Incomplete chart price-series API");
+ function normalizeScope(value){
+  if(!value||typeof value!=="object"||Array.isArray(value))throw new TypeError("Invalid chart scope");
+  const result={};for(const key of ["account","symbol","timeframe"]){
+   if(typeof value[key]!=="string"||!value[key].trim()||value[key].length>64)throw new TypeError("Invalid chart scope");
+   result[key]=value[key];
+  }
+  return Object.freeze(result);
+ }
+ function normalizeTime(value){
+  if(Number.isSafeInteger(value)&&value>0)return value;
+  if(!value||typeof value!=="object"||Array.isArray(value)||
+   !Number.isInteger(value.year)||value.year<1||value.year>9999||
+   !Number.isInteger(value.month)||value.month<1||value.month>12||
+   !Number.isInteger(value.day)||value.day<1||value.day>31)throw new TypeError("Invalid chart time");
+  const date=new Date(0);date.setUTCFullYear(value.year,value.month-1,value.day);date.setUTCHours(0,0,0,0);
+  if(date.getUTCFullYear()!==value.year||date.getUTCMonth()+1!==value.month||date.getUTCDate()!==value.day)
+   throw new TypeError("Invalid chart business day");
+  return Math.floor(date.getTime()/1000);
+ }
+ function logicalRange(value){
+  if(!value||typeof value!=="object"||!Number.isFinite(value.from)||!Number.isFinite(value.to)||value.from>=value.to)
+   throw new TypeError("Invalid visible logical range");
+  return {from:value.from,to:value.to};
+ }
+ function coordinate(method,value){
+  if(!Number.isFinite(value))throw new TypeError("Invalid chart coordinate input");
+  const result=method(value);return result==null?null:Number.isFinite(result)?result:null;
+ }
+ let activeScope=normalizeScope(scope),revision=0,destroyed=false;
+ const subscriptions=new Set();
+ function requireActive(){if(destroyed)throw new TypeError("Chart coordinate adapter is disposed")}
+ function detach(subscription){
+  if(!subscription.handler)return;
+  if(subscription.kind==="crosshair")chart.unsubscribeCrosshairMove(subscription.handler);
+  else timeScale.unsubscribeVisibleLogicalRangeChange(subscription.handler);
+  subscription.handler=null;
+ }
+ function attach(subscription){
+  const generation=revision,capturedScope=activeScope;
+  subscription.handler=subscription.kind==="crosshair"?event=>{
+   if(!subscription.active||destroyed||generation!==revision)return;
+   try{
+    subscription.listener({scope:capturedScope,time:event?.time==null?null:normalizeTime(event.time),
+     logical:Number.isFinite(event?.logical)?event.logical:null,
+     seriesData:event?.seriesData instanceof Map?event.seriesData:new Map()});
+   }catch(_){/* Malformed crosshair events are ignored without reaching UI state. */}
+  }:range=>{
+   if(!subscription.active||destroyed||generation!==revision)return;
+   let normalized=null;try{if(range!=null)normalized=logicalRange(range)}catch(_){return}
+   subscription.listener({scope:capturedScope,range:normalized});
+  };
+  if(subscription.kind==="crosshair")chart.subscribeCrosshairMove(subscription.handler);
+  else timeScale.subscribeVisibleLogicalRangeChange(subscription.handler);
+ }
+ function subscribe(kind,listener){
+  requireActive();if(typeof listener!=="function")throw new TypeError("Invalid chart event listener");
+  const subscription={kind,listener,handler:null,active:true};subscriptions.add(subscription);attach(subscription);
+  let removed=false;return ()=>{
+   if(removed)return;removed=true;subscription.active=false;detach(subscription);subscriptions.delete(subscription);
+  };
+ }
+ return Object.freeze({apiVersion,
+  timeToX(time){requireActive();let input;try{input=normalizeTime(time)}catch(_){throw new TypeError("Invalid chart time")}
+   const nativeTime=typeof time==="number"?input:time,result=timeScale.timeToCoordinate(nativeTime);
+   return result==null?null:Number.isFinite(result)?result:null},
+  xToTime(x){requireActive();if(!Number.isFinite(x))throw new TypeError("Invalid chart coordinate input");
+   const value=timeScale.coordinateToTime(x);return value==null?null:normalizeTime(value)},
+  priceToY(price){requireActive();return coordinate(value=>series.priceToCoordinate(value),price)},
+  yToPrice(y){requireActive();return coordinate(value=>series.coordinateToPrice(value),y)},
+  visibleLogicalRange(){requireActive();const value=timeScale.getVisibleLogicalRange();return value==null?null:logicalRange(value)},
+  setVisibleLogicalRange(value){requireActive();timeScale.setVisibleLogicalRange(logicalRange(value))},
+  subscribeCrosshair(listener){return subscribe("crosshair",listener)},
+  subscribeVisibleLogicalRange(listener){return subscribe("range",listener)},
+  setScope(value){requireActive();const next=normalizeScope(value);
+   if(next.account===activeScope.account&&next.symbol===activeScope.symbol&&next.timeframe===activeScope.timeframe)return;
+   revision++;activeScope=next;for(const subscription of subscriptions){detach(subscription);attach(subscription)}
+  },
+  destroy(){if(destroyed)return;revision++;destroyed=true;for(const subscription of subscriptions){subscription.active=false;detach(subscription)}subscriptions.clear()}
+ });
+}
 const json=v=>JSON.parse(JSON.stringify(v));
 const get=(k,df)=>{try{const v=JSON.parse(localStorage.getItem(prefix+k));return v??df}catch(_){return df}};
 const save=(k,v)=>{try{localStorage.setItem(prefix+k,JSON.stringify(v))}catch(_){}};
@@ -437,24 +526,24 @@ function updateSeries(){
 }
 function drawBollingerFill(ctx){
  const points=s?.bbData;if(!s?.opts.bb||!s.opts.bbFill||!points?.upper?.length)return;
- const visible=s.chart.timeScale().getVisibleLogicalRange?.(),offset=s.candles.length-points.upper.length;
+ const visible=s.coordinates.visibleLogicalRange(),offset=s.candles.length-points.upper.length;
  const start=Math.max(0,Math.floor(visible?.from??0)-offset-1),end=Math.min(points.upper.length-1,Math.ceil(visible?.to??s.candles.length)+1-offset);
  const upper=[],lower=[];for(let i=start;i<=end;i++){
-  const x=s.chart.timeScale().timeToCoordinate(points.upper[i].time),yu=s.series.priceToCoordinate(points.upper[i].value),yl=s.series.priceToCoordinate(points.lower[i].value);
+  const x=s.coordinates.timeToX(points.upper[i].time),yu=s.coordinates.priceToY(points.upper[i].value),yl=s.coordinates.priceToY(points.lower[i].value);
   if(Number.isFinite(x)&&Number.isFinite(yu)&&Number.isFinite(yl)){upper.push([x,yu]);lower.push([x,yl])}
  }
  if(upper.length<2)return;ctx.save();ctx.beginPath();ctx.moveTo(...upper[0]);for(let i=1;i<upper.length;i++)ctx.lineTo(...upper[i]);for(let i=lower.length-1;i>=0;i--)ctx.lineTo(...lower[i]);ctx.closePath();ctx.fillStyle="rgba(185,161,255,.10)";ctx.fill();ctx.restore();
 }
 function project(anchor){
  let x=null,y=null;
- try{x=s.chart.timeScale().timeToCoordinate(anchor.time);y=s.series.priceToCoordinate(anchor.price)}catch(_){}
+ try{x=s.coordinates.timeToX(anchor.time);y=s.coordinates.priceToY(anchor.price)}catch(_){}
  return Number.isFinite(x)&&Number.isFinite(y)?{x,y}:null;
 }
 function snapAnchor(point){
  if(!s?.magnet||!point)return point;
  const c=window.ChartStudioDrawingGeometry?.nearestSnap(point,s.candles,
- time=>s.chart.timeScale().timeToCoordinate(time),
- price=>s.series.priceToCoordinate(price),12);
+ time=>s.coordinates.timeToX(time),
+ price=>s.coordinates.priceToY(price),12);
  return c?{time:c.time,price:c.price}:point;
 }
 function removeSelected(){
@@ -500,8 +589,8 @@ function operateObject(i,action,value){
  persist();return true;
 }
 function unproject(x,y){
- const time=s.chart.timeScale().coordinateToTime(x),price=s.series.coordinateToPrice(y);
- return typeof time==="number"&&Number.isFinite(price)&&price>0?{time,price}:null;
+ const time=s.coordinates.xToTime(x),price=s.coordinates.yToPrice(y);
+ return Number.isSafeInteger(time)&&Number.isFinite(price)&&price>0?{time,price}:null;
 }
 function dims(){
  const root=s.host.getBoundingClientRect(),cell=s.host.querySelector("table tbody tr:first-child td:first-child");
@@ -569,10 +658,10 @@ function drawPositions(ctx,d){
  for(const p of s.verifiedPositions){
   const entry=Number(p.price_open),sl=Number(p.sl),tp=Number(p.tp);
   if(!Number.isFinite(entry)||entry<=0)continue;
-  const yEntry=s.series.priceToCoordinate(entry);if(!Number.isFinite(yEntry))continue;
+  const yEntry=s.coordinates.priceToY(entry);if(!Number.isFinite(yEntry))continue;
   for(const [price,type] of [[sl,"SL"],[tp,"TP"]]){
    if(!Number.isFinite(price)||price<=0)continue;
-   const y=s.series.priceToCoordinate(price);if(!Number.isFinite(y))continue;
+   const y=s.coordinates.priceToY(price);if(!Number.isFinite(y))continue;
    ctx.fillStyle=type==="SL"?"rgba(236,80,92,.16)":"rgba(36,206,143,.13)";
    ctx.fillRect(0,Math.min(y,yEntry),d.w,Math.abs(y-yEntry));
    ctx.strokeStyle=type==="SL"?"#ff7e8e":"#60eabb";ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(d.w-62,y);ctx.stroke();
@@ -606,7 +695,7 @@ function drawPositionDraft(ctx,d){
  ctx.save();ctx.setLineDash([5,4]);ctx.font="11px monospace";
  for(const [leg,color] of [["slPrice","#ff7584"],["tpPrice","#5eeabb"]]){
   const price=draft[leg];if(!Number.isFinite(price)||price<=0)continue;
-  const y=s.series.priceToCoordinate(price);if(!Number.isFinite(y))continue;
+  const y=s.coordinates.priceToY(price);if(!Number.isFinite(y))continue;
   ctx.strokeStyle=color;ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(d.w-10,y);ctx.stroke();
   ctx.setLineDash([]);ctx.fillRect(d.w*.48-7,y-7,14,14);ctx.fillStyle="#071721";ctx.fillText(leg==="slPrice"?"SL":"TP",d.w*.48-5,y+4);ctx.setLineDash([5,4]);
   ctx.fillStyle=color;ctx.fillText("ENTWURF "+(leg==="slPrice"?"SL ":"TP ")+price.toFixed(draft.digits),5,Math.max(12,Math.min(d.h-4,y-5)));
@@ -615,7 +704,7 @@ function drawPositionDraft(ctx,d){
 }
 function drawScenario(ctx,d){
  const plan=s.scenario;if(!plan)return;
- const entry=s.series.priceToCoordinate(plan.entryPrice),sl=s.series.priceToCoordinate(plan.slPrice),tp=s.series.priceToCoordinate(plan.tpPrice);
+  const entry=s.coordinates.priceToY(plan.entryPrice),sl=s.coordinates.priceToY(plan.slPrice),tp=s.coordinates.priceToY(plan.tpPrice);
  if(![entry,sl,tp].every(Number.isFinite))return;
  ctx.save();
  for(const [a,b,color] of [[entry,sl,"rgba(255,120,130,.21)"],[entry,tp,"rgba(60,223,178,.18)"]]){
@@ -637,7 +726,7 @@ function drawScenario(ctx,d){
 }
 function drawPinnedDataWindow(ctx,d){
  const row=s?.dataWindow?.pinned?s.dataWindow.snapshot:null;if(!row)return;
- const x=s.chart.timeScale().timeToCoordinate(row.time),y=s.series.priceToCoordinate(row.close);
+  const x=s.coordinates.timeToX(row.time),y=s.coordinates.priceToY(row.close);
  if(!Number.isFinite(x)||!Number.isFinite(y))return;
  ctx.save();ctx.strokeStyle="#ffd166";ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,d.h);ctx.moveTo(0,y);ctx.lineTo(d.w,y);ctx.stroke();ctx.restore();
 }
@@ -684,14 +773,15 @@ function previewPlan(immediate=false){
 }
 function findPlanGrip(x,y){
  if(!s?.scenario||!s.planTickSize)return null;
- const sl=s.series.priceToCoordinate(s.scenario.slPrice),tp=s.series.priceToCoordinate(s.scenario.tpPrice);
+  const sl=s.coordinates.priceToY(s.scenario.slPrice),tp=s.coordinates.priceToY(s.scenario.tpPrice);
  const dsl=Number.isFinite(sl)?Math.abs(y-sl):Infinity,dtp=Number.isFinite(tp)?Math.abs(y-tp):Infinity;
  if(Math.min(dsl,dtp)>19)return null;
  return dsl<=dtp?"slPrice":"tpPrice";
 }
 function findPositionDraftGrip(y){
  if(!s?.positionDraft)return null;
- const points=["slPrice","tpPrice"].map(leg=>({leg,y:s.series.priceToCoordinate(s.positionDraft[leg])})).filter(x=>Number.isFinite(x.y));
+ const points=["slPrice","tpPrice"].filter(leg=>s.positionDraft[leg]!=null)
+  .map(leg=>({leg,y:s.coordinates.priceToY(s.positionDraft[leg])})).filter(x=>Number.isFinite(x.y));
  const hit=points.sort((a,b)=>Math.abs(a.y-y)-Math.abs(b.y-y))[0];return hit&&Math.abs(hit.y-y)<=20?hit.leg:null;
 }
 function closestHandle(x,y){for(let i=s.draw.length-1;i>=0;i--){if(s.draw[i].locked||s.draw[i].visible===false)continue;for(let j=0;j<s.draw[i].anchors.length;j++){const p=project(s.draw[i].anchors[j]);if(p&&Math.hypot(p.x-x,p.y-y)<11)return {i,j}}}return null}
@@ -774,7 +864,7 @@ function symbol(value){
  if(!s||!valid)return false;if(value===chartSymbol())return true;
  cancelPlanPreview();window.ChartStudioBrokerPanel?.invalidateDraft("Chartsymbol geändert · Positionsentwurf verworfen.");
  if(s.tool==="position-draft"||s.tool==="plan")setTool("cursor");
- s.symbol=value;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.magnet=get(magnetKey(),false)===true;
+ s.symbol=value;s.coordinates.setScope({account:s.account,symbol:value,timeframe:s.tf});s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.magnet=get(magnetKey(),false)===true;
  s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
  s.candles=[];s.candleSignature=null;s.positions=[];s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.brokerMarkers=[];
  s.scenario=null;s.validatedScenario=null;s.planDrag=null;s.planOriginal=null;s.marketQuote=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.undo=[];s.redo=[];
@@ -785,7 +875,7 @@ function symbol(value){
  refreshProfiles();showOpts();updateSeries();window.ChartStudioObjectManager?.render();requestDraw();
  window.dispatchEvent(new CustomEvent("chartstudio:symbol-change",{detail:{account:s.account,symbol:value,timeframe:s.tf}}));return true;
 }
-function account(id){if(!s)return;cancelPlanPreview();s.account=id;clearEvidence();s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioLoading=false;s.portfolioError="";if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
+function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});clearEvidence();s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioLoading=false;s.portfolioError="";if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
  s.lastScenarioPreview=null;s.marketQuote=null;clearDataWindowPin();
   s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
   const fibInput=s.panel.querySelector("#cs-fib-levels");if(fibInput)fibInput.value=window.ChartStudioFib?.display(s.fibLevels)||"";
@@ -803,7 +893,7 @@ function account(id){if(!s)return;cancelPlanPreview();s.account=id;clearEvidence
  renderScenarioSnapshots();loadPortfolio(id);
  const scenarioStatus=s.panel.querySelector("#cs-scenario-ab-status");if(scenarioStatus)scenarioStatus.textContent="A/B-Snapshots für "+id+" · lokal · nur verifizierte Vorschauen.";
  showOpts();refreshProfiles();updateSeries();window.ChartStudioObjectManager?.render();requestDraw()}
-function timeframe(tf){if(s){cancelPlanPreview();if(s.positionDraft)window.ChartStudioBrokerPanel?.invalidateDraft("Timeframe geändert · Positionsentwurf verworfen.");s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.tf=tf;window.ChartStudioBrokerPanel?.setTimeframe(tf);s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");refreshProfiles();
+function timeframe(tf){if(s){cancelPlanPreview();if(s.positionDraft)window.ChartStudioBrokerPanel?.invalidateDraft("Timeframe geändert · Positionsentwurf verworfen.");s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.tf=tf;s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});window.ChartStudioBrokerPanel?.setTimeframe(tf);s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");refreshProfiles();
  clearDataWindowPin();
  window.ChartStudioIndicators?.updateBars([]);
   window.ChartStudioOscillators?.updateBars([]);
@@ -976,7 +1066,8 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  host.parentElement.insertAdjacentElement("beforebegin",panel);
  const canvas=document.createElement("canvas");canvas.className="cs-beta-canvas";canvas.style.pointerEvents="none";canvas.setAttribute("aria-hidden","true");
  host.style.position="relative";host.appendChild(canvas);
- s={chart,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
+ const coordinates=createChartCoordinates({apiVersion:4,chart,series:candleSeries,scope:{account:accountId,symbol:"XAUUSD",timeframe:tf}});
+ s={chart,coordinates,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
   account:accountId,symbol:"XAUUSD",tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,positionDraft:null,positionDraftDrag:null,verifiedPositions:[],positionContext:null,
   lastScenarioPreview:null,portfolio:null,portfolioCapturedAtUtc:null,portfolioLoading:false,portfolioError:"",dataWindow:{snapshot:null,pinned:false},marketQuote:null,
   draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],brokerMarkers:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null,fibLevels:[...ratios],evidence:{rows:[],cursor:null,query:null,meta:null,loading:false,error:"",generation:0}};
@@ -987,7 +1078,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  panel.querySelector("#cs-evidence-days").addEventListener("change",clearEvidence);
  renderEvidence();
  panel.querySelector("#cs-portfolio-refresh").addEventListener("click",()=>loadPortfolio(s.account));
- chart.subscribeCrosshairMove(handleCrosshair);
+ s.coordinates.subscribeCrosshair(handleCrosshair);
  try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}
  catch (err) {console.warn("Chart Studio indicator pane could not load:",err);}
  try {window.ChartStudioCatalog?.mount({panel});}
@@ -1197,10 +1288,10 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
    f:"fib",c:"channel",m:"ruler"};
   if(hotkeys[key]){e.preventDefault();setTool(hotkeys[key])}
  });
- chart.timeScale().subscribeVisibleLogicalRangeChange(requestDraw);
+ s.coordinates.subscribeVisibleLogicalRange(()=>requestDraw());
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();
 }
-window.ChartStudioBeta=Object.freeze({mount,account,symbol,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,symbol:s.symbol,timeframe:s.tf,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),portfolio:s.portfolio?json(s.portfolio):null,positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
+window.ChartStudioBeta=Object.freeze({mount,account,symbol,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,coordinates:Object.freeze({create:createChartCoordinates}),calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,symbol:s.symbol,timeframe:s.tf,coordinateApiVersion:s.coordinates.apiVersion,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),portfolio:s.portfolio?json(s.portfolio):null,positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
  scenario:s.scenario?json(s.scenario):null,tool:s.tool,magnet:s.magnet,selected:s.selected}:null});
 })();

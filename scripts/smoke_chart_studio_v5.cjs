@@ -19,6 +19,45 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   page.on("request",request=>{if(request.method()!=="GET")writes.push(request.url())});
   await page.goto("http://127.0.0.1:8872/chart_studio_v5/fixture.html",{waitUntil:"networkidle"});
   assert.equal(await page.evaluate(()=>window.__chartV5Ready),true);
+  await page.addScriptTag({path:path.resolve("chart_studio_v5/node_modules/lightweight-charts/dist/lightweight-charts.standalone.development.js")});
+  await page.addScriptTag({path:path.resolve("static/chart-studio-beta.js")});
+  const coordinateCompatibility=await page.evaluate(async()=>{
+   const run=(time,secondTime)=>{
+    const host=document.createElement("div");host.style.cssText="width:900px;height:360px";document.body.append(host);
+    const lib=window.LightweightCharts,chart=lib.createChart(host,{width:900,height:360,autoSize:false});
+    const series=chart.addSeries(lib.CandlestickSeries,{priceLineVisible:false});
+    const bars=[{time,open:100,high:105,low:95,close:101},{time:secondTime,open:101,high:108,low:99,close:106}];
+    series.setData(bars);chart.timeScale().fitContent();
+    const adapter=ChartStudioBeta.coordinates.create({apiVersion:5,chart,series,scope:{account:"titan",symbol:"XAUUSD",timeframe:"M15"}});
+    adapter.setVisibleLogicalRange({from:-2,to:3});
+    const x=adapter.timeToX(time),y=adapter.priceToY(bars[0].close),range=adapter.visibleLogicalRange();
+    const roundtripTime=adapter.xToTime(x),roundtripPrice=adapter.yToPrice(y);
+    let crosshair=null,rangeEvent=null;
+    const offCrosshair=adapter.subscribeCrosshair(value=>{crosshair=value});
+    const offRange=adapter.subscribeVisibleLogicalRange(value=>{rangeEvent=value});
+    adapter.setScope({account:"goldm15",symbol:"EURUSD",timeframe:"H1"});
+    chart.setCrosshairPosition(bars[1].close,secondTime,series);
+    adapter.setVisibleLogicalRange({from:0,to:1});
+    return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>{
+     const result={version:adapter.apiVersion,x,y,roundtripTime,roundtripPrice,
+      range,scope:crosshair?.scope||null,crosshairTime:crosshair?.time??null,rangeScope:rangeEvent?.scope||null,
+      rangeValue:rangeEvent?.range||null,visibleRange:adapter.visibleLogicalRange()};
+     offCrosshair();offRange();adapter.destroy();chart.remove();host.remove();resolve(result);
+    })));
+   };
+   const utc=run(1700000000,1700086400),businessDay=run({year:2024,month:1,day:2},{year:2024,month:1,day:3});
+   return {utc:await utc,businessDay:await businessDay};
+  });
+  assert.equal(coordinateCompatibility.utc.version,5);
+  assert.ok(Number.isFinite(coordinateCompatibility.utc.x)&&Number.isFinite(coordinateCompatibility.utc.y));
+  assert.equal(coordinateCompatibility.utc.roundtripTime,1700000000);
+  assert.ok(Math.abs(coordinateCompatibility.utc.roundtripPrice-101)<1e-8);
+  assert.deepEqual(coordinateCompatibility.utc.scope,{account:"goldm15",symbol:"EURUSD",timeframe:"H1"});
+  assert.equal(coordinateCompatibility.utc.crosshairTime,1700086400);
+  assert.deepEqual(coordinateCompatibility.utc.rangeScope,{account:"goldm15",symbol:"EURUSD",timeframe:"H1"});
+  assert.deepEqual(coordinateCompatibility.utc.visibleRange,{from:0,to:1});
+  assert.equal(coordinateCompatibility.businessDay.roundtripTime,Date.UTC(2024,0,2)/1000);
+  assert.ok(Number.isFinite(coordinateCompatibility.businessDay.x));
   const result=await page.evaluate(()=>{
    const engine=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan");
    const bars=Array.from({length:80},(_,i)=>{

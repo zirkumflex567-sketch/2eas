@@ -5,6 +5,7 @@
 ## Current integration and compatibility
 
 - Existing dashboard, data feeds, EA signals, risk guards and all MT5 functionality continue using `static/lightweight-charts.js` (v4). **Do not change the active `app.py` Chart mount in this PR.**
+- ChartStudioBeta's coordinate use now goes through an explicit v4/v5 adapter for epoch/BusinessDay time, price pixels, logical ranges and scope-bound crosshair/range callbacks. Node contract tests and Chromium smokes against the current v4 Beta and pinned native v5 bundle pass. Production remains mounted on v4; this interface does not claim native multi-symbol feeds or renderer parity.
 - v5 replaces `chart.addLineSeries(options)` with `chart.addSeries(LineSeries, options)`, and likewise Candlestick/Histogram. v5 supports `addSeries(..., paneIndex)`, `moveToPane`, `chart.panes()`, and native pane height management.
 - An independent native TypeScript adapter in `chart_studio_v5/src/adapter.ts` currently renders candles, configurable line-instance data, native indicator panes and volume. It rejects invalid/duplicate candles, stale out-of-order updates, unsafe line IDs, and indicator count excess. An account switch clears series and bars; no broker routes are called.
 - The isolated adapter also exposes a read-only exact-time data-window model: OHLC and real volume (or explicitly labeled tick-volume proxy), plus only line-series values whose timestamp exactly matches a loaded candle. Missing/warm-up data stays null, forming-bar updates invalidate indicator readouts, replacing history clears old values, and all fields identify the current account and `CHART_FEED` source. This is adapter capability only; no production sidebar/crosshair wiring is claimed.
@@ -24,7 +25,7 @@ Pin must be reviewed for a security update with an explicit PR rather than `late
 
 ## Next engineering gates (not claimed by this RFC)
 
-1. Replace v4-specific price/time coordinate and mouse-gesture assumptions behind a versioned adapter interface; stable native price and time scale semantics, including multi-symbol/timeframe subscriptions.
+1. The versioned coordinate interface and v4/v5 public coordinate contracts are implemented and tested. Stable native price/time behavior is covered for the pinned v5 browser bundle; native multi-symbol/timeframe feeds and cross-chart subscriptions remain open.
 2. Move production indicator math to v5 native panes **without duplicate render or duplicated EMA calculations**. Preserve user settings and complete pane sizing/axis labels; the isolated fixture now includes price/time lines plus bounded anchored text annotations with scoped local persistence and JSON transfer. Additional drawing types and stop/target draft overlays remain separate work.
 3. Add robust rollback and v4/v5 screenshot parity on real historical broker data (account-scoped; no foreign-account fallback), responsiveness at 320/390/768/1440 px, full-screen, touch and reduced-motion.
 4. Do not permit any new MT5 mutation from adapter or smoke tests; all real stop adjustments remain behind separate auth/CSRF/guard/revision/idempotency, and demo-user-release gates in Tasks 0.7/4.x.

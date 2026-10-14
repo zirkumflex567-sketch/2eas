@@ -29,7 +29,9 @@ const chart=LightweightCharts.createChart(host,{width:host.clientWidth,height:ho
  timeScale:{timeVisible:true,rightOffset:7,barSpacing:7}});
 window.__chartCrosshairSubscribers=[];
 const subscribeCrosshairMove=chart.subscribeCrosshairMove.bind(chart);
+const unsubscribeCrosshairMove=chart.unsubscribeCrosshairMove.bind(chart);
 chart.subscribeCrosshairMove=callback=>{window.__chartCrosshairSubscribers.push(callback);subscribeCrosshairMove(callback)};
+chart.unsubscribeCrosshairMove=callback=>{window.__chartCrosshairSubscribers=window.__chartCrosshairSubscribers.filter(item=>item!==callback);unsubscribeCrosshairMove(callback)};
 const scale=chart.timeScale(),timeToCoordinate=scale.timeToCoordinate.bind(scale);
 window.__chartTimeLookups=[];scale.timeToCoordinate=time=>{window.__chartTimeLookups.push(time);return timeToCoordinate(time)};
 const candleSeries=chart.addCandlestickSeries({upColor:"#1acc92",downColor:"#ef6781"});

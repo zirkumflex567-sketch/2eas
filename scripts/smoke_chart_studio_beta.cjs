@@ -136,6 +136,8 @@ const fs=require("node:fs"),path=require("node:path");
   });
   await page.goto("http://127.0.0.1:8864/static/chart-studio-fixture.html",{waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartSmokeReady===true);
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().coordinateApiVersion),4,
+   "The production Beta mount remains explicitly bound to the vendored v4 chart");
   await page.locator("#cs-beta-toggle").click();
   await page.locator("#cs-evidence-panel > summary").click();
   const chartBeforeEvidence=await page.evaluate(()=>JSON.stringify({drawings:ChartStudioBeta.getState().drawings,options:ChartStudioBeta.getState().options}));
