@@ -3,7 +3,7 @@
    No broker write calls or chart trading mutations in this module. */
 (()=>{
 "use strict";
-const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","trend","rect","fib","ray","ruler","channel","plan"];
+const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","trend","rect","fib","ray","ruler","channel","plan","position-draft"];
 const ratios=[0,.236,.382,.5,.618,.786,1];
 let s=null,requestId=0,scenarioGeneration=0,planTimer=null;
 const json=v=>JSON.parse(JSON.stringify(v));
@@ -150,11 +150,11 @@ function setTool(kind){
  if(s.tool==="plan"&&kind!=="plan")cancelPlanPreview();
  s.tool=kind;s.begin=null;s.preview=null;s.pending=[];s.drag=null;s.selected=null;
  s.canvas.style.pointerEvents=kind==="cursor"?"none":"auto";
- s.canvas.style.cursor=kind==="edit"?"grab":kind==="plan"?"ns-resize":"crosshair";
+ s.canvas.style.cursor=kind==="edit"?"grab":kind==="plan"||kind==="position-draft"?"ns-resize":"crosshair";
  s.panel.querySelector('[data-cmd="drag-plan"]')?.setAttribute("aria-pressed",String(kind==="plan"));
  s.panel.querySelectorAll("[data-tool]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.tool===kind)));
  window.ChartStudioObjectManager?.render();
- updateMessage(kind==="cursor"?"Navigation":kind==="edit"?"Griff anklicken und ziehen":kind==="horizontal"?"Preislinie: einmal klicken":kind==="plan"?"PLAN: SL oder TP am Chart ziehen · nur Broker-Vorschau":"Zwei Anker setzen · Esc abbrechen");
+ updateMessage(kind==="cursor"?"Navigation":kind==="edit"?"Griff anklicken und ziehen":kind==="horizontal"?"Preislinie: einmal klicken":kind==="plan"?"PLAN: SL oder TP am Chart ziehen · nur Broker-Vorschau":kind==="position-draft"?"Positionsentwurf: SL- oder TP-Griff ziehen · Vorschau bleibt read-only":"Zwei Anker setzen · Esc abbrechen");
  requestDraw();
 }
 function showOpts(){
@@ -342,6 +342,18 @@ function drawBrokerDeals(ctx,d){
   ctx.restore();
  }
 }
+function drawPositionDraft(ctx,d){
+ const draft=s.positionDraft;if(!draft)return;
+ ctx.save();ctx.setLineDash([5,4]);ctx.font="11px monospace";
+ for(const [leg,color] of [["slPrice","#ff7584"],["tpPrice","#5eeabb"]]){
+  const price=draft[leg];if(!Number.isFinite(price)||price<=0)continue;
+  const y=s.series.priceToCoordinate(price);if(!Number.isFinite(y))continue;
+  ctx.strokeStyle=color;ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(d.w-10,y);ctx.stroke();
+  ctx.setLineDash([]);ctx.fillRect(d.w*.48-7,y-7,14,14);ctx.fillStyle="#071721";ctx.fillText(leg==="slPrice"?"SL":"TP",d.w*.48-5,y+4);ctx.setLineDash([5,4]);
+  ctx.fillStyle=color;ctx.fillText("ENTWURF "+(leg==="slPrice"?"SL ":"TP ")+price.toFixed(draft.digits),5,Math.max(12,Math.min(d.h-4,y-5)));
+ }
+ ctx.restore();
+}
 function drawScenario(ctx,d){
  const plan=s.scenario;if(!plan)return;
  const entry=s.series.priceToCoordinate(plan.entryPrice),sl=s.series.priceToCoordinate(plan.slPrice),tp=s.series.priceToCoordinate(plan.tpPrice);
@@ -371,6 +383,7 @@ function render(){
  const pw=Math.ceil(d.w*ratio),ph=Math.ceil(d.h*ratio);if(c.width!==pw||c.height!==ph){c.width=pw;c.height=ph}
  const ctx=c.getContext("2d");ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,d.w,d.h);
  if(s.opts.positions)drawPositions(ctx,d);
+ drawPositionDraft(ctx,d);
  drawBrokerDeals(ctx,d);
  if(s.scenario)drawScenario(ctx,d);
  for(let i=0;i<s.draw.length;i++)drawObject(ctx,{...s.draw[i],selected:i===s.selected},d);
@@ -409,11 +422,20 @@ function findPlanGrip(x,y){
  if(Math.min(dsl,dtp)>19)return null;
  return dsl<=dtp?"slPrice":"tpPrice";
 }
+function findPositionDraftGrip(y){
+ if(!s?.positionDraft)return null;
+ const points=["slPrice","tpPrice"].map(leg=>({leg,y:s.series.priceToCoordinate(s.positionDraft[leg])})).filter(x=>Number.isFinite(x.y));
+ const hit=points.sort((a,b)=>Math.abs(a.y-y)-Math.abs(b.y-y))[0];return hit&&Math.abs(hit.y-y)<=20?hit.leg:null;
+}
 function closestHandle(x,y){for(let i=s.draw.length-1;i>=0;i--){if(s.draw[i].locked||s.draw[i].visible===false)continue;for(let j=0;j<s.draw[i].anchors.length;j++){const p=project(s.draw[i].anchors[j]);if(p&&Math.hypot(p.x-x,p.y-y)<11)return {i,j}}}return null}
 function pointerdown(e){
  if(!s||s.tool==="cursor"||e.button!==0)return;
  const {x,y}=xy(e),raw=unproject(x,y);if(!raw)return;
- const p=s.tool==="plan"?raw:snapAnchor(raw);
+ const p=s.tool==="plan"||s.tool==="position-draft"?raw:snapAnchor(raw);
+ if(s.tool==="position-draft"){
+  const grip=findPositionDraftGrip(y);if(!grip){updateMessage("Positionsentwurf: SL- oder TP-Griff anklicken.");return}
+  s.positionDraftDrag=grip;s.canvas.setPointerCapture(e.pointerId);e.preventDefault();return;
+ }
  if(s.tool==="plan"){
   const grip=findPlanGrip(x,y);if(!grip){updateMessage("PLAN: SL- oder TP-Griff anklicken.");return}
   s.planOriginal=json(s.scenario);s.planDrag=grip;
@@ -453,6 +475,12 @@ function pointermove(e){
   s.panel.querySelector("#cs-scenario-result").textContent="PLAN-VORSCHAU · USD-Risiko wird vom Broker neu berechnet … KEINE ORDER";
   previewPlan();requestDraw();return;
  }
+ if(s.tool==="position-draft"&&s.positionDraftDrag&&s.positionDraft){
+  const tick=s.positionDraft.tickSize,value=Number((Math.round(p.price/tick)*tick).toFixed(s.positionDraft.digits));
+  const next={...s.positionDraft,[s.positionDraftDrag]:value};
+  if(next.side==="BUY"&&((next.slPrice!=null&&next.slPrice>=next.entryPrice)||(next.tpPrice!=null&&next.tpPrice<=next.entryPrice))||next.side==="SELL"&&((next.slPrice!=null&&next.slPrice<=next.entryPrice)||(next.tpPrice!=null&&next.tpPrice>=next.entryPrice)))return;
+  s.positionDraft=next;window.ChartStudioBrokerPanel?.updateDraftPrice(s.positionDraftDrag,value);requestDraw();return;
+ }
  if(s.drag){s.draw[s.drag.i].anchors[s.drag.j]=p;requestDraw()}
  else if(s.pending.length){s.preview=p;requestDraw()}
 }
@@ -465,9 +493,10 @@ function pointerup(e){
   try{window.StoneCelebration?.applyChartSettings()}catch(_){}
   return;
  }
+ if(s.positionDraftDrag){s.positionDraftDrag=null;try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){};return}
  if(!s.drag)return;s.drag=null;persist();try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){}
 }
-function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
+function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
  s.lastScenarioPreview=null;
   s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
   const fibInput=s.panel.querySelector("#cs-fib-levels");if(fibInput)fibInput.value=window.ChartStudioFib?.display(s.fibLevels)||"";
@@ -485,7 +514,7 @@ function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.candleSigna
  renderScenarioSnapshots();
  const scenarioStatus=s.panel.querySelector("#cs-scenario-ab-status");if(scenarioStatus)scenarioStatus.textContent="A/B-Snapshots für "+id+" · lokal · nur verifizierte Vorschauen.";
  showOpts();refreshProfiles();updateSeries();window.ChartStudioObjectManager?.render();requestDraw()}
-function timeframe(tf){if(s){cancelPlanPreview();s.tf=tf;s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");
+function timeframe(tf){if(s){cancelPlanPreview();if(s.positionDraft)window.ChartStudioBrokerPanel?.invalidateDraft("Timeframe geändert · Positionsentwurf verworfen.");s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.tf=tf;s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");
  window.ChartStudioIndicators?.updateBars([]);
   window.ChartStudioOscillators?.updateBars([]);
   window.ChartStudioChartTypes?.updateBars([]);
@@ -505,6 +534,13 @@ function updateCandles(c){if(s&&Array.isArray(c)){
    window.ChartStudioReplay?.updateBars(c);
  requestDraw()}}
 function updatePositions(accountId,positions){if(s&&s.account===accountId){s.positions=Array.isArray(positions)?positions:[];requestDraw()}}
+function updatePositionDraft(accountId,draft){
+ if(!s||s.account!==accountId)return false;
+ if(draft===null){s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");requestDraw();return true}
+ if(draft.symbol!=="XAUUSD"||!/^\d{1,20}$/.test(draft.ticket)||!/^([0-9a-f]{64})$/.test(draft.revision)||!["BUY","SELL"].includes(draft.side)||!Number.isFinite(draft.entryPrice)||draft.entryPrice<=0||!Number.isFinite(draft.tickSize)||draft.tickSize<=0||!Number.isInteger(draft.digits)||draft.digits<0||draft.digits>10)return false;
+ s.positionDraft={...draft};s.positionDraftDrag=null;requestDraw();return true;
+}
+function setPositionDraftTool(accountId){if(!s||s.account!==accountId||!s.positionDraft)return false;setTool("position-draft");return true}
 function updateBrokerDeals(accountId,deals){
  if(!s||s.account!==accountId)return {plotted:0,unplotted:0};
  const entries=new Set(["IN","OUT","INOUT","OUT_BY"]),bars=new Set(s.candles.map(c=>Number(c.time)));
@@ -576,7 +612,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  const canvas=document.createElement("canvas");canvas.className="cs-beta-canvas";canvas.style.pointerEvents="none";canvas.setAttribute("aria-hidden","true");
  host.style.position="relative";host.appendChild(canvas);
  s={chart,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
-  account:accountId,tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,
+  account:accountId,tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,positionDraft:null,positionDraftDrag:null,
   lastScenarioPreview:null,
   draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],brokerMarkers:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null,fibLevels:[...ratios]};
  try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}
@@ -740,7 +776,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  });
  canvas.addEventListener("pointerdown",pointerdown);canvas.addEventListener("pointermove",pointermove);
  canvas.addEventListener("pointerup",pointerup);
- canvas.addEventListener("pointercancel",()=>{cancelPlanPreview();s.drag=null;s.begin=null;s.preview=null;s.pending=[];setTool("cursor")});
+ canvas.addEventListener("pointercancel",()=>{cancelPlanPreview();s.positionDraftDrag=null;s.drag=null;s.begin=null;s.preview=null;s.pending=[];setTool("cursor")});
  window.addEventListener("keydown",e=>{
   if(!s||e.defaultPrevented)return;
   // Never intercept typing, color/period edits, saved names, or other dashboard inputs.
@@ -770,6 +806,6 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();
 }
-window.ChartStudioBeta=Object.freeze({mount,account,timeframe,updateCandles,updatePositions,updateBrokerDeals,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),
+window.ChartStudioBeta=Object.freeze({mount,account,timeframe,updateCandles,updatePositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),positionDraft:s.positionDraft?json(s.positionDraft):null,
  scenario:s.scenario?json(s.scenario):null,tool:s.tool,magnet:s.magnet,selected:s.selected}:null});
 })();

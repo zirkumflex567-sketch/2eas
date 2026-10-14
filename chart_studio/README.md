@@ -302,8 +302,12 @@ gross is positive; profitable trailing stops remain valid geometry.
 
 Guard and market-session sources remain UNKNOWN/NONE. Geometry validity is never
 permission: every preview has `canExecute=false` and `canCommit=false`. Persisted EA
-files without a live heartbeat do not authorize anything. Native dragging and commit
-remain unavailable; there is no commit route.
+files without a live heartbeat do not authorize anything. The beta can select a
+verified open position, adjust a transient revision-bound SL/TP draft with chart
+pointer handles or price fields, and request this read-only preview. Account, ticket,
+revision, and request ID are checked before showing a result; a revision conflict or
+chart/account scope change discards the draft. Touch/hardware acceptance remains open,
+and there is still no commit route.
 
 Random preview IDs live only in a locked process-local registry (maximum 256), expire
 at a monotonic 10-second deadline, and disappear on restart or eviction. Internal

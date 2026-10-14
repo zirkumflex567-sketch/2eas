@@ -18,7 +18,7 @@ const fs=require("node:fs"),path=require("node:path");
   browser=await chromium.launch({headless:true,executablePath:process.env.CHART_STUDIO_CHROMIUM_PATH||undefined});
   const page=await browser.newPage({viewport:{width:1280,height:850},deviceScaleFactor:1.5});
   const consoleErrors=[];page.on("pageerror",e=>consoleErrors.push(e.message));
-  let requests=[],scenarioPayloads=[],scenarioResponses=[],brokerReadRequests=[],failBrokerReads=false,cursorExpired=false,deferTitanPositions=false,releaseTitanPositions=null;
+  let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,brokerReadRequests=[],failBrokerReads=false,cursorExpired=false,deferTitanPositions=false,releaseTitanPositions=null;
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
   await page.route("**/api/chart/v1/scenarios/preview*",async route=>{
     const req=route.request().postDataJSON();
@@ -37,16 +37,24 @@ const fs=require("node:fs"),path=require("node:path");
     scenarioResponses.push(preview);
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(preview)});
   });
+  await page.route("**/api/chart/v1/position/preview-stop",async route=>{
+    const req=route.request().postDataJSON();stopPreviewPayloads.push(req);
+    if(rejectStopPreview)return route.fulfill({status:409,contentType:"application/json",body:JSON.stringify({detail:{code:"POSITION_CHANGED"}})});
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({schemaVersion:1,clientRequestId:req.clientRequestId,account:req.account,symbol:req.symbol,positionTicket:req.positionTicket,positionRevision:req.expectedRevision,brokerPreview:{slPrice:req.candidate.slPrice,tpPrice:req.candidate.tpPrice},pnlAtSl:{amount:"-10.00",currency:"USD",kind:"estimatedGross"},pnlAtTp:{amount:"20.00",currency:"USD",kind:"estimatedGross"},geometry:{state:"VALID",reasons:[]},guard:{state:"UNKNOWN",source:"NONE"},canExecute:false,canCommit:false})});
+  });
   await page.route("**/api/chart/v1/quotes?*",async route=>{
     const url=new URL(route.request().url());
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),symbol:"XAUUSD",bid:"4100.00",ask:"4100.25",tickSize:0.01,source:"MT5_VERIFIED",canExecute:false})});
+  });
+  await page.route("**/api/chart/v1/symbol-info?*",async route=>{
+    const url=new URL(route.request().url());await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),symbol:"XAUUSD",source:"MT5_VERIFIED",canExecute:false,tickSize:"0.01",digits:2})});
   });
   await page.route("**/api/chart/v1/positions?*",async route=>{
     const url=new URL(route.request().url());brokerReadRequests.push({path:url.pathname,url:url.pathname,params:Object.fromEntries(url.searchParams)});
     if(failBrokerReads)return route.fulfill({status:503,contentType:"application/json",body:JSON.stringify({detail:"broker unavailable"})});
     if(deferTitanPositions&&url.searchParams.get("account")==="titan")await new Promise(resolve=>{releaseTitanPositions=resolve});
     const positionTicket=url.searchParams.get("account")==="goldm15"?"22":"9007199254740993";
-    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),login:url.searchParams.get("account")==="goldm15"?"53090070":"53087839",server:"ICMarketsEU-Demo",source:"MT5_VERIFIED",canExecute:false,symbol:"XAUUSD",currency:"USD",marginMode:2,quote:{freshness:"FRESH"},positions:[{ticket:positionTicket,type:"BUY",volume:"0.1",price_open:"4000",sl:"3990",tp:null,profit:"10",swap:"-1",ownership:"MANUAL",currency:"USD"}],orders:[{ticket:"9007199254740995",type:"BUY_LIMIT",volume_current:"0.2",price_open:"3995",sl:null,tp:"4010",ownership:"UNKNOWN"}]})});
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),login:url.searchParams.get("account")==="goldm15"?"53090070":"53087839",server:"ICMarketsEU-Demo",source:"MT5_VERIFIED",canExecute:false,symbol:"XAUUSD",currency:"USD",marginMode:2,quote:{freshness:"FRESH"},positions:[{ticket:positionTicket,type:"BUY",volume:"0.1",price_open:"4100",sl:"4090",tp:null,profit:"10",swap:"-1",ownership:"MANUAL",currency:"USD",revision:"a".repeat(64)}],orders:[{ticket:"9007199254740995",type:"BUY_LIMIT",volume_current:"0.2",price_open:"3995",sl:null,tp:"4010",ownership:"UNKNOWN"}]})});
   });
   await page.route("**/api/chart/v1/trades?*",async route=>{
     const url=new URL(route.request().url());brokerReadRequests.push({path:url.pathname,url:url.pathname,params:Object.fromEntries(url.searchParams)});
@@ -95,6 +103,29 @@ const fs=require("node:fs"),path=require("node:path");
   await page.locator(".cs-broker-read-panel summary").click();
   await page.waitForFunction(()=>document.querySelectorAll("#cs-broker-positions tbody tr").length===1);
   assert.equal(await page.locator("#cs-broker-positions tbody tr").first().locator("td").nth(0).textContent(),"9007199254740993");
+  await page.locator("#cs-broker-positions tbody tr button[data-cmd='position-draft']").click();
+  await page.locator("#cs-position-stop-draft").waitFor({state:"visible"});
+  await page.locator("#cs-position-stop-draft [name='slPrice']").fill("4098.50");
+  await page.locator("#cs-position-stop-draft [name='tpPrice']").fill("4104.00");
+  await page.locator("#cs-position-stop-draft button[type='submit']").click();
+  await page.waitForFunction(()=>document.querySelector("#cs-position-stop-draft-status")?.textContent.includes("GUARD UNKNOWN · KEINE ÄNDERUNG"));
+  assert.deepEqual(stopPreviewPayloads[0],{account:"titan",symbol:"XAUUSD",positionTicket:"9007199254740993",expectedRevision:"a".repeat(64),candidate:{slPrice:"4098.50",tpPrice:"4104.00"},clientRequestId:stopPreviewPayloads[0]?.clientRequestId});
+  assert.match(stopPreviewPayloads[0].clientRequestId,/^[0-9a-f-]{36}$/i);
+  rejectStopPreview=true;await page.locator("#cs-position-stop-draft button[type='submit']").click();
+  await page.waitForFunction(()=>document.querySelector("#cs-position-stop-draft-status")?.textContent.includes("409"));
+  assert.equal(stopPreviewPayloads.length,2);rejectStopPreview=false;
+  await page.locator("#cs-position-stop-draft [data-cmd='drag']").click();
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().tool),"position-draft");
+  const draftY=await page.evaluate(()=>candleSeries.priceToCoordinate(4098.5));
+  await page.locator("canvas.cs-beta-canvas").scrollIntoViewIfNeeded();const draftBox=await page.locator("canvas.cs-beta-canvas").boundingBox();
+  assert.ok(Number.isFinite(draftY)&&draftBox&&draftY>=0&&draftY<draftBox.height,"Selected stop draft handle must be visible on chart");
+  await page.mouse.move(draftBox.x+draftBox.width*.48,draftBox.y+draftY);await page.mouse.down();await page.mouse.move(draftBox.x+draftBox.width*.48,draftBox.y+draftY-8,{steps:3});await page.mouse.up();
+  assert.notEqual(await page.evaluate(()=>ChartStudioBeta.getState().positionDraft.slPrice),4098.5,"Chart pointer drag updates the scoped stop draft");
+  assert.match(await page.locator("#cs-position-stop-draft-status").textContent(),/Entwurf geändert/,"Draft edits invalidate the previous calculation");
+  await page.evaluate(()=>ChartStudioBeta.timeframe("M5"));
+  assert.equal(await page.locator("#cs-position-stop-draft").isHidden(),true,"Timeframe changes clear the scoped position draft");
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().positionDraft),null);
+  await page.evaluate(()=>ChartStudioBeta.timeframe("M15"));
   assert.equal(await page.locator("#cs-broker-orders tbody tr").count(),1);
   assert.ok((await page.locator("#cs-broker-positions-status").textContent()).includes("MT5_VERIFIED"));
   assert.ok(brokerReadRequests.some(r=>r.path.endsWith("/positions")&&r.params.account==="titan"&&r.params.symbol==="XAUUSD"));
@@ -283,8 +314,8 @@ const fs=require("node:fs"),path=require("node:path");
   assert.match(await page.locator("#cs-scenario-ab-status").textContent(),/erst eine erfolgreiche Broker-Vorschau/);
   await page.locator('[name="volumeLots"]').fill("0.1");
   await page.locator('[name="entryPrice"]').fill("4100");
-  await page.locator('[name="slPrice"]').fill("4090");
-  await page.locator('[name="tpPrice"]').fill("4120");
+  await page.locator('#cs-scenario-form [name="slPrice"]').fill("4090");
+  await page.locator('#cs-scenario-form [name="tpPrice"]').fill("4120");
   await page.locator('#cs-scenario-form button[type="submit"]').click();
   await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER"));
   await page.locator('[name="lotMode"]').selectOption("BUDGET");
@@ -363,8 +394,8 @@ const fs=require("node:fs"),path=require("node:path");
   const money=await page.locator("#cs-scenario-result").textContent();
   assert.ok(money.includes("Stop "+Number(((afterPlan-4100)*0.1*100).toFixed(2))+" USD"),
     "USD risk must reflect the broker-priced new stop rather than old UI value");
-  assert.ok(requests.every(url=>url.includes("/api/chart/v1/scenarios/preview")),
-    "No broker modify/order-send request may be used during drag");
+  assert.ok(requests.every(url=>url.includes("/api/chart/v1/scenarios/preview")||url.includes("/api/chart/v1/position/preview-stop")),
+    "Only read-only scenario and position preview routes may be called; no broker mutation");
   // Opt-in server layout store round-trip; scoped by active account and version.
   const sb=page.locator(".cs-server-sync");
   await sb.locator('input[type="password"]').fill(storageToken);
