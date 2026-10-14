@@ -1051,8 +1051,9 @@ body.theme-stone .stone-asset-panel button.stone-chart-expand-primary:hover:not(
   bottom: 28px !important;
   z-index: 18 !important;
   width: min(228px, calc(100% - 95px)) !important;
-  max-height: min(240px, 52%) !important;
-  overflow: hidden !important;
+  max-height: min(330px, 65%) !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
   box-sizing: border-box !important;
   padding: 7px 10px 9px !important;
   color: #ecfaff !important;
@@ -1060,7 +1061,7 @@ body.theme-stone .stone-asset-panel button.stone-chart-expand-primary:hover:not(
   border: 1px solid rgba(96,198,218,.66) !important;
   border-radius: 6px !important;
   box-shadow: 0 4px 18px rgba(0,0,0,.70), inset 0 1px rgba(188,236,251,.18) !important;
-  pointer-events: none !important;
+  pointer-events: auto !important;
   font-family: ui-monospace, Consolas, monospace !important;
 }
 #chart-level-legend.stone-chart-level-legend[hidden] { display:none !important; }
@@ -1075,7 +1076,7 @@ body.theme-stone .stone-asset-panel button.stone-chart-expand-primary:hover:not(
 }
 #chart-level-legend .stone-chart-level {
   display: grid;
-  grid-template-columns: minmax(0,1fr) auto;
+  grid-template-columns: 15px minmax(0,1fr) auto;
   align-items: center;
   column-gap: 8px;
   min-height: 22px;
@@ -1099,6 +1100,19 @@ body.theme-stone .stone-asset-panel button.stone-chart-expand-primary:hover:not(
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   text-shadow: 0 0 6px rgba(8,15,20,.7);
+}
+#chart-level-legend .stone-chart-level-toggle {
+  width: 13px !important;
+  height: 13px !important;
+  margin: 0 !important;
+  accent-color: var(--level-color, #4ee7f7);
+  cursor: pointer !important;
+}
+#chart-level-legend .stone-chart-level-note {
+  grid-column: 2 / 4;
+  font-size: 8px;
+  color: #fbbf24;
+  line-height: 1.2;
 }
 /* A native-scale anchored overlay needs the pane's own measured dimensions,
    never the root including the right price axis and bottom time scale. */

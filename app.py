@@ -1742,11 +1742,14 @@ HTML_CONTENT = """<!DOCTYPE html>
 
   <!-- 4. JAVASCRIPT ENGINE -->
   <script src="static/dashboard-runtime.js"></script>
+  <script src="static/chart-level-visibility.js"></script>
   <script>
     const localStorage = DashboardRuntime.storage; // Optional preferences must never stop the dashboard.
     let chart, candleSeries, ema20Series, ema50Series, ema200Series;
     // Sparse overlay FX no longer allocates six transparent chart series.
     let srLines = {};
+    let currentSRLevels = null;
+    let currentSRPrice = 0;
     let isInitialLoad = true;
     let lastCandleTime = 0;
     let currentCandlesCount = 0;
@@ -1923,6 +1926,8 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (levelLegend) { levelLegend.replaceChildren(); levelLegend.hidden = true; }
         for (const series of [candleSeries,ema20Series,ema50Series,ema200Series]) series.setData([]);
       }
+      currentSRLevels = null;
+      currentSRPrice = 0;
       isInitialLoad = true;
       lastCandleTime = 0;
     }
@@ -2173,13 +2178,26 @@ HTML_CONTENT = """<!DOCTYPE html>
 
     // --- SUPPORT & RESISTANCE / VOLUME PROFILE LINES ON CHART ---
     function updateChartSRLines(sr, curPrice) {
-      if (!sr || !candleSeries) { renderChartLevelLegend([]); return; }
+      const definitions = window.DashboardChartLevelVisibility?.definitions || [];
+      function removeLine(key) {
+        if (candleSeries && srLines[key]) {
+          candleSeries.removePriceLine(srLines[key]);
+          delete srLines[key];
+        }
+      }
+      if (!sr || !candleSeries) {
+        definitions.forEach(level => removeLine(level.key));
+        currentSRLevels = null;
+        currentSRPrice = 0;
+        renderChartLevelLegend([]);
+        return;
+      }
+      currentSRLevels = sr;
+      currentSRPrice = Number(curPrice) || 0;
       const visibleLevels = [];
-
       function setLine(key, price, color, title, style = 2) {
         const p = Number(price);
-        if (!Number.isFinite(p) || p <= 0) { removeLine(key); return; }
-        visibleLevels.push({key, price:p, color, title});
+        if (!Number.isFinite(p) || p <= 0) return;
         // Long native price-line titles are clipped by the narrow right axis.
         // Keep their numeric scale labels and show complete names in our legend.
         if (srLines[key]) {
@@ -2187,36 +2205,31 @@ HTML_CONTENT = """<!DOCTYPE html>
         } else {
           srLines[key] = candleSeries.createPriceLine({
             price:p, color, lineWidth:1, lineStyle:style,
-            axisLabelVisible:true, title:'',
+            axisLabelVisible:false, title:'',
           });
         }
       }
 
-      function removeLine(key) {
-        if (srLines[key]) {
-          candleSeries.removePriceLine(srLines[key]);
-          delete srLines[key];
+      const preferences = window.DashboardChartLevelVisibility?.read(activeAccount, localStorage) || {};
+      const ref = currentSRPrice > 0 ? currentSRPrice : Number(sr.daily_poc) || 0;
+      for (const definition of definitions) {
+        const price = Number(sr[definition.field]);
+        if (!Number.isFinite(price) || price <= 0) {
+          removeLine(definition.key);
+          continue;
         }
-      }
-
-      setLine('res_high', sr.daily_high, '#f43f5e', 'Daily High (Res)', 2);
-      setLine('sup_low',  sr.daily_low,  '#10b981', 'Daily Low (Sup)', 2);
-      setLine('dpoc',     sr.daily_poc,  '#f59e0b', 'Daily POC', 0);
-      setLine('wpoc',     sr.weekly_poc, '#06b6d4', 'Weekly POC', 0);
-
-      // Only display weekly high/low if within $35 USD of current price,
-      // so distant weekly levels don't blow out the vertical price scale and crush the candles.
-      const ref = (curPrice && curPrice > 0) ? curPrice : (sr.daily_poc || 0);
-      if (sr.weekly_high && ref > 0 && Math.abs(sr.weekly_high - ref) <= 35) {
-        setLine('w_high', sr.weekly_high, '#e11d48', 'Weekly High (Res)', 1);
-      } else {
-        removeLine('w_high');
-      }
-
-      if (sr.weekly_low && ref > 0 && Math.abs(sr.weekly_low - ref) <= 35) {
-        setLine('w_low', sr.weekly_low, '#059669', 'Weekly Low (Sup)', 1);
-      } else {
-        removeLine('w_low');
+        const weeklyExtreme = definition.key === 'weekly_high' || definition.key === 'weekly_low';
+        const nearChart = !weeklyExtreme || ref <= 0 || Math.abs(price - ref) <= 35;
+        const hasChoice = window.DashboardChartLevelVisibility?.hasChoice(activeAccount, definition.key, localStorage);
+        // Preserve the historical $35 autoscale guard by default. An explicit
+        // user toggle may reveal a distant weekly extreme when desired.
+        const enabled = !!preferences[definition.key] && (nearChart || hasChoice);
+        if (enabled) setLine(definition.key, price, definition.color, definition.title, definition.style);
+        else removeLine(definition.key);
+        visibleLevels.push({
+          ...definition, price, enabled,
+          note: weeklyExtreme && !nearChart && !hasChoice ? 'Skalenschutz ±35 · anklicken zum Anzeigen' : '',
+        });
       }
       renderChartLevelLegend(visibleLevels);
     }
@@ -2224,26 +2237,10 @@ HTML_CONTENT = """<!DOCTYPE html>
     function renderChartLevelLegend(levels) {
       const box = document.getElementById('chart-level-legend');
       if (!box) return;
-      box.replaceChildren();
-      box.hidden = !levels.length;
-      if (!levels.length) return;
-      const heading = document.createElement('div');
-      heading.className = 'stone-chart-level-heading';
-      heading.textContent = 'PREISLEVEL';
-      box.append(heading);
-      for (const level of levels) {
-        const row = document.createElement('div');
-        row.className = 'stone-chart-level';
-        row.style.setProperty('--level-color',level.color);
-        const label = document.createElement('span');
-        label.className = 'stone-chart-level-name';
-        label.textContent = level.title;
-        const value = document.createElement('strong');
-        value.className = 'stone-chart-level-price';
-        value.textContent = level.price.toFixed(2);
-        row.append(label,value);
-        box.append(row);
-      }
+      window.DashboardChartLevelVisibility?.render(box,levels,activeAccount,{
+        storage:localStorage,
+        onChange:()=>{if(currentSRLevels)updateChartSRLines(currentSRLevels,currentSRPrice);}
+      });
     }
 
     // --- SMOOTH CANDLES LOAD (NO JUMPING & PRESERVES ZOOM) ---
