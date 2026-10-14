@@ -97,6 +97,13 @@
 #cs-beta-panel #cs-scenario-ab p{margin:0;font-size:12px;line-height:1.5;color:#d0e6eb}
 #cs-beta-panel .cs-catalog-results{grid-template-columns:repeat(auto-fit,minmax(min(100%,235px),1fr))}
 #cs-beta-panel .cs-beta-keyboard-hint{font-size:11px;opacity:.85;line-height:1.5}
+#cs-tool-preferences{margin:8px 0;padding:8px;border:1px solid rgba(116,178,198,.35);border-radius:8px}
+#cs-tool-preferences>summary{cursor:pointer;font-weight:700}
+#cs-tool-preferences>strong{display:block;margin-top:8px}
+#cs-tool-preferences .cs-tool-preference-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:7px;margin:8px 0}
+#cs-tool-preferences .cs-tool-preference-grid label{display:flex;align-items:center;gap:6px;min-width:0}
+#cs-tool-preferences .cs-tool-preference-grid input[type=text]{width:42px;min-height:32px;text-align:center}
+#cs-tool-preferences>p{font-size:11px;line-height:1.45;opacity:.85}
 @media(max-width:420px){
  #cs-beta-panel{padding:8px}
  #cs-data-window dl{grid-template-columns:repeat(3,minmax(72px,1fr))}

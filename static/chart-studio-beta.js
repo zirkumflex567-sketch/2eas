@@ -4,6 +4,33 @@
 (()=>{
 "use strict";
 const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","vertical","text","trend","rect","fib","ray","ruler","channel","plan","position-draft"];
+const preferenceTools=["cursor","edit","horizontal","vertical","text","trend","rect","ray","channel","fib","ruler"];
+const defaultShortcuts=Object.freeze({cursor:"v",edit:"e",horizontal:"h",vertical:"",text:"",trend:"t",rect:"r",ray:"",channel:"c",fib:"f",ruler:"m"});
+function normalizeFavorites(raw){
+ if(!Array.isArray(raw))return [];
+ return [...new Set(raw.filter(value=>preferenceTools.includes(value)))].slice(0,preferenceTools.length);
+}
+function normalizeShortcuts(raw){
+ if(!raw||typeof raw!=="object"||Array.isArray(raw))return {};
+ const result={},used=new Set();
+ for(const tool of preferenceTools){
+  if(!Object.hasOwn(raw,tool))continue;
+  const value=raw[tool];if(value===""){result[tool]="";continue}
+  if(typeof value!=="string")continue;
+  const key=value.trim().toLowerCase();if(!/^[a-z]$/.test(key)||used.has(key))continue;
+  result[tool]=key;used.add(key);
+ }
+ return result;
+}
+function resolveShortcut(event,raw){
+ if(!event||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||typeof event.key!=="string"||! /^[a-z]$/i.test(event.key))return null;
+ const shortcuts={...defaultShortcuts},custom=normalizeShortcuts(raw);
+ for(const [tool,key] of Object.entries(custom)){
+  if(key)for(const other of preferenceTools)if(other!==tool&&shortcuts[other]===key)shortcuts[other]="";
+  shortcuts[tool]=key;
+ }
+ const key=event.key.toLowerCase();return preferenceTools.find(tool=>shortcuts[tool]===key)||null;
+}
 const MAX_DRAWINGS=1000;
 const MAX_EVIDENCE_ROWS=500;
 const ratios=[0,.236,.382,.5,.618,.786,1];
@@ -107,6 +134,24 @@ function cleanOptions(raw){const out=optsDefault();if(!raw||typeof raw!=="object
  if(typeof raw.bbStdDev==="number"&&Number.isFinite(raw.bbStdDev)&&raw.bbStdDev>=.1&&raw.bbStdDev<=10)out.bbStdDev=raw.bbStdDev;return out}
 const chartSymbol=()=>s?.symbol||"XAUUSD";
 const drawKey=()=>s.account+":draw:"+chartSymbol(),optKey=()=>s.account+":opts:"+chartSymbol();
+const favoritesKey=()=>s.account+":favorite-tools",shortcutsKey=()=>s.account+":tool-shortcuts";
+function effectiveShortcuts(raw){
+ const result={...defaultShortcuts},custom=normalizeShortcuts(raw);
+ for(const [tool,key] of Object.entries(custom)){
+  if(key)for(const other of preferenceTools)if(other!==tool&&result[other]===key)result[other]="";
+  result[tool]=key;
+ }
+ return result;
+}
+function renderToolPreferences(){
+ if(!s?.panel)return;
+ const labels={cursor:"Navigation",edit:"Griffe bearbeiten",horizontal:"Preislinie",vertical:"Zeitlinie",text:"Text",trend:"Trendlinie",rect:"Zone",ray:"Strahl",channel:"Parallelkanal",fib:"Fibonacci",ruler:"Preis-/Zeitmessung"};
+ const favorites=s.panel.querySelector("#cs-favorite-tools");
+ if(favorites){favorites.replaceChildren();for(const tool of s.favorites){const button=document.createElement("button");button.type="button";button.dataset.tool=tool;button.textContent=labels[tool];favorites.append(button)}
+  if(!s.favorites.length){const empty=document.createElement("span");empty.textContent="Noch keine Favoriten ausgewählt.";favorites.append(empty)}}
+ for(const input of s.panel.querySelectorAll("[data-favorite-tool]"))input.checked=s.favorites.includes(input.dataset.favoriteTool);
+ const bindings=s.panel.querySelector("#cs-tool-shortcuts");if(bindings){const effective=effectiveShortcuts(s.shortcuts);for(const input of bindings.querySelectorAll("[data-shortcut-tool]"))input.value=effective[input.dataset.shortcutTool]||""}
+}
 const profileKey=()=>s.account+":profiles:"+chartSymbol()+":"+(s.tf||"M15"),legacyProfileKey=()=>s.account+":profiles:XAUUSD",magnetKey=()=>s.account+":magnet:"+chartSymbol(),fibKey=()=>s.account+":fibLevels:"+chartSymbol();
 const scenarioSnapshotsKey=(account,symbol=chartSymbol())=>account+":whatif-snapshots:"+symbol;
 const validProfileScope=item=>item&&typeof item==="object"&&!Array.isArray(item)&&item.schemaVersion===1&&item.symbol===chartSymbol()&&item.timeframe===(s.tf||"M15");
@@ -930,7 +975,7 @@ function symbol(value){
  refreshProfiles();showOpts();updateSeries();window.ChartStudioObjectManager?.render();requestDraw();
  window.dispatchEvent(new CustomEvent("chartstudio:symbol-change",{detail:{account:s.account,symbol:value,timeframe:s.tf}}));return true;
 }
-function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});clearEvidence();s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioLoading=false;s.portfolioError="";if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
+function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.favorites=normalizeFavorites(get(favoritesKey(),[]));s.shortcuts=normalizeShortcuts(get(shortcutsKey(),{}));renderToolPreferences();s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});clearEvidence();s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioLoading=false;s.portfolioError="";if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
  s.lastScenarioPreview=null;s.marketQuote=null;clearScenarioDraft("Konto geändert · neue Quote und Preise eingeben; Gebühren/Risikobudget neu bestätigen.",true);clearDataWindowPin();
   s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
   const fibInput=s.panel.querySelector("#cs-fib-levels");if(fibInput)fibInput.value=window.ChartStudioFib?.display(s.fibLevels)||"";
@@ -1088,6 +1133,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   '<details id="cs-evidence-panel" class="cs-evidence-panel"><summary>Aufzeichnungsnachweise · nur gespeicherte Read-Daten</summary><div class="cs-evidence-controls"><label for="cs-evidence-kind">Typ</label><select id="cs-evidence-kind"><option value="DECISION">Decisions</option><option value="LIFECYCLE">Broker-Lifecycle</option><option value="SNAPSHOT">Chart-Snapshots</option></select><label for="cs-evidence-days">Tage</label><select id="cs-evidence-days"><option value="1">1</option><option value="7">7</option><option value="30" selected>30</option></select><button type="button" id="cs-evidence-load">Zeitraum laden</button><button type="button" id="cs-evidence-more" hidden>Weitere Einträge</button></div><p id="cs-evidence-status" role="status" aria-live="polite">Keine Aufzeichnung abgefragt · Historie wird nicht rekonstruiert.</p><ol id="cs-evidence-list" aria-label="Aufgezeichnete Ereignisse"></ol><p>Read-only: keine MT5-Abfrage oder Handelsänderung. Fehlende Zeiträume bleiben NOT_RECORDED.</p></details>'+
   '<div class="cs-beta-buttons">'+toolLabels.map(([id,label])=>'<button type="button" data-tool="'+id+'">'+label+'</button>').join("")+
   ["undo","redo","delete-selected","export","save-png","clear"].map(id=>'<button type="button" data-cmd="'+id+'">'+({undo:"↶ Undo",redo:"↷ Redo","delete-selected":"Ausgewählte löschen",export:"JSON kopieren","save-png":"Bild (PNG) speichern",clear:"Alle Zeichnungen löschen"}[id])+'</button>').join("")+'</div>'+
+  '<details id="cs-tool-preferences" class="cs-tool-preferences"><summary>Favoriten und individuelle Tastenkürzel</summary><strong>Favorisierte Werkzeuge</strong><div id="cs-favorite-tools" class="cs-beta-buttons" aria-label="Favorisierte Werkzeuge"></div><div class="cs-tool-preference-grid">'+toolLabels.map(([id,label])=>'<label><input type="checkbox" data-favorite-tool="'+id+'"> '+label+' als Favorit</label><label>'+label+' · Kürzel <input type="text" inputmode="text" autocomplete="off" maxlength="1" data-shortcut-tool="'+id+'" aria-label="Tastenkürzel für '+label+'" placeholder="—"></label>').join("")+'</div><p>Einzelne Buchstaben ohne Strg, Alt oder Umschalt. Doppelte Kürzel werden abgewiesen. Kürzel wirken nur bei geöffnetem Chart Studio.</p></details>'+
   '<p class="cs-beta-keyboard-hint">Kürzel: V Navigation · E Bearbeiten · H Linie · T Trend · R Zone · F Fibonacci · C Kanal · M Messen · Strg+Z Rückgängig · Entf Löschen</p>'+
   '<div class="cs-beta-buttons cs-fib-settings"><label>Fibonacci-Level (%) <input type="text" id="cs-fib-levels" aria-label="Fibonacci-Level in Prozent" placeholder="0; 23,6; 38,2; 50; 61,8; 78,6; 100" maxlength="240"></label><button type="button" data-cmd="fib-default">Fibo-Vorlage speichern</button><button type="button" data-cmd="fib-selected">Ausgewählte Fibo ändern</button></div>'+
   '<div class="cs-beta-buttons"><button type="button" data-cmd="magnet" aria-pressed="false">Magnet: AUS · Kerzen-OHLC</button></div>'+
@@ -1125,7 +1171,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  host.style.position="relative";host.appendChild(canvas);
  const coordinates=createChartCoordinates({apiVersion:4,chart,series:candleSeries,scope:{account:accountId,symbol:"XAUUSD",timeframe:tf}});
  s={chart,coordinates,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
-  account:accountId,symbol:"XAUUSD",tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,positionDraft:null,positionDraftDrag:null,verifiedPositions:[],positionContext:null,
+  account:accountId,favorites:normalizeFavorites(get(accountId+":favorite-tools",[])),shortcuts:normalizeShortcuts(get(accountId+":tool-shortcuts",{})),symbol:"XAUUSD",tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,positionDraft:null,positionDraftDrag:null,verifiedPositions:[],positionContext:null,
   lastScenarioPreview:null,portfolio:null,portfolioCapturedAtUtc:null,portfolioLoading:false,portfolioError:"",dataWindow:{snapshot:null,pinned:false},marketQuote:null,
   draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],brokerMarkers:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null,fibLevels:[...ratios],evidence:{rows:[],cursor:null,query:null,meta:null,loading:false,error:"",generation:0}};
  panel.querySelector("#cs-data-window-pin").addEventListener("click",()=>setDataWindowPin(!s.dataWindow.pinned));
@@ -1136,6 +1182,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  renderEvidence();
  panel.querySelector("#cs-portfolio-refresh").addEventListener("click",()=>loadPortfolio(s.account));
  s.coordinates.subscribeCrosshair(handleCrosshair);
+ renderToolPreferences();
  try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}
  catch (err) {console.warn("Chart Studio indicator pane could not load:",err);}
  try {window.ChartStudioCatalog?.mount({panel});}
@@ -1185,6 +1232,15 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  maPeriod.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();maAdd.click()}});
  toggle.addEventListener("click",()=>{panel.hidden=!panel.hidden;toggle.setAttribute("aria-expanded",String(!panel.hidden));maOpen.setAttribute("aria-expanded",String(!panel.hidden));requestDraw()});
  panel.addEventListener("change",e=>{
+  const favorite=e.target.closest("[data-favorite-tool]");
+  if(favorite){const tool=favorite.dataset.favoriteTool;s.favorites=favorite.checked?normalizeFavorites([...s.favorites,tool]):s.favorites.filter(item=>item!==tool);save(favoritesKey(),s.favorites);renderToolPreferences();return}
+  const shortcut=e.target.closest("[data-shortcut-tool]");
+  if(shortcut){
+   const tool=shortcut.dataset.shortcutTool,value=shortcut.value.trim().toLowerCase(),effective=effectiveShortcuts(s.shortcuts);
+   if(value&&!/^[a-z]$/.test(value)){shortcut.setCustomValidity("Nur ein einzelner Buchstabe ist erlaubt.");shortcut.reportValidity();renderToolPreferences();return}
+   if(value&&preferenceTools.some(other=>other!==tool&&effective[other]===value)){shortcut.setCustomValidity("Dieses Kürzel ist bereits vergeben.");shortcut.reportValidity();renderToolPreferences();return}
+   shortcut.setCustomValidity("");effective[tool]=value;s.shortcuts=effective;save(shortcutsKey(),s.shortcuts);renderToolPreferences();return
+  }
   const input=e.target.closest("[data-bb-setting]");if(!input)return;
   const key=input.dataset.bbSetting,value=key==="bbFill"?input.checked:input.valueAsNumber;
   const valid=key==="bbFill"?typeof value==="boolean":key==="bbPeriod"?Number.isInteger(value)&&value>=2&&value<=300:Number.isFinite(value)&&value>=.1&&value<=10;
@@ -1343,14 +1399,13 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
    if(Number.isInteger(s.selected)){e.preventDefault();removeSelected()}
    return;
   }
-  const hotkeys={v:"cursor",e:"edit",h:"horizontal",t:"trend",r:"rect",
-   f:"fib",c:"channel",m:"ruler"};
-  if(hotkeys[key]){e.preventDefault();setTool(hotkeys[key])}
+  const tool=resolveShortcut(e,s.shortcuts);
+  if(tool){e.preventDefault();setTool(tool)}
  });
  s.coordinates.subscribeVisibleLogicalRange(()=>requestDraw());
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();
 }
-window.ChartStudioBeta=Object.freeze({mount,account,symbol,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,coordinates:Object.freeze({create:createChartCoordinates}),getLiveMAs,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,symbol:s.symbol,timeframe:s.tf,coordinateApiVersion:s.coordinates.apiVersion,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),portfolio:s.portfolio?json(s.portfolio):null,positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
+window.ChartStudioBeta=Object.freeze({mount,account,symbol,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,coordinates:Object.freeze({create:createChartCoordinates}),preferences:Object.freeze({normalizeFavorites,normalizeShortcuts,resolveShortcut}),getLiveMAs,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,symbol:s.symbol,timeframe:s.tf,favorites:json(s.favorites),shortcuts:json(effectiveShortcuts(s.shortcuts)),coordinateApiVersion:s.coordinates.apiVersion,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),portfolio:s.portfolio?json(s.portfolio):null,positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
  scenario:s.scenario?json(s.scenario):null,tool:s.tool,magnet:s.magnet,selected:s.selected}:null});
 })();
