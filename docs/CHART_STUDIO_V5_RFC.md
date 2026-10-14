@@ -29,7 +29,7 @@ Pin must be reviewed for a security update with an explicit PR rather than `late
 ## Acceptance evidence
 
 - Task 0.8: version and API/license decision plus isolated proof source exist; CI results must be recorded before treating 0.8 as complete.
-- Task 1.8, 2.1: **not completed**. The isolated renderer proves native price/time lines and anchored text annotations, drawing persistence/transfer, hit testing, pointer-capture movement, candle snap and Escape rollback. It does not replace the production wrapper; additional drawing types, full parity and target-hardware acceptance remain open.
+- Task 1.8, 2.1: **not completed**. The isolated renderer proves native price/time lines, anchored text annotations and two-point trend lines, along with drawing persistence/transfer, hit testing, pointer-capture movement, candle snap and Escape rollback. It does not replace the production wrapper; additional drawing types, full parity and target-hardware acceptance remain open.
 
 ## Follow-up: native pane lifecycle package (PR #25)
 
