@@ -59,7 +59,11 @@ async function previewDraft(event){
  try{
   const response=await fetch(apiScope()+"/api/chart/v1/position/preview-stop",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({account:scope.account,symbol:"XAUUSD",positionTicket:scope.ticket,expectedRevision:scope.revision,candidate:values,clientRequestId:requestId})}),data=await response.json();
   if(token!==state.draftToken||scope.account!==state.account||!state.draft||scope.ticket!==state.draft.ticket||scope.revision!==state.draft.revision)return;
-  if(response.status===409)throw new Error("Position geändert (409) · bitte Brokerdaten neu laden.");
+  if(response.status===409&&data.detail?.code==="POSITION_CHANGED"){
+   closeDraft("Position geändert (409) · aktuelle Brokerwerte werden neu geladen.");
+   loadPositions();return;
+  }
+  if(response.status===409)throw new Error("Broker-Scope geändert (409) · Vorschau verworfen.");
   if(!response.ok||data.clientRequestId!==requestId||data.account!==scope.account||data.symbol!=="XAUUSD"||data.positionTicket!==scope.ticket||data.positionRevision!==scope.revision||data.canExecute!==false||data.canCommit!==false||data.guard?.state!=="UNKNOWN"||data.guard?.source!=="NONE"||!['VALID','INVALID'].includes(data.geometry?.state)||!data.brokerPreview)throw new Error("Vorschau nicht verifiziert; keine Änderung möglich.");
   state.draftPreview=data;state.draftStatus.textContent=(data.geometry.state==="VALID"?"Vorschau":"Vorschau ungültig · "+(data.geometry.reasons||[]).join(", "))+" · SL "+(data.pnlAtSl?.amount??"—")+" / TP "+(data.pnlAtTp?.amount??"—")+" "+(data.pnlAtSl?.currency||data.pnlAtTp?.currency||"")+" · GUARD UNKNOWN · KEINE ÄNDERUNG";
  }catch(error){if(token===state.draftToken){state.draftPreview=null;state.draftStatus.textContent="Keine gültige Vorschau: "+error.message}}

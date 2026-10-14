@@ -18,7 +18,7 @@ const fs=require("node:fs"),path=require("node:path");
   browser=await chromium.launch({headless:true,executablePath:process.env.CHART_STUDIO_CHROMIUM_PATH||undefined});
   const page=await browser.newPage({viewport:{width:1280,height:850},deviceScaleFactor:1.5});
   const consoleErrors=[];page.on("pageerror",e=>consoleErrors.push(e.message));
-  let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,invalidStopGeometry=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,deferTitanPositions=false,releaseTitanPositions=null,multiPositionRows=false,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badDealRow=false,symbolCatalogTruncated=false,evidenceRequests=[];
+  let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,invalidStopGeometry=false,trailingStop=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,deferTitanPositions=false,releaseTitanPositions=null,multiPositionRows=false,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badDealRow=false,symbolCatalogTruncated=false,evidenceRequests=[];
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
   await page.route("**/api/chart/v1/scenarios/preview*",async route=>{
     const req=route.request().postDataJSON();
@@ -46,7 +46,7 @@ const fs=require("node:fs"),path=require("node:path");
   await page.route("**/api/chart/v1/position/preview-stop",async route=>{
     const req=route.request().postDataJSON();stopPreviewPayloads.push(req);
     if(deferStopPreview)await new Promise(resolve=>{releaseStopPreview=resolve;notifyStopPreviewStarted?.()});
-    if(rejectStopPreview)return route.fulfill({status:409,contentType:"application/json",body:JSON.stringify({detail:{code:"POSITION_CHANGED"}})});
+    if(rejectStopPreview){trailingStop=true;return route.fulfill({status:409,contentType:"application/json",body:JSON.stringify({detail:{code:"POSITION_CHANGED",currentRevision:"d".repeat(64)}})});}
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({schemaVersion:1,clientRequestId:req.clientRequestId,account:req.account,symbol:req.symbol,positionTicket:req.positionTicket,positionRevision:req.expectedRevision,brokerPreview:{slPrice:req.candidate.slPrice,tpPrice:req.candidate.tpPrice},pnlAtSl:{amount:"-10.00",currency:"USD",kind:"estimatedGross"},pnlAtTp:{amount:"20.00",currency:"USD",kind:"estimatedGross"},geometry:{state:invalidStopGeometry?"INVALID":"VALID",reasons:invalidStopGeometry?["SL_STOPS_LEVEL"]:[]},guard:{state:"UNKNOWN",source:"NONE"},canExecute:false,canCommit:false})});notifyStopPreviewCompleted?.();
   });
   await page.route("**/api/chart/v1/quotes?*",async route=>{
@@ -79,7 +79,7 @@ const fs=require("node:fs"),path=require("node:path");
     const selectedSymbol=url.searchParams.get("symbol"),positionTicket=url.searchParams.get("account")==="goldm15"?"22":selectedSymbol==="EURUSD"?"123":"9007199254740993";
     const currency=url.searchParams.get("account")==="goldm15"?"EUR":"USD";
     const account=url.searchParams.get("account");
-    const position={account,source:badPositionRow?"UNVERIFIED":"MT5_VERIFIED",canExecute:false,ticket:positionTicket,type:"BUY",side:"BUY",symbol:selectedSymbol,volume:"0.1",price_open:"4100",sl:"4090",tp:null,profit:"10",swap:"-1",ownership:"MANUAL",currency,revision:"a".repeat(64)};
+    const position={account,source:badPositionRow?"UNVERIFIED":"MT5_VERIFIED",canExecute:false,ticket:positionTicket,type:"BUY",side:"BUY",symbol:selectedSymbol,volume:"0.1",price_open:"4100",sl:account==="titan"&&trailingStop?"4095":"4090",tp:null,profit:"10",swap:"-1",ownership:"MANUAL",currency,revision:account==="titan"&&trailingStop?"d".repeat(64):"a".repeat(64)};
     const positions=multiPositionRows?[position,{...position,ticket:"9007199254740991",price_open:"4101",sl:"4088",tp:"4115",revision:"b".repeat(64)},{...position,ticket:"9007199254740992",type:"SELL",side:"SELL",price_open:"4102",sl:"4112",tp:"4090",revision:"c".repeat(64)}]:[position];
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account,login:account==="goldm15"?"53090070":"53087839",server:"ICMarketsEU-Demo",source:"MT5_VERIFIED",canExecute:false,symbol:selectedSymbol,currency,marginMode:currency==="EUR"?0:2,quote:{freshness:"FRESH"},positions,orders:[{account,source:badOrderRow?"UNVERIFIED":"MT5_VERIFIED",canExecute:false,symbol:selectedSymbol,ticket:"9007199254740995",type:"BUY_LIMIT",volume_current:"0.2",price_open:"3995",sl:null,tp:"4010",ownership:"UNKNOWN"}]})});
   });
@@ -331,8 +331,13 @@ const fs=require("node:fs"),path=require("node:path");
   assert.equal(requests.filter(url=>url.includes("/position/preview-stop")).length,2,"A rejected stop-level preview cannot commit a broker change");
   invalidStopGeometry=false;
   rejectStopPreview=true;await page.locator("#cs-position-stop-draft button[type='submit']").click();
-  await page.waitForFunction(()=>document.querySelector("#cs-position-stop-draft-status")?.textContent.includes("409"));
+  await page.waitForFunction(()=>document.querySelector("#cs-broker-positions tbody tr")?.cells[4]?.textContent==="4095");
+  assert.equal(await page.locator("#cs-position-stop-draft").isHidden(),true,"A stale preview clears its revision-bound draft");
+  assert.match(await page.locator("#cs-position-stop-draft-status").textContent(),/Position geändert \(409\).*Brokerwerte/);
+  assert.equal((await page.evaluate(()=>ChartStudioBeta.getState().verifiedPositions[0])).revision,"d".repeat(64),"A 409 reloads the new broker revision");
   assert.equal(stopPreviewPayloads.length,3);rejectStopPreview=false;
+  await page.locator("#cs-broker-positions tbody tr button[data-cmd='position-draft']").click();await page.locator("#cs-position-stop-draft").waitFor({state:"visible"});
+  assert.equal(await page.locator("#cs-position-stop-draft [name='slPrice']").inputValue(),"4095","A refreshed draft starts from the EA-trailed broker stop");
   deferStopPreview=true;const previewStarted=new Promise(resolve=>{notifyStopPreviewStarted=resolve});const previewCompleted=new Promise(resolve=>{notifyStopPreviewCompleted=resolve});
   await page.locator("#cs-position-stop-draft button[type='submit']").click();await previewStarted;
   await page.locator("#cs-position-stop-draft [name='slPrice']").fill("4098.40");
