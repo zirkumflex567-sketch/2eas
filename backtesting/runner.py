@@ -92,6 +92,8 @@ class Job:
     run_id: str
     expert_hash: str
     preset_hash: str | None
+    strategy_id: str
+    sample: str
 
 
 @dataclass(frozen=True)
@@ -101,6 +103,7 @@ class Batch:
     timeout_seconds: int
     broker_label: str
     jobs: tuple[Job, ...]
+    screening_limits: dict[str, float]
 
 
 def load_config(path: Path, root: Path = PROJECT_ROOT) -> Batch:
@@ -131,11 +134,20 @@ def load_config(path: Path, root: Path = PROJECT_ROOT) -> Batch:
     raw_jobs = data.get("jobs")
     if not isinstance(raw_jobs, list) or not 1 <= len(raw_jobs) <= 100:
         raise ValueError("Supply between 1 and 100 jobs")
+    limits = data.get('screening_limits', {})
+    if not isinstance(limits, dict):
+        raise ValueError('screening_limits must be an object')
+    from .analytics import assess
+    assess({}, limits)
     jobs = []
     for entry in raw_jobs:
         if not isinstance(entry, dict):
             raise ValueError("Each job must be a JSON object")
         name = clean(entry.get("name"), "name", SAFE_NAME)
+        strategy_id = clean(entry.get('strategy_id', name), 'strategy_id', SAFE_NAME)
+        sample = clean(entry.get('sample', 'full'), 'sample')
+        if sample not in ('full', 'in_sample', 'out_of_sample'):
+            raise ValueError('sample must be full, in_sample or out_of_sample')
         expert = source_file(entry.get("expert"), root, ".ex5")
         preset = source_file(entry["set_file"], root, ".set") if entry.get("set_file") else None
         symbol = clean(entry.get("symbol"), "symbol")
@@ -167,15 +179,15 @@ def load_config(path: Path, root: Path = PROJECT_ROOT) -> Batch:
                     preset=str(preset.relative_to(root)) if preset else None, preset_sha256=preset_hash,
                     symbol=symbol, period=period, start=start, end=end, deposit=deposit,
                     leverage=leverage, currency=currency, execution=execution, login=login,
-                    terminal=str(terminal), broker=broker, model=4)
+                    terminal=str(terminal), broker=broker, model=4, strategy_id=strategy_id, sample=sample)
         fingerprint = hashlib.sha256(json.dumps(spec, sort_keys=True).encode("utf-8")).hexdigest()
         slug = re.sub(r"[^a-z0-9-]", "-", name.lower()).strip("-")[:45]
         jobs.append(Job(name, expert, preset, symbol, period, start, end, deposit, leverage,
                         currency, execution, login, fingerprint, f"{slug}-{fingerprint[:12]}",
-                        expert_hash, preset_hash))
+                        expert_hash, preset_hash, strategy_id, sample))
     if len({x.run_id for x in jobs}) != len(jobs):
         raise ValueError("Duplicate jobs")
-    return Batch(terminal, output, timeout, broker, tuple(jobs))
+    return Batch(terminal, output, timeout, broker, tuple(jobs), limits)
 
 
 def build_ini(job: Job, report_relative: str) -> str:
@@ -251,7 +263,8 @@ def run_batch(batch: Batch, *, dry_run: bool = False, force: bool = False) -> di
             expected_report = batch.terminal.parent / "reports" / "ea-batch" / report_name
             ini_path = target / "test.ini"
             ini_path.write_bytes(build_ini(job, report_relative).encode("ascii"))
-            result = dict(name=job.name, run_id=target.name, fingerprint=job.fingerprint,
+            result = dict(name=job.name, strategy_id=job.strategy_id, sample=job.sample,
+                          run_id=target.name, fingerprint=job.fingerprint,
                           status="planned" if dry_run else "running", started_at=utc_now(),
                           requested_tick_mode="MT5 Model=4, broker real ticks", tick_coverage_verified=False,
                           broker_label_unverified=batch.broker_label, symbol=job.symbol, timeframe=job.period,
@@ -289,19 +302,28 @@ def run_batch(batch: Batch, *, dry_run: bool = False, force: bool = False) -> di
                     raise RuntimeError("No complete report; tester may be open, EA failed, or broker data unavailable")
                 archive = target / "report.htm"
                 shutil.copy2(expected_report, archive)
-                result.update(status="success", report_path=str(archive), report_sha256=sha256(archive))
+                from .analytics import parse_report, assess
+                metrics = parse_report(archive)
+                result.update(status="success", report_path=str(archive), report_sha256=sha256(archive),
+                              metrics=metrics, screening=assess(metrics, batch.screening_limits))
             except Exception as exc:
                 result.update(status="failed", error=f"{type(exc).__name__}: {exc}")
             finally:
                 result["finished_at"] = utc_now()
                 result["duration_seconds"] = round(time.monotonic() - started, 3)
                 atomic_json(target / "result.json", result)
-            record = dict(name=job.name, run_id=target.name, status=result["status"])
+            record = dict(name=job.name, strategy_id=job.strategy_id, sample=job.sample,
+                          run_id=target.name, status=result["status"])
+            if result['status'] == 'success':
+                record['metrics'] = result['metrics']
+                record['screening'] = result['screening']
             if "error" in result:
                 record["error"] = result["error"]
             records.append(record)
         summary = dict(generated_at=utc_now(), dry_run=dry_run, records=records,
                        total=len(records), failed=sum(r["status"] == "failed" for r in records))
+        from .analytics import write_csv
+        write_csv(batch.output / 'batch_metrics.csv', records)
         atomic_json(batch.output / "batch_summary.json", summary)
     return summary
 
