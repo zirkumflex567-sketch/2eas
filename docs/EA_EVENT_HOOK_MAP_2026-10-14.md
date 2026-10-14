@@ -1,6 +1,6 @@
-# EA event-hook map (checked-in candidates only)
+# EA event-hook map (checked-in candidates and observed installations)
 
-Date: 2026-10-14. This is a read-only source review for package 1. It maps the checked-in candidates in this worktree, not the images loaded in either MT5 chart. No EA source or preset was changed, no terminal was started, and no trading operation was performed.
+Date: 2026-10-14. This is a read-only source review for package 1. It maps checked-in candidates plus files/logs observed in four running terminals; logs show Titan on three and GoldM15 on the fourth, but do not attest in-memory binary or preset identities. No EA source or preset was changed, no terminal was started, and no trading operation was performed.
 
 ## Identity boundary
 
@@ -43,3 +43,11 @@ This is explicitly the reconstructed candidate, not a verified original strategy
 ## Verification boundary and next step
 
 Source locations, repository file hashes and hook semantics were inspected with read-only repository commands. No MQL compiler run is claimed by this map. Before any EA edit, collect the requested chart-bound terminal/account alias, terminal path, symbol/timeframe, attached EA/version, loaded EX5 identity, preset identity and attach/reload time for each chart. Re-hash source and preset files from those exact terminal data folders; source and installed-file hashes still cannot attest an already loaded in-memory binary. Until that manifest is available, retain the existing recorder as opt-in and disabled and do not claim live captures.
+
+## Additional observed EA artifacts
+
+| Artifact | Evidence | Recorder implication |
+|---|---|---|
+| PrimeTitan/XAU_Titan_Pro.ex5 | Separate installed binary hash 6c91d0…f214a58; a sibling source candidate named XAU_Titan_Pro_25k.mq5 is version 7.25. A saved chart profile associates it with a Titan setup. | Treat as a separate producer/version only after its exact chart, source, binary and preset are attested. The checked-in 7.10 hook map cannot be assumed to describe 7.25 behavior. |
+| Market XAUUSD 5 minute.ex5 | Closed-source Market binary, version recorded in terminal research notes as 7.3; one saved M5 chart profile exists. No corresponding source was found in the checked-in research locations. | Do not reverse-engineer or modify the binary. Its internal candidate/reject reasons cannot be captured from EA source; broker transactions may be observed independently and decisions must remain NOT_RECORDED. |
+| Four-terminal runtime inventory | Four terminal processes were open; inspected recent logs prove Titan initialization in three and GoldM15 initialization on XAUUSD M15 in the fourth. In-memory binary and preset identities remain unresolved. | Do not make process-count=producer-count assumptions or map producer IDs to the two legacy dashboard accounts. Resolve account identity and chart binding first. |

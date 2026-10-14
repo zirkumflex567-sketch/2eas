@@ -8,7 +8,7 @@ FR-026/033/035, AUD-09/11/12, AT-036–038/049–050/055–056. Strategy Tester,
 
 ## Evidence and blockers
 
-`docs/EA_RUNTIME_IDENTITY_2026-10-14.md` is the identity ledger. It distinguishes visible chart identity from installed files and journal observations. Titan runtime source differs from the clean main source. GoldM15 has multiple installed source/binary candidates and no visible chart. Therefore no source replacement, EA attach, auto-trading toggle or demo trade is allowed in this package until a fresh, chart-bound identity record is collected. The recorder work must not claim events from those existing charts.
+`docs/EA_RUNTIME_IDENTITY_2026-10-14.md` is the identity ledger. A read-only follow-up found four running terminal processes, recent Titan initialization logs in three data folders, a saved XAUUSD 5 minute chart, and a GoldM15 initialization in the fourth terminal log. The fourth log shows GoldM15_Reconstruction on XAUUSD M15. This does not prove four distinct attached strategies or their in-memory binaries/presets. Titan runtime source differs from clean main; GoldM15 has multiple installed candidates; the Market EA is source-less. Therefore no source replacement, EA attach, auto-trading toggle or demo trade is allowed in this package until a fresh, chart-bound identity record is collected. The recorder work must not claim events from those existing charts.
 
 ## Vertical-slice sequence
 
@@ -35,6 +35,7 @@ A package milestone may close only with independent test/review evidence and an 
 ## Progress
 
 - [x] Mapped checked-in Titan and GoldM15 candidate hooks with SHA-256 manifests and identified decision, risk-reject, order-intent and protective-exit points in [`EA_EVENT_HOOK_MAP_2026-10-14.md`](../../EA_EVENT_HOOK_MAP_2026-10-14.md). This is source-only review; runtime chart identities remain unverified and neither EA was changed.
+- [x] Extended the read-only terminal inventory to all four running MT5 processes by resolving the non-portable terminal's roaming data folder. Recent logs show Titan initialization in three terminals and GoldM15 on XAUUSD M15 in the fourth; installed hashes and the supplied boss.set hash are recorded. Loaded in-memory binary/preset identity remains unverified; no terminal or EA was changed.
 - [x] Bounded schema-v1 line validation, configured account/terminal/producer binding, atomic private write-ahead cursor, idempotent replay, sequence conflict rejection, first/interior gap counts, and store-loss reporting implemented in `chart_studio/evidence_spool.py`.
 - [x] Unit tests first observed the missing-module failure; reviewer findings for first-sequence gaps, lost cursor state across restarts, and parser recursion were reproduced before fixes.
 - [x] Add an opt-in single-consumer private file reader/rotation protocol and application startup/shutdown wiring; bounded reads run off the event loop and expose internal gap/loss diagnostics. It remains disabled without an explicit private spool root; it has not yet been enabled for live EA producers.
