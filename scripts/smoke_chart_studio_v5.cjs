@@ -601,6 +601,12 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const corruptKey="2eas.chartstudio.v5.drawings:titan:GBPUSD:M5";localStorage.setItem(corruptKey,"not-json");
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",{symbol:"GBPUSD",timeframe:"M5"});e.setCandles(rows);
    const corrupt={status:e.inspect().persistenceStatus,error:e.inspect().persistenceError,stored:localStorage.getItem(corruptKey)};e.destroy();
+   const unicodeOversizeKey="2eas.chartstudio.v5.drawings:unicodeoversize:XAUUSD:M15",unicodeOversize=JSON.stringify({schemaVersion:1,account:"unicodeoversize",symbol:"XAUUSD",timeframe:"M15",drawings:[],padding:"é".repeat(270000)});localStorage.setItem(unicodeOversizeKey,unicodeOversize);
+   e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"unicodeoversize",scope);e.setCandles(rows);
+   const unicodeOversizeSnapshot={status:e.inspect().persistenceStatus,error:e.inspect().persistenceError,characters:unicodeOversize.length,bytes:new TextEncoder().encode(unicodeOversize).byteLength};e.destroy();
+   const unicodeImportHost=document.createElement("div");unicodeImportHost.style.cssText="width:2px;height:2px;position:absolute;left:-2000px;top:0";document.body.append(unicodeImportHost);
+   e=ChartStudioV5.createStudioV5(unicodeImportHost,"unicodeimportoversize",scope);e.setCandles(rows);let unicodeImportError="";try{e.importDrawings(unicodeOversize)}catch(error){unicodeImportError=error.message}e.destroy();unicodeImportHost.remove();
+   const unicodeOversizeImport={error:unicodeImportError,characters:unicodeOversize.length,bytes:new TextEncoder().encode(unicodeOversize).byteLength};
    const legacyKey="2eas.chartstudio.v5.drawings:migrationtest:XAUUSD:M15",legacy=JSON.stringify({schemaVersion:1,account:"migrationtest",symbol:"XAUUSD",timeframe:"M15",drawings:[{kind:"PRICE",options:{id:"legacy-price",price:4001,color:"#ffffff",visible:true,locked:false}}]});localStorage.setItem(legacyKey,legacy);
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"migrationtest",scope);e.setCandles(rows);
    const migrated={status:e.inspect().persistenceStatus,drawing:e.readDrawing("legacy-price"),stored:JSON.parse(localStorage.getItem(legacyKey))};e.destroy();
@@ -617,12 +623,24 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    while(sizeEnvelope().length>65000&&sizeHistory.length)sizeHistory.shift();
    const sizeSeed=sizeEnvelope();localStorage.setItem(sizeKey,sizeSeed);
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"sizetest",scope);e.setCandles(rows);e.updateTextAnnotation(sizeDrawings[0].options.id,{text:"Z".repeat(40)});
-   const sizeBound={seedBytes:sizeSeed.length,storedBytes:localStorage.getItem(sizeKey).length,historyCount:JSON.parse(localStorage.getItem(sizeKey)).undoStack.length,drawingCount:e.inspect().nativePrimitives,drawing:e.readDrawing(sizeDrawings[0].options.id)};e.destroy();
+   const sizeBound={seedBytes:new TextEncoder().encode(sizeSeed).byteLength,storedBytes:new TextEncoder().encode(localStorage.getItem(sizeKey)).byteLength,historyCount:JSON.parse(localStorage.getItem(sizeKey)).undoStack.length,drawingCount:e.inspect().nativePrimitives,drawing:e.readDrawing(sizeDrawings[0].options.id)};e.destroy();
+   const capacityHistoryKey="2eas.chartstudio.v5.drawings:capacityhistory:XAUUSD:M15",capacityLevels=Array.from({length:16},(_,i)=>-999.1234567890123+i*133.2345678912345);
+   const capacityOptions=(id,color)=>({id,startTime:rows[10].time,startPrice:4001,endTime:rows[20].time,endPrice:4002,color,visible:true,locked:false,levels:capacityLevels});
+   const capacityDrawings=Array.from({length:1000},(_,i)=>({kind:"FIBO",options:capacityOptions(`capacity-fibo-${String(i).padStart(18,"0")}`,"#000000")}));
+   const capacityHistory=Array.from({length:100},(_,i)=>{const id=`capacity-fibo-${String(i).padStart(18,"0")}`;return {id,before:{kind:"FIBO",options:capacityOptions(id,"#000000")},after:{kind:"FIBO",options:capacityOptions(id,"#ffffff")}}});
+   const capacityEnvelope=()=>JSON.stringify({schemaVersion:2,account:"capacityhistory",symbol:"XAUUSD",timeframe:"M15",drawings:capacityDrawings,undoStack:capacityHistory,redoStack:[]});
+   while(new TextEncoder().encode(capacityEnvelope()).byteLength>524288-512&&capacityHistory.length)capacityHistory.shift();
+   const capacitySeed=capacityEnvelope(),capacitySeedBytes=new TextEncoder().encode(capacitySeed).byteLength,capacitySeedHistory=capacityHistory.length,capacitySeedOldest=capacityHistory[0]?.id;
+   localStorage.setItem(capacityHistoryKey,capacitySeed);
+   const capacityHost=document.createElement("div");capacityHost.style.cssText="width:2px;height:2px;position:absolute;left:-2000px;top:0";document.body.append(capacityHost);
+   e=ChartStudioV5.createStudioV5(capacityHost,"capacityhistory",scope);e.setCandles(rows);const capacityHydrated={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives};
+   e.updateFibonacci("capacity-fibo-000000000000000000",{color:"#ffffff"});
+   const capacityStored=JSON.parse(localStorage.getItem(capacityHistoryKey)),capacityHistoryBound={seedBytes:capacitySeedBytes,storedBytes:new TextEncoder().encode(localStorage.getItem(capacityHistoryKey)).byteLength,seedHistoryCount:capacitySeedHistory,storedHistoryCount:capacityStored.undoStack.length,seedOldest:capacitySeedOldest,storedOldest:capacityStored.undoStack[0]?.id,drawingCount:e.inspect().nativePrimitives,status:e.inspect().persistenceStatus};e.destroy();capacityHost.remove();
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",scope);e.setCandles(rows);
    e.addAverage({id:"ema21",color:"#61ddf2"},rows.slice(20).map(c=>({time:c.time,value:c.close-1.2})));
    e.addPaneLine({id:"rsi14",color:"#f7c774"},rows.slice(14).map((c,i)=>({time:c.time,value:45+18*Math.sin(i/8)})));
    e.showVolume(true);window.__v5Screenshot=e;
-   return {restored,otherAccount,returned,otherTimeframe,conflict,externalSnapshot,corrupt,migrated,legacy,badHistory,malformedHistory,migrationFailure,failedMigration,sizeBound};
+   return {restored,otherAccount,returned,otherTimeframe,conflict,externalSnapshot,corrupt,unicodeOversizeSnapshot,unicodeOversizeImport,migrated,legacy,badHistory,malformedHistory,migrationFailure,failedMigration,sizeBound,capacityHydrated,capacityHistoryBound};
   });
   assert.equal(persistenceProbe.restored.status,"READY");
   assert.equal(persistenceProbe.restored.count,11);
@@ -645,6 +663,12 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(persistenceProbe.corrupt.status,"UNAVAILABLE");
   assert.equal(persistenceProbe.corrupt.error,"INVALID_SNAPSHOT");
   assert.equal(persistenceProbe.corrupt.stored,"not-json");
+  assert.ok(persistenceProbe.unicodeOversizeSnapshot.characters<524288,"unicode fixture stays below the JavaScript character limit");
+  assert.ok(persistenceProbe.unicodeOversizeSnapshot.bytes>524288,"unicode fixture exceeds the UTF-8 byte limit");
+  assert.equal(persistenceProbe.unicodeOversizeSnapshot.error,"SNAPSHOT_TOO_LARGE","private persistence enforces bytes rather than JavaScript character count");
+  assert.equal(persistenceProbe.unicodeOversizeImport.characters,persistenceProbe.unicodeOversizeSnapshot.characters);
+  assert.equal(persistenceProbe.unicodeOversizeImport.bytes,persistenceProbe.unicodeOversizeSnapshot.bytes);
+  assert.equal(persistenceProbe.unicodeOversizeImport.error,"Invalid drawing import size","portable import enforces the UTF-8 byte limit before parsing");
   assert.equal(persistenceProbe.migrated.status,"READY");
   assert.equal(persistenceProbe.migrated.drawing.price,4001);
   assert.equal(persistenceProbe.migrated.stored.schemaVersion,2);
@@ -657,10 +681,21 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(persistenceProbe.migrationFailure.error,"STORAGE_WRITE_FAILED");
   assert.equal(persistenceProbe.migrationFailure.stored,persistenceProbe.failedMigration);
   assert.ok(persistenceProbe.sizeBound.seedBytes<=65536);
-  assert.ok(persistenceProbe.sizeBound.storedBytes<=65536);
+  assert.ok(persistenceProbe.sizeBound.storedBytes<=524288);
   assert.equal(persistenceProbe.sizeBound.drawingCount,100);
   assert.equal(persistenceProbe.sizeBound.drawing.text,"Z".repeat(40));
-  assert.ok(persistenceProbe.sizeBound.historyCount<100,"oversized history should deterministically trim its oldest entries");
+  assert.ok(persistenceProbe.sizeBound.historyCount<=100,"persisted undo history remains bounded to 100 entries");
+  assert.equal(persistenceProbe.capacityHydrated.status,"READY","near-limit 1,000-drawing snapshot hydrates cleanly");
+  assert.equal(persistenceProbe.capacityHydrated.count,1000);
+  assert.ok(persistenceProbe.capacityHistoryBound.seedBytes<=524288-512,"seed leaves room for the new history entry to exceed the persistence budget");
+  assert.ok(persistenceProbe.capacityHistoryBound.seedBytes>524288-4096,"seed exercises the persistence boundary rather than an ordinary snapshot");
+  assert.ok(persistenceProbe.capacityHistoryBound.seedHistoryCount>0&&persistenceProbe.capacityHistoryBound.seedHistoryCount<100);
+  assert.ok(persistenceProbe.capacityHistoryBound.storedBytes<=524288,"persistence trims history to stay inside the storage bound");
+  assert.ok(persistenceProbe.capacityHistoryBound.storedHistoryCount<persistenceProbe.capacityHistoryBound.seedHistoryCount+1,"oldest undo entries are trimmed after adding history at the size limit");
+  assert.notEqual(persistenceProbe.capacityHistoryBound.storedOldest,persistenceProbe.capacityHistoryBound.seedOldest,"the oldest persisted undo entry is discarded first");
+  assert.equal(persistenceProbe.capacityHistoryBound.drawingCount,1000,"history trimming preserves every drawing");
+  assert.equal(persistenceProbe.capacityHistoryBound.status,"READY");
+  console.log(`AT-025 persistence-boundary evidence ${JSON.stringify(persistenceProbe.capacityHistoryBound)}`);
   const drawingTransfer=await page.evaluate(()=>{
    const rows=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2,tick_volume:100+i*3}});
    const scope={symbol:"XAUUSD",timeframe:"M15"};
@@ -695,10 +730,11 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    target.updateChannel("visual-channel",{offsetPrice:channelOriginal.offsetPrice+3});const editedChannel=target.readDrawing("visual-channel");
    target.undo();const channelUndo=target.readDrawing("visual-channel");target.redo();const channelRedo=target.readDrawing("visual-channel");
    target.removeChannel("visual-channel");const removedChannel=target.readDrawing("visual-channel");target.undo();const restoredChannelByUndo=target.readDrawing("visual-channel");
+   target.setDrawingVisible("visual-channel",false);const hiddenChannelPosition=target.drawingPosition("visual-channel"),hiddenChannel=target.readDrawing("visual-channel");target.setDrawingVisible("visual-channel",true);
    target.addChannel({id:"vertical-channel",startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[30].time,endPrice:rows[30].close+10,offsetTime:rows[32].time,offsetPrice:rows[32].close+20,color:"#38bdf8"});const verticalChannel=target.readDrawing("vertical-channel");target.removeChannel("vertical-channel");
    let invalidChannel="";try{target.addChannel({id:"invalid-channel",startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[42].time,endPrice:rows[42].close+8,offsetTime:rows[30].time,offsetPrice:rows[30].close,color:"#38bdf8"})}catch(error){invalidChannel=error.message}
    let unloadedChannel="";try{target.addChannel({id:"unloaded-channel",startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[42].time,endPrice:rows[42].close+8,offsetTime:rows[89].time+900,offsetPrice:rows[89].close+14,color:"#38bdf8"})}catch(error){unloadedChannel=error.message}
-   const channelApi={editedChannel,channelUndo,channelRedo,removedChannel,restoredChannelByUndo,invalidChannel,unloadedChannel,verticalChannel};
+   const channelApi={editedChannel,channelUndo,channelRedo,removedChannel,restoredChannelByUndo,hiddenChannelPosition,hiddenChannel,invalidChannel,unloadedChannel,verticalChannel};
    target.destroy();
    const malformedTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"malformedtest",scope);malformedTarget.setCandles(rows);
    let malformed="";try{malformedTarget.importDrawings('{"schemaVersion":1,"symbol":"XAUUSD","timeframe":"M15","drawings":[{"kind":"PRICE","options":{"id":"ok","price":4001,"color":"#ffffff","visible":true,"locked":false}},{"kind":"PRICE","options":{"id":"bad","price":null,"color":"#ffffff","visible":true,"locked":false}}]}')}catch(error){malformed=error.message}
@@ -718,12 +754,6 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const missingChannelEnvelope={...sourceEnvelope,drawings:[{kind:"CHANNEL",options:{...sourceEnvelope.drawings.find(item=>item.kind==="CHANNEL").options}}]};delete missingChannelEnvelope.drawings[0].options.offsetTime;
    const missingChannelTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"missingchannel",scope);missingChannelTarget.setCandles(rows);
    let missingChannel="";try{missingChannelTarget.importDrawings(JSON.stringify(missingChannelEnvelope))}catch(error){missingChannel=error.message}const missingChannelCount=missingChannelTarget.inspect().nativePrimitives;missingChannelTarget.destroy();
-   const capTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"captest",scope);capTarget.setCandles(rows);
-   for(let i=0;i<98;i++)capTarget.addTrendLine({id:`trend${i}`,startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[40].time,endPrice:rows[40].close,color:"#ffffff"});
-   capTarget.addFibonacci({id:"last-drawing",startTime:rows[30].time,startPrice:rows[30].close+1,endTime:rows[40].time,endPrice:rows[40].close-1,color:"#ffffff"});
-   capTarget.addChannel({id:"last-channel",startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[40].time,endPrice:rows[40].close+2,offsetTime:rows[32].time,offsetPrice:rows[32].close+12,color:"#ffffff"});
-   let capError="";try{capTarget.addTrendLine({id:"trend-over-cap",startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[40].time,endPrice:rows[40].close,color:"#ffffff"})}catch(error){capError=error.message}
-   const capCount=capTarget.inspect().nativePrimitives;capTarget.destroy();
    const conflictTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"conflicttest",scope);conflictTarget.setCandles(rows);conflictTarget.addPriceLevel({id:"existing",price:4000,color:"#ffffff"});
    let conflictError="";try{conflictTarget.importDrawings(source)}catch(error){conflictError=error.message}const conflictCount=conflictTarget.inspect().nativePrimitives;conflictTarget.destroy();
    const storageConflictTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"storageconflict",scope);storageConflictTarget.setCandles(rows);
@@ -732,7 +762,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const storageConflict={error:storageConflictError,status:storageConflictTarget.inspect().persistenceStatus,count:storageConflictTarget.inspect().nativePrimitives,stored:localStorage.getItem(conflictKey)};storageConflictTarget.destroy();
    const wrongScope=ChartStudioV5.createStudioV5(document.getElementById("chart"),"goldm15",{symbol:"EURUSD",timeframe:"M15"});wrongScope.setCandles(rows);
    let scopeError="";try{wrongScope.importDrawings(source)}catch(error){scopeError=error.message}const wrongScopeCount=wrongScope.inspect().nativePrimitives;wrongScope.destroy();
-   return {source,imported,restored,annotationApi,channelApi,trendApi,rectangleApi,rayApi,fiboApi,fiboPaneCollision,malformed,afterMalformed,malformedTrend,afterMalformedTrend,malformedRectangle,afterMalformedRectangle,malformedFibo,afterMalformedFibo,malformedCustomFibo,afterMalformedCustomFibo,missingChannel,missingChannelCount,capError,capCount,conflictError,conflictCount,storageConflict,scopeError,wrongScopeCount};
+   return {source,imported,restored,annotationApi,channelApi,trendApi,rectangleApi,rayApi,fiboApi,fiboPaneCollision,malformed,afterMalformed,malformedTrend,afterMalformedTrend,malformedRectangle,afterMalformedRectangle,malformedFibo,afterMalformedFibo,malformedCustomFibo,afterMalformedCustomFibo,missingChannel,missingChannelCount,conflictError,conflictCount,storageConflict,scopeError,wrongScopeCount};
   });
   const transferEnvelope=JSON.parse(drawingTransfer.source);
   assert.equal(transferEnvelope.schemaVersion,1);
@@ -760,6 +790,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(drawingTransfer.channelApi.channelRedo,drawingTransfer.channelApi.editedChannel);
   assert.equal(drawingTransfer.channelApi.removedChannel,null);
   assert.deepEqual(drawingTransfer.channelApi.restoredChannelByUndo,drawingTransfer.channelApi.editedChannel);
+  assert.equal(drawingTransfer.channelApi.hiddenChannel.visible,false);
+  assert.equal(drawingTransfer.channelApi.hiddenChannelPosition,null);
   assert.ok(drawingTransfer.channelApi.invalidChannel);
   assert.ok(drawingTransfer.channelApi.unloadedChannel);
   assert.equal(drawingTransfer.channelApi.verticalChannel.startTime,drawingTransfer.channelApi.verticalChannel.endTime,"vertical baseline channel is supported");
@@ -795,8 +827,6 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(drawingTransfer.afterMalformedFibo,0);
   assert.ok(drawingTransfer.malformedCustomFibo);
   assert.equal(drawingTransfer.afterMalformedCustomFibo,0);
-  assert.ok(drawingTransfer.capError);
-  assert.equal(drawingTransfer.capCount,100);
   assert.ok(drawingTransfer.conflictError);
   assert.equal(drawingTransfer.conflictCount,1);
   assert.ok(drawingTransfer.storageConflict.error);
@@ -858,6 +888,55 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   const beforeLockedChannel=await page.evaluate(()=>window.__v5Screenshot.readDrawing("keyboard-channel"));await page.evaluate(()=>window.__v5Screenshot.setDrawingLocked("keyboard-channel",true));
   const lockedAnchor=await page.evaluate(()=>window.__v5Screenshot.drawingAnchorPosition("keyboard-channel","START"));await page.mouse.move(lockedAnchor.x,lockedAnchor.y);await page.waitForTimeout(80);await page.mouse.down();await page.mouse.move(lockedAnchor.x+20,lockedAnchor.y-15,{steps:2});await page.mouse.up();
   const afterLockedChannel=await page.evaluate(()=>window.__v5Screenshot.readDrawing("keyboard-channel"));assert.deepEqual([afterLockedChannel.startTime,afterLockedChannel.startPrice],[beforeLockedChannel.startTime,beforeLockedChannel.startPrice],"Locked channel rejects anchor drags");await page.evaluate(()=>window.__v5Screenshot.setDrawingLocked("keyboard-channel",false));
+  const capacityProbe=await page.evaluate(()=>{
+   const originalHost=document.getElementById("chart"),originalDisplay=originalHost.style.display;originalHost.style.display="none";
+   const host=document.createElement("div");host.style.cssText="width:min(1280px,100vw);height:min(720px,100vh);position:fixed;left:0;top:0;z-index:9999;background:#121416";document.body.append(host);
+   const rows=Array.from({length:5000},(_,i)=>{const close=4000+i*.01+Math.sin(i/20)*3+2;return {time:1700000000+i*900,open:close-1,high:close+4,low:close-4,close,tick_volume:100+i}});
+   const engine=ChartStudioV5.createStudioV5(host,"capacity-source");let t=performance.now();engine.setCandles(rows);const barsMs=performance.now()-t;
+   t=performance.now();for(let i=0;i<16;i++)engine.addAverage({id:`capacity-overlay-${i}`,color:"#61ddf2"},rows.map(c=>({time:c.time,value:c.close+i/100})));
+   for(let i=0;i<4;i++)engine.addPaneLine({id:`capacity-pane-${i}`,color:"#f7c774"},rows.map((c,index)=>({time:c.time,value:20+i+Math.sin(index/20)})));
+   const indicatorsMs=performance.now()-t;let combinedIndicatorError="";try{engine.addPaneLine({id:"capacity-pane-over-limit",color:"#ffffff"},rows.map(c=>({time:c.time,value:c.close})))}catch(error){combinedIndicatorError=error.message}
+   t=performance.now();let drawingError="",overLimitError="",accepted=0;
+   for(let i=0;i<1000;i++){
+    const start=100+i*4,end=start+50;
+    try{engine.addTrendLine({id:`capacity-drawing-${i}`,startTime:rows[start].time,startPrice:rows[start].close+i%7,endTime:rows[end].time,endPrice:rows[end].close+(i%11),color:"#ffffff"});accepted++}
+    catch(error){drawingError=error.message;break}
+   }
+   if(accepted===1000)try{engine.addTrendLine({id:"capacity-drawing-over-limit",startTime:rows[100].time,startPrice:rows[100].close,endTime:rows[150].time,endPrice:rows[150].close+1,color:"#ffffff"})}catch(error){overLimitError=error.message}
+   const drawingsMs=performance.now()-t,ids=[0,500,999].map(i=>`capacity-drawing-${i}`),positions=ids.map(id=>engine.drawingPosition(id)),readback=ids.map(id=>engine.readDrawing(id));
+   let transferError="",reloadedCount=0,exportedCount=0,exportedBytes=0,otherAccountCount=0,otherTimeframeCount=0,transferBytes=0,transferMs=0,reloadMs=0;
+   if(accepted===1000){
+    const envelope={schemaVersion:1,symbol:"XAUUSD",timeframe:"M15",drawings:Array.from({length:1000},(_,i)=>({kind:"TREND",options:engine.readDrawing(`capacity-drawing-${i}`)}))};const serialized=JSON.stringify(envelope);transferBytes=serialized.length;
+    const transferHost=document.createElement("div");transferHost.style.cssText="width:1280px;height:720px;position:absolute;left:-2000px;top:0";document.body.append(transferHost);
+    const target=ChartStudioV5.createStudioV5(transferHost,"capacity-target",{symbol:"XAUUSD",timeframe:"M15"});target.setCandles(rows);t=performance.now();try{target.importDrawings(serialized)}catch(error){transferError=error.message}transferMs=performance.now()-t;const exported=target.exportDrawings();exportedBytes=exported.length;exportedCount=JSON.parse(exported).drawings.length;target.destroy();
+    const reloadHost=document.createElement("div");reloadHost.style.cssText="width:1280px;height:720px;position:absolute;left:-2000px;top:0";document.body.append(reloadHost);t=performance.now();const reload=ChartStudioV5.createStudioV5(reloadHost,"capacity-target",{symbol:"XAUUSD",timeframe:"M15"});reload.setCandles(rows);reloadMs=performance.now()-t;reloadedCount=reload.inspect().nativePrimitives;reload.destroy();transferHost.remove();reloadHost.remove();
+    const isolationHost=document.createElement("div");isolationHost.style.cssText="width:1280px;height:720px;position:absolute;left:-2000px;top:0";document.body.append(isolationHost);const otherAccount=ChartStudioV5.createStudioV5(isolationHost,"capacity-other",{symbol:"XAUUSD",timeframe:"M15"});otherAccount.setCandles(rows);otherAccount.addTrendLine({id:"unrelated-account",startTime:rows[200].time,startPrice:rows[200].close,endTime:rows[260].time,endPrice:rows[260].close+1,color:"#ffffff"});otherAccountCount=otherAccount.inspect().nativePrimitives;otherAccount.destroy();const otherTimeframe=ChartStudioV5.createStudioV5(isolationHost,"capacity-target",{symbol:"XAUUSD",timeframe:"H1"});otherTimeframe.setCandles(rows);otherTimeframeCount=otherTimeframe.inspect().nativePrimitives;otherTimeframe.destroy();isolationHost.remove();
+   }
+   window.__capacityEngine=engine;window.__capacityHost=host;window.__capacityOriginalHost=originalHost;window.__capacityOriginalDisplay=originalDisplay;
+   return {runtime:{viewport:[innerWidth,innerHeight],devicePixelRatio,userAgent:navigator.userAgent},barsMs,indicatorsMs,drawingsMs,accepted,drawingError,overLimitError,combinedIndicatorError,positions,readback,transferError,transferBytes,transferMs,exportedBytes,exportedCount,reloadMs,reloadedCount,otherAccountCount,otherTimeframeCount};
+  });
+  const capacitySelectionMs={};
+  for(const index of [0,500,999]){
+   const id=`capacity-drawing-${index}`,start=100+index*4;await page.evaluate(from=>window.__capacityEngine.setVisibleLogicalRange({from,to:from+130}),start-40);await page.waitForTimeout(60);
+   const point=await page.evaluate(drawingId=>window.__capacityEngine.drawingPosition(drawingId),id);assert.ok(point,`${id} is positionable in its view range`);
+   const started=Date.now();await page.mouse.move(point.x,point.y);await page.waitForTimeout(30);await page.mouse.click(point.x,point.y);await page.waitForTimeout(30);
+   assert.equal(await page.evaluate(()=>window.__capacityEngine.inspect().selectedDrawingId),id,`${id} remains selectable at 1,000 drawings`);capacitySelectionMs[index]=Date.now()-started;
+  }
+  await page.evaluate(()=>{window.__capacityEngine.destroy();window.__capacityHost.remove();window.__capacityOriginalHost.style.display=window.__capacityOriginalDisplay;delete window.__capacityEngine;delete window.__capacityHost;delete window.__capacityOriginalHost;delete window.__capacityOriginalDisplay});
+  console.log(`AT-025 Chromium capacity evidence ${JSON.stringify({runtime:capacityProbe.runtime,barsMs:capacityProbe.barsMs,indicatorsMs:capacityProbe.indicatorsMs,drawingsMs:capacityProbe.drawingsMs,accepted:capacityProbe.accepted,transferBytes:capacityProbe.transferBytes,transferMs:capacityProbe.transferMs,reloadMs:capacityProbe.reloadMs,reloadedCount:capacityProbe.reloadedCount,otherAccountCount:capacityProbe.otherAccountCount,otherTimeframeCount:capacityProbe.otherTimeframeCount,capacitySelectionMs})}`);
+  assert.equal(capacityProbe.accepted,1000,`5k/20/1k target failed at ${capacityProbe.accepted}: ${capacityProbe.drawingError}`);
+  assert.ok(capacityProbe.combinedIndicatorError,"20 total overlay/pane instances should be the shared active-indicator limit");
+  assert.equal(capacityProbe.drawingError,"","all 1,000 drawings must be accepted");
+  assert.equal(capacityProbe.overLimitError,"Native drawing limit","drawing 1,001 is rejected");
+  assert.ok(capacityProbe.positions.every(Boolean),"drawings near the start, middle and end remain positionable");
+  assert.equal(capacityProbe.readback.length,3);
+  assert.equal(capacityProbe.transferError,"");
+  assert.equal(capacityProbe.transferBytes>65536,true);
+  assert.equal(capacityProbe.exportedCount,1000,"schema-v1 export includes all drawings at capacity");
+  assert.equal(capacityProbe.exportedBytes,capacityProbe.transferBytes);
+  assert.equal(capacityProbe.reloadedCount,1000,"1,000 drawings survive scoped localStorage reload");
+  assert.equal(capacityProbe.otherAccountCount,1,"different account scope stays isolated at capacity");
+  assert.equal(capacityProbe.otherTimeframeCount,0,"different timeframe scope stays isolated at capacity");
   const touchContext=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:1.5,hasTouch:true,isMobile:true});
   try{
    const touchPage=await touchContext.newPage();await touchPage.goto("http://127.0.0.1:8872/chart_studio_v5/fixture.html",{waitUntil:"networkidle"});await touchPage.waitForFunction(()=>window.__chartV5Ready===true);
