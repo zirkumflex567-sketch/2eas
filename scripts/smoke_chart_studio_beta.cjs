@@ -451,6 +451,8 @@ const fs=require("node:fs"),path=require("node:path");
   await page.waitForFunction(()=>document.querySelector("#cs-broker-positions-status").textContent.includes("Brokerdaten sind"));
   assert.deepEqual(await page.evaluate(()=>ChartStudioBeta.getState().verifiedPositions),[],"A failed broker read must remove stale chart positions");
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().positionContext),null);
+  assert.equal(await page.locator("#cs-broker-positions tbody tr").count(),0,"A failed broker read must not leave stale positions visible");
+  assert.equal(await page.locator("#cs-broker-orders tbody tr").count(),0,"A failed broker read must not leave stale pending orders visible");
   failBrokerReads=false;
   deferTitanPositions=true;
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
