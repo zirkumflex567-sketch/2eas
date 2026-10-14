@@ -39,3 +39,27 @@ The runner uses only standard-library Python, sequential jobs, configurable per-
 This is the standalone runner, not yet a finished ChartStudio dashboard or trading-signal optimizer. EA compilation, matching EX5 to source, tester initialization, broker login, and validation with historical tick data must happen on the Windows VPS. GoldM15 news/history inputs require particular attention; historical broker data alone cannot reconstruct missing EA decision events. MT5 terminal reports remain the source of performance metrics until a validated parser is integrated.
 
 Reference: https://www.metatrader5.com/en/terminal/help/algotrading/testing
+
+## Results & out-of-sample workflow
+
+The batch now produces:
+- `batch_metrics.csv`: native MT5 report summary statistics when parseable.
+- `oos_comparison.json`: matched `strategy_id` in-sample / out-of-sample results.
+- `index.html`: **static, private, offline** results view. Open it locally after a run. No unauthenticated Cockpit route is enabled.
+- Per-run `result.json` and unmodified `report.htm` for verification.
+
+Define a pair using identical `strategy_id`, `sample: "in_sample"` and `sample: "out_of_sample"`, with **non-overlapping historical ranges**. Adjust parameters **only using IS**, freeze the preset before running OOS. No hindsight retuning; do not treat OOS as a second optimization set. Ambiguous multiple independent run fingerprints within the same strategy/sample are marked `ambiguous` rather than silently cherry-picked.
+
+`screening_limits` supports `min_trades`, `min_profit_factor`, `max_equity_drawdown_pct` and `min_history_quality_pct`. Missing numbers report `unknown`. Prop-firm daily drawdown, static trailing floor, resets/DST and broker tick quality are **never certified** by these summary metrics. They require a verified deal/equity timeline plus the exact firm rules, separately. With unknowns, the summary status is `review`, not an automatic trading approval.
+
+**Current integration boundary:** Native report exports and the CSV/HTML viewer are implemented. A chronological equity-curve parser and a native Cockpit UI endpoint are **not yet built**; do not infer a per-trade equity curve from only aggregate performance stats. Native MT5 reports may vary with language/build; unsupported reports fail closed with an actionable failed status.
+
+## Operator acceptance checklist
+
+Before treating this as overnight-ready on the VPS:
+1. Complete GitHub contract checks and Windows MT5 dry run; resolve any CI infrastructure failures.
+2. Verify research terminal is a separate portable demo terminal, not running the production EA or real account.
+3. Check EA loaded from its expected EX5/preset, broker symbol suffix, history downloaded and correct real-tick model in tester journal.
+4. Compare one simple manual MT5 Strategy Tester run against the batch report (profit/trades/drawdown) on exactly identical dates/settings.
+5. Run two consecutive overnight batches, verify resume after interrupted run, empty/missing broker history handling, timeouts, report integrity, and no live trading impact.
+6. Treat OOS performance as research evidence, **never** as proof of future returns.
