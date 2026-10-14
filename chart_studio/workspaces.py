@@ -25,8 +25,8 @@ INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap"})
 PERIOD_FIELDS = frozenset({"period", "fast", "slow", "signal"})
 SESSION_FIELDS = frozenset({"timeZone", "sessionStart"})
 TIMEFRAMES = frozenset({"M1", "M5", "M15", "M30", "H1", "H4", "D1"})
-MAX_DOCUMENT_BYTES = 131072
-MAX_DRAWINGS = 500
+MAX_DOCUMENT_BYTES = 524288
+MAX_DRAWINGS = 1000
 
 
 class StoreError(ValueError):

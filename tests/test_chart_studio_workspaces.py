@@ -1,4 +1,5 @@
 """Chart Studio SQLite layout storage and guarded HTTP integration; no real MT5."""
+import json
 import os
 import tempfile
 import threading
@@ -119,11 +120,62 @@ class SqliteLayoutTests(unittest.TestCase):
             dict(options={"clickToOrder": True}),
             dict(indicators={"evil": {"enabled": True}}),
             dict(timeframe="a script"),
-            dict(drawings=[example()["drawings"][0]] * 501),
+            dict(drawings=[example()["drawings"][0]] * 1001),
         ]
         for change in tests:
             with self.subTest(change=str(change)[:60]), self.assertRaises(StoreError):
                 validate_document({**example(), **change})
+
+    def test_1000_drawings_roundtrip_and_1001_is_rejected_before_persistence(self):
+        drawings = [{
+            "id": f"capacity-{index:04d}",
+            "kind": "horizontal",
+            "anchors": [{"time": 1700000000 + index, "price": 4000 + index / 10}],
+        } for index in range(1000)]
+        doc = {**example(), "drawings": drawings}
+
+        result = self.store.put("local-owner", "titan", "XAUUSD", "Capacity", doc, 0)
+        self.assertEqual(result["revision"], 1)
+        self.assertEqual(len(result["document"]["drawings"]), 1000)
+        reopened = WorkspaceStore(self.path)
+        loaded = reopened.get("local-owner", "titan", "XAUUSD", "Capacity")
+        self.assertEqual(loaded["revision"], 1)
+        self.assertEqual(loaded["document"]["drawings"], drawings)
+
+        oversized = {**doc, "drawings": drawings + [{
+            "id": "capacity-1000",
+            "kind": "horizontal",
+            "anchors": [{"time": 1700001000, "price": 4100}],
+        }]}
+        with self.assertRaises(StoreError):
+            self.store.put("local-owner", "titan", "XAUUSD", "Over capacity", oversized, 0)
+        with self.assertRaises(WorkspaceMissing):
+            self.store.get("local-owner", "titan", "XAUUSD", "Over capacity")
+
+    def test_near_512_kib_workspace_with_1000_custom_fibos_roundtrips(self):
+        levels = [(index - 8) * 1.23456789012345 for index in range(16)]
+        drawings = [{
+            "id": f"x{index:031d}",
+            "kind": "fib",
+            "anchors": [
+                {"time": 7258118400, "price": 1e15},
+                {"time": 7258118399, "price": 999999999999999.0},
+            ],
+            "levels": levels,
+            "label": "x" * 40,
+            "visible": True,
+            "locked": True,
+        } for index in range(1000)]
+        doc = {**example(), "drawings": drawings}
+        encoded_bytes = len(json.dumps(doc, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+        self.assertGreater(encoded_bytes, 500 * 1024)
+        self.assertLessEqual(encoded_bytes, 512 * 1024)
+
+        saved = self.store.put("local-owner", "titan", "XAUUSD", "Large capacity", doc, 0)
+        loaded = WorkspaceStore(self.path).get("local-owner", "titan", "XAUUSD", "Large capacity")
+        self.assertEqual(saved["revision"], 1)
+        self.assertEqual(loaded["revision"], 1)
+        self.assertEqual(loaded["document"]["drawings"], drawings)
 
     def test_malicious_name_and_scope_rejected(self):
         for account, symbol, name in [
