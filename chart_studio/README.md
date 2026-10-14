@@ -17,6 +17,10 @@ Current features:
   currency, plus the account's NETTING/EXCHANGE/HEDGING mode. Failed/stale
   reads and account changes clear the overlay; there is no guessed USD
   conversion and no trading mutation.
+- The read-only Brokerbuch searches the verified MT5 symbol catalog and filters
+  positions, pending orders and deal history by selected symbol. Non-XAU rows
+  stay table-only while the displayed chart is XAUUSD; drafts and overlays remain
+  bound to the matching chart symbol.
 - The beta data window shows the hovered or pinned candle's UTC time and OHLC
   from the loaded chart series, plus calculated values for enabled RSI, MACD,
   ATR, volume, ADX, and VWAP indicators when available at that bar. Warm-up and
@@ -147,8 +151,13 @@ retained. Magic zero means `MANUAL`; all other rows are `UNKNOWN` because no
 verified ownership map exists. Comments remain provenance, never EA identity.
 All read models expose `source: MT5_VERIFIED` and `canExecute: false`.
 
-The Chart Studio beta's Brokerbuch panel consumes these routes for XAUUSD open
-positions and pending orders, and `/trades` for a paginated list of actual deals.
+The Chart Studio beta's Brokerbuch panel consumes these routes for verified
+account-scoped symbol search and selection, selected-symbol positions and pending
+orders, and `/trades` for a paginated list of actual deals. It requests up to 200
+catalog entries; when the result is truncated, refine the symbol search. Positions,
+orders and deals are validated row-by-row against the selected account, symbol,
+source and read-only flag. Since the beta chart remains XAUUSD, other symbols stay
+in tables and cannot create chart overlays or stop drafts.
 Ticket, magic and manual/unknown filters are preserved in the UTC history cursor
 scope; changing a filter or date range restarts at page one. A 410 cursor error
 clears pagination and asks the user to reload history. The panel validates
