@@ -3,7 +3,7 @@
  * No execution routes, broker writes, credentials or global MT5 state.
  * Rendering remains isolated until the v4 -> v5 migration acceptance gate.
  */
-import {createChart, CandlestickSeries, LineSeries, HistogramSeries, type ISeriesPrimitive, type UTCTimestamp} from "lightweight-charts";
+import {createChart, CandlestickSeries, LineSeries, HistogramSeries, type ISeriesPrimitive, type LogicalRange, type UTCTimestamp} from "lightweight-charts";
 import type {CanvasRenderingTarget2D} from "fancy-canvas";
 export const VERSION = "5.2.1";
 export type Candle = {time:UTCTimestamp;open:number;high:number;low:number;close:number;tick_volume?:number;real_volume?:number};
@@ -1057,6 +1057,16 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    if(pane)pane.setHeight(140);
   }else if(!show&&volume){chart.removeSeries(volume);volume=null}
  }
+ function visibleLogicalRange():LogicalRange|null{
+  guard();const range=chart.timeScale().getVisibleLogicalRange();
+  return range?{from:range.from,to:range.to}:null;
+ }
+ function setVisibleLogicalRange(range:LogicalRange){
+  guard();
+  if(!range||!Number.isFinite(range.from)||!Number.isFinite(range.to)||range.from>=range.to)
+   throw Error("Invalid visible logical range");
+  chart.timeScale().setVisibleLogicalRange({from:range.from,to:range.to});
+ }
  function updateLast(c:Candle){
   guard();if(!validBar(c))throw Error("Invalid candle");
   const prev=bars[bars.length-1];
@@ -1111,6 +1121,6 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  function destroy(){if(destroyed)return;finishDrag(true);destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();paneLines.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
  return Object.freeze({setCandles,addAverage,moveAverage,removeAverage,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker,updateTimeMarker,removeTimeMarker,addTextAnnotation,updateTextAnnotation,removeTextAnnotation,addTrendLine,updateTrendLine,removeTrendLine,addRectangle,updateRectangle,removeRectangle,addRay,updateRay,removeRay,addFibonacci,updateFibonacci,removeFibonacci,fibonacciLevels,drawingPosition,readDrawing,exportDrawings,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,
-  addPaneLine,movePaneLine,removePaneLine,resizePane,showVolume,readDataWindow,
+  addPaneLine,movePaneLine,removePaneLine,resizePane,showVolume,visibleLogicalRange,setVisibleLogicalRange,readDataWindow,
   updateLast,changeAccount,inspect,destroy});
 }

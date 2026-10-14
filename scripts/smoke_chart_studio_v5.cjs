@@ -80,7 +80,44 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
     replacementReadout,badVolumeRejected,invalidReadoutTimeRejected,
     expectedWarmupOpen:bars[10].open,expectedWarmupUtc:new Date(bars[10].time*1000).toISOString()};
   });
+  const panZoom=await page.evaluate(async()=>{
+   const host=document.createElement("div");host.style.cssText="width:1000px;height:420px";document.body.append(host);
+   const engine=ChartStudioV5.createStudioV5(host,"panzoom"),bars=Array.from({length:1200},(_,i)=>{
+    const close=1000+Math.sin(i/11)*12+i*.02;return {time:1702000000+i*900,open:close-1,high:close+5,low:close-4,close,tick_volume:500+i};
+   });
+   engine.setCandles(bars);
+   const start=bars[430],end=bars[500];
+   engine.addTrendLine({id:"long-history-trend",startTime:start.time,startPrice:start.close,endTime:end.time,endPrice:end.close,color:"#9be564"});
+   engine.addTimeMarker({id:"trend-start-time",time:start.time,color:"#ffffff"});
+   engine.addTimeMarker({id:"trend-end-time",time:end.time,color:"#ffffff"});
+   engine.addPriceLevel({id:"trend-start-price",price:start.close,color:"#ffffff"});
+   engine.addPriceLevel({id:"trend-end-price",price:end.close,color:"#ffffff"});
+   const original=engine.readDrawing("long-history-trend"),measurements=[];
+   for(const range of [{from:300,to:700},{from:400,to:530},{from:420,to:520}]){
+    engine.setVisibleLogicalRange(range);
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const trend=engine.drawingPosition("long-history-trend"),startX=engine.drawingPosition("trend-start-time").x,
+     endX=engine.drawingPosition("trend-end-time").x,startY=engine.drawingPosition("trend-start-price").y,
+     endY=engine.drawingPosition("trend-end-price").y;
+    measurements.push({range:engine.visibleLogicalRange(),anchor:engine.readDrawing("long-history-trend"),
+     midpointError:Math.max(Math.abs(trend.x-(startX+endX)/2),Math.abs(trend.y-(startY+endY)/2))});
+   }
+   let collapsedRejected=false,badRangeRejected=false;
+   try{engine.setVisibleLogicalRange({from:500,to:500})}catch(_){collapsedRejected=true}
+   try{engine.setVisibleLogicalRange({from:Infinity,to:600})}catch(_){badRangeRejected=true}
+   const afterInvalid=engine.visibleLogicalRange();engine.destroy();host.remove();
+   return {original,measurements,collapsedRejected,badRangeRejected,afterInvalid};
+  });
   assert.equal(result.first.version,"5.2.1");
+  assert.deepEqual(panZoom.measurements.map(item=>[item.range.from,item.range.to]),[[300,700],[400,530],[420,520]],"The chart traverses the requested 1,200-bar pan/zoom windows");
+  assert.equal(panZoom.measurements.length,3);
+  for(const measurement of panZoom.measurements){
+   assert.deepEqual(measurement.anchor,panZoom.original,"Trend anchors remain exact during pan and zoom");
+   assert.ok(measurement.midpointError<=1,"Trend geometry stays aligned with exact time/price anchors across 1,200 bars");
+  }
+  assert.equal(panZoom.collapsedRejected,true);
+  assert.equal(panZoom.badRangeRejected,true);
+  assert.deepEqual(panZoom.afterInvalid,panZoom.measurements.at(-1).range,"Invalid viewport ranges leave the last valid view unchanged");
   assert.equal(result.first.candleCount,80);
   assert.equal(result.first.averageCount,1);
   assert.equal(result.first.nativePaneLines,1);
