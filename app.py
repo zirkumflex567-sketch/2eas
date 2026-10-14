@@ -1833,7 +1833,26 @@ HTML_CONTENT = """<!DOCTYPE html>
 
   <!-- 2. MAIN 2-COLUMN SECTION -->
   <main id="account-content" data-connected="false">
-  <div class="grid grid-cols-12 gap-3 mb-3">
+
+    <!-- 2.0 OFFENE POSITIONEN & SL/TP MANAGER (Zwischen Status und Chart) -->
+    <div class="glass-card rounded-xl p-3.5 mb-3">
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center gap-2">
+          <span class="font-black text-sm">📊 Offene Positionen & SL/TP Manager (MT5 Live-Sync)</span>
+          <span id="pos-count-badge" class="px-2 py-0.5 rounded font-mono text-[10px] ticker-bg border font-bold">0 Aktiv</span>
+        </div>
+        <span class="text-[11px] text-sub">Ziel-P/L in USD, kein Stoppreis. Senden aktualisiert beide Felder sofort in MT5. TP = 0: kein fixer TP.</span>
+      </div>
+
+      <p id="position-edit-status" role="status" aria-live="polite" class="text-amber-500"></p>
+      <div id="positions-list" class="min-h-[100px]">
+        <div class="py-6 flex items-center justify-center text-sub text-xs">
+          Aktuell keine offenen Positionen auf XAUUSD. Der EA scannt den Markt bei jedem M15-Kerzenschluss.
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-12 gap-3 mb-3">
 
     <!-- LEFT COLUMN: CHART & VOLUMENPROFILE (7 of 12) -->
     <div class="col-span-12 lg:col-span-7 flex flex-col gap-3">
@@ -2031,25 +2050,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
   </div>
 
-  <!-- 3. LOWER SCROLLABLE SECTION: OFFENE POSITIONEN & SL/TP MANAGER -->
-  <div class="glass-card rounded-xl p-3.5 mb-4">
-    <div class="flex items-center justify-between mb-2">
-      <div class="flex items-center gap-2">
-        <span class="font-black text-sm">📊 Offene Positionen & SL/TP Manager (MT5 Live-Sync)</span>
-        <span id="pos-count-badge" class="px-2 py-0.5 rounded font-mono text-[10px] ticker-bg border font-bold">0 Aktiv</span>
-      </div>
-      <span class="text-[11px] text-sub">Ziel-P/L in USD, kein Stoppreis. Senden aktualisiert beide Felder sofort in MT5. TP = 0: kein fixer TP.</span>
-    </div>
-
-    <p id="position-edit-status" role="status" aria-live="polite" class="text-amber-500"></p>
-    <div id="positions-list" class="min-h-[100px]">
-      <div class="py-6 flex items-center justify-center text-sub text-xs">
-        Aktuell keine offenen Positionen auf XAUUSD. Der EA scannt den Markt bei jedem M15-Kerzenschluss.
-      </div>
-    </div>
-  </div>
-
-  <!-- 4. TRADE JOURNAL: GESPIELTE POSITIONEN & STRATEGIE-ERKLÄRUNG (Aufnahme ab 20:00 Uhr DE) -->
+  <!-- 3. TRADE JOURNAL: GESPIELTE POSITIONEN & STRATEGIE-ERKLÄRUNG (Aufnahme ab 20:00 Uhr DE) -->
   <div class="glass-card rounded-xl p-3.5 mb-4">
     <div class="flex flex-wrap items-center justify-between mb-3 border-b table-border pb-2.5 gap-2">
       <div class="flex flex-wrap items-center gap-2">
