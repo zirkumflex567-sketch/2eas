@@ -4,6 +4,8 @@ Stand: 14.10.2026. Diese Liste ist die zentrale Restarbeit nach der Repository-K
 
 `Teilweise` bedeutet: Eine getestete Teilfunktion ist vorhanden, die vollständige Anforderung bleibt offen. Grüne Python-/Chromium-Tests ersetzen keine Broker-Demo-, Mobilgeräte- oder Deployment-Abnahme. Die ChartStudio-Beta bleibt gegenüber Handelsorders read-only.
 
+**Betriebscheck 14.10.2026:** Die lokale Runtime auf `127.0.0.1:8050` ist gestoppt; beide konfigurierten MT5-Terminalprozesse laufen. Auf htown sind nginx und sshd aktiv, die privilegierte nginx-Konfigurationsprüfung ist erfolgreich. Der Reverse-Tunnel fehlt (kein Listener auf `127.0.0.1:8055`, keine etablierte 8055-Verbindung); öffentlich liefert `/stt/api/runtime` ohne Authentisierung erwartungsgemäß 401. Damit sind weder Live-Runtime-Revision noch authentisierte Feeds aktuell verifiziert. Der Root-Checkout enthält benutzerlokale Änderungen einschließlich `app.py`; ihn nicht mit dem Guard-Launcher starten oder überschreiben. Erneute Live-Abnahme erfolgt nach sauberer freigegebener Runtime und Tunnelstart.
+
 ## Bereits integriert / überprüfbare Teilfunktionen
 
 - PRs [#3](https://github.com/zirkumflex567-sketch/2eas/pull/3), [#4–#13](https://github.com/zirkumflex567-sketch/2eas/pulls?q=is%3Apr+is%3Amerged+chart) und [#15–#26](https://github.com/zirkumflex567-sketch/2eas/pull/26): Performance-Basis, Chart-Beta, What-if, SQLite-Workspaces, ADX/VWAP, Zeichnungen, Multi-MA, Erscheinungsbild, mehrere Oszillatoren, Diagrammarten, Objektmanager, inkrementelles Rendern, EMA-Schnellzugriff, Katalog, isolierter v5-Adapter, Replay-Vorschau, Shortcuts, responsive Emulation, Fibo-Level und lokaler PNG-Export. Letzter Ausgangs-main: `1013149` (#26).
