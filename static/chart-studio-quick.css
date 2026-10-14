@@ -52,6 +52,10 @@
 .cs-indicator-controls,.cs-indicator-panes,.cs-indicator-pane{
  box-sizing:border-box;max-width:100%;min-width:0}
 #cs-beta-panel{width:100%;overflow-wrap:anywhere}
+#cs-data-window{display:grid;gap:4px;margin:8px 0;padding:8px;border:1px solid rgba(116,178,198,.35);border-radius:7px;background:rgba(8,25,35,.72)}
+#cs-data-window>div{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:#d5edf3;font-size:12px}
+#cs-data-window dl{display:grid;grid-template-columns:repeat(6,minmax(70px,1fr));gap:3px 8px;margin:0;font:11px ui-monospace,Consolas,monospace}
+#cs-data-window dt{color:#a8c5cf}#cs-data-window dd{margin:0;color:#f2fbff;overflow-wrap:anywhere}
 #cs-beta-panel .cs-beta-buttons,
 #cs-beta-panel .cs-beta-profiles,
 #cs-beta-panel .cs-ma-presets,
@@ -79,6 +83,7 @@
 #cs-beta-panel .cs-beta-keyboard-hint{font-size:11px;opacity:.85;line-height:1.5}
 @media(max-width:420px){
  #cs-beta-panel{padding:8px}
+ #cs-data-window dl{grid-template-columns:repeat(3,minmax(72px,1fr))}
  #cs-beta-panel .cs-ma-instance label{flex-basis:100%}
  #cs-beta-panel .cs-beta-buttons button{flex:1 1 110px}
  #cs-beta-panel .cs-replay-actions button{flex:1 1 115px}

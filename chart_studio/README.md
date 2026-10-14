@@ -17,6 +17,11 @@ Current features:
   currency, plus the account's NETTING/EXCHANGE/HEDGING mode. Failed/stale
   reads and account changes clear the overlay; there is no guessed USD
   conversion and no trading mutation.
+- The beta data window shows the hovered or pinned candle's UTC time and OHLC
+  from the loaded chart series. It labels the source as the chart feed; live
+  indicator values and verified bid/ask spread are not part of this slice.
+  Unpinning, Escape, account changes, and timeframe changes clear the pinned
+  bar; hover resumes when the pointer selects a candle again.
 - Read-only What-if plan and JSON API endpoints for a verified MT5 XAUUSD
   quote and `order_calc_profit`/`order_calc_margin` broker pricing.
 - Read-only What-if sizing can use fixed lots, a cash risk budget in account

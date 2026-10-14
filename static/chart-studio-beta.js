@@ -382,6 +382,12 @@ function drawScenario(ctx,d){
  }
  ctx.restore();
 }
+function drawPinnedDataWindow(ctx,d){
+ const row=s?.dataWindow?.pinned?s.dataWindow.snapshot:null;if(!row)return;
+ const x=s.chart.timeScale().timeToCoordinate(row.time),y=s.series.priceToCoordinate(row.close);
+ if(!Number.isFinite(x)||!Number.isFinite(y))return;
+ ctx.save();ctx.strokeStyle="#ffd166";ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,d.h);ctx.moveTo(0,y);ctx.lineTo(d.w,y);ctx.stroke();ctx.restore();
+}
 function render(){
  if(!s)return;const d=dims();if(!d)return;
  const c=s.canvas,ratio=Math.min(2,window.devicePixelRatio||1);
@@ -394,6 +400,7 @@ function render(){
  if(s.scenario)drawScenario(ctx,d);
  for(let i=0;i<s.draw.length;i++)drawObject(ctx,{...s.draw[i],selected:i===s.selected},d);
  if(s.pending.length&&s.preview)drawObject(ctx,{kind:s.tool,anchors:[...s.pending,s.preview],preview:true},d);
+ drawPinnedDataWindow(ctx,d);
 }
 function xy(e){const r=s.canvas.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top}}
 function cancelPlanPreview(){
@@ -503,7 +510,7 @@ function pointerup(e){
  if(!s.drag)return;s.drag=null;persist();try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){}
 }
 function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
- s.lastScenarioPreview=null;
+ s.lastScenarioPreview=null;clearDataWindowPin();
   s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
   const fibInput=s.panel.querySelector("#cs-fib-levels");if(fibInput)fibInput.value=window.ChartStudioFib?.display(s.fibLevels)||"";
   scenarioGeneration++;if(s.tool==="plan")setTool("cursor");
@@ -521,6 +528,7 @@ function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.verifiedPos
  const scenarioStatus=s.panel.querySelector("#cs-scenario-ab-status");if(scenarioStatus)scenarioStatus.textContent="A/B-Snapshots für "+id+" · lokal · nur verifizierte Vorschauen.";
  showOpts();refreshProfiles();updateSeries();window.ChartStudioObjectManager?.render();requestDraw()}
 function timeframe(tf){if(s){cancelPlanPreview();if(s.positionDraft)window.ChartStudioBrokerPanel?.invalidateDraft("Timeframe geändert · Positionsentwurf verworfen.");s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.tf=tf;s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");
+ clearDataWindowPin();
  window.ChartStudioIndicators?.updateBars([]);
   window.ChartStudioOscillators?.updateBars([]);
   window.ChartStudioChartTypes?.updateBars([]);
@@ -540,6 +548,35 @@ function updateCandles(c){if(s&&Array.isArray(c)){
    window.ChartStudioReplay?.updateBars(c);
  requestDraw()}}
 function updatePositions(accountId,positions){if(s&&s.account===accountId){s.positions=Array.isArray(positions)?positions:[];requestDraw()}}
+function dataBar(param){
+ if(!s||!param||param.time==null)return null;
+ const bar=param.seriesData?.get?.(s.series);if(!bar)return null;
+ const raw=[bar.open,bar.high,bar.low,bar.close];if(raw.some(value=>value===null||value===undefined))return null;
+ const values=raw.map(Number);
+ if(!values.every(Number.isFinite)||values.some(value=>value<=0)||values[1]<Math.max(values[0],values[2],values[3])||values[2]>Math.min(values[0],values[1],values[3]))return null;
+ const time=typeof param.time==="number"?param.time:Date.UTC(param.time.year,param.time.month-1,param.time.day)/1000;
+ const date=new Date(time*1000);if(!Number.isFinite(date.getTime()))return null;
+ return {time,open:values[0],high:values[1],low:values[2],close:values[3],timeLabel:new Intl.DateTimeFormat("de-DE",{timeZone:"UTC",dateStyle:"medium",timeStyle:"medium"}).format(date)+" UTC",source:"Chart-Feed · geladene OHLC-Kerze"};
+}
+function renderDataWindow(){
+ if(!s?.dataWindow)return;const view=s.dataWindow,panel=s.panel;
+ panel.querySelector("#cs-data-window-state").textContent=view.pinned?"Angeheftet":"Crosshair";
+ panel.querySelector("#cs-data-window-pin").textContent=view.pinned?"Crosshair lösen":"Crosshair anheften";
+ const row=view.snapshot,values={time:row?.timeLabel||"—",open:row?row.open.toFixed(2):"—",high:row?row.high.toFixed(2):"—",low:row?row.low.toFixed(2):"—",close:row?row.close.toFixed(2):"—",source:row?.source||"Chart-Feed · wartet auf Kerze"};
+ for(const [key,value] of Object.entries(values))panel.querySelector("#cs-data-window-"+key).textContent=value;
+}
+function setDataWindowPin(pin){
+ if(!s)return;
+ if(pin){if(!s.dataWindow.snapshot)return;s.dataWindow.pinned=true}
+ else{s.dataWindow.pinned=false;s.dataWindow.snapshot=null}
+ renderDataWindow();requestDraw();
+}
+function handleCrosshair(param){
+ if(!s)return;
+ if(s.dataWindow.pinned)return;
+ const row=dataBar(param);if(row){s.dataWindow.snapshot=row;renderDataWindow()}
+}
+function clearDataWindowPin(){if(!s?.dataWindow)return;s.dataWindow.pinned=false;s.dataWindow.snapshot=null;renderDataWindow();requestDraw()}
 function updateVerifiedPositions(accountId,envelope){
  if(!s||s.account!==accountId)return false;
  if(envelope===null){s.verifiedPositions=[];s.positionContext=null;requestDraw();return true}
@@ -605,6 +642,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  const optLabels=[["ema20","EMA20"],["ema50","EMA50"],["ema200","EMA200"],["sma20","SMA20"],["sma50","SMA50"],["bb","Bollinger20"],["positions","Positionen & SL/TP"]];
  panel.innerHTML=
   '<div class="cs-beta-head"><strong>CHART STUDIO · EXPERIMENTELL</strong><span>Keine Handelsausführung</span></div>'+
+  '<section id="cs-data-window" aria-label="Datenfenster"><div><strong>Datenfenster</strong> · <span id="cs-data-window-state">Crosshair</span> <button type="button" id="cs-data-window-pin">Crosshair anheften</button></div><dl><dt>Kerzenzeit</dt><dd id="cs-data-window-time">—</dd><dt>Open</dt><dd id="cs-data-window-open">—</dd><dt>High</dt><dd id="cs-data-window-high">—</dd><dt>Low</dt><dd id="cs-data-window-low">—</dd><dt>Close</dt><dd id="cs-data-window-close">—</dd><dt>Quelle</dt><dd id="cs-data-window-source">Chart-Feed · wartet auf Kerze</dd></dl></section>'+
   '<div class="cs-beta-buttons">'+toolLabels.map(([id,label])=>'<button type="button" data-tool="'+id+'">'+label+'</button>').join("")+
   ["undo","redo","delete-selected","export","save-png","clear"].map(id=>'<button type="button" data-cmd="'+id+'">'+({undo:"↶ Undo",redo:"↷ Redo","delete-selected":"Ausgewählte löschen",export:"JSON kopieren","save-png":"Bild (PNG) speichern",clear:"Alle Zeichnungen löschen"}[id])+'</button>').join("")+'</div>'+
   '<p class="cs-beta-keyboard-hint">Kürzel: V Navigation · E Bearbeiten · H Linie · T Trend · R Zone · F Fibonacci · C Kanal · M Messen · Strg+Z Rückgängig · Entf Löschen</p>'+
@@ -636,8 +674,10 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  host.style.position="relative";host.appendChild(canvas);
  s={chart,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
   account:accountId,tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,positionDraft:null,positionDraftDrag:null,verifiedPositions:[],positionContext:null,
-  lastScenarioPreview:null,
+  lastScenarioPreview:null,dataWindow:{snapshot:null,pinned:false},
   draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],brokerMarkers:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null,fibLevels:[...ratios]};
+ panel.querySelector("#cs-data-window-pin").addEventListener("click",()=>setDataWindowPin(!s.dataWindow.pinned));
+ chart.subscribeCrosshairMove(handleCrosshair);
  try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}
  catch (err) {console.warn("Chart Studio indicator pane could not load:",err);}
  try {window.ChartStudioCatalog?.mount({panel});}
@@ -807,6 +847,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   // Never intercept typing, color/period edits, saved names, or other dashboard inputs.
   const target=e.target;
   if(target?.isContentEditable||target?.closest?.("input, textarea, select, [contenteditable]"))return;
+  if(e.key==="Escape"&&s.dataWindow.pinned){clearDataWindowPin();if(s.tool==="cursor")return}
   if(e.key==="Escape"&&s.tool!=="cursor"){
    cancelPlanPreview();s.begin=null;s.preview=null;s.pending=[];s.drag=null;setTool("cursor");return;
   }
@@ -831,6 +872,6 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();
 }
-window.ChartStudioBeta=Object.freeze({mount,account,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),verifiedPositions:json(s.verifiedPositions),positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
+window.ChartStudioBeta=Object.freeze({mount,account,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
  scenario:s.scenario?json(s.scenario):null,tool:s.tool,magnet:s.magnet,selected:s.selected}:null});
 })();
