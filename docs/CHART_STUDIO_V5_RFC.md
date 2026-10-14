@@ -39,3 +39,7 @@ Pin must be reviewed for a security update with an explicit PR rather than `late
 ## Follow-up: native pane lifecycle package (PR #25)
 
 The opt-in adapter now includes native v5 `addPaneLine`, `movePaneLine`, `resizePane` and `removePaneLine` using the single chart's `addSeries(LineSeries, ..., paneIndex)` API, not independent chart instances. Its read-only lifecycle caps oscillator panes at eight, validates series points, and removes all pane lines on account switch. The browser proof adds an RSI-shaped line, checks native pane movement and resize bounds, and checks disposal/account isolation. This is a renderer proof only, **not** a completed RSI indicator implementation or the production v5 migration.
+
+## Follow-up: native measurement drawing
+
+The isolated v5 adapter supports a two-anchor measurement on exact loaded UTC candles. It displays signed price change, percent change and candle count, with no monetary P/L. The Chromium smoke captures the rendered label and covers endpoint drag with the opposite anchor preserved, keyboard nudging, Escape rollback, undo/redo, immediate atomic invalid-anchor rejection, the measurement's place in the shared 1,000-object limit and atomic 1,001 rejection, private account/symbol/timeframe reload, cross-account schema-v1 JSON transfer and mismatched symbol/timeframe rejection. Failed-import cleanup also detaches measurements. Production tool wiring, full parity, touch/DPI and target-device acceptance remain open.

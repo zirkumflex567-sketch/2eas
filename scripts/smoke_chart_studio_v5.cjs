@@ -147,6 +147,47 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const afterInvalid=engine.visibleLogicalRange();engine.destroy();host.remove();
    return {original,measurements,collapsedRejected,badRangeRejected,afterInvalid};
   });
+  const measurementWritesBefore=writes.length;
+  const measurementProbe=await page.evaluate(async()=>{
+   const host=document.createElement("div");host.style.cssText="width:800px;height:360px";document.body.append(host);
+   let engine=ChartStudioV5.createStudioV5(host,"measurement-contract",{symbol:"XAUUSD",timeframe:"M15"});
+   const bars=Array.from({length:12},(_,i)=>{const close=2000+i*2;return {time:1705000000+i*900,open:close,high:close+1,low:close-1,close,tick_volume:10+i}});
+   engine.setCandles(bars);
+   const recordedMeasurementLabels=[],originalFillText=CanvasRenderingContext2D.prototype.fillText;
+   CanvasRenderingContext2D.prototype.fillText=function(text,...args){if(typeof text==="string"&&text.includes("bars")&&text.includes("%"))recordedMeasurementLabels.push(text);return originalFillText.call(this,text,...args)};
+   const options={id:"measure-contract",startTime:bars[3].time,startPrice:bars[3].close,endTime:bars[8].time,endPrice:bars[8].close+5,color:"#f7c774"};
+   engine.addMeasurement(options);await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));CanvasRenderingContext2D.prototype.fillText=originalFillText;const renderedLabel=recordedMeasurementLabels.find(text=>text.includes("+15.00")&&text.includes("+0.75%")&&text.includes("5 bars"))||null;const readout=engine.measurementReadout(options.id),position=engine.drawingPosition(options.id),start=engine.drawingAnchorPosition(options.id,"START");
+   const beforeInvalid=engine.inspect().nativePrimitives;let invalidRejected=false;try{engine.addMeasurement({...options,id:"measure-invalid",endTime:bars[8].time+1})}catch(_){invalidRejected=true}const invalidCountStable=engine.inspect().nativePrimitives===beforeInvalid;
+   const original=engine.readDrawing(options.id),portable=engine.exportDrawings();engine.updateMeasurement(options.id,{endPrice:options.endPrice+1});const updatedReadout=engine.measurementReadout(options.id);engine.updateMeasurement(options.id,{endPrice:options.endPrice});const removeApi=engine.removeMeasurement(options.id),removeRead=engine.readDrawing(options.id),removeUndo=engine.undo(),removeRestored=engine.readDrawing(options.id);engine.redo();engine.addMeasurement(options);const afterInvalid=beforeInvalid===engine.inspect().nativePrimitives;const undo=engine.undo(),undoRemoved=engine.readDrawing(options.id)===null;const redo=engine.redo(),redoRestored=engine.readDrawing(options.id);
+   engine.destroy();host.remove();
+   const reloadHost=document.createElement("div");reloadHost.style.cssText="width:800px;height:360px";document.body.append(reloadHost);
+   engine=ChartStudioV5.createStudioV5(reloadHost,"measurement-contract",{symbol:"XAUUSD",timeframe:"M15"});engine.setCandles(bars);const privateReload=engine.readDrawing(options.id);engine.destroy();reloadHost.remove();
+   const transferHost=document.createElement("div");transferHost.style.cssText="width:800px;height:360px";document.body.append(transferHost);
+   engine=ChartStudioV5.createStudioV5(transferHost,"measurement-other",{symbol:"XAUUSD",timeframe:"M15"});engine.setCandles(bars);const portableImport=engine.importDrawings(portable),portableRestored=engine.readDrawing(options.id);let mismatchRejected=false,mismatch=null;const mismatchHost=document.createElement("div");mismatchHost.style.cssText="width:400px;height:200px";document.body.append(mismatchHost);try{mismatch=ChartStudioV5.createStudioV5(mismatchHost,"measurement-mismatch",{symbol:"EURUSD",timeframe:"H1"});mismatch.setCandles(bars);mismatch.importDrawings(portable)}catch(_){mismatchRejected=true}finally{mismatch?.destroy();mismatchHost.remove()}
+   const accountIsolated=portableRestored?.id===options.id&&portableImport.imported===1;engine.destroy();transferHost.remove();
+   return {readout,position,start,renderedLabel,beforeInvalid,invalidRejected,invalidCountStable,afterInvalid,original,updatedReadout,removeApi,removeRead,removeUndo,removeRestored,undo,undoRemoved,redo,redoRestored,accountIsolated,privateReload,mismatchRejected};
+  });
+  assert.equal(measurementProbe.readout.priceDelta,15);
+  assert.equal(measurementProbe.readout.percentChange,15/2006*100);
+  assert.equal(measurementProbe.readout.bars,5);
+  assert.ok(measurementProbe.position&&measurementProbe.start);
+  assert.ok(measurementProbe.renderedLabel,"Measurement text is rendered into the native canvas");
+  assert.equal(measurementProbe.invalidRejected,true);
+  assert.equal(measurementProbe.invalidCountStable,true,"Invalid measurement is rejected atomically with no drawing-count change");
+  assert.equal(measurementProbe.afterInvalid,true);
+  assert.equal(measurementProbe.undo,true);
+  assert.equal(measurementProbe.updatedReadout.priceDelta,16);
+  assert.equal(measurementProbe.removeApi,true);
+  assert.equal(measurementProbe.removeRead,null);
+  assert.equal(measurementProbe.removeUndo,true);
+  assert.deepEqual(measurementProbe.removeRestored,measurementProbe.original);
+  assert.equal(measurementProbe.undoRemoved,true);
+  assert.equal(measurementProbe.redo,true);
+  assert.deepEqual(measurementProbe.redoRestored,measurementProbe.original);
+  assert.equal(measurementProbe.accountIsolated,true);
+  assert.deepEqual(measurementProbe.privateReload,measurementProbe.original,"Private measurement survives scoped reload");
+  assert.equal(measurementProbe.mismatchRejected,true,"Portable transfer rejects symbol/timeframe mismatch");
+  assert.equal(writes.length,measurementWritesBefore,"Measurement lifecycle does not issue any broker/MT5 writes");
   assert.equal(result.first.version,"5.2.1");
   assert.deepEqual(panZoom.measurements.map(item=>[item.range.from,item.range.to]),[[300,700],[400,530],[420,520]],"The chart traverses the requested 1,200-bar pan/zoom windows");
   assert.equal(panZoom.measurements.length,3);
@@ -896,8 +937,9 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    e.addFibonacci({id:"keyboard-fibo",startTime:base+50*900,startPrice:4020,endTime:base+65*900,endPrice:4030,color:"#ffffff"});
    const close=i=>4000+i*.4+Math.sin(i/10)*16+2;
    e.addChannel({id:"keyboard-channel",startTime:base+70*900,startPrice:close(70),endTime:base+82*900,endPrice:close(82)+5,offsetTime:base+74*900,offsetPrice:close(74)+12,color:"#ffffff"});
+   e.addMeasurement({id:"keyboard-measure",startTime:base+10*900,startPrice:close(10),endTime:base+24*900,endPrice:close(24)+6,color:"#f7c774"});
   });
-  for(const id of ["keyboard-text","keyboard-trend","keyboard-ray","keyboard-fibo","keyboard-channel"]){
+  for(const id of ["keyboard-text","keyboard-trend","keyboard-ray","keyboard-fibo","keyboard-channel","keyboard-measure"]){
    const point=await page.evaluate(drawingId=>drawingId==="keyboard-trend"||drawingId==="keyboard-fibo"?window.__v5Screenshot.drawingAnchorPosition(drawingId,"START"):window.__v5Screenshot.drawingPosition(drawingId),id);
    assert.ok(point&&Number.isFinite(point.x)&&Number.isFinite(point.y),`${id} has a keyboard hit target`);
    await page.mouse.move(point.x,point.y);await page.waitForTimeout(80);await page.mouse.click(point.x,point.y);await page.waitForTimeout(30);
@@ -912,6 +954,18 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    assert.equal(await page.evaluate(()=>window.__v5Screenshot.redo()),true);
    assert.deepEqual(await page.evaluate(drawingId=>window.__v5Screenshot.readDrawing(drawingId),id),after);
   }
+  const beforeMeasurementDrag=await page.evaluate(()=>window.__v5Screenshot.readDrawing("keyboard-measure")),measurementStart=await page.evaluate(()=>window.__v5Screenshot.drawingAnchorPosition("keyboard-measure","START"));
+  await page.mouse.move(measurementStart.x,measurementStart.y);await page.waitForTimeout(80);await page.mouse.down();await page.mouse.move(measurementStart.x+24,measurementStart.y-14,{steps:3});await page.mouse.up();
+  const draggedMeasurement=await page.evaluate(()=>window.__v5Screenshot.readDrawing("keyboard-measure"));
+  assert.notDeepEqual([draggedMeasurement.startTime,draggedMeasurement.startPrice],[beforeMeasurementDrag.startTime,beforeMeasurementDrag.startPrice],"Measurement start endpoint pointer drag changes its anchor");
+  assert.deepEqual([draggedMeasurement.endTime,draggedMeasurement.endPrice],[beforeMeasurementDrag.endTime,beforeMeasurementDrag.endPrice],"Measurement pointer drag preserves the opposite endpoint");
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.undo()),true,"Measurement endpoint gesture is one undo step");
+  assert.deepEqual(await page.evaluate(()=>window.__v5Screenshot.readDrawing("keyboard-measure")),beforeMeasurementDrag);
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.redo()),true);
+  assert.deepEqual(await page.evaluate(()=>window.__v5Screenshot.readDrawing("keyboard-measure")),draggedMeasurement);
+  const beforeMeasurementEscape=await page.evaluate(()=>window.__v5Screenshot.readDrawing("keyboard-measure")),measurementEscapeAnchor=await page.evaluate(()=>window.__v5Screenshot.drawingAnchorPosition("keyboard-measure","END"));
+  await page.mouse.move(measurementEscapeAnchor.x,measurementEscapeAnchor.y);await page.waitForTimeout(80);await page.mouse.down();await page.mouse.move(measurementEscapeAnchor.x+20,measurementEscapeAnchor.y-14,{steps:2});await page.keyboard.press("Escape");await page.mouse.up();
+  assert.deepEqual(await page.evaluate(()=>window.__v5Screenshot.readDrawing("keyboard-measure")),beforeMeasurementEscape,"Escape restores the measurement anchor snapshot");
   const channelAnchors={START:["startTime","startPrice"],END:["endTime","endPrice"],OFFSET:["offsetTime","offsetPrice"]};
   for(const anchor of Object.keys(channelAnchors)){
    const before=await page.evaluate(()=>window.__v5Screenshot.readDrawing("keyboard-channel"));
@@ -936,26 +990,27 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    for(let i=0;i<4;i++)engine.addPaneLine({id:`capacity-pane-${i}`,color:"#f7c774"},rows.map((c,index)=>({time:c.time,value:20+i+Math.sin(index/20)})));
    const indicatorsMs=performance.now()-t;let combinedIndicatorError="";try{engine.addPaneLine({id:"capacity-pane-over-limit",color:"#ffffff"},rows.map(c=>({time:c.time,value:c.close})))}catch(error){combinedIndicatorError=error.message}
    t=performance.now();let drawingError="",overLimitError="",accepted=0;
-   for(let i=0;i<1000;i++){
+   for(let i=0;i<999;i++){
     const start=100+i*4,end=start+50;
     try{engine.addTrendLine({id:`capacity-drawing-${i}`,startTime:rows[start].time,startPrice:rows[start].close+i%7,endTime:rows[end].time,endPrice:rows[end].close+(i%11),color:"#ffffff"});accepted++}
     catch(error){drawingError=error.message;break}
    }
+   if(accepted===999)try{engine.addMeasurement({id:"capacity-measurement",startTime:rows[100].time,startPrice:rows[100].close,endTime:rows[150].time,endPrice:rows[150].close+1,color:"#f7c774"});accepted++}catch(error){drawingError=error.message}
    if(accepted===1000)try{engine.addTrendLine({id:"capacity-drawing-over-limit",startTime:rows[100].time,startPrice:rows[100].close,endTime:rows[150].time,endPrice:rows[150].close+1,color:"#ffffff"})}catch(error){overLimitError=error.message}
-   const drawingsMs=performance.now()-t,ids=[0,500,999].map(i=>`capacity-drawing-${i}`),positions=ids.map(id=>engine.drawingPosition(id)),readback=ids.map(id=>engine.readDrawing(id));
+   const countAfterRejectedDrawing=engine.inspect().nativePrimitives,drawingsMs=performance.now()-t,ids=[0,500,998,"capacity-measurement"].map(i=>i==="capacity-measurement"?i:`capacity-drawing-${i}`),positions=ids.map(id=>engine.drawingPosition(id)),readback=ids.map(id=>engine.readDrawing(id));
    let transferError="",reloadedCount=0,exportedCount=0,exportedBytes=0,otherAccountCount=0,otherTimeframeCount=0,transferBytes=0,transferMs=0,reloadMs=0;
    if(accepted===1000){
-    const envelope={schemaVersion:1,symbol:"XAUUSD",timeframe:"M15",drawings:Array.from({length:1000},(_,i)=>({kind:"TREND",options:engine.readDrawing(`capacity-drawing-${i}`)}))};const serialized=JSON.stringify(envelope);transferBytes=serialized.length;
+    const envelope={schemaVersion:1,symbol:"XAUUSD",timeframe:"M15",drawings:[...Array.from({length:999},(_,i)=>({kind:"TREND",options:engine.readDrawing(`capacity-drawing-${i}`)})),{kind:"MEASURE",options:engine.readDrawing("capacity-measurement")}]};const serialized=JSON.stringify(envelope);transferBytes=serialized.length;
     const transferHost=document.createElement("div");transferHost.style.cssText="width:1280px;height:720px;position:absolute;left:-2000px;top:0";document.body.append(transferHost);
     const target=ChartStudioV5.createStudioV5(transferHost,"capacity-target",{symbol:"XAUUSD",timeframe:"M15"});target.setCandles(rows);t=performance.now();try{target.importDrawings(serialized)}catch(error){transferError=error.message}transferMs=performance.now()-t;const exported=target.exportDrawings();exportedBytes=exported.length;exportedCount=JSON.parse(exported).drawings.length;target.destroy();
     const reloadHost=document.createElement("div");reloadHost.style.cssText="width:1280px;height:720px;position:absolute;left:-2000px;top:0";document.body.append(reloadHost);t=performance.now();const reload=ChartStudioV5.createStudioV5(reloadHost,"capacity-target",{symbol:"XAUUSD",timeframe:"M15"});reload.setCandles(rows);reloadMs=performance.now()-t;reloadedCount=reload.inspect().nativePrimitives;reload.destroy();transferHost.remove();reloadHost.remove();
     const isolationHost=document.createElement("div");isolationHost.style.cssText="width:1280px;height:720px;position:absolute;left:-2000px;top:0";document.body.append(isolationHost);const otherAccount=ChartStudioV5.createStudioV5(isolationHost,"capacity-other",{symbol:"XAUUSD",timeframe:"M15"});otherAccount.setCandles(rows);otherAccount.addTrendLine({id:"unrelated-account",startTime:rows[200].time,startPrice:rows[200].close,endTime:rows[260].time,endPrice:rows[260].close+1,color:"#ffffff"});otherAccountCount=otherAccount.inspect().nativePrimitives;otherAccount.destroy();const otherTimeframe=ChartStudioV5.createStudioV5(isolationHost,"capacity-target",{symbol:"XAUUSD",timeframe:"H1"});otherTimeframe.setCandles(rows);otherTimeframeCount=otherTimeframe.inspect().nativePrimitives;otherTimeframe.destroy();isolationHost.remove();
    }
    window.__capacityEngine=engine;window.__capacityHost=host;window.__capacityOriginalHost=originalHost;window.__capacityOriginalDisplay=originalDisplay;
-   return {runtime:{viewport:[innerWidth,innerHeight],devicePixelRatio,userAgent:navigator.userAgent},barsMs,indicatorsMs,drawingsMs,accepted,drawingError,overLimitError,combinedIndicatorError,positions,readback,transferError,transferBytes,transferMs,exportedBytes,exportedCount,reloadMs,reloadedCount,otherAccountCount,otherTimeframeCount};
+   return {runtime:{viewport:[innerWidth,innerHeight],devicePixelRatio,userAgent:navigator.userAgent},barsMs,indicatorsMs,drawingsMs,accepted,drawingError,overLimitError,countAfterRejectedDrawing,combinedIndicatorError,positions,readback,transferError,transferBytes,transferMs,exportedBytes,exportedCount,reloadMs,reloadedCount,otherAccountCount,otherTimeframeCount};
   });
   const capacitySelectionMs={};
-  for(const index of [0,500,999]){
+  for(const index of [0,500,998]){
    const id=`capacity-drawing-${index}`,start=100+index*4;await page.evaluate(from=>window.__capacityEngine.setVisibleLogicalRange({from,to:from+130}),start-40);await page.waitForTimeout(60);
    const point=await page.evaluate(drawingId=>window.__capacityEngine.drawingPosition(drawingId),id);assert.ok(point,`${id} is positionable in its view range`);
    const started=Date.now();await page.mouse.move(point.x,point.y);await page.waitForTimeout(30);await page.mouse.click(point.x,point.y);await page.waitForTimeout(30);
@@ -967,8 +1022,10 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.ok(capacityProbe.combinedIndicatorError,"20 total overlay/pane instances should be the shared active-indicator limit");
   assert.equal(capacityProbe.drawingError,"","all 1,000 drawings must be accepted");
   assert.equal(capacityProbe.overLimitError,"Native drawing limit","drawing 1,001 is rejected");
-  assert.ok(capacityProbe.positions.every(Boolean),"drawings near the start, middle and end remain positionable");
-  assert.equal(capacityProbe.readback.length,3);
+  assert.equal(capacityProbe.countAfterRejectedDrawing,1000,"Rejected drawing 1,001 leaves the 1,000-object set unchanged");
+   assert.ok(capacityProbe.positions.every(Boolean),"drawings near the start, middle, end and measurement remain positionable");
+  assert.equal(capacityProbe.readback.length,4);
+  assert.equal(capacityProbe.readback[3].id,"capacity-measurement","The capacity slot includes a measurement drawing");
   assert.equal(capacityProbe.transferError,"");
   assert.equal(capacityProbe.transferBytes>65536,true);
   assert.equal(capacityProbe.exportedCount,1000,"schema-v1 export includes all drawings at capacity");

@@ -15,6 +15,7 @@ export type TextAnnotationOptions = {id:string;time:UTCTimestamp;price:number;te
 export type TrendLineOptions = {id:string;startTime:UTCTimestamp;startPrice:number;endTime:UTCTimestamp;endPrice:number;color:string;visible?:boolean;locked?:boolean};
 export type RectangleOptions = TrendLineOptions&{fill:boolean};
 export type ChannelOptions = {id:string;startTime:UTCTimestamp;startPrice:number;endTime:UTCTimestamp;endPrice:number;offsetTime:UTCTimestamp;offsetPrice:number;color:string;visible?:boolean;locked?:boolean};
+export type MeasurementOptions = TrendLineOptions;
 export type RayOptions = TrendLineOptions;
 export type FibonacciOptions = TrendLineOptions&{levels?:number[]};
 export type ChartStorageScope = {symbol:string;timeframe:string};
@@ -130,7 +131,7 @@ class TrendLinePrimitive implements ISeriesPrimitive {
  private chart:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]["chart"]|null=null;
  private series:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]["series"]|null=null;
  private requestUpdate:(()=>void)|null=null;
- constructor(private id:string,private options:TrendLineOptions){this.visible=options.visible??true}
+ constructor(private id:string,private options:TrendLineOptions,private readout?:string){this.visible=options.visible??true}
  attached(param:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]){
   this.chart=param.chart;this.series=param.series;this.requestUpdate=param.requestUpdate;this.updateAllViews();
  }
@@ -155,11 +156,14 @@ class TrendLinePrimitive implements ISeriesPrimitive {
   const p=this.points;if(!p)return;
   target.useMediaCoordinateSpace(({context})=>{
    context.save();context.strokeStyle=this.options.color;context.lineWidth=this.selected?2:1.5;
-   context.beginPath();context.moveTo(p.x1,p.y1);context.lineTo(p.x2,p.y2);context.stroke();context.restore();
+   context.beginPath();context.moveTo(p.x1,p.y1);context.lineTo(p.x2,p.y2);context.stroke();
+   if(this.readout){const text=this.readout;context.font="12px sans-serif";const width=context.measureText(text).width+12,x=(p.x1+p.x2)/2,y=(p.y1+p.y2)/2-20;context.fillStyle="rgba(9,25,35,0.94)";context.strokeStyle=this.options.color;context.fillRect(x-width/2,y-10,width,20);context.strokeRect(x-width/2,y-10,width,20);context.fillStyle="#e8f2f6";context.textBaseline="middle";context.textAlign="center";context.fillText(text,x,y)}
+   context.restore();
    if(this.selected){drawAnchorHandle(context,p.x1,p.y1,this.options.color);drawAnchorHandle(context,p.x2,p.y2,this.options.color)}
   });
  }} }]}
  set(options:TrendLineOptions){this.options={...options};this.visible=options.visible??true;this.updateAllViews();this.requestUpdate?.()}
+ setReadout(value:string){this.readout=value;this.requestUpdate?.()}
  setSelected(selected:boolean){this.selected=selected;this.requestUpdate?.()}
 }
 class RayPrimitive implements ISeriesPrimitive {
@@ -328,6 +332,7 @@ class ChannelPrimitive implements ISeriesPrimitive {
  set(options:ChannelOptions){this.options={...options};this.visible=options.visible??true;this.updateAllViews();this.requestUpdate?.()}
  setSelected(selected:boolean){this.selected=selected;this.requestUpdate?.()}
 }
+class MeasurementPrimitive extends TrendLinePrimitive {}
 const colorPattern = /^#[0-9a-fA-F]{6}$/;
 function validBar(c:Candle):boolean {
  return Number.isSafeInteger(c.time) && c.time>0 && Number.isFinite(new Date(c.time*1000).getTime()) &&
@@ -382,9 +387,10 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  const rays=new Map<string,{primitive:RayPrimitive;options:RayOptions}>();
  const fibonacci=new Map<string,{primitive:FibonacciPrimitive;options:FibonacciOptions}>();
  const channels=new Map<string,{primitive:ChannelPrimitive;options:ChannelOptions}>();
+ const measurements=new Map<string,{primitive:MeasurementPrimitive;options:MeasurementOptions}>();
  const maxNativeDrawings=1000,maxIndicatorInstances=20;
- const drawingCount=()=>priceLevels.size+timeMarkers.size+textAnnotations.size+trendLines.size+rectangles.size+rays.size+fibonacci.size+channels.size;
- type DrawingSnapshot={kind:"PRICE";options:PriceLevelOptions}|{kind:"TIME";options:TimeMarkerOptions}|{kind:"TEXT";options:TextAnnotationOptions}|{kind:"TREND";options:TrendLineOptions}|{kind:"RECT";options:RectangleOptions}|{kind:"RAY";options:RayOptions}|{kind:"FIBO";options:FibonacciOptions}|{kind:"CHANNEL";options:ChannelOptions};
+ const drawingCount=()=>priceLevels.size+timeMarkers.size+textAnnotations.size+trendLines.size+rectangles.size+rays.size+fibonacci.size+channels.size+measurements.size;
+ type DrawingSnapshot={kind:"PRICE";options:PriceLevelOptions}|{kind:"TIME";options:TimeMarkerOptions}|{kind:"TEXT";options:TextAnnotationOptions}|{kind:"TREND";options:TrendLineOptions}|{kind:"RECT";options:RectangleOptions}|{kind:"RAY";options:RayOptions}|{kind:"FIBO";options:FibonacciOptions}|{kind:"CHANNEL";options:ChannelOptions}|{kind:"MEASURE";options:MeasurementOptions};
  type DrawingHistory={id:string;before:DrawingSnapshot|null;after:DrawingSnapshot|null};
  const undoStack:DrawingHistory[]=[],redoStack:DrawingHistory[]=[];
  const historyLimit=100;
@@ -395,11 +401,11 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  let lastPersistedSnapshot:string|null=null;
  const persistenceLimit=524288;
  let selectedDrawingId:string|null=null,hoveredDrawingId:string|null=null;
- type ActiveDrag={pointerId:number;id:string;kind:"PRICE";original:PriceLevelOptions}|{pointerId:number;id:string;kind:"TIME";original:TimeMarkerOptions}|{pointerId:number;id:string;kind:"TEXT";original:TextAnnotationOptions}|{pointerId:number;id:string;kind:"TREND";anchor:"START"|"END";original:TrendLineOptions}|{pointerId:number;id:string;kind:"RECT";anchor:"START"|"END";original:RectangleOptions}|{pointerId:number;id:string;kind:"FIBO";anchor:"START"|"END";original:FibonacciOptions}|{pointerId:number;id:string;kind:"CHANNEL";anchor:"START"|"END"|"OFFSET";original:ChannelOptions};
+ type ActiveDrag={pointerId:number;id:string;kind:"PRICE";original:PriceLevelOptions}|{pointerId:number;id:string;kind:"TIME";original:TimeMarkerOptions}|{pointerId:number;id:string;kind:"TEXT";original:TextAnnotationOptions}|{pointerId:number;id:string;kind:"TREND";anchor:"START"|"END";original:TrendLineOptions}|{pointerId:number;id:string;kind:"RECT";anchor:"START"|"END";original:RectangleOptions}|{pointerId:number;id:string;kind:"FIBO";anchor:"START"|"END";original:FibonacciOptions}|{pointerId:number;id:string;kind:"CHANNEL";anchor:"START"|"END"|"OFFSET";original:ChannelOptions}|{pointerId:number;id:string;kind:"MEASURE";anchor:"START"|"END";original:MeasurementOptions};
  let activeDrag:ActiveDrag|null=null;
  chart.subscribeCrosshairMove(param=>{
-  const objectId=param.hoveredInfo?.objectId;
-  hoveredDrawingId=typeof objectId==="string"&&(priceLevels.has(objectId)||timeMarkers.has(objectId)||textAnnotations.has(objectId)||trendLines.has(objectId)||rectangles.has(objectId)||rays.has(objectId)||fibonacci.has(objectId))?objectId:null;
+    const objectId=param.hoveredInfo?.objectId;
+  hoveredDrawingId=typeof objectId==="string"&&(priceLevels.has(objectId)||timeMarkers.has(objectId)||textAnnotations.has(objectId)||trendLines.has(objectId)||rectangles.has(objectId)||rays.has(objectId)||fibonacci.has(objectId)||measurements.has(objectId))?objectId:null;
  });
  chart.subscribeClick(param=>{
   selectDrawing(hoveredDrawingId);
@@ -420,7 +426,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  const drawingAt=(clientX:number,clientY:number)=>{
   const rect=host.getBoundingClientRect(),x=clientX-rect.left,y=clientY-rect.top;
   let bestId:string|null=null,bestDistance=Infinity;
-  const primitives=[...priceLevels.values(),...timeMarkers.values(),...textAnnotations.values(),...trendLines.values(),...rectangles.values(),...rays.values(),...fibonacci.values(),...channels.values()];
+  const primitives=[...priceLevels.values(),...timeMarkers.values(),...textAnnotations.values(),...trendLines.values(),...rectangles.values(),...rays.values(),...fibonacci.values(),...channels.values(),...measurements.values()];
   for(const item of primitives){
    const hit=item.primitive.hitTest(x,y);if(hit&&hit.distance<=bestDistance){bestId=hit.externalId;bestDistance=hit.distance}
   }
@@ -431,12 +437,12 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const drawingId=hoveredDrawingId??drawingAt(event.clientX,event.clientY)??(event.pointerType==="touch"?touchAnchorAt(event.clientX,event.clientY):null);
   if(!drawingId)return;
   hoveredDrawingId=drawingId;
-  const level=priceLevels.get(drawingId),marker=timeMarkers.get(drawingId),annotation=textAnnotations.get(drawingId),trend=trendLines.get(drawingId),rectangle=rectangles.get(drawingId),fibo=fibonacci.get(drawingId),channel=channels.get(drawingId);
+  const level=priceLevels.get(drawingId),marker=timeMarkers.get(drawingId),annotation=textAnnotations.get(drawingId),trend=trendLines.get(drawingId),rectangle=rectangles.get(drawingId),fibo=fibonacci.get(drawingId),channel=channels.get(drawingId),measurement=measurements.get(drawingId);
   selectDrawing(drawingId);
   if(host.tabIndex<0)host.tabIndex=0;
   host.focus({preventScroll:true});
-  if(!level&&!marker&&!annotation&&!trend&&!rectangle&&!fibo&&!channel)return;
-  if((level?.options.locked??marker?.options.locked??annotation?.options.locked??trend?.options.locked??rectangle?.options.locked??fibo?.options.locked??channel?.options.locked)===true){event.preventDefault();event.stopImmediatePropagation();return}
+  if(!level&&!marker&&!annotation&&!trend&&!rectangle&&!fibo&&!channel&&!measurement)return;
+  if((level?.options.locked??marker?.options.locked??annotation?.options.locked??trend?.options.locked??rectangle?.options.locked??fibo?.options.locked??channel?.options.locked??measurement?.options.locked)===true){event.preventDefault();event.stopImmediatePropagation();return}
   if(level)activeDrag={pointerId:event.pointerId,id:drawingId,kind:"PRICE",original:{...level.options}};
   else if(marker)activeDrag={pointerId:event.pointerId,id:drawingId,kind:"TIME",original:{...marker.options}};
   else if(annotation)activeDrag={pointerId:event.pointerId,id:drawingId,kind:"TEXT",original:{...annotation.options}};
@@ -471,6 +477,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    if(distances[nearest]>12)return;
    activeDrag={pointerId:event.pointerId,id:drawingId,kind:"CHANNEL",anchor:(["START","END","OFFSET"] as const)[nearest],original:{...channel.options}};
   }
+  else if(measurement){const a=drawingAnchorPosition(drawingId,"START"),b=drawingAnchorPosition(drawingId,"END");if(!a||!b)return;const da=Math.hypot(event.clientX-a.x,event.clientY-a.y),db=Math.hypot(event.clientX-b.x,event.clientY-b.y);if(Math.min(da,db)>12)return;activeDrag={pointerId:event.pointerId,id:drawingId,kind:"MEASURE",anchor:da<=db?"START":"END",original:{...measurement.options}}}
   else return;
   host.setPointerCapture(event.pointerId);event.preventDefault();event.stopImmediatePropagation();
  };
@@ -497,14 +504,14 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
     const options={...item.options,...patch};
     try{validateChannel(options);updateChannel(activeDrag.id,patch)}catch(_){}
    }
-  }else if(activeDrag.kind==="TREND"||activeDrag.kind==="RECT"||activeDrag.kind==="FIBO"){
+  }else if(activeDrag.kind==="TREND"||activeDrag.kind==="RECT"||activeDrag.kind==="FIBO"||activeDrag.kind==="MEASURE"){
    const logical=chart.timeScale().coordinateToLogical(x),index=logical===null?-1:Math.round(Number(logical));
-   const candle=bars[index],value=price.coordinateToPrice(y),item=activeDrag.kind==="TREND"?trendLines.get(activeDrag.id):activeDrag.kind==="RECT"?rectangles.get(activeDrag.id):fibonacci.get(activeDrag.id);
+   const candle=bars[index],value=price.coordinateToPrice(y),item=activeDrag.kind==="TREND"?trendLines.get(activeDrag.id):activeDrag.kind==="RECT"?rectangles.get(activeDrag.id):activeDrag.kind==="FIBO"?fibonacci.get(activeDrag.id):measurements.get(activeDrag.id);
    if(candle&&value!==null&&Number.isFinite(value)&&value>0&&item){
     const patch=activeDrag.anchor==="START"?{startTime:candle.time,startPrice:value}:{endTime:candle.time,endPrice:value};
     const otherTime=activeDrag.anchor==="START"?item.options.endTime:item.options.startTime,otherPrice=activeDrag.anchor==="START"?item.options.endPrice:item.options.startPrice;
     if(candle.time!==otherTime&&(activeDrag.kind==="TREND"||value!==otherPrice)){
-     if(activeDrag.kind==="TREND")updateTrendLine(activeDrag.id,patch);else if(activeDrag.kind==="RECT")updateRectangle(activeDrag.id,patch);else updateFibonacci(activeDrag.id,patch);
+     if(activeDrag.kind==="TREND")updateTrendLine(activeDrag.id,patch);else if(activeDrag.kind==="RECT")updateRectangle(activeDrag.id,patch);else if(activeDrag.kind==="FIBO")updateFibonacci(activeDrag.id,patch);else updateMeasurement(activeDrag.id,patch);
     }
    }
   }
@@ -519,6 +526,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    if(drag.kind==="RECT"&&rectangles.has(drag.id))updateRectangle(drag.id,drag.original);
    if(drag.kind==="FIBO"&&fibonacci.has(drag.id))updateFibonacci(drag.id,drag.original);
    if(drag.kind==="CHANNEL"&&channels.has(drag.id))updateChannel(drag.id,drag.original);
+   if(drag.kind==="MEASURE"&&measurements.has(drag.id))updateMeasurement(drag.id,drag.original);
   }else{
    let before:DrawingSnapshot;
    if(drag.kind==="PRICE")before={kind:"PRICE",options:{...drag.original}};
@@ -527,7 +535,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    else if(drag.kind==="TREND")before={kind:"TREND",options:{...drag.original}};
    else if(drag.kind==="RECT")before={kind:"RECT",options:{...drag.original}};
    else if(drag.kind==="FIBO"){const original={...drag.original};if(original.levels)original.levels=[...original.levels];else delete original.levels;before={kind:"FIBO",options:original}}
-   else before={kind:"CHANNEL",options:{...drag.original}}
+   else if(drag.kind==="CHANNEL")before={kind:"CHANNEL",options:{...drag.original}}
+   else before={kind:"MEASURE",options:{...drag.original}}
    recordDrawingChange(drag.id,before,snapshotDrawing(drag.id));
   }
   activeDrag=null;
@@ -585,6 +594,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   else if(current.kind==="RECT")updateRectangle(id,patch);
   else if(current.kind==="RAY")updateRay(id,patch);
   else if(current.kind==="FIBO")updateFibonacci(id,patch);
+  else if(current.kind==="MEASURE")updateMeasurement(id,patch);
   return true;
  }
  const onKeyDown=(event:KeyboardEvent)=>{
@@ -643,6 +653,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    ...[...rays.values()].map(({options})=>({kind:"RAY" as const,options:{...options}})),
    ...[...fibonacci.values()].map(({options})=>({kind:"FIBO" as const,options:{...options}})),
    ...[...channels.values()].map(({options})=>({kind:"CHANNEL" as const,options:{...options}})),
+   ...[...measurements.values()].map(({options})=>({kind:"MEASURE" as const,options:{...options}})),
   ];
  }
  function persistDrawings(){
@@ -688,7 +699,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    if(Object.keys(row).sort().join(",")!=="kind,options"||!row.options||typeof row.options!=="object"||Array.isArray(row.options))throw Error();
    const options=row.options as Record<string,unknown>,kind=row.kind;
    const keys=Object.keys(options).sort().join(",");
-   const expected=kind==="PRICE"?"color,id,locked,price,visible":kind==="TIME"?"color,id,locked,time,visible":kind==="TEXT"?"color,id,locked,price,text,time,visible":kind==="TREND"||kind==="RAY"?"color,endPrice,endTime,id,locked,startPrice,startTime,visible":kind==="RECT"?"color,endPrice,endTime,fill,id,locked,startPrice,startTime,visible":kind==="CHANNEL"?"color,endPrice,endTime,id,locked,offsetPrice,offsetTime,startPrice,startTime,visible":kind==="FIBO"?new Set(["color,endPrice,endTime,id,locked,startPrice,startTime,visible","color,endPrice,endTime,id,levels,locked,startPrice,startTime,visible"]).has(keys):false;
+   const expected=kind==="PRICE"?"color,id,locked,price,visible":kind==="TIME"?"color,id,locked,time,visible":kind==="TEXT"?"color,id,locked,price,text,time,visible":kind==="TREND"||kind==="RAY"||kind==="MEASURE"?"color,endPrice,endTime,id,locked,startPrice,startTime,visible":kind==="RECT"?"color,endPrice,endTime,fill,id,locked,startPrice,startTime,visible":kind==="CHANNEL"?"color,endPrice,endTime,id,locked,offsetPrice,offsetTime,startPrice,startTime,visible":kind==="FIBO"?new Set(["color,endPrice,endTime,id,locked,startPrice,startTime,visible","color,endPrice,endTime,id,levels,locked,startPrice,startTime,visible"]).has(keys):false;
    if(!expected||((kind!=="FIBO")&&keys!==expected)||options.id!==expectedId||averages.has(expectedId)||paneLines.has(expectedId))throw Error();
    if(kind==="PRICE"){const value=options as unknown as PriceLevelOptions;validatePriceLevel(value);return {kind,options:{...value}}}
    if(kind==="TIME"){const value=options as unknown as TimeMarkerOptions;validateTimeMarker(value,false);return {kind,options:{...value}}}
@@ -697,6 +708,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    if(kind==="RECT"){const value=options as unknown as RectangleOptions;validateRectangle(value,false);return {kind,options:{...value}}}
    if(kind==="RAY"){const value=options as unknown as RayOptions;validateTrendLine(value,false);return {kind,options:{...value}}}
    if(kind==="CHANNEL"){const value=options as unknown as ChannelOptions;validateChannel(value,false);return {kind,options:{...value}}}
+   if(kind==="MEASURE"){const value=options as unknown as MeasurementOptions;validateTrendLine(value,false);return {kind,options:{...value}}}
    const value=normalizeFibonacciOptions(options as unknown as FibonacciOptions,false);return {kind:"FIBO",options:{...value}}
   };
   const parseHistory=(raw:unknown,out:DrawingHistory[])=>{
@@ -725,7 +737,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
     if(isV2){
      if(Array.isArray(entry)||Object.keys(entry).sort().join(",")!=="kind,options"||Array.isArray(row.options))throw Error();
      const keys=Object.keys(options).sort().join(","),kind=row.kind;
-     const expected=kind==="PRICE"?"color,id,locked,price,visible":kind==="TIME"?"color,id,locked,time,visible":kind==="TEXT"?"color,id,locked,price,text,time,visible":kind==="TREND"||kind==="RAY"?"color,endPrice,endTime,id,locked,startPrice,startTime,visible":kind==="RECT"?"color,endPrice,endTime,fill,id,locked,startPrice,startTime,visible":kind==="CHANNEL"?"color,endPrice,endTime,id,locked,offsetPrice,offsetTime,startPrice,startTime,visible":kind==="FIBO"?new Set(["color,endPrice,endTime,id,locked,startPrice,startTime,visible","color,endPrice,endTime,id,levels,locked,startPrice,startTime,visible"]).has(keys):false;
+     const expected=kind==="PRICE"?"color,id,locked,price,visible":kind==="TIME"?"color,id,locked,time,visible":kind==="TEXT"?"color,id,locked,price,text,time,visible":kind==="TREND"||kind==="RAY"||kind==="MEASURE"?"color,endPrice,endTime,id,locked,startPrice,startTime,visible":kind==="RECT"?"color,endPrice,endTime,fill,id,locked,startPrice,startTime,visible":kind==="CHANNEL"?"color,endPrice,endTime,id,locked,offsetPrice,offsetTime,startPrice,startTime,visible":kind==="FIBO"?new Set(["color,endPrice,endTime,id,locked,startPrice,startTime,visible","color,endPrice,endTime,id,levels,locked,startPrice,startTime,visible"]).has(keys):false;
      if(!expected||((kind!=="FIBO")&&keys!==expected))throw Error();
     }
     if(typeof options.id!=="string"||seen.has(options.id)||averages.has(options.id)||paneLines.has(options.id))throw Error();
@@ -751,6 +763,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
     }else if(row.kind==="CHANNEL"){
      const normalized={id:options.id,startTime:options.startTime,startPrice:options.startPrice,endTime:options.endTime,endPrice:options.endPrice,offsetTime:options.offsetTime,offsetPrice:options.offsetPrice,color:options.color,visible:options.visible,locked:options.locked} as ChannelOptions;
      validateChannel(normalized,false);snapshots.push({kind:"CHANNEL",options:{...normalized,visible:normalized.visible??true,locked:normalized.locked??false}});
+    }else if(row.kind==="MEASURE"){
+     const normalized=options as unknown as MeasurementOptions;validateTrendLine(normalized);snapshots.push({kind:"MEASURE",options:{...normalized,visible:normalized.visible??true,locked:normalized.locked??false}});
     }else if(row.kind==="FIBO"){
      const normalized={id:options.id,startTime:options.startTime,startPrice:options.startPrice,endTime:options.endTime,endPrice:options.endPrice,color:options.color,levels:options.levels,visible:options.visible,locked:options.locked} as FibonacciOptions;
      const validated=normalizeFibonacciOptions(normalized,false);
@@ -778,9 +792,9 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function selectDrawing(id:string|null){
   if(selectedDrawingId===id){if(id){priceLevels.get(id)?.primitive.setSelected(true);timeMarkers.get(id)?.primitive.setSelected(true);textAnnotations.get(id)?.primitive.setSelected(true);trendLines.get(id)?.primitive.setSelected(true);rectangles.get(id)?.primitive.setSelected(true);rays.get(id)?.primitive.setSelected(true);fibonacci.get(id)?.primitive.setSelected(true);channels.get(id)?.primitive.setSelected(true)}return}
-  if(selectedDrawingId){priceLevels.get(selectedDrawingId)?.primitive.setSelected(false);timeMarkers.get(selectedDrawingId)?.primitive.setSelected(false);textAnnotations.get(selectedDrawingId)?.primitive.setSelected(false);trendLines.get(selectedDrawingId)?.primitive.setSelected(false);rectangles.get(selectedDrawingId)?.primitive.setSelected(false);rays.get(selectedDrawingId)?.primitive.setSelected(false);fibonacci.get(selectedDrawingId)?.primitive.setSelected(false);channels.get(selectedDrawingId)?.primitive.setSelected(false)}
+  if(selectedDrawingId){priceLevels.get(selectedDrawingId)?.primitive.setSelected(false);timeMarkers.get(selectedDrawingId)?.primitive.setSelected(false);textAnnotations.get(selectedDrawingId)?.primitive.setSelected(false);trendLines.get(selectedDrawingId)?.primitive.setSelected(false);rectangles.get(selectedDrawingId)?.primitive.setSelected(false);rays.get(selectedDrawingId)?.primitive.setSelected(false);fibonacci.get(selectedDrawingId)?.primitive.setSelected(false);channels.get(selectedDrawingId)?.primitive.setSelected(false);measurements.get(selectedDrawingId)?.primitive.setSelected(false)}
   selectedDrawingId=id;
-  if(id){priceLevels.get(id)?.primitive.setSelected(true);timeMarkers.get(id)?.primitive.setSelected(true);textAnnotations.get(id)?.primitive.setSelected(true);trendLines.get(id)?.primitive.setSelected(true);rectangles.get(id)?.primitive.setSelected(true);rays.get(id)?.primitive.setSelected(true);fibonacci.get(id)?.primitive.setSelected(true);channels.get(id)?.primitive.setSelected(true)}
+  if(id){priceLevels.get(id)?.primitive.setSelected(true);timeMarkers.get(id)?.primitive.setSelected(true);textAnnotations.get(id)?.primitive.setSelected(true);trendLines.get(id)?.primitive.setSelected(true);rectangles.get(id)?.primitive.setSelected(true);rays.get(id)?.primitive.setSelected(true);fibonacci.get(id)?.primitive.setSelected(true);channels.get(id)?.primitive.setSelected(true);measurements.get(id)?.primitive.setSelected(true)}
  }
  function snapshotDrawing(id:string):DrawingSnapshot|null{
   const priceLevel=priceLevels.get(id);if(priceLevel)return {kind:"PRICE",options:{...priceLevel.options}};
@@ -791,6 +805,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const ray=rays.get(id);if(ray)return {kind:"RAY",options:{...ray.options}};
   const fibo=fibonacci.get(id);if(fibo){const options={...fibo.options};if(options.levels)options.levels=[...options.levels];else delete options.levels;return {kind:"FIBO",options}}
   const channel=channels.get(id);if(channel)return {kind:"CHANNEL",options:{...channel.options}}
+  const measurement=measurements.get(id);if(measurement)return {kind:"MEASURE",options:{...measurement.options}}
   return null;
  }
  function recordDrawingChange(id:string,before:DrawingSnapshot|null,after:DrawingSnapshot|null){
@@ -810,6 +825,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const oldRay=rays.get(id);if(oldRay){price.detachPrimitive(oldRay.primitive);rays.delete(id)}
   const oldFibo=fibonacci.get(id);if(oldFibo){price.detachPrimitive(oldFibo.primitive);fibonacci.delete(id)}
   const oldChannel=channels.get(id);if(oldChannel){price.detachPrimitive(oldChannel.primitive);channels.delete(id)}
+  const oldMeasurement=measurements.get(id);if(oldMeasurement){price.detachPrimitive(oldMeasurement.primitive);measurements.delete(id)}
   if(snapshot?.kind==="PRICE"){
    if(drawingCount()>=maxNativeDrawings)return false;
    const options={...snapshot.options};validatePriceLevel(options);
@@ -849,6 +865,10 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    if(drawingCount()>=maxNativeDrawings)return false;
    const options={...snapshot.options};validateChannel(options,false);
    const primitive=new ChannelPrimitive(id,options);price.attachPrimitive(primitive);channels.set(id,{primitive,options});
+  }else if(snapshot?.kind==="MEASURE"){
+   if(drawingCount()>=maxNativeDrawings)return false;
+   const options={...snapshot.options};validateTrendLine(options,false);
+   const primitive=new MeasurementPrimitive(id,options,measurementLabel(options));price.attachPrimitive(primitive);measurements.set(id,{primitive,options});
   }
   if(wasSelected&&snapshot)selectDrawing(id);
   return true;
@@ -872,6 +892,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   if(rectangles.has(selectedDrawingId))return removeRectangle(selectedDrawingId);
   if(rays.has(selectedDrawingId))return removeRay(selectedDrawingId);
   if(channels.has(selectedDrawingId))return removeChannel(selectedDrawingId);
+  if(measurements.has(selectedDrawingId))return removeMeasurement(selectedDrawingId);
   return removeFibonacci(selectedDrawingId);
  }
  function duplicateSelectedDrawing(){
@@ -906,7 +927,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   guard();
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color))throw Error("Invalid line options");
   if(averages.size+paneLines.size>=maxIndicatorInstances&&!averages.has(opts.id))throw Error("Indicator instance limit");
-  if(paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id))throw Error("Duplicate chart object identity");
+  if(paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");
   const values=validSeriesData(data);
   let series=averages.get(opts.id);
   if(!series){series=newLine(opts);averages.set(opts.id,series)}
@@ -923,7 +944,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function addPriceLevel(opts:PriceLevelOptions){
   guard();validatePriceLevel(opts);
-  if(averages.has(opts.id)||paneLines.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id))throw Error("Duplicate chart object identity");
+  if(averages.has(opts.id)||paneLines.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");
   const existing=priceLevels.get(opts.id);
   const options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};
   if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options.price,options.color,options.visible);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
@@ -951,7 +972,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function addTimeMarker(opts:TimeMarkerOptions,requireLoadedTime=true){
   guard();validateTimeMarker(opts,requireLoadedTime);
-  if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id))throw Error("Duplicate chart object identity");
+  if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");
   const existing=timeMarkers.get(opts.id);
   const options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};
   if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options.time,options.color,options.visible);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
@@ -980,7 +1001,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function addTextAnnotation(opts:TextAnnotationOptions,requireLoadedTime=true){
   guard();validateTextAnnotation(opts,requireLoadedTime);
-  if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id))throw Error("Duplicate chart object identity");
+  if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");
   const existing=textAnnotations.get(opts.id);
   const options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};
   if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
@@ -1007,7 +1028,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function addTrendLine(opts:TrendLineOptions,requireLoadedAnchors=true){
   guard();validateTrendLine(opts,requireLoadedAnchors);
-  if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id))throw Error("Duplicate chart object identity");
+  if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");
   const existing=trendLines.get(opts.id),options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};
   if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
   if(drawingCount()>=maxNativeDrawings)throw Error("Native drawing limit");
@@ -1028,7 +1049,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function addRectangle(opts:RectangleOptions,requireLoadedAnchors=true){
   guard();validateRectangle(opts,requireLoadedAnchors);
-  if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id))throw Error("Duplicate chart object identity");
+  if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");
   const existing=rectangles.get(opts.id),options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};
   if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
   if(drawingCount()>=maxNativeDrawings)throw Error("Native drawing limit");
@@ -1045,7 +1066,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function addRay(opts:RayOptions,requireLoadedAnchors=true){
   guard();validateTrendLine(opts,requireLoadedAnchors);
-  if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id))throw Error("Duplicate chart object identity");
+  if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");
   const existing=rays.get(opts.id),options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};
   if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
   if(drawingCount()>=maxNativeDrawings)throw Error("Native drawing limit");
@@ -1107,6 +1128,12 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    }
   }
  }
+ function measurementLabel(options:MeasurementOptions){const read=measurementReadoutValue(options);return `${read.priceDelta>=0?"+":""}${read.priceDelta.toFixed(2)} (${read.percentChange>=0?"+":""}${read.percentChange.toFixed(2)}%) · ${read.bars} bars`}
+ function measurementReadoutValue(options:MeasurementOptions){const start=barsByTime.get(options.startTime),end=barsByTime.get(options.endTime);if(!start||!end)throw Error("Invalid or unavailable measurement");return {priceDelta:options.endPrice-options.startPrice,percentChange:(options.endPrice-options.startPrice)/options.startPrice*100,bars:Math.abs(bars.indexOf(end)-bars.indexOf(start))}}
+ function addMeasurement(opts:MeasurementOptions){guard();validateTrendLine(opts,true);if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");const existing=measurements.get(opts.id),options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}if(drawingCount()>=maxNativeDrawings)throw Error("Native drawing limit");const primitive=new MeasurementPrimitive(opts.id,options,measurementLabel(options));price.attachPrimitive(primitive);measurements.set(opts.id,{primitive,options});recordDrawingChange(opts.id,null,snapshotDrawing(opts.id))}
+ function updateMeasurement(id:string,patch:Partial<Pick<MeasurementOptions,"startTime"|"startPrice"|"endTime"|"endPrice"|"color"|"visible"|"locked">>){guard();const item=measurements.get(id);if(!item)throw Error("Unknown measurement");const before=snapshotDrawing(id),options={...item.options,...patch};validateTrendLine(options,patch.startTime!==undefined||patch.endTime!==undefined);const label=measurementLabel(options);item.primitive.set(options);item.primitive.setReadout(label);item.options=options;if(activeDrag?.id!==id)recordDrawingChange(id,before,snapshotDrawing(id))}
+ function removeMeasurement(id:string){guard();const item=measurements.get(id);if(!item)return false;const before=snapshotDrawing(id);price.detachPrimitive(item.primitive);measurements.delete(id);if(selectedDrawingId===id)selectDrawing(null);recordDrawingChange(id,before,null);return true}
+ function measurementReadout(id:string){guard();const item=measurements.get(id);return item?measurementReadoutValue(item.options):null}
  function addChannel(opts:ChannelOptions,requireLoadedAnchors=true){
   guard();validateChannel(opts,requireLoadedAnchors);
   if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id))throw Error("Duplicate chart object identity");
@@ -1133,12 +1160,13 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const ray=rays.get(id);if(ray){if(!ray.options.visible)return null;const p=ray.primitive.coordinates();return p===null?null:{x:rect.left+(p.x1+p.x2)/2,y:rect.top+(p.y1+p.y2)/2}}
   const fibo=fibonacci.get(id);if(fibo){if(!fibo.options.visible)return null;const p=fibo.primitive.coordinates();if(!p)return null;const level=p.levels.find(item=>item.ratio===0.5);return level?{x:rect.left+(p.x1+p.x2)/2,y:rect.top+level.y}:null}
   const channel=channels.get(id);if(channel){if(!channel.options.visible)return null;const p=channel.primitive.coordinates();return p?{x:rect.left+(p.m1.x+p.m2.x)/2,y:rect.top+(p.m1.y+p.m2.y)/2}:null}
+  const measurement=measurements.get(id);if(measurement){if(!measurement.options.visible)return null;const p=measurement.primitive.coordinates();return p?{x:rect.left+(p.x1+p.x2)/2,y:rect.top+(p.y1+p.y2)/2}:null}
   return null;
  }
  function drawingAnchorPosition(id:string,anchor:"START"|"END"|"OFFSET"){
-  guard();const trend=trendLines.get(id),zone=rectangles.get(id),ray=rays.get(id),fibo=fibonacci.get(id);
+  guard();const trend=trendLines.get(id),zone=rectangles.get(id),ray=rays.get(id),fibo=fibonacci.get(id),measurement=measurements.get(id);
   const channel=channels.get(id)?.options;
-  const options=trend?.options??zone?.options??ray?.options??fibo?.options??channel;
+  const options=trend?.options??zone?.options??ray?.options??fibo?.options??channel??measurement?.options;
   if(!options||options.visible===false)return null;
   const time=anchor==="OFFSET"&&channel?channel.offsetTime:anchor==="START"?options.startTime:options.endTime,priceValue=anchor==="OFFSET"&&channel?channel.offsetPrice:anchor==="START"?options.startPrice:options.endPrice;
   const x=chart.timeScale().timeToCoordinate(time),y=price.priceToCoordinate(priceValue),rect=host.getBoundingClientRect();
@@ -1153,6 +1181,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const ray=rays.get(id);if(ray)return {...ray.options};
   const fibo=fibonacci.get(id);if(fibo){const options={...fibo.options};if(options.levels)options.levels=[...options.levels];else delete options.levels;return options}
   const channel=channels.get(id);if(channel)return {...channel.options};
+  const measurement=measurements.get(id);if(measurement)return {...measurement.options};
   return null;
  }
  function exportDrawings():string{
@@ -1165,7 +1194,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
     ...[...rectangles.values()].map(({options})=>({kind:"RECT" as const,options:{...options}})),
     ...[...rays.values()].map(({options})=>({kind:"RAY" as const,options:{...options}})),
    ...[...fibonacci.values()].map(({options})=>({kind:"FIBO" as const,options:{...options}})),
-    ...[...channels.values()].map(({options})=>({kind:"CHANNEL" as const,options:{...options}}))];
+    ...[...channels.values()].map(({options})=>({kind:"CHANNEL" as const,options:{...options}})),
+    ...[...measurements.values()].map(({options})=>({kind:"MEASURE" as const,options:{...options}}))];
   const serialized=JSON.stringify({schemaVersion:1,symbol:drawingScope.symbol,timeframe:drawingScope.timeframe,drawings});
   if(utf8ByteLength(serialized)>persistenceLimit)throw Error("Drawing export exceeds size limit");
   return serialized;
@@ -1193,9 +1223,9 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
     throw Error("Invalid drawing import entry");
    const options=row.options as Record<string,unknown>,kind=row.kind;
    const keys=Object.keys(options).sort().join(",");
-   const expected=kind==="PRICE"?"color,id,locked,price,visible":kind==="TIME"?"color,id,locked,time,visible":kind==="TEXT"?"color,id,locked,price,text,time,visible":kind==="TREND"||kind==="RAY"?"color,endPrice,endTime,id,locked,startPrice,startTime,visible":kind==="CHANNEL"?"color,endPrice,endTime,id,locked,offsetPrice,offsetTime,startPrice,startTime,visible":kind==="FIBO"?new Set(["color,endPrice,endTime,id,locked,startPrice,startTime,visible","color,endPrice,endTime,id,levels,locked,startPrice,startTime,visible"]).has(keys):kind==="RECT"?"color,endPrice,endTime,fill,id,locked,startPrice,startTime,visible":"";
+   const expected=kind==="PRICE"?"color,id,locked,price,visible":kind==="TIME"?"color,id,locked,time,visible":kind==="TEXT"?"color,id,locked,price,text,time,visible":kind==="TREND"||kind==="RAY"||kind==="MEASURE"?"color,endPrice,endTime,id,locked,startPrice,startTime,visible":kind==="CHANNEL"?"color,endPrice,endTime,id,locked,offsetPrice,offsetTime,startPrice,startTime,visible":kind==="FIBO"?new Set(["color,endPrice,endTime,id,locked,startPrice,startTime,visible","color,endPrice,endTime,id,levels,locked,startPrice,startTime,visible"]).has(keys):kind==="RECT"?"color,endPrice,endTime,fill,id,locked,startPrice,startTime,visible":"";
    if(!expected||((kind!=="FIBO")&&keys!==expected)||typeof options.id!=="string"||seen.has(options.id)||
-    averages.has(options.id)||paneLines.has(options.id)||priceLevels.has(options.id)||timeMarkers.has(options.id)||textAnnotations.has(options.id)||trendLines.has(options.id)||rectangles.has(options.id)||rays.has(options.id)||fibonacci.has(options.id)||channels.has(options.id))throw Error("Invalid or conflicting drawing identity/options");
+    averages.has(options.id)||paneLines.has(options.id)||priceLevels.has(options.id)||timeMarkers.has(options.id)||textAnnotations.has(options.id)||trendLines.has(options.id)||rectangles.has(options.id)||rays.has(options.id)||fibonacci.has(options.id)||channels.has(options.id)||measurements.has(options.id))throw Error("Invalid or conflicting drawing identity/options");
    seen.add(options.id);
    if(kind==="PRICE"){
     const normalized=options as unknown as PriceLevelOptions;validatePriceLevel(normalized);
@@ -1218,6 +1248,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    }else if(kind==="CHANNEL"){
     const normalized=options as unknown as ChannelOptions;validateChannel(normalized);
     snapshots.push({kind:"CHANNEL",options:{...normalized,visible:normalized.visible??true,locked:normalized.locked??false}});
+   }else if(kind==="MEASURE"){
+    const normalized=options as unknown as MeasurementOptions;validateTrendLine(normalized);snapshots.push({kind:"MEASURE",options:{...normalized,visible:normalized.visible??true,locked:normalized.locked??false}});
    }else{
     const normalized=normalizeFibonacciOptions(options as unknown as FibonacciOptions);
     if(options.levels===undefined)delete normalized.levels;
@@ -1226,7 +1258,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   }
   if(snapshots.length>maxNativeDrawings)throw Error("Native drawing limit");
   hydratingDrawings=true;
-  try{for(const snapshot of snapshots){if(snapshot.kind==="PRICE")addPriceLevel(snapshot.options);else if(snapshot.kind==="TIME")addTimeMarker(snapshot.options);else if(snapshot.kind==="TEXT")addTextAnnotation(snapshot.options);else if(snapshot.kind==="TREND")addTrendLine(snapshot.options);else if(snapshot.kind==="RECT")addRectangle(snapshot.options);else if(snapshot.kind==="RAY")addRay(snapshot.options);else if(snapshot.kind==="CHANNEL")addChannel(snapshot.options);else addFibonacci(snapshot.options)}}
+  try{for(const snapshot of snapshots){if(snapshot.kind==="PRICE")addPriceLevel(snapshot.options);else if(snapshot.kind==="TIME")addTimeMarker(snapshot.options);else if(snapshot.kind==="TEXT")addTextAnnotation(snapshot.options);else if(snapshot.kind==="TREND")addTrendLine(snapshot.options);else if(snapshot.kind==="RECT")addRectangle(snapshot.options);else if(snapshot.kind==="RAY")addRay(snapshot.options);else if(snapshot.kind==="CHANNEL")addChannel(snapshot.options);else if(snapshot.kind==="MEASURE")addMeasurement(snapshot.options);else addFibonacci(snapshot.options)}}
   catch(error){
    for(const item of priceLevels.values())price.detachPrimitive(item.primitive);priceLevels.clear();
    for(const item of timeMarkers.values())price.detachPrimitive(item.primitive);timeMarkers.clear();
@@ -1236,7 +1268,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    for(const item of rays.values())price.detachPrimitive(item.primitive);rays.clear();
    for(const item of fibonacci.values())price.detachPrimitive(item.primitive);fibonacci.clear();
    for(const item of channels.values())price.detachPrimitive(item.primitive);channels.clear();
-   for(const item of channels.values())price.detachPrimitive(item.primitive);channels.clear();
+   for(const item of measurements.values())price.detachPrimitive(item.primitive);measurements.clear();
    undoStack.length=0;redoStack.length=0;throw error;
   }finally{hydratingDrawings=false}
   undoStack.length=0;redoStack.length=0;persistDrawings();
@@ -1252,6 +1284,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const ray=rays.get(id);if(ray){updateRay(id,{visible});return true}
   const fibo=fibonacci.get(id);if(fibo){updateFibonacci(id,{visible});return true}
   const channel=channels.get(id);if(channel){updateChannel(id,{visible});return true}
+  if(measurements.has(id)){updateMeasurement(id,{visible});return true}
   return false;
  }
  function setDrawingLocked(id:string,locked:boolean){
@@ -1264,6 +1297,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const ray=rays.get(id);if(ray){updateRay(id,{locked});return true}
   const fibo=fibonacci.get(id);if(fibo){updateFibonacci(id,{locked});return true}
   const channel=channels.get(id);if(channel){updateChannel(id,{locked});return true}
+  if(measurements.has(id)){updateMeasurement(id,{locked});return true}
   return false;
  }
  function addPaneLine(opts:AverageOptions,data:readonly AveragePoint[]){
@@ -1271,7 +1305,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color))
    throw Error("Invalid pane line");
   const values=validSeriesData(data);
-  if(averages.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id))throw Error("Duplicate chart object identity");
+  if(averages.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");
   if(averages.size+paneLines.size>=maxIndicatorInstances&&!paneLines.has(opts.id))throw Error("Indicator instance limit");
   if(paneLines.size>=8&&!paneLines.has(opts.id))throw Error("Native pane limit");
   let series=paneLines.get(opts.id);
@@ -1366,6 +1400,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   for(const item of rays.values())price.detachPrimitive(item.primitive);rays.clear();
   for(const item of fibonacci.values())price.detachPrimitive(item.primitive);fibonacci.clear();
   for(const item of channels.values())price.detachPrimitive(item.primitive);channels.clear();
+  for(const item of measurements.values())price.detachPrimitive(item.primitive);measurements.clear();
   for(const item of averages.values())chart.removeSeries(item);
   averages.clear();
   for(const line of paneLines.values())chart.removeSeries(line);
@@ -1375,9 +1410,9 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
   averageCount:averages.size,nativePaneLines:paneLines.size,nativePrimitives:drawingCount(),selectedDrawingId,hoveredDrawingId,
   paneCount:chart.panes().length,volumeVisible:!!volume,persistenceStatus,persistenceError}}
- function destroy(){if(destroyed)return;finishDrag(true);destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();paneLines.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
+ function destroy(){if(destroyed)return;finishDrag(true);destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();paneLines.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();measurements.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
  return Object.freeze({setCandles,addAverage,moveAverage,removeAverage,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,drawingPosition,drawingAnchorPosition,readDrawing,exportDrawings,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,
-  addPaneLine,movePaneLine,removePaneLine,resizePane,showVolume,visibleLogicalRange,setVisibleLogicalRange,readDataWindow,
+  addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,resizePane,showVolume,visibleLogicalRange,setVisibleLogicalRange,readDataWindow,
   updateLast,changeAccount,inspect,destroy});
 }
