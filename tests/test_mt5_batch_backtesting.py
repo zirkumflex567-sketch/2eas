@@ -88,11 +88,13 @@ class MT5BatchContractTests(unittest.TestCase):
             report_rel = next(line.split("=", 1)[1] for line in ini.splitlines() if line.startswith("Report="))
             report = self.terminal.parent / Path(report_rel.replace("\\", "/"))
             report.parent.mkdir(parents=True, exist_ok=True)
-            report.write_text("<html>MT5 report</html>" * 30)
+            report.write_text("<html><table>" + "".join("<tr><td>%s</td><td>%s</td></tr>" % p for p in [("Total Net Profit", "120.50"), ("Profit Factor", "1.45"), ("Total Trades", "50"), ("Equity Drawdown Relative", "5.20%"), ("History Quality", "99.00%"), ("Profit Trades (% of total)", "31 (62.00%)")]) + "</table></html>" + " " * 220)
             return FakeProc()
         with patch("backtesting.runner.sys.platform", "win32"), patch("backtesting.runner.subprocess.Popen", side_effect=report_writing_launch):
             first = run_batch(batch)
         self.assertEqual(first["records"][0]["status"], "success")
+        self.assertEqual(first["records"][0]["metrics"]["total_trades"], 50)
+        self.assertTrue((batch.output / "batch_metrics.csv").exists())
         with patch("backtesting.runner.sys.platform", "win32"), patch("backtesting.runner.subprocess.Popen", side_effect=AssertionError("no second launch")):
             second = run_batch(batch)
         self.assertEqual(second["records"][0]["status"], "skipped_success")
@@ -100,3 +102,4 @@ class MT5BatchContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
