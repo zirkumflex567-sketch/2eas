@@ -755,7 +755,9 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
    if(!response.ok||result.account!==account||result.canExecute!==false){
     const detail=result.detail;throw Error(typeof detail==="string"?detail:detail?.message||"Broker-Rechenfehler");
    }
-   s.scenario=payload;s.validatedScenario=json(payload);s.lastScenarioPreview={account,symbol:"XAUUSD",savedAtUtc:new Date().toISOString(),request:json(payload),result:json(result)};s.planOriginal=null;
+   const actualLots=Number(result.positionSizing?.volumeLots);
+   if(!Number.isFinite(actualLots)||actualLots<=0)throw Error("Broker-Lotgröße fehlt in der verifizierten Vorschau.");
+   s.scenario={...payload,volumeLots:actualLots};s.validatedScenario=json(s.scenario);s.lastScenarioPreview={account,symbol:"XAUUSD",savedAtUtc:new Date().toISOString(),request:json(payload),result:json(result)};s.planOriginal=null;
    if(Number.isFinite(Number(result.tickSize))&&Number(result.tickSize)>0)s.planTickSize=Number(result.tickSize);
    requestDraw();
    const loss=result.pnlAtSl.amount,reward=result.pnlAtTp.amount,cur=result.pnlAtSl.currency;
