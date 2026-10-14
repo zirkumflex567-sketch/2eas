@@ -514,8 +514,49 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await page.mouse.move(10,10);
   await page.waitForTimeout(150);
   const persistedBeforeReload=await page.evaluate(()=>({price:window.__v5Screenshot.readDrawing("visual-level"),priceSecond:window.__v5Screenshot.readDrawing("visual-level-second"),time:window.__v5Screenshot.readDrawing("visual-time"),timeSecond:window.__v5Screenshot.readDrawing("visual-time-second"),text:window.__v5Screenshot.readDrawing("visual-note"),trend:window.__v5Screenshot.readDrawing("visual-trend"),rectangle:window.__v5Screenshot.readDrawing("visual-zone"),ray:window.__v5Screenshot.readDrawing("visual-ray"),fibo:window.__v5Screenshot.readDrawing("visual-fibo"),customFibo:window.__v5Screenshot.readDrawing("visual-fibo-custom")}));
+  await page.evaluate(()=>{
+   const rows=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2}});
+   const key="2eas.chartstudio.v5.drawings:historycontract:XAUUSD:M15";localStorage.removeItem(key);
+   const host=document.createElement("div");host.style.cssText="width:800px;height:400px";document.body.append(host);
+   const e=ChartStudioV5.createStudioV5(host,"historycontract",{symbol:"XAUUSD",timeframe:"M15"});e.setCandles(rows);
+   e.addPriceLevel({id:"history-edit",price:4001,color:"#ffffff"});e.updatePriceLevel("history-edit",{price:4002});e.updatePriceLevel("history-edit",{price:4003});e.destroy();
+   const createHost=document.createElement("div");createHost.style.cssText="width:800px;height:400px";document.body.append(createHost);
+   const created=ChartStudioV5.createStudioV5(createHost,"historycreated",{symbol:"XAUUSD",timeframe:"M15"});created.setCandles(rows);
+   created.addPriceLevel({id:"history-created",price:4011,color:"#ffffff"});created.removePriceLevel("history-created");created.destroy();createHost.remove();host.remove();
+  });
   await page.reload({waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartV5Ready===true);
+  const persistedHistoryProbe=await page.evaluate(()=>{
+   const rows=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2}});
+   const host=document.createElement("div");host.style.cssText="width:800px;height:400px";document.body.append(host);
+   const e=ChartStudioV5.createStudioV5(host,"historycontract",{symbol:"XAUUSD",timeframe:"M15"});e.setCandles(rows);
+   const before=e.readDrawing("history-edit"),undo=e.undo(),undone=e.readDrawing("history-edit"),undoAgain=e.undo(),undoneAgain=e.readDrawing("history-edit"),redo=e.redo(),redone=e.readDrawing("history-edit"),redoAgain=e.redo(),redoneAgain=e.readDrawing("history-edit");
+   e.setCandles(rows.slice(1));const afterBarsReplacement={undo:e.undo(),drawings:JSON.parse(localStorage.getItem("2eas.chartstudio.v5.drawings:historycontract:XAUUSD:M15"))};e.destroy();host.remove();
+   const createHost=document.createElement("div");createHost.style.cssText="width:800px;height:400px";document.body.append(createHost);
+   const created=ChartStudioV5.createStudioV5(createHost,"historycreated",{symbol:"XAUUSD",timeframe:"M15"});created.setCandles(rows);
+   const deleteUndo=created.undo(),restored=created.readDrawing("history-created"),createUndo=created.undo(),removed=created.readDrawing("history-created"),createRedo=created.redo(),createdAgain=created.readDrawing("history-created"),deleteRedo=created.redo(),deletedAgain=created.readDrawing("history-created");created.destroy();createHost.remove();
+   return {before,undo,undone,undoAgain,undoneAgain,redo,redone,redoAgain,redoneAgain,afterBarsReplacement,createDelete:{deleteUndo,restored,createUndo,removed,createRedo,createdAgain,deleteRedo,deletedAgain}};
+  });
+  assert.equal(persistedHistoryProbe.before.price,4003);
+  assert.equal(persistedHistoryProbe.undo,true,"scoped undo history should survive browser reload");
+  assert.equal(persistedHistoryProbe.undone.price,4002);
+  assert.equal(persistedHistoryProbe.undoAgain,true);
+  assert.equal(persistedHistoryProbe.undoneAgain.price,4001);
+  assert.equal(persistedHistoryProbe.redo,true);
+  assert.equal(persistedHistoryProbe.redone.price,4002);
+  assert.equal(persistedHistoryProbe.redoAgain,true);
+  assert.equal(persistedHistoryProbe.redoneAgain.price,4003);
+  assert.equal(persistedHistoryProbe.afterBarsReplacement.undo,false);
+  assert.deepEqual(persistedHistoryProbe.afterBarsReplacement.drawings.undoStack,[]);
+  assert.deepEqual(persistedHistoryProbe.afterBarsReplacement.drawings.redoStack,[]);
+  assert.equal(persistedHistoryProbe.createDelete.deleteUndo,true);
+  assert.equal(persistedHistoryProbe.createDelete.restored.price,4011);
+  assert.equal(persistedHistoryProbe.createDelete.createUndo,true);
+  assert.equal(persistedHistoryProbe.createDelete.removed,null);
+  assert.equal(persistedHistoryProbe.createDelete.createRedo,true);
+  assert.equal(persistedHistoryProbe.createDelete.createdAgain.price,4011);
+  assert.equal(persistedHistoryProbe.createDelete.deleteRedo,true);
+  assert.equal(persistedHistoryProbe.createDelete.deletedAgain,null);
   const persistenceProbe=await page.evaluate(()=>{
    const rows=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2,tick_volume:100+i*3}});
    const scope={symbol:"XAUUSD",timeframe:"M15"};
@@ -535,11 +576,28 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const corruptKey="2eas.chartstudio.v5.drawings:titan:GBPUSD:M5";localStorage.setItem(corruptKey,"not-json");
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",{symbol:"GBPUSD",timeframe:"M5"});e.setCandles(rows);
    const corrupt={status:e.inspect().persistenceStatus,error:e.inspect().persistenceError,stored:localStorage.getItem(corruptKey)};e.destroy();
+   const legacyKey="2eas.chartstudio.v5.drawings:migrationtest:XAUUSD:M15",legacy=JSON.stringify({schemaVersion:1,account:"migrationtest",symbol:"XAUUSD",timeframe:"M15",drawings:[{kind:"PRICE",options:{id:"legacy-price",price:4001,color:"#ffffff",visible:true,locked:false}}]});localStorage.setItem(legacyKey,legacy);
+   e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"migrationtest",scope);e.setCandles(rows);
+   const migrated={status:e.inspect().persistenceStatus,drawing:e.readDrawing("legacy-price"),stored:JSON.parse(localStorage.getItem(legacyKey))};e.destroy();
+   const badHistoryKey="2eas.chartstudio.v5.drawings:badhistory:XAUUSD:M15",badHistory=JSON.stringify({schemaVersion:2,account:"badhistory",symbol:"XAUUSD",timeframe:"M15",drawings:[{kind:"PRICE",options:{id:"must-not-restore",price:4001,color:"#ffffff",visible:true,locked:false}}],undoStack:[{id:"wrong-id",before:null,after:{kind:"PRICE",options:{id:"other-id",price:4001,color:"#ffffff",visible:true,locked:false}}}],redoStack:[]});localStorage.setItem(badHistoryKey,badHistory);
+   e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"badhistory",scope);e.setCandles(rows);
+   const malformedHistory={status:e.inspect().persistenceStatus,error:e.inspect().persistenceError,count:e.inspect().nativePrimitives,stored:localStorage.getItem(badHistoryKey)};e.destroy();
+   const failedMigrationKey="2eas.chartstudio.v5.drawings:migrationfailure:XAUUSD:M15",failedMigration=JSON.stringify({schemaVersion:1,account:"migrationfailure",symbol:"XAUUSD",timeframe:"M15",drawings:[]});localStorage.setItem(failedMigrationKey,failedMigration);
+   const originalSetItem=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key===failedMigrationKey)throw Error("quota fixture");return originalSetItem.call(this,key,value)};
+   let migrationFailure;try{e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"migrationfailure",scope);e.setCandles(rows);migrationFailure={status:e.inspect().persistenceStatus,error:e.inspect().persistenceError,stored:localStorage.getItem(failedMigrationKey)};e.destroy()}finally{Storage.prototype.setItem=originalSetItem}
+   const sizeKey="2eas.chartstudio.v5.drawings:sizetest:XAUUSD:M15",sizeDrawings=Array.from({length:100},(_,i)=>({kind:"TEXT",options:{id:`size-${String(i).padStart(3,"0")}-abcdefghijklmnopqrstuv`,time:rows[10].time,price:4001,text:"a",color:"#ffffff",visible:true,locked:false}}));
+   const fiboSnapshot={kind:"FIBO",options:{id:"history-filler",startTime:rows[10].time,startPrice:4001,endTime:rows[20].time,endPrice:4002,color:"#ffffff",visible:true,locked:false,levels:Array.from({length:16},(_,i)=>i*66.666666666)}};
+   let sizeHistory=Array.from({length:100},()=>({id:"history-filler",before:fiboSnapshot,after:{...fiboSnapshot,options:{...fiboSnapshot.options,endPrice:4002.25}}}));
+   const sizeEnvelope=()=>JSON.stringify({schemaVersion:2,account:"sizetest",symbol:"XAUUSD",timeframe:"M15",drawings:sizeDrawings,undoStack:sizeHistory,redoStack:[]});
+   while(sizeEnvelope().length>65000&&sizeHistory.length)sizeHistory.shift();
+   const sizeSeed=sizeEnvelope();localStorage.setItem(sizeKey,sizeSeed);
+   e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"sizetest",scope);e.setCandles(rows);e.updateTextAnnotation(sizeDrawings[0].options.id,{text:"Z".repeat(40)});
+   const sizeBound={seedBytes:sizeSeed.length,storedBytes:localStorage.getItem(sizeKey).length,historyCount:JSON.parse(localStorage.getItem(sizeKey)).undoStack.length,drawingCount:e.inspect().nativePrimitives,drawing:e.readDrawing(sizeDrawings[0].options.id)};e.destroy();
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",scope);e.setCandles(rows);
    e.addAverage({id:"ema21",color:"#61ddf2"},rows.slice(20).map(c=>({time:c.time,value:c.close-1.2})));
    e.addPaneLine({id:"rsi14",color:"#f7c774"},rows.slice(14).map((c,i)=>({time:c.time,value:45+18*Math.sin(i/8)})));
    e.showVolume(true);window.__v5Screenshot=e;
-   return {restored,otherAccount,returned,otherTimeframe,conflict,externalSnapshot,corrupt};
+   return {restored,otherAccount,returned,otherTimeframe,conflict,externalSnapshot,corrupt,migrated,legacy,badHistory,malformedHistory,migrationFailure,failedMigration,sizeBound};
   });
   assert.equal(persistenceProbe.restored.status,"READY");
   assert.equal(persistenceProbe.restored.count,10);
@@ -561,6 +619,22 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(persistenceProbe.corrupt.status,"UNAVAILABLE");
   assert.equal(persistenceProbe.corrupt.error,"INVALID_SNAPSHOT");
   assert.equal(persistenceProbe.corrupt.stored,"not-json");
+  assert.equal(persistenceProbe.migrated.status,"READY");
+  assert.equal(persistenceProbe.migrated.drawing.price,4001);
+  assert.equal(persistenceProbe.migrated.stored.schemaVersion,2);
+  assert.deepEqual(persistenceProbe.migrated.stored.undoStack,[]);
+  assert.deepEqual(persistenceProbe.migrated.stored.redoStack,[]);
+  assert.equal(persistenceProbe.malformedHistory.status,"UNAVAILABLE");
+  assert.equal(persistenceProbe.malformedHistory.count,0);
+  assert.equal(persistenceProbe.malformedHistory.stored,persistenceProbe.badHistory);
+  assert.equal(persistenceProbe.migrationFailure.status,"UNAVAILABLE");
+  assert.equal(persistenceProbe.migrationFailure.error,"STORAGE_WRITE_FAILED");
+  assert.equal(persistenceProbe.migrationFailure.stored,persistenceProbe.failedMigration);
+  assert.ok(persistenceProbe.sizeBound.seedBytes<=65536);
+  assert.ok(persistenceProbe.sizeBound.storedBytes<=65536);
+  assert.equal(persistenceProbe.sizeBound.drawingCount,100);
+  assert.equal(persistenceProbe.sizeBound.drawing.text,"Z".repeat(40));
+  assert.ok(persistenceProbe.sizeBound.historyCount<100,"oversized history should deterministically trim its oldest entries");
   const drawingTransfer=await page.evaluate(()=>{
    const rows=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2,tick_volume:100+i*3}});
    const scope={symbol:"XAUUSD",timeframe:"M15"};
@@ -624,6 +698,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   });
   const transferEnvelope=JSON.parse(drawingTransfer.source);
   assert.equal(transferEnvelope.schemaVersion,1);
+  assert.deepEqual(Object.keys(transferEnvelope).sort(),["drawings","schemaVersion","symbol","timeframe"]);
   assert.equal(transferEnvelope.account,undefined);
   assert.deepEqual(drawingTransfer.imported,{imported:10});
   assert.equal(drawingTransfer.restored.count,10);
@@ -697,7 +772,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await page.screenshot({path:path.join(folder,"chart-studio-v5-selected-handles.png"),fullPage:true});
   const touchContext=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:1.5,hasTouch:true,isMobile:true});
   try{
-   const touchPage=await touchContext.newPage();await touchPage.goto("http://127.0.0.1:8872/chart_studio_v5/fixture.html",{waitUntil:"networkidle"});
+   const touchPage=await touchContext.newPage();await touchPage.goto("http://127.0.0.1:8872/chart_studio_v5/fixture.html",{waitUntil:"networkidle"});await touchPage.waitForFunction(()=>window.__chartV5Ready===true);
    await touchPage.evaluate(()=>{
     const e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"touch");
     const bars=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700200000+i*900,open:p,high:p+5,low:p-5,close:p+2,tick_volume:100+i}});

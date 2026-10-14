@@ -558,22 +558,29 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  function localStorageApi():Storage|null{
   try{return host.ownerDocument.defaultView?.localStorage??null}catch(_){return null}
  }
+ function drawingSnapshots():DrawingSnapshot[]{
+  return [
+   ...[...priceLevels.values()].map(({options})=>({kind:"PRICE" as const,options:{...options}})),
+   ...[...timeMarkers.values()].map(({options})=>({kind:"TIME" as const,options:{...options}})),
+   ...[...textAnnotations.values()].map(({options})=>({kind:"TEXT" as const,options:{...options}})),
+   ...[...trendLines.values()].map(({options})=>({kind:"TREND" as const,options:{...options}})),
+   ...[...rectangles.values()].map(({options})=>({kind:"RECT" as const,options:{...options}})),
+   ...[...rays.values()].map(({options})=>({kind:"RAY" as const,options:{...options}})),
+   ...[...fibonacci.values()].map(({options})=>({kind:"FIBO" as const,options:{...options}})),
+  ];
+ }
  function persistDrawings(){
   if(!drawingScope||!drawingsHydrated||hydratingDrawings||persistenceStatus==="CONFLICT"||persistenceStatus==="UNAVAILABLE")return;
   const storage=localStorageApi(),key=persistenceKey();
   if(!storage||!key){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_UNAVAILABLE";return}
   try{
    if(storage.getItem(key)!==lastPersistedSnapshot){persistenceStatus="CONFLICT";persistenceError="EXTERNAL_CHANGE";return}
-   const drawings:DrawingSnapshot[]=[
-    ...[...priceLevels.values()].map(({options})=>({kind:"PRICE" as const,options:{...options}})),
-    ...[...timeMarkers.values()].map(({options})=>({kind:"TIME" as const,options:{...options}})),
-   ...[...textAnnotations.values()].map(({options})=>({kind:"TEXT" as const,options:{...options}})),
-   ...[...trendLines.values()].map(({options})=>({kind:"TREND" as const,options:{...options}}))];
-  drawings.push(...[...rectangles.values()].map(({options})=>({kind:"RECT" as const,options:{...options}})),
-   ...[...rays.values()].map(({options})=>({kind:"RAY" as const,options:{...options}})));
-  drawings.push(...[...fibonacci.values()].map(({options})=>({kind:"FIBO" as const,options:{...options}})));
-   const serialized=JSON.stringify({schemaVersion:1,account:activeAccount,symbol:drawingScope.symbol,
-    timeframe:drawingScope.timeframe,drawings});
+   const drawings=drawingSnapshots();
+   const envelope=()=>JSON.stringify({schemaVersion:2,account:activeAccount,symbol:drawingScope.symbol,
+    timeframe:drawingScope.timeframe,drawings,undoStack,redoStack});
+   let serialized=envelope();
+   while(serialized.length>persistenceLimit&&undoStack.length){undoStack.shift();serialized=envelope()}
+   while(serialized.length>persistenceLimit&&redoStack.length){redoStack.shift();serialized=envelope()}
    if(serialized.length>persistenceLimit){persistenceStatus="UNAVAILABLE";persistenceError="SNAPSHOT_TOO_LARGE";return}
    storage.setItem(key,serialized);lastPersistedSnapshot=serialized;persistenceStatus="READY";persistenceError=null;
   }catch(_){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_WRITE_FAILED"}
@@ -591,9 +598,44 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   let parsed:unknown;
   try{parsed=JSON.parse(raw)}catch(_){persistenceStatus="UNAVAILABLE";persistenceError="INVALID_SNAPSHOT";return}
   if(!parsed||typeof parsed!=="object") {persistenceStatus="UNAVAILABLE";persistenceError="INVALID_SNAPSHOT";return}
-  const root=parsed as {schemaVersion?:unknown;account?:unknown;symbol?:unknown;timeframe?:unknown;drawings?:unknown};
-  if(root.schemaVersion!==1||root.account!==activeAccount||root.symbol!==drawingScope.symbol||root.timeframe!==drawingScope.timeframe||!Array.isArray(root.drawings)||root.drawings.length>100){
+  const root=parsed as Record<string,unknown>;
+  if(!root||Array.isArray(parsed)||!new Set(["account,drawings,schemaVersion,symbol,timeframe","account,drawings,redoStack,schemaVersion,symbol,timeframe,undoStack"]).has(Object.keys(root).sort().join(","))||
+   (root.schemaVersion!==1&&root.schemaVersion!==2)||root.account!==activeAccount||root.symbol!==drawingScope.symbol||root.timeframe!==drawingScope.timeframe||!Array.isArray(root.drawings)||root.drawings.length>100){
    persistenceStatus="UNAVAILABLE";persistenceError="INVALID_OR_MISMATCHED_SNAPSHOT";return;
+  }
+  const isV2=root.schemaVersion===2;
+  const restoredUndo:DrawingHistory[]=[],restoredRedo:DrawingHistory[]=[];
+  const parseSnapshot=(raw:unknown,expectedId:string):DrawingSnapshot|null=>{
+   if(raw===null)return null;
+   if(!raw||typeof raw!=="object"||Array.isArray(raw))throw Error();
+   const row=raw as Record<string,unknown>;
+   if(Object.keys(row).sort().join(",")!=="kind,options"||!row.options||typeof row.options!=="object"||Array.isArray(row.options))throw Error();
+   const options=row.options as Record<string,unknown>,kind=row.kind;
+   const keys=Object.keys(options).sort().join(",");
+   const expected=kind==="PRICE"?"color,id,locked,price,visible":kind==="TIME"?"color,id,locked,time,visible":kind==="TEXT"?"color,id,locked,price,text,time,visible":kind==="TREND"||kind==="RAY"?"color,endPrice,endTime,id,locked,startPrice,startTime,visible":kind==="RECT"?"color,endPrice,endTime,fill,id,locked,startPrice,startTime,visible":kind==="FIBO"?new Set(["color,endPrice,endTime,id,locked,startPrice,startTime,visible","color,endPrice,endTime,id,levels,locked,startPrice,startTime,visible"]).has(keys):false;
+   if(!expected||((kind!=="FIBO")&&keys!==expected)||options.id!==expectedId||averages.has(expectedId)||paneLines.has(expectedId))throw Error();
+   if(kind==="PRICE"){const value=options as unknown as PriceLevelOptions;validatePriceLevel(value);return {kind,options:{...value}}}
+   if(kind==="TIME"){const value=options as unknown as TimeMarkerOptions;validateTimeMarker(value);return {kind,options:{...value}}}
+   if(kind==="TEXT"){const value=options as unknown as TextAnnotationOptions;validateTextAnnotation(value);return {kind,options:{...value}}}
+   if(kind==="TREND"){const value=options as unknown as TrendLineOptions;validateTrendLine(value);return {kind,options:{...value}}}
+   if(kind==="RECT"){const value=options as unknown as RectangleOptions;validateRectangle(value);return {kind,options:{...value}}}
+   if(kind==="RAY"){const value=options as unknown as RayOptions;validateTrendLine(value);return {kind,options:{...value}}}
+   const value=normalizeFibonacciOptions(options as unknown as FibonacciOptions);return {kind:"FIBO",options:{...value}}
+  };
+  const parseHistory=(raw:unknown,out:DrawingHistory[])=>{
+   if(!Array.isArray(raw)||raw.length>historyLimit)throw Error();
+   for(const item of raw){
+    if(!item||typeof item!=="object"||Array.isArray(item))throw Error();
+    const entry=item as Record<string,unknown>;
+    if(Object.keys(entry).sort().join(",")!=="after,before,id"||typeof entry.id!=="string"||!/^[-_a-zA-Z0-9]{1,32}$/.test(entry.id))throw Error();
+    const before=parseSnapshot(entry.before,entry.id),after=parseSnapshot(entry.after,entry.id);
+    if((before===null&&after===null)||(before&&after&&before.kind!==after.kind))throw Error();
+    out.push({id:entry.id,before,after});
+   }
+  };
+  if(isV2){
+   try{parseHistory(root.undoStack,restoredUndo);parseHistory(root.redoStack,restoredRedo);if(restoredUndo.length+restoredRedo.length>historyLimit)throw Error()}
+   catch(_){persistenceStatus="UNAVAILABLE";persistenceError="INVALID_OR_UNAVAILABLE_DRAWING";return}
   }
   if(drawingCount()){persistenceStatus="CONFLICT";persistenceError="DRAWINGS_ALREADY_PRESENT";return}
   const seen=new Set<string>(),snapshots:DrawingSnapshot[]=[];
@@ -603,6 +645,12 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
     const row=entry as {kind?:unknown;options?:unknown};
     if(!row.options||typeof row.options!=="object")throw Error();
     const options=row.options as Record<string,unknown>;
+    if(isV2){
+     if(Array.isArray(entry)||Object.keys(entry).sort().join(",")!=="kind,options"||Array.isArray(row.options))throw Error();
+     const keys=Object.keys(options).sort().join(","),kind=row.kind;
+     const expected=kind==="PRICE"?"color,id,locked,price,visible":kind==="TIME"?"color,id,locked,time,visible":kind==="TEXT"?"color,id,locked,price,text,time,visible":kind==="TREND"||kind==="RAY"?"color,endPrice,endTime,id,locked,startPrice,startTime,visible":kind==="RECT"?"color,endPrice,endTime,fill,id,locked,startPrice,startTime,visible":kind==="FIBO"?new Set(["color,endPrice,endTime,id,locked,startPrice,startTime,visible","color,endPrice,endTime,id,levels,locked,startPrice,startTime,visible"]).has(keys):false;
+     if(!expected||((kind!=="FIBO")&&keys!==expected))throw Error();
+    }
     if(typeof options.id!=="string"||seen.has(options.id)||averages.has(options.id)||paneLines.has(options.id))throw Error();
     seen.add(options.id);
     if(row.kind==="PRICE"){
@@ -634,7 +682,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   hydratingDrawings=true;
   try{
    for(const snapshot of snapshots){if(snapshot.kind==="PRICE")addPriceLevel(snapshot.options);else if(snapshot.kind==="TIME")addTimeMarker(snapshot.options);else if(snapshot.kind==="TEXT")addTextAnnotation(snapshot.options);else if(snapshot.kind==="TREND")addTrendLine(snapshot.options);else if(snapshot.kind==="RECT")addRectangle(snapshot.options);else if(snapshot.kind==="RAY")addRay(snapshot.options);else addFibonacci(snapshot.options)}
-   undoStack.length=0;redoStack.length=0;persistenceStatus="READY";persistenceError=null;
+   undoStack.splice(0,undoStack.length,...restoredUndo);redoStack.splice(0,redoStack.length,...restoredRedo);persistenceStatus="READY";persistenceError=null;
   }catch(_){
    for(const item of priceLevels.values())price.detachPrimitive(item.primitive);priceLevels.clear();
    for(const item of timeMarkers.values())price.detachPrimitive(item.primitive);timeMarkers.clear();
@@ -645,6 +693,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    for(const item of fibonacci.values())price.detachPrimitive(item.primitive);fibonacci.clear();
    undoStack.length=0;redoStack.length=0;persistenceStatus="UNAVAILABLE";persistenceError="RESTORE_FAILED";
   }finally{hydratingDrawings=false}
+  if(!isV2)persistDrawings();
  }
  function selectDrawing(id:string|null){
   if(selectedDrawingId===id){if(id){priceLevels.get(id)?.primitive.setSelected(true);timeMarkers.get(id)?.primitive.setSelected(true);textAnnotations.get(id)?.primitive.setSelected(true);trendLines.get(id)?.primitive.setSelected(true);rectangles.get(id)?.primitive.setSelected(true);rays.get(id)?.primitive.setSelected(true);fibonacci.get(id)?.primitive.setSelected(true)}return}
@@ -764,6 +813,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   readoutIndicators.clear();price.setData(bars);
   if(volume)volume.setData(volumeRows());
   hydrateDrawings();
+  if(drawingsHydrated&&persistenceStatus==="READY")persistDrawings();
  }
  function volumeRows(){
   return bars.map(c=>({time:c.time,value:Math.max(0,(c.real_volume??0)>0?c.real_volume!:c.tick_volume??0),
