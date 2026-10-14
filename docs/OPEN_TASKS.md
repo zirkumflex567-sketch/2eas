@@ -120,7 +120,7 @@ Die folgende Matrix enthält jede verbindliche AT-ID. `Offen (Gesamtabnahme)` be
 | AT-009 | Toggle „Positionen“ versteckt Overlay, lässt Backend-Position unverändert | Teilweise: Beta-Smoke schaltet das Positionsoverlay sichtbar/unsichtbar, vergleicht den unveränderten verifizierten Snapshot und bestätigt, dass der Toggle keinen Positions-Read oder POST auslöst. MT5-Live-/Chart-Gesamtabnahme bleibt offen. |
 | AT-010 | Entry, SL, TP mit korrekter Seite/Preis für BUY und SELL | Teilweise: Beta-Smoke liefert zwei BUY- und ein SELL-Ticket mit unterschiedlichen Entry-/SL-/TP-Werten und prüft die getrennte Darstellung in State und Brokerzeilen. Chart-/MT5-Live-Preisachsen- und Gesamtabnahme offen. |
 | AT-011 | Drag-SL zeigt Live-Preis, vorläufige USD-Schätzung, verfügbare Broker-Preview | Offen (Gesamtabnahme) |
-| AT-012 | Drag bei StopLimit-Verletzung sichtbar abgelehnt, kein commit möglich | Offen (Gesamtabnahme) |
+| AT-012 | Drag bei StopLimit-Verletzung sichtbar abgelehnt, kein commit möglich | Teilweise: Beta-Smoke erzwingt SL_STOPS_LEVEL in der revision-bound Broker-Preview, prüft die sichtbare Ablehnung und bestätigt, dass kein anderer POST als die read-only Preview-Route gesendet wird. Reale Demo-Brokerantwort, Write-Gate und Gesamtabnahme bleiben offen. |
 | AT-013 | Beim Drag KEIN order_send, bei bestätigtem Commit genau eine geprüfte MT5-Änderung | Offen (Gesamtabnahme) |
 | AT-014 | Nach Commit zeigt UI nur tatsächlich rückgelesene Broker-Level | Offen (Gesamtabnahme) |
 | AT-015 | Ohne Kontoidentität, bei falschem Ticket/Symbol oder Hard-Lock sichere Ablehnung | Offen (Gesamtabnahme) |
