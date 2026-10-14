@@ -53,3 +53,5 @@ output/platform/
 bitunix_config.json
 bitunix_bridge_state.json
 
+# Native MT5 research reports (broker data / account metadata may be sensitive)
+output/mt5-backtests/
