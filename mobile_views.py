@@ -722,6 +722,8 @@ ASCII_HTML = """<!DOCTYPE html>
       <button onclick="setTheme('green')">[GRÜN]</button>
       <button onclick="setTheme('amber')">[AMBER]</button>
       <button onclick="setTheme('cyan')">[CYAN]</button>
+      <span style="margin-left:8px;">[AUDIO]:</span>
+      <button id="ascii-sound-btn" onclick="toggleAsciiAudio()">[🔊 SOUND: AN]</button>
     </div>
 
     <div id="account-buttons" class="top-bar"></div>
@@ -740,6 +742,103 @@ ASCII_HTML = """<!DOCTYPE html>
     let journalScope = 'all'; // 'all' or 'single'
     let journalLimit = 10;    // 10, 25, 0 (all)
     let posDetailMode = true; // true = detailed cards with EMA9 & exit rules, false = compact table
+    let tradeObserverInitialized = false;
+    let prevSeenTickets = new Set();
+    let journalInitialized = false;
+    let prevJournalCount = 0;
+
+    let soundEnabled = localStorage.getItem('titan_sound_enabled') !== 'false';
+    const ArcadeAudio = (() => {
+      let ctx = null;
+      function getContext() {
+        if (!ctx) {
+          const A = window.AudioContext || window.webkitAudioContext;
+          if (A) ctx = new A();
+        }
+        if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+        return ctx;
+      }
+      function unlock() { const c = getContext(); if (c && c.state === 'suspended') c.resume().catch(() => {}); }
+      if (typeof window !== 'undefined') {
+        ['click', 'keydown', 'touchstart'].forEach(e => window.addEventListener(e, unlock, { once: true, passive: true }));
+      }
+      function playTradeSound() {
+        if (!soundEnabled) return;
+        try {
+          const c = getContext(); if (!c) return;
+          const t0 = c.currentTime + 0.01;
+          const o1 = c.createOscillator(), g1 = c.createGain();
+          o1.type = 'sine'; o1.frequency.setValueAtTime(987.77, t0); o1.frequency.setValueAtTime(1318.51, t0 + 0.07);
+          g1.gain.setValueAtTime(0.001, t0); g1.gain.exponentialRampToValueAtTime(0.24, t0 + 0.015); g1.gain.exponentialRampToValueAtTime(0.001, t0 + 0.28);
+          o1.connect(g1); g1.connect(c.destination); o1.start(t0); o1.stop(t0 + 0.29);
+          const o2 = c.createOscillator(), flt = c.createBiquadFilter(), g2 = c.createGain();
+          o2.type = 'triangle'; flt.type = 'lowpass'; flt.frequency.setValueAtTime(2200, t0);
+          o2.frequency.setValueAtTime(440, t0); o2.frequency.exponentialRampToValueAtTime(880, t0 + 0.12);
+          g2.gain.setValueAtTime(0.001, t0); g2.gain.linearRampToValueAtTime(0.18, t0 + 0.02); g2.gain.exponentialRampToValueAtTime(0.001, t0 + 0.22);
+          o2.connect(flt); flt.connect(g2); g2.connect(c.destination); o2.start(t0); o2.stop(t0 + 0.23);
+        } catch (_) {}
+      }
+      function playWinSound() {
+        if (!soundEnabled) return;
+        try {
+          const c = getContext(); if (!c) return;
+          const t0 = c.currentTime + 0.01;
+          [523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98].forEach((f, i) => {
+            const osc = c.createOscillator(), g = c.createGain(), st = t0 + i * 0.07;
+            osc.type = 'triangle'; osc.frequency.setValueAtTime(f, st);
+            g.gain.setValueAtTime(0.001, st); g.gain.exponentialRampToValueAtTime(0.22, st + 0.01); g.gain.exponentialRampToValueAtTime(0.001, st + 0.24);
+            osc.connect(g); g.connect(c.destination); osc.start(st); osc.stop(st + 0.25);
+          });
+          const dts = [0.44, 0.53, 0.62, 0.72, 0.83], ps = [2093.0, 2637.0, 2093.0, 3136.0, 2637.0];
+          dts.forEach((dt, i) => {
+            const osc = c.createOscillator(), g = c.createGain(), st = t0 + dt;
+            osc.type = 'sine'; osc.frequency.setValueAtTime(ps[i], st);
+            g.gain.setValueAtTime(0.001, st); g.gain.exponentialRampToValueAtTime(0.20, st + 0.008); g.gain.exponentialRampToValueAtTime(0.001, st + 0.16);
+            osc.connect(g); g.connect(c.destination); osc.start(st); osc.stop(st + 0.17);
+          });
+        } catch (_) {}
+      }
+      function playSlSound() {
+        if (!soundEnabled) return;
+        try {
+          const c = getContext(); if (!c) return;
+          const t0 = c.currentTime + 0.01;
+          const steps = [{ f: 349.23, d: 0.10 }, { f: 293.66, d: 0.10 }, { f: 220.00, d: 0.12 }, { f: 146.83, d: 0.28 }];
+          let cur = t0;
+          steps.forEach(st => {
+            const osc = c.createOscillator(), g = c.createGain();
+            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(st.f, cur);
+            g.gain.setValueAtTime(0.001, cur); g.gain.exponentialRampToValueAtTime(0.22, cur + 0.01); g.gain.exponentialRampToValueAtTime(0.001, cur + st.d);
+            osc.connect(g); g.connect(c.destination); osc.start(cur); osc.stop(cur + st.d + 0.01);
+            cur += st.d;
+          });
+          try {
+            const bufLen = Math.floor(c.sampleRate * 0.35), buf = c.createBuffer(1, bufLen, c.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (c.sampleRate * 0.07));
+            const noise = c.createBufferSource(); noise.buffer = buf;
+            const flt = c.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.setValueAtTime(900, t0); flt.frequency.linearRampToValueAtTime(140, t0 + 0.35);
+            const gn = c.createGain(); gn.gain.setValueAtTime(0.18, t0); gn.gain.exponentialRampToValueAtTime(0.001, t0 + 0.35);
+            noise.connect(flt); flt.connect(gn); gn.connect(c.destination); noise.start(t0); noise.stop(t0 + 0.36);
+          } catch (_) {}
+        } catch (_) {}
+      }
+      return { playTradeSound, playWinSound, playSlSound, unlock };
+    })();
+
+    function syncAsciiSoundBtn() {
+      const btn = document.getElementById('ascii-sound-btn');
+      if (btn) {
+        btn.textContent = soundEnabled ? '[🔊 SOUND: AN]' : '[🔇 SOUND: AUS]';
+        btn.className = soundEnabled ? 'active-btn' : '';
+      }
+    }
+    function toggleAsciiAudio() {
+      soundEnabled = !soundEnabled;
+      localStorage.setItem('titan_sound_enabled', String(soundEnabled));
+      syncAsciiSoundBtn();
+      if (soundEnabled) ArcadeAudio.playTradeSound();
+    }
 
     function setTheme(t) {
       document.body.className = t === 'amber' ? 'theme-amber' : t === 'cyan' ? 'theme-cyan' : '';
@@ -822,6 +921,7 @@ ASCII_HTML = """<!DOCTYPE html>
         if (saved && accounts[saved]) activeAccount = saved;
         else activeAccount = data.default || 'xau5m_m5';
         renderAccountButtons();
+        syncAsciiSoundBtn();
         update();
         setInterval(update, 1500);
         loadCandles();
@@ -1018,6 +1118,32 @@ ASCII_HTML = """<!DOCTYPE html>
 
         // 5. OFFENE POSITIONEN MIT EMA9-ABSTAND & AUSSTIEGS-REGELN
         const positions = d.positions || [];
+        const curTickets = new Set(positions.map(p => p.ticket));
+        if (tradeObserverInitialized) {
+          for (const p of positions) {
+            if (!prevSeenTickets.has(p.ticket)) {
+              ArcadeAudio.playTradeSound();
+              break;
+            }
+          }
+        }
+        tradeObserverInitialized = true;
+        prevSeenTickets = curTickets;
+
+        if (journalInitialized && Array.isArray(journalData.all)) {
+          if (journalData.all.length > prevJournalCount) {
+            const newest = journalData.all[0];
+            if (newest && newest.status === 'CLOSED') {
+              if (newest.profit_usd > 0) ArcadeAudio.playWinSound();
+              else if (newest.profit_usd < 0) ArcadeAudio.playSlSound();
+            }
+          }
+        }
+        if (Array.isArray(journalData.all) && journalData.all.length > 0) {
+          journalInitialized = true;
+          prevJournalCount = journalData.all.length;
+        }
+
         const posToggleBtn = btn(posDetailMode ? '[ANSICHT: KOMPAKT]' : '[ANSICHT: DETAIL]', 'togglePosDetail()', 'cyan');
         screen += bTop(`OFFENE POSITIONEN (${positions.length} AKTIV) │ ${posToggleBtn}`);
 

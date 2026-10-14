@@ -350,8 +350,9 @@
     const now = performance.now();
     const strength = clamp(Number(level) || 3, 1, 5);
     const isProfit = kind === "profit";
-    const count = isProfit ? 22 + strength * 4 : 10 + strength * 3;
-    const duration = isProfit ? 5200 + strength * 650 : 2300 + strength * 360;
+    const isChaos = kind === "chaos" || kind === "sl" || kind === "loss";
+    const count = isProfit ? 22 + strength * 4 : isChaos ? 28 + strength * 5 : 10 + strength * 3;
+    const duration = isProfit ? 5200 + strength * 650 : isChaos ? 4200 + strength * 450 : 2300 + strength * 360;
     const candles = visibleCandles(state);
     const validEma = [0,1,2].filter(i => visibleEmaPoints(state,i).length > 9);
     if (!candles.length && !validEma.length) return false;
@@ -359,11 +360,11 @@
     for (let i=0; i<count; i++) {
       const start = now + random(0, duration * .83);
       const roll = Math.random();
-      if (roll < .40 && candles.length) {
+      if ((roll < .40 || isChaos) && candles.length) {
         const c = candles[Math.floor(random(0, candles.length))];
         state.effects.push({
-          kind:"candle", candle:c, at:start, until:start+random(430,990),
-          power:Math.min(1.65,random(.85,1.1)+strength*.12)
+          kind:"candle", candle:c, at:start, until:start+random(380,880),
+          power:Math.min(1.8,random(.85,1.1)+strength*.14)
         });
       } else if (validEma.length) {
         const emaIndex = validEma[Math.floor(random(0,validEma.length))];

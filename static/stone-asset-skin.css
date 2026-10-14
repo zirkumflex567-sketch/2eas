@@ -1179,7 +1179,7 @@ body.theme-stone .stone-asset-panel--chart::after {
 }
 
 /* Chart FX laboratory: accessible collapsed controls and ephemeral celebrations. */
-#stone-fx-toggle.stone-fx-toggle {
+#stone-fx-toggle.stone-fx-toggle, #stone-sound-toggle.stone-fx-toggle {
   display:inline-flex;align-items:center;justify-content:center;
   padding:6px 11px;min-height:30px;white-space:nowrap;cursor:pointer;
   border:1px solid #c08e51 !important;color:#ffdfb0 !important;
@@ -1187,7 +1187,12 @@ body.theme-stone .stone-asset-panel--chart::after {
   font:bold 11px/1.2 ui-monospace,Consolas,monospace;
   box-shadow:0 0 12px #f4b95e44,inset 0 1px #f4b95e33;
 }
-#stone-fx-toggle:hover {filter:brightness(1.35);}
+#stone-fx-toggle:hover, #stone-sound-toggle:hover {filter:brightness(1.35);}
+#stone-sound-toggle.sound-off {
+  border-color:#5a6872 !important;color:#94a8b3 !important;
+  background:linear-gradient(#1f262b,#12181c) !important;
+  box-shadow:none !important;
+}
 .stone-fx-panel {
   margin:2px 0 11px;padding:11px 13px;
   color:#e9f5f8;border:1px solid #7baab5;border-radius:9px;
@@ -1246,6 +1251,15 @@ body.theme-stone .stone-asset-panel--chart::after {
 }
 .stone-event-toast--profit {color:#fff3c1;border-color:#ffd878;background:linear-gradient(130deg,#44280cf3,#14140bf5);
  box-shadow:0 0 34px #ffbd66aa,0 0 90px #ff970c66;font-size:20px;}
+.stone-event-toast--sl {color:#ffe4e6;border-color:#f43f5e;background:linear-gradient(130deg,#4c0519f3,#1f040cf5);
+ box-shadow:0 0 34px #f43f5e88,0 0 90px #be123c55;font-size:20px;}
+.stone-chaos-shake {animation:stone-chaos-anim .45s cubic-bezier(.36,.07,.19,.97) both;}
+@keyframes stone-chaos-anim {
+ 10%,90%{transform:translate3d(-3px,0,0);}
+ 20%,80%{transform:translate3d(4px,0,0);}
+ 30%,50%,70%{transform:translate3d(-5px,0,0);}
+ 40%,60%{transform:translate3d(5px,0,0);}
+}
 @keyframes stone-event-flash {
   0%,100% {opacity:0;transform:translate3d(0,9px,0) scale(.35);}
   30% {opacity:1;transform:translate3d(11px,-11px,0) scale(1.8);}
@@ -1257,7 +1271,7 @@ body.theme-stone .stone-asset-panel--chart::after {
 }
 @media(max-width:800px){.stone-event-toast {font-size:13px;top:120px;padding:9px 12px}.stone-fx-controls {gap:9px}}
 @media(prefers-reduced-motion:reduce){
- .stone-event-toast,.stone-event-spark {animation:none !important;display:none !important;}
+ .stone-event-toast,.stone-event-spark,.stone-chaos-shake {animation:none !important;display:none !important;}
 }
 
 /* FX-Off also silences idle ambience. Normal Stone keeps its bionic finish. */

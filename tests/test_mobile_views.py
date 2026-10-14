@@ -38,6 +38,8 @@ def test_ascii_endpoint():
     assert "GESAMT (ALLE KONTEN)" in response.text
     assert "setJournalScope" in response.text
     assert "togglePosDetail" in response.text
+    assert "ascii-sound-btn" in response.text
+    assert "toggleAsciiAudio" in response.text
 
 def test_terminal_endpoint_alias():
     response = client.get("/terminal")
