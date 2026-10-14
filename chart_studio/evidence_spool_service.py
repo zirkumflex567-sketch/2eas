@@ -236,10 +236,12 @@ class SpoolFileConsumer:
                 if saved['fileState'] not in ('ready','archive') or saved['offset']!=size:raise FileIdentityChanged()
                 self._remove_cursor(account,importer.producer_id)
                 return None
+            if state=='active' and saved['fileState']!='active':raise FileIdentityChanged()
             if state=='ready':
+                if saved['fileState'] not in ('active','ready'):raise FileIdentityChanged()
                 data,sequences=self._segment_sequences(path,first,last)
                 if saved['offset']>len(data):raise FileIdentityChanged()
-            elif saved['fileState'] not in ('active','ready'):
+            elif saved['fileState']!='active':
                 raise StoreUnavailable()
             saved.update(fileName=path.name,fileState=state,firstSequence=first,lastSequence=last)
             return saved,path,(first,last,state)
@@ -259,6 +261,7 @@ class SpoolFileConsumer:
         with self.producer_lock(producer) as locked:
             if not locked:return {'code':'CONSUMER_LOCKED','imported':0,'gapCount':importer.gap_count,'gapObserved':importer.gap_count>0}
             try:
+                importer.reload_cursor()
                 chosen=self._choose(account,importer)
                 if chosen is None:return {'code':'IDLE','imported':0,'gapCount':importer.gap_count,'gapObserved':importer.gap_count>0}
                 cursor,path,(first,last,state)=chosen
@@ -289,10 +292,27 @@ class SpoolFileConsumer:
                 if state=='ready' and not partial and not remaining and cursor['offset']==size:
                     if first is None or last is None:raise StoreUnavailable()
                     self._segment_sequences(path,first,last)
+                    expected_identity=(cursor['device'],cursor['inode'])
+                    def verify_acknowledged_file(candidate):
+                        _physical(candidate);_private(candidate,False)
+                        dev,ino=_physical(candidate)
+                        if (int(dev),int(ino))!=expected_identity or candidate.stat().st_size!=cursor['offset']:
+                            raise FileIdentityChanged()
+                        digest=hashlib.sha256()
+                        with candidate.open('rb') as stream:
+                            for block in iter(lambda:stream.read(65536),b''):digest.update(block)
+                        if digest.hexdigest()!=cursor['prefixDigest']:
+                            raise FileIdentityChanged()
+                        return (int(dev),int(ino))
+                    identity=verify_acknowledged_file(path)
                     archive=self.archive/path.name
                     if os.path.lexists(archive):raise StoreUnavailable()
-                    identity=_physical(path);os.replace(path,archive)
-                    if _physical(archive)!=identity:raise StoreUnavailable()
+                    os.replace(path,archive)
+                    try:
+                        if verify_acknowledged_file(archive)!=identity:raise FileIdentityChanged()
+                    except FileIdentityChanged:
+                        if not os.path.lexists(path):os.replace(archive,path)
+                        raise
                     cursor['fileName']=archive.name;cursor['fileState']='archive'
                     self._save_cursor(account,producer,cursor)
                     self._remove_cursor(account,producer)

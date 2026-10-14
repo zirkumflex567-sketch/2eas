@@ -65,6 +65,70 @@ def test_active_file_reads_complete_lines_and_resumes_partial_tail(private_root,
     assert len(store.read(context(), kind='DECISION')['records']) == 2
 
 
+def test_preexisting_consumers_reload_sequence_cursor_under_producer_lock(private_root, spool_root):
+    store = evidence_store(private_root)
+    active = spool_root / 'titan_demo.active.ndjson'
+    row1, row2 = record(seq=1), record(seq=2)
+    row2['envelope']['id'] = row2['envelope']['payload']['eventId'] = 'event_2'
+    row2['envelope']['payload']['correlationId'] = 'corr_2'
+    write_private(active, (line(row1) + line(row2)).encode())
+    first_consumer = SpoolFileConsumer(store, spool_root, producers={'titan':'titan_demo'}, excluded_roots=[Path.cwd()], records_per_poll=1)
+    second_consumer = SpoolFileConsumer(store, spool_root, producers={'titan':'titan_demo'}, excluded_roots=[Path.cwd()], records_per_poll=1)
+
+    first = first_consumer.poll_once()['titan_demo']
+    second = second_consumer.poll_once()['titan_demo']
+
+    assert first['imported'] == second['imported'] == 1
+    assert second['gapCount'] == 0
+    assert second['gapObserved'] is False
+    assert len(store.read(context(), kind='DECISION')['records']) == 2
+
+
+def test_ready_segment_cannot_revert_to_active_after_partial_import(private_root, spool_root):
+    store = evidence_store(private_root)
+    ready = spool_root / 'titan_demo.1-2.ready.ndjson'
+    row1, row2 = record(seq=1), record(seq=2)
+    row2['envelope']['id'] = row2['envelope']['payload']['eventId'] = 'event_2'
+    row2['envelope']['payload']['correlationId'] = 'corr_2'
+    write_private(ready, (line(row1) + line(row2)).encode())
+    service = SpoolFileConsumer(store, spool_root, producers={'titan':'titan_demo'}, excluded_roots=[Path.cwd()], records_per_poll=1)
+
+    assert service.poll_once()['titan_demo']['imported'] == 1
+    ready.rename(spool_root / 'titan_demo.active.ndjson')
+
+    result = service.poll_once()['titan_demo']
+    assert result['code'] == 'FILE_IDENTITY_CHANGED'
+    assert result['imported'] == 0
+    assert len(store.read(context(), kind='DECISION')['records']) == 1
+
+
+def test_replaced_ready_segment_is_not_archived_after_import(private_root, spool_root):
+    store = evidence_store(private_root)
+    ready = spool_root / 'titan_demo.1-1.ready.ndjson'
+    original = record(seq=1)
+    replacement = record(seq=1)
+    replacement['envelope']['id'] = replacement['envelope']['payload']['eventId'] = 'replacement_event'
+    replacement['envelope']['payload']['correlationId'] = 'replacement_corr'
+    write_private(ready, line(original).encode())
+    replacement_path = spool_root / 'replacement.tmp'
+    write_private(replacement_path, line(replacement).encode())
+    append = store.append
+
+    def replace_after_append(*args, **kwargs):
+        result = append(*args, **kwargs)
+        os.replace(replacement_path, ready)
+        return result
+
+    store.append = replace_after_append
+    result = consumer(store, spool_root).poll_once()['titan_demo']
+
+    assert result['code'] == 'FILE_IDENTITY_CHANGED'
+    assert (spool_root / 'titan_demo.1-1.ready.ndjson').exists()
+    assert not (spool_root / 'archive' / ready.name).exists()
+    records = store.read(context(), kind='DECISION')['records']
+    assert len(records) == 1 and records[0]['id'] == 'event_1'
+
+
 def test_ready_segment_is_range_checked_archived_and_gap_remains_visible(private_root, spool_root):
     store = evidence_store(private_root)
     ready = spool_root / 'titan_demo.1-3.ready.ndjson'

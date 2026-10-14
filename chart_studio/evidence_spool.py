@@ -87,6 +87,17 @@ class SpoolImporter:
         except (OSError, ValueError, TypeError, RecursionError, StoreUnavailable) as exc:
             raise StoreUnavailable() from exc
 
+    def reload_cursor(self):
+        """Refresh durable producer progress after acquiring its process lock."""
+        self.last_sequence = 0
+        self.gap_count = 0
+        self.last_digest = None
+        self.pending = False
+        self._cursor_fault = False
+        self._seen.clear()
+        if self.cursor_path:
+            self._load_cursor()
+
     def _save_cursor(self):
         if not self.cursor_path:
             return
