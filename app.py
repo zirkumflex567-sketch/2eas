@@ -164,6 +164,7 @@ class ChartWorkspaceDeleteRequest(BaseModel):
 
 class ClosePositionRequest(BaseModel):
     ticket: Annotated[int, Field(gt=0, strict=True)]
+    volume: Optional[Annotated[FiniteFloat, Field(gt=0)]] = None
 
 class ResetDrawdownRequest(BaseModel):
     action: Literal['reset', 'auto'] = 'reset'
@@ -760,8 +761,10 @@ def get_live_market_data(include_journal=True):
     recent_res = float(swing_lookback['high'].max()) if len(swing_lookback) > 0 else float(cur_bar['close']) + 10.0
     recent_sup = float(swing_lookback['low'].min()) if len(swing_lookback) > 0 else float(cur_bar['close']) - 10.0
     min_sr_room = 300 * float(getattr(sym, 'point', .01))
-    buy_c8_sr_ok = not (recent_res > cur_bar['close'] and (recent_res - cur_bar['close']) < min_sr_room)
-    sell_c8_sr_ok = not (cur_bar['close'] > recent_sup and (cur_bar['close'] - recent_sup) < min_sr_room)
+    sup_buffer = float(cur_bar['close'] - recent_sup)
+    res_buffer = float(recent_res - cur_bar['close'])
+    buy_c8_sr_ok = not (recent_res > cur_bar['close'] and res_buffer < min_sr_room)
+    sell_c8_sr_ok = not (cur_bar['close'] > recent_sup and sup_buffer < min_sr_room)
 
     rules_matrix = [
         {
@@ -830,11 +833,11 @@ def get_live_market_data(include_journal=True):
         {
             "id": "sr_room",
             "name": "8. Anti-Trap: S/R-Widerstandspuffer",
-            "current_val": f"Widerstand ${recent_res:.2f} (Puffer ${recent_res-cur_bar['close']:.2f})",
+            "current_val": f"Sup ${recent_sup:.2f} (Puffer ${sup_buffer:.2f}) · Res ${recent_res:.2f} (Puffer ${res_buffer:.2f})",
             "short_met": bool(sell_c8_sr_ok),
             "long_met": bool(buy_c8_sr_ok),
-            "short_note": "Genügend Support-Freiraum" if sell_c8_sr_ok else "Direkt auf Support (< $3 Puffer)",
-            "long_note": "Genügend Widerstands-Freiraum" if buy_c8_sr_ok else "Direkt unter Widerstand (< $3 Puffer)"
+            "short_note": f"Genügend Support-Puffer (${sup_buffer:.2f} >= ${min_sr_room:.2f})" if sell_c8_sr_ok else f"Direkt auf Support: nur ${sup_buffer:.2f} Puffer (< ${min_sr_room:.2f})",
+            "long_note": f"Genügend Widerstands-Puffer (${res_buffer:.2f} >= ${min_sr_room:.2f})" if buy_c8_sr_ok else f"Direkt unter Widerstand: nur ${res_buffer:.2f} Puffer (< ${min_sr_room:.2f})"
         }
     ]
 
@@ -867,7 +870,7 @@ def get_live_market_data(include_journal=True):
         elif not buy_c7_climax_ok:
             trend_diagnosis = f"ANTI-TRAP AKTIV: Bereits {green_streak} grüne Kerzen in Folge. Warten auf Pause/Pullback!"
         elif not buy_c8_sr_ok:
-            trend_diagnosis = f"ANTI-TRAP AKTIV: Zu nah am Widerstand (${recent_res:.2f}). Kauf in Supply gesperrt!"
+            trend_diagnosis = f"ANTI-TRAP AKTIV: Zu nah am Widerstand (${recent_res:.2f}, Puffer ${res_buffer:.2f} < ${min_sr_room:.2f}). Kauf in Supply gesperrt!"
         else:
             trend_diagnosis = "ALLE REGELN ERFÜLLT INKL. ANTI-TRAP SCHUTZ! Bereit für M15-Schluss."
     else:
@@ -889,7 +892,7 @@ def get_live_market_data(include_journal=True):
         elif not sell_c7_climax_ok:
             trend_diagnosis = f"ANTI-TRAP AKTIV: Bereits {red_streak} rote Kerzen in Folge. Warten auf Pause/Pullback!"
         elif not sell_c8_sr_ok:
-            trend_diagnosis = f"ANTI-TRAP AKTIV: Zu nah am Support (${recent_sup:.2f}). Verkauf in Demand gesperrt!"
+            trend_diagnosis = f"ANTI-TRAP AKTIV: Zu nah am Support (${recent_sup:.2f}, Puffer ${sup_buffer:.2f} < ${min_sr_room:.2f}). Verkauf in Demand gesperrt!"
         else:
             trend_diagnosis = f"ALLE REGELN ERFÜLLT INKL. ANTI-TRAP SCHUTZ! Bereit für {acc_tf_str}-Schluss."
 
@@ -1465,17 +1468,28 @@ def api_close_position(req: ClosePositionRequest, account: str):
     price = tick.bid if is_buy else tick.ask
     order_type = mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY
     filling = mt5.ORDER_FILLING_IOC if (sym.filling_mode & 2) != 0 else mt5.ORDER_FILLING_RETURN
+    vol_to_close = pos.volume
+    if req.volume is not None:
+        step = getattr(sym, 'volume_step', 0.01) or 0.01
+        min_vol = getattr(sym, 'volume_min', 0.01) or 0.01
+        v = round(round(req.volume / step) * step, 2)
+        if v >= pos.volume or (pos.volume - v) < (min_vol - 1e-5):
+            vol_to_close = pos.volume
+        elif v >= min_vol:
+            vol_to_close = v
+        else:
+            vol_to_close = min_vol
 
     request = {
         "action": mt5.TRADE_ACTION_DEAL,
         "position": req.ticket,
         "symbol": pos.symbol,
-        "volume": pos.volume,
+        "volume": vol_to_close,
         "type": order_type,
         "price": price,
         "deviation": 50,
         "type_filling": filling,
-        "comment": "Webapp_Manual_Close"
+        "comment": f"Webapp_Close_{vol_to_close:.2f}lot" if vol_to_close < pos.volume else "Webapp_Manual_Close"
     }
     verify_identity(mt5, selected())
     tick = mt5.symbol_info_tick(pos.symbol)
@@ -1701,7 +1715,11 @@ HTML_CONTENT = """<!DOCTYPE html>
       <div class="flex flex-wrap items-center gap-3">
         <!-- TOP NAV THEME & VIEW TOOLBAR -->
         <div id="top-nav-theme-container" class="flex flex-wrap items-center gap-2 font-mono text-[11px]">
-          <!-- stone-theme-dock is injected here by addSwitcher() -->
+          <div class="stone-theme-dock" role="group" aria-label="Cockpit Design wählen">
+            <button type="button" data-mode="stone" aria-pressed="true" aria-label="Design Stein">ᛟ STEIN</button>
+            <button type="button" data-mode="dark" aria-pressed="false" aria-label="Design Dunkel">◈ DUNKEL</button>
+            <button type="button" data-mode="light" aria-pressed="false" aria-label="Design Hell">☼ HELL</button>
+          </div>
           <a id="nav-mobile-link" href="/mobile" target="_blank" class="px-2.5 py-1 rounded-lg ticker-bg border font-sans font-bold hover:bg-emerald-500/20 text-emerald-400 flex items-center gap-1 text-[11px] cursor-pointer" title="Lightweight Mobile Version fürs Smartphone (ohne Animationen)">
             📱 Mobile
           </a>
@@ -1725,71 +1743,113 @@ HTML_CONTENT = """<!DOCTYPE html>
   </nav>
 
   <!-- 1. TOP NAVBAR -->
-  <header class="glass-card rounded-xl px-4 py-2 mb-3 flex flex-wrap gap-3 items-center justify-between shrink-0 shadow-sm">
-    <div class="flex items-center gap-3">
-      <div class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></div>
-      <h1 class="font-black text-sm tracking-wider flex items-center gap-2">
-        <span id="strategy-title">BLUEBERRY FUNDED (PROP-FIRMA)</span> <span id="strategy-version" class="text-[10px] px-2 py-0.5 rounded bg-amber-600 text-white font-bold tracking-normal">Phase 1 LIVE PROP</span>
-      </h1>
-      <span class="opacity-40">|</span>
-      <span class="text-sub font-medium">Gold (XAUUSD) Cockpit</span>
+  <header class="glass-card rounded-xl px-4 py-2.5 mb-3 flex flex-col gap-2 shrink-0 shadow-sm">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></div>
+        <h1 class="font-black text-sm tracking-wider flex items-center gap-2">
+          <span id="strategy-title">BLUEBERRY FUNDED (PROP-FIRMA)</span> <span id="strategy-version" class="text-[10px] px-2 py-0.5 rounded bg-amber-600 text-white font-bold tracking-normal">Phase 1 LIVE PROP</span>
+        </h1>
+        <span class="opacity-40">|</span>
+        <span class="text-sub font-medium">Gold (XAUUSD) Cockpit</span>
+      </div>
     </div>
 
-    <!-- Live Prices, Drawdown, Account & Timers -->
-    <div class="flex flex-wrap items-center gap-3 font-mono">
-      <div class="flex items-center gap-2 px-3 py-1 rounded-lg ticker-bg border">
-        <span class="font-sans font-bold text-sub">XAUUSD:</span>
-        <span id="live-bid" class="font-bold text-emerald-500 text-sm">----.--</span>
-        <span class="opacity-40">/</span>
-        <span id="live-ask" class="font-bold text-rose-500 text-sm">----.--</span>
-        <span id="live-spread" class="text-[10px] text-sub px-1 rounded bg-black/10">Spr: --</span>
+    <!-- Live Prices, Drawdown, Account & Timers (5 strictly equal boxes via 5-col CSS grid) -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 w-full font-mono">
+      <!-- 1. XAUUSD KURS -->
+      <div class="header-stat-box h-12 px-3 py-1.5 rounded-xl ticker-bg border flex items-center justify-between font-mono text-[11px]">
+        <div class="flex items-center gap-1.5">
+          <span class="font-sans font-black text-amber-400 text-xs tracking-wide">XAUUSD</span>
+          <span id="live-spread" class="text-[9px] text-sub px-1 py-0.5 rounded bg-black/20 font-bold">Spr: --</span>
+        </div>
+        <div class="flex items-center gap-1 font-bold text-xs">
+          <span id="live-bid" class="text-emerald-400">----.--</span>
+          <span class="opacity-30">/</span>
+          <span id="live-ask" class="text-rose-400">----.--</span>
+        </div>
       </div>
 
-      <!-- DAILY DRAWDOWN BADGE -->
-      <div id="dd-badge" class="flex items-center gap-2 px-3 py-1 rounded-lg ticker-bg border text-[11px]" title="Blueberry Funded Tages-Drawdown (Tages-Start / High-Water Mark)">
-        <span class="font-sans font-bold text-sub flex items-center gap-1.5">
-          <span id="dd-dot" class="w-2 h-2 rounded-full bg-emerald-500"></span>
-          TAGES-DD:
-        </span>
-        <span id="dd-pct" class="font-bold text-emerald-400">--%</span>
-        <span class="text-sub text-[10px]" id="dd-usd">(-$--.--)</span>
-        <span class="opacity-30">|</span>
-        <span class="text-sub text-[10px]">Puffer:</span>
-        <span id="dd-buffer" class="font-bold text-emerald-400">$----.--</span>
-        <span id="dd-reset-tag" class="hidden text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40 font-mono font-bold">Reset: $10k</span>
-        <button id="dd-reset-button" onclick="openDrawdownResetModal()" class="ml-1 px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-sans font-bold text-[10px] cursor-pointer transition-all flex items-center gap-1 shadow-sm" title="Tages-Drawdown auf 0.00% zurücksetzen">
-          🔄 Reset
-        </button>
+      <!-- 2. DAILY DRAWDOWN BADGE -->
+      <div id="dd-badge" class="header-stat-box h-12 px-3 py-1.5 rounded-xl ticker-bg border flex items-center justify-between font-mono text-[11px]" title="Tages-Drawdown (Tages-Start / High-Water Mark)">
+        <div class="flex items-center gap-1.5">
+          <span id="dd-dot" class="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+          <span class="font-sans font-bold text-sub text-[10px]">TAGES-DD:</span>
+          <span id="dd-pct" class="font-bold text-emerald-400 text-xs">--%</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <div class="text-right text-[10px]">
+            <span class="text-sub">Puf: </span><span id="dd-buffer" class="font-bold text-emerald-400">$----</span>
+          </div>
+          <span id="dd-usd" class="hidden">(-$--.--)</span>
+          <span id="dd-reset-tag" class="hidden text-[9px] px-1 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40 font-mono font-bold">Reset</span>
+          <button id="dd-reset-button" onclick="openDrawdownResetModal()" class="px-1.5 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-sans font-bold text-[9px] cursor-pointer transition-all shadow-sm shrink-0" title="Tages-Drawdown auf 0.00% zurücksetzen">
+            🔄
+          </button>
+        </div>
       </div>
 
-      <!-- LIVE ACCOUNT BALANCE & FLOATING PNL BADGE -->
-      <div id="account-balance-badge" class="flex items-center gap-2 px-3 py-1 rounded-lg ticker-bg border text-[11px]" title="Aktueller Kontostand, Equity und laufende offene PnL">
-        <span class="font-sans font-bold text-sub">KONTO:</span>
-        <span id="live-balance" class="font-bold text-sky-400">$----.--</span>
-        <span class="opacity-30">|</span>
-        <span class="text-sub">EQ:</span>
-        <span id="live-equity" class="font-bold text-slate-200">$----.--</span>
-        <span class="opacity-30">|</span>
-        <span class="text-sub">OFFEN:</span>
-        <span id="live-floating-pnl" class="font-bold text-emerald-400">+$0.00</span>
-        <span id="live-floating-pnl-pct" class="text-sub text-[10px]">(+0.00%)</span>
+      <!-- 3. LIVE ACCOUNT BALANCE & FLOATING PNL BADGE -->
+      <div id="account-balance-badge" class="header-stat-box h-12 px-3 py-1.5 rounded-xl ticker-bg border flex items-center justify-between font-mono text-[11px]" title="Aktueller Kontostand, Equity und offene PnL">
+        <div class="flex items-center gap-1.5">
+          <span class="font-sans font-bold text-sub text-[10px]">KONTO:</span>
+          <span id="live-balance" class="font-bold text-sky-400 text-xs">$----.--</span>
+        </div>
+        <div class="text-right text-[10px] flex items-center gap-1">
+          <span class="text-sub">OFFEN:</span>
+          <span id="live-floating-pnl" class="font-bold text-emerald-400">+$0.00</span>
+          <span id="live-floating-pnl-pct" class="text-[9px] text-emerald-400/80">(+0%)</span>
+          <span id="live-equity" class="hidden">$----.--</span>
+        </div>
       </div>
 
-      <div class="flex items-center gap-3 px-3 py-1 rounded-lg ticker-bg border text-[11px]">
-        <div><span class="text-sub">SERVER:</span> <span id="time-server" class="font-bold">--:--:--</span></div>
-        <div><span class="text-sub">DE:</span> <span id="time-german" class="text-emerald-500 font-bold">--:--:--</span></div>
+      <!-- 4. ZEITEN (SERVER / DE) -->
+      <div class="header-stat-box h-12 px-3 py-1.5 rounded-xl ticker-bg border flex items-center justify-between font-mono text-[11px]">
+        <div class="flex items-center gap-1">
+          <span class="text-sub text-[10px]">SRV:</span>
+          <span id="time-server" class="font-bold text-xs">--:--:--</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <span class="text-sub text-[10px]">DE:</span>
+          <span id="time-german" class="text-emerald-400 font-bold text-xs">--:--:--</span>
+        </div>
       </div>
 
-      <div class="flex items-center gap-1.5 px-3 py-1 bg-blue-600/15 text-blue-500 rounded-lg border border-blue-500/40 text-[11px]">
-        <span class="font-bold">⏳ M15-SCHLUSS:</span>
-        <span id="bar-countdown" class="font-bold text-xs">--:--</span>
+      <!-- 5. KERZENSCHLUSS COUNTDOWN -->
+      <div class="header-stat-box h-12 px-3 py-1.5 rounded-xl ticker-bg border flex items-center justify-between font-mono text-[11px]">
+        <div class="flex items-center gap-1 text-blue-400">
+          <span>⏳</span>
+          <span class="font-bold text-[10px]">KERZENSCHLUSS:</span>
+        </div>
+        <div>
+          <span id="bar-countdown" class="font-bold text-xs text-blue-400">--:--</span>
+        </div>
       </div>
     </div>
   </header>
 
   <!-- 2. MAIN 2-COLUMN SECTION -->
   <main id="account-content" data-connected="false">
-  <div class="grid grid-cols-12 gap-3 mb-3">
+
+    <!-- 2.0 OFFENE POSITIONEN & SL/TP MANAGER (Zwischen Status und Chart) -->
+    <div class="glass-card rounded-xl p-3.5 mb-3">
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center gap-2">
+          <span class="font-black text-sm">📊 Offene Positionen & SL/TP Manager (MT5 Live-Sync)</span>
+          <span id="pos-count-badge" class="px-2 py-0.5 rounded font-mono text-[10px] ticker-bg border font-bold">0 Aktiv</span>
+        </div>
+        <span class="text-[11px] text-sub">Ziel-P/L in USD, kein Stoppreis. Senden aktualisiert beide Felder sofort in MT5. TP = 0: kein fixer TP.</span>
+      </div>
+
+      <p id="position-edit-status" role="status" aria-live="polite" class="text-amber-500"></p>
+      <div id="positions-list" class="min-h-[100px]">
+        <div class="py-6 flex items-center justify-center text-sub text-xs">
+          Aktuell keine offenen Positionen auf XAUUSD. Der EA scannt den Markt bei jedem M15-Kerzenschluss.
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-12 gap-3 mb-3">
 
     <!-- LEFT COLUMN: CHART & VOLUMENPROFILE (7 of 12) -->
     <div class="col-span-12 lg:col-span-7 flex flex-col gap-3">
@@ -1987,25 +2047,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
   </div>
 
-  <!-- 3. LOWER SCROLLABLE SECTION: OFFENE POSITIONEN & SL/TP MANAGER -->
-  <div class="glass-card rounded-xl p-3.5 mb-4">
-    <div class="flex items-center justify-between mb-2">
-      <div class="flex items-center gap-2">
-        <span class="font-black text-sm">📊 Offene Positionen & SL/TP Manager (MT5 Live-Sync)</span>
-        <span id="pos-count-badge" class="px-2 py-0.5 rounded font-mono text-[10px] ticker-bg border font-bold">0 Aktiv</span>
-      </div>
-      <span class="text-[11px] text-sub">Ziel-P/L in USD, kein Stoppreis. Senden aktualisiert beide Felder sofort in MT5. TP = 0: kein fixer TP.</span>
-    </div>
-
-    <p id="position-edit-status" role="status" aria-live="polite" class="text-amber-500"></p>
-    <div id="positions-list" class="min-h-[100px]">
-      <div class="py-6 flex items-center justify-center text-sub text-xs">
-        Aktuell keine offenen Positionen auf XAUUSD. Der EA scannt den Markt bei jedem M15-Kerzenschluss.
-      </div>
-    </div>
-  </div>
-
-  <!-- 4. TRADE JOURNAL: GESPIELTE POSITIONEN & STRATEGIE-ERKLÄRUNG (Aufnahme ab 20:00 Uhr DE) -->
+  <!-- 3. TRADE JOURNAL: GESPIELTE POSITIONEN & STRATEGIE-ERKLÄRUNG (Aufnahme ab 20:00 Uhr DE) -->
   <div class="glass-card rounded-xl p-3.5 mb-4">
     <div class="flex flex-wrap items-center justify-between mb-3 border-b table-border pb-2.5 gap-2">
       <div class="flex flex-wrap items-center gap-2">
@@ -3481,12 +3523,18 @@ HTML_CONTENT = """<!DOCTYPE html>
         const template = document.createElement('template');
         template.innerHTML = positions.map(p => `
         <div data-position-ticket="${p.ticket}" class="p-3 rounded-xl ticker-bg border flex flex-wrap items-center justify-between gap-3 text-xs mb-2">
-          <div class="flex items-center gap-2.5">
+          <div class="flex items-center gap-2.5 flex-wrap">
             <span data-position-type class="px-2 py-1 rounded-md font-bold font-mono text-[11px] text-white ${p.type === 'BUY' ? 'bg-emerald-600' : 'bg-rose-600'}">
               ${escapeHTML(p.type)} ${escapeHTML(p.volume)} Lot
             </span>
             <span data-position-entry class="font-mono font-bold text-xs">#${p.ticket} @ $${p.open_price.toFixed(2)}</span>
             <span data-position-current class="text-sub font-mono text-[10px]">Aktuell: &#36;${p.current_price.toFixed(2)}</span>
+            <span data-position-sl-val class="px-1.5 py-0.5 rounded ticker-bg border font-mono text-[10px] text-rose-400 font-bold">
+              ${p.sl_price > 0 ? 'SL: $' + p.sl_price.toFixed(2) + ' (' + (p.sl_usd >= 0 ? '+' : '') + '$' + p.sl_usd.toFixed(2) + ')' : 'Kein SL'}
+            </span>
+            <span data-position-tp-val class="px-1.5 py-0.5 rounded ticker-bg border font-mono text-[10px] text-emerald-400 font-bold">
+              ${p.tp_price > 0 ? 'TP: $' + p.tp_price.toFixed(2) + ' (' + (p.tp_usd >= 0 ? '+' : '') + '$' + p.tp_usd.toFixed(2) + ')' : 'Kein TP'}
+            </span>
             ${p.ema9 ? `<span data-position-ema9 class="px-2 py-0.5 rounded bg-cyan-950/40 border border-cyan-500/30 text-cyan-300 font-mono text-[10px] font-bold">🎯 EMA9: $${p.ema9.toFixed(2)}${p.dist_to_ema9 !== null && p.dist_to_ema9 !== undefined ? ' (' + p.dist_to_ema9.toFixed(2) + ' Pkt)' : ''}</span>` : ''}
           </div>
 
@@ -3514,9 +3562,19 @@ HTML_CONTENT = """<!DOCTYPE html>
           </div>
           <button aria-label="SL und TP an MT5 senden · Ticket ${p.ticket}" onclick="applySLTP(${p.ticket})" class="px-3 py-2 bg-blue-600 text-white font-bold rounded">SL + TP an MT5 senden</button>
 
-          <button onclick="closePos(${p.ticket})" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs cursor-pointer shadow-sm">
-            Position Schließen
-          </button>
+          <!-- Teilschließen / Schließen -->
+          <div class="flex items-center gap-1.5 flex-wrap font-mono text-xs">
+            <span class="text-sub font-bold">Teilschließen:</span>
+            <button onclick="closePosPct(${p.ticket}, ${p.volume}, 25)" class="px-2 py-1 ticker-bg hover:opacity-80 text-stone-200 border rounded text-[10px] font-bold cursor-pointer" title="25% der Position schließen">25%</button>
+            <button onclick="closePosPct(${p.ticket}, ${p.volume}, 50)" class="px-2 py-1 ticker-bg hover:opacity-80 text-stone-200 border rounded text-[10px] font-bold cursor-pointer" title="50% der Position schließen">50%</button>
+            <button onclick="closePosPct(${p.ticket}, ${p.volume}, 75)" class="px-2 py-1 ticker-bg hover:opacity-80 text-stone-200 border rounded text-[10px] font-bold cursor-pointer" title="75% der Position schließen">75%</button>
+            <button onclick="closePosPct(${p.ticket}, ${p.volume}, 100)" class="px-2 py-1 ticker-bg hover:opacity-80 text-stone-200 border rounded text-[10px] font-bold cursor-pointer" title="100% der Position schließen">100%</button>
+            <label for="close-lot-${p.ticket}" class="sr-only">Lotzahl zum Schließen</label>
+            <input type="number" id="close-lot-${p.ticket}" step="0.01" min="0.01" max="${p.volume}" value="${p.volume.toFixed(2)}" class="w-16 rounded px-1.5 py-0.5 text-center text-xs ticker-bg border text-stone-100 font-bold" title="Gewünschte Lotzahl eingeben">
+            <button onclick="closePosCustom(${p.ticket})" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs cursor-pointer shadow-sm">
+              ✕ Schließen
+            </button>
+          </div>
           <span data-draft-note class="text-amber-500 hidden">Entwurf · noch nicht an MT5 gesendet</span>
         </div>
       `).join('');
@@ -3540,6 +3598,15 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (entry) entry.textContent = '#'+pos.ticket+' @ $'+pos.open_price.toFixed(2);
         const price = row.querySelector('[data-position-current]');
         if (price) price.textContent = 'Aktuell: ' + String.fromCharCode(36) + pos.current_price.toFixed(2);
+        const slVal = row.querySelector('[data-position-sl-val]');
+        if (slVal) slVal.textContent = pos.sl_price > 0 ? 'SL: $' + pos.sl_price.toFixed(2) + ' (' + (pos.sl_usd >= 0 ? '+' : '') + '$' + pos.sl_usd.toFixed(2) + ')' : 'Kein SL';
+        const tpVal = row.querySelector('[data-position-tp-val]');
+        if (tpVal) tpVal.textContent = pos.tp_price > 0 ? 'TP: $' + pos.tp_price.toFixed(2) + ' (' + (pos.tp_usd >= 0 ? '+' : '') + '$' + pos.tp_usd.toFixed(2) + ')' : 'Kein TP';
+        const closeLotInp = row.querySelector('#close-lot-' + pos.ticket);
+        if (closeLotInp && document.activeElement !== closeLotInp) {
+          closeLotInp.max = String(pos.volume);
+          if (parseFloat(closeLotInp.value) > pos.volume) closeLotInp.value = pos.volume.toFixed(2);
+        }
         const emaBadge = row.querySelector('[data-position-ema9]');
         if (emaBadge && pos.ema9) {
           emaBadge.textContent = '🎯 EMA9: $' + pos.ema9.toFixed(2) + (pos.dist_to_ema9 !== null && pos.dist_to_ema9 !== undefined ? ' (' + pos.dist_to_ema9.toFixed(2) + ' Pkt)' : '');
@@ -3964,25 +4031,41 @@ HTML_CONTENT = """<!DOCTYPE html>
       return applySLTP(ticket);
     }
 
-    async function closePos(ticket) {
-      if (!confirm(`Konto ${accounts[activeAccount].login}: Position #${ticket} wirklich sofort zum Marktpreis schließen?`)) return;
+    async function closePos(ticket, volume = null) {
+      const volNum = (volume != null && Number.isFinite(Number(volume)) && Number(volume) > 0) ? Number(volume) : null;
+      const volText = volNum ? `${volNum.toFixed(2)} Lot von Position #${ticket}` : `Position #${ticket}`;
+      if (!confirm(`Konto ${accounts[activeAccount]?.name || accounts[activeAccount]?.login}: ${volText} wirklich sofort zum Marktpreis schließen?`)) return;
       try {
+        const payload = volNum ? { ticket, volume: volNum } : { ticket };
         const res = await accountFetch('/api/close_position', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ticket })
+          body: JSON.stringify(payload)
         });
         const result = await res.json();
         if (result.success) {
-          alert(`Position #${ticket} geschlossen!`);
+          alert(`${volText} erfolgreich geschlossen!`);
           updateStatus();
         } else {
-          alert(`Fehler: ${result.comment || result.error}`);
+          alert(`Fehler: ${result.comment || result.error || 'Schließen fehlgeschlagen'}`);
         }
       } catch (err) {
         if (err.name === 'AbortError') return;
         alert('Netzwerkfehler: ' + err);
       }
+    }
+
+    function closePosPct(ticket, fullVolume, pct) {
+      const vol = Math.max(0.01, Math.round(fullVolume * pct / 100 * 100) / 100);
+      const inp = document.getElementById('close-lot-' + ticket);
+      if (inp) inp.value = vol.toFixed(2);
+      closePos(ticket, vol);
+    }
+
+    function closePosCustom(ticket) {
+      const inp = document.getElementById('close-lot-' + ticket);
+      const vol = inp ? parseFloat(inp.value) : null;
+      closePos(ticket, vol);
     }
 
     // --- DAILY DRAWDOWN RESET MODAL CONTROLS ---

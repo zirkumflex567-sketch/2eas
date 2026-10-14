@@ -214,6 +214,11 @@ body.theme-stone #stone-rails { display:block; }
   animation:stone-current 11s linear infinite; filter:drop-shadow(0 0 5px #28bfff);}
 #stone-rails .right .ember {animation-delay:-5.5s;}
 #stone-rails .amber {stroke:rgba(245,149,67,.48);stroke-width:1;fill:none;filter:drop-shadow(0 0 2px #e58c4b);}
+.header-stat-box {
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
 .stone-theme-dock {
   flex: 0 0 auto; display:flex; align-items:center; gap:6px;
   padding:4px 5px; border:1px solid rgba(78,146,161,.6); border-radius:11px;
