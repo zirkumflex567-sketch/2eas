@@ -327,6 +327,8 @@ def run_batch(batch: Batch, *, dry_run: bool = False, force: bool = False) -> di
         from .oos import write_comparisons
         write_csv(batch.output / 'batch_metrics.csv', records)
         write_comparisons(batch.output)
+        from .html_report import render
+        render(batch.output)
         atomic_json(batch.output / "batch_summary.json", summary)
     return summary
 
