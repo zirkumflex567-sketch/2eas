@@ -143,6 +143,13 @@ body.theme-stone #diagnose-card {
 }
 body.theme-stone #diagnose-card .text-blue-500,
 body.theme-stone #diagnose-card .font-black { color: #5ccff5 !important; }
+body.theme-stone #short-missing-text {
+  position: relative;
+  z-index: 1;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgba(5, 13, 20, .96);
+}
 body.theme-stone #sell-bar {
   background: linear-gradient(90deg,#641018 0%,#ff3d35 70%,#ffb35b 100%) !important;
   box-shadow: 0 0 6px #ff542f, 0 0 16px rgba(239,47,36,.6);

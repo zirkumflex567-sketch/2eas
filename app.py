@@ -1084,6 +1084,8 @@ def api_candles(count: int = 150, account: str = 'titan', tf: Optional[str] = No
         raise HTTPException(status_code=500, detail="Konnte Kerzen nicht laden")
 
     df = pd.DataFrame(rates)
+    df['dt'] = pd.to_datetime(df['time'], unit='s')
+
     # Keep history bars exactly as returned by the verified MT5 symbol read.
     # Quotes have their own endpoint; folding a later tick into OHLC rewrites
     # the broker candle and can mix prices from another symbol in test adapters.
