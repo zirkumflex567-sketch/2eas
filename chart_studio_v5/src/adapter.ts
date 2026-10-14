@@ -342,7 +342,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  let lastPersistedSnapshot:string|null=null;
  const persistenceLimit=65536;
  let selectedDrawingId:string|null=null,hoveredDrawingId:string|null=null;
- type ActiveDrag={pointerId:number;id:string;kind:"PRICE";original:PriceLevelOptions}|{pointerId:number;id:string;kind:"TIME";original:TimeMarkerOptions}|{pointerId:number;id:string;kind:"TEXT";original:TextAnnotationOptions}|{pointerId:number;id:string;kind:"TREND";anchor:"START"|"END";original:TrendLineOptions}|{pointerId:number;id:string;kind:"RECT";anchor:"START"|"END";original:RectangleOptions};
+ type ActiveDrag={pointerId:number;id:string;kind:"PRICE";original:PriceLevelOptions}|{pointerId:number;id:string;kind:"TIME";original:TimeMarkerOptions}|{pointerId:number;id:string;kind:"TEXT";original:TextAnnotationOptions}|{pointerId:number;id:string;kind:"TREND";anchor:"START"|"END";original:TrendLineOptions}|{pointerId:number;id:string;kind:"RECT";anchor:"START"|"END";original:RectangleOptions}|{pointerId:number;id:string;kind:"FIBO";anchor:"START"|"END";original:FibonacciOptions};
  let activeDrag:ActiveDrag|null=null;
  chart.subscribeCrosshairMove(param=>{
   const objectId=param.hoveredInfo?.objectId;
@@ -353,12 +353,12 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  });
  const onPointerDown=(event:PointerEvent)=>{
   if(event.button!==0||!event.isPrimary||!hoveredDrawingId)return;
-  const level=priceLevels.get(hoveredDrawingId),marker=timeMarkers.get(hoveredDrawingId),annotation=textAnnotations.get(hoveredDrawingId),trend=trendLines.get(hoveredDrawingId),rectangle=rectangles.get(hoveredDrawingId);
+  const level=priceLevels.get(hoveredDrawingId),marker=timeMarkers.get(hoveredDrawingId),annotation=textAnnotations.get(hoveredDrawingId),trend=trendLines.get(hoveredDrawingId),rectangle=rectangles.get(hoveredDrawingId),fibo=fibonacci.get(hoveredDrawingId);
   selectDrawing(hoveredDrawingId);
   if(host.tabIndex<0)host.tabIndex=0;
   host.focus({preventScroll:true});
-  if(!level&&!marker&&!annotation&&!trend&&!rectangle)return;
-  if((level?.options.locked??marker?.options.locked??annotation?.options.locked??trend?.options.locked??rectangle?.options.locked)===true){event.preventDefault();event.stopImmediatePropagation();return}
+  if(!level&&!marker&&!annotation&&!trend&&!rectangle&&!fibo)return;
+  if((level?.options.locked??marker?.options.locked??annotation?.options.locked??trend?.options.locked??rectangle?.options.locked??fibo?.options.locked)===true){event.preventDefault();event.stopImmediatePropagation();return}
   if(level)activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"PRICE",original:{...level.options}};
   else if(marker)activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"TIME",original:{...marker.options}};
   else if(annotation)activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"TEXT",original:{...annotation.options}};
@@ -378,6 +378,15 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    if(Math.min(startDistance,endDistance)>12)return;
    activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"RECT",anchor:startDistance<=endDistance?"START":"END",original:{...rectangle.options}};
   }
+  else if(fibo){
+   const rect=host.getBoundingClientRect(),start=drawingAnchorPosition(hoveredDrawingId,"START"),end=drawingAnchorPosition(hoveredDrawingId,"END");
+   if(!start||!end)return;
+   const x=event.clientX-rect.left,y=event.clientY-rect.top;
+   const startDistance=Math.hypot(x-(start.x-rect.left),y-(start.y-rect.top)),endDistance=Math.hypot(x-(end.x-rect.left),y-(end.y-rect.top));
+   if(Math.min(startDistance,endDistance)>12)return;
+   const original={...fibo.options};if(original.levels)original.levels=[...original.levels];
+   activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"FIBO",anchor:startDistance<=endDistance?"START":"END",original};
+  }
   else return;
   host.setPointerCapture(event.pointerId);event.preventDefault();event.stopImmediatePropagation();
  };
@@ -396,14 +405,14 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    const logical=chart.timeScale().coordinateToLogical(x),index=logical===null?-1:Math.round(Number(logical));
    const candle=bars[index],value=price.coordinateToPrice(y);
    if(candle&&value!==null&&Number.isFinite(value)&&value>0){const item=textAnnotations.get(activeDrag.id);if(item)updateTextAnnotation(activeDrag.id,{time:candle.time,price:value})}
-  }else if(activeDrag.kind==="TREND"||activeDrag.kind==="RECT"){
+  }else if(activeDrag.kind==="TREND"||activeDrag.kind==="RECT"||activeDrag.kind==="FIBO"){
    const logical=chart.timeScale().coordinateToLogical(x),index=logical===null?-1:Math.round(Number(logical));
-   const candle=bars[index],value=price.coordinateToPrice(y),item=activeDrag.kind==="TREND"?trendLines.get(activeDrag.id):rectangles.get(activeDrag.id);
+   const candle=bars[index],value=price.coordinateToPrice(y),item=activeDrag.kind==="TREND"?trendLines.get(activeDrag.id):activeDrag.kind==="RECT"?rectangles.get(activeDrag.id):fibonacci.get(activeDrag.id);
    if(candle&&value!==null&&Number.isFinite(value)&&value>0&&item){
     const patch=activeDrag.anchor==="START"?{startTime:candle.time,startPrice:value}:{endTime:candle.time,endPrice:value};
     const otherTime=activeDrag.anchor==="START"?item.options.endTime:item.options.startTime,otherPrice=activeDrag.anchor==="START"?item.options.endPrice:item.options.startPrice;
     if(candle.time!==otherTime&&(activeDrag.kind==="TREND"||value!==otherPrice)){
-     if(activeDrag.kind==="TREND")updateTrendLine(activeDrag.id,patch);else updateRectangle(activeDrag.id,patch);
+     if(activeDrag.kind==="TREND")updateTrendLine(activeDrag.id,patch);else if(activeDrag.kind==="RECT")updateRectangle(activeDrag.id,patch);else updateFibonacci(activeDrag.id,patch);
     }
    }
   }
@@ -416,8 +425,15 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    if(drag.kind==="TEXT"&&textAnnotations.has(drag.id))updateTextAnnotation(drag.id,drag.original);
    if(drag.kind==="TREND"&&trendLines.has(drag.id))updateTrendLine(drag.id,drag.original);
    if(drag.kind==="RECT"&&rectangles.has(drag.id))updateRectangle(drag.id,drag.original);
+   if(drag.kind==="FIBO"&&fibonacci.has(drag.id))updateFibonacci(drag.id,drag.original);
   }else{
-   const before:DrawingSnapshot=drag.kind==="PRICE"?{kind:"PRICE",options:{...drag.original}}:drag.kind==="TIME"?{kind:"TIME",options:{...drag.original}}:drag.kind==="TEXT"?{kind:"TEXT",options:{...drag.original}}:drag.kind==="TREND"?{kind:"TREND",options:{...drag.original}}:{kind:"RECT",options:{...drag.original}};
+   let before:DrawingSnapshot;
+   if(drag.kind==="PRICE")before={kind:"PRICE",options:{...drag.original}};
+   else if(drag.kind==="TIME")before={kind:"TIME",options:{...drag.original}};
+   else if(drag.kind==="TEXT")before={kind:"TEXT",options:{...drag.original}};
+   else if(drag.kind==="TREND")before={kind:"TREND",options:{...drag.original}};
+   else if(drag.kind==="RECT")before={kind:"RECT",options:{...drag.original}};
+   else{const original={...drag.original};if(original.levels)original.levels=[...original.levels];else delete original.levels;before={kind:"FIBO",options:original}}
    recordDrawingChange(drag.id,before,snapshotDrawing(drag.id));
   }
   activeDrag=null;
@@ -909,7 +925,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function updateFibonacci(id:string,patch:Partial<Pick<FibonacciOptions,"startTime"|"startPrice"|"endTime"|"endPrice"|"color"|"levels"|"visible"|"locked">>){
   guard();const item=fibonacci.get(id);if(!item)throw Error("Unknown Fibonacci drawing");const before=snapshotDrawing(id);
-  const options=normalizeFibonacciOptions({...item.options,...patch},patch.startTime!==undefined||patch.endTime!==undefined);item.primitive.set(options);item.options=options;recordDrawingChange(id,before,snapshotDrawing(id));
+  const options=normalizeFibonacciOptions({...item.options,...patch},patch.startTime!==undefined||patch.endTime!==undefined);item.primitive.set(options);item.options=options;if(activeDrag?.id!==id)recordDrawingChange(id,before,snapshotDrawing(id));
  }
  function removeFibonacci(id:string){
   guard();const item=fibonacci.get(id);if(!item)return false;
