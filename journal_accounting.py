@@ -20,7 +20,13 @@ def times(stamp, broker_utc_offset_seconds=0):
 
 
 def owns(record, magics):
-    return getattr(record, 'symbol', None)=='XAUUSD' and getattr(record, 'magic', None) in magics
+    sym = getattr(record, 'symbol', None)
+    if sym not in ('XAUUSD', 'XAUUSD.p', 'XAUUSD.pi'):
+        return False
+    magic = getattr(record, 'magic', None)
+    if callable(magics):
+        return bool(magics(magic))
+    return magic in magics
 
 
 def costs(record):
@@ -38,7 +44,7 @@ def close_accounting(deals, mt5, magics):
     invalidated_magic = None
     unique = {int(d.ticket):d for d in deals}
     for d in sorted(unique.values(), key=lambda d:(d.time,d.ticket)):
-        if getattr(d,'symbol',None)!='XAUUSD':
+        if getattr(d, 'symbol', None) not in ('XAUUSD', 'XAUUSD.p', 'XAUUSD.pi'):
             continue
         if d.entry == mt5.DEAL_ENTRY_IN:
             inventory.append([float(d.volume), float(d.price), costs(d), d, owns(d,magics)])

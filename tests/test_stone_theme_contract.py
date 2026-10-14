@@ -144,7 +144,22 @@ class StoneThemeContractTests(unittest.TestCase):
         # stone-preview.html attaches demo chart and candle series
         self.assertIn("StoneCockpit?.attachChart", demo)
 
+    def test_chart_position_lines_contract(self):
+        app = (ROOT / "app.py").read_text(encoding="utf-8")
+        self.assertIn('id="toggle-positions-btn"', app)
+        self.assertIn('onclick="toggleChartPositions()"', app)
+        self.assertIn('id="chart-pos-legend"', app)
+        self.assertIn("function toggleChartPositions()", app)
+        self.assertIn("function updateChartPositionsButtonUI()", app)
+        self.assertIn("function updateChartPositionLines(positions)", app)
+        self.assertIn("function removeAllPositionLines()", app)
+        self.assertIn("showChartPositions", app)
+        self.assertIn("pos.open_price", app)
+        self.assertIn("pos.sl_price", app)
+        self.assertIn("pos.tp_price", app)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

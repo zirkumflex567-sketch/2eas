@@ -35,7 +35,7 @@ class MultiAccountTests(unittest.TestCase):
     def test_explicit_paths_and_default_titan(self):
         fake = self.fake()
         with self.gateway.session(fake):
-            self.assertEqual(fake.current['login'], 53087839)
+            self.assertEqual(fake.current['login'], 5120620)
         with self.gateway.session(fake, 'goldm15'):
             self.assertEqual(fake.current['login'], 53090070)
             self.assertEqual(self.gateway.selected()['id'], 'goldm15')
@@ -190,7 +190,7 @@ class MultiAccountTests(unittest.TestCase):
         client = TestClient(app.app)
         accounts = client.get('/api/accounts')
         self.assertEqual(accounts.status_code, 200)
-        self.assertEqual([a['login'] for a in accounts.json()['accounts']], [53087839, 53090070])
+        self.assertEqual([a['login'] for a in accounts.json()['accounts']], [5120620, 53087839, 700194619, 700184986, 700194822])
         schema = client.get('/openapi.json').json()
         for route, method in [('/api/status','get'), ('/api/candles','get'), ('/api/close_position','post'), ('/api/modify_position','post'), ('/api/reset_drawdown','post')]:
             params = schema['paths'][route][method]['parameters']
@@ -204,7 +204,7 @@ class MultiAccountTests(unittest.TestCase):
         # Stop writes now require broker tick/stop metadata (fail closed if absent).
         fake.symbol_info = lambda _: SimpleNamespace(trade_contract_size=100, digits=2,
             trade_tick_size=.01, point=.01, trade_stops_level=0, trade_freeze_level=0)
-        fake.symbol_info_tick = lambda _: SimpleNamespace(time=1791547200, bid=4000., ask=4000.05)
+        fake.symbol_info_tick = lambda _: SimpleNamespace(time=1791547200 + 10800, bid=4000., ask=4000.05)
         fake.order_send = lambda req: (fake.sent.append((fake.current['login'], req)) or SimpleNamespace(retcode=10009, comment='ok'))
         for key in ('ORDER_TYPE_BUY','TRADE_ACTION_SLTP','TRADE_RETCODE_DONE'):
             setattr(fake, key, getattr(app.mt5, key))
@@ -221,7 +221,7 @@ class MultiAccountTests(unittest.TestCase):
     def test_gold_reset_cannot_write_titan_or_guard_files(self):
         import app
         fake = self.fake()
-        fake.symbol_info_tick = lambda _: SimpleNamespace(time=1791547200, bid=4000., ask=4000.05)
+        fake.symbol_info_tick = lambda _: SimpleNamespace(time=1791547200 + 10800, bid=4000., ask=4000.05)
         fake.account_info = lambda: SimpleNamespace(login=53090070, server='ICMarketsEU-Demo', balance=9975)
         with tempfile.TemporaryDirectory() as root, patch.object(app, 'BASE_DIR', Path(root)), patch.object(app, 'COMMON_FILES_DIR', root), patch.object(app, 'mt5', fake), patch.object(app.time, 'time', return_value=1791547200.):
             with self.gateway.session(fake, 'goldm15'):
@@ -273,7 +273,7 @@ class MultiAccountTests(unittest.TestCase):
         fake.positions_get=lambda **kw:[]
         fake.history_deals_get=lambda *args:[]
         fake.ORDER_TYPE_BUY=app.mt5.ORDER_TYPE_BUY
-        with patch.object(app,'mt5',fake),patch.object(app,'load_dd_config',return_value={}),patch.object(app.time,'time',return_value=float(tick_time)):
+        with patch.object(app,'mt5',fake),patch.object(app,'load_dd_config',return_value={}),patch.object(app.time,'time',return_value=float(tick_time - 10800)):
             with self.gateway.session(fake,'titan'):
                 data=app.get_live_market_data()
         for field in ['daily_vp','weekly_vp','sr_levels','positions','indicators','daily_drawdown','rules_matrix','buy_readiness','sell_readiness']:

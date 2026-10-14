@@ -60,6 +60,11 @@ input int      InpTradeStartHour          = 1;           // Handelsstart Stunde 
 input int      InpTradeStartMinute        = 0;           // Handelsstart Minute
 input int      InpTradeEndHour            = 23;          // Handelsende Stunde
 input int      InpTradeEndMinute          = 45;          // Handelsende Minute
+input bool     InpCloseWeekendFriday      = true;        // Wochenend-Schutz: Freitags vor Marktschluss Positionen schließen
+input int      InpFridayCloseHour         = 22;          // Freitag Schließung Stunde (Serverzeit, z.B. 22:00)
+input int      InpFridayCloseMinute       = 0;           // Freitag Schließung Minute
+input bool     InpBlockFridayLateEntries  = true;        // Freitag Spätnachmittag: Keine neuen Einstiege vor Wochenende
+input int      InpFridayStopEntryHour     = 19;          // Freitag Einstiegs-Stopp Stunde (Serverzeit, z.B. 19:00)
 
 input group "=== 04 / Blueberry Funded Prop-Firm Schutz ==="
 input bool     InpEnablePropProtection    = true;        // Harter Prop-Firm Notaus aktiv
@@ -274,9 +279,22 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 bool IsWithinTradingWindow(const MqlDateTime &dt)
 {
+   // 0. Weekend Filter: Kein Handel am Samstag oder Sonntag
+   if(dt.day_of_week == 0 || dt.day_of_week == 6)
+      return false;
+
+   // 1. Freitag Spätnachmittag: Keine neuen Positionen mehr vor dem Wochenende
+   if(dt.day_of_week == 5 && InpBlockFridayLateEntries)
+   {
+      int current_min_fri = dt.hour * 60 + dt.min;
+      int stop_min_fri    = InpFridayStopEntryHour * 60;
+      if(current_min_fri >= stop_min_fri)
+         return false;
+   }
+
    if(InpFilterEliteHours)
    {
-      // 1. Asian Session Switch (Hours 1 to 7)
+      // 2. Asian Session Switch (Hours 1 to 7)
       if(dt.hour >= 1 && dt.hour <= 7 && !InpEnableAsianSession)
          return false;
 
@@ -652,6 +670,26 @@ void ManageOpenPositions(const MqlDateTime &dt)
 
    if(my_positions == 0) return;
 
+   // 3.5 Weekend Protection: Unbedingte Glattstellung am Freitagabend vor Marktschluss
+   if(InpCloseWeekendFriday && dt.day_of_week == 5)
+   {
+      int current_min_fri = dt.hour * 60 + dt.min;
+      int close_min_fri   = InpFridayCloseHour * 60 + InpFridayCloseMinute;
+      if(current_min_fri >= close_min_fri)
+      {
+         CloseAllPositionsForMagic();
+         PrintFormat("WEEKEND PROTECTION EXIT: Freitagabend %02d:%02d Uhr Serverzeit erreicht. Korb (%d Positionen) vor dem Wochenende geschlossen. PnL: $%.2f",
+                     dt.hour, dt.min, my_positions, total_profit_usd);
+         return;
+      }
+   }
+   if(InpCloseWeekendFriday && (dt.day_of_week == 0 || dt.day_of_week == 6))
+   {
+      CloseAllPositionsForMagic();
+      PrintFormat("WEEKEND PROTECTION EXIT: Wochenende aktiv (Wochentag %d). Alle Positionen geschlossen.", dt.day_of_week);
+      return;
+   }
+
    // 4. HEBEL 1: TREND-INVALIDATION EXIT (Trendbruch-Notausstieg)
    // Wenn Position im Minus ist und M15-Trend klar gebrochen ist -> Sofort beenden!
    if(InpUseTrendInvalidationExit && total_profit_usd < 0.0)
@@ -849,6 +887,12 @@ void UpdateDashboard(const MqlDateTime &dt)
       state_str = "NOT-HALT (Gesamt-Drawdown Limit erreicht)";
    else if(m_daily_lockout)
       state_str = "TAGES-SPERRE (Tages-Drawdown Limit erreicht)";
+   else if(dt.day_of_week == 0 || dt.day_of_week == 6)
+      state_str = "WOCHENENDE (Markt geschlossen / Weekend Protection)";
+   else if(dt.day_of_week == 5 && InpCloseWeekendFriday && (dt.hour * 60 + dt.min >= InpFridayCloseHour * 60 + InpFridayCloseMinute))
+      state_str = "WOCHENENDE-SCHUTZ AKTIV (Freitagabend Glattstellung)";
+   else if(dt.day_of_week == 5 && InpBlockFridayLateEntries && (dt.hour >= InpFridayStopEntryHour))
+      state_str = "FREITAG-STOPP (Keine neuen Einstiege vor Wochenende)";
    else if(!in_window)
       state_str = "Warten auf Handelsfenster (07:00-18:00 oder 22:00-02:00 DE)";
 

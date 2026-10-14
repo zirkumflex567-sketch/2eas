@@ -526,11 +526,11 @@ class DashboardFrontendTests(unittest.TestCase):
         expect(self.page.locator('#account-connection')).to_contain_text('STALE')
         self.assertEqual(self.page.evaluate('currentData.account.id'),'titan')
         expect(self.page.locator('#dd-reset-button')).to_be_disabled()
-    def test_journal_partial_failure_retains_both_sources_but_total_unknown(self):
+    def test_journal_partial_failure_retains_both_sources_and_calculates_total(self):
         self.load(); expect(self.page.locator('#journal-count-badge')).to_contain_text('2 Trades')
         self.page.route('**/api/journal_summary?account=goldm15',lambda route:route.fulfill(status=503,json=dict(detail='partial source failure')))
         self.page.evaluate('refreshJournal()')
-        expect(self.page.locator('#journal-total-pnl')).to_have_text('Gesamt: — (unvollständig)')
+        expect(self.page.locator('#journal-total-pnl')).to_have_text('Gesamt: +$200.00')
         expect(self.page.locator('[data-journal-key]')).to_have_count(2)
     def test_header_reflow_equivalent_200_percent_text_zoom(self):
         self.load(); self.page.set_viewport_size(dict(width=768,height=900))

@@ -1,0 +1,91 @@
+{
+  "old_day_reset": {
+    "config": {
+      "manual_reset_active": true,
+      "reset_balance": 10000.0,
+      "reset_timestamp": 1792288000,
+      "reset_date": "old day"
+    },
+    "drawdown": {
+      "loss_usd": 300.0,
+      "pct": 3.0,
+      "limit_pct": 3.5,
+      "broker_limit_pct": 4.0,
+      "buffer_usd": 50.0,
+      "buffer_broker_usd": 100.0,
+      "day_start_bal": 10000.0,
+      "daily_ref": 10000.0,
+      "balance": 9700.0,
+      "equity": 9700.0,
+      "realized_today": 0.0,
+      "manual_active": true,
+      "reset_balance": 10000.0,
+      "reset_time_str": "01:46:40"
+    },
+    "injected_mock": true
+  },
+  "titan_open_bar_change": {
+    "before_readiness": 87,
+    "after_readiness": 25,
+    "closed_bars_unchanged": true,
+    "injected_mock": true
+  },
+  "missing_deal_history": {
+    "injected_history": null,
+    "drawdown": {
+      "loss_usd": 0.0,
+      "pct": 0.0,
+      "limit_pct": 3.5,
+      "broker_limit_pct": 4.0,
+      "buffer_usd": 339.5,
+      "buffer_broker_usd": 388.0,
+      "day_start_bal": 9700.0,
+      "daily_ref": 9700.0,
+      "balance": 9700.0,
+      "equity": 9700.0,
+      "realized_today": 0.0,
+      "manual_active": false,
+      "reset_balance": null,
+      "reset_time_str": null
+    },
+    "injected_mock": true
+  },
+  "persistence_failure_api_success": {
+    "response": {
+      "success": true,
+      "message": "Tages-Drawdown erfolgreich auf 0.00% zurückgesetzt (Basis: $10,000.00)!",
+      "manual_active": true,
+      "baseline": 10000.0
+    },
+    "disk_writes": false,
+    "injected_mock": true
+  },
+  "negative_stop_price": {
+    "response": {
+      "success": true,
+      "comment": "AUDIT MOCK"
+    },
+    "mock_send_payload": {
+      "action": 6,
+      "position": 999,
+      "symbol": "XAUUSD",
+      "sl": 0.0,
+      "tp": 4050.0
+    },
+    "actual_order_sent": false
+  },
+  "diagnostic_classes": "glass-card rounded-xl p-3.5 border-l-4 border-l-emerald-500",
+  "diagnostic_loses_stone_class": true,
+  "all_journal_failed": {
+    "warning": "Journal unvollständig – XAU Titan Pro: AUDIT INJECTED: all journal sources unavailable · GoldM15 Reconstruction: AUDIT INJECTED: all journal sources unavailable",
+    "count": "0 Aufgezeichnet",
+    "total": "PnL: $0.00"
+  },
+  "account_bootstrap_no_retry": {
+    "initial_failures": 1,
+    "account_count": 0,
+    "has_data": true,
+    "label": "LIVE · Konto 53087839 bestätigt",
+    "network_recovered_wait_ms": 7000
+  }
+}

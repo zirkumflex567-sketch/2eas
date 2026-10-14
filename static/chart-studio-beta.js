@@ -527,6 +527,44 @@ function updateSeries(){
   s.extras[key].applyOptions({visible:!!s.opts[option]});
   s.extras[key].setData(data);
  }
+ try{window.StoneCelebration?.refresh?.();}catch(_){}
+}
+function getLiveMAs(){
+ if(!s)return null;
+ const result=[];
+ const getSma=n=>{
+  if(!Array.isArray(s.candles)||s.candles.length<n)return null;
+  let sum=0;for(let i=s.candles.length-n;i<s.candles.length;i++)sum+=Number(s.candles[i].close);
+  return sum/n;
+ };
+ if(s.opts?.sma20){
+  result.push({
+   id:"sma20",
+   type:"SMA",
+   period:20,
+   source:"close",
+   label:"SMA20",
+   color:"#76e9a8",
+   value:getSma(20),
+   visible:true
+  });
+ }
+ if(s.opts?.sma50){
+  result.push({
+   id:"sma50",
+   type:"SMA",
+   period:50,
+   source:"close",
+   label:"SMA50",
+   color:"#ffb675",
+   value:getSma(50),
+   visible:true
+  });
+ }
+ return {
+  opts:s.opts?{...s.opts}:{ema20:true,ema50:true,ema200:true},
+  extras:result
+ };
 }
 function drawBollingerFill(ctx){
  const points=s?.bbData;if(!s?.opts.bb||!s.opts.bbFill||!points?.upper?.length)return;
@@ -1082,6 +1120,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  '<button type="button" data-cmd="clear-plan">Plan ausblenden</button>'+
  '</form><output id="cs-scenario-result" role="status" aria-live="polite">Nur Schätzung. Keine Brokeränderungen.</output><p id="cs-scenario-portfolio-impact" role="status" aria-live="polite">Portfolio-Gesamtrisiko UNAVAILABLE · Portfolio und Vorschau für dasselbe Konto erforderlich.</p><div class="cs-scenario-ab-actions"><button type="button" id="cs-scenario-save-a">Vorschau in A speichern</button><button type="button" id="cs-scenario-save-b">Vorschau in B speichern</button><button type="button" id="cs-scenario-export" disabled>A/B als JSON exportieren</button></div><p id="cs-scenario-ab-status" role="status" aria-live="polite">Nur lokal gespeicherte, verifizierte Broker-Vorschauen.</p><div id="cs-scenario-ab" aria-label="Gespeicherte What-if A/B-Vergleiche"></div></details>';
  host.parentElement.insertAdjacentElement("beforebegin",panel);
+ panel.addEventListener("wheel",e=>e.stopPropagation(),{passive:true});
  const canvas=document.createElement("canvas");canvas.className="cs-beta-canvas";canvas.style.pointerEvents="none";canvas.setAttribute("aria-hidden","true");
  host.style.position="relative";host.appendChild(canvas);
  const coordinates=createChartCoordinates({apiVersion:4,chart,series:candleSeries,scope:{account:accountId,symbol:"XAUUSD",timeframe:tf}});
@@ -1312,6 +1351,6 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();
 }
-window.ChartStudioBeta=Object.freeze({mount,account,symbol,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,coordinates:Object.freeze({create:createChartCoordinates}),calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,symbol:s.symbol,timeframe:s.tf,coordinateApiVersion:s.coordinates.apiVersion,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),portfolio:s.portfolio?json(s.portfolio):null,positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
+window.ChartStudioBeta=Object.freeze({mount,account,symbol,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,coordinates:Object.freeze({create:createChartCoordinates}),getLiveMAs,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,symbol:s.symbol,timeframe:s.tf,coordinateApiVersion:s.coordinates.apiVersion,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),portfolio:s.portfolio?json(s.portfolio):null,positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
  scenario:s.scenario?json(s.scenario):null,tool:s.tool,magnet:s.magnet,selected:s.selected}:null});
 })();

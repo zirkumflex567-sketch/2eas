@@ -1,0 +1,932 @@
+{
+  "path": "/api/status?account=goldm15",
+  "status": 200,
+  "ms": 193.04,
+  "bytes": 21413,
+  "body": {
+    "symbol": "XAUUSD",
+    "bid": 4179.33,
+    "ask": 4179.38,
+    "spread": 5,
+    "times": {
+      "server": "07:16:21",
+      "german": "06:16:22",
+      "bar_remaining_sec": 819,
+      "bar_remaining_fmt": "13:39"
+    },
+    "indicators": {
+      "close": 4179.33,
+      "ema20": 4166.069935449782,
+      "ema50": 4150.0934775019805,
+      "ema200": 4135.654556650866,
+      "rsi14": 82.10282865772066,
+      "ema_diff": 15.976457947801464
+    },
+    "sell_readiness": 50,
+    "buy_readiness": 50,
+    "sell_met_count": 3,
+    "buy_met_count": 3,
+    "trend_direction": "BULLISH",
+    "trend_name": "RSI-PULLBACK · 3 SYSTEME",
+    "active_focus": "M15 SCHLUSSSIGNAL",
+    "trend_diagnosis": "M15-Schluss · Long-Signale: keine · Short-Signale: keine. Einstieg zusätzlich von Slot-Belegung und EA-Schutzfiltern abhängig.",
+    "trend_diff": 9.97,
+    "rules_matrix": [
+      {
+        "id": "s1_trend",
+        "name": "S1 · RSI-Trend",
+        "current_val": "L 59.3 / S 67.6",
+        "long_met": true,
+        "short_met": false,
+        "long_note": "RSI70 ≥ 45",
+        "short_note": "RSI30 ≤ 55"
+      },
+      {
+        "id": "s1_pullback",
+        "name": "S1 · RSI-Pullback",
+        "current_val": "RSI2 80.4",
+        "long_met": false,
+        "short_met": true,
+        "long_note": "≤ 45",
+        "short_note": "≥ 70"
+      },
+      {
+        "id": "s2_trend",
+        "name": "S2 · RSI-Trend",
+        "current_val": "L 59.3 / S 67.6",
+        "long_met": true,
+        "short_met": false,
+        "long_note": "RSI70 ≥ 45",
+        "short_note": "RSI30 ≤ 55"
+      },
+      {
+        "id": "s2_pullback",
+        "name": "S2 · RSI-Pullback",
+        "current_val": "RSI2 80.4",
+        "long_met": false,
+        "short_met": true,
+        "long_note": "≤ 45",
+        "short_note": "≥ 70"
+      },
+      {
+        "id": "s3_trend",
+        "name": "S3 · RSI-Trend",
+        "current_val": "L 64.6 / S 71.3",
+        "long_met": true,
+        "short_met": false,
+        "long_note": "RSI40 ≥ 55",
+        "short_note": "RSI20 ≤ 55"
+      },
+      {
+        "id": "s3_pullback",
+        "name": "S3 · RSI-Pullback",
+        "current_val": "RSI5 72.7",
+        "long_met": false,
+        "short_met": true,
+        "long_note": "≤ 35",
+        "short_note": "≥ 55"
+      }
+    ],
+    "short_missing": "M15-Schluss · Long-Signale: keine · Short-Signale: keine. Einstieg zusätzlich von Slot-Belegung und EA-Schutzfiltern abhängig.",
+    "in_window": null,
+    "sr_levels": {
+      "daily_high": 4180.58,
+      "daily_low": 4131.05,
+      "daily_poc": 4176.87,
+      "daily_vah": 4179.34,
+      "daily_val": 4147.15,
+      "weekly_high": 4184.5,
+      "weekly_low": 4066.48,
+      "weekly_poc": 4130.21,
+      "weekly_vah": 4153.81,
+      "weekly_val": 4106.61
+    },
+    "daily_vp": {
+      "poc": 4176.87,
+      "vah": 4179.34,
+      "val": 4147.15,
+      "high": 4180.58,
+      "low": 4131.05,
+      "total_volume": 92498,
+      "histogram": [
+        {
+          "price": 4132.29,
+          "vol_pct": 12.4,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4134.76,
+          "vol_pct": 11.8,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4137.24,
+          "vol_pct": 10.0,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4139.72,
+          "vol_pct": 19.5,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4142.19,
+          "vol_pct": 36.7,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4144.67,
+          "vol_pct": 55.1,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4147.15,
+          "vol_pct": 57.8,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4149.62,
+          "vol_pct": 55.8,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4152.1,
+          "vol_pct": 0.0,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4154.58,
+          "vol_pct": 0.0,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4157.05,
+          "vol_pct": 0.0,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4159.53,
+          "vol_pct": 39.6,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4162.01,
+          "vol_pct": 0.0,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4164.48,
+          "vol_pct": 0.0,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4166.96,
+          "vol_pct": 45.1,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4169.44,
+          "vol_pct": 0.0,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4171.91,
+          "vol_pct": 44.5,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4174.39,
+          "vol_pct": 54.5,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4176.87,
+          "vol_pct": 100.0,
+          "in_va": true,
+          "is_poc": true
+        },
+        {
+          "price": 4179.34,
+          "vol_pct": 16.5,
+          "in_va": true,
+          "is_poc": false
+        }
+      ]
+    },
+    "weekly_vp": {
+      "poc": 4130.21,
+      "vah": 4153.81,
+      "val": 4106.61,
+      "high": 4184.5,
+      "low": 4066.48,
+      "total_volume": 2113036,
+      "histogram": [
+        {
+          "price": 4068.84,
+          "vol_pct": 0.0,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4073.56,
+          "vol_pct": 0.0,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4078.28,
+          "vol_pct": 15.1,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4083.0,
+          "vol_pct": 0.0,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4087.72,
+          "vol_pct": 6.1,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4092.44,
+          "vol_pct": 15.2,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4097.17,
+          "vol_pct": 9.9,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4101.89,
+          "vol_pct": 22.8,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4106.61,
+          "vol_pct": 30.8,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4111.33,
+          "vol_pct": 29.5,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4116.05,
+          "vol_pct": 36.5,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4120.77,
+          "vol_pct": 84.5,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4125.49,
+          "vol_pct": 77.3,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4130.21,
+          "vol_pct": 100.0,
+          "in_va": true,
+          "is_poc": true
+        },
+        {
+          "price": 4134.93,
+          "vol_pct": 66.3,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4139.65,
+          "vol_pct": 78.7,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4144.37,
+          "vol_pct": 52.1,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4149.09,
+          "vol_pct": 28.5,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4153.81,
+          "vol_pct": 65.4,
+          "in_va": true,
+          "is_poc": false
+        },
+        {
+          "price": 4158.54,
+          "vol_pct": 47.9,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4163.26,
+          "vol_pct": 52.1,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4167.98,
+          "vol_pct": 34.4,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4172.7,
+          "vol_pct": 19.7,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4177.42,
+          "vol_pct": 13.3,
+          "in_va": false,
+          "is_poc": false
+        },
+        {
+          "price": 4182.14,
+          "vol_pct": 2.0,
+          "in_va": false,
+          "is_poc": false
+        }
+      ]
+    },
+    "positions": [
+      {
+        "ticket": 1998044845,
+        "type": "BUY",
+        "volume": 0.01,
+        "open_price": 4175.59,
+        "current_price": 4179.33,
+        "profit_usd": 3.74,
+        "profit_pct": 0.03736554896385533,
+        "sl_price": 4105.13,
+        "sl_usd": -70.46000000000004,
+        "tp_price": 0.0,
+        "tp_usd": 0.0,
+        "time": "06:45:00",
+        "magic": 14733201
+      },
+      {
+        "ticket": 1998045124,
+        "type": "BUY",
+        "volume": 0.01,
+        "open_price": 4175.26,
+        "current_price": 4179.33,
+        "profit_usd": 4.07,
+        "profit_pct": 0.04066250916654845,
+        "sl_price": 4105.13,
+        "sl_usd": -70.13000000000011,
+        "tp_price": 0.0,
+        "tp_usd": 0.0,
+        "time": "06:45:00",
+        "magic": 14733202
+      }
+    ],
+    "daily_drawdown": {
+      "loss_usd": 0,
+      "pct": 0.0,
+      "limit_pct": 3.5,
+      "broker_limit_pct": 4.0,
+      "buffer_usd": 394.8,
+      "buffer_broker_usd": 400.37,
+      "day_start_bal": 9964.42,
+      "daily_ref": 9964.42,
+      "balance": 10009.22,
+      "equity": 10017.03,
+      "realized_today": 44.8,
+      "manual_active": false,
+      "reset_balance": null,
+      "reset_time_str": null
+    },
+    "journal": [
+      {
+        "ticket": 1998044845,
+        "time_ts": 1791528300,
+        "strategy": "GoldM15 Reconstruction",
+        "account": "goldm15",
+        "status": "OPEN",
+        "type": "BUY",
+        "volume": 0.01,
+        "open_price": 4175.59,
+        "current_price": 4179.27,
+        "points": 3.68,
+        "sl_price": 4105.13,
+        "tp_price": 0.0,
+        "profit_usd": 3.68,
+        "time_server": "08:45:00",
+        "time_de": "05:45:00",
+        "why_triggered": "Ausgelöst durch Subsystem Gold candidate S1. RSI-Trendfilter aktiv mit RSI-Pullback Extremwert.",
+        "profit_goal": "Momentum-Exit via Rate-of-Change (ROC) Zielerreichung im Slot oder Not-SL bei 4140.50 $."
+      },
+      {
+        "ticket": 1998045124,
+        "time_ts": 1791528300,
+        "strategy": "GoldM15 Reconstruction",
+        "account": "goldm15",
+        "status": "OPEN",
+        "type": "BUY",
+        "volume": 0.01,
+        "open_price": 4175.26,
+        "current_price": 4179.27,
+        "points": 4.01,
+        "sl_price": 4105.13,
+        "tp_price": 0.0,
+        "profit_usd": 4.01,
+        "time_server": "08:45:00",
+        "time_de": "05:45:00",
+        "why_triggered": "Ausgelöst durch Subsystem Gold candidate S2. RSI-Trendfilter aktiv mit RSI-Pullback Extremwert.",
+        "profit_goal": "Momentum-Exit via Rate-of-Change (ROC) Zielerreichung im Slot oder Not-SL bei 4140.50 $."
+      },
+      {
+        "ticket": 1605542695,
+        "time_ts": 1791519300,
+        "strategy": "GoldM15 Reconstruction",
+        "account": "goldm15",
+        "status": "CLOSED",
+        "type": "BUY",
+        "volume": 0.01,
+        "open_price": 4133.41,
+        "close_price": 4155.66,
+        "points": 22.25,
+        "profit_usd": 22.25,
+        "net_profit_usd": 22.21,
+        "time_server": "06:15:00",
+        "time_de": "03:15:00",
+        "why_triggered": "Ausgelöst bei M15-Kerzenschluss (Subsystem S1): Bärischer Trendfilter (RSI30 <= 55) mit überkauftem RSI2-Spike (>= 70) als Mean-Reversion Short-Bounce.",
+        "profit_goal": "Ausstiegsziel: Momentum-Exit bei Erreichen des ROC-Ziels (ROC 5 <= -0.2%/-0.3%). Geschlossen um 06:15:00 Server (03:15:00 DE) bei 4155.66 $."
+      },
+      {
+        "ticket": 1605542914,
+        "time_ts": 1791519300,
+        "strategy": "GoldM15 Reconstruction",
+        "account": "goldm15",
+        "status": "CLOSED",
+        "type": "BUY",
+        "volume": 0.01,
+        "open_price": 4133.37,
+        "close_price": 4156.16,
+        "points": 22.79,
+        "profit_usd": 22.79,
+        "net_profit_usd": 22.75,
+        "time_server": "06:15:00",
+        "time_de": "03:15:00",
+        "why_triggered": "Ausgelöst bei M15-Kerzenschluss (Subsystem S2): Bärischer Trendfilter (RSI30 <= 55) mit überkauftem RSI2-Spike (>= 70) als Mean-Reversion Short-Bounce.",
+        "profit_goal": "Ausstiegsziel: Momentum-Exit bei Erreichen des ROC-Ziels (ROC 5 <= -0.2%/-0.3%). Geschlossen um 06:15:00 Server (03:15:00 DE) bei 4156.16 $."
+      },
+      {
+        "ticket": 1605297522,
+        "time_ts": 1791503401,
+        "strategy": "GoldM15 Reconstruction",
+        "account": "goldm15",
+        "status": "CLOSED",
+        "type": "SELL",
+        "volume": 0.01,
+        "open_price": 4130.26,
+        "close_price": 4133.14,
+        "points": -2.88,
+        "profit_usd": -2.88,
+        "net_profit_usd": -2.92,
+        "time_server": "01:50:01",
+        "time_de": "22:50:01",
+        "why_triggered": "Ausgelöst bei M15-Kerzenschluss (Subsystem S1): Bärischer Trendfilter (RSI30 <= 55) mit überkauftem RSI2-Spike (>= 70) als Mean-Reversion Short-Bounce.",
+        "profit_goal": "Ausstiegsziel: Momentum-Exit bei Erreichen des ROC-Ziels (ROC 5 <= -0.2%/-0.3%). Geschlossen um 01:50:01 Server (22:50:01 DE) bei 4133.14 $."
+      },
+      {
+        "ticket": 1605297356,
+        "time_ts": 1791503400,
+        "strategy": "GoldM15 Reconstruction",
+        "account": "goldm15",
+        "status": "CLOSED",
+        "type": "SELL",
+        "volume": 0.01,
+        "open_price": 4130.27,
+        "close_price": 4133.43,
+        "points": -3.16,
+        "profit_usd": -3.16,
+        "net_profit_usd": -3.2,
+        "time_server": "01:50:00",
+        "time_de": "22:50:00",
+        "why_triggered": "Ausgelöst bei M15-Kerzenschluss (Subsystem S3): Bärischer Trendfilter (RSI30 <= 55) mit überkauftem RSI2-Spike (>= 70) als Mean-Reversion Short-Bounce.",
+        "profit_goal": "Ausstiegsziel: Momentum-Exit bei Erreichen des ROC-Ziels (ROC 5 <= -0.2%/-0.3%). Geschlossen um 01:50:00 Server (22:50:00 DE) bei 4133.43 $."
+      },
+      {
+        "ticket": 1605297480,
+        "time_ts": 1791503400,
+        "strategy": "GoldM15 Reconstruction",
+        "account": "goldm15",
+        "status": "CLOSED",
+        "type": "SELL",
+        "volume": 0.01,
+        "open_price": 4130.26,
+        "close_price": 4133.43,
+        "points": -3.17,
+        "profit_usd": -3.17,
+        "net_profit_usd": -3.21,
+        "time_server": "01:50:00",
+        "time_de": "22:50:00",
+        "why_triggered": "Ausgelöst bei M15-Kerzenschluss (Subsystem S2): Bärischer Trendfilter (RSI30 <= 55) mit überkauftem RSI2-Spike (>= 70) als Mean-Reversion Short-Bounce.",
+        "profit_goal": "Ausstiegsziel: Momentum-Exit bei Erreichen des ROC-Ziels (ROC 5 <= -0.2%/-0.3%). Geschlossen um 01:50:00 Server (22:50:00 DE) bei 4133.43 $."
+      },
+      {
+        "ticket": 1605110053,
+        "time_ts": 1791493232,
+        "strategy": "GoldM15 Reconstruction",
+        "account": "goldm15",
+        "status": "CLOSED",
+        "type": "SELL",
+        "volume": 0.01,
+        "open_price": 4131.06,
+        "close_price": 4132.48,
+        "points": -1.42,
+        "profit_usd": -1.42,
+        "net_profit_usd": -1.46,
+        "time_server": "23:00:32",
+        "time_de": "20:00:32",
+        "why_triggered": "Ausgelöst bei M15-Kerzenschluss (Subsystem S1): Bärischer Trendfilter (RSI30 <= 55) mit überkauftem RSI2-Spike (>= 70) als Mean-Reversion Short-Bounce.",
+        "profit_goal": "Ausstiegsziel: Momentum-Exit bei Erreichen des ROC-Ziels (ROC 5 <= -0.2%/-0.3%). Geschlossen um 23:00:32 Server (20:00:32 DE) bei 4132.48 $."
+      },
+      {
+        "ticket": 1605110041,
+        "time_ts": 1791493231,
+        "strategy": "GoldM15 Reconstruction",
+        "account": "goldm15",
+        "status": "CLOSED",
+        "type": "SELL",
+        "volume": 0.01,
+        "open_price": 4131.08,
+        "close_price": 4132.48,
+        "points": -1.4,
+        "profit_usd": -1.4,
+        "net_profit_usd": -1.44,
+        "time_server": "23:00:31",
+        "time_de": "20:00:31",
+        "why_triggered": "Ausgelöst bei M15-Kerzenschluss (Subsystem S2): Bärischer Trendfilter (RSI30 <= 55) mit überkauftem RSI2-Spike (>= 70) als Mean-Reversion Short-Bounce.",
+        "profit_goal": "Ausstiegsziel: Momentum-Exit bei Erreichen des ROC-Ziels (ROC 5 <= -0.2%/-0.3%). Geschlossen um 23:00:31 Server (20:00:31 DE) bei 4132.48 $."
+      }
+    ],
+    "journal_cache": {
+      "titan": [
+        {
+          "ticket": 1997437758,
+          "time_ts": 1791499500,
+          "strategy": "XAU Titan Pro",
+          "account": "titan",
+          "status": "OPEN",
+          "type": "BUY",
+          "volume": 0.01,
+          "open_price": 4130.5,
+          "current_price": 4179.27,
+          "points": 48.77,
+          "sl_price": 4102.68,
+          "tp_price": 0.0,
+          "profit_usd": 48.77,
+          "time_server": "00:45:00",
+          "time_de": "21:45:00",
+          "why_triggered": "Ausgelöst bei M15-Kerzenschluss (20:00 DE / 23:00 Server). Alle 5 Champion-Kriterien erfüllt: 1. Bullischer Trend-Fächer (EMA9 > EMA21), 2. Kurs über Trendfilter EMA50 ($4133.09 > $4123.69), 3. Kurs über Basis-EMA9 ($4127.33), 4. RSI14 bei 54.1 (Momentum >= 50.0), 5. Grüne Bestätigungskerze (Close > Open). Keine Cluster-Sperre aktiv.",
+          "profit_goal": "Dynamischer Trend-Runner Modus (Kein fixer TP für maximale Gewinne). Trailing-Ausstieg: Schließt, sobald mindestens +$28.00 Gewinn erreicht sind und eine M15-Kerze unter die Basis-EMA9 schließt. Absicherung: Struktureller Swing-SL bei 4102.68 $ (-30.41 $ Puffer)."
+        },
+        {
+          "ticket": 1997369377,
+          "time_ts": 1791496800,
+          "strategy": "XAU Titan Pro",
+          "account": "titan",
+          "status": "OPEN",
+          "type": "BUY",
+          "volume": 0.02,
+          "open_price": 4127.11,
+          "current_price": 4179.27,
+          "points": 52.16,
+          "sl_price": 4102.68,
+          "tp_price": 0.0,
+          "profit_usd": 104.32,
+          "time_server": "00:00:00",
+          "time_de": "21:00:00",
+          "why_triggered": "Ausgelöst bei M15-Kerzenschluss (20:00 DE / 23:00 Server). Alle 5 Champion-Kriterien erfüllt: 1. Bullischer Trend-Fächer (EMA9 > EMA21), 2. Kurs über Trendfilter EMA50 ($4133.09 > $4123.69), 3. Kurs über Basis-EMA9 ($4127.33), 4. RSI14 bei 54.1 (Momentum >= 50.0), 5. Grüne Bestätigungskerze (Close > Open). Keine Cluster-Sperre aktiv.",
+          "profit_goal": "Dynamischer Trend-Runner Modus (Kein fixer TP für maximale Gewinne). Trailing-Ausstieg: Schließt, sobald mindestens +$28.00 Gewinn erreicht sind und eine M15-Kerze unter die Basis-EMA9 schließt. Absicherung: Struktureller Swing-SL bei 4102.68 $ (-30.41 $ Puffer)."
+        },
+        {
+          "ticket": 1997267275,
+          "time_ts": 1791493200,
+          "strategy": "XAU Titan Pro",
+          "account": "titan",
+          "status": "OPEN",
+          "type": "BUY",
+          "volume": 0.01,
+          "open_price": 4133.09,
+          "current_price": 4179.27,
+          "points": 46.18,
+          "sl_price": 4102.68,
+          "tp_price": 0.0,
+          "profit_usd": 46.18,
+          "time_server": "23:00:00",
+          "time_de": "20:00:00",
+          "why_triggered": "Ausgelöst bei M15-Kerzenschluss (20:00 DE / 23:00 Server). Alle 5 Champion-Kriterien erfüllt: 1. Bullischer Trend-Fächer (EMA9 > EMA21), 2. Kurs über Trendfilter EMA50 ($4133.09 > $4123.69), 3. Kurs über Basis-EMA9 ($4127.33), 4. RSI14 bei 54.1 (Momentum >= 50.0), 5. Grüne Bestätigungskerze (Close > Open). Keine Cluster-Sperre aktiv.",
+          "profit_goal": "Dynamischer Trend-Runner Modus (Kein fixer TP für maximale Gewinne). Trailing-Ausstieg: Schließt, sobald mindestens +$28.00 Gewinn erreicht sind und eine M15-Kerze unter die Basis-EMA9 schließt. Absicherung: Struktureller Swing-SL bei 4102.68 $ (-30.41 $ Puffer)."
+        }
+      ],
+      "goldm15": [
+        {
+          "ticket": 1998044845,
+          "time_ts": 1791528300,
+          "strategy": "GoldM15 Reconstruction",
+          "account": "goldm15",
+          "status": "OPEN",
+          "type": "BUY",
+          "volume": 0.01,
+          "open_price": 4175.59,
+          "current_price": 4179.27,
+          "points": 3.68,
+          "sl_price": 4105.13,
+          "tp_price": 0.0,
+          "profit_usd": 3.68,
+          "time_server": "08:45:00",
+          "time_de": "05:45:00",
+          "why_triggered": "Ausgelöst durch Subsystem Gold candidate S1. RSI-Trendfilter aktiv mit RSI-Pullback Extremwert.",
+          "profit_goal": "Momentum-Exit via Rate-of-Change (ROC) Zielerreichung im Slot oder Not-SL bei 4140.50 $."
+        },
+        {
+          "ticket": 1998045124,
+          "time_ts": 1791528300,
+          "strategy": "GoldM15 Reconstruction",
+          "account": "goldm15",
+          "status": "OPEN",
+          "type": "BUY",
+          "volume": 0.01,
+          "open_price": 4175.26,
+          "current_price": 4179.27,
+          "points": 4.01,
+          "sl_price": 4105.13,
+          "tp_price": 0.0,
+          "profit_usd": 4.01,
+          "time_server": "08:45:00",
+          "time_de": "05:45:00",
+          "why_triggered": "Ausgelöst durch Subsystem Gold candidate S2. RSI-Trendfilter aktiv mit RSI-Pullback Extremwert.",
+          "profit_goal": "Momentum-Exit via Rate-of-Change (ROC) Zielerreichung im Slot oder Not-SL bei 4140.50 $."
+        },
+        {
+          "ticket": 1605542695,
+          "time_ts": 1791519300,
+          "strategy": "GoldM15 Reconstruction",
+          "account": "goldm15",
+          "status": "CLOSED",
+          "type": "BUY",
+          "volume": 0.01,
+          "open_price": 4133.41,
+          "close_price": 4155.66,
+          "points": 22.25,
+          "profit_usd": 22.25,
+          "net_profit_usd": 22.21,
+          "time_server": "06:15:00",
+          "time_de": "03:15:00",
+          "why_triggered": "Ausgelöst bei M15-Kerzenschluss (Subsystem S1): Bärischer Trendfilter (RSI30 <= 55) mit überkauftem RSI2-Spike (>= 70) als Mean-Reversion Short-Bounce.",
+          "profit_goal": "Ausstiegsziel: Momentum-Exit bei Erreichen des ROC-Ziels (ROC 5 <= -0.2%/-0.3%). Geschlossen um 06:15:00 Server (03:15:00 DE) bei 4155.66 $."
+        },
+        {
+          "ticket": 1605542914,
+          "time_ts": 1791519300,
+          "strategy": "GoldM15 Reconstruction",
+          "account": "goldm15",
+          "status": "CLOSED",
+          "type": "BUY",
+          "volume": 0.01,
+          "open_price": 4133.37,
+          "close_price": 4156.16,
+          "points": 22.79,
+          "profit_usd": 22.79,
+          "net_profit_usd": 22.75,
+          "time_server": "06:15:00",
+          "time_de": "03:15:00",
+          "why_triggered": "Ausgelöst bei M15-Kerzenschluss (Subsystem S2): Bärischer Trendfilter (RSI30 <= 55) mit überkauftem RSI2-Spike (>= 70) als Mean-Reversion Short-Bounce.",
+          "profit_goal": "Ausstiegsziel: Momentum-Exit bei Erreichen des ROC-Ziels (ROC 5 <= -0.2%/-0.3%). Geschlossen um 06:15:00 Server (03:15:00 DE) bei 4156.16 $."
+        },
+        {
+          "ticket": 1605297522,
+          "time_ts": 1791503401,
+          "strategy": "GoldM15 Reconstruction",
+          "account": "goldm15",
+          "status": "CLOSED",
+          "type": "SELL",
+          "volume": 0.01,
+          "open_price": 4130.26,
+          "close_price": 4133.14,
+          "points": -2.88,
+          "profit_usd": -2.88,
+          "net_profit_usd": -2.92,
+          "time_server": "01:50:01",
+          "time_de": "22:50:01",
+          "why_triggered": "Ausgelöst bei M15-Kerzenschluss (Subsystem S1): Bärischer Trendfilter (RSI30 <= 55) mit überkauftem RSI2-Spike (>= 70) als Mean-Reversion Short-Bounce.",
+          "profit_goal": "Ausstiegsziel: Momentum-Exit bei Erreichen des ROC-Ziels (ROC 5 <= -0.2%/-0.3%). Geschlossen um 01:50:01 Server (22:50:01 DE) bei 4133.14 $."
+        },
+        {
+          "ticket": 1605297356,
+          "time_ts": 1791503400,
+          "strategy": "GoldM15 Reconstruction",
+          "account": "goldm15",
+          "status": "CLOSED",
+          "type": "SELL",
+          "volume": 0.01,
+          "open_price": 4130.27,
+          "close_price": 4133.43,
+          "points": -3.16,
+          "profit_usd": -3.16,
+          "net_profit_usd": -3.2,
+          "time_server": "01:50:00",
+          "time_de": "22:50:00",
+          "why_triggered": "Ausgelöst bei M15-Kerzenschluss (Subsystem S3): Bärischer Trendfilter (RSI30 <= 55) mit überkauftem RSI2-Spike (>= 70) als Mean-Reversion Short-Bounce.",
+          "profit_goal": "Ausstiegsziel: Momentum-Exit bei Erreichen des ROC-Ziels (ROC 5 <= -0.2%/-0.3%). Geschlossen um 01:50:00 Server (22:50:00 DE) bei 4133.43 $."
+        },
+        {
+          "ticket": 1605297480,
+          "time_ts": 1791503400,
+          "strategy": "GoldM15 Reconstruction",
+          "account": "goldm15",
+          "status": "CLOSED",
+          "type": "SELL",
+          "volume": 0.01,
+          "open_price": 4130.26,
+          "close_price": 4133.43,
+          "points": -3.17,
+          "profit_usd": -3.17,
+          "net_profit_usd": -3.21,
+          "time_server": "01:50:00",
+          "time_de": "22:50:00",
+          "why_triggered": "Ausgelöst bei M15-Kerzenschluss (Subsystem S2): Bärischer Trendfilter (RSI30 <= 55) mit überkauftem RSI2-Spike (>= 70) als Mean-Reversion Short-Bounce.",
+          "profit_goal": "Ausstiegsziel: Momentum-Exit bei Erreichen des ROC-Ziels (ROC 5 <= -0.2%/-0.3%). Geschlossen um 01:50:00 Server (22:50:00 DE) bei 4133.43 $."
+        },
+        {
+          "ticket": 1605110053,
+          "time_ts": 1791493232,
+          "strategy": "GoldM15 Reconstruction",
+          "account": "goldm15",
+          "status": "CLOSED",
+          "type": "SELL",
+          "volume": 0.01,
+          "open_price": 4131.06,
+          "close_price": 4132.48,
+          "points": -1.42,
+          "profit_usd": -1.42,
+          "net_profit_usd": -1.46,
+          "time_server": "23:00:32",
+          "time_de": "20:00:32",
+          "why_triggered": "Ausgelöst bei M15-Kerzenschluss (Subsystem S1): Bärischer Trendfilter (RSI30 <= 55) mit überkauftem RSI2-Spike (>= 70) als Mean-Reversion Short-Bounce.",
+          "profit_goal": "Ausstiegsziel: Momentum-Exit bei Erreichen des ROC-Ziels (ROC 5 <= -0.2%/-0.3%). Geschlossen um 23:00:32 Server (20:00:32 DE) bei 4132.48 $."
+        },
+        {
+          "ticket": 1605110041,
+          "time_ts": 1791493231,
+          "strategy": "GoldM15 Reconstruction",
+          "account": "goldm15",
+          "status": "CLOSED",
+          "type": "SELL",
+          "volume": 0.01,
+          "open_price": 4131.08,
+          "close_price": 4132.48,
+          "points": -1.4,
+          "profit_usd": -1.4,
+          "net_profit_usd": -1.44,
+          "time_server": "23:00:31",
+          "time_de": "20:00:31",
+          "why_triggered": "Ausgelöst bei M15-Kerzenschluss (Subsystem S2): Bärischer Trendfilter (RSI30 <= 55) mit überkauftem RSI2-Spike (>= 70) als Mean-Reversion Short-Bounce.",
+          "profit_goal": "Ausstiegsziel: Momentum-Exit bei Erreichen des ROC-Ziels (ROC 5 <= -0.2%/-0.3%). Geschlossen um 23:00:31 Server (20:00:31 DE) bei 4132.48 $."
+        }
+      ]
+    },
+    "account": {
+      "id": "goldm15",
+      "name": "GoldM15 Reconstruction",
+      "login": 53090070,
+      "server": "ICMarketsEU-Demo",
+      "version": "v1.21 GUARDED",
+      "capacity": 3
+    },
+    "rule_count": 6,
+    "exit_goals": [
+      {
+        "slot": 1,
+        "long_met": false,
+        "short_met": false,
+        "long_note": "ROC 6 ≥ +0.2%",
+        "short_note": "ROC 5 ≤ −0.2%",
+        "long_value": 0.09267951567168975,
+        "short_value": 0.035662484502374525
+      },
+      {
+        "slot": 2,
+        "long_met": false,
+        "short_met": false,
+        "long_note": "ROC 6 ≥ +0.2%",
+        "short_note": "ROC 5 ≤ −0.3%",
+        "long_value": 0.09267951567168975,
+        "short_value": 0.035662484502374525
+      },
+      {
+        "slot": 3,
+        "long_met": false,
+        "short_met": false,
+        "long_note": "ROC 5 ≥ +0.7%",
+        "short_note": "ROC 8 ≤ −0.7%",
+        "long_value": 0.035662484502374525,
+        "short_value": 0.2114737707787473
+      }
+    ],
+    "ea_guard": {
+      "baseline_verified": true,
+      "baseline": 9964.42,
+      "daily_buffer_usd": 394.7999999999993,
+      "daily_protected_buffer_usd": 319.7999999999993,
+      "daily_limit_usd": 350.0,
+      "hard_floor_usd": 9100.0,
+      "hard_protected_floor_usd": 9200.0,
+      "hard_buffer_usd": 809.2199999999993,
+      "hard_lock": false,
+      "daily_lock": false,
+      "note": "EA-Baseline bestätigt · fixe $350 Tagesgrenze, $75 Tagesreserve, $100 Gesamtreserve. Dashboard-Reset ändert nur die Anzeige."
+    },
+    "slots": [
+      {
+        "slot": 1,
+        "fast_rsi": 80.4143426829203,
+        "buy_rsi": 59.265833046983595,
+        "sell_rsi": 67.56398728427976,
+        "buy_signal": false,
+        "sell_signal": false,
+        "buy_period": 6,
+        "sell_period": 5,
+        "buy_target": 0.2,
+        "sell_target": 0.2,
+        "buy_roc": 0.09267951567168975,
+        "sell_roc": 0.035662484502374525
+      },
+      {
+        "slot": 2,
+        "fast_rsi": 80.4143426829203,
+        "buy_rsi": 59.265833046983595,
+        "sell_rsi": 67.56398728427976,
+        "buy_signal": false,
+        "sell_signal": false,
+        "buy_period": 6,
+        "sell_period": 5,
+        "buy_target": 0.2,
+        "sell_target": 0.3,
+        "buy_roc": 0.09267951567168975,
+        "sell_roc": 0.035662484502374525
+      },
+      {
+        "slot": 3,
+        "fast_rsi": 72.74358318267257,
+        "buy_rsi": 64.60057735328986,
+        "sell_rsi": 71.34624261055606,
+        "buy_signal": false,
+        "sell_signal": false,
+        "buy_period": 5,
+        "sell_period": 8,
+        "buy_target": 0.7,
+        "sell_target": 0.7,
+        "buy_roc": 0.035662484502374525,
+        "sell_roc": 0.2114737707787473
+      }
+    ],
+    "signal_bar_time": "07:00"
+  }
+}

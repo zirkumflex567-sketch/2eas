@@ -35,6 +35,11 @@ InpTradeStartHour=1
 InpTradeStartMinute=0
 InpTradeEndHour=23
 InpTradeEndMinute=45
+InpCloseWeekendFriday=true
+InpFridayCloseHour=22
+InpFridayCloseMinute=0
+InpBlockFridayLateEntries=true
+InpFridayStopEntryHour=19
 
 InpEnablePropProtection=true
 InpMaxDailyDrawdownPercent=3.5

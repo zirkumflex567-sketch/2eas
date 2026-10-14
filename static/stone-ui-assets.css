@@ -55,6 +55,9 @@ body.theme-stone nav.stone-asset-nav .account-tab[aria-pressed="true"] {
 body.theme-stone header.stone-asset-header .ticker-bg {
   background-image: linear-gradient(180deg, rgba(4,12,18,.9), rgba(17,28,34,.97)), url("stone-assets/ui/07_brushed_gunmetal_tile.webp") !important;
 }
+body.theme-stone nav.stone-asset-nav .ticker-bg {
+  background-image: linear-gradient(180deg, rgba(4,12,18,.9), rgba(17,28,34,.97)), url("stone-assets/ui/07_brushed_gunmetal_tile.webp") !important;
+}
 body.theme-stone .stone-asset-panel:where(.stone-asset-panel--diagnostic, .stone-asset-panel--matrix, .stone-asset-panel--guard, .stone-asset-panel--positions, .stone-asset-panel--journal) .ticker-bg {
   background-image: linear-gradient(180deg, rgba(4,12,18,.9), rgba(17,28,34,.97)), url("stone-assets/ui/07_brushed_gunmetal_tile.webp") !important;
 }
@@ -121,6 +124,9 @@ body.theme-stone .stone-asset-panel:where(.stone-asset-panel--diagnostic, .stone
 body.theme-stone header.stone-asset-header .stone-theme-dock button {
   background-image: linear-gradient(rgba(7,17,23,.22),rgba(7,17,23,.22)), url("stone-assets/ui/31_button_idle_blue.webp") !important;
 }
+body.theme-stone nav.stone-asset-nav .stone-theme-dock button {
+  background-image: linear-gradient(rgba(7,17,23,.22),rgba(7,17,23,.22)), url("stone-assets/ui/31_button_idle_blue.webp") !important;
+}
 body.theme-stone header.stone-asset-header #dd-reset-button {
   background-image: linear-gradient(rgba(7,17,23,.22),rgba(7,17,23,.22)), url("stone-assets/ui/31_button_idle_blue.webp") !important;
 }
@@ -129,6 +135,15 @@ body.theme-stone .stone-asset-panel:where(.stone-asset-panel--diagnostic, .stone
 }
 body.theme-stone header.stone-asset-header .stone-theme-dock button[aria-pressed="true"] {
   background-image: url("stone-assets/ui/32_button_active_blue.webp") !important;
+}
+body.theme-stone nav.stone-asset-nav .stone-theme-dock button[aria-pressed="true"] {
+  background-image: url("stone-assets/ui/32_button_active_blue.webp") !important;
+}
+body.theme-stone header.stone-asset-header .stone-theme-dock button[aria-pressed="true"] {
+  background-size: 1255px 542px !important;
+}
+body.theme-stone nav.stone-asset-nav .stone-theme-dock button[aria-pressed="true"] {
+  background-size: 1255px 542px !important;
 }
 body.theme-stone #dd-reset-modal .glass-card {
   border-image-source: url("stone-assets/ui/49_modal_warning_frame.webp") !important;
@@ -149,6 +164,12 @@ body.theme-stone header.stone-asset-header .stone-theme-dock {
   border-image-source: url("stone-assets/ui/15_header_command_slab.webp") !important;
 }
 body.theme-stone header.stone-asset-header .stone-theme-dock {
+  border-image-slice: 35.71428571% 11.68736304% 35.71428571% 11.68736304% !important;
+}
+body.theme-stone nav.stone-asset-nav .stone-theme-dock {
+  border-image-source: url("stone-assets/ui/15_header_command_slab.webp") !important;
+}
+body.theme-stone nav.stone-asset-nav .stone-theme-dock {
   border-image-slice: 35.71428571% 11.68736304% 35.71428571% 11.68736304% !important;
 }
 body.theme-stone .stone-asset-panel--matrix #matrix-tbody tr.stone-target-row--0 {

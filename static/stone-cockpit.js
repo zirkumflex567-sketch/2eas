@@ -478,8 +478,8 @@
   }
 
   function addSwitcher() {
-    const header = document.querySelector("header.glass-card");
-    if (!header || document.querySelector(".stone-theme-dock")) return;
+    const target = document.getElementById("top-nav-theme-container") || document.querySelector("header.glass-card");
+    if (!target || document.querySelector(".stone-theme-dock")) return;
     const dock = document.createElement("div");
     dock.className = "stone-theme-dock";
     dock.setAttribute("role", "group");
@@ -496,7 +496,11 @@
       button.addEventListener("click",()=>setMode(mode));
       dock.append(button);
     }
-    header.append(dock);
+    if (target.id === "top-nav-theme-container") {
+      target.prepend(dock);
+    } else {
+      target.append(dock);
+    }
 
     // Keep the existing old theme toggle operational outside stone mode.
     const legacyToggle = byId("theme-label")?.closest("button");

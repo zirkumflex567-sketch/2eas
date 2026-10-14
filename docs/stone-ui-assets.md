@@ -1,11 +1,10 @@
 # Nonchart Stone UI asset budget
 
-Scope: standalone worktree `test/audit-assets`, base `8562771832ff078fce6f67390439c8638e95c787`.
-Only new files. No changes to `app.py`, existing `stone*.css`, `ready/`, `source/`, charts, indicators or EAs. Historical `docs/audits/` is read-only and unchanged.
+Original scope: standalone worktree `test/audit-assets`, base `8562771832ff078fce6f67390439c8638e95c787`; that isolated implementation initially added files only. The parent integration follow-up below also updates the generated selector map and manifest baseline for reviewed files changed by `main`. `ready/`, `source/`, charts, indicators, EAs and historical `docs/audits/` remain unchanged.
 
 ## Integration (parent agent only)
 
-Insert `<link rel="stylesheet" href="static/stone-ui-assets.css">` **after** `stone-asset-skin.css`. The builder does not modify the application or preview. The later accessibility stylesheet is independently owned.
+Insert `<link rel="stylesheet" href="static/stone-ui-assets.css">` **after** `stone-asset-skin.css`. The builder does not modify the application or preview. The later accessibility stylesheet is independently owned. It maps URL layers and proportional nine-slice coordinates; a fixed intrinsic background-size is also used for the downscaled active theme texture so its crop matches the original.
 
 ## Measured RED → GREEN
 
@@ -33,7 +32,7 @@ See `docs/stone-ui-assets-browser-evidence.json` for the actual resource ledger.
 - Portrait screenshot comparison for nav, header, diagnostic and matrix: identical dimensions, per-channel RGB RMS ≤6.0; worst measured **5.141768/255**. Generated screenshots are local at `output/stone-ui-assets/`, not committed. Visual inspection found intact panel silhouettes/frames, no obvious missing decorative shapes; small/low-contrast existing text is outside this asset-only scope.
 - Browser computes every style property on visualization cards, all descendants and pseudos before/after: **identical**. No chart/volume/Studio selector occurs in new CSS. CSS writes only `background-image`, `border-image-source`, and proportional `border-image-slice`; gradients, positioning, opacity, layouts and content remain owned by original/UI styles.
 - Fractional numeric nine-slice values were rounded by Chromium and failed the nav screenshot gate. Percentage slices preserve original per-axis slice ratios and passed without raising tolerance. Header slab keeps its original dimensions for quality, while re-encoding cuts its bytes.
-- SHA-256 baseline covers **133 originals** (all ready/source files, old Stone styles, app.py). All unchanged; Git-filtered blob verification against base also passes. Text checkouts have CRLF/LF differences versus raw Git blob bytes, so direct blob SHA comparison is not the correct EOL-aware comparison.
+- The original isolated SHA-256 baseline covered **133 originals** (all ready/source files, old Stone styles, app.py); Git-filtered blob verification against its base passed. The updated integration baseline is recorded in the follow-up below. Text checkouts have CRLF/LF differences versus raw Git blob bytes, so direct blob SHA comparison is not the correct EOL-aware comparison.
 - Second generation produced identical hashes for all **31 generated files** with Pillow 12.1.1 and the same libwebp. Reproducibility across different encoder versions is not claimed.
 
 ## Reproduce
@@ -55,6 +54,24 @@ HTTP mutations are denied. Fixture data is explicitly static, not measured/live
 market data. It shows guard/modal/positions/target rows to exercise every UI
 asset. Narrow desktop dynamic states and the actual production broker/session
 waterfall are not claimed; the parent must run integrated browser verification.
+
+## Parent integration follow-up (14 October 2026)
+
+The incoming `main` moved the theme dock and mobile/ASCII links into the account
+navigation. The builder now maps those nav consumers to the same UI-only copies.
+The active theme button keeps the original 1255×542 CSS-pixel texture crop even
+though the downloaded derivative is 640×276. This is the sole `background-size`
+override in the generated sheet; it restores visual scale while preserving the
+chart/volume computed-style identity gate. The manifest baseline was refreshed
+for the reviewed integrated `app.py`, `stone-asset-skin.css`, and
+`stone-cockpit.css`; the other 130 source hashes and all 29 output asset hashes
+remain unchanged. The builder was rerun against that exact baseline.
+
+Integrated cold Chromium at 390×844 and 768×844, DPR 2 passed both the nonchart
+3-MiB/no-ready-asset gate and the portrait fidelity gate. The worst per-channel
+RMS was **3.693137/255** (390px nav); chart and volume styles remained identical.
+The raw screenshot/resource measurements are in the local
+`output/stone-ui-assets/browser-measurements.json` and are not committed.
 
 ## Shared originals remain legal visualization downloads
 

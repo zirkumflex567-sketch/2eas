@@ -168,6 +168,33 @@ function refreshSeries(){
   }
  }
  state.readouts=readouts;
+ try{window.StoneCelebration?.refresh?.();}catch(_){}
+}
+function getLiveAverages(){
+ if(!state||!Array.isArray(state.configs))return [];
+ const result=[];
+ for(const cfg of state.configs){
+  if(!cfg.visible)continue;
+  const cacheKey=keyFor(cfg);
+  let points=state.cache.get(cacheKey);
+  if((!points||!points.length)&&state.bars&&state.bars.length){
+   points=calculate(state.bars,cfg.type,cfg.period,cfg.source);
+   state.cache.set(cacheKey,points);
+  }
+  const lastVal=points&&points.length?points[points.length-1].value:null;
+  const label=(cfg.label&&cfg.label.trim())||(cfg.type+cfg.period);
+  result.push({
+   id:cfg.id,
+   type:cfg.type,
+   period:cfg.period,
+   source:cfg.source,
+   color:cfg.color,
+   label,
+   value:lastVal,
+   visible:true
+  });
+ }
+ return result;
 }
 function optionsSelect(values,value,aria,field,id){
  const sel=document.createElement("select");sel.dataset.field=field;sel.dataset.id=id;
@@ -295,8 +322,8 @@ function mount({chart,panel,account="titan"}){
  const info=document.createElement("p");
  info.textContent="Eigene EMA/SMA/WMA/RMA/SMMA-Linien: Typ, Periode, Preisquelle, Farbe, Dicke und Name. Bestehende EMA20/50/200 bleiben separat steuerbar.";
  const commands=document.createElement("div");commands.className="cs-ma-presets";
- for(const [type,period,label] of [["EMA",21,"+ EMA 21"],["EMA",50,"+ EMA 50"],
-  ["EMA",200,"+ EMA 200"],["SMA",20,"+ SMA 20"],["WMA",20,"+ WMA 20"]]){
+ for(const [type,period,label] of [["EMA",9,"+ EMA 9"],["EMA",21,"+ EMA 21"],["EMA",50,"+ EMA 50"],
+  ["EMA",200,"+ EMA 200"],["SMA",9,"+ SMA 9"],["SMA",20,"+ SMA 20"],["WMA",20,"+ WMA 20"]]){
   const b=document.createElement("button");b.type="button";b.textContent=label;
   b.addEventListener("click",()=>add(type,period));commands.append(b);
  }
@@ -332,7 +359,7 @@ function mount({chart,panel,account="titan"}){
  });
  redrawEditor();refreshSeries();
 }
-window.ChartStudioAverages=Object.freeze({mount,updateBars,switchAccount,getConfigs,
+window.ChartStudioAverages=Object.freeze({mount,updateBars,switchAccount,getConfigs,getLiveAverages,
  applySettings,add,edit,remove,calculate,readout,normalize,normalizeList,MAX_INSTANCES,shiftDisplay,applyPreset:applyDisplayPreset,
  diagnostics:()=>state?{account:state.account,dataWrites:state.dataWrites,seriesCount:state.series.size}:null});
 })();

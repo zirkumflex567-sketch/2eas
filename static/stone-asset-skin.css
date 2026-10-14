@@ -118,7 +118,8 @@ body.theme-stone .stone-asset-panel .font-black {
   letter-spacing: .025em;
 }
 body.theme-stone .stone-asset-panel--chart {
-  border: 22px solid #3f6878 !important;
+  border: 22px solid transparent !important;
+  border-image: url("stone-assets/ready/12_chart_frame_wide.webp") 140 170 150 170 / 25px / 0 stretch !important;
   padding: 16px 18px 20px !important;
   background:
     linear-gradient(rgba(6, 12, 18, .94), rgba(8, 20, 24, .95)),
@@ -134,7 +135,8 @@ body.theme-stone .stone-chart-stage > div:first-child {
   box-shadow: inset 0 0 25px rgba(0,0,0,.75), 0 0 10px rgba(15, 170, 207, .10);
 }
 body.theme-stone .stone-side-volume {
-  border: 17px solid #405e6a !important;
+  border: 17px solid transparent !important;
+  border-image: url("stone-assets/ready/13_volume_frame_tall.webp") 160 130 160 130 / 21px / 0 stretch !important;
   border-radius: 0 !important;
   background:
     linear-gradient(rgba(5, 12, 16, .86),rgba(6, 15, 19, .93)),
@@ -710,6 +712,18 @@ body .stone-chart-expanded > .panel-heading {
   position: relative;
   z-index: 5;
 }
+body .stone-chart-expanded #cs-beta-panel,
+body .stone-chart-expanded .cs-beta-panel {
+  max-height: calc(100vh - 140px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch;
+  z-index: 50 !important;
+  position: relative !important;
+  flex: 0 1 auto !important;
+  margin-bottom: 8px !important;
+}
 body .stone-chart-expanded .stone-chart-stage {
   display: grid !important;
   grid-template-columns: minmax(0, 1fr) minmax(120px, 190px) !important;
@@ -1047,8 +1061,8 @@ body.theme-stone .stone-asset-panel button.stone-chart-expand-primary:hover:not(
    overlay INSIDE the plot area; the original TradingView axis stays numeric. */
 #chart-level-legend.stone-chart-level-legend {
   position: absolute !important;
-  right: 82px !important;
-  bottom: 28px !important;
+  right: 82px;
+  bottom: 28px;
   z-index: 18 !important;
   width: min(228px, calc(100% - 95px)) !important;
   max-height: min(330px, 65%) !important;
@@ -1063,9 +1077,31 @@ body.theme-stone .stone-asset-panel button.stone-chart-expand-primary:hover:not(
   box-shadow: 0 4px 18px rgba(0,0,0,.70), inset 0 1px rgba(188,236,251,.18) !important;
   pointer-events: auto !important;
   font-family: ui-monospace, Consolas, monospace !important;
+  user-select: none;
+  touch-action: none;
 }
 #chart-level-legend.stone-chart-level-legend[hidden] { display:none !important; }
+#chart-level-legend.is-collapsed {
+  max-height: 30px !important;
+  overflow: hidden !important;
+  padding-bottom: 5px !important;
+}
+#chart-level-legend.is-collapsed .stone-chart-level {
+  display: none !important;
+}
+#chart-level-legend.is-collapsed .stone-chart-level-heading {
+  border-bottom: none !important;
+  margin-bottom: 0 !important;
+  padding-bottom: 0 !important;
+}
+#chart-level-legend.is-dragging {
+  opacity: 0.90;
+  cursor: grabbing !important;
+}
 #chart-level-legend .stone-chart-level-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   font-size: 9px !important;
   font-weight: 800;
   color: #7bdbef !important;
@@ -1073,6 +1109,11 @@ body.theme-stone .stone-asset-panel button.stone-chart-expand-primary:hover:not(
   padding-bottom: 5px;
   margin-bottom: 4px;
   border-bottom: 1px solid rgba(114,197,219,.36);
+  cursor: grab;
+  user-select: none;
+}
+#chart-level-legend.is-dragging .stone-chart-level-heading {
+  cursor: grabbing !important;
 }
 #chart-level-legend .stone-chart-level {
   display: grid;
@@ -1127,9 +1168,9 @@ body.theme-stone .stone-asset-panel button.stone-chart-expand-primary:hover:not(
 #chart-ea-status-box { display:none !important; }
 @media (max-width: 900px) {
   #chart-level-legend.stone-chart-level-legend {
-    right: 66px !important;
+    right: 66px;
     width: min(188px, calc(100% - 75px)) !important;
-    bottom: 25px !important;
+    bottom: 25px;
     padding: 6px !important;
   }
   #chart-level-legend .stone-chart-level-name,
@@ -1138,8 +1179,8 @@ body.theme-stone .stone-asset-panel button.stone-chart-expand-primary:hover:not(
 @media (max-width: 520px) {
   #chart-level-legend.stone-chart-level-legend {
     width: min(158px, calc(100% - 60px)) !important;
-    right: 52px !important;
-    bottom: 23px !important;
+    right: 52px;
+    bottom: 23px;
   }
 }
 
@@ -1163,7 +1204,7 @@ body.theme-stone .stone-asset-panel--chart::after {
 }
 
 /* Chart FX laboratory: accessible collapsed controls and ephemeral celebrations. */
-#stone-fx-toggle.stone-fx-toggle {
+#stone-fx-toggle.stone-fx-toggle, #stone-sound-toggle.stone-fx-toggle {
   display:inline-flex;align-items:center;justify-content:center;
   padding:6px 11px;min-height:30px;white-space:nowrap;cursor:pointer;
   border:1px solid #c08e51 !important;color:#ffdfb0 !important;
@@ -1171,7 +1212,12 @@ body.theme-stone .stone-asset-panel--chart::after {
   font:bold 11px/1.2 ui-monospace,Consolas,monospace;
   box-shadow:0 0 12px #f4b95e44,inset 0 1px #f4b95e33;
 }
-#stone-fx-toggle:hover {filter:brightness(1.35);}
+#stone-fx-toggle:hover, #stone-sound-toggle:hover {filter:brightness(1.35);}
+#stone-sound-toggle.sound-off {
+  border-color:#5a6872 !important;color:#94a8b3 !important;
+  background:linear-gradient(#1f262b,#12181c) !important;
+  box-shadow:none !important;
+}
 .stone-fx-panel {
   margin:2px 0 11px;padding:11px 13px;
   color:#e9f5f8;border:1px solid #7baab5;border-radius:9px;
@@ -1230,6 +1276,15 @@ body.theme-stone .stone-asset-panel--chart::after {
 }
 .stone-event-toast--profit {color:#fff3c1;border-color:#ffd878;background:linear-gradient(130deg,#44280cf3,#14140bf5);
  box-shadow:0 0 34px #ffbd66aa,0 0 90px #ff970c66;font-size:20px;}
+.stone-event-toast--sl {color:#ffe4e6;border-color:#f43f5e;background:linear-gradient(130deg,#4c0519f3,#1f040cf5);
+ box-shadow:0 0 34px #f43f5e88,0 0 90px #be123c55;font-size:20px;}
+.stone-chaos-shake {animation:stone-chaos-anim .45s cubic-bezier(.36,.07,.19,.97) both;}
+@keyframes stone-chaos-anim {
+ 10%,90%{transform:translate3d(-3px,0,0);}
+ 20%,80%{transform:translate3d(4px,0,0);}
+ 30%,50%,70%{transform:translate3d(-5px,0,0);}
+ 40%,60%{transform:translate3d(5px,0,0);}
+}
 @keyframes stone-event-flash {
   0%,100% {opacity:0;transform:translate3d(0,9px,0) scale(.35);}
   30% {opacity:1;transform:translate3d(11px,-11px,0) scale(1.8);}
@@ -1241,14 +1296,36 @@ body.theme-stone .stone-asset-panel--chart::after {
 }
 @media(max-width:800px){.stone-event-toast {font-size:13px;top:120px;padding:9px 12px}.stone-fx-controls {gap:9px}}
 @media(prefers-reduced-motion:reduce){
- .stone-event-toast,.stone-event-spark {animation:none !important;display:none !important;}
+ .stone-event-toast,.stone-event-spark,.stone-chaos-shake {animation:none !important;display:none !important;}
 }
 
-/* FX-Off also silences idle ambience. Normal Stone keeps its bionic finish. */
-body.theme-stone.stone-fx-off .stone-ambience { display: none !important; }
-body.theme-stone.stone-fx-off .stone-cockpit-crest,
-body.theme-stone.stone-fx-off .stone-theme-dock button,
-body.theme-stone.stone-fx-off #vp-histogram-container .vp-bar { animation: none !important; }
+/* Universal Strict No-FX Mode: stops ALL animations, transitions and glow pulses throughout the cockpit */
+body.stone-fx-off *,
+body.stone-fx-off *::before,
+body.stone-fx-off *::after {
+  animation: none !important;
+  transition: none !important;
+}
+body.stone-fx-off .stone-ambience,
+body.stone-fx-off .stone-event-spark,
+body.stone-fx-off .stone-vapor,
+body.stone-fx-off .stone-crest-layer {
+  display: none !important;
+}
+body.stone-fx-off #vp-histogram-container .vp-bar,
+body.stone-fx-off #stone-mini-volume .stone-mini-fill,
+body.stone-fx-off .vp-bar,
+body.stone-fx-off .stone-mini-fill {
+  animation: none !important;
+  transition: none !important;
+}
+body.stone-fx-off #vp-histogram-container .vp-bar::after,
+body.stone-fx-off #stone-mini-volume .stone-mini-fill::after,
+body.stone-fx-off .vp-bar::after,
+body.stone-fx-off .stone-mini-fill::after {
+  display: none !important;
+  animation: none !important;
+}
 body.theme-stone #matrix-tbody .stone-target-row td .text-sub {
   font-size: 11px !important; line-height: 1.45;
 }
@@ -1297,6 +1374,25 @@ body.theme-stone #stone-fx-panel button:focus-visible {
  margin:2px 0 12px;padding:12px;border:1px solid #416e80;border-radius:9px;
  background:linear-gradient(150deg,#122835fa,#0d1824f7);color:#e3f8fc;
  box-shadow:0 3px 14px #04080e99;font-family:ui-monospace,Consolas,monospace;
+ max-height: min(80vh, 760px);
+ overflow-y: auto !important;
+ overflow-x: hidden !important;
+ overscroll-behavior: contain !important;
+ -webkit-overflow-scrolling: touch;
+}
+.cs-beta-panel::-webkit-scrollbar {
+ width: 8px;
+}
+.cs-beta-panel::-webkit-scrollbar-track {
+ background: rgba(4, 9, 12, 0.5);
+ border-radius: 4px;
+}
+.cs-beta-panel::-webkit-scrollbar-thumb {
+ background: rgba(70, 216, 239, 0.4);
+ border-radius: 4px;
+}
+.cs-beta-panel::-webkit-scrollbar-thumb:hover {
+ background: rgba(70, 216, 239, 0.7);
 }
 .cs-beta-panel[hidden]{display:none!important}
 .cs-beta-head{display:flex;gap:12px;align-items:center;justify-content:space-between;
@@ -1515,3 +1611,206 @@ body.theme-stone #stone-fx-panel button:focus-visible {
 .cs-object-row button:disabled{opacity:.35;cursor:not-allowed}
 .cs-object-empty{padding:9px;margin:0;color:#b4ccd7}
 @media(max-width:700px){.cs-object-row input{flex:1 1 100%}.cs-object-row button{flex:1 1 60px}}
+
+/* ========================================================
+   LIGHT THEME (HELL) COMPLETE OVERRIDES
+   Ensures all buttons, inputs, panels, docks & volume profile
+   bars are beautifully styled for light mode.
+   ======================================================== */
+body.theme-light .stone-theme-dock {
+  background: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
+}
+body.theme-light .stone-theme-dock button {
+  background: #ffffff !important;
+  color: #334155 !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04) !important;
+}
+body.theme-light .stone-theme-dock button:hover {
+  background: #f8fafc !important;
+  color: #0f172a !important;
+  border-color: #94a3b8 !important;
+}
+body.theme-light .stone-theme-dock button[aria-pressed="true"] {
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+  border-color: #3b82f6 !important;
+  box-shadow: inset 0 0 0 1px #3b82f6 !important;
+  font-weight: 800 !important;
+}
+
+/* Light buttons across chart toolbar and FX */
+body.theme-light #chart-studio-toggle,
+body.theme-light .cs-beta-toggle,
+body.theme-light .cs-ma-quick button,
+body.theme-light #stone-fx-toggle,
+body.theme-light #stone-sound-toggle,
+body.theme-light #stone-chart-expand-btn,
+body.theme-light #toggle-ea-status-btn,
+body.theme-light #toggle-positions-btn,
+body.theme-light #toggle-levels-btn,
+body.theme-light .stone-chart-expand-trigger {
+  background: #ffffff !important;
+  color: #1e293b !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+}
+body.theme-light #chart-studio-toggle:hover,
+body.theme-light .cs-beta-toggle:hover,
+body.theme-light .cs-ma-quick button:hover,
+body.theme-light #stone-fx-toggle:hover,
+body.theme-light #stone-sound-toggle:hover,
+body.theme-light #stone-chart-expand-btn:hover,
+body.theme-light #toggle-ea-status-btn:hover,
+body.theme-light #toggle-positions-btn:hover,
+body.theme-light #toggle-levels-btn:hover,
+body.theme-light .stone-chart-expand-trigger:hover {
+  background: #f8fafc !important;
+  color: #0f172a !important;
+  border-color: #94a3b8 !important;
+}
+body.theme-light .cs-ma-quick input,
+body.theme-light .cs-ma-quick-period {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #cbd5e1 !important;
+}
+body.theme-light .cs-ma-quick-hint {
+  color: #64748b !important;
+}
+
+/* Light mode Chart Studio Beta drawer */
+body.theme-light #cs-beta-panel,
+body.theme-light .cs-beta-panel {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08) !important;
+}
+body.theme-light .cs-beta-head {
+  color: #0284c7 !important;
+}
+body.theme-light .cs-beta-head span {
+  color: #64748b !important;
+}
+body.theme-light .cs-beta-buttons button,
+body.theme-light .cs-beta-profiles button {
+  background: #f8fafc !important;
+  color: #334155 !important;
+  border: 1px solid #cbd5e1 !important;
+}
+body.theme-light .cs-beta-buttons button:hover,
+body.theme-light .cs-beta-profiles button:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+body.theme-light .cs-beta-buttons button[aria-pressed="true"] {
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+  border-color: #3b82f6 !important;
+  box-shadow: inset 0 0 0 1px #3b82f6 !important;
+}
+body.theme-light .cs-scenario {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #1e293b !important;
+}
+body.theme-light .cs-scenario summary {
+  color: #b45309 !important;
+}
+body.theme-light .cs-scenario label {
+  color: #334155 !important;
+}
+body.theme-light .cs-scenario input,
+body.theme-light .cs-scenario select {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #cbd5e1 !important;
+}
+body.theme-light .cs-scenario button {
+  background: #f1f5f9 !important;
+  color: #1e293b !important;
+  border: 1px solid #cbd5e1 !important;
+}
+body.theme-light .cs-scenario button[type=submit] {
+  background: #3b82f6 !important;
+  color: #ffffff !important;
+  border-color: #2563eb !important;
+}
+body.theme-light #cs-beta-message,
+body.theme-light #cs-scenario-result {
+  color: #475569 !important;
+}
+
+/* Light mode FX Panel */
+body.theme-light #stone-fx-panel {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08) !important;
+}
+body.theme-light .stone-fx-head strong {
+  color: #0284c7 !important;
+}
+body.theme-light .stone-fx-head span,
+body.theme-light #stone-fx-info {
+  color: #64748b !important;
+}
+body.theme-light .stone-fx-modes button,
+body.theme-light .stone-fx-tests button {
+  background: #f8fafc !important;
+  color: #334155 !important;
+  border: 1px solid #cbd5e1 !important;
+}
+body.theme-light .stone-fx-modes button:hover,
+body.theme-light .stone-fx-tests button:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+body.theme-light .stone-fx-modes button[aria-pressed="true"] {
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+  border-color: #3b82f6 !important;
+}
+body.theme-light .stone-fx-controls label {
+  color: #334155 !important;
+}
+body.theme-light .stone-ema-live {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #1e293b !important;
+}
+body.theme-light .stone-ema-live strong {
+  color: #0f172a !important;
+}
+
+/* Light mode Volume Profile bars contrast */
+body.theme-light #vp-histogram-container .vp-bar {
+  background-color: #3b82f6 !important;
+  box-shadow: none !important;
+}
+body.theme-light #vp-histogram-container .vp-bar[data-tone="amber"] {
+  background-color: #f59e0b !important;
+}
+body.theme-light #vp-histogram-container .vp-bar[data-kind="poc"] {
+  background-color: #f59e0b !important;
+  box-shadow: 0 0 8px rgba(245,158,11,0.4) !important;
+}
+body.theme-light #vp-histogram-container .vp-bar[data-kind="off"] {
+  background-color: #94a3b8 !important;
+}
+body.theme-light #vp-histogram-container .bg-black\/20 {
+  background-color: #e2e8f0 !important;
+}
+
+/* Expanded chart in light mode */
+body.theme-light .stone-chart-expanded {
+  background: #ffffff !important;
+  border-color: #94a3b8 !important;
+  box-shadow: 0 0 0 200vmax rgba(15,23,42,.6), 0 0 35px rgba(0,0,0,.15) !important;
+}
+body.theme-light .stone-chart-expanded #tv-chart {
+  background: #ffffff !important;
+}
