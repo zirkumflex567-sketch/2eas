@@ -101,6 +101,10 @@ These account labels and the Marketplace EA attachment are user-provided. Exact 
 
 The user subsequently confirmed changing both the EA and preset on the ICMarkets $10k account to Marketplace EA `XAUUSD 5 minute`. A read-only recheck at 23:16 found the replacement `icmarkets10k.set` to be 306 bytes with four inputs (`AB_C`, `AB_K`, `Entry_Amount`, `Use_Swing_SL`) and SHA-256 `C0320BE28583C9376852B0946C57F36742CC1120EFDD525DA35A5A89A9211E04`; this supersedes the 50-input hash in the initial scan. The user asked to include this EA in testing. Its attached chart and loaded EX5 identity remain to be verified without reloading the chart.
 
+## Read-only process and preset refresh (2026-10-15 00:34 local)
+
+A fresh process-image check found five running `terminal64.exe` processes. Their executable paths match five of the six distinct terminal paths configured in `account_gateway.py`; the separate configured GoldM15 path is not running. This is a configured-path/process match only and does not authenticate the broker account, attached chart, symbol/timeframe, or in-memory EA/preset. A fresh file-only hash scan of the five user-provided presets found the same hashes recorded above, including the four-input ICMarkets Marketplace preset `C0320BE28583C9376852B0946C57F36742CC1120EFDD525DA35A5A89A9211E04`. The Marketplace identity for ICMarkets is user-confirmed; current attachment and loaded binary remain unverified. No account login was queried, and no terminal, chart, EA, preset, or order was changed.
+
 ## User-directed process/log refresh (2026-10-14 22:00 local)
 
 A fresh `Win32_Process` snapshot still shows four `terminal64.exe` processes: three PU Prime terminal installations and one separate Research portable terminal. The user confirmed that account `xauusd5min15m` is intentionally off; that instance is absent from this snapshot. No process arguments, account number, or credentials were read into the report.
