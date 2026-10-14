@@ -190,7 +190,7 @@ class MultiAccountTests(unittest.TestCase):
         client = TestClient(app.app)
         accounts = client.get('/api/accounts')
         self.assertEqual(accounts.status_code, 200)
-        self.assertEqual([a['login'] for a in accounts.json()['accounts']], [5120620, 53087839, 700194619, 700184986, 53090070])
+        self.assertEqual([a['login'] for a in accounts.json()['accounts']], [5120620, 53087839, 700194619, 700184986, 700194822])
         schema = client.get('/openapi.json').json()
         for route, method in [('/api/status','get'), ('/api/candles','get'), ('/api/close_position','post'), ('/api/modify_position','post'), ('/api/reset_drawdown','post')]:
             params = schema['paths'][route][method]['parameters']

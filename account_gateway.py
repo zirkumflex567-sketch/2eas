@@ -40,12 +40,12 @@ ACCOUNTS = {
                      symbol='XAUUSD.p', timeframe='M5', initial_balance=500.0, leverage='1:500',
                      account_type='DEMO', is_demo=True, badge='DEMO 500$',
                      challenge_protection=False),
-    'titan_500_2': dict(id='titan_500_2', name='XAU Titan Pro (M5 $500 #2)', login=700194822,
+    'xau5m_500': dict(id='xau5m_500', name='XAUUSD 5 Minute (M15 $500)', login=700194822,
                         server='PUPrime-Demo', company='PU Prime Ltd',
                         terminal=r'C:\Users\zirku\Documents\goldm5\.mt5-puprime-700194822\terminal64.exe',
-                        portable=True, version='v7.1 M5 (500$ #2)', capacity=3, broker_utc_offset_seconds=10800,
-                        symbol='XAUUSD.p', timeframe='M5', initial_balance=500.0, leverage='1:500',
-                        account_type='DEMO', is_demo=True, badge='DEMO 500$ #2',
+                        portable=True, version='XAUUSD 5M EA (500$)', capacity=3, broker_utc_offset_seconds=10800,
+                        symbol='XAUUSD.p', timeframe='M15', initial_balance=500.0, leverage='1:500',
+                        account_type='DEMO', is_demo=True, badge='DEMO 500$',
                         challenge_protection=False),
     'goldm15': dict(id='goldm15', name='GoldM15 Reconstruction', login=53090070,
                     server='ICMarketsEU-Demo', company='IC Markets (EU) Ltd',
@@ -53,8 +53,9 @@ ACCOUNTS = {
                     portable=True, version='v1.21 GUARDED', capacity=3, broker_utc_offset_seconds=10800,
                     symbol='XAUUSD', timeframe='M15', initial_balance=10000.0, leverage='1:10',
                     account_type='DEMO', is_demo=True, badge='DEMO 10k',
-                    challenge_protection=True),
+                    challenge_protection=True, hidden=True),
 }
+ACCOUNTS['titan_500_2'] = ACCOUNTS['xau5m_500']  # Compatibility alias
 ACCOUNTS['xau5m_m15'] = ACCOUNTS['xau5m_m5']  # Compatibility alias
 ACCOUNTS['titan_25k'] = ACCOUNTS['xau5m_m5']  # Compatibility alias
 _selected = ContextVar('dashboard_account', default='blueberry')
