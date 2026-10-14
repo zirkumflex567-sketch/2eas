@@ -250,6 +250,23 @@ class SqliteLayoutTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(StoreError):
                 validate_document({**old, "options": invalid})
 
+    def test_vwap_session_settings_validate_iana_zone_and_wall_clock(self):
+        old = example()
+        self.assertEqual(validate_document(old)["indicators"], old["indicators"])
+        config = {"enabled": True, "timeZone": "America/New_York", "sessionStart": "09:30"}
+        doc = {**old, "indicators": {**old["indicators"], "vwap": config}}
+        self.assertEqual(validate_document(doc)["indicators"]["vwap"], config)
+        saved = self.store.put("local-owner", "titan", "XAUUSD", "Session VWAP", doc, 0)
+        self.assertEqual(self.store.get("local-owner", "titan", "XAUUSD", "Session VWAP")["document"]["indicators"]["vwap"], config)
+        for invalid in [
+            {**config, "timeZone": "No/Such_Zone"},
+            {**config, "sessionStart": "9:30"},
+            {**config, "sessionStart": "24:00"},
+            {**config, "unknown": "UTC"},
+        ]:
+            with self.subTest(invalid=invalid), self.assertRaises(StoreError):
+                validate_document({**old, "indicators": {"vwap": invalid}})
+
     def test_chart_appearance_document_is_optional_strict_and_scoped(self):
         before = example()
         self.assertNotIn("chartAppearance", validate_document(before))

@@ -67,6 +67,28 @@ near(vw[0].value,10);
 near(vw[1].value,17.5);
 near(vw[2].value,(10+20*3+30*5)/9);
 near(vw[3].value,50);
+const sessionBars=[
+ {time:midnight+1,open:10,high:12,low:8,close:10,tick_volume:1,real_volume:0},
+ {time:midnight+900,open:20,high:22,low:18,close:20,tick_volume:3,real_volume:0},
+ {time:midnight+1800,open:30,high:32,low:28,close:30,tick_volume:1,real_volume:0},
+ {time:midnight+86400+1,open:50,high:52,low:48,close:50,tick_volume:2,real_volume:0},
+ {time:midnight+86400+900,open:60,high:62,low:58,close:60,tick_volume:1,real_volume:0}
+];
+const sessionVwap=math.vwap(sessionBars,{timeZone:"UTC",sessionStart:"00:15"});
+assert.equal(sessionVwap.length,5);
+near(sessionVwap[0].value,10);
+near(sessionVwap[1].value,20);
+near(sessionVwap[2].value,22.5);
+near(sessionVwap[3].value,(20*3+30+50*2)/6);
+near(sessionVwap[4].value,60);
+const nyDst=[
+ {time:Date.parse("2026-03-08T13:30:00Z")/1000,open:10,high:12,low:8,close:10,tick_volume:1,real_volume:0},
+ {time:Date.parse("2026-03-08T14:30:00Z")/1000,open:20,high:22,low:18,close:20,tick_volume:1,real_volume:0},
+ {time:Date.parse("2026-03-09T13:30:00Z")/1000,open:30,high:32,low:28,close:30,tick_volume:1,real_volume:0}
+];
+assert.deepEqual(Array.from(math.vwap(nyDst,{timeZone:"America/New_York",sessionStart:"09:30"}),p=>p.value),[10,15,30]);
+assert.equal(math.vwap(sessionBars,{timeZone:"No/Such_Zone",sessionStart:"09:30"}).length,0);
+assert.equal(math.vwap(sessionBars,{timeZone:"UTC",sessionStart:"24:00"}).length,0);
 assert.ok(src.includes("Tick-/Realvolumenproxy"));
 
 console.log("PASS Chart Studio RSI/ATR/MACD/ADX/VWAP and broker volume math, warm-up, time alignment, read-only checks");

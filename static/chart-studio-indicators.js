@@ -10,7 +10,7 @@ const REGISTRY=Object.freeze({
  atr:{name:"ATR (Wilder)",type:"oscillator",period:14,min:2,max:200},
  volume:{name:"Volumen (Tick/Real)",type:"histogram",upColor:"#41cce9",downColor:"#f7758b"},
  adx:{name:"ADX +DI / −DI (Wilder)",type:"oscillator",period:14,min:2,max:200},
- vwap:{name:"VWAP (UTC, Volumenproxy)",type:"overlay"}
+ vwap:{name:"Session-VWAP (Volumenproxy)",type:"overlay",timeZone:"UTC",sessionStart:"00:00"}
 });
 const storagePrefix="2eas:studio:indicators:v1:";
 const finite=x=>Number.isFinite(Number(x))?Number(x):null;
@@ -122,14 +122,25 @@ function adx(input,period=14){
  }
  return out;
 }
-function vwap(input){
+function sessionConfig(settings={}){
+ const timeZone=settings.timeZone??"UTC",sessionStart=settings.sessionStart??"00:00";
+ if(typeof timeZone!=="string"||timeZone.length>64||typeof sessionStart!=="string"||!/^([01]\d|2[0-3]):[0-5]\d$/.test(sessionStart))return null;
+ try{new Intl.DateTimeFormat("en-CA",{timeZone}).format(new Date(0))}catch(_){return null}
+ const [hour,minute]=sessionStart.split(":").map(Number);
+ return {timeZone,sessionStart,minutes:hour*60+minute,formatter:new Intl.DateTimeFormat("en-CA",{timeZone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"})};
+}
+function vwap(input,settings={}){
  // OTC XAUUSD/FX tick_volume is a weighted-price PROXY, not exchange orderflow.
- // Reset at UTC midnight; no volume = no invented bar observation.
+ // Session reset follows the selected wall-clock time and IANA timezone.
+ const config=sessionConfig(settings);if(!config)return[];
  const bars=validateBars(input),out=[];
- let day=null,sumPV=0,sumVolume=0;
+ let session=null,sumPV=0,sumVolume=0;
  for(const b of bars){
-  const d=Math.floor(b.time/86400);
-  if(d!==day){day=d;sumPV=0;sumVolume=0}
+  const parts=Object.fromEntries(config.formatter.formatToParts(new Date(b.time*1000)).map(p=>[p.type,p.value]));
+  const y=Number(parts.year),m=Number(parts.month),day=Number(parts.day),minute=Number(parts.hour)*60+Number(parts.minute);
+  const sessionDay=new Date(Date.UTC(y,m-1,day)-(minute<config.minutes?86400000:0));
+  const key=sessionDay.toISOString().slice(0,10);
+  if(key!==session){session=key;sumPV=0;sumVolume=0}
   const volume=b.real_volume>0?b.real_volume:b.tick_volume;
   if(volume<=0)continue;
   const typical=(b.high+b.low+b.close)/3;
@@ -144,12 +155,12 @@ function calc(kind,candles,settings={}){
  if(kind==="macd")return macd(candles,settings.fast||12,settings.slow||26,settings.signal||9);
  if(kind==="volume")return {volume:volumes(candles,settings)};
  if(kind==="adx")return adx(candles,settings.period||14);
- if(kind==="vwap")return {vwap:vwap(candles)};
+ if(kind==="vwap")return {vwap:vwap(candles,settings)};
  throw Error("Unknown indicator: "+kind);
 }
 function defaults(){
  return {rsi:{enabled:false,period:14},macd:{enabled:false,fast:12,slow:26,signal:9},
-  atr:{enabled:false,period:14},volume:{enabled:false,upColor:"#41cce9",downColor:"#f7758b"},adx:{enabled:false,period:14},vwap:{enabled:false}};
+  atr:{enabled:false,period:14},volume:{enabled:false,upColor:"#41cce9",downColor:"#f7758b"},adx:{enabled:false,period:14},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
 }
 function restore(account){
  try{const raw=JSON.parse(localStorage.getItem(storagePrefix+account)||"null");
@@ -163,6 +174,7 @@ function restore(account){
     }
     if(id==="volume")for(const prop of ["upColor","downColor"])
      if(typeof raw[id][prop]==="string"&&/^#[0-9a-fA-F]{6}$/.test(raw[id][prop]))result[id][prop]=raw[id][prop].toLowerCase();
+    if(id==="vwap"){const config=sessionConfig(raw[id]);if(config){result.vwap.timeZone=config.timeZone;result.vwap.sessionStart=config.sessionStart}}
    }
   }
   return result;
@@ -182,6 +194,11 @@ function box(kind){
   const label=document.createElement("span");label.textContent=prop==="upColor"?"Aufwärtsfarbe":"Abwärtsfarbe";
   const input=document.createElement("input");input.type="color";input.value=settings[prop];input.dataset.parameter=prop;input.dataset.kind=kind;
   input.setAttribute("aria-label",cfg.name+": "+label.textContent);row.append(label,input);
+ }
+ if(kind==="vwap")for(const [prop,labelText] of [["timeZone","IANA-Zeitzone"],["sessionStart","Sessionstart (HH:MM)"]]){
+  const label=document.createElement("span");label.textContent=labelText;
+  const input=document.createElement("input");input.type="text";input.value=settings[prop];input.dataset.parameter=prop;input.dataset.kind=kind;
+  input.setAttribute("aria-label",cfg.name+": "+labelText);label.append(input);row.append(label);
  }
  for(const prop of ["period","fast","slow","signal"]){
   if(!Object.hasOwn(cfg,prop))continue;
@@ -264,11 +281,11 @@ function renderPanes(){
    const calculated=state.settings.vwap.enabled?data("vwap"):null;
    if(calculated)addReadout(id,calculated);
    if(state.settings.vwap.enabled&&!state.vwapOverlay){
-    state.vwapOverlay=state.chart.addLineSeries({title:"VWAP UTC · Tick-/Realvolumenproxy",
+    state.vwapOverlay=state.chart.addLineSeries({title:"Session-VWAP "+state.settings.vwap.sessionStart+" "+state.settings.vwap.timeZone+" · Tick-/Realvolumenproxy",
      color:"#f1da9b",lineWidth:2,lastValueVisible:true,priceLineVisible:false});
    }
    if(state.vwapOverlay){
-    state.vwapOverlay.applyOptions({visible:!!state.settings.vwap.enabled});
+    state.vwapOverlay.applyOptions({visible:!!state.settings.vwap.enabled,title:"Session-VWAP "+state.settings.vwap.sessionStart+" "+state.settings.vwap.timeZone+" · Tick-/Realvolumenproxy"});
     if(calculated)state.vwapOverlay.setData(calculated.vwap);
    }
    continue;
@@ -322,6 +339,11 @@ function updateConfig(kind,prop,val){
   if(typeof val!=="string"||!/^#[0-9a-fA-F]{6}$/.test(val))return false;
   state.settings.volume[prop]=val.toLowerCase();
  }
+ else if(kind==="vwap"&&["timeZone","sessionStart"].includes(prop)){
+  const candidate={...state.settings.vwap,[prop]:String(val)};
+  if(!sessionConfig(candidate)){state.notice.textContent=prop==="timeZone"?"Ungültige IANA-Zeitzone.":"Sessionstart muss HH:MM sein.";syncPanel();return false}
+  state.settings.vwap[prop]=String(val);
+ }
  else if(Object.hasOwn(REGISTRY[kind],prop)){
   const n=Number(val),maximum=prop==="slow"?300:200;
   if(!Number.isInteger(n)||n<2||n>maximum){state.notice.textContent="Ungültige Periode (2–"+maximum+")";return false}
@@ -342,6 +364,7 @@ function applySettings(raw){
   fresh[id].enabled=input.enabled===true;
   if(id==="volume")for(const key of ["upColor","downColor"])
    if(typeof input[key]==="string"&&/^#[0-9a-fA-F]{6}$/.test(input[key]))fresh.volume[key]=input[key].toLowerCase();
+  if(id==="vwap"){const config=sessionConfig(input);if(config){fresh.vwap.timeZone=config.timeZone;fresh.vwap.sessionStart=config.sessionStart}}
   for(const key of ["period","fast","slow","signal"]){
    const value=Number(input[key]);
    if(Object.hasOwn(fresh[id],key)&&Number.isInteger(value)&&value>=2&&value<=(key==="slow"?300:200))

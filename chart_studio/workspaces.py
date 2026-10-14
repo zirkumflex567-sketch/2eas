@@ -11,6 +11,7 @@ import math
 import re
 import sqlite3
 import time
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,7 @@ UI_FLAGS = frozenset({"ema20", "ema50", "ema200", "sma20", "sma50",
 UI_NUMBERS = frozenset({"bbPeriod", "bbStdDev"})
 INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap"})
 PERIOD_FIELDS = frozenset({"period", "fast", "slow", "signal"})
+SESSION_FIELDS = frozenset({"timeZone", "sessionStart"})
 TIMEFRAMES = frozenset({"M1", "M5", "M15", "M30", "H1", "H4", "D1"})
 MAX_DOCUMENT_BYTES = 131072
 MAX_DRAWINGS = 500
@@ -154,8 +156,9 @@ def validate_document(raw: Any) -> dict:
     clean_indicators = {}
     for kind, values in indicators.items():
         color_fields = {"upColor", "downColor"} if kind == "volume" else set()
+        session_fields = SESSION_FIELDS if kind == "vwap" else set()
         if not isinstance(values, dict) or any(
-            k not in PERIOD_FIELDS | {"enabled"} | color_fields for k in values
+            k not in PERIOD_FIELDS | {"enabled"} | color_fields | session_fields for k in values
         ):
             raise StoreError("Ungültige Indikator-Parameter.")
         cleaned = {}
@@ -167,6 +170,16 @@ def validate_document(raw: Any) -> dict:
                 if not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
                     raise StoreError("Ungültige Volumenfarbe.")
                 value = value.lower()
+            elif param in SESSION_FIELDS:
+                if not isinstance(value, str) or len(value) > 64:
+                    raise StoreError("Ungültige VWAP-Session-Einstellung.")
+                if param == "sessionStart" and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
+                    raise StoreError("VWAP-Sessionstart muss HH:MM sein.")
+                if param == "timeZone":
+                    try:
+                        ZoneInfo(value)
+                    except (ZoneInfoNotFoundError, ValueError):
+                        raise StoreError("Ungültige VWAP-IANA-Zeitzone.") from None
             else:
                 _number(value, param, integer=True)
                 if not 2 <= value <= 300:
