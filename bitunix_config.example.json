@@ -1,0 +1,17 @@
+{
+  "api_key": "YOUR_BITUNIX_API_KEY",
+  "secret_key": "YOUR_BITUNIX_SECRET_KEY",
+  "base_url": "https://fapi.bitunix.com",
+  "enabled": false,
+  "symbol": "XAUUSDT",
+  "tracked_accounts": [],
+  "copy_market_ea": true,
+  "copy_titan_ea": true,
+  "sizing_mode": "fixed_qty",
+  "fixed_qty": 0.01,
+  "lot_multiplier": 1.0,
+  "min_qty": 0.002,
+  "max_open_positions": 5,
+  "copy_sl_tp": true,
+  "sync_interval_seconds": 2.0
+}

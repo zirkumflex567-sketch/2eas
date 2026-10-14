@@ -70,6 +70,26 @@ def test_mobile_has_sltp_partial_close_and_sound():
     assert "75%" in html
     assert "100%" in html
 
+def test_mobile_mutations_use_control_session_and_csrf():
+    html = client.get('/mobile').text
+    assert "'/api/control_session'" in html
+    assert "'X-Dashboard-CSRF': session.csrf_token" in html
+    assert "controlledPost('/api/modify_position'" in html
+    assert "controlledPost('/api/close_position'" in html
+
+def test_ascii_mutations_use_control_session_and_csrf():
+    html = client.get('/ascii').text
+    assert "'/api/control_session'" in html
+    assert "'X-Dashboard-CSRF': session.csrf_token" in html
+    assert "controlledPost('/api/modify_position'" in html
+    assert "controlledPost('/api/close_position'" in html
+
+def test_ascii_has_compact_responsive_terminal():
+    html = client.get('/ascii').text
+    assert 'renderCompactAscii' in html
+    assert 'window.matchMedia' in html
+    assert 'terminal-screen.compact' in html
+
 def test_ascii_has_sltp_partial_close_and_sound():
     response = client.get("/ascii")
     assert response.status_code == 200

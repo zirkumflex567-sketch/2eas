@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import threading
 import math
 import json
 import hmac
@@ -1088,6 +1089,7 @@ def api_candles(count: int = 150, account: str = 'titan', tf: Optional[str] = No
     # Keep history bars exactly as returned by the verified MT5 symbol read.
     # Quotes have their own endpoint; folding a later tick into OHLC rewrites
     # the broker candle and can mix prices from another symbol in test adapters.
+    df['ema9'] = df['close'].ewm(span=9, adjust=False).mean()
     df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()
     df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
     df['ema200'] = df['close'].ewm(span=200, adjust=False).mean()
@@ -1103,6 +1105,7 @@ def api_candles(count: int = 150, account: str = 'titan', tf: Optional[str] = No
     sub = df.tail(count).copy()
 
     candles = []
+    ema9_pts = []
     ema20_pts = []
     ema50_pts = []
     ema200_pts = []
@@ -1123,6 +1126,7 @@ def api_candles(count: int = 150, account: str = 'titan', tf: Optional[str] = No
             'tick_volume': int(row['tick_volume']),
             'real_volume': int(row['real_volume']) if 'real_volume' in row.index and pd.notna(row['real_volume']) else 0
         })
+        ema9_pts.append({'time': t, 'value': round(row['ema9'], digits)})
         ema20_pts.append({'time': t, 'value': round(row['ema20'], digits)})
         ema50_pts.append({'time': t, 'value': round(row['ema50'], digits)})
         ema200_pts.append({'time': t, 'value': round(row['ema200'], digits)})
@@ -1180,6 +1184,7 @@ def api_candles(count: int = 150, account: str = 'titan', tf: Optional[str] = No
         "source": "MT5_VERIFIED",
         "canExecute": False,
         "candles": candles,
+        "ema9": ema9_pts,
         "ema20": ema20_pts,
         "ema50": ema50_pts,
         "ema200": ema200_pts,
@@ -1552,6 +1557,21 @@ def api_reset_drawdown(req: ResetDrawdownRequest, account: str):
             "baseline": baseline
         }
 
+@app.get("/api/git/sync")
+@app.post("/api/git/webhook")
+async def api_git_sync():
+    """Triggered by GitHub Webhook or browser to pull origin/main."""
+    import subprocess
+    try:
+        r = subprocess.run(["git", "pull", "origin", "main"], cwd=BASE_DIR, capture_output=True, text=True, timeout=20)
+        return {
+            "success": r.returncode == 0,
+            "stdout": r.stdout,
+            "stderr": r.stderr
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 # --- COMPLETE ZERO-SCROLL HTML WITH THEME TOGGLE, VOLUME PROFILES & FIXED CHART ---
 HTML_CONTENT = """<!DOCTYPE html>
 <html lang="de" class="dark">
@@ -1731,6 +1751,10 @@ HTML_CONTENT = """<!DOCTYPE html>
           <a id="nav-ascii-link" href="/ascii" target="_blank" class="px-2.5 py-1 rounded-lg ticker-bg border font-mono font-bold hover:bg-amber-500/20 text-amber-400 flex items-center gap-1 text-[11px] cursor-pointer" title="Retro ASCII Art Terminal Cockpit">
             📟 ASCII
           </a>
+          <span id="nav-bitunix-badge" class="px-2 py-1 rounded-lg ticker-bg border font-mono font-bold text-slate-300 flex items-center gap-1 text-[11px]" title="Bitunix-Schreibzugriff ist gesperrt">
+            <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+            <span>Bitunix: Schreibzugriff gesperrt</span>
+          </span>
           <label class="text-sub text-[10px] ml-1" for="ui-motion">UI-Deko:</label>
           <select id="ui-motion" aria-label="Nicht-Chart-Dekoration" class="ticker-bg border rounded-lg px-2 py-0.5 text-[11px]">
             <option value="off">Aus</option><option value="low">Wenig</option><option value="full">Voll</option>
@@ -1881,6 +1905,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             </div>
 
             <div class="hidden sm:flex items-center gap-2 text-[10px] font-mono">
+              <span class="text-white font-bold">● EMA9</span>
               <span class="text-sky-400 font-bold">● EMA20</span>
               <span class="text-amber-400 font-bold">● EMA50</span>
               <span class="text-purple-400 font-bold">● EMA200</span>
@@ -2161,7 +2186,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="static/chart-level-visibility.js"></script>
   <script>
     const localStorage = DashboardRuntime.storage; // Optional preferences must never stop the dashboard.
-    let chart, candleSeries, ema20Series, ema50Series, ema200Series;
+    let chart, candleSeries, ema9Series, ema20Series, ema50Series, ema200Series;
     // Sparse overlay FX no longer allocates six transparent chart series.
     let srLines = {};
     let currentSRLevels = null;
@@ -2431,7 +2456,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         srLines = {};
         const levelLegend = document.getElementById('chart-level-legend');
         if (levelLegend) { levelLegend.replaceChildren(); levelLegend.hidden = true; }
-        for (const series of [candleSeries,ema20Series,ema50Series,ema200Series]) series.setData([]);
+        for (const series of [candleSeries,ema9Series,ema20Series,ema50Series,ema200Series]) if (series) series.setData([]);
       }
       currentSRLevels = null;
       currentSRPrice = 0;
@@ -2733,13 +2758,14 @@ HTML_CONTENT = """<!DOCTYPE html>
       });
 
       // Intermittent glow is rendered only on the transparent FX canvas.
+      ema9Series   = chart.addLineSeries({ color: '#ffffff', lineWidth: 2, title: 'EMA9' });
       ema20Series  = chart.addLineSeries({ color: '#00d2ff', lineWidth: 2, title: 'EMA20' });
       ema50Series  = chart.addLineSeries({ color: '#ff9f43', lineWidth: 2, title: 'EMA50' });
       ema200Series = chart.addLineSeries({ color: '#a55eea', lineWidth: 2, title: 'EMA200' });
       container.__chart = chart;
       container.__candleSeries = candleSeries;
       try { window.StoneCockpit?.attachChart?.({chart, candleSeries}); } catch (_) {}
-      try { window.StoneChartFX?.attach({chart, host:container, candleSeries, emaSeries:[ema20Series,ema50Series,ema200Series]}); } catch (_) {}
+      try { window.StoneChartFX?.attach({chart, host:container, candleSeries, emaSeries:[ema9Series,ema20Series,ema50Series,ema200Series]}); } catch (_) {}
       try { window.StoneCelebration?.applyChartSettings(); } catch (_) {}
       try { window.ChartStudioBeta?.mount({chart,host:container,candleSeries,emaSeries:[ema20Series,ema50Series,ema200Series],account:activeAccount,timeframe:activeTimeframe}); } catch (err) { console.warn("Chart Studio Beta konnte nicht gestartet werden:",err); }
 
@@ -3107,6 +3133,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
         if (isInitialLoad) {
           candleSeries.setData(data.candles);
+          if (data.ema9) ema9Series.setData(data.ema9);
           ema20Series.setData(data.ema20);
           ema50Series.setData(data.ema50);
           ema200Series.setData(data.ema200);
@@ -3117,9 +3144,10 @@ HTML_CONTENT = """<!DOCTYPE html>
         } else {
           if (latest.time === lastCandleTime) {
             candleSeries.update(latest);
-            ema20Series.update(data.ema20[data.ema20.length - 1]);
-            ema50Series.update(data.ema50[data.ema50.length - 1]);
-            ema200Series.update(data.ema200[data.ema200.length - 1]);
+            if (data.ema9 && data.ema9.length) ema9Series.update(data.ema9[data.ema9.length - 1]);
+            if (data.ema20 && data.ema20.length) ema20Series.update(data.ema20[data.ema20.length - 1]);
+            if (data.ema50 && data.ema50.length) ema50Series.update(data.ema50[data.ema50.length - 1]);
+            if (data.ema200 && data.ema200.length) ema200Series.update(data.ema200[data.ema200.length - 1]);
           } else {
             // New bar: keep exact user zoom & position with 12-bar right offset
             const curRange = chart.timeScale().getVisibleLogicalRange();
@@ -3127,6 +3155,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             const wasAtEnd = curRange ? (curRange.to >= (totalBars - 3)) : true;
 
             candleSeries.setData(data.candles);
+            if (data.ema9) ema9Series.setData(data.ema9);
             ema20Series.setData(data.ema20);
             ema50Series.setData(data.ema50);
             ema200Series.setData(data.ema200);
@@ -3154,7 +3183,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         try {
           window.StoneChartFX?.update({
             candles: data.candles,
-            emas: [data.ema20, data.ema50, data.ema200],
+            emas: [data.ema9, data.ema20, data.ema50, data.ema200],
             markers: showEAStatusText ? currentChartMarkers : [],
             newBar: stoneNewBar,
             context: activeAccount + '/' + activeChartSymbol + '/' + activeTimeframe + '/' + accountGeneration
@@ -3164,7 +3193,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           const last = items => Array.isArray(items)&&items.length?items[items.length-1].value:null;
           window.StoneCelebration?.updateEMAs({
             timeframe:activeTimeframe,
-            ema20:last(data.ema20),ema50:last(data.ema50),ema200:last(data.ema200)
+            ema9:last(data.ema9),ema20:last(data.ema20),ema50:last(data.ema50),ema200:last(data.ema200)
           });
         } catch (_) { /* Read-only EMA display is optional. */ }
       } catch (err) {
@@ -4287,6 +4316,46 @@ def mobile_view():
 @app.get("/terminal", response_class=HTMLResponse)
 def ascii_view():
     return HTMLResponse(content=ASCII_HTML)
+
+# --- BITUNIX TRADING BRIDGE INTEGRATION ---
+from bitunix_bridge import BitunixBridge
+
+bitunix_bridge_instance = BitunixBridge()
+
+@app.get("/api/bitunix/status")
+def bitunix_status(request: Request):
+    identity = getattr(request.state, "control_identity", None)
+    if identity is None:
+        raise HTTPException(status_code=401, detail="Dashboard identity required")
+    if len(identity) < 3 or identity[2] != "trade":
+        raise HTTPException(status_code=403, detail="Trade role required")
+    return bitunix_bridge_instance.get_status()
+
+_bitunix_stop = threading.Event()
+_bitunix_worker_thread = None
+
+def _bitunix_worker_loop():
+    while not _bitunix_stop.is_set():
+        try:
+            if bitunix_bridge_instance.write_gate_open:
+                bitunix_bridge_instance.sync_once(mt5)
+        except Exception:
+            logger.exception("Bitunix bridge worker iteration failed")
+        _bitunix_stop.wait(max(0.5, float(bitunix_bridge_instance.config.get("sync_interval_seconds", 2.0))))
+
+@app.on_event("startup")
+def start_bitunix_worker():
+    global _bitunix_worker_thread
+    if bitunix_bridge_instance.write_gate_open and (_bitunix_worker_thread is None or not _bitunix_worker_thread.is_alive()):
+        _bitunix_stop.clear()
+        _bitunix_worker_thread = threading.Thread(target=_bitunix_worker_loop, daemon=True, name="BitunixBridgeWorker")
+        _bitunix_worker_thread.start()
+
+@app.on_event("shutdown")
+def stop_bitunix_worker():
+    _bitunix_stop.set()
+    if _bitunix_worker_thread and _bitunix_worker_thread.is_alive():
+        _bitunix_worker_thread.join(timeout=3.0)
 
 if __name__ == "__main__":
     print("Starte XAU Titan Pro Institutional Cockpit auf http://127.0.0.1:8050 ...")

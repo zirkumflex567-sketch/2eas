@@ -16,6 +16,7 @@ compile_*.log
 # Cache & Backups
 dashboard-backups/
 .playwright-cli/
+.codex-remote-attachments/
 *.tmp
 *.state
 
@@ -47,3 +48,10 @@ chart_studio_v5/package-lock.json
 
 # Synthetic evidence benchmarks contain local platform/resource measurements.
 output/platform/
+
+# Bitunix Bridge credentials and runtime position cache
+bitunix_config.json
+bitunix_bridge_state.json
+
+# Native MT5 research reports (broker data / account metadata may be sensitive)
+output/mt5-backtests/

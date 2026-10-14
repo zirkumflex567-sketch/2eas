@@ -18,9 +18,10 @@
     : { matches: false };
 
   const PALETTE = [
-    { r: 74, g: 227, b: 255 },  // EMA20
-    { r: 255, g: 176, b: 85 },  // EMA50
-    { r: 190, g: 133, b: 255 }  // EMA200
+    { r: 255, g: 255, b: 255 },  // EMA9
+    { r: 74, g: 227, b: 255 },   // EMA20
+    { r: 255, g: 176, b: 85 },   // EMA50
+    { r: 190, g: 133, b: 255 }   // EMA200
   ];
 
   const clamp = (v, low, high) => Math.max(low, Math.min(high, v));
@@ -122,7 +123,7 @@
 
   function spawnEffect(state, now) {
     const candles = visibleCandles(state);
-    const eligible = [0, 1, 2].map(i => ({index: i, pts: visibleEmaPoints(state, i)}))
+    const eligible = (state.emaSeries || []).map((_, i) => ({index: i, pts: visibleEmaPoints(state, i)}))
       .filter(item => item.pts.length >= 8);
     if (!candles.length && !eligible.length) return;
 
@@ -361,7 +362,7 @@
     const count = isProfit ? 22 + strength * 4 : isChaos ? 28 + strength * 5 : 10 + strength * 3;
     const duration = isProfit ? 5200 + strength * 650 : isChaos ? 4200 + strength * 450 : 2300 + strength * 360;
     const candles = visibleCandles(state);
-    const validEma = [0,1,2].filter(i => visibleEmaPoints(state,i).length > 9);
+    const validEma = (state.emaSeries || []).map((_, i) => i).filter(i => visibleEmaPoints(state,i).length > 9);
     if (!candles.length && !validEma.length) return false;
     state.effects = []; // a confirmed event takes priority over idle accents
     for (let i=0; i<count; i++) {
