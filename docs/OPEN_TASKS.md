@@ -124,7 +124,7 @@ Die folgende Matrix enthält jede verbindliche AT-ID. `Offen (Gesamtabnahme)` be
 | AT-013 | Beim Drag KEIN order_send, bei bestätigtem Commit genau eine geprüfte MT5-Änderung | Offen (Gesamtabnahme) |
 | AT-014 | Nach Commit zeigt UI nur tatsächlich rückgelesene Broker-Level | Offen (Gesamtabnahme) |
 | AT-015 | Ohne Kontoidentität, bei falschem Ticket/Symbol oder Hard-Lock sichere Ablehnung | Offen (Gesamtabnahme) |
-| AT-016 | Account/Timeframe-Wechsel während Draft bricht sicher ab | Offen (Gesamtabnahme) |
+| AT-016 | Account/Timeframe-Wechsel während Draft bricht sicher ab | Teilweise: Beta-Smoke öffnet einen Positionsentwurf und prüft, dass sowohl Timeframe- als auch Kontowechsel den Draft und seine Chartprojektion sofort verwerfen; der nächste Broker-Snapshot wird erst im neuen Scope geladen. Race-/Hardware- und Demo-Gesamtabnahme offen. |
 | AT-017 | Stale Revision durch EA-Trailing ergibt 409, neue Brokerwerte bleiben | Offen (Gesamtabnahme) |
 | AT-018 | USD-Berechnung entspricht order_calc_profit für 4 Symbol-/Accountkonstellationen | Offen (Gesamtabnahme) |
 | AT-019 | Fremdwährungskonto zeigt Account-Currency korrekt; USD-Wert nur mit gültiger Konversion | Offen (Gesamtabnahme) |
