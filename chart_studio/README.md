@@ -9,7 +9,7 @@ It does **not** replace the planned professional v5 engine.
 
 Current features:
 - Enable/disable EMA20/50/200; SMA20/50 and Bollinger 20 overlays.
-- Draw horizontal/trend/rectangle/Fibonacci tools with time+price anchors, drag
+- Draw horizontal/vertical, trend/rectangle/Fibonacci tools with time+price anchors, drag
   existing handles, undo/redo, account-scoped *provisional* browser storage and
   JSON export through clipboard.
 - Display current `MT5_VERIFIED` XAUUSD positions as separate BUY/SELL ticket

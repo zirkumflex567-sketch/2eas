@@ -16,7 +16,7 @@ from typing import Any
 
 ACCOUNTS = frozenset({"titan", "goldm15"})
 SYMBOL_RE = re.compile(r"^[A-Z0-9._-]{1,32}$")
-DRAWING_TYPES = frozenset({"horizontal", "trend", "rect", "fib", "ray", "ruler", "channel"})
+DRAWING_TYPES = frozenset({"horizontal", "vertical", "trend", "rect", "fib", "ray", "ruler", "channel"})
 UI_FLAGS = frozenset({"ema20", "ema50", "ema200", "sma20", "sma50",
                       "bb", "positions"})
 INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap"})
@@ -101,7 +101,7 @@ def validate_document(raw: Any) -> dict:
         if not isinstance(kind, str) or kind not in DRAWING_TYPES:
             raise StoreError("Nicht unterstützter Zeichnungstyp.")
         anchors = drawing["anchors"]
-        expected = 1 if kind == "horizontal" else (3 if kind == "channel" else 2)
+        expected = 1 if kind in {"horizontal", "vertical"} else (3 if kind == "channel" else 2)
         if not isinstance(anchors, list) or len(anchors) != expected:
             raise StoreError("Ungültige Ankeranzahl.")
         safe_anchors = []

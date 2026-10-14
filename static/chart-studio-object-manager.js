@@ -5,7 +5,7 @@
 (()=>{
 "use strict";
 const NAMES=Object.freeze({
- horizontal:"Preislinie",trend:"Trendlinie",rect:"Rechteck",fib:"Fibonacci",
+ horizontal:"Preislinie",vertical:"Zeitlinie",trend:"Trendlinie",rect:"Rechteck",fib:"Fibonacci",
  ray:"Strahl",ruler:"Messung",channel:"Parallelkanal"
 });
 let state=null;

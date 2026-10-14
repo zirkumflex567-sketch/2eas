@@ -3,7 +3,7 @@
  */
 (()=>{
 "use strict";
-const COUNTS=Object.freeze({horizontal:1,trend:2,rect:2,fib:2,ray:2,ruler:2,channel:3});
+const COUNTS=Object.freeze({horizontal:1,vertical:1,trend:2,rect:2,fib:2,ray:2,ruler:2,channel:3});
 function expected(kind){return Object.hasOwn(COUNTS,kind)?COUNTS[kind]:0}
 function validPoint(p){
  return !!p&&Number.isInteger(p.time)&&p.time>0&&p.time<=7258118400&&

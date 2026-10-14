@@ -90,6 +90,16 @@ class SqliteLayoutTests(unittest.TestCase):
                 doc["drawings"] = [case]
                 validate_document(doc)
 
+    def test_vertical_time_line_roundtrips_with_one_anchor(self):
+        doc = example()
+        doc["drawings"] = [{"kind": "vertical", "anchors": [
+            {"time": 1700000000, "price": 4175.5}]}]
+        saved = self.store.put("local-owner", "titan", "XAUUSD", "Vertical", doc, 0)
+        self.assertEqual(saved["document"]["drawings"], doc["drawings"])
+        for anchors in [[], doc["drawings"][0]["anchors"] * 2]:
+            with self.subTest(count=len(anchors)), self.assertRaises(StoreError):
+                validate_document({**doc, "drawings": [{"kind": "vertical", "anchors": anchors}]})
+
     def test_reject_unknown_keys_scaling_and_executables(self):
         tests = [
             dict(schemaVersion=2),
