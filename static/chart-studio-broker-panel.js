@@ -83,6 +83,7 @@ function filterParams(params){const f=queryFilters();if(f.ticket)params.set("tic
 function apiScope(){return window.location.pathname.startsWith("/stt")?"/stt":"";}
 async function loadPositions(){
  if(!state)return;
+ if(state.draft)closeDraft("Brokerpositionen werden aktualisiert · Entwurf verworfen.");
  const token=++state.positionToken,account=state.account;
  table(state.positions,["Ticket","Seite","Lots","Einstieg","SL","TP","P/L (MT5)","Swap (MT5)","Währung"],[]);
  table(state.orders,["Ticket","Typ","Lots","Preis","Stop-Limit","SL","TP"],[]);
