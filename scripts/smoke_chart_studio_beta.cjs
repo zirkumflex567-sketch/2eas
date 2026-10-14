@@ -18,7 +18,7 @@ const fs=require("node:fs"),path=require("node:path");
   browser=await chromium.launch({headless:true,executablePath:process.env.CHART_STUDIO_CHROMIUM_PATH||undefined});
   const page=await browser.newPage({viewport:{width:1280,height:850},deviceScaleFactor:1.5});
   const consoleErrors=[];page.on("pageerror",e=>consoleErrors.push(e.message));
-  let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,deferTitanPositions=false,releaseTitanPositions=null,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badDealRow=false,symbolCatalogTruncated=false,evidenceRequests=[];
+  let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,deferTitanPositions=false,releaseTitanPositions=null,multiPositionRows=false,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badDealRow=false,symbolCatalogTruncated=false,evidenceRequests=[];
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
   await page.route("**/api/chart/v1/scenarios/preview*",async route=>{
     const req=route.request().postDataJSON();
@@ -79,7 +79,9 @@ const fs=require("node:fs"),path=require("node:path");
     const selectedSymbol=url.searchParams.get("symbol"),positionTicket=url.searchParams.get("account")==="goldm15"?"22":selectedSymbol==="EURUSD"?"123":"9007199254740993";
     const currency=url.searchParams.get("account")==="goldm15"?"EUR":"USD";
     const account=url.searchParams.get("account");
-    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account,login:account==="goldm15"?"53090070":"53087839",server:"ICMarketsEU-Demo",source:"MT5_VERIFIED",canExecute:false,symbol:selectedSymbol,currency,marginMode:currency==="EUR"?0:2,quote:{freshness:"FRESH"},positions:[{account,source:badPositionRow?"UNVERIFIED":"MT5_VERIFIED",canExecute:false,ticket:positionTicket,type:"BUY",side:"BUY",symbol:selectedSymbol,volume:"0.1",price_open:"4100",sl:"4090",tp:null,profit:"10",swap:"-1",ownership:"MANUAL",currency,revision:"a".repeat(64)}],orders:[{account,source:badOrderRow?"UNVERIFIED":"MT5_VERIFIED",canExecute:false,symbol:selectedSymbol,ticket:"9007199254740995",type:"BUY_LIMIT",volume_current:"0.2",price_open:"3995",sl:null,tp:"4010",ownership:"UNKNOWN"}]})});
+    const position={account,source:badPositionRow?"UNVERIFIED":"MT5_VERIFIED",canExecute:false,ticket:positionTicket,type:"BUY",side:"BUY",symbol:selectedSymbol,volume:"0.1",price_open:"4100",sl:"4090",tp:null,profit:"10",swap:"-1",ownership:"MANUAL",currency,revision:"a".repeat(64)};
+    const positions=multiPositionRows?[position,{...position,ticket:"9007199254740991",price_open:"4101",sl:"4088",tp:"4115",revision:"b".repeat(64)},{...position,ticket:"9007199254740992",type:"SELL",side:"SELL",price_open:"4102",sl:"4112",tp:"4090",revision:"c".repeat(64)}]:[position];
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account,login:account==="goldm15"?"53090070":"53087839",server:"ICMarketsEU-Demo",source:"MT5_VERIFIED",canExecute:false,symbol:selectedSymbol,currency,marginMode:currency==="EUR"?0:2,quote:{freshness:"FRESH"},positions,orders:[{account,source:badOrderRow?"UNVERIFIED":"MT5_VERIFIED",canExecute:false,symbol:selectedSymbol,ticket:"9007199254740995",type:"BUY_LIMIT",volume_current:"0.2",price_open:"3995",sl:null,tp:"4010",ownership:"UNKNOWN"}]})});
   });
   await page.route("**/api/chart/v1/portfolio?*",async route=>{
     const url=new URL(route.request().url()),account=url.searchParams.get("account");portfolioReadRequests.push(account);
@@ -277,6 +279,16 @@ const fs=require("node:fs"),path=require("node:path");
   assert.equal(verifiedPositionState.length,1,"The overlay should be driven by the current verified broker snapshot");
   assert.equal(verifiedPositionState[0].source,"MT5_VERIFIED");
   assert.equal(verifiedPositionState[0].currency,"USD");
+  multiPositionRows=true;await page.locator("#cs-broker-positions-refresh").click();
+  await page.waitForFunction(()=>ChartStudioBeta.getState().verifiedPositions.length===3);
+  assert.deepEqual(await page.evaluate(()=>ChartStudioBeta.getState().verifiedPositions.map(({ticket,side,price_open,sl,tp})=>({ticket,side,price_open,sl,tp}))),[
+    {ticket:"9007199254740993",side:"BUY",price_open:"4100",sl:"4090",tp:null},
+    {ticket:"9007199254740991",side:"BUY",price_open:"4101",sl:"4088",tp:"4115"},
+    {ticket:"9007199254740992",side:"SELL",price_open:"4102",sl:"4112",tp:"4090"}
+  ],"Same-direction and opposing broker tickets must retain separate side/price levels");
+  assert.equal(await page.locator("#cs-broker-positions tbody tr").count(),3,"Every broker position ticket remains a distinct row");
+  multiPositionRows=false;await page.locator("#cs-broker-positions-refresh").click();
+  await page.waitForFunction(()=>ChartStudioBeta.getState().verifiedPositions.length===1);
   const forgedRowAccepted=await page.evaluate(()=>{const row=ChartStudioBeta.getState().verifiedPositions[0];return ChartStudioBeta.updateVerifiedPositions("titan",{account:"titan",symbol:"XAUUSD",source:"MT5_VERIFIED",canExecute:false,currency:"USD",marginMode:2,positions:[{...row,account:"goldm15"}]})});
   assert.equal(forgedRowAccepted,false,"A valid envelope cannot relabel a row from a different account");
   assert.deepEqual(await page.evaluate(()=>ChartStudioBeta.getState().verifiedPositions),[]);
