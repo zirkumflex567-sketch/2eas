@@ -3,6 +3,7 @@
 let state=null;
 const el=(tag,attrs={},text="")=>{const node=document.createElement(tag);for(const [key,value] of Object.entries(attrs))node.setAttribute(key,value);if(text)node.textContent=text;return node;};
 const cell=value=>{const td=document.createElement("td");td.textContent=value==null||value===""?"—":String(value);return td;};
+const stopLevel=value=>value==null||value===""||Number(value)===0?"Nicht gesetzt":value;
 function table(container,headers,rows){
  const t=container.querySelector("table"),head=t.tHead||t.createTHead(),body=t.tBodies[0]||t.createTBody();
  head.replaceChildren();const tr=head.insertRow();for(const label of headers){const th=document.createElement("th");th.scope="col";th.textContent=label;tr.append(th)}
@@ -12,7 +13,7 @@ function renderPositions(rows){
  const t=state.positions.querySelector("table"),head=t.tHead||t.createTHead(),body=t.tBodies[0]||t.createTBody();
  head.replaceChildren();const hr=head.insertRow();for(const label of ["Ticket","Seite","Lots","Einstieg","SL","TP","P/L (MT5)","Swap (MT5)","Währung","Entwurf"]){const th=document.createElement("th");th.scope="col";th.textContent=label;hr.append(th)}
  body.replaceChildren();state.positionRows=new Map();
- for(const position of rows){const tr=body.insertRow();for(const value of [position.ticket,position.type,position.volume,position.price_open,position.sl,position.tp,position.profit,position.swap,position.currency])tr.append(cell(value));
+ for(const position of rows){const tr=body.insertRow();for(const value of [position.ticket,position.type,position.volume,position.price_open,stopLevel(position.sl),stopLevel(position.tp),position.profit,position.swap,position.currency])tr.append(cell(value));
   const td=tr.insertCell(),button=state.symbol==="XAUUSD"?el("button",{type:"button","data-cmd":"position-draft"},"SL/TP-Entwurf"):null;
   const valid=typeof position.ticket==="string"&&/^\d{1,20}$/.test(position.ticket)&&typeof position.revision==="string"&&/^[0-9a-f]{64}$/.test(position.revision)&&["BUY","SELL"].includes(position.type)&&Number.isFinite(Number(position.price_open))&&Number(position.price_open)>0;
   if(button){button.disabled=!valid;button.setAttribute("aria-label","SL/TP-Entwurf für Position "+String(position.ticket));td.append(button)}else td.textContent="Nur lesbar · anderes Chartsymbol";
@@ -139,7 +140,7 @@ async function loadPositions(){
   if(!window.ChartStudioBeta?.updateVerifiedPositions(account,{...data,timeframe}))throw new Error("Brokerpositionen haben keinen gültigen Overlay-Scope.");
   if(state.draft){const current=(data.positions||[]).find(x=>x.ticket===state.draft.ticket);if(!current||current.revision!==state.draft.revision)closeDraft("Positionsrevision geändert · Entwurf und Vorschau verworfen.")}
   renderPositions(data.positions||[]);
-  table(state.orders,["Ticket","Typ","Lots","Preis","Stop-Limit","SL","TP"],(data.orders||[]).map(x=>[x.ticket,x.type,x.volume_current,x.price_open,x.price_stoplimit,x.sl,x.tp]));
+  table(state.orders,["Ticket","Typ","Lots","Preis","Stop-Limit","SL","TP"],(data.orders||[]).map(x=>[x.ticket,x.type,x.volume_current,x.price_open,x.price_stoplimit,stopLevel(x.sl),stopLevel(x.tp)]));
   state.positionStatus.textContent="Quelle MT5_VERIFIED · "+(data.positions.length||0)+" Position(en), "+(data.orders.length||0)+" Pending Order(s) · Nur lesen"+(symbol==="XAUUSD"?"":" · SL/TP-Entwürfe für andere Symbole nicht verfügbar");
  }catch(error){if(token===state.positionToken){clearVerifiedPositions();state.positionStatus.textContent=error.message}}
 }

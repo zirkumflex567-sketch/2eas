@@ -128,7 +128,7 @@ Die folgende Matrix enthält jede verbindliche AT-ID. `Offen (Gesamtabnahme)` be
 | AT-017 | Stale Revision durch EA-Trailing ergibt 409, neue Brokerwerte bleiben | Offen (Gesamtabnahme) |
 | AT-018 | USD-Berechnung entspricht order_calc_profit für 4 Symbol-/Accountkonstellationen | Offen (Gesamtabnahme) |
 | AT-019 | Fremdwährungskonto zeigt Account-Currency korrekt; USD-Wert nur mit gültiger Konversion | Offen (Gesamtabnahme) |
-| AT-020 | Kein TP/SL ergibt „nicht gesetzt“, nicht Phantom-0-Zone | Offen (Gesamtabnahme) |
+| AT-020 | Kein TP/SL ergibt „nicht gesetzt“, nicht Phantom-0-Zone | Teilweise: Broker-Panel zeigt fehlende und Null-SL/TP bei Positionen und Pending Orders als „Nicht gesetzt“; Beta-Smoke deckt fehlendes Positions-TP/Pending-SL, Nullpreis ohne Chartprojektion und weiterhin funktionierende Draft-Vorschau ab. MT5-Live-/Chart-Gesamtabnahme bleibt offen. |
 | AT-021 | Mehrere Tickets derselben Symbolrichtung und gegenläufige Tickets korrekt getrennt | Offen (Gesamtabnahme) |
 | AT-022 | Keine überlappenden/abgeschnittenen Daily-High-, POC- und Order-Axis-Labels | Teilweise: scrollbare Legende und zehn individuelle Schalter im Chromium-Smoke; vollständige v5-Preisachsen-/Hardware-Abnahme offen |
 | AT-023 | Stone/Dark/Light und Fullscreen erhalten Zeichnungen, Achsen und Chartfunktionen | Offen (Gesamtabnahme) |
