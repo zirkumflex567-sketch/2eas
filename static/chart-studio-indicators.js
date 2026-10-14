@@ -8,7 +8,7 @@ const REGISTRY=Object.freeze({
  rsi:{name:"RSI (Wilder)",type:"oscillator",period:14,min:2,max:200},
  macd:{name:"MACD",type:"oscillator",fast:12,slow:26,signal:9},
  atr:{name:"ATR (Wilder)",type:"oscillator",period:14,min:2,max:200},
- volume:{name:"Volumen (Tick/Real)",type:"histogram"},
+ volume:{name:"Volumen (Tick/Real)",type:"histogram",upColor:"#41cce9",downColor:"#f7758b"},
  adx:{name:"ADX +DI / −DI (Wilder)",type:"oscillator",period:14,min:2,max:200},
  vwap:{name:"VWAP (UTC, Volumenproxy)",type:"overlay"}
 });
@@ -78,9 +78,12 @@ function macd(input,fast=12,slow=26,signal=9){
  }
  return out;
 }
-function volumes(input){
+function volumes(input,settings={}){
+ const validColor=value=>typeof value==="string"&&/^#[0-9a-fA-F]{6}$/.test(value)?value.toLowerCase():null;
+ const upColor=validColor(settings.upColor)||"#41cce9";
+ const downColor=validColor(settings.downColor)||"#f7758b";
  return validateBars(input).map(b=>({time:b.time,value:b.real_volume>0?b.real_volume:b.tick_volume,
-  color:b.close>=b.open?"rgba(65,204,233,.8)":"rgba(247,117,139,.72)",
+  color:b.close>=b.open?upColor:downColor,
   kind:b.real_volume>0?"real":"tick"}));
 }
 function adx(input,period=14){
@@ -139,14 +142,14 @@ function calc(kind,candles,settings={}){
  if(kind==="rsi")return {rsi:rsi(candles,settings.period||14)};
  if(kind==="atr")return {atr:atr(candles,settings.period||14)};
  if(kind==="macd")return macd(candles,settings.fast||12,settings.slow||26,settings.signal||9);
- if(kind==="volume")return {volume:volumes(candles)};
+ if(kind==="volume")return {volume:volumes(candles,settings)};
  if(kind==="adx")return adx(candles,settings.period||14);
  if(kind==="vwap")return {vwap:vwap(candles)};
  throw Error("Unknown indicator: "+kind);
 }
 function defaults(){
  return {rsi:{enabled:false,period:14},macd:{enabled:false,fast:12,slow:26,signal:9},
-  atr:{enabled:false,period:14},volume:{enabled:false},adx:{enabled:false,period:14},vwap:{enabled:false}};
+  atr:{enabled:false,period:14},volume:{enabled:false,upColor:"#41cce9",downColor:"#f7758b"},adx:{enabled:false,period:14},vwap:{enabled:false}};
 }
 function restore(account){
  try{const raw=JSON.parse(localStorage.getItem(storagePrefix+account)||"null");
@@ -158,6 +161,8 @@ function restore(account){
      if(Object.hasOwn(result[id],prop)&&Number.isInteger(raw[id][prop])&&raw[id][prop]>=2&&raw[id][prop]<=300)
       result[id][prop]=raw[id][prop];
     }
+    if(id==="volume")for(const prop of ["upColor","downColor"])
+     if(typeof raw[id][prop]==="string"&&/^#[0-9a-fA-F]{6}$/.test(raw[id][prop]))result[id][prop]=raw[id][prop].toLowerCase();
    }
   }
   return result;
@@ -173,6 +178,11 @@ function box(kind){
  chk.setAttribute("aria-label",cfg.name+" anzeigen");chk.dataset.kind=kind;
  const name=document.createElement("strong");name.textContent=cfg.name;
  row.append(chk,name);
+ for(const prop of kind==="volume"?["upColor","downColor"]:[]){
+  const label=document.createElement("span");label.textContent=prop==="upColor"?"Aufwärtsfarbe":"Abwärtsfarbe";
+  const input=document.createElement("input");input.type="color";input.value=settings[prop];input.dataset.parameter=prop;input.dataset.kind=kind;
+  input.setAttribute("aria-label",cfg.name+": "+label.textContent);row.append(label,input);
+ }
  for(const prop of ["period","fast","slow","signal"]){
   if(!Object.hasOwn(cfg,prop))continue;
   const label=document.createElement("span");label.textContent=prop;
@@ -236,7 +246,7 @@ function createPane(kind){
  };
  if(kind==="rsi")series("rsi","#e9bb72");
  if(kind==="atr")series("atr","#a68eff");
- if(kind==="macd"){series("macd","#55d7ee");series("signal","#f3c56a");series("histogram","#53dabd","hist")}
+  if(kind==="macd"){series("macd","#55d7ee");series("signal","#f3c56a");series("histogram","#53dabd","hist")}
  if(kind==="volume")series("volume","#5de1d8","hist");
  if(kind==="adx"){series("adx","#e9bc72");series("plusDi","#55deaa");series("minusDi","#f17e97")}
  const pane={shell,chart,plot,lines,observer:null};
@@ -308,6 +318,10 @@ function switchAccount(account){
 function updateConfig(kind,prop,val){
  if(!state||!REGISTRY[kind])return false;
  if(prop==="enabled")state.settings[kind].enabled=val===true;
+ else if(kind==="volume"&&["upColor","downColor"].includes(prop)){
+  if(typeof val!=="string"||!/^#[0-9a-fA-F]{6}$/.test(val))return false;
+  state.settings.volume[prop]=val.toLowerCase();
+ }
  else if(Object.hasOwn(REGISTRY[kind],prop)){
   const n=Number(val),maximum=prop==="slow"?300:200;
   if(!Number.isInteger(n)||n<2||n>maximum){state.notice.textContent="Ungültige Periode (2–"+maximum+")";return false}
@@ -326,6 +340,8 @@ function applySettings(raw){
  for(const id of Object.keys(REGISTRY)){
   const input=raw[id];if(!input||typeof input!=="object")continue;
   fresh[id].enabled=input.enabled===true;
+  if(id==="volume")for(const key of ["upColor","downColor"])
+   if(typeof input[key]==="string"&&/^#[0-9a-fA-F]{6}$/.test(input[key]))fresh.volume[key]=input[key].toLowerCase();
   for(const key of ["period","fast","slow","signal"]){
    const value=Number(input[key]);
    if(Object.hasOwn(fresh[id],key)&&Number.isInteger(value)&&value>=2&&value<=(key==="slow"?300:200))

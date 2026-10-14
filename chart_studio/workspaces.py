@@ -146,8 +146,9 @@ def validate_document(raw: Any) -> dict:
         raise StoreError("Unbekannter Indikator.")
     clean_indicators = {}
     for kind, values in indicators.items():
+        color_fields = {"upColor", "downColor"} if kind == "volume" else set()
         if not isinstance(values, dict) or any(
-            k not in PERIOD_FIELDS | {"enabled"} for k in values
+            k not in PERIOD_FIELDS | {"enabled"} | color_fields for k in values
         ):
             raise StoreError("Ungültige Indikator-Parameter.")
         cleaned = {}
@@ -155,6 +156,10 @@ def validate_document(raw: Any) -> dict:
             if param == "enabled":
                 if type(value) is not bool:
                     raise StoreError("Indikator-Sichtbarkeit muss boolesch sein.")
+            elif param in color_fields:
+                if not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+                    raise StoreError("Ungültige Volumenfarbe.")
+                value = value.lower()
             else:
                 _number(value, param, integer=True)
                 if not 2 <= value <= 300:

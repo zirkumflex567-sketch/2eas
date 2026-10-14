@@ -219,6 +219,16 @@ class SqliteLayoutTests(unittest.TestCase):
         ]:
             with self.subTest(case=str(bad)[:50]),self.assertRaises(StoreError):
                 validate_document({**old,"movingAverages":bad})
+        volume = {"enabled":True,"upColor":"#22aa66","downColor":"#dd4455"}
+        document = validate_document({**old,"indicators":{"volume":volume}})
+        self.assertEqual(document["indicators"]["volume"],volume)
+        for bad_volume in [
+            {**volume,"upColor":"red"},
+            {**volume,"downColor":"url(https://bad)"},
+            {**volume,"unknown":"#000000"},
+        ]:
+            with self.subTest(bad_volume=bad_volume),self.assertRaises(StoreError):
+                validate_document({**old,"indicators":{"volume":bad_volume}})
         with self.assertRaises(StoreError):
             validate_document({**old,"movingAverages":"no"})
 

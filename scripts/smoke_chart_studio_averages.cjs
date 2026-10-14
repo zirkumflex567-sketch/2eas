@@ -166,6 +166,29 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
   assert.deepEqual(Array.from((await page.evaluate(()=>ChartStudioAverages.getConfigs())).map(x=>x.period)).sort((a,b)=>a-b),[9,21,50]);
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
+  const volumeToggle=page.locator('.cs-indicator-control input[type="checkbox"][data-kind="volume"]');
+  await volumeToggle.check();
+  const upColor=page.locator('.cs-indicator-control input[type="color"][data-kind="volume"][data-parameter="upColor"]');
+  const downColor=page.locator('.cs-indicator-control input[type="color"][data-kind="volume"][data-parameter="downColor"]');
+  await upColor.evaluate(el=>{el.value="#112233";el.dispatchEvent(new Event("change",{bubbles:true}))});
+  await downColor.evaluate(el=>{el.value="#445566";el.dispatchEvent(new Event("change",{bubbles:true}))});
+  assert.deepEqual(await page.evaluate(()=>ChartStudioIndicators.settings().volume),
+    {enabled:true,upColor:"#112233",downColor:"#445566"});
+  const volumeColorsValid=await page.evaluate(()=>{
+    const bars=window.__chartSmokeCandles,rows=ChartStudioIndicators.calculate("volume",bars,
+      ChartStudioIndicators.settings().volume).volume;
+    return rows.every(row=>{
+      const bar=bars.find(item=>item.time===row.time);
+      return (row.kind==="tick"||row.kind==="real")&&row.color===(bar.close>=bar.open?"#112233":"#445566");
+    });
+  });
+  assert.equal(volumeColorsValid,true,"Volume colors follow candle direction without changing provenance");
+  await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
+  assert.deepEqual(await page.evaluate(()=>ChartStudioIndicators.settings().volume),
+    {enabled:false,upColor:"#41cce9",downColor:"#f7758b"});
+  await page.evaluate(()=>ChartStudioBeta.account("titan"));
+  assert.deepEqual(await page.evaluate(()=>ChartStudioIndicators.settings().volume),
+    {enabled:true,upColor:"#112233",downColor:"#445566"});
   // New opt-in SQLite document extension round trip via existing UI.
   const sb=page.locator(".cs-server-sync");
   await sb.locator('input[type="password"]').fill(secret);
@@ -178,12 +201,16 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(saved.movingAverages.length,2);
   assert.equal(saved.movingAverages[0].period,34);
   assert.equal(saved.movingAverages[0].displayShift,2);
+  assert.deepEqual(saved.indicators.volume,{enabled:true,upColor:"#112233",downColor:"#445566"});
+  await page.evaluate(()=>ChartStudioIndicators.updateConfig("volume","upColor","#aabbcc"));
   await area.locator('[data-instance="ma1"] [data-field="period"]').fill("77");
   await area.locator('[data-instance="ma1"] [data-field="period"]').press("Tab");
   await sb.getByRole("button",{name:"Server laden"}).click();
   await page.waitForFunction(()=>document.querySelector(".cs-server-sync p").textContent.includes("geladen"));
   assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].period,34);
   assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].displayShift,2);
+  assert.deepEqual(await page.evaluate(()=>ChartStudioIndicators.settings().volume),
+    {enabled:true,upColor:"#112233",downColor:"#445566"});
   assert.equal(await page.evaluate(secret=>Object.values(localStorage).some(v=>v.includes(secret)),secret),false);
   const limit=await page.evaluate(()=>{
    const configs=Array.from({length:16},(_,index)=>({id:"limit"+index,type:"EMA",period:100+index,
