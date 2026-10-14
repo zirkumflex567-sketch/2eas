@@ -825,7 +825,7 @@ const fs=require("node:fs"),path=require("node:path");
   assert.equal(scenarioExport.snapshots.A.portfolioContext.correlation.pairs[0].coefficient,"0.75");
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
   assert.match(await page.locator("#cs-scenario-ab").textContent(),/Keine A\/B-Snapshots für GoldM15/);
-  await page.evaluate(()=>{const key="2eas:studio:beta:titan:whatif-snapshots:XAUUSD",saved=JSON.parse(localStorage.getItem(key));saved.A.schemaVersion=99;saved.B.schemaVersion=1;delete saved.B.portfolioContext;localStorage.setItem(key,JSON.stringify(saved));ChartStudioBeta.account("titan")});
+  await page.evaluate(()=>{const key="2eas:studio:beta:titan:whatif-snapshots:XAUUSD",saved=JSON.parse(localStorage.getItem(key));saved.A.schemaVersion=99;saved.B.schemaVersion=1;delete saved.B.portfolioContext;delete saved.B.result.symbol;localStorage.setItem(key,JSON.stringify(saved));ChartStudioBeta.account("titan")});
    assert.equal(await page.locator('#cs-scenario-form [name="entryPrice"]').inputValue(),"","Account changes clear previously entered prices");
   assert.doesNotMatch(await page.locator("#cs-scenario-ab").textContent(),/A · Budget 50 USD/);
   assert.match(await page.locator("#cs-scenario-ab").textContent(),/B · FIXED_LOTS/);

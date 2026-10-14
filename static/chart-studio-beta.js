@@ -277,7 +277,8 @@ function validSavedPortfolioContext(context,account){
   new Date(context.capturedAtUtc).toISOString()===context.capturedAtUtc&&nestedKeys&&validPortfolio(context,account);
 }
 function validSavedPreview(item,account,symbol=chartSymbol()){
- const preview=item&&item.account===account&&item.symbol===symbol&&item.request?.account===account&&item.request?.symbol===symbol&&item.result?.account===account&&item.result?.symbol===symbol&&item.result?.canExecute===false;
+ const resultSymbolMatches=item?.result?.symbol===symbol||(symbol==="XAUUSD"&&item?.schemaVersion===1&&item?.result?.symbol===undefined);
+ const preview=item&&item.account===account&&item.symbol===symbol&&item.request?.account===account&&item.request?.symbol===symbol&&item.result?.account===account&&resultSymbolMatches&&item.result?.canExecute===false;
  return Boolean(preview&&((symbol==="XAUUSD"&&item.schemaVersion===1)||
   (symbol==="XAUUSD"&&item.schemaVersion===2&&validSavedPortfolioContext(item.portfolioContext,account))||
   (item.schemaVersion===3&&validSavedPortfolioContext(item.portfolioContext,account))));
