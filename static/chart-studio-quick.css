@@ -64,6 +64,14 @@
 .cs-evidence-panel #cs-evidence-list details{border:1px solid rgba(116,178,198,.22);border-radius:5px;padding:5px}
 .cs-evidence-panel #cs-evidence-list summary{cursor:pointer;overflow-wrap:anywhere}
 .cs-evidence-panel #cs-evidence-list pre{max-height:260px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:10px ui-monospace,Consolas,monospace}
+.cs-mtf-panel{margin:8px 0;padding:8px;border:1px solid rgba(116,178,198,.35);border-radius:7px;background:rgba(8,25,35,.72);color:#d5edf3;font-size:12px}
+.cs-mtf-panel>summary{cursor:pointer;font-weight:700}
+.cs-mtf-controls{display:flex;flex-wrap:wrap;align-items:end;gap:8px;margin:8px 0}
+.cs-mtf-controls label{display:grid;gap:4px}
+.cs-mtf-table-wrap{max-width:100%;overflow:auto}
+.cs-mtf-panel table{width:100%;min-width:760px;border-collapse:collapse;text-align:left}
+.cs-mtf-panel th,.cs-mtf-panel td{padding:5px 7px;border-bottom:1px solid rgba(116,178,198,.22);vertical-align:top;white-space:nowrap}
+.cs-mtf-panel [data-mtf-status]{margin:8px 0;color:#b8d3dd;overflow-wrap:anywhere}
 #cs-beta-panel .cs-beta-buttons,
 #cs-beta-panel .cs-beta-profiles,
 #cs-beta-panel .cs-ma-presets,
