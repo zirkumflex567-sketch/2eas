@@ -361,41 +361,56 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  chart.subscribeClick(param=>{
   selectDrawing(hoveredDrawingId);
  });
+ const touchAnchorAt=(x:number,y:number)=>{
+  let bestId:string|null=null,bestDistance=12;
+  const ids=[...trendLines.keys(),...rectangles.keys(),...fibonacci.keys()];
+  for(const id of ids){
+   const snapshot=snapshotDrawing(id);if(!snapshot||snapshot.options.visible===false)continue;
+   for(const anchor of ["START","END"] as const){
+    const point=drawingAnchorPosition(id,anchor);if(!point)continue;
+    const distance=Math.hypot(x-point.x,y-point.y);
+    if(distance<=bestDistance){bestId=id;bestDistance=distance}
+   }
+  }
+  return bestId;
+ };
  const onPointerDown=(event:PointerEvent)=>{
-  if(event.button!==0||!event.isPrimary||!hoveredDrawingId)return;
-  const level=priceLevels.get(hoveredDrawingId),marker=timeMarkers.get(hoveredDrawingId),annotation=textAnnotations.get(hoveredDrawingId),trend=trendLines.get(hoveredDrawingId),rectangle=rectangles.get(hoveredDrawingId),fibo=fibonacci.get(hoveredDrawingId);
-  selectDrawing(hoveredDrawingId);
+  if(event.button!==0||!event.isPrimary)return;
+  const drawingId=hoveredDrawingId??(event.pointerType==="touch"?touchAnchorAt(event.clientX,event.clientY):null);
+  if(!drawingId)return;
+  const level=priceLevels.get(drawingId),marker=timeMarkers.get(drawingId),annotation=textAnnotations.get(drawingId),trend=trendLines.get(drawingId),rectangle=rectangles.get(drawingId),fibo=fibonacci.get(drawingId);
+  selectDrawing(drawingId);
   if(host.tabIndex<0)host.tabIndex=0;
   host.focus({preventScroll:true});
   if(!level&&!marker&&!annotation&&!trend&&!rectangle&&!fibo)return;
   if((level?.options.locked??marker?.options.locked??annotation?.options.locked??trend?.options.locked??rectangle?.options.locked??fibo?.options.locked)===true){event.preventDefault();event.stopImmediatePropagation();return}
-  if(level)activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"PRICE",original:{...level.options}};
-  else if(marker)activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"TIME",original:{...marker.options}};
-  else if(annotation)activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"TEXT",original:{...annotation.options}};
+  if(level)activeDrag={pointerId:event.pointerId,id:drawingId,kind:"PRICE",original:{...level.options}};
+  else if(marker)activeDrag={pointerId:event.pointerId,id:drawingId,kind:"TIME",original:{...marker.options}};
+  else if(annotation)activeDrag={pointerId:event.pointerId,id:drawingId,kind:"TEXT",original:{...annotation.options}};
   else if(trend){
    const points=trend.primitive.coordinates(),rect=host.getBoundingClientRect();
    if(!points)return;
    const x=event.clientX-rect.left,y=event.clientY-rect.top;
    const startDistance=Math.hypot(x-points.x1,y-points.y1),endDistance=Math.hypot(x-points.x2,y-points.y2);
    if(Math.min(startDistance,endDistance)>12)return;
-   activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"TREND",anchor:startDistance<=endDistance?"START":"END",original:{...trend.options}};
+   activeDrag={pointerId:event.pointerId,id:drawingId,kind:"TREND",anchor:startDistance<=endDistance?"START":"END",original:{...trend.options}};
   }
   else if(rectangle){
-   const rect=host.getBoundingClientRect(),start=drawingAnchorPosition(hoveredDrawingId,"START"),end=drawingAnchorPosition(hoveredDrawingId,"END");
+   const rect=host.getBoundingClientRect(),start=drawingAnchorPosition(drawingId,"START"),end=drawingAnchorPosition(drawingId,"END");
    if(!start||!end)return;
    const x=event.clientX-rect.left,y=event.clientY-rect.top;
    const startDistance=Math.hypot(x-(start.x-rect.left),y-(start.y-rect.top)),endDistance=Math.hypot(x-(end.x-rect.left),y-(end.y-rect.top));
    if(Math.min(startDistance,endDistance)>12)return;
-   activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"RECT",anchor:startDistance<=endDistance?"START":"END",original:{...rectangle.options}};
+   activeDrag={pointerId:event.pointerId,id:drawingId,kind:"RECT",anchor:startDistance<=endDistance?"START":"END",original:{...rectangle.options}};
   }
   else if(fibo){
-   const rect=host.getBoundingClientRect(),start=drawingAnchorPosition(hoveredDrawingId,"START"),end=drawingAnchorPosition(hoveredDrawingId,"END");
+   const rect=host.getBoundingClientRect(),start=drawingAnchorPosition(drawingId,"START"),end=drawingAnchorPosition(drawingId,"END");
    if(!start||!end)return;
    const x=event.clientX-rect.left,y=event.clientY-rect.top;
    const startDistance=Math.hypot(x-(start.x-rect.left),y-(start.y-rect.top)),endDistance=Math.hypot(x-(end.x-rect.left),y-(end.y-rect.top));
    if(Math.min(startDistance,endDistance)>12)return;
    const original={...fibo.options};if(original.levels)original.levels=[...original.levels];
-   activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"FIBO",anchor:startDistance<=endDistance?"START":"END",original};
+   activeDrag={pointerId:event.pointerId,id:drawingId,kind:"FIBO",anchor:startDistance<=endDistance?"START":"END",original};
   }
   else return;
   host.setPointerCapture(event.pointerId);event.preventDefault();event.stopImmediatePropagation();

@@ -142,7 +142,7 @@ Die folgende Matrix enthält jede verbindliche AT-ID. `Offen (Gesamtabnahme)` be
 | AT-031 | Symbol-/Konto-/TF-Wechsel 20-mal ohne Memory-Leak, stale UI oder Event-Duplikat | Offen (Gesamtabnahme) |
 | AT-032 | Preview-Timeout, doppelte Bestätigung, 409-Konflikt, MT5-Retcode-Ablehnung korrekt | Offen (Gesamtabnahme) |
 | AT-033 | Layout exportieren/importieren, neu laden, Schema-Migration und Konfliktfälle | Teilweise: isolierter v5-Zeilenexport/-import mit Schema v1, Symbol-/Timeframe-Scope, Reload und Konflikt-/Fehlerfällen im Chromium geprüft; vollständiger Layouttransfer, Versionsmigration, UI-Konfliktauflösung und Produktionsabnahme offen. |
-| AT-034 | Touch-Drag unter 390px und Windows 150% DPI korrekt | Offen (Gesamtabnahme) |
+| AT-034 | Touch-Drag unter 390px und Windows 150% DPI korrekt | Teilweise: CDP-Touch-Drag im nativen v5-Fixture bei 390 CSS px und 150% DPR, auch ohne vorherigen Hover, bewegt den Trendanker und hält den Gegenanker exakt. Physische Mobile-Abnahme, echte Windows-150%-Skalierung und Produktionsparität offen. |
 | AT-035 | Kein Signalmarker wird versehentlich zu einer echten Position/Order umgedeutet | Offen (Gesamtabnahme) |
 | AT-036 | P0 — Titan und GoldM15 mit aufgezeichnetem Candidate/Signal/Reject — Decision Inspector zeigt damals protokollierte Bedingungen, ReasonCodes, Parameter- und EMA-/RSI-Werte exakt | Offen (Gesamtabnahme) |
 | AT-037 | P0 — Nicht instrumentierter Alt-Trade — „Nicht aufgezeichnet“; keine frei erfundenen Gründe, kein nachträglicher Fill aus Setupmarker | Offen (Gesamtabnahme) |

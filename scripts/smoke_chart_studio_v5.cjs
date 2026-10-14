@@ -695,6 +695,25 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(await page.evaluate(()=>window.__v5Screenshot.inspect().selectedDrawingId),"visual-trend");
   assert.ok(await page.evaluate(()=>window.__trendHandleArcs>=2),"Selected trend line renders two visible endpoint handles");
   await page.screenshot({path:path.join(folder,"chart-studio-v5-selected-handles.png"),fullPage:true});
+  const touchContext=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:1.5,hasTouch:true,isMobile:true});
+  try{
+   const touchPage=await touchContext.newPage();await touchPage.goto("http://127.0.0.1:8872/chart_studio_v5/fixture.html",{waitUntil:"networkidle"});
+   await touchPage.evaluate(()=>{
+    const e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"touch");
+    const bars=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700200000+i*900,open:p,high:p+5,low:p-5,close:p+2,tick_volume:100+i}});
+    e.setCandles(bars);e.addTrendLine({id:"touch-trend",startTime:bars[70].time,startPrice:bars[70].close,endTime:bars[82].time,endPrice:bars[82].close+4,color:"#9be564"});window.__touchChart=e;
+   });
+   await touchPage.waitForTimeout(120);
+   const touchStart=await touchPage.evaluate(()=>({anchor:window.__touchChart.readDrawing("touch-trend"),point:window.__touchChart.drawingAnchorPosition("touch-trend","START")}));
+   const touchCdp=await touchContext.newCDPSession(touchPage);
+   await touchCdp.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x:touchStart.point.x,y:touchStart.point.y,id:1}]});
+   await touchCdp.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:[{x:touchStart.point.x+24,y:touchStart.point.y-18,id:1}]});
+   await touchCdp.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});await touchPage.waitForTimeout(100);
+   const touchMoved=await touchPage.evaluate(()=>window.__touchChart.readDrawing("touch-trend"));
+   assert.notDeepEqual([touchMoved.startTime,touchMoved.startPrice],[touchStart.anchor.startTime,touchStart.anchor.startPrice],"Touch drag moves a v5 anchor at 390 CSS px and 150% DPR");
+   assert.deepEqual([touchMoved.endTime,touchMoved.endPrice],[touchStart.anchor.endTime,touchStart.anchor.endPrice]);
+   await touchPage.screenshot({path:path.join(folder,"chart-studio-v5-touch-390-dpr150.png"),fullPage:true});
+  }finally{await touchContext.close()}
   await page.screenshot({path:path.join(folder,"chart-studio-v5-poc.png"),fullPage:true});
   console.log("PASS native v5 chart, configurable oscillator panes, move/resize, averages, volume, account isolation, no writes");
  }finally{if(browser)await browser.close();server.kill()}
