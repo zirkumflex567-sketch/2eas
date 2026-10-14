@@ -157,6 +157,39 @@ def test_daily_drawdown_records_its_mt5_history_read():
     assert [span['name'] for span in trace['spans']] == ['mt5_history']
 
 
+def test_titan_m5_daily_drawdown_filters_other_strategy_deals_and_disables_challenge_limits():
+    import app
+    from datetime import datetime, timezone
+
+    deals = [
+        SimpleNamespace(type=0, magic=881122, profit=10., swap=0., commission=0., fee=0.),
+        SimpleNamespace(type=1, magic=123456, profit=500., swap=0., commission=0., fee=0.),
+    ]
+    fake = SimpleNamespace(
+        history_deals_get=lambda *_args, **_kwargs: deals,
+        DEAL_TYPE_BUY=0,
+        DEAL_TYPE_SELL=1,
+    )
+    risk_context = dict(manual_active=False, risk_day='2026-10-14', risk_timezone='UTC', risk_reset_hour=0)
+    with patch.object(app, 'mt5', fake), \
+            patch.object(app, 'risk_day_context', return_value=(risk_context, datetime(2026, 10, 14, tzinfo=timezone.utc))), \
+            patch.object(app, 'require_fresh_quote', return_value={}), \
+            patch.object(app, 'selected', return_value=app.ACCOUNTS['titan_m5']):
+        result, _, _ = app.current_daily_drawdown(
+            fake, SimpleNamespace(balance=10_000., equity=9_900.),
+            SimpleNamespace(time=1_792_000_000), 1_792_000_000,
+            params=None, dd_cfg={},
+        )
+
+    assert result['realized_today'] == 10.
+    assert result['day_start_bal'] == 9_990.
+    assert result['challenge_protection'] is False
+    assert result['limit_pct'] is None
+    assert result['broker_limit_pct'] is None
+    assert result['buffer_usd'] is None
+    assert result['buffer_broker_usd'] is None
+
+
 def test_mt5_trace_diagnostics_require_authorized_read_identity(monkeypatch):
     from fastapi.testclient import TestClient
     import app

@@ -71,9 +71,39 @@ The `GoldM15_Reconstruction` initialization found in the roaming data root belon
 
 The user's four-strategy scope and the four running processes are recorded separately. EA-name/timeframe evidence is available from logs; a verified mapping of all four strategy identities to account alias, chart, exact preset, and in-memory binary remains unavailable from these read-only file/log sources. No terminal or chart was changed, and no login, password, or account number was queried or recorded.
 
+## User-provided five-preset inventory (2026-10-14 22:55 local)
+
+The user supplied the folder `Downloads/backtest/set` as containing preset files for five MT5 instances. A read-only scan found these files; the hashes identify file bytes only and do not prove an attached chart loaded them.
+
+| Candidate preset | Parameters | Modified (local) | SHA-256 |
+|---|---:|---|---|
+| `blueberry10k.set` | 50 | 22:51:23 | `D3734028E87C09E8C9017E271E7AFD76B73F7556E70ADD557AA612A82A2C9733` |
+| `icmarkets10k.set` | 50 at initial scan; superseded below | 22:53:58 | `7828A448DBD943907E5162143B2B313519F130BA7ECD9A1A4F10414577EE7A9C` (superseded) |
+| `puprime250.set` | 50 | 22:52:15 | `FF92CE8710E151CB73D304E411338C411DB487BC3983F15EEC541138A0AEA286` |
+| `puprime500.set` | 50 | 22:53:08 | `FEB3030FEE155BB41E8604A67117519F97DB00BEAC614E103180813FAF697E69` |
+| `xauusd5min15m.set` | 4 | 22:55:13 | `32880024DC1ACCA8F31C75718D82ABD190D971350AB51C21131D648FF27C0385` |
+
+A 23:08:55 local read-only process snapshot found five `terminal64.exe` processes, including the previously reported `xauusd5min15m` instance (start 22:50:38). The user later confirmed that the instance had been deliberately restarted and should be included in the test scope. The five preset filenames are useful candidate labels, but terminal/account/chart/timeframe/EA attachment and which four correspond to the user's four strategies are not yet attested. No preset was opened by MT5 or changed; no chart, terminal, EA, switch, or order was modified.
+
+## User-provided account mapping (2026-10-14, subsequent clarification)
+
+The user confirmed that `xauusd5min15m` was deliberately turned back on and an EA attached; include that instance in the test scope. The user supplied these preset-to-account labels:
+
+| Preset | User-provided account/EA label |
+|---|---|
+| `blueberry10k.set` | Blueberry account |
+| `icmarkets10k.set` | ICMarkets $10k account |
+| `puprime250.set` | PU Prime $250 account |
+| `puprime500.set` | PU Prime $500 account |
+| `xauusd5min15m.set` | The other PU Prime $500 account, running the Marketplace EA |
+
+These account labels and the Marketplace EA attachment are user-provided. Exact terminal process/account binding, visible chart symbol/timeframe, loaded binary/version, and in-memory preset remain to be verified from read-only runtime evidence. The earlier user statement described four strategies; the supplied mapping now covers five account/preset instances, so the count of distinct strategies is intentionally not inferred from the account count. No chart or EA was controlled, no preset was applied, and no trade was initiated during this inspection.
+
+The user subsequently confirmed changing both the EA and preset on the ICMarkets $10k account to Marketplace EA `XAUUSD 5 minute`. A read-only recheck at 23:16 found the replacement `icmarkets10k.set` to be 306 bytes with four inputs (`AB_C`, `AB_K`, `Entry_Amount`, `Use_Swing_SL`) and SHA-256 `C0320BE28583C9376852B0946C57F36742CC1120EFDD525DA35A5A89A9211E04`; this supersedes the 50-input hash in the initial scan. The user asked to include this EA in testing. Its attached chart and loaded EX5 identity remain to be verified without reloading the chart.
+
 ## User-directed process/log refresh (2026-10-14 22:00 local)
 
-A fresh `Win32_Process` snapshot still shows four `terminal64.exe` processes: three PU Prime terminal installations and one separate Research portable terminal. The user confirmed that account `700194822` is intentionally off; that instance is absent from this snapshot. No process arguments, account number, or credentials were read into the report.
+A fresh `Win32_Process` snapshot still shows four `terminal64.exe` processes: three PU Prime terminal installations and one separate Research portable terminal. The user confirmed that account `xauusd5min15m` is intentionally off; that instance is absent from this snapshot. No process arguments, account number, or credentials were read into the report.
 
 The active process-associated Expert logs contain Titan initialization/activity on gold M5/M15, with some additional M30/H1 initializations. No current `GoldM15_Reconstruction` or `XAUUSD 5 minute` initialization appears in the four active process-associated logs. A roaming IC Markets log still contains an older GoldM15 M15 initialization, but its originating terminal is not among the four current processes and does not establish a live attachment. Saved chart profiles in the process directories have not been updated since March; they cannot bind the current charts to the user's four named strategies.
 

@@ -326,7 +326,8 @@ def current_daily_drawdown(mt5_client, account_info, tick, now, params=None, dd_
     """Read only the fresh inputs needed for today's dashboard DD estimate."""
     if not tick or not account_info:
         raise HTTPException(503, 'MT5-Quote/Kontodaten für Tages-DD fehlen.')
-    params = gold_parameters() if selected()['id'] == 'goldm15' else params
+    current_account = selected()
+    params = gold_parameters() if current_account['id'] == 'goldm15' else params
     reset_hour = int(params['RiskResetHourServer']) if params else 0
     dd_cfg = load_dd_config() if dd_cfg is None else dd_cfg
     risk_context, midnight_dt = risk_day_context(now, reset_hour, dd_cfg)
@@ -346,20 +347,23 @@ def current_daily_drawdown(mt5_client, account_info, tick, now, params=None, dd_
     if deals:
         for deal in deals:
             if deal.type in (mt5_client.DEAL_TYPE_BUY, mt5_client.DEAL_TYPE_SELL):
+                if current_account['id'] == 'titan_m5' and getattr(deal, 'magic', 0) != 881122:
+                    continue
                 realized_today += deal.profit + deal.swap + deal.commission + getattr(deal, 'fee', 0.)
     day_start_bal = float(reset_bal) if manual_active and reset_ts else account_info.balance - realized_today
     if not all(math.isfinite(v) for v in (realized_today, day_start_bal)) or day_start_bal <= 0:
         raise HTTPException(503, 'Tageshistorie/-baseline ist ungültig; Risiko unbekannt.')
     daily_ref = max(day_start_bal, account_info.balance)
     daily_loss = max(0.0, daily_ref - account_info.equity)
-    ea_limit_pct, broker_limit_pct = 3.5, 4.0
+    challenge_protection = bool(current_account.get('challenge_protection', True))
+    ea_limit_pct, broker_limit_pct = (3.5, 4.0) if challenge_protection else (None, None)
     daily_drawdown = {
         'loss_usd': round(daily_loss, 2),
         'pct': round(100 * daily_loss / daily_ref, 2),
         'limit_pct': ea_limit_pct,
         'broker_limit_pct': broker_limit_pct,
-        'buffer_usd': round(max(0.0, daily_ref * ea_limit_pct / 100 - daily_loss), 2),
-        'buffer_broker_usd': round(max(0.0, daily_ref * broker_limit_pct / 100 - daily_loss), 2),
+        'buffer_usd': round(max(0.0, daily_ref * ea_limit_pct / 100 - daily_loss), 2) if challenge_protection else None,
+        'buffer_broker_usd': round(max(0.0, daily_ref * broker_limit_pct / 100 - daily_loss), 2) if challenge_protection else None,
         'day_start_bal': round(day_start_bal, 2),
         'daily_ref': round(daily_ref, 2),
         'balance': round(account_info.balance, 2),
@@ -367,6 +371,7 @@ def current_daily_drawdown(mt5_client, account_info, tick, now, params=None, dd_
         'realized_today': round(realized_today, 2),
         'manual_active': manual_active,
         'manual_expired': bool(dd_cfg.get('manual_reset_active', False) and not manual_active),
+        'challenge_protection': challenge_protection,
         'risk_day': risk_context['risk_day'],
         'risk_timezone': risk_context['risk_timezone'],
         'risk_reset_hour': reset_hour,

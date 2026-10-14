@@ -6,6 +6,16 @@ The saved GoldM15 chart profile names `Experts/GoldM15_Reconstruction.ex5`; the 
 
 MetaEditor 5.0.0.6230 (SHA-256 `CF2750BDE55D98A1F3B4E56BCDD4F59300D0CFF5CAA6760985F7EF2C2CC12229`) compiled the copied v1.21 source twice with zero errors and zero warnings. One run used the other installed terminal's standard library tree; the second used this Gold terminal's tree. The output hashes differed (`E5E846860871FD9380A7A00AE2A66107E58CDA339EE45B9D23746560BA0DE2D8` and `B1C37D1F940E47E4E2632C2918358C23E5C73210EEAF8447E2261B6AE211FFA5`), and neither matched the installed EX5 (`B7C2345FFA921882A13FA9AB05E1BDAB96C18B75924CFF7AF169E3A3349BB0B1`). This is consistent with the earlier compile audit's finding that EX5 output is not byte-reproducible across nominally identical runs. It does not prove which EX5 image is loaded in process memory.
 
+The redacted compiler transcript from the two retained logs is:
+
+```text
+MetaEditor 5.0.0.6230 — copied GoldM15_Reconstruction.mq5 — X64 Regular
+Pass 1: code generated; Result: 0 errors, 0 warnings; 3045 ms
+Pass 2: code generated; Result: 0 errors, 0 warnings; 2795 ms
+```
+
+The full local logs include workstation paths and remain in ignored output folders; the transcript above omits those paths while preserving the compiler result and timings.
+
 | Input | SHA-256 |
 |---|---|
 | GoldM15_Reconstruction.mq5 v1.21 | `AD898E5A8A10DF7F55512B64DA63A25C884241678565E89A3363BF04715B346A` |
