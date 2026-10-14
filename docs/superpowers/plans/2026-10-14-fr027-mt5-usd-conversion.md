@@ -33,4 +33,4 @@
 - [x] Integrate without changing the existing account-currency PnL or `canExecute=false` contract; disclose conversion in the What-if result.
 - [x] Run focused tests, full Python suite (`924 passed, 305 subtests`), beta Chromium UI smoke, Python/JS syntax checks, and `git diff --check`; inspect source and confirm the conversion path has no MT5 mutation calls.
 - [x] Update FR-027/AT-039 with local contract evidence and explicit remaining two-demo/hardware/release gates.
-- [ ] Commit only the feature, tests, plan, and ledger; leave generated visual artifacts unstaged.
+- [x] Commit only the feature, tests, plan, and ledger; leave generated visual artifacts unstaged (commit `209c0ff`).
