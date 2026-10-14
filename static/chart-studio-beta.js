@@ -4,6 +4,7 @@
 (()=>{
 "use strict";
 const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","vertical","text","trend","rect","fib","ray","ruler","channel","plan","position-draft"];
+const MAX_DRAWINGS=1000;
 const ratios=[0,.236,.382,.5,.618,.786,1];
 let s=null,requestId=0,scenarioGeneration=0,portfolioGeneration=0,planTimer=null;
 const json=v=>JSON.parse(JSON.stringify(v));
@@ -292,7 +293,7 @@ function safeDraw(list){
  const reserved=new Set(list.filter(o=>o&&typeof o.id==="string"&&/^[A-Za-z0-9_-]{1,32}$/.test(o.id)).map(o=>o.id));
  const used=new Set(),allowed=new Set(["kind","anchors","id","label","visible","locked","levels"]);
  let serial=1;const result=[];
- for(const o of list.slice(0,500)){
+ for(const o of list.slice(0,MAX_DRAWINGS)){
   if(!window.ChartStudioDrawingGeometry?.validDrawing(o)||
    Object.keys(o).some(k=>!allowed.has(k)))continue;
   if(o.id!==undefined&&(typeof o.id!=="string"||
@@ -423,7 +424,7 @@ function operateObject(i,action,value){
   updateMessage("Textannotation benötigt mindestens ein druckbares Zeichen.");
   window.ChartStudioObjectManager?.render();return false;
  }
- if(action==="duplicate"&&s.draw.length>=500){updateMessage("Maximal 500 Objekte.");return false}
+ if(action==="duplicate"&&s.draw.length>=MAX_DRAWINGS){updateMessage("Maximal 1.000 Objekte.");return false}
  if(action==="up"&&i===s.draw.length-1)return false;
  if(action==="down"&&i===0)return false;
  if(!["rename","visibility","lock","duplicate","remove","up","down"].includes(action))return false;

@@ -53,6 +53,37 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process");
   await manager.locator(".cs-object-row").first().waitFor({state:"visible"});
   assert.equal(await manager.locator(".cs-object-row").count(),2);
   assert.ok((await manager.locator(".cs-object-count").textContent()).includes("2"));
+  const originalDocument=await page.evaluate(()=>ChartStudioBeta.exportDocument());
+  const capacityDocument=count=>({...originalDocument,drawings:Array.from({length:count},(_,index)=>({
+   id:`capacity-${String(index).padStart(4,"0")}`,kind:"horizontal",
+   anchors:[{time:1700000000+index,price:4000+index/10}]}))});
+  assert.equal(await page.evaluate(doc=>ChartStudioBeta.importDocument(doc),capacityDocument(999)),true,
+   "A valid 999-drawing document must import without truncation");
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),999);
+  assert.equal(await manager.locator(".cs-object-row").count(),999,
+   "Object Manager must list every imported drawing");
+  assert.equal(await manager.locator('.cs-object-row[data-index="0"] button[data-action="duplicate"]').isDisabled(),false,
+   "Duplication remains available below the shared cap");
+  await manager.locator('.cs-object-row[data-index="0"] button[data-action="duplicate"]').click();
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),1000,
+   "Duplicating the 999th drawing must reach exactly 1,000");
+  assert.equal(await page.evaluate(doc=>ChartStudioBeta.importDocument(doc),capacityDocument(1000)),true,
+   "A valid 1,000-drawing document must import intact");
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),1000);
+  assert.equal(await manager.locator(".cs-object-row").count(),1000);
+  assert.equal(await manager.locator('.cs-object-row[data-index="0"] button[data-action="duplicate"]').isDisabled(),true,
+   "Duplication is disabled at the shared cap");
+  const idsAtCapacity=await page.evaluate(()=>ChartStudioBeta.getState().drawings.map(drawing=>drawing.id));
+  await page.evaluate(()=>document.querySelector('.cs-object-row[data-index="0"] button[data-action="duplicate"]')
+   .dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true})));
+  assert.deepEqual(await page.evaluate(()=>ChartStudioBeta.getState().drawings.map(drawing=>drawing.id)),idsAtCapacity,
+   "A direct duplicate event at 1,000 must be rejected without changing drawings");
+  assert.equal(await page.evaluate(doc=>ChartStudioBeta.importDocument(doc),capacityDocument(1001)),false,
+   "An over-cap document must be rejected rather than truncated");
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),1000,
+   "Rejected import must preserve all existing drawings");
+  assert.equal(await page.evaluate(doc=>ChartStudioBeta.importDocument(doc),originalDocument),true,
+   "Restore the original document before the existing object-manager checks");
   const row=()=>manager.locator('.cs-object-row[data-index="0"]');
   await row().locator('input[data-field="label"]').fill("London Sweep");
   await row().locator('input[data-field="label"]').press("Tab");
