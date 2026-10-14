@@ -29,7 +29,7 @@ This is an editable draft and a read-only calculation only. It cannot enable, im
 
 ## Progress
 
-- [ ] Plan independently reviewed.
+- [x] Plan independently reviewed.
 - [x] Browser contract observed failing before implementation.
 - [x] Revision-bound draft and read-only preview implemented.
-- [ ] Browser and Python regressions pass; independent review has no findings. (Smoke and focused Python suite pass; independent UI review and touch hardware check remain.)
+- [x] Browser and Python regressions pass; independent review has no findings. Touch/hardware acceptance remains open in the requirement ledger.
