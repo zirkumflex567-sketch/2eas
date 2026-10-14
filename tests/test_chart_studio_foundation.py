@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from chart_studio.money import PreviewError, drawdown_projection, preview_scenario, size_for_risk_budget
+from chart_studio.currency_conversion import convert_amount_to_usd, convert_amounts_to_usd
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -30,6 +31,53 @@ def result(side="BUY",currency="USD",mt5=None,**k):
     return preview_scenario(mt5 or MT5Fake(),SimpleNamespace(currency=currency),SYMBOL,**d)
 
 class ChartStudioFoundationTests(unittest.TestCase):
+    def test_fx_conversion_uses_direct_bid_for_assets_and_ask_for_liabilities(self):
+        class FxMT5:
+            def symbols_get(self):
+                return [SimpleNamespace(name="EURUSD.r",currency_base="EUR",currency_profit="USD",visible=True)]
+            def symbol_info_tick(self,symbol):
+                self.symbol=symbol
+                return SimpleNamespace(bid=1.1,ask=1.12,time_msc=1_800_000_000_000)
+        mt5=FxMT5()
+        credit=convert_amount_to_usd(mt5,10,"EUR",now_ms=1_800_000_000_000)
+        liability=convert_amount_to_usd(mt5,-10,"EUR",now_ms=1_800_000_000_000)
+        self.assertEqual(credit["amountUsd"],11.0)
+        self.assertEqual(credit["conversionSide"],"BID")
+        self.assertEqual(liability["amountUsd"],-11.2)
+        self.assertEqual(liability["conversionSide"],"ASK")
+        self.assertEqual(credit["symbol"],"EURUSD.r")
+
+    def test_fx_amount_batch_uses_one_quote_for_stop_and_target(self):
+        class MovingFxMT5:
+            def __init__(self): self.reads=0
+            def symbols_get(self):
+                return [SimpleNamespace(name="EURUSD",currency_base="EUR",currency_profit="USD",visible=True)]
+            def symbol_info_tick(self,symbol):
+                self.reads+=1
+                return SimpleNamespace(bid=1.1+self.reads/10,ask=1.12+self.reads/10,time_msc=1_800_000_000_000+self.reads)
+        mt5=MovingFxMT5()
+        converted=convert_amounts_to_usd(mt5,{"stop":-10,"target":20},"EUR",now_ms=1_800_000_000_000)
+        self.assertEqual(mt5.reads,1)
+        self.assertEqual(converted["amountsUsd"],{"stop":-12.2,"target":24.0})
+
+    def test_fx_conversion_inverse_uses_quote_side_and_fails_closed_on_stale_or_ambiguous(self):
+        class FxMT5:
+            def __init__(self,symbols,tick): self._symbols=symbols;self._tick=tick
+            def symbols_get(self): return self._symbols
+            def symbol_info_tick(self,symbol): return self._tick
+        inverse=SimpleNamespace(name="USDEUR",currency_base="USD",currency_profit="EUR",visible=True)
+        tick=SimpleNamespace(bid=.89,ask=.91,time_msc=1_800_000_000_000)
+        converted=convert_amount_to_usd(FxMT5([inverse],tick),10,"EUR",now_ms=1_800_000_000_000)
+        self.assertEqual(converted["amountUsd"],10.99)
+        self.assertEqual(converted["conversionSide"],"ASK")
+        stale=convert_amount_to_usd(FxMT5([inverse],SimpleNamespace(bid=.89,ask=.91,time_msc=1)),10,"EUR",now_ms=1_800_000_000_000)
+        self.assertEqual(stale["state"],"UNAVAILABLE")
+        inverse_alias=SimpleNamespace(name="USDEUR.a",currency_base="USD",currency_profit="EUR",visible=True)
+        duplicate=convert_amount_to_usd(FxMT5([inverse,inverse_alias],tick),10,"EUR",now_ms=1_800_000_000_000)
+        self.assertEqual(duplicate["reason"],"AMBIGUOUS_FX_SYMBOL")
+        missing=convert_amount_to_usd(FxMT5([],tick),10,"EUR",now_ms=1_800_000_000_000)
+        self.assertEqual(missing["state"],"UNAVAILABLE")
+
     def test_drawdown_projection_uses_fresh_dashboard_buffer_and_keeps_guard_unknown(self):
         projection=drawdown_projection(currency="USD",daily_drawdown={"risk_status":"available","loss_usd":100,
             "limit_pct":3.5,"daily_ref":10000},scenario_risk=80,quote_time_utc="2026-10-14T10:00:00Z")
@@ -200,7 +248,22 @@ class ChartStudioFoundationTests(unittest.TestCase):
         r=result(currency="EUR")
         self.assertIsNone(r["riskUsd"])
         self.assertIsNone(r["rewardUsd"])
+        self.assertEqual(r["usdConversion"]["state"],"UNAVAILABLE")
         self.assertEqual(r["pnlAtTp"]["currency"],"EUR")
+
+    def test_non_usd_scenario_exposes_fresh_mt5_usd_conversion_without_replacing_account_pnl(self):
+        class FxScenarioMT5(MT5Fake):
+            def symbols_get(self):
+                return [SimpleNamespace(name="EURUSD.r",currency_base="EUR",currency_profit="USD",visible=True)]
+            def symbol_info_tick(self,symbol):
+                return SimpleNamespace(bid=1.1,ask=1.12,time_msc=1_800_000_000_000)
+        r=result(currency="EUR",mt5=FxScenarioMT5(),now_ms=1_800_000_000_000)
+        self.assertEqual(r["riskUsd"],112.0)
+        self.assertEqual(r["rewardUsd"],220.0)
+        self.assertEqual(r["pnlAtSl"],{"amount":-100.0,"currency":"EUR","kind":"brokerEstimatedGross"})
+        self.assertEqual(r["usdConversion"]["source"],"MT5_FX_QUOTE")
+        self.assertEqual(r["usdConversion"]["symbol"],"EURUSD.r")
+        self.assertFalse(r["canExecute"])
     def test_invalid_inputs(self):
         for kw in ({"side":"HOLD"},{"entry":4100.001},{"stop":4120.0},
                    {"volume":.015},{"target":-1},{"entry":float("nan")}):
@@ -226,6 +289,8 @@ class ChartStudioFoundationTests(unittest.TestCase):
         self.assertIn('data-cmd="drag-plan"',ui)
         self.assertIn("scenarioGeneration++",ui)
         self.assertIn("validScenario(next)",ui)
+        self.assertIn("result.usdConversion",ui)
+        self.assertIn("USD-Konversion UNAVAILABLE",ui)
         self.assertNotIn("/api/modify_position",ui)
         self.assertNotIn("/api/close_position",ui)
 

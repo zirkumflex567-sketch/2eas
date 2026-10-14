@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from .currency_conversion import convert_amounts_to_usd
 
 
 class PreviewError(ValueError):
@@ -185,7 +186,7 @@ def size_for_risk_budget(mt5, account_info, symbol_info, *, symbol, side, entry,
 
 def preview_scenario(mt5, account_info, symbol_info, *, symbol, side, volume=None, entry, stop, target,
                      risk_budget=None, risk_percent=None, fees_per_lot=0,
-                     slippage_ticks=0):
+                     slippage_ticks=0, now_ms=None):
     """Compute broker authoritative prospective GROSS PnL in account currency.
 
     Scenario is strictly NOT a broker order and is NOT a stop-modification preview.
@@ -225,8 +226,11 @@ def preview_scenario(mt5, account_info, symbol_info, *, symbol, side, volume=Non
     currency = str(getattr(account_info, "currency", "") or "").upper()
     if not currency:
         raise PreviewError("ACCOUNT_CURRENCY_UNKNOWN", "MT5-Kontowährung nicht verfügbar.")
-    # USD only if account itself denominates USD; conversion is future work.
-    usd = currency == "USD"
+    usd_conversion = convert_amounts_to_usd(mt5, {"stop":float(pnl_stop),"target":float(pnl_target)},
+                                            currency, now_ms=now_ms)
+    usd_available = usd_conversion["state"] == "AVAILABLE"
+    stop_usd = usd_conversion.get("amountsUsd",{}).get("stop")
+    target_usd = usd_conversion.get("amountsUsd",{}).get("target")
     assumed_fees = fees_per_lot * volume
     net_stop = float(slipped_stop_pnl) - assumed_fees
     net_target = float(slipped_target_pnl) - assumed_fees
@@ -243,8 +247,13 @@ def preview_scenario(mt5, account_info, symbol_info, *, symbol, side, volume=Non
                     "kind": "brokerEstimatedGross"},
         "pnlAtTp": {"amount": round(float(pnl_target), 2), "currency": currency,
                     "kind": "brokerEstimatedGross"},
-        "riskUsd": round(-float(pnl_stop),2) if usd else None,
-        "rewardUsd": round(float(pnl_target),2) if usd else None,
+        "riskUsd": round(-stop_usd,2) if usd_available else None,
+        "rewardUsd": round(target_usd,2) if usd_available else None,
+        "usdConversion": {"state":"AVAILABLE", "source":usd_conversion["source"],
+                           "symbol":usd_conversion.get("symbol"), "quoteTimeUtc":usd_conversion.get("quoteTimeUtc"),
+                           "conversionSides":usd_conversion.get("conversionSides",{})}
+                          if usd_available else {"state":"UNAVAILABLE",
+                                                 "reason":usd_conversion.get("reason"),"source":"NONE"},
         "riskRewardRatio": round(float(pnl_target) / -float(pnl_stop), 3),
         "margin": {"amount": round(float(margin),2), "currency": currency},
         "positionSizing": sizing or {"mode": "FIXED_LOTS", "volumeLots": volume, "currency": currency},

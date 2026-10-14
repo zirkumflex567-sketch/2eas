@@ -931,13 +931,17 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
    if(Number.isFinite(Number(result.tickSize))&&Number(result.tickSize)>0)s.planTickSize=Number(result.tickSize);
    requestDraw();
    const loss=result.pnlAtSl.amount,reward=result.pnlAtTp.amount,cur=result.pnlAtSl.currency;
+   const usdFx=result.usdConversion?.state==="AVAILABLE"
+    ? " · USD-Brutto SL/Ziel "+result.riskUsd+" / "+result.rewardUsd+" USD"+
+      (result.usdConversion.source==="MT5_FX_QUOTE"?" · MT5-FX "+result.usdConversion.symbol+" "+result.usdConversion.quoteTimeUtc+" ("+result.usdConversion.conversionSides.stop+"/"+result.usdConversion.conversionSides.target+")":" · Kontowährung USD")
+    : " · USD-Konversion UNAVAILABLE ("+(result.usdConversion?.reason||"Quelle fehlt")+")";
    output.textContent="PLAN · GROSS Stop "+loss+" "+cur+" / Ziel +"+reward+" "+cur+
     " · R:R "+result.riskRewardRatio+" · Lots "+result.positionSizing.volumeLots+
     (result.positionSizing.mode==="FIXED_LOTS"?"":" · Budget "+result.positionSizing.riskBudget+" "+cur+" · GROSS-Risiko nach Slippage "+result.positionSizing.grossStopRisk+" "+cur+" · Gesamtrisiko-Annahme "+result.positionSizing.estimatedTotalStopRisk+" "+cur)+
     " · NETTO-Annahme SL "+result.netEstimate.pnlAtSl.amount+" / TP "+result.netEstimate.pnlAtTp.amount+" "+cur+" · Gebühren "+result.estimatedCosts.feesPerLot+" "+cur+"/Lot Roundtrip · adverse Slippage "+result.estimatedCosts.slippageTicks+" Ticks (User-Annahme)"+
     (result.dailyDrawdownProjection?.state==="AVAILABLE"?" · Tages-DD-Schätzung "+result.dailyDrawdownProjection.projectedLoss+"/"+result.dailyDrawdownProjection.dailyLimit+" "+result.dailyDrawdownProjection.currency+" · Rest "+result.dailyDrawdownProjection.remainingToLimit+" · Quote "+result.dailyDrawdownProjection.quoteTimeUtc+" · EA-Guard UNKNOWN":" · Tages-DD UNAVAILABLE ("+(result.dailyDrawdownProjection?.reason||"Daten fehlen")+") · EA-Guard UNKNOWN")+
     " · Margin "+result.margin.amount+" "+cur+
-    (cur==="USD"?"":" · USD-Konversion nicht verfügbar")+
+    usdFx+
     " · Brutto aus MT5, Netto aus User-Annahmen; tatsächliche Gebühren/Swap/Slippage/Gaps können abweichen · KEINE ORDER";
   }catch(err){if(nonce===scenarioGeneration){
     if(s.validatedScenario||s.planOriginal){

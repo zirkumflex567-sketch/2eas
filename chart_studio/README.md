@@ -52,10 +52,12 @@ Current features:
 - USD What-if results also project the assumed net stop risk against the fresh
   dashboard daily drawdown estimate, with quote time and remaining distance.
   The EA guard is always shown as unknown unless a separate live authorization
-  source is proven; unavailable history/quotes and non-USD accounts stay
-  unavailable without conversion.
-- No USD exchange-rate fabrication: previews for non-USD accounts are in
-  account currency, with USD explicitly unavailable.
+  source is proven; unavailable history/quotes and non-USD daily-DD projections
+  stay unavailable.
+- For non-USD What-if PnL, USD equivalents use one fresh selected MT5 direct or
+  inverse currency pair. Assets use bid and liabilities use ask in the correct
+  pair direction. Missing, stale, invalid, or ambiguous symbols leave USD
+  amounts unavailable; the broker's original account-currency PnL stays primary.
 - Two broker-verified What-if previews can be saved as account-scoped local A/B
   snapshots and exported as JSON. Snapshots retain the exact preview request,
   response, currency, and capture time; they are not executable orders and are

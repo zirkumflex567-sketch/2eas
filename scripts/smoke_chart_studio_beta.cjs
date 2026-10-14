@@ -34,6 +34,7 @@ const fs=require("node:fs"),path=require("node:path");
     const fees=Number((feePerLot*volume).toFixed(2)),netStop=Number((risk-slipPerLot*volume-fees).toFixed(2)),netTarget=Number((reward-slipPerLot*volume-fees).toFixed(2));
     const preview={account:"titan",canExecute:false,pnlAtSl:{amount:risk,currency:"USD"},
       pnlAtTp:{amount:reward,currency:"USD"},margin:{amount:95,currency:"USD"},
+      riskUsd:-risk,rewardUsd:reward,usdConversion:{state:"AVAILABLE",source:"ACCOUNT_CURRENCY"},
       riskRewardRatio:Number((reward/-risk).toFixed(3)),tickSize:0.01,
       estimatedCosts:{source:"USER_ASSUMPTION",currency:"USD",feesPerLot:feePerLot,feesTotal:fees,slippageTicks:req.slippageTicks||0,slippageAtStop:slipPerLot*volume,slippageAtTarget:slipPerLot*volume},
       netEstimate:{kind:"userAssumptionsEstimate",pnlAtSl:{amount:netStop,currency:"USD"},pnlAtTp:{amount:netTarget,currency:"USD"},riskRewardRatio:netStop<0&&netTarget>0?Number((netTarget/-netStop).toFixed(3)):null},
@@ -621,6 +622,7 @@ const fs=require("node:fs"),path=require("node:path");
   assert.notEqual(afterPlan,beforePlan);
   assert.ok(requests.length>=2);
   const money=await page.locator("#cs-scenario-result").textContent();
+  assert.ok(money.includes("Kontowährung USD"),"USD account conversion source must be explicit");
   assert.ok(money.includes("Stop "+Number(((afterPlan-4100)*0.1*100).toFixed(2))+" USD"),
     "USD risk must reflect the broker-priced new stop rather than old UI value");
   assert.ok(requests.every(url=>url.includes("/api/chart/v1/scenarios/preview")||url.includes("/api/chart/v1/position/preview-stop")),
