@@ -8,9 +8,9 @@ const REGISTRY=Object.freeze({
  rsi:{name:"RSI (Wilder)",type:"oscillator",period:14,min:2,max:200},
  macd:{name:"MACD",type:"oscillator",fast:12,slow:26,signal:9},
  atr:{name:"ATR (Wilder)",type:"oscillator",period:14,min:2,max:200},
- volume:{name:"Volumen (Tick/Real)",type:"histogram"},
+ volume:{name:"Volumen (Tick/Real)",type:"histogram",upColor:"#41cce9",downColor:"#f7758b"},
  adx:{name:"ADX +DI / −DI (Wilder)",type:"oscillator",period:14,min:2,max:200},
- vwap:{name:"VWAP (UTC, Volumenproxy)",type:"overlay"}
+ vwap:{name:"Session-VWAP (Volumenproxy)",type:"overlay",timeZone:"UTC",sessionStart:"00:00"}
 });
 const storagePrefix="2eas:studio:indicators:v1:";
 const finite=x=>Number.isFinite(Number(x))?Number(x):null;
@@ -78,9 +78,12 @@ function macd(input,fast=12,slow=26,signal=9){
  }
  return out;
 }
-function volumes(input){
+function volumes(input,settings={}){
+ const validColor=value=>typeof value==="string"&&/^#[0-9a-fA-F]{6}$/.test(value)?value.toLowerCase():null;
+ const upColor=validColor(settings.upColor)||"#41cce9";
+ const downColor=validColor(settings.downColor)||"#f7758b";
  return validateBars(input).map(b=>({time:b.time,value:b.real_volume>0?b.real_volume:b.tick_volume,
-  color:b.close>=b.open?"rgba(65,204,233,.8)":"rgba(247,117,139,.72)",
+  color:b.close>=b.open?upColor:downColor,
   kind:b.real_volume>0?"real":"tick"}));
 }
 function adx(input,period=14){
@@ -119,14 +122,25 @@ function adx(input,period=14){
  }
  return out;
 }
-function vwap(input){
+function sessionConfig(settings={}){
+ const timeZone=settings.timeZone??"UTC",sessionStart=settings.sessionStart??"00:00";
+ if(typeof timeZone!=="string"||timeZone.length>64||typeof sessionStart!=="string"||!/^([01]\d|2[0-3]):[0-5]\d$/.test(sessionStart))return null;
+ try{new Intl.DateTimeFormat("en-CA",{timeZone}).format(new Date(0))}catch(_){return null}
+ const [hour,minute]=sessionStart.split(":").map(Number);
+ return {timeZone,sessionStart,minutes:hour*60+minute,formatter:new Intl.DateTimeFormat("en-CA",{timeZone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"})};
+}
+function vwap(input,settings={}){
  // OTC XAUUSD/FX tick_volume is a weighted-price PROXY, not exchange orderflow.
- // Reset at UTC midnight; no volume = no invented bar observation.
+ // Session reset follows the selected wall-clock time and IANA timezone.
+ const config=sessionConfig(settings);if(!config)return[];
  const bars=validateBars(input),out=[];
- let day=null,sumPV=0,sumVolume=0;
+ let session=null,sumPV=0,sumVolume=0;
  for(const b of bars){
-  const d=Math.floor(b.time/86400);
-  if(d!==day){day=d;sumPV=0;sumVolume=0}
+  const parts=Object.fromEntries(config.formatter.formatToParts(new Date(b.time*1000)).map(p=>[p.type,p.value]));
+  const y=Number(parts.year),m=Number(parts.month),day=Number(parts.day),minute=Number(parts.hour)*60+Number(parts.minute);
+  const sessionDay=new Date(Date.UTC(y,m-1,day)-(minute<config.minutes?86400000:0));
+  const key=sessionDay.toISOString().slice(0,10);
+  if(key!==session){session=key;sumPV=0;sumVolume=0}
   const volume=b.real_volume>0?b.real_volume:b.tick_volume;
   if(volume<=0)continue;
   const typical=(b.high+b.low+b.close)/3;
@@ -139,14 +153,14 @@ function calc(kind,candles,settings={}){
  if(kind==="rsi")return {rsi:rsi(candles,settings.period||14)};
  if(kind==="atr")return {atr:atr(candles,settings.period||14)};
  if(kind==="macd")return macd(candles,settings.fast||12,settings.slow||26,settings.signal||9);
- if(kind==="volume")return {volume:volumes(candles)};
+ if(kind==="volume")return {volume:volumes(candles,settings)};
  if(kind==="adx")return adx(candles,settings.period||14);
- if(kind==="vwap")return {vwap:vwap(candles)};
+ if(kind==="vwap")return {vwap:vwap(candles,settings)};
  throw Error("Unknown indicator: "+kind);
 }
 function defaults(){
  return {rsi:{enabled:false,period:14},macd:{enabled:false,fast:12,slow:26,signal:9},
-  atr:{enabled:false,period:14},volume:{enabled:false},adx:{enabled:false,period:14},vwap:{enabled:false}};
+  atr:{enabled:false,period:14},volume:{enabled:false,upColor:"#41cce9",downColor:"#f7758b"},adx:{enabled:false,period:14},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
 }
 function restore(account){
  try{const raw=JSON.parse(localStorage.getItem(storagePrefix+account)||"null");
@@ -158,6 +172,9 @@ function restore(account){
      if(Object.hasOwn(result[id],prop)&&Number.isInteger(raw[id][prop])&&raw[id][prop]>=2&&raw[id][prop]<=300)
       result[id][prop]=raw[id][prop];
     }
+    if(id==="volume")for(const prop of ["upColor","downColor"])
+     if(typeof raw[id][prop]==="string"&&/^#[0-9a-fA-F]{6}$/.test(raw[id][prop]))result[id][prop]=raw[id][prop].toLowerCase();
+    if(id==="vwap"){const config=sessionConfig(raw[id]);if(config){result.vwap.timeZone=config.timeZone;result.vwap.sessionStart=config.sessionStart}}
    }
   }
   return result;
@@ -173,6 +190,16 @@ function box(kind){
  chk.setAttribute("aria-label",cfg.name+" anzeigen");chk.dataset.kind=kind;
  const name=document.createElement("strong");name.textContent=cfg.name;
  row.append(chk,name);
+ for(const prop of kind==="volume"?["upColor","downColor"]:[]){
+  const label=document.createElement("span");label.textContent=prop==="upColor"?"Aufwärtsfarbe":"Abwärtsfarbe";
+  const input=document.createElement("input");input.type="color";input.value=settings[prop];input.dataset.parameter=prop;input.dataset.kind=kind;
+  input.setAttribute("aria-label",cfg.name+": "+label.textContent);row.append(label,input);
+ }
+ if(kind==="vwap")for(const [prop,labelText] of [["timeZone","IANA-Zeitzone"],["sessionStart","Sessionstart (HH:MM)"]]){
+  const label=document.createElement("span");label.textContent=labelText;
+  const input=document.createElement("input");input.type="text";input.value=settings[prop];input.dataset.parameter=prop;input.dataset.kind=kind;
+  input.setAttribute("aria-label",cfg.name+": "+labelText);label.append(input);row.append(label);
+ }
  for(const prop of ["period","fast","slow","signal"]){
   if(!Object.hasOwn(cfg,prop))continue;
   const label=document.createElement("span");label.textContent=prop;
@@ -189,6 +216,14 @@ function syncPanel(){
  for(const id of Object.keys(REGISTRY))state.controls.append(box(id));
 }
 function data(kind){return calc(kind,state.bars,state.settings[kind])}
+function addReadout(kind,calculated){
+ const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],vwap:["VWAP"]}[kind];
+ const keys=Object.keys(calculated);
+ for(let i=0;i<keys.length;i++)for(const point of calculated[keys[i]]||[]){
+  const rows=state.readouts.get(point.time)||[];
+  rows.push({kind,label:labels[i],value:point.value});state.readouts.set(point.time,rows);
+ }
+}
 function syncRanges(){
  if(!state)return;
  let range=null;
@@ -228,7 +263,7 @@ function createPane(kind){
  };
  if(kind==="rsi")series("rsi","#e9bb72");
  if(kind==="atr")series("atr","#a68eff");
- if(kind==="macd"){series("macd","#55d7ee");series("signal","#f3c56a");series("histogram","#53dabd","hist")}
+  if(kind==="macd"){series("macd","#55d7ee");series("signal","#f3c56a");series("histogram","#53dabd","hist")}
  if(kind==="volume")series("volume","#5de1d8","hist");
  if(kind==="adx"){series("adx","#e9bc72");series("plusDi","#55deaa");series("minusDi","#f17e97")}
  const pane={shell,chart,plot,lines,observer:null};
@@ -240,21 +275,25 @@ function createPane(kind){
 }
 function renderPanes(){
  if(!state)return;
+ state.readouts=new Map();
  for(const id of Object.keys(REGISTRY)){
   if(id==="vwap"){
+   const calculated=state.settings.vwap.enabled?data("vwap"):null;
+   if(calculated)addReadout(id,calculated);
    if(state.settings.vwap.enabled&&!state.vwapOverlay){
-    state.vwapOverlay=state.chart.addLineSeries({title:"VWAP UTC · Tick-/Realvolumenproxy",
+    state.vwapOverlay=state.chart.addLineSeries({title:"Session-VWAP "+state.settings.vwap.sessionStart+" "+state.settings.vwap.timeZone+" · Tick-/Realvolumenproxy",
      color:"#f1da9b",lineWidth:2,lastValueVisible:true,priceLineVisible:false});
    }
    if(state.vwapOverlay){
-    state.vwapOverlay.applyOptions({visible:!!state.settings.vwap.enabled});
-    if(state.settings.vwap.enabled)state.vwapOverlay.setData(data("vwap").vwap);
+    state.vwapOverlay.applyOptions({visible:!!state.settings.vwap.enabled,title:"Session-VWAP "+state.settings.vwap.sessionStart+" "+state.settings.vwap.timeZone+" · Tick-/Realvolumenproxy"});
+    if(calculated)state.vwapOverlay.setData(calculated.vwap);
    }
    continue;
   }
   if(!state.settings[id].enabled){destroyPane(id);continue}
   const pane=state.panes.get(id)||createPane(id);
   const calculated=data(id);
+  addReadout(id,calculated);
   for(const [key,series] of Object.entries(pane.lines)){
    // Align warm-up bars to the primary chart's logical coordinates.
    const byTime=new Map((calculated[key]||[]).map(p=>[p.time,p]));
@@ -262,6 +301,21 @@ function renderPanes(){
   }
  }
  syncRanges();
+ window.ChartStudioBeta?.refreshDataWindowIndicators();
+}
+function readout(time){
+ if(!state)return "";
+ const rows=state.readouts.get(Number(time))||[];
+ const values=[];
+ const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],vwap:["VWAP"]};
+ for(const id of Object.keys(REGISTRY))if(state.settings[id].enabled){
+  for(const label of components[id]){
+   const row=rows.find(item=>item.kind===id&&item.label===label);
+   if(row)values.push(row.label+" "+(row.kind==="volume"?row.value.toFixed(0):row.value.toFixed(2)));
+   else values.push(id==="vwap"?"VWAP · Kein Volumen":label+" · Warm-up");
+  }
+ }
+ return values.join(" · ")||"Keine aktiven Indikatoren";
 }
 function updateBars(bars){
  if(!state||!Array.isArray(bars))return;
@@ -281,6 +335,15 @@ function switchAccount(account){
 function updateConfig(kind,prop,val){
  if(!state||!REGISTRY[kind])return false;
  if(prop==="enabled")state.settings[kind].enabled=val===true;
+ else if(kind==="volume"&&["upColor","downColor"].includes(prop)){
+  if(typeof val!=="string"||!/^#[0-9a-fA-F]{6}$/.test(val))return false;
+  state.settings.volume[prop]=val.toLowerCase();
+ }
+ else if(kind==="vwap"&&["timeZone","sessionStart"].includes(prop)){
+  const candidate={...state.settings.vwap,[prop]:String(val)};
+  if(!sessionConfig(candidate)){state.notice.textContent=prop==="timeZone"?"Ungültige IANA-Zeitzone.":"Sessionstart muss HH:MM sein.";syncPanel();return false}
+  state.settings.vwap[prop]=String(val);
+ }
  else if(Object.hasOwn(REGISTRY[kind],prop)){
   const n=Number(val),maximum=prop==="slow"?300:200;
   if(!Number.isInteger(n)||n<2||n>maximum){state.notice.textContent="Ungültige Periode (2–"+maximum+")";return false}
@@ -299,6 +362,9 @@ function applySettings(raw){
  for(const id of Object.keys(REGISTRY)){
   const input=raw[id];if(!input||typeof input!=="object")continue;
   fresh[id].enabled=input.enabled===true;
+  if(id==="volume")for(const key of ["upColor","downColor"])
+   if(typeof input[key]==="string"&&/^#[0-9a-fA-F]{6}$/.test(input[key]))fresh.volume[key]=input[key].toLowerCase();
+  if(id==="vwap"){const config=sessionConfig(input);if(config){fresh.vwap.timeZone=config.timeZone;fresh.vwap.sessionStart=config.sessionStart}}
   for(const key of ["period","fast","slow","signal"]){
    const value=Number(input[key]);
    if(Object.hasOwn(fresh[id],key)&&Number.isInteger(value)&&value>=2&&value<=(key==="slow"?300:200))
@@ -317,7 +383,7 @@ function mount({chart,host,panel,account="titan"}){
  head.textContent="Zusätzliche Indikator-Panes · unabhängig ein-/ausblendbar";panel.append(head,controls);
  const notice=document.createElement("p");notice.className="cs-indicator-notice";notice.textContent="Indikatoren basieren auf geladenen Brokerkerzen. Warm-up erforderlich.";
  panel.append(notice);
- state={chart,host,stack,controls,notice,account,settings:restore(account),bars:[],signature:null,panes:new Map(),vwapOverlay:null};
+ state={chart,host,stack,controls,notice,account,settings:restore(account),bars:[],signature:null,panes:new Map(),vwapOverlay:null,readouts:new Map()};
  controls.addEventListener("change",evt=>{
   const target=evt.target;
   if(!target.dataset.kind)return;
@@ -327,6 +393,6 @@ function mount({chart,host,panel,account="titan"}){
  chart.timeScale().subscribeVisibleLogicalRangeChange(syncRanges);
  syncPanel();renderPanes();
 }
-window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,updateConfig,settings,
+window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,updateConfig,settings,readout,
  registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,macd,atr,adx,vwap,volumes})});
 })();

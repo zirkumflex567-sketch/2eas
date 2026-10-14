@@ -12,21 +12,22 @@ from typing import Optional, Literal, Annotated
 import pandas as pd
 import numpy as np
 import MetaTrader5 as mt5
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, FiniteFloat, Field, StrictBool, model_validator
+from pydantic import BaseModel, FiniteFloat, Field, StrictBool, field_validator, model_validator
 import uvicorn
 import dd_persistence
 import journal_accounting
 import broker_clock
+import broker_telemetry
 from metrics_cache import ClosedBarMetricsCache
 from pathlib import Path
 from account_gateway import ACCOUNTS, config_path, public_account, scoped, selected, verify_identity, writes_titan_reset
 from goldm15_dashboard import GUARD_FILE, metrics as gold_metrics, parameters as gold_parameters, read_guard, wilder_rsi
-from chart_studio.money import PreviewError, preview_scenario
-from chart_studio.broker_reads import legacy_quote
-from chart_studio.read_api import install_read_routes
+from chart_studio.money import PreviewError, drawdown_projection, preview_scenario
+from chart_studio.broker_reads import broker_symbol, legacy_quote, require_symbol
+from chart_studio.read_api import install_read_routes, Symbol
 from chart_studio.preview_api import install_preview_routes
 from chart_studio.evidence_api import install_evidence_routes
 from dashboard_security import install_control_security
@@ -81,6 +82,21 @@ def ensure_mt5_init():
     # The request decorator holds the connection lock and explicitly attaches.
     return bool(verify_identity(mt5, selected()))
 
+
+_MT5_READ_SPANS = {
+    'copy_rates_from_pos': 'mt5_rates',
+    'history_deals_get': 'mt5_history',
+    'history_orders_get': 'mt5_history',
+}
+
+
+def _mt5_read(method, *args, **kwargs):
+    span_name = _MT5_READ_SPANS.get(method)
+    if span_name is None:
+        raise ValueError('unsupported MT5 read for telemetry')
+    with broker_telemetry.span(span_name):
+        return getattr(mt5, method)(*args, **kwargs)
+
 class ModifyPositionRequest(BaseModel):
     ticket: Annotated[int, Field(gt=0, strict=True)]
     sl_usd: Optional[FiniteFloat] = None
@@ -103,10 +119,32 @@ class ChartScenarioPreviewRequest(BaseModel):
     account: str
     symbol: str
     side: str
-    volumeLots: float
+    volumeLots: Optional[FiniteFloat] = None
     entryPrice: float
     slPrice: float
     tpPrice: float
+    riskBudget: Optional[FiniteFloat] = None
+    riskPercent: Optional[FiniteFloat] = None
+    feesPerLot: FiniteFloat = Field(default=0, ge=0, le=10_000)
+    slippageTicks: Annotated[int, Field(strict=True, ge=0, le=1000)] = 0
+
+    @field_validator('symbol')
+    @classmethod
+    def verified_symbol_name(cls, value):
+        return broker_symbol(value)
+
+    @field_validator('volumeLots', 'riskBudget', 'riskPercent', 'feesPerLot', 'entryPrice', 'slPrice', 'tpPrice', mode='before')
+    @classmethod
+    def numeric_not_boolean(cls, value):
+        if value is not None and (isinstance(value, bool) or type(value) not in (int, float)):
+            raise ValueError('Numerische Werte müssen JSON-Zahlen sein.')
+        return value
+
+    @model_validator(mode='after')
+    def exactly_one_sizing_mode(self):
+        if sum(value is not None for value in (self.volumeLots, self.riskBudget, self.riskPercent)) != 1:
+            raise ValueError('Genau Lots, Risikobudget oder Equity-Prozent angeben.')
+        return self
 
 
 class ChartWorkspaceWriteRequest(BaseModel):
@@ -160,10 +198,10 @@ def compute_volume_profile(df_subset, num_bins=24):
     max_p = float(df_subset['high'].max())
     if max_p <= min_p:
         return {}
-        
+
     bins = np.linspace(min_p, max_p, num_bins + 1)
     bin_vols = np.zeros(num_bins)
-    
+
     # Vectorized midpoint binning with unchanged clipping semantics.
     midpoint = (df_subset['high'].to_numpy(dtype=float) +
                 df_subset['low'].to_numpy(dtype=float)) / 2.0
@@ -171,15 +209,15 @@ def compute_volume_profile(df_subset, num_bins=24):
                       0, num_bins - 1)
     bin_vols = np.bincount(indices, weights=df_subset['tick_volume'].to_numpy(dtype=float),
                            minlength=num_bins).astype(float)
-        
+
     poc_idx = int(np.argmax(bin_vols))
     poc_price = float((bins[poc_idx] + bins[poc_idx+1]) / 2.0)
-    
+
     total_vol = float(bin_vols.sum())
     target_va = total_vol * 0.70
     cum_vol = float(bin_vols[poc_idx])
     l_idx, r_idx = poc_idx, poc_idx
-    
+
     while cum_vol < target_va and (l_idx > 0 or r_idx < num_bins - 1):
         next_l = bin_vols[l_idx - 1] if l_idx > 0 else 0
         next_r = bin_vols[r_idx + 1] if r_idx < num_bins - 1 else 0
@@ -191,10 +229,10 @@ def compute_volume_profile(df_subset, num_bins=24):
             cum_vol += next_r
         else:
             break
-            
+
     val_price = float((bins[l_idx] + bins[l_idx+1]) / 2.0)
     vah_price = float((bins[r_idx] + bins[r_idx+1]) / 2.0)
-    
+
     max_v = float(max(bin_vols)) if max(bin_vols) > 0 else 1.0
     histogram = []
     for i in range(num_bins):
@@ -207,7 +245,7 @@ def compute_volume_profile(df_subset, num_bins=24):
             'in_va': in_va,
             'is_poc': bool(i == poc_idx)
         })
-        
+
     return {
         'poc': round(poc_price, 2),
         'vah': round(vah_price, 2),
@@ -284,6 +322,75 @@ def risk_day_context(now, reset_hour, cfg):
                 risk_day=day, risk_timezone=broker_clock.zone_label(selected()), risk_reset_hour=reset_hour), midnight
 
 
+def current_daily_drawdown(mt5_client, account_info, tick, now, params=None, dd_cfg=None):
+    """Read only the fresh inputs needed for today's dashboard DD estimate."""
+    if not tick or not account_info:
+        raise HTTPException(503, 'MT5-Quote/Kontodaten für Tages-DD fehlen.')
+    current_account = selected()
+    params = gold_parameters() if current_account['id'] == 'goldm15' else params
+    reset_hour = int(params['RiskResetHourServer']) if params else 0
+    dd_cfg = load_dd_config() if dd_cfg is None else dd_cfg
+    risk_context, midnight_dt = risk_day_context(now, reset_hour, dd_cfg)
+    source_meta = require_fresh_quote(tick, now, risk_context)
+    if not all(math.isfinite(v) and v > 0 for v in (account_info.balance, account_info.equity)):
+        raise HTTPException(503, 'Kontorisikodaten sind ungültig/unbekannt.')
+
+    manual_active = risk_context['manual_active']
+    reset_ts = dd_cfg.get('reset_timestamp')
+    reset_bal = dd_cfg.get('reset_balance', 10000.0)
+    from_dt = max(midnight_dt, datetime.fromtimestamp(reset_ts, timezone.utc)) if manual_active and reset_ts else midnight_dt
+    offset = broker_clock.offset_seconds(selected())
+    deals = require_mt5_data(_mt5_read('history_deals_get',
+        from_dt + timedelta(seconds=offset),
+        datetime.fromtimestamp(now, timezone.utc) + timedelta(seconds=offset)), 'daily_history')
+    realized_today = 0.0
+    if deals:
+        for deal in deals:
+            if deal.type in (mt5_client.DEAL_TYPE_BUY, mt5_client.DEAL_TYPE_SELL):
+                if current_account['id'] == 'titan_m5' and getattr(deal, 'magic', 0) != 881122:
+                    continue
+                realized_today += deal.profit + deal.swap + deal.commission + getattr(deal, 'fee', 0.)
+    day_start_bal = float(reset_bal) if manual_active and reset_ts else account_info.balance - realized_today
+    if not all(math.isfinite(v) for v in (realized_today, day_start_bal)) or day_start_bal <= 0:
+        raise HTTPException(503, 'Tageshistorie/-baseline ist ungültig; Risiko unbekannt.')
+    daily_ref = max(day_start_bal, account_info.balance)
+    daily_loss = max(0.0, daily_ref - account_info.equity)
+    challenge_protection = bool(current_account.get('challenge_protection', True))
+    ea_limit_pct, broker_limit_pct = (3.5, 4.0) if challenge_protection else (None, None)
+    daily_drawdown = {
+        'loss_usd': round(daily_loss, 2),
+        'pct': round(100 * daily_loss / daily_ref, 2),
+        'limit_pct': ea_limit_pct,
+        'broker_limit_pct': broker_limit_pct,
+        'buffer_usd': round(max(0.0, daily_ref * ea_limit_pct / 100 - daily_loss), 2) if challenge_protection else None,
+        'buffer_broker_usd': round(max(0.0, daily_ref * broker_limit_pct / 100 - daily_loss), 2) if challenge_protection else None,
+        'day_start_bal': round(day_start_bal, 2),
+        'daily_ref': round(daily_ref, 2),
+        'balance': round(account_info.balance, 2),
+        'equity': round(account_info.equity, 2),
+        'realized_today': round(realized_today, 2),
+        'manual_active': manual_active,
+        'manual_expired': bool(dd_cfg.get('manual_reset_active', False) and not manual_active),
+        'challenge_protection': challenge_protection,
+        'risk_day': risk_context['risk_day'],
+        'risk_timezone': risk_context['risk_timezone'],
+        'risk_reset_hour': reset_hour,
+        'reset_balance': round(float(reset_bal), 2) if manual_active else None,
+        'reset_time_str': datetime.fromtimestamp(reset_ts, timezone.utc).strftime('%H:%M:%S') if manual_active and reset_ts else None,
+    }
+    guard = None
+    if selected()['id'] == 'goldm15':
+        guard = read_guard(GUARD_FILE, broker_clock.to_broker_epoch(now, selected()), account_info.equity,
+                           params, balance=account_info.balance)
+        if guard['baseline_verified'] and not manual_active:
+            daily_loss = max(0, guard['baseline'] - min(account_info.balance, account_info.equity))
+            daily_drawdown.update(loss_usd=round(daily_loss, 2),
+                                  pct=round(100 * daily_loss / params['InitialBalanceUSD'], 2),
+                                  daily_ref=guard['baseline'], day_start_bal=guard['baseline'],
+                                  buffer_usd=round(guard['daily_buffer_usd'], 2))
+    return daily_drawdown, source_meta, guard
+
+
 def require_mt5_data(data, source):
     if data is None:
         error = mt5.last_error() if hasattr(mt5, 'last_error') else None
@@ -356,17 +463,17 @@ def explain_trade_exit(status, p_type, sl_price=0.0, tp_price=0.0, profit_usd=0.
     if status == 'OPEN':
         sl_desc = f"${sl_price:.2f}" if (sl_price and sl_price > 0) else "Kein fixer SL"
         tp_desc = f"${tp_price:.2f}" if (tp_price and tp_price > 0) else "Dynamic Runner (kein starres TP)"
-        
+
         acc_meta = ACCOUNTS.get(account_id, {})
         tf_str = timeframe or acc_meta.get('timeframe', 'M15')
-        
+
         # Base Titan logic targets 280 points.
         # On 0.01 lot -> $28.00. On 0.04 lot (e.g. 25k account) -> $112.00 ($28 * 4).
         vol = float(volume) if volume and volume > 0 else 0.01
         target_usd = round(28.0 * (vol / 0.01), 2)
         if target_usd <= 0:
             target_usd = 28.0
-            
+
         ema_info = ""
         if ema9 is not None and math.isfinite(ema9) and ema9 > 0:
             if current_price and current_price > 0:
@@ -375,7 +482,7 @@ def explain_trade_exit(status, p_type, sl_price=0.0, tp_price=0.0, profit_usd=0.
                 ema_info = f" (Aktuell ${ema9:.2f} · Abstand: {dist:.2f} Pkt {side_info})"
             else:
                 ema_info = f" (Aktuell ${ema9:.2f})"
-                
+
         pnl_status = ""
         if profit_usd is not None and math.isfinite(profit_usd):
             if profit_usd >= target_usd:
@@ -384,7 +491,7 @@ def explain_trade_exit(status, p_type, sl_price=0.0, tp_price=0.0, profit_usd=0.
                 diff_to_target = target_usd - profit_usd
                 sign_str = f"+${profit_usd:.2f}" if profit_usd >= 0 else f"-${abs(profit_usd):.2f}"
                 pnl_status = f" [⏳ Mindestgewinn noch offen: {sign_str} / ${target_usd:.0f}, noch ${diff_to_target:.2f}]"
-                
+
         runner_rule = (
             f"🎯 Dynamic Runner (Hauptziel): Schließt im Gewinn an {tf_str} EMA9{ema_info}, "
             f"sobald Mindestgewinn >= ${target_usd:.0f} (280 Pkt) erreicht ist und das Momentum abflacht{pnl_status}."
@@ -401,7 +508,7 @@ def explain_trade_exit(status, p_type, sl_price=0.0, tp_price=0.0, profit_usd=0.
             rules.append("⚠️ 25k Notbremse: Hard-Floor Cutoff bei $23.000 Kontowert.")
         else:
             rules.append("⚠️ Kontoschutz: Hard-Cutoff bei 3.5% Daily Drawdown.")
-        
+
         rules.append("(Exakter Ausstiegs-Tick im Voraus marktbedingt variabel/unbekannt).")
         return " | ".join(rules)
     else:
@@ -411,10 +518,10 @@ def explain_trade_exit(status, p_type, sl_price=0.0, tp_price=0.0, profit_usd=0.
         exp_val = getattr(mt5, 'DEAL_REASON_EXPERT', 3)
         cli_val = getattr(mt5, 'DEAL_REASON_CLIENT', 0)
         so_val = getattr(mt5, 'DEAL_REASON_SO', 6)
-        
+
         pnl_str = f"+${profit_usd:.2f}" if profit_usd is not None and profit_usd >= 0 else f"-${abs(profit_usd):.2f}" if profit_usd is not None else ""
         close_str = f" bei ${close_price:.2f}" if close_price is not None else ""
-        
+
         if deal_reason == sl_val:
             return f"Stop Loss ausgelöst: Struktureller Swing-SL getroffen{close_str} ({pnl_str}). (Deal-Grund: SL/unbekannt im Voraus)."
         elif deal_reason == tp_val:
@@ -440,13 +547,13 @@ def build_trade_journal(account_id, server_time, local_time, ema9=None):
     if ema9 is None:
         try:
             acc_tf = TIMEFRAME_MAP.get(acc_tf_str, getattr(mt5, 'TIMEFRAME_M15', 15))
-            rates = mt5.copy_rates_from_pos(sym_name, acc_tf, 0, 50)
+            rates = _mt5_read('copy_rates_from_pos', sym_name, acc_tf, 0, 50)
             if rates is not None and len(rates) >= 15:
                 closes = pd.Series([r['close'] for r in rates])
                 ema9 = float(closes.ewm(span=9, adjust=False).mean().iloc[-1])
         except Exception:
             ema9 = None
-    deals = require_mt5_data(mt5.history_deals_get(
+    deals = require_mt5_data(_mt5_read('history_deals_get',
         journal_accounting.CUTOFF+timedelta(seconds=broker_clock.offset_seconds(selected())),
         server_time+timedelta(seconds=broker_clock.offset_seconds(selected()))), 'journal_history')
     positions = require_mt5_data(mt5.positions_get(symbol=sym_name), 'journal_positions')
@@ -494,7 +601,7 @@ def build_trade_journal(account_id, server_time, local_time, ema9=None):
         if getattr(d, 'symbol', None) in (sym_name, 'XAUUSD', 'XAUUSD.p', 'XAUUSD.pi') and d.entry != mt5.DEAL_ENTRY_IN:
             by_position.setdefault(d.position_id, []).append(d)
     for position_id, exits in by_position.items():
-        lifecycle = require_mt5_data(mt5.history_deals_get(position=position_id), 'journal_position_history')
+        lifecycle = require_mt5_data(_mt5_read('history_deals_get', position=position_id), 'journal_position_history')
         lifecycle = [d for d in lifecycle if getattr(d,'position_id',None)==position_id]
         accounting = journal_accounting.close_accounting(lifecycle + exits, mt5, magics)
         for d in exits:
@@ -524,7 +631,7 @@ def build_trade_journal(account_id, server_time, local_time, ema9=None):
 def get_live_market_data(include_journal=True):
     if not ensure_mt5_init():
         return None
-    
+
     current_acc = selected()
     acc_id = current_acc['id']
     sym_name = current_acc.get('symbol', 'XAUUSD')
@@ -536,22 +643,17 @@ def get_live_market_data(include_journal=True):
     tick = mt5.symbol_info_tick(sym_name)
     acc = mt5.account_info()
     now = time.time()
-    params = gold_parameters() if acc_id == 'goldm15' else None
-    reset_hour = int(params['RiskResetHourServer']) if (params and 'RiskResetHourServer' in params) else 0
-    dd_cfg = load_dd_config()
-    risk_context, midnight_dt = risk_day_context(now, reset_hour, dd_cfg)
-    source_meta = require_fresh_quote(tick, now, risk_context)
-    wall_time = datetime.fromtimestamp(now, timezone.utc)
-    
     if not sym or not tick or not acc:
         return None
-    if not all(math.isfinite(v) and v > 0 for v in (acc.balance, acc.equity)):
-        raise HTTPException(503, 'Kontorisikodaten sind ungültig/unbekannt.')
-        
-    rates = mt5.copy_rates_from_pos(sym_name, acc_tf, 0, 5000 if acc_id == 'goldm15' else 1000)
+    params = gold_parameters() if selected()['id']=='goldm15' else None
+    dd_cfg = load_dd_config()
+    daily_drawdown, source_meta, guard = current_daily_drawdown(mt5, acc, tick, now, params, dd_cfg)
+    wall_time = datetime.fromtimestamp(now, timezone.utc)
+
+    rates = _mt5_read('copy_rates_from_pos', sym_name, acc_tf, 0, 5000 if acc_id == 'goldm15' else 1000)
     if rates is None or len(rates) < 200:
         return None
-        
+
     df = pd.DataFrame(rates)
     df['dt'] = pd.to_datetime(df['time'], unit='s')
 
@@ -573,45 +675,45 @@ def get_live_market_data(include_journal=True):
             'dt': pd.to_datetime(current_bar_start, unit='s')
         }])
         df = pd.concat([df, forming_row], ignore_index=True)
-    
+
     # Indicators
     df['ema9'] = df['close'].ewm(span=9, adjust=False).mean()
     df['ema21'] = df['close'].ewm(span=21, adjust=False).mean()
     df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()  # UI EMA20; separate from EA ema21
     df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
     df['ema200'] = df['close'].ewm(span=200, adjust=False).mean()
-    
+
     # iRSI reference: Wilder smoothing; rolling RSI is not the same indicator.
     df['rsi14'] = wilder_rsi(df['close'].to_numpy(), 14)
-    
+
     tr = pd.concat([df['high'] - df['low'], abs(df['high'] - df['close'].shift(1)), abs(df['low'] - df['close'].shift(1))], axis=1).max(axis=1)
     df['atr14'] = tr.rolling(14).mean()
-    
+
     open_bar = df.iloc[-1]
     cur_bar = df.iloc[-2]  # Shift 1: closed-bar reference criteria.
-    
+
     server_time = datetime.fromtimestamp(tick.time, timezone.utc)
     local_time = datetime.fromtimestamp(broker_clock.to_utc_epoch(tick.time, current_acc), timezone.utc).astimezone(journal_accounting.BERLIN)
 
-    
+
     # Time/config alone cannot prove EA activity or execution permission.
     in_window = None
-                 
+
     bar_elapsed = tick_epoch % bar_duration
     bar_remaining = bar_duration - bar_elapsed
     if bar_remaining <= 0:
         bar_remaining = bar_duration
-    
+
     # 1. Volume Profiles (Daily & Weekly)
     today_date = cur_bar['dt'].date()
     monday_date = today_date - timedelta(days=today_date.weekday())
-    
+
     today_df = df[df['dt'].dt.date == today_date]
     week_df  = df[df['dt'].dt.date >= monday_date]
-    
+
     daily_vp = compute_volume_profile(today_df, num_bins=20)
     weekly_vp = compute_volume_profile(week_df, num_bins=25)
-    
+
     # 2. Key Support & Resistance Levels
     sr_levels = {
         'daily_high': daily_vp.get('high', round(float(cur_bar['high']), 2)),
@@ -625,25 +727,25 @@ def get_live_market_data(include_journal=True):
         'weekly_vah':  weekly_vp.get('vah', 0.0),
         'weekly_val':  weekly_vp.get('val', 0.0),
     }
-    
+
     # 3. Closed-bar reconstruction of committed Titan v7.10 reference defaults.
     # Not proof of attached EA inputs or execution permission.
     # The EA checks at the bar transition:
     # Buy: (close1 > fast_ema[1]) && (fast_ema[1] > slow_ema[1]) && (close1 > trend_ema[1]) && (rsi_val[1] >= 50.0) && (close1 > open1)
     # Sell: (close1 < fast_ema[1]) && (fast_ema[1] < slow_ema[1]) && (close1 < trend_ema[1]) && (rsi_val[1] <= 50.0) && (close1 < open1)
-    
+
     buy_c1_stack = (cur_bar['ema9'] > cur_bar['ema21'])
     buy_c2_ema50 = (cur_bar['close'] > cur_bar['ema50'])
     buy_c3_ema9  = (cur_bar['close'] > cur_bar['ema9'])
     buy_c4_rsi   = (cur_bar['rsi14'] >= 50.0)
     buy_c5_green = (cur_bar['close'] > cur_bar['open'])
-    
+
     sell_c1_stack = (cur_bar['ema9'] < cur_bar['ema21'])
     sell_c2_ema50 = (cur_bar['close'] < cur_bar['ema50'])
     sell_c3_ema9  = (cur_bar['close'] < cur_bar['ema9'])
     sell_c4_rsi   = (cur_bar['rsi14'] <= 50.0)
     sell_c5_red   = (cur_bar['close'] < cur_bar['open'])
-    
+
     # 6. Anti-Trap / Überdehnungsfilter (ATR)
     atr_val = float(cur_bar['atr14']) if pd.notnull(cur_bar.get('atr14')) and cur_bar['atr14'] > 0 else 3.5
     max_atr_dist = 1.8 * atr_val
@@ -743,17 +845,17 @@ def get_live_market_data(include_journal=True):
             "long_note": f"Genügend Widerstands-Puffer (${res_buffer:.2f} >= ${min_sr_room:.2f})" if buy_c8_sr_ok else f"Direkt unter Widerstand: nur ${res_buffer:.2f} Puffer (< ${min_sr_room:.2f})"
         }
     ]
-    
+
     sell_met_count = sum(1 for r in rules_matrix if r['short_met'])
     buy_met_count  = sum(1 for r in rules_matrix if r['long_met'])
     total_rules = len(rules_matrix)
     sell_readiness = int((sell_met_count / float(total_rules)) * 100)
     buy_readiness  = int((buy_met_count / float(total_rules)) * 100)
-    
+
     # Dynamic Trend Regime Identification
     is_bullish = bool(cur_bar['ema9'] >= cur_bar['ema21'])
     trend_diff = float(cur_bar['ema9'] - cur_bar['ema21'])
-    
+
     if is_bullish:
         trend_direction = "BULLISH"
         trend_name = "AUFWÄRTSTREND (BULLISH)"
@@ -808,7 +910,7 @@ def get_live_market_data(include_journal=True):
         raise HTTPException(503, 'MT5-Positionen derzeit nicht verfügbar.')
     positions = []
     contract_size = sym.trade_contract_size
-    
+
     for p in pos_objects:
         if acc_id == 'titan_m5' and getattr(p, 'magic', 0) != 881122:
             continue
@@ -817,14 +919,14 @@ def get_live_market_data(include_journal=True):
         op = p.price_open
         cp = p.price_current
         profit = p.profit + p.swap
-        
+
         sl_usd = 0.0
         if p.sl > 0:
             sl_usd = ((p.sl - op) if p_type == "BUY" else (op - p.sl)) * vol * contract_size
         tp_usd = 0.0
         if p.tp > 0:
             tp_usd = ((p.tp - op) if p_type == "BUY" else (op - p.tp)) * vol * contract_size
-            
+
         ema9_val = round(float(open_bar['ema9']), 2) if (pd.notnull(open_bar.get('ema9')) and math.isfinite(open_bar['ema9'])) else None
         dist_ema9 = round(abs(cp - ema9_val), 2) if ema9_val is not None else None
         target_usd = round(28.0 * (vol / 0.01), 2)
@@ -847,120 +949,6 @@ def get_live_market_data(include_journal=True):
             "dist_to_ema9": dist_ema9,
             "target_usd": target_usd
         })
-
-    # Daily Drawdown Calculation (Blueberry Funded Rule: Day Start Balance / High Water Mark)
-    risk_day = risk_context['risk_day']
-    manual_requested = dd_cfg.get('manual_reset_active', False)
-    reset_ts = dd_cfg.get("reset_timestamp")
-    manual_active = risk_context['manual_active']
-    reset_bal = dd_cfg.get("reset_balance", init_bal)
-
-    if manual_active and reset_ts:
-        reset_dt = datetime.fromtimestamp(reset_ts, timezone.utc)
-        from_dt = max(midnight_dt, reset_dt)
-        deals = require_mt5_data(mt5.history_deals_get(from_dt+timedelta(seconds=broker_clock.offset_seconds(current_acc)), wall_time+timedelta(seconds=broker_clock.offset_seconds(current_acc))), 'daily_history')
-        realized_today = 0.0
-        if deals:
-            for d in deals:
-                if d.type in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL):
-                    if acc_id == 'titan_m5' and getattr(d, 'magic', 0) != 881122:
-                        continue
-                    realized_today += (d.profit + d.swap + d.commission + getattr(d, 'fee', 0.))
-        day_start_bal = float(reset_bal)
-    else:
-        deals = require_mt5_data(mt5.history_deals_get(midnight_dt+timedelta(seconds=broker_clock.offset_seconds(current_acc)), wall_time+timedelta(seconds=broker_clock.offset_seconds(current_acc))), 'daily_history')
-        realized_today = 0.0
-        if deals:
-            for d in deals:
-                if d.type in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL):
-                    if acc_id == 'titan_m5' and getattr(d, 'magic', 0) != 881122:
-                        continue
-                    realized_today += (d.profit + d.swap + d.commission + getattr(d, 'fee', 0.))
-        day_start_bal = acc.balance - realized_today
-
-    if not all(math.isfinite(v) for v in (realized_today, day_start_bal)) or day_start_bal <= 0:
-        raise HTTPException(503, 'Tageshistorie/-baseline ist ungültig; Risiko unbekannt.')
-    daily_ref = max(day_start_bal, acc.balance)
-    daily_loss_usd = max(0.0, daily_ref - acc.equity)
-    daily_dd_pct = (daily_loss_usd / daily_ref) * 100.0 if daily_ref > 0 else 0.0
-
-    has_challenge = bool(current_acc.get('challenge_protection', True))
-    ea_limit_pct = 3.5 if has_challenge else None
-    broker_limit_pct = 4.0 if has_challenge else None
-    buffer_ea_usd = max(0.0, (daily_ref * (ea_limit_pct / 100.0)) - daily_loss_usd) if has_challenge else None
-    buffer_broker_usd = max(0.0, (daily_ref * (broker_limit_pct / 100.0)) - daily_loss_usd) if has_challenge else None
-
-    daily_drawdown = {
-        "loss_usd": round(daily_loss_usd, 2),
-        "pct": round(daily_dd_pct, 2),
-        "limit_pct": ea_limit_pct,
-        "broker_limit_pct": broker_limit_pct,
-        "buffer_usd": round(buffer_ea_usd, 2) if buffer_ea_usd is not None else None,
-        "buffer_broker_usd": round(buffer_broker_usd, 2) if buffer_broker_usd is not None else None,
-        "day_start_bal": round(day_start_bal, 2),
-        "daily_ref": round(daily_ref, 2),
-        "balance": round(acc.balance, 2),
-        "equity": round(acc.equity, 2),
-        "realized_today": round(realized_today, 2),
-        "manual_active": manual_active,
-        "manual_expired": bool(manual_requested and not manual_active),
-        "risk_day": risk_day,
-        "risk_timezone": risk_context['risk_timezone'],
-        "risk_reset_hour": reset_hour,
-        "reset_balance": round(float(reset_bal), 2) if manual_active else None,
-        "reset_time_str": datetime.fromtimestamp(reset_ts, timezone.utc).strftime("%H:%M:%S") if (manual_active and reset_ts) else None,
-        "challenge_protection": has_challenge
-    }
-
-    exit_goals = []
-    if acc_id == 'blueberry':
-        exit_goals = [
-            {'title': 'Prop-Firm Status', 'target': 'Blueberry Funded Prime Phase 1', 'note': 'LIVE PROPFIRMA KONTO (#5120620) · Kein Demo-Konto!', 'status': 'PROPFIRMA'},
-            {'title': 'Tages-Verlustgrenze (Daily DD)', 'target': 'Max 4.0% ($400) / EA-Notbremse $350 (3.5%)', 'note': 'Hard stop bei $400 Tages-DD relativ zur Mitternachts-Balance', 'status': 'Aktiv'},
-            {'title': 'Maximaler Gesamt-DD', 'target': 'Max 10.0% ($1,000) / Notbremse $9,100', 'note': 'Konto darf niemals unter $9,000.00 Equity fallen (Hebel 1:30)', 'status': 'Aktiv'},
-            {'title': 'Struktureller Swing-SL', 'target': '48 M15 Kerzen Lookback', 'note': 'SL-Buffer: 250 pt | Min SL $15.00 | Max SL $150.00', 'status': 'Aktiv'},
-            {'title': 'Weekend Protection', 'target': 'Freitag 21:00 UTC Schließung', 'note': 'Automatischer EA-Positionsschluss vor Wochenende (Blueberry Regel)', 'status': 'Aktiv'}
-        ]
-    elif acc_id in ('xau5m_m5', 'xau5m_m15'):
-        exit_goals = [
-            {'title': 'Demokonto Status', 'target': 'PU Prime Demo M5 ($250)', 'note': 'M5 Scalping Konto (#700194619) · Hebel 1:500', 'status': 'DEMO'},
-            {'title': 'M5 Scalping Runner', 'target': 'Dynamisches Scalping-Ziel', 'note': 'Schnelle Gewinnmitnahme auf 5-Minuten-Basis', 'status': 'Aktiv'},
-            {'title': 'Struktureller Swing-SL', 'target': '48 M5 Kerzen Lookback', 'note': 'SL-Buffer: 250 pt | Min SL $10.00 | Max SL $75.00', 'status': 'Aktiv'},
-            {'title': 'Handelsfenster (Server)', 'target': '01:00 - 23:45', 'note': 'PU Prime Demo Handelszeiten', 'status': 'Aktiv'},
-            {'title': 'Challenge-Schutz', 'target': 'Deaktiviert (Demokonto)', 'note': 'Kein Prop-Firm Limit aktiv', 'status': 'Frei'}
-        ]
-    elif acc_id in ('xau5m_500', 'titan_500_2'):
-        exit_goals = [
-            {'title': 'Demokonto Status', 'target': 'PU Prime Demo M15 ($500)', 'note': 'XAUUSD 5M EA (#700194822) auf M15 · Hebel 1:500', 'status': 'DEMO'},
-            {'title': 'M15 Scalping Runner', 'target': 'Dynamisches Scalping-Ziel', 'note': 'Schnelle Gewinnmitnahme auf 15-Minuten-Basis', 'status': 'Aktiv'},
-            {'title': 'Struktureller Swing-SL', 'target': '48 M15 Kerzen Lookback', 'note': 'SL-Buffer: 250 pt | Min SL $15.00 | Max SL $150.00', 'status': 'Aktiv'},
-            {'title': 'Handelsfenster (Server)', 'target': '01:00 - 23:45', 'note': 'PU Prime Demo Handelszeiten', 'status': 'Aktiv'},
-            {'title': 'Challenge-Schutz', 'target': 'Deaktiviert (Demokonto)', 'note': 'Kein Prop-Firm Limit aktiv', 'status': 'Frei'}
-        ]
-    elif acc_id == 'titan_25k':
-        exit_goals = [
-            {'title': 'Dynamic Runner Target', 'target': 'Min $70.00 Profit', 'note': 'Dynamic Runner Ausstieg skaliert für 25k Account', 'status': 'Aktiv'},
-            {'title': 'Struktureller Swing-SL', 'target': '48 M15 Kerzen Lookback', 'note': 'SL-Buffer: 250 pt | Min SL $35.00 | Max SL $350.00', 'status': 'Aktiv'},
-            {'title': 'Break-Even Trailing', 'target': 'Trigger $100 / Lock $35', 'note': 'Sichert Gewinn bei $100 auf $35 ab', 'status': 'Standby'},
-            {'title': 'Tages-DD Überwachung', 'target': 'Max 4.0% ($1,000.00)', 'note': 'ICMarketsEU Demo 25k (Hebel 1:10)', 'status': 'Aktiv'},
-            {'title': 'Handelsfenster (DE)', 'target': '05:00-12:00 & 15:00-18:00', 'note': 'Golden Hours aktiv', 'status': 'Aktiv'}
-        ]
-    elif acc_id == 'titan_m5':
-        exit_goals = [
-            {'title': 'Dynamic Runner Target', 'target': 'Min $28.00 Profit', 'note': 'Dynamic Runner Ausstieg ab $28.00 (5.6% auf 500$ Konto)', 'status': 'Aktiv'},
-            {'title': 'Struktureller Swing-SL', 'target': '48 M5 Kerzen Lookback', 'note': 'SL-Buffer: 250 pt | Min SL $15.00 | Max SL $150.00', 'status': 'Aktiv'},
-            {'title': 'Break-Even Trailing', 'target': 'Trigger $40 / Lock $15', 'note': 'Sichert Gewinn bei $40 auf $15 ab', 'status': 'Standby'},
-            {'title': 'Handelsfenster (Server)', 'target': '01:00 - 23:45', 'note': 'Elite-Hours Filter aktiv (Montag-Freitag)', 'status': 'Aktiv'},
-            {'title': 'Challenge-Schutz', 'target': 'Deaktiviert (Normales Konto)', 'note': 'Keine Prop-Firm Beschränkungen oder Notbremsen aktiv', 'status': 'Frei'}
-        ]
-    elif acc_id == 'titan':
-        exit_goals = [
-            {'title': 'Dynamic Runner Target', 'target': 'Min $28.00 Profit', 'note': 'Dynamic Runner Ausstieg ab $28.00', 'status': 'Aktiv'},
-            {'title': 'Struktureller Swing-SL', 'target': '48 M15 Kerzen Lookback', 'note': 'SL-Buffer: 250 pt | Min SL $15.00 | Max SL $150.00', 'status': 'Aktiv'},
-            {'title': 'Break-Even Trailing', 'target': 'Trigger $40 / Lock $15', 'note': 'Sichert Gewinn bei $40 auf $15 ab', 'status': 'Standby'},
-            {'title': 'Tages-DD Überwachung', 'target': 'Max 4.0% ($400.00)', 'note': 'ICMarketsEU Demo 10k (Hebel 1:10)', 'status': 'Aktiv'},
-            {'title': 'Handelsfenster (DE)', 'target': '05:00-12:00 & 15:00-18:00', 'note': 'Golden Hours aktiv', 'status': 'Aktiv'}
-        ]
 
     result = {
         **source_meta,
@@ -1006,7 +994,7 @@ def get_live_market_data(include_journal=True):
         account_id = current_acc['id']
         entries = get_cached_trade_journal(account_id, wall_time, local_time, ema9=float(open_bar['ema9']) if pd.notnull(open_bar.get('ema9')) else None)
         result.update(journal=entries, journal_cache={account_id: entries}, journal_meta=journal_metadata(account_id))
-    result.update(account=public_account(current_acc), rule_count=len(rules_matrix), exit_goals=exit_goals, ea_guard=None)
+    result.update(account=public_account(selected()), rule_count=len(rules_matrix), exit_goals=[], ea_guard=guard)
     preview = df.iloc[-1]
     result.update(
         signal_mode='closed_bar_reference', signal_label=f'{acc_tf_str}-Schluss · Referenzrekonstruktion, keine EA-Freigabe',
@@ -1019,13 +1007,8 @@ def get_live_market_data(include_journal=True):
     if acc_id == 'goldm15':
         result.update(GOLD_METRICS_CACHE.get(current_acc, sym_name, acc_tf, cur_bar['time'],
                                             df['close'].to_numpy(), params, gold_metrics))
-        result['signal_bar_time'] = datetime.fromtimestamp(int(df.iloc[-2]['time']), timezone.utc).strftime('%H:%M')
-        guard = read_guard(GUARD_FILE, broker_clock.to_broker_epoch(now, current_acc), acc.equity, params, balance=acc.balance)
         result['ea_guard'] = guard
-        if guard['baseline_verified'] and not manual_active:
-            daily_loss = max(0, guard['baseline'] - min(acc.balance, acc.equity))
-            daily_drawdown.update(loss_usd=round(daily_loss, 2), pct=round(100*daily_loss/params['InitialBalanceUSD'], 2),
-                                 daily_ref=guard['baseline'], day_start_bal=guard['baseline'], buffer_usd=round(guard['daily_buffer_usd'], 2))
+        result['signal_bar_time'] = datetime.fromtimestamp(int(df.iloc[-2]['time']), timezone.utc).strftime('%H:%M')
         result['in_window'] = False if guard['hard_lock'] or guard['daily_lock'] or not guard['baseline_verified'] else None
     return result
 
@@ -1065,53 +1048,46 @@ def api_status(account: str = 'blueberry', include_journal: bool = True, light: 
         raise HTTPException(status_code=500, detail="MT5 nicht verbunden")
     return data
 
+
+@app.get('/api/diagnostics/mt5-traces')
+def api_mt5_traces(request: Request, limit: int = 50):
+    identity = getattr(request.state, 'control_identity', None)
+    if not isinstance(identity, tuple) or len(identity) != 3 or identity[2] not in ('read', 'layout', 'trade'):
+        raise HTTPException(status_code=403, detail='Autorisierte Read-Identität erforderlich.')
+    if isinstance(limit, bool) or not 1 <= limit <= 50:
+        raise HTTPException(status_code=422, detail='Limit muss zwischen 1 und 50 liegen.')
+    return JSONResponse({'traces': broker_telemetry.recent_traces(limit)},
+                        headers={'Cache-Control': 'no-store'})
+
 @app.get("/api/candles")
 @scoped(mt5)
-def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] = None):
+def api_candles(count: int = 150, account: str = 'titan', tf: Optional[str] = None, symbol: Optional[Symbol] = None):
     if not ensure_mt5_init():
         raise HTTPException(status_code=500, detail="MT5 Fehler")
     current_acc = selected()
-    sym_name = current_acc.get('symbol', 'XAUUSD')
+    sym_name = symbol or current_acc.get('symbol', SYMBOL)
     if tf is None:
         tf = current_acc.get('timeframe', 'M15')
+    symbol_info = require_symbol(mt5, sym_name)
+    digits = getattr(symbol_info, 'digits', None)
+    if isinstance(digits, bool) or not isinstance(digits, int) or not 0 <= digits <= 10:
+        raise HTTPException(status_code=503, detail="MT5-Symbolpräzision nicht verfügbar.")
     tf_upper = tf.upper()
-    tf_val = TIMEFRAME_MAP.get(tf_upper, mt5.TIMEFRAME_M15)
+    if tf_upper not in TIMEFRAME_MAP:
+        raise HTTPException(status_code=422, detail="Ungültiger Chart-Timeframe.")
+    tf_val = TIMEFRAME_MAP[tf_upper]
     count = min(1000, max(10, count))
-    fetch_count = max(5000, count+250) if (account == 'goldm15' and tf_val==mt5.TIMEFRAME_M15) else (count+250)
-    rates = mt5.copy_rates_from_pos(sym_name, tf_val, 0, fetch_count)
+    fetch_count = max(5000, count+250) if (account == 'goldm15' and sym_name == SYMBOL and tf_val == mt5.TIMEFRAME_M15) else (count+250)
+    rates = _mt5_read('copy_rates_from_pos', sym_name, tf_val, 0, fetch_count)
     if rates is None or len(rates)<2:
         raise HTTPException(status_code=500, detail="Konnte Kerzen nicht laden")
-        
+
     df = pd.DataFrame(rates)
     df['dt'] = pd.to_datetime(df['time'], unit='s')
 
-    tf_seconds = TIMEFRAME_SECONDS.get(tf_upper, 900)
-    tick = mt5.symbol_info_tick(sym_name)
-    if tick and hasattr(tick, 'time') and tick.time:
-        tick_epoch = int(tick.time)
-        current_bar_start = (tick_epoch // tf_seconds) * tf_seconds
-        if int(df.iloc[-1]['time']) < current_bar_start:
-            cur_price = round(float(tick.bid), 2) if tick.bid else round(float(df.iloc[-1]['close']), 2)
-            forming_row = pd.DataFrame([{
-                'time': current_bar_start,
-                'open': cur_price,
-                'high': cur_price,
-                'low': cur_price,
-                'close': cur_price,
-                'tick_volume': 1,
-                'real_volume': 0,
-                'spread': getattr(tick, 'spread', 0) if hasattr(tick, 'spread') else 0,
-                'dt': pd.to_datetime(current_bar_start, unit='s')
-            }])
-            df = pd.concat([df, forming_row], ignore_index=True)
-        elif tick.bid:
-            cur_price = round(float(tick.bid), 2)
-            last_idx = df.index[-1]
-            df.at[last_idx, 'close'] = cur_price
-            if cur_price > df.at[last_idx, 'high']:
-                df.at[last_idx, 'high'] = cur_price
-            if cur_price < df.at[last_idx, 'low']:
-                df.at[last_idx, 'low'] = cur_price
+    # Keep history bars exactly as returned by the verified MT5 symbol read.
+    # Quotes have their own endpoint; folding a later tick into OHLC rewrites
+    # the broker candle and can mix prices from another symbol in test adapters.
     df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()
     df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
     df['ema200'] = df['close'].ewm(span=200, adjust=False).mean()
@@ -1119,44 +1095,44 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
     g = diff.clip(lower=0).rolling(14).mean()
     l = (-diff.clip(upper=0)).rolling(14).mean()
     df['rsi14'] = 100 - (100 / (1 + g / (l + 1e-9)))
-    if account == 'goldm15' and tf_val==mt5.TIMEFRAME_M15:
+    if account=='goldm15' and sym_name==SYMBOL and tf_val==mt5.TIMEFRAME_M15:
         params = gold_parameters()
         for n in {int(params[f'S{s}_{key}']) for s in range(1,4) for key in ('FastRSI','BuyTrendRSI','SellTrendRSI')}:
             df[f'gold_rsi{n}'] = wilder_rsi(df['close'].to_numpy(), n)
-    
+
     sub = df.tail(count).copy()
-    
+
     candles = []
     ema20_pts = []
     ema50_pts = []
     ema200_pts = []
     markers = []
     previous_gold_signals = {}
-    
+
     for i in range(1, len(sub)):
         idx = sub.index[i]
         row = sub.loc[idx]
         t = int(row['time'])
-        
+
         candles.append({
             'time': t,
-            'open': round(float(row['open']), 2),
-            'high': round(float(row['high']), 2),
-            'low': round(float(row['low']), 2),
-            'close': round(float(row['close']), 2),
+            'open': round(row['open'], digits),
+            'high': round(row['high'], digits),
+            'low': round(row['low'], digits),
+            'close': round(row['close'], digits),
             'tick_volume': int(row['tick_volume']),
             'real_volume': int(row['real_volume']) if 'real_volume' in row.index and pd.notna(row['real_volume']) else 0
         })
-        ema20_pts.append({'time': t, 'value': round(row['ema20'], 2)})
-        ema50_pts.append({'time': t, 'value': round(row['ema50'], 2)})
-        ema200_pts.append({'time': t, 'value': round(row['ema200'], 2)})
-        
-        if tf_val in (mt5.TIMEFRAME_M15, mt5.TIMEFRAME_M5):
+        ema20_pts.append({'time': t, 'value': round(row['ema20'], digits)})
+        ema50_pts.append({'time': t, 'value': round(row['ema50'], digits)})
+        ema200_pts.append({'time': t, 'value': round(row['ema200'], digits)})
+
+        if sym_name == SYMBOL and tf_val == mt5.TIMEFRAME_M15:
             prev = df.loc[idx - 1]
             c1, o1 = prev['close'], prev['open']
             e20_1, e50_1, e200_1 = prev['ema20'], prev['ema50'], prev['ema200']
             rsi1 = prev['rsi14']
-            
+
             if account == 'goldm15' and tf_val==mt5.TIMEFRAME_M15:
                 new_long, new_short = [], []
                 for s in range(1,4):
@@ -1172,7 +1148,7 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
                     if systems:
                         markers.append({'time': t, 'position': 'belowBar' if buys else 'aboveBar', 'color': '#10b981' if buys else '#f43f5e', 'shape': 'arrowUp' if buys else 'arrowDown', 'text': 'S'+'/'.join(systems)+(' L' if buys else ' S')})
                 continue
-            
+
             if account in ('blueberry', 'titan', 'titan_25k', 'titan_m5', 'titan_500_2', 'xau5m_500', 'xau5m_m5', 'xau5m_m15'):
                 buy = (c1 > e20_1) and (e20_1 > e50_1) and (c1 > e200_1) and (rsi1 >= 50.0) and (c1 > o1)
                 sell = (c1 < e20_1) and (e20_1 < e50_1) and (c1 < e200_1) and (rsi1 <= 50.0) and (c1 < o1)
@@ -1180,25 +1156,29 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
                     markers.append({'time': t, 'position': 'belowBar', 'color': '#10b981', 'shape': 'arrowUp', 'text': 'BUY'})
                 elif sell:
                     markers.append({'time': t, 'position': 'aboveBar', 'color': '#f43f5e', 'shape': 'arrowDown', 'text': 'SELL'})
-            
+
     # Support & Resistance for drawing
     today_date = df['dt'].iloc[-1].date()
     monday_date = today_date - timedelta(days=today_date.weekday())
     daily_vp = compute_volume_profile(df[df['dt'].dt.date == today_date], num_bins=20)
     weekly_vp = compute_volume_profile(df[df['dt'].dt.date >= monday_date], num_bins=25)
-    
+
     sr_levels = {
-        'daily_high': daily_vp.get('high', 0.0),
-        'daily_low':  daily_vp.get('low', 0.0),
-        'daily_poc':  daily_vp.get('poc', 0.0),
-        'weekly_high': weekly_vp.get('high', 0.0),
-        'weekly_low':  weekly_vp.get('low', 0.0),
-        'weekly_poc':  weekly_vp.get('poc', 0.0),
+        'daily_high': round(daily_vp.get('high', 0.0), digits),
+        'daily_low':  round(daily_vp.get('low', 0.0), digits),
+        'daily_poc':  round(daily_vp.get('poc', 0.0), digits),
+        'weekly_high': round(weekly_vp.get('high', 0.0), digits),
+        'weekly_low':  round(weekly_vp.get('low', 0.0), digits),
+        'weekly_poc':  round(weekly_vp.get('poc', 0.0), digits),
     }
 
     return {
         "account": public_account(selected()),
+        "accountId": account,
+        "symbol": symbol,
         "timeframe": tf_upper,
+        "source": "MT5_VERIFIED",
+        "canExecute": False,
         "candles": candles,
         "ema20": ema20_pts,
         "ema50": ema50_pts,
@@ -1330,8 +1310,7 @@ def api_chart_capabilities():
 @app.get("/api/chart/v1/quotes")
 @scoped(mt5)
 def api_chart_quotes(account: str, symbol: str = SYMBOL):
-    if symbol != SYMBOL:
-        raise HTTPException(status_code=400, detail="Dieses Chart-Modul unterstützt noch ausschließlich XAUUSD.")
+    symbol = broker_symbol(symbol)
     acc = verify_identity(mt5, selected())
     return legacy_quote(mt5, selected(), acc, symbol, now=time.time())
 
@@ -1341,20 +1320,41 @@ def api_chart_quotes(account: str, symbol: str = SYMBOL):
 def api_chart_preview(req: ChartScenarioPreviewRequest, account: str):
     if req.account != account:
         raise HTTPException(status_code=409, detail="Szenario gehört nicht zum angefragten Konto.")
-    if req.symbol != SYMBOL:
-        raise HTTPException(status_code=400, detail="Symbol derzeit nicht freigegeben.")
     acc = verify_identity(mt5, selected())
-    sym = mt5.symbol_info(req.symbol)
-    if sym is None:
-        raise HTTPException(status_code=503, detail="MT5-Symbolinformationen nicht verfügbar.")
+    sym = require_symbol(mt5, req.symbol)
     try:
         result = preview_scenario(
             mt5, acc, sym, symbol=req.symbol, side=req.side,
             volume=req.volumeLots, entry=req.entryPrice,
-            stop=req.slPrice, target=req.tpPrice
+            stop=req.slPrice, target=req.tpPrice,
+            risk_budget=req.riskBudget, risk_percent=req.riskPercent,
+            fees_per_lot=req.feesPerLot, slippage_ticks=req.slippageTicks,
         )
     except PreviewError as exc:
         raise HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)}) from exc
+    dd_context = None
+    dd_account = acc
+    if str(getattr(dd_account, "currency", "") or "").upper() == "USD":
+        try:
+            dd_account = verify_identity(mt5, selected())
+            dd_tick = mt5.symbol_info_tick(req.symbol)
+            dd, dd_source, _guard = current_daily_drawdown(mt5, dd_account, dd_tick, time.time())
+            dd_context = {"risk_status": "available", "source_fresh": dd_source.get("source_fresh") is True,
+                          "quote_time_epoch": dd_source.get("quote_time_epoch"), "daily_drawdown": dd}
+        except HTTPException:
+            # Keep the broker What-if result usable while making DD explicitly unavailable.
+            dd_context = None
+    quote_time_utc = None
+    if dd_context and dd_context.get("risk_status") == "available" and dd_context.get("source_fresh") is True:
+        quote_epoch = dd_context.get("quote_time_epoch")
+        if isinstance(quote_epoch, (int, float)) and not isinstance(quote_epoch, bool) and math.isfinite(quote_epoch):
+            quote_time_utc = datetime.fromtimestamp(quote_epoch, timezone.utc).isoformat().replace("+00:00", "Z")
+    result["dailyDrawdownProjection"] = drawdown_projection(
+        currency=getattr(dd_account, "currency", None),
+        daily_drawdown=dd_context.get("daily_drawdown") if quote_time_utc else None,
+        scenario_risk=-result["netEstimate"]["pnlAtSl"]["amount"] if quote_time_utc else None,
+        quote_time_utc=quote_time_utc,
+    )
     result["account"] = account
     result["tickSize"] = float(sym.trade_tick_size)
     return result
@@ -1381,7 +1381,7 @@ def api_modify_position(req: ModifyPositionRequest, account: str):
     is_buy = (pos.type == mt5.ORDER_TYPE_BUY)
     if not all(math.isfinite(v) and v > 0 for v in (contract_size, vol, op)):
         raise HTTPException(503, 'Positionsdaten sind ungültig.')
-    
+
     target_sl = pos.sl
     target_tp = pos.tp
     if req.sl_price is not None:
@@ -1435,7 +1435,7 @@ def api_modify_position(req: ModifyPositionRequest, account: str):
         if gap <= 0 or gap + 1e-9 < distance:
             raise HTTPException(422, 'Schutzpreis verletzt Broker-Stops-/Freeze-Level.')
     target_sl, target_tp = round(target_sl, sym.digits), round(target_tp, sym.digits)
-        
+
     request = {
         "action": mt5.TRADE_ACTION_SLTP,
         "position": req.ticket,
@@ -1473,7 +1473,6 @@ def api_close_position(req: ClosePositionRequest, account: str):
     price = tick.bid if is_buy else tick.ask
     order_type = mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY
     filling = mt5.ORDER_FILLING_IOC if (sym.filling_mode & 2) != 0 else mt5.ORDER_FILLING_RETURN
-    
     vol_to_close = pos.volume
     if req.volume is not None:
         step = getattr(sym, 'volume_step', 0.01) or 0.01
@@ -1531,8 +1530,8 @@ def api_reset_drawdown(req: ResetDrawdownRequest, account: str):
         }
         save_dd_config(cfg)
         return {
-            "success": True, 
-            "message": "Anzeige wieder auf EA-Tagesbasis gestellt; EA-Sperren unverändert." if account=='goldm15' else "Tages-Drawdown zurück auf automatischen MT5-Tagesanfang gestellt.", 
+            "success": True,
+            "message": "Anzeige wieder auf EA-Tagesbasis gestellt; EA-Sperren unverändert." if account=='goldm15' else "Tages-Drawdown zurück auf automatischen MT5-Tagesanfang gestellt.",
             "manual_active": False
         }
     else:
@@ -1577,6 +1576,9 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="static/chart-studio-catalog.js"></script>\n  <script src="static/chart-studio-replay.js"></script>
   <script src="static/chart-studio-fib.js"></script>
   <script src="static/chart-studio-export.js"></script>
+  <script src="static/chart-studio-broker-panel.js"></script>
+  <script src="static/chart-studio-mtf.js"></script>
+  <script src="static/chart-studio-mtf-panel.js"></script>
   <script src="static/chart-studio-beta.js"></script>
   <script src="static/stone-celebrations.js"></script>
   <style>
@@ -1587,7 +1589,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       padding: 0;
       font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
-    
+
     /* DARK THEME */
     body.theme-dark {
       background-color: #070b14;
@@ -1856,7 +1858,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
     <!-- LEFT COLUMN: CHART & VOLUMENPROFILE (7 of 12) -->
     <div class="col-span-12 lg:col-span-7 flex flex-col gap-3">
-      
+
       <!-- 2.1 CHART CARD -->
       <div class="glass-card rounded-xl p-3 flex flex-col">
         <div class="flex flex-wrap items-center justify-between mb-2 gap-2">
@@ -1866,7 +1868,7 @@ HTML_CONTENT = """<!DOCTYPE html>
               aria-label="Chart vergrößern" class="stone-chart-expand-trigger stone-chart-expand-primary"
               title="Chart bildschirmfüllend vergrößern · Esc zum Schließen">⛶ CHART GROSS</button>
             <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-sans" title="Zeiteinheit dient nur der Ansicht - der EA rechnet weiter strikt auf M15">Ansicht</span>
-            
+
             <!-- Timeframe Selector Pills -->
             <div class="flex items-center rounded-lg ticker-bg p-0.5 border text-[11px] font-bold font-mono">
               <button id="tf-btn-M1" onclick="switchTimeframe('M1')" class="px-2 py-0.5 rounded cursor-pointer transition text-sub hover:text-white">M1</button>
@@ -1891,7 +1893,7 @@ HTML_CONTENT = """<!DOCTYPE html>
               </span>
             </div>
           </div>
-          
+
           <!-- Chart Controls: EA-Text toggle, Positionen toggle, Runterziehen, Hochziehen, Zoom, Reset -->
           <div class="flex items-center gap-1 text-[10px] font-sans">
             <button id="toggle-ea-status-btn" onclick="toggleEAStatusText()" class="px-2 py-1 rounded ticker-bg border font-bold cursor-pointer transition flex items-center gap-1 bg-blue-600/30 text-blue-300 border-blue-500/40" title="EA-Statustext & Signal-Pfeile auf dem Chart ein-/ausblenden">
@@ -1964,7 +1966,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           </div>
           <span id="window-badge" class="px-2 py-0.5 rounded font-bold text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-500/40">HANDEL OFFEN</span>
         </div>
-        
+
         <p id="short-missing-text" class="text-xs font-semibold leading-relaxed mb-3">
           Lade Live-Marktdaten...
         </p>
@@ -2156,11 +2158,14 @@ HTML_CONTENT = """<!DOCTYPE html>
 
   <!-- 4. JAVASCRIPT ENGINE -->
   <script src="static/dashboard-runtime.js"></script>
+  <script src="static/chart-level-visibility.js"></script>
   <script>
     const localStorage = DashboardRuntime.storage; // Optional preferences must never stop the dashboard.
     let chart, candleSeries, ema20Series, ema50Series, ema200Series;
     // Sparse overlay FX no longer allocates six transparent chart series.
     let srLines = {};
+    let currentSRLevels = null;
+    let currentSRPrice = 0;
     let positionLines = {};
     let lastKnownPositions = [];
     let isInitialLoad = true;
@@ -2171,6 +2176,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     const BASE_PATH = window.location.pathname.startsWith('/stt') ? '/stt' : '';
     let activeAccount = 'blueberry';
     let activeTimeframe = 'M15';
+    let activeChartSymbol = 'XAUUSD';
     const AVAILABLE_TFS = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'];
     let accountGeneration = 0;
     let accounts = {};
@@ -2221,6 +2227,9 @@ HTML_CONTENT = """<!DOCTYPE html>
     let showEAStatusText = localStorage.getItem('chart_show_ea_status') !== 'false';
     let currentChartMarkers = [];
     let matrixSignature = null, vpSignature = null;
+    function clearChartFX() {
+      try { window.StoneChartFX?.update({ candles: [], emas: [[], [], []], context: activeAccount + '/' + activeChartSymbol + '/' + activeTimeframe + '/' + accountGeneration }); } catch (_) {}
+    }
 
     function updateEAStatusButtonUI() {
       const btn = document.getElementById('toggle-ea-status-btn');
@@ -2244,6 +2253,10 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
     }
 
+    function updateChartScopeLabel() {
+      const meta=accounts[activeAccount],detail=document.getElementById('account-detail');
+      if(meta&&detail)detail.textContent=meta.login+' · '+meta.server+' · '+activeChartSymbol+' / '+activeTimeframe;
+    }
     let showChartPositions = localStorage.getItem('chart_show_positions') !== 'false';
 
     function updateChartPositionsButtonUI() {
@@ -2302,6 +2315,8 @@ HTML_CONTENT = """<!DOCTYPE html>
     function switchTimeframe(tf) {
       if (activeTimeframe === tf) return;
       activeTimeframe = tf;
+      updateChartScopeLabel();
+      clearChartFX();
       try { window.ChartStudioBeta?.timeframe(tf); } catch (_) {}
 
       AVAILABLE_TFS.forEach(t => {
@@ -2316,7 +2331,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
       const titleEl = document.getElementById('chart-title-text');
       if (titleEl) {
-        titleEl.textContent = `XAUUSD ${tf} Chart`;
+        titleEl.textContent = `${activeChartSymbol} ${tf} Chart`;
       }
 
       isInitialLoad = true;
@@ -2324,6 +2339,26 @@ HTML_CONTENT = """<!DOCTYPE html>
       try {window.StoneCelebration?.clearEMAs();}catch(_){}
       loadCandles();
     }
+
+    function switchChartSymbol(symbol) {
+      if (typeof symbol !== 'string' || !/^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$/.test(symbol) || symbol === activeChartSymbol) return;
+      activeChartSymbol = symbol;
+      updateChartScopeLabel();
+      isInitialLoad = true;
+      lastCandleTime = 0;
+      currentCandlesCount = 0;
+      candleSeries?.setData([]);
+      ema20Series?.setData([]); ema50Series?.setData([]); ema200Series?.setData([]);
+      currentChartMarkers = [];
+      candleSeries?.setMarkers([]);
+      updateChartSRLines(null, 0);
+      try { window.StoneCelebration?.clearEMAs(); } catch (_) {}
+      clearChartFX();
+      const titleEl = document.getElementById('chart-title-text');
+      if (titleEl) titleEl.textContent = `${activeChartSymbol} ${activeTimeframe} Chart`;
+      void loadCandles();
+    }
+    window.addEventListener('chartstudio:symbol-change', event => switchChartSymbol(event.detail?.symbol));
 
     function staleRequest() { return new DOMException('Account wurde gewechselt', 'AbortError'); }
     let controlSessionPromise = null;
@@ -2398,6 +2433,8 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (levelLegend) { levelLegend.replaceChildren(); levelLegend.hidden = true; }
         for (const series of [candleSeries,ema20Series,ema50Series,ema200Series]) series.setData([]);
       }
+      currentSRLevels = null;
+      currentSRPrice = 0;
       removeAllPositionLines();
       lastKnownPositions = [];
       isInitialLoad = true;
@@ -2416,6 +2453,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       activeAccount = account;
       try { window.ChartStudioBeta?.account(account); } catch (_) {}
       accountGeneration++;
+      clearChartFX();
       DashboardRuntime.abortAccount();
       localStorage.setItem('gold_dashboard_account', account);
       document.querySelectorAll('.account-tab').forEach(tab => tab.setAttribute('aria-pressed', String(tab.dataset.account===account)));
@@ -2423,7 +2461,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       document.getElementById('strategy-title').textContent = meta.name.toUpperCase();
       document.getElementById('strategy-version').textContent = meta.version;
       document.title = meta.name + ' · ' + meta.login + ' · Live Cockpit';
-      document.getElementById('account-detail').textContent = meta.login + ' · ' + meta.server + ' · ' + (meta.symbol || 'XAUUSD') + ' / ' + (meta.timeframe || 'M15');
+      updateChartScopeLabel();
       document.getElementById('account-connection').textContent = 'Verbindung wird geprüft …';
       document.getElementById('account-connection').className = 'text-amber-500 font-bold';
 
@@ -2481,8 +2519,8 @@ HTML_CONTENT = """<!DOCTYPE html>
       activeTimeframe = meta.timeframe || 'M15';
       document.querySelectorAll('[id^="tf-btn-"]').forEach(btn => {
         const isCurrent = (btn.id === 'tf-btn-' + activeTimeframe);
-        btn.className = isCurrent 
-          ? 'px-2 py-0.5 rounded cursor-pointer transition bg-blue-600 text-white font-black shadow' 
+        btn.className = isCurrent
+          ? 'px-2 py-0.5 rounded cursor-pointer transition bg-blue-600 text-white font-black shadow'
           : 'px-2 py-0.5 rounded cursor-pointer transition text-sub hover:text-white';
       });
       const chartTitle = document.getElementById('chart-title-text');
@@ -2505,8 +2543,8 @@ HTML_CONTENT = """<!DOCTYPE html>
 
       const titleSpan = container.querySelector('strong');
       if (titleSpan) {
-        titleSpan.textContent = (activeAccount === 'blueberry' || activeAccount === 'titan_25k' || activeAccount === 'titan_m5' || activeAccount === 'titan_500_2' || activeAccount === 'titan' || activeAccount === 'xau5m_m5' || activeAccount === 'xau5m_m15') 
-          ? '🎯 Ausstiegsregeln & Gewinnziele (' + (accounts[activeAccount]?.name || '') + ')' 
+        titleSpan.textContent = (activeAccount === 'blueberry' || activeAccount === 'titan_25k' || activeAccount === 'titan_m5' || activeAccount === 'titan_500_2' || activeAccount === 'titan' || activeAccount === 'xau5m_m5' || activeAccount === 'xau5m_m15')
+          ? '🎯 Ausstiegsregeln & Gewinnziele (' + (accounts[activeAccount]?.name || '') + ')'
           : '🎯 Momentum-Ausstiegsziele & Schutz';
       }
 
@@ -2795,13 +2833,26 @@ HTML_CONTENT = """<!DOCTYPE html>
 
     // --- SUPPORT & RESISTANCE / VOLUME PROFILE LINES ON CHART ---
     function updateChartSRLines(sr, curPrice) {
-      if (!sr || !candleSeries) { renderChartLevelLegend([]); return; }
+      const definitions = window.DashboardChartLevelVisibility?.definitions || [];
+      function removeLine(key) {
+        if (candleSeries && srLines[key]) {
+          candleSeries.removePriceLine(srLines[key]);
+          delete srLines[key];
+        }
+      }
+      if (!sr || !candleSeries) {
+        definitions.forEach(level => removeLine(level.key));
+        currentSRLevels = null;
+        currentSRPrice = 0;
+        renderChartLevelLegend([]);
+        return;
+      }
+      currentSRLevels = sr;
+      currentSRPrice = Number(curPrice) || 0;
       const visibleLevels = [];
-
       function setLine(key, price, color, title, style = 2) {
         const p = Number(price);
-        if (!Number.isFinite(p) || p <= 0) { removeLine(key); return; }
-        visibleLevels.push({key, price:p, color, title});
+        if (!Number.isFinite(p) || p <= 0) return;
         // Long native price-line titles are clipped by the narrow right axis.
         // Keep their numeric scale labels and show complete names in our legend.
         if (srLines[key]) {
@@ -2809,36 +2860,31 @@ HTML_CONTENT = """<!DOCTYPE html>
         } else {
           srLines[key] = candleSeries.createPriceLine({
             price:p, color, lineWidth:1, lineStyle:style,
-            axisLabelVisible:true, title:'',
+            axisLabelVisible:false, title:'',
           });
         }
       }
 
-      function removeLine(key) {
-        if (srLines[key]) {
-          candleSeries.removePriceLine(srLines[key]);
-          delete srLines[key];
+      const preferences = window.DashboardChartLevelVisibility?.read(activeAccount, localStorage) || {};
+      const ref = currentSRPrice > 0 ? currentSRPrice : Number(sr.daily_poc) || 0;
+      for (const definition of definitions) {
+        const price = Number(sr[definition.field]);
+        if (!Number.isFinite(price) || price <= 0) {
+          removeLine(definition.key);
+          continue;
         }
-      }
-
-      setLine('res_high', sr.daily_high, '#f43f5e', 'Daily High (Res)', 2);
-      setLine('sup_low',  sr.daily_low,  '#10b981', 'Daily Low (Sup)', 2);
-      setLine('dpoc',     sr.daily_poc,  '#f59e0b', 'Daily POC', 0);
-      setLine('wpoc',     sr.weekly_poc, '#06b6d4', 'Weekly POC', 0);
-
-      // Only display weekly high/low if within $35 USD of current price,
-      // so distant weekly levels don't blow out the vertical price scale and crush the candles.
-      const ref = (curPrice && curPrice > 0) ? curPrice : (sr.daily_poc || 0);
-      if (sr.weekly_high && ref > 0 && Math.abs(sr.weekly_high - ref) <= 35) {
-        setLine('w_high', sr.weekly_high, '#e11d48', 'Weekly High (Res)', 1);
-      } else {
-        removeLine('w_high');
-      }
-
-      if (sr.weekly_low && ref > 0 && Math.abs(sr.weekly_low - ref) <= 35) {
-        setLine('w_low', sr.weekly_low, '#059669', 'Weekly Low (Sup)', 1);
-      } else {
-        removeLine('w_low');
+        const weeklyExtreme = definition.key === 'weekly_high' || definition.key === 'weekly_low';
+        const nearChart = !weeklyExtreme || ref <= 0 || Math.abs(price - ref) <= 35;
+        const hasChoice = window.DashboardChartLevelVisibility?.hasChoice(activeAccount, definition.key, localStorage);
+        // Preserve the historical $35 autoscale guard by default. An explicit
+        // user toggle may reveal a distant weekly extreme when desired.
+        const enabled = !!preferences[definition.key] && (nearChart || hasChoice);
+        if (enabled) setLine(definition.key, price, definition.color, definition.title, definition.style);
+        else removeLine(definition.key);
+        visibleLevels.push({
+          ...definition, price, enabled,
+          note: weeklyExtreme && !nearChart && !hasChoice ? 'Skalenschutz ±35 · anklicken zum Anzeigen' : '',
+        });
       }
       renderChartLevelLegend(visibleLevels);
     }
@@ -2941,83 +2987,10 @@ HTML_CONTENT = """<!DOCTYPE html>
       const currentLevels = levels || lastKnownVisibleLevels;
       const box = document.getElementById('chart-level-legend');
       if (!box) return;
-      box.replaceChildren();
-      if (!showPriceLevelLegend || !currentLevels.length) {
-        box.hidden = true;
-        return;
-      }
-      box.hidden = false;
-      initChartLevelLegendDrag();
-
-      let isCollapsed = localStorage.getItem('stone_price_levels_collapsed') === 'true';
-      if (isCollapsed) box.classList.add('is-collapsed');
-      else box.classList.remove('is-collapsed');
-
-      const heading = document.createElement('div');
-      heading.className = 'stone-chart-level-heading';
-      
-      const titleSpan = document.createElement('span');
-      titleSpan.style.display = 'inline-flex';
-      titleSpan.style.alignItems = 'center';
-      titleSpan.style.gap = '5px';
-      titleSpan.innerHTML = '<span style="opacity:0.6; font-size:11px; cursor:grab;" title="Verschieben">⠿</span> PREISLEVEL';
-      
-      const actionsSpan = document.createElement('div');
-      actionsSpan.style.display = 'inline-flex';
-      actionsSpan.style.alignItems = 'center';
-      actionsSpan.style.gap = '6px';
-
-      const collapseBtn = document.createElement('button');
-      collapseBtn.type = 'button';
-      collapseBtn.textContent = isCollapsed ? '▼' : '▲';
-      collapseBtn.title = isCollapsed ? 'Aufklappen' : 'Einklappen';
-      collapseBtn.style.background = 'transparent';
-      collapseBtn.style.border = 'none';
-      collapseBtn.style.color = '#7bdbef';
-      collapseBtn.style.cursor = 'pointer';
-      collapseBtn.style.fontSize = '10px';
-      collapseBtn.style.padding = '0 2px';
-      collapseBtn.onclick = (e) => {
-        e.stopPropagation();
-        isCollapsed = !isCollapsed;
-        localStorage.setItem('stone_price_levels_collapsed', String(isCollapsed));
-        collapseBtn.textContent = isCollapsed ? '▼' : '▲';
-        collapseBtn.title = isCollapsed ? 'Aufklappen' : 'Einklappen';
-        box.classList.toggle('is-collapsed', isCollapsed);
-      };
-
-      const closeBtn = document.createElement('button');
-      closeBtn.type = 'button';
-      closeBtn.textContent = '✕';
-      closeBtn.title = 'Infobox schließen';
-      closeBtn.style.background = 'transparent';
-      closeBtn.style.border = 'none';
-      closeBtn.style.color = '#7bdbef';
-      closeBtn.style.cursor = 'pointer';
-      closeBtn.style.fontSize = '12px';
-      closeBtn.style.padding = '0 2px';
-      closeBtn.onclick = (e) => {
-        e.stopPropagation();
-        togglePriceLevelLegend(false);
-      };
-      
-      actionsSpan.append(collapseBtn, closeBtn);
-      heading.append(titleSpan, actionsSpan);
-      box.append(heading);
-
-      for (const level of currentLevels) {
-        const row = document.createElement('div');
-        row.className = 'stone-chart-level';
-        row.style.setProperty('--level-color',level.color);
-        const label = document.createElement('span');
-        label.className = 'stone-chart-level-name';
-        label.textContent = level.title;
-        const value = document.createElement('strong');
-        value.className = 'stone-chart-level-price';
-        value.textContent = level.price.toFixed(2);
-        row.append(label,value);
-        box.append(row);
-      }
+      window.DashboardChartLevelVisibility?.render(box,levels,activeAccount,{
+        storage:localStorage,
+        onChange:()=>{if(currentSRLevels)updateChartSRLines(currentSRLevels,currentSRPrice);}
+      });
     }
 
     // --- POSITION, SL & TP LINES ON CHART ---
@@ -3115,13 +3088,16 @@ HTML_CONTENT = """<!DOCTYPE html>
     // --- SMOOTH CANDLES LOAD (NO JUMPING & PRESERVES ZOOM) ---
     async function loadCandles() {
       const generation = accountGeneration;
-      if (candlesBusy === generation) return;
-      candlesBusy = generation;
+      const reqTf = activeTimeframe;
+      const reqSymbol = activeChartSymbol;
+      const requestKey = generation + '/' + reqSymbol + '/' + reqTf;
+      if (candlesBusy === requestKey) return;
+      candlesBusy = requestKey;
       try {
-        const reqTf = activeTimeframe;
-        const res = await accountFetch('/api/candles?tf=' + encodeURIComponent(reqTf));
+        const res = await accountFetch('/api/candles?tf=' + encodeURIComponent(reqTf) + '&symbol=' + encodeURIComponent(reqSymbol));
         const data = await res.json();
-        if (generation !== accountGeneration || reqTf !== activeTimeframe) throw staleRequest();
+        if (generation !== accountGeneration || reqTf !== activeTimeframe || reqSymbol !== activeChartSymbol) throw staleRequest();
+        if (!res.ok || data.accountId !== activeAccount || data.symbol !== reqSymbol || data.timeframe !== reqTf || data.source !== 'MT5_VERIFIED' || data.canExecute !== false) throw new Error('Chartdaten haben keinen passenden Account-/Symbol-/Timeframe-Read-Scope.');
         if (!data.candles || data.candles.length === 0) return;
 
         currentCandlesCount = data.candles.length;
@@ -3181,7 +3157,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             emas: [data.ema20, data.ema50, data.ema200],
             markers: showEAStatusText ? currentChartMarkers : [],
             newBar: stoneNewBar,
-            context: activeAccount + '/' + activeTimeframe + '/' + accountGeneration
+            context: activeAccount + '/' + activeChartSymbol + '/' + activeTimeframe + '/' + accountGeneration
           });
         } catch (_) { /* Never let decorative effects interfere with MT5 polling. */ }
         try {
@@ -3193,7 +3169,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         } catch (_) { /* Read-only EMA display is optional. */ }
       } catch (err) {
         reportAccountError(err, generation);
-      } finally { if (candlesBusy === generation) candlesBusy = null; }
+      } finally { if (candlesBusy === requestKey) candlesBusy = null; }
     }
 
     // --- LIVE STATUS & TARGET MATRIX ---
@@ -3349,10 +3325,10 @@ HTML_CONTENT = """<!DOCTYPE html>
           cardElem.classList.toggle('border-l-rose-500', data.trend_direction !== 'BULLISH');
         }
 
-        const statusPrefix = data.account.id==='goldm15' ? '<span class="text-blue-400 font-black">RSI-Setup:</span>' : (data.trend_direction === 'BULLISH') 
-          ? `<span class="text-emerald-400 font-black">Aktiver Trend (Long):</span>` 
+        const statusPrefix = data.account.id==='goldm15' ? '<span class="text-blue-400 font-black">RSI-Setup:</span>' : (data.trend_direction === 'BULLISH')
+          ? `<span class="text-emerald-400 font-black">Aktiver Trend (Long):</span>`
           : `<span class="text-rose-400 font-black">Aktiver Trend (Short):</span>`;
-        
+
         document.getElementById('short-missing-text').innerHTML = `${statusPrefix} ${escapeHTML(data.trend_diagnosis || data.short_missing)}`;
         document.getElementById('sell-pct').innerText = `${data.sell_readiness}% (${data.sell_met_count}/${data.rule_count})`;
         document.getElementById('sell-bar').style.width = `${data.sell_readiness}%`;
@@ -3460,8 +3436,8 @@ HTML_CONTENT = """<!DOCTYPE html>
       vpSignature = signature;
 
       document.getElementById('vp-summary-badge').innerHTML = `
-        <span class="text-amber-500 font-bold">POC: $${vp.poc.toFixed(2)}</span> | 
-        <span class="text-sky-500">VAH: $${vp.vah.toFixed(2)}</span> | 
+        <span class="text-amber-500 font-bold">POC: $${vp.poc.toFixed(2)}</span> |
+        <span class="text-sky-500">VAH: $${vp.vah.toFixed(2)}</span> |
         <span class="text-emerald-500">VAL: $${vp.val.toFixed(2)}</span> |
         <span class="text-rose-500">High: $${vp.high.toFixed(2)}</span> |
         <span class="text-emerald-600">Low: $${vp.low.toFixed(2)}</span>
@@ -3482,7 +3458,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (closest) sorted[closest.index] = pocRow;
         sorted.sort((a,b) => b.price - a.price);
       }
-      
+
       container.innerHTML = sorted.map((b, index) => {
         let barColor = index % 2 === 0 ? 'bg-cyan-500/75' : 'bg-amber-500/75';
         let label = '';
@@ -3795,19 +3771,19 @@ HTML_CONTENT = """<!DOCTYPE html>
       // Calculations
       const isAllMode = journalFilter === 'all';
       const allFailed = wanted.length > 0 && journalErrors.length >= wanted.length;
-      const totalUnknown = isAllMode 
-        ? allFailed 
+      const totalUnknown = isAllMode
+        ? allFailed
         : (journalErrors.length > 0 || itemsToRender.some(it => !Number.isFinite(it.profit_usd) || it.net_complete === false));
       const totalPnL = itemsToRender.reduce((sum, it) => sum + (Number.isFinite(it.profit_usd) ? it.profit_usd : 0), 0);
       const liveItems = itemsToRender.filter(it => it.status === 'OPEN');
       const closedItems = itemsToRender.filter(it => it.status === 'CLOSED');
       const livePnL = liveItems.reduce((sum, it) => sum + (it.profit_usd || 0), 0);
       const closedPnL = closedItems.reduce((sum, it) => sum + (it.profit_usd || 0), 0);
-      const liveUnknown = isAllMode 
-        ? allFailed 
+      const liveUnknown = isAllMode
+        ? allFailed
         : (journalErrors.length > 0 || liveItems.some(it => !Number.isFinite(it.profit_usd)));
-      const closedUnknown = isAllMode 
-        ? allFailed 
+      const closedUnknown = isAllMode
+        ? allFailed
         : (journalErrors.length > 0 || closedItems.some(it => !Number.isFinite(it.profit_usd) || it.net_complete === false));
 
       if (countBadge) {
@@ -3825,8 +3801,8 @@ HTML_CONTENT = """<!DOCTYPE html>
         const sign = totalPnL >= 0 ? '+' : '-';
         totBadge.textContent = totalUnknown ? 'Gesamt: — (unvollständig)' : `Gesamt: ${sign}$${Math.abs(totalPnL).toFixed(2)}`;
         totBadge.className = `px-2.5 py-0.5 rounded-md font-mono text-[11px] font-black border ${
-          totalPnL >= 0 
-            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' 
+          totalPnL >= 0
+            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
             : 'bg-rose-500/20 text-rose-400 border-rose-500/40'
         }`;
       }
@@ -3873,7 +3849,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         const ptsSign = (item.points >= 0) ? '+' : '-';
         const ptsFormatted = (typeof item.points === 'number') ? `${ptsSign}${Math.abs(item.points).toFixed(2)} Pkt` : '';
 
-        const statusBadge = isOpen 
+        const statusBadge = isOpen
           ? `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-pulse">
                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>LIVE POSITION
              </span>`
@@ -3883,8 +3859,8 @@ HTML_CONTENT = """<!DOCTYPE html>
 
         const pnlBadge = `
           <div class="flex items-center gap-1 px-3 py-1 rounded-lg border font-mono font-black text-xs ${
-            isProfit 
-              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40 shadow-sm shadow-emerald-500/10' 
+            isProfit
+              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40 shadow-sm shadow-emerald-500/10'
               : 'bg-rose-500/15 text-rose-400 border-rose-500/40 shadow-sm shadow-rose-500/10'
           }">
             <span class="text-[10px] opacity-75 font-sans uppercase">${isOpen ? 'Live PnL' : 'Realisiert'}:</span>
@@ -4123,30 +4099,30 @@ HTML_CONTENT = """<!DOCTYPE html>
       if (!accountActionsReady()) return;
       const acc = accounts[activeAccount];
       const isChallenge = acc?.challenge_protection !== false;
-      document.getElementById('reset-description').textContent = activeAccount==='goldm15' 
-        ? 'Konto '+acc.login+': Dieser Reset betrifft ausschließlich die Dashboard-Anzeige. Er verändert weder die feste $350-Tagesgrenze noch die EA-Baseline oder bestehende Handelssperren.' 
+      document.getElementById('reset-description').textContent = activeAccount==='goldm15'
+        ? 'Konto '+acc.login+': Dieser Reset betrifft ausschließlich die Dashboard-Anzeige. Er verändert weder die feste $350-Tagesgrenze noch die EA-Baseline oder bestehende Handelssperren.'
         : !isChallenge
         ? 'Konto '+acc.login+' ('+acc.name+'): Setzt den Tagesverlust und die High-Water-Mark auf 0.00% zurück. Normales Trading-Konto ohne Challenge-Notbremsen.'
         : 'Setzt den Tagesverlust und die High-Water-Mark auf 0.00% zurück. Trades vor dem Reset werden für die heutige Drawdown-Berechnung ignoriert.';
-      document.getElementById('reset-help').textContent = activeAccount==='goldm15' 
-        ? 'Referenzwert nur für die Anzeige; der tatsächliche EA-Schutzstatus steht separat im Dashboard.' 
+      document.getElementById('reset-help').textContent = activeAccount==='goldm15'
+        ? 'Referenzwert nur für die Anzeige; der tatsächliche EA-Schutzstatus steht separat im Dashboard.'
         : !isChallenge
         ? 'Die Baseline (' + (acc?.initial_balance ? '$'+acc.initial_balance : '$500') + ') zur Berechnung des relativen Tages-Drawdowns (keine Notbremsen aktiv).'
         : 'Die Baseline, ab der die 3.5% EA- und 4.0% Broker-Notbremse gerechnet wird.';
       const modal = document.getElementById('dd-reset-modal');
       const input = document.getElementById('dd-reset-input');
       const initBal = acc?.initial_balance || 10000.0;
-      const currentBal = (currentData && currentData.daily_drawdown && Number.isFinite(currentData.daily_drawdown.balance)) 
-        ? currentData.daily_drawdown.balance 
+      const currentBal = (currentData && currentData.daily_drawdown && Number.isFinite(currentData.daily_drawdown.balance))
+        ? currentData.daily_drawdown.balance
         : initBal;
-      
+
       const initBtn = document.getElementById('modal-preset-init-btn');
       if (initBtn) {
         initBtn.textContent = '$' + (initBal >= 1000 ? (initBal / 1000) + 'k' : initBal);
       }
-      
+
       refreshResetModalValues();
-      
+
       if (!input.value || parseFloat(input.value) <= 0) {
         input.value = currentBal.toFixed(2);
       }
@@ -4173,8 +4149,8 @@ HTML_CONTENT = """<!DOCTYPE html>
     }
 
     function setModalInputBalCurrent() {
-      const currentBal = (currentData && currentData.daily_drawdown && Number.isFinite(currentData.daily_drawdown.balance)) 
-        ? currentData.daily_drawdown.balance 
+      const currentBal = (currentData && currentData.daily_drawdown && Number.isFinite(currentData.daily_drawdown.balance))
+        ? currentData.daily_drawdown.balance
         : (accounts[activeAccount]?.initial_balance || 10000.0);
       document.getElementById('dd-reset-input').value = currentBal.toFixed(2);
     }

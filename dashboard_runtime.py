@@ -27,7 +27,9 @@ _FALLBACK_ROOT = {'app.py', 'dashboard_runtime.py', 'dashboard_security.py',
 _FALLBACK_DIRS = {'static', 'chart_studio', 'chart_studio_v5'}
 _ENV_KEYS = {'DASHBOARD_ALLOWED_HOSTS', 'DASHBOARD_PROXY_SECRET', 'DASHBOARD_PROXY_USERS',
              'DASHBOARD_PROXY_PREFIX', 'DASHBOARD_CONTROL_TOKEN', 'DASHBOARD_QUOTE_MAX_AGE_SECONDS',
-             'CHART_STUDIO_STORAGE_TOKEN', 'CHART_STUDIO_STORAGE_ENABLED', 'CHART_STUDIO_DB'}
+             'CHART_STUDIO_STORAGE_TOKEN', 'CHART_STUDIO_STORAGE_ENABLED', 'CHART_STUDIO_DB',
+             'CHART_STUDIO_EVIDENCE_ROOT', 'CHART_STUDIO_EVIDENCE_DB',
+             'CHART_STUDIO_EVIDENCE_SPOOL_ROOT'}
 
 
 def validate_environment_file(root, private_path):
@@ -50,6 +52,26 @@ def validate_environment_file(root, private_path):
             raise ValueError('invalid environment')
         if 'DASHBOARD_PROXY_SECRET' in values and len(values['DASHBOARD_PROXY_SECRET']) < 32:
             raise ValueError('short secret')
+        if 'CHART_STUDIO_EVIDENCE_SPOOL_ROOT' in values:
+            spool_root = Path(values['CHART_STUDIO_EVIDENCE_SPOOL_ROOT'])
+            if not spool_root.is_absolute() or not spool_root.is_dir() or spool_root.resolve().is_relative_to(Path(root).resolve()):
+                raise ValueError('invalid spool root')
+        has_evidence_root = 'CHART_STUDIO_EVIDENCE_ROOT' in values
+        has_evidence_db = 'CHART_STUDIO_EVIDENCE_DB' in values
+        if has_evidence_root != has_evidence_db:
+            raise ValueError('incomplete evidence store')
+        if has_evidence_root:
+            raw_evidence_root = Path(values['CHART_STUDIO_EVIDENCE_ROOT'])
+            raw_evidence_db = Path(values['CHART_STUDIO_EVIDENCE_DB'])
+            if not raw_evidence_root.is_absolute() or not raw_evidence_db.is_absolute():
+                raise ValueError('evidence paths must be absolute')
+            evidence_root = raw_evidence_root.resolve()
+            evidence_db = raw_evidence_db.resolve()
+            checkout = Path(root).resolve()
+            if (not evidence_root.is_absolute() or not evidence_root.is_dir() or
+                    evidence_root.is_relative_to(checkout) or evidence_db.is_relative_to(checkout) or
+                    evidence_db.parent != evidence_root or evidence_db.suffix != '.sqlite'):
+                raise ValueError('invalid evidence store')
         users = json.loads(values.get('DASHBOARD_PROXY_USERS', '{}'), object_pairs_hook=unique)
         if not isinstance(users, dict) or any(not k or not all(32 < ord(c) < 127 and c != ',' for c in k)
                                               or v not in ('read', 'layout', 'trade')

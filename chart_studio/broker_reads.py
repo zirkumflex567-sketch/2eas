@@ -1,13 +1,16 @@
 """MT5-only read models. Decimal values and identifiers never lose precision in JSON."""
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
 import json
+import math
+import numbers
 import re
 import time
 
 from fastapi import HTTPException
 import account_gateway as gateway
 import broker_clock
+import broker_telemetry
 from chart_studio import history_cursor
 
 SOURCE = 'MT5_VERIFIED'
@@ -205,7 +208,7 @@ def order_model(row, spec, symbol):
 def verified_read(mt5, account, operation):
     """Hold the shared gateway lock through fetching AND serializing broker rows."""
     try:
-        with gateway.session(mt5, account) as spec:
+        with gateway.traced_session(mt5, account) as spec:
             return operation(spec)
     except HTTPException:
         raise
@@ -247,6 +250,161 @@ def positions_read(mt5, spec, symbol, *, ticket=None, magic=None, manual=None, n
             'marginMode': margin_mode, 'quote': quote,
             'positions': [r for r in models if matches(r)],
             'orders': [r for r in pending if matches(r)]}
+
+
+PORTFOLIO_MAX_POSITIONS = 500
+CORRELATION_MAX_SYMBOLS = 12
+CORRELATION_BAR_COUNT = 257
+CORRELATION_MIN_RETURNS = 60
+
+
+def portfolio_correlations(mt5, symbols, scenario_symbol):
+    """Pairwise Pearson correlations of aligned completed H1 close returns."""
+    names = sorted(set(symbols) | {scenario_symbol})
+    def unavailable(reason):
+        return {'state':'UNAVAILABLE', 'reason':reason,
+                'scenarioSymbol':scenario_symbol, 'symbols':names if len(names) <= CORRELATION_MAX_SYMBOLS else []}
+    if len(names) < 2:
+        return unavailable('NO_SYMBOL_PAIRS')
+    if len(names) > CORRELATION_MAX_SYMBOLS:
+        return unavailable('SYMBOL_LIMIT_EXCEEDED')
+    reader = getattr(mt5, 'copy_rates_from_pos', None)
+    timeframe = getattr(mt5, 'TIMEFRAME_H1', 16385)
+    if not callable(reader):
+        return unavailable('HISTORY_UNAVAILABLE')
+    series = {}
+    try:
+        for name in names:
+            with broker_telemetry.span('mt5_rates', count=CORRELATION_BAR_COUNT):
+                raw = reader(name, timeframe, 1, CORRELATION_BAR_COUNT)
+            if raw is None:
+                return unavailable('HISTORY_UNAVAILABLE')
+            rows = list(raw)
+            if len(rows) > CORRELATION_BAR_COUNT:
+                return unavailable('INVALID_CORRELATION_SERIES')
+            values = {}
+            for row in rows:
+                try:
+                    stamp = row['time'] if not hasattr(row, 'time') else row.time
+                    close = row['close'] if not hasattr(row, 'close') else row.close
+                    if isinstance(stamp, bool) or not isinstance(stamp, numbers.Integral) or stamp <= 0:
+                        raise ValueError('timestamp')
+                    if isinstance(close, bool) or not isinstance(close, (numbers.Real, Decimal)):
+                        raise ValueError('close')
+                    stamp, price = int(stamp), float(close)
+                    if not math.isfinite(price) or price <= 0 or stamp in values:
+                        raise ValueError('rate')
+                    values[stamp] = price
+                except Exception as exc:
+                    raise BrokerReadError('invalid correlation rate') from exc
+            series[name] = values
+    except BrokerReadError:
+        return unavailable('INVALID_CORRELATION_SERIES')
+    except Exception:
+        return unavailable('HISTORY_UNAVAILABLE')
+
+    pairs = []
+    for index, left in enumerate(names):
+        for right in names[index+1:]:
+            common = sorted(series[left].keys() & series[right].keys())
+            intervals = [(a,b) for a,b in zip(common,common[1:]) if b-a == 3600]
+            left_returns = [series[left][b]/series[left][a]-1 for a,b in intervals]
+            right_returns = [series[right][b]/series[right][a]-1 for a,b in intervals]
+            if len(left_returns) < CORRELATION_MIN_RETURNS:
+                return unavailable('INSUFFICIENT_ALIGNED_HISTORY')
+            mean_left = math.fsum(left_returns)/len(left_returns)
+            mean_right = math.fsum(right_returns)/len(right_returns)
+            centered_left = [v-mean_left for v in left_returns]
+            centered_right = [v-mean_right for v in right_returns]
+            variance_left = math.fsum(v*v for v in centered_left)
+            variance_right = math.fsum(v*v for v in centered_right)
+            if variance_left <= 0 or variance_right <= 0:
+                return unavailable('INVALID_CORRELATION_SERIES')
+            coefficient = math.fsum(a*b for a,b in zip(centered_left,centered_right))/math.sqrt(variance_left*variance_right)
+            if not math.isfinite(coefficient):
+                return unavailable('INVALID_CORRELATION_SERIES')
+            coefficient = max(-1.0,min(1.0,coefficient))
+            pairs.append({'symbols':[left,right], 'coefficient':decimal(Decimal(str(coefficient)).quantize(Decimal('0.000001'), rounding=ROUND_HALF_UP), signed=True), 'observations':len(left_returns)})
+    return {'state':'AVAILABLE', 'timeframe':'H1', 'source':'MT5_COMPLETED_BARS',
+            'scenarioSymbol':scenario_symbol, 'symbols':names, 'pairs':pairs}
+
+
+def portfolio_read(mt5, spec, scenario_symbol='XAUUSD'):
+    """Read a bounded account-wide position and completed-bar correlation snapshot."""
+    info = gateway.verify_identity(mt5, spec)
+    currency = text(required(info, 'currency'))
+    currency_digits = integer(required(info, 'currency_digits'), choices=range(0, 9))
+    currency_quantum = Decimal(1).scaleb(-currency_digits)
+    margin = {
+        'state': 'AVAILABLE',
+        'used': decimal(required(info, 'margin')),
+        'free': decimal(required(info, 'margin_free'), signed=True),
+        'equity': decimal(required(info, 'equity'), signed=True),
+        'balance': decimal(required(info, 'balance'), signed=True),
+        'currency': currency,
+        'scope': 'ACCOUNT',
+    }
+    rows = broker_rows(mt5.positions_get())
+    if len(rows) > PORTFOLIO_MAX_POSITIONS:
+        raise BrokerReadError('portfolio position limit exceeded')
+    totals = {}
+    checked_symbols = set()
+    stop_loss = Decimal(0)
+    stop_risk_reason = None
+    for row in rows:
+        symbol = broker_symbol(required(row, 'symbol'))
+        if symbol not in checked_symbols:
+            require_symbol(mt5, symbol)
+            checked_symbols.add(symbol)
+        model = position_model(row, spec, symbol, currency)
+        total = totals.setdefault(symbol, {
+            'symbol': symbol, 'buyLots': Decimal(0), 'sellLots': Decimal(0),
+            'floatingPnl': Decimal(0), 'swap': Decimal(0), 'currency': currency,
+        })
+        side_key = 'buyLots' if model['side'] == 'BUY' else 'sellLots'
+        total[side_key] += Decimal(model['volume'])
+        total['floatingPnl'] += Decimal(model['profit'])
+        total['swap'] += Decimal(model['swap'])
+        if model['sl'] is None:
+            stop_risk_reason = stop_risk_reason or 'MISSING_STOP'
+        elif stop_risk_reason is None:
+            calculator = getattr(mt5, 'order_calc_profit', None)
+            if not callable(calculator):
+                stop_risk_reason = 'BROKER_CALCULATION_UNAVAILABLE'
+            else:
+                action = getattr(mt5, 'ORDER_TYPE_BUY' if model['side'] == 'BUY' else 'ORDER_TYPE_SELL',
+                                 0 if model['side'] == 'BUY' else 1)
+                try:
+                    pnl = calculator(action, symbol, float(model['volume']),
+                                     float(model['priceOpen']), float(model['sl']))
+                    if isinstance(pnl, bool) or not isinstance(pnl, (int, float)):
+                        raise BrokerReadError('invalid broker calculation')
+                    pnl_decimal = Decimal(str(pnl))
+                    if not pnl_decimal.is_finite():
+                        raise BrokerReadError('invalid broker calculation')
+                    pnl_decimal = pnl_decimal.quantize(currency_quantum, rounding=ROUND_HALF_UP)
+                    stop_loss += max(Decimal(0), -pnl_decimal)
+                except Exception:
+                    stop_risk_reason = 'BROKER_CALCULATION_UNAVAILABLE'
+    symbols = []
+    for name in sorted(totals):
+        total = totals[name]
+        buy, sell = total['buyLots'], total['sellLots']
+        symbols.append({
+            'symbol': name, 'buyLots': decimal(buy), 'sellLots': decimal(sell),
+            'netLots': decimal(buy-sell, signed=True),
+            'floatingPnl': decimal(total['floatingPnl'], signed=True),
+            'swap': decimal(total['swap'], signed=True), 'currency': currency,
+        })
+    stop_risk = ({'state':'UNAVAILABLE', 'reason':stop_risk_reason} if stop_risk_reason else
+                 {'state':'AVAILABLE', 'lossAtStops':decimal(stop_loss.quantize(currency_quantum, rounding=ROUND_HALF_UP)), 'currency':currency,
+                  'source':'MT5_ORDER_CALC_PROFIT'})
+    if scenario_symbol not in checked_symbols:
+        require_symbol(mt5, scenario_symbol)
+    return {**provenance(spec), 'positionCount': len(rows), 'currency': currency,
+            'margin': margin, 'stopRisk': stop_risk,
+            'symbols': symbols,
+            'correlation': portfolio_correlations(mt5, checked_symbols, scenario_symbol)}
 
 
 # Official DEAL_TYPE values (BUY_CANCELED=13, SELL_CANCELED=14). Unknown newer
@@ -304,9 +462,13 @@ def trades_read(mt5, spec, symbol, start, stop, *, limit=100, ticket=None,
     currency = text(required(gateway.verify_identity(mt5, spec), 'currency'))
     # Broker wall-clock epochs are offset from UTC by this account's policy.
     # Both datetimes carry UTC tzinfo so no machine-local conversion is possible.
-    rows = broker_rows(mt5.history_deals_get(
-        history_cursor.utc_datetime(start+offset*1000000),
-        history_cursor.utc_datetime(asof+offset*1000000))) if asof >= start else ()
+    if asof >= start:
+        with broker_telemetry.span('mt5_history'):
+            rows = broker_rows(mt5.history_deals_get(
+                history_cursor.utc_datetime(start+offset*1000000),
+                history_cursor.utc_datetime(asof+offset*1000000)))
+    else:
+        rows = ()
     if len(rows) > HISTORY_MAX_ROWS:
         raise HTTPException(503, {'code':'HISTORY_LIMIT',
                                  'message':'Broker history exceeds 50000 rows; narrow the UTC range.'})
@@ -360,8 +522,10 @@ def legacy_quote(mt5, spec, info, symbol, *, now=None):
         if broker_symbol(required(sym, 'name')) != symbol:
             raise BrokerReadError('symbol mismatch')
         tick_size = decimal(required(sym, 'trade_tick_size'), positive=True)
+        digits = integer(required(sym, 'digits'), choices=range(11))
         return {**quote, 'symbol': symbol, 'currency': text(required(info, 'currency')),
-                'bid': float(quote['bid']), 'ask': float(quote['ask']), 'tickSize': float(tick_size)}
+                'bid': float(quote['bid']), 'ask': float(quote['ask']),
+                'tickSize': float(tick_size), 'digits': digits}
     except HTTPException:
         raise
     except Exception as exc:

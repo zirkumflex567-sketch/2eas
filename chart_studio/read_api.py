@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from chart_studio.broker_reads import (
     SYMBOL_PATTERN, broker_rows, symbol_summary, symbol_model, require_symbol,
     verified_read, positions_read, trades_read, provenance,
+    portfolio_read,
 )
 from chart_studio.history_cursor import utc_range
 
@@ -43,6 +44,11 @@ def install_read_routes(app, mt5, *, now=None):
                   magic: Magic = None, manual: bool | None = None):
         return response(verified_read(mt5, account, lambda spec: positions_read(
             mt5, spec, symbol, ticket=ticket, magic=magic, manual=manual, now=clock())))
+
+    @app.get('/api/chart/v1/portfolio')
+    def portfolio(account: Account, scenarioSymbol: Symbol = 'XAUUSD'):
+        return response(verified_read(mt5, account,
+                        lambda spec: portfolio_read(mt5, spec, scenarioSymbol)))
 
     @app.get('/api/chart/v1/trades')
     def trades(account: Account, symbol: Symbol,

@@ -27,3 +27,8 @@ Keine Anpassungen an Broker/MT5-Endpunkten, Risiko-, Signal- oder Orderlogik. Di
 6. Auf echtem MT5 prüfen, dass Konto-/Timeframe-Wechsel keine Daten aus dem vorherigen Konto zurücklassen und alle Orders wie bisher funktionieren.
 
 Ein statisch bestandener Check ersetzt weder visuelle Browsertests noch den MT5-End-to-End-Test.
+
+
+## Chart canvas placement
+
+The optional FX canvas now derives its plot bounds from the public Lightweight Charts 4.1 time-scale width/height and left/right price-scale widths. Candle and EMA marks continue to use series price coordinates and the time-scale time conversion. It no longer queries the library-generated table/cell DOM. Isolated Chromium checks compare canvas placement with public API dimensions within one CSS pixel at 150% device scale; live scale-label reflow and target-hardware resize acceptance remain open.

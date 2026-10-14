@@ -79,7 +79,7 @@ class StoneUiAssets(unittest.TestCase):
             self.assertTrue(selector.strip().startswith('body.theme-stone'))
             self.assertIsNone(re.search(r'(?:\.stone-chart|\.chart-|#tv-chart|\.cs-|#cs-|--chart|--volume|#vp-|\.stone-side|\.stone-mini)', selector))
             for prop in re.findall(r'([\w-]+)\s*:', body):
-                self.assertIn(prop, ('background-image','border-image-source','border-image-slice'))
+                self.assertIn(prop, ('background-image','background-size','border-image-source','border-image-slice'))
         names = set(re.findall(r'stone-assets/ui/([\w.]+)',css))
         self.assertEqual(names, {Path(r['output']).name for r in manifest['assets']})
         self.assertNotIn(12, {r['id'] for r in manifest['assets']})

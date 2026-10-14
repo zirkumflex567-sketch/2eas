@@ -4,6 +4,8 @@ const entries=Object.freeze([
  {id:"ema",name:"Exponential Moving Average",group:"Trend",desc:"EMA auf dem Preischart",type:"average",kind:"EMA"},
  {id:"sma",name:"Simple Moving Average",group:"Trend",desc:"SMA auf dem Preischart",type:"average",kind:"SMA"},
  {id:"wma",name:"Weighted Moving Average",group:"Trend",desc:"WMA auf dem Preischart",type:"average",kind:"WMA"},
+ {id:"rma",name:"Wilder's Moving Average (RMA)",group:"Trend",desc:"Wilder-geglätteter Durchschnitt auf dem Preischart",type:"average",kind:"RMA"},
+ {id:"smma",name:"Smoothed Moving Average (SMMA)",group:"Trend",desc:"Geglätteter gleitender Durchschnitt auf dem Preischart",type:"average",kind:"SMMA"},
  {id:"rsi",name:"Relative Strength Index",group:"Momentum",desc:"Separates RSI-Fenster",type:"oscillator",kind:"rsi"},
  {id:"macd",name:"MACD",group:"Momentum",desc:"MACD, Signal und Histogramm",type:"oscillator",kind:"macd"},
  {id:"atr",name:"Average True Range",group:"Volatilität",desc:"ATR-Fenster",type:"oscillator",kind:"atr"},

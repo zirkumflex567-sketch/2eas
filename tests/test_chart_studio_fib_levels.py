@@ -26,13 +26,13 @@ class FibLevelTests(unittest.TestCase):
         self.assertNotIn("levels", validate_document(document(fib()))["drawings"][0])
 
     def test_valid_extension_persists_exact_levels(self):
-        values = [0, .25, .5, 1, 1.618]
+        values = [-.5, 0, .25, 1, 2.618]
         item = validate_document(document(fib(values)))["drawings"][0]
         self.assertEqual(item["levels"], values)
 
     def test_rejects_bad_or_malicious_levels(self):
         cases = [
-            [], [0] * 17, [-.1], [2.01], [0, .5, .5], [.7, .5],
+            [], [0] * 17, [-10.01], [10.01], [0, .5, .5], [.7, .5],
             [False], [float("nan")], [float("inf")], ["0; alert(1)"],
             [{"svg": "<script>"}],
         ]

@@ -58,18 +58,39 @@ class StoneThemeContractTests(unittest.TestCase):
         app = (ROOT / "app.py").read_text(encoding="utf-8")
         fx = (STATIC / "stone-chart-effects.js").read_text(encoding="utf-8")
         skin = (STATIC / "stone-asset-skin.css").read_text(encoding="utf-8")
+        levels = (STATIC / "chart-level-visibility.js").read_text(encoding="utf-8")
         self.assertNotIn('id="chart-ea-status-box"', app)
         self.assertNotIn("chart-ea-status-text", app)
         self.assertIn('id="chart-level-legend"', app)
         self.assertIn("renderChartLevelLegend(visibleLevels);", app)
-        self.assertIn("level.title", app)
+        self.assertIn("level.title", levels)
         self.assertIn("title:''", app)
         self.assertIn("drawEmaEffect(state,effect,now)", fx)
-        self.assertIn("state.chart.timeScale().width()", fx)
-        self.assertIn('plotCell.getBoundingClientRect()', fx)
+        self.assertIn("const plotWidth = Number(timeScale.width())", fx)
+        self.assertIn("timeScale.height()", fx)
         self.assertIn('cv.style.setProperty("width"', fx)
         self.assertIn("!motionPreference.matches", fx)
         self.assertIn("#chart-level-legend.stone-chart-level-legend", skin)
+
+    def test_chart_fx_uses_public_plot_geometry_apis(self):
+        fx = (STATIC / "stone-chart-effects.js").read_text(encoding="utf-8")
+        self.assertNotIn("table tbody tr:first-child td:first-child", fx)
+        self.assertIn("timeScale.height()", fx)
+        self.assertIn('state.chart.priceScale("left").width()', fx)
+        self.assertIn('state.chart.priceScale("right").width()', fx)
+        self.assertIn("getX(state, c.time)", fx)
+        self.assertIn("getY(state.candleSeries, c.high)", fx)
+
+    def test_daily_weekly_price_levels_have_individual_account_scoped_toggles(self):
+        app = (ROOT / "app.py").read_text(encoding="utf-8")
+        levels = (STATIC / "chart-level-visibility.js").read_text(encoding="utf-8")
+        self.assertIn('src="static/chart-level-visibility.js"', app)
+        for key in ("daily_high", "daily_low", "daily_poc", "daily_vah", "daily_val",
+                    "weekly_high", "weekly_low", "weekly_poc", "weekly_vah", "weekly_val"):
+            self.assertIn(f'key:"{key}"', levels)
+        self.assertIn("hasChoice(activeAccount, definition.key, localStorage)", app)
+        self.assertIn("axisLabelVisible:false", app)
+        self.assertIn("currentSRLevels = null", app)
 
 
     def test_mythic_chart_effects_are_sparse_and_visual_only(self):

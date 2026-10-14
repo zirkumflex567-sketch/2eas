@@ -3,24 +3,26 @@
  */
 (()=>{
 "use strict";
-const TYPES=Object.freeze(["EMA","SMA","WMA"]);
+const TYPES=Object.freeze(["EMA","SMA","WMA","RMA","SMMA"]);
 const SOURCES=Object.freeze(["close","open","high","low","hl2","hlc3","ohlc4"]);
 const PALETTE=Object.freeze(["#68dfff","#f5c66d","#e9a0ff","#7eebac","#ff858a","#9caaff"]);
-const MAX_INSTANCES=16,MAX_PERIOD=500,STORE_PREFIX="2eas:studio:averages:v1:";
+const MAX_INSTANCES=16,MAX_PERIOD=1000,STORE_PREFIX="2eas:studio:averages:v1:";
 const copy=value=>JSON.parse(JSON.stringify(value));
 const isHex=value=>typeof value==="string"&&/^#[0-9a-fA-F]{6}$/.test(value);
 function normalize(raw){
  if(!raw||typeof raw!=="object"||Array.isArray(raw))return null;
- const allowed=["id","type","period","source","color","lineWidth","visible","label"];
+ const allowed=["id","type","period","source","color","lineWidth","visible","label","displayShift"];
  if(Object.keys(raw).some(k=>!allowed.includes(k)))return null;
  if(typeof raw.id!=="string"||!/^[a-zA-Z0-9_-]{1,32}$/.test(raw.id))return null;
  if(!TYPES.includes(raw.type)||!SOURCES.includes(raw.source))return null;
- if(!Number.isInteger(raw.period)||raw.period<2||raw.period>MAX_PERIOD)return null;
+ if(!Number.isInteger(raw.period)||raw.period<1||raw.period>MAX_PERIOD)return null;
+ const displayShift=raw.displayShift===undefined?0:raw.displayShift;
+ if(!Number.isInteger(displayShift)||displayShift < -500||displayShift > 500)return null;
  if(!isHex(raw.color)||!Number.isInteger(raw.lineWidth)||raw.lineWidth<1||raw.lineWidth>4||
   typeof raw.visible!=="boolean")return null;
  if(typeof raw.label!=="string"||raw.label.length>40||/[\u0000-\u001f]/.test(raw.label))return null;
  return {id:raw.id,type:raw.type,period:raw.period,source:raw.source,
-  color:raw.color.toLowerCase(),lineWidth:raw.lineWidth,visible:raw.visible,label:raw.label};
+  color:raw.color.toLowerCase(),lineWidth:raw.lineWidth,visible:raw.visible,label:raw.label,displayShift};
 }
 function normalizeList(data){
  if(!Array.isArray(data)||data.length>MAX_INSTANCES)return null;
@@ -56,7 +58,7 @@ function valueFrom(bar,source){
 }
 function calculate(input,type,period,source="close"){
  if(!TYPES.includes(type)||!SOURCES.includes(source)||!Number.isInteger(period)||
-    period<2||period>MAX_PERIOD)return [];
+    period<1||period>MAX_PERIOD)return [];
  const bars=rows(input),result=[];
  if(bars.length<period)return result;
  let sum=0,weighted=0,previous=null;
@@ -64,6 +66,13 @@ function calculate(input,type,period,source="close"){
   const value=valueFrom(bars[i],source);
   if(type==="EMA"){
    previous=previous===null?value:previous+(2/(period+1))*(value-previous);
+   if(i>=period-1)result.push({time:bars[i].time,value:previous});
+   continue;
+  }
+  if(type==="RMA"||type==="SMMA"){
+   if(i<period)sum+=value;
+   if(i===period-1)previous=sum/period;
+   else if(i>=period)previous+=(value-previous)/period;
    if(i>=period-1)result.push({time:bars[i].time,value:previous});
    continue;
   }
@@ -82,6 +91,16 @@ function calculate(input,type,period,source="close"){
  }
  return result;
 }
+function shiftDisplay(bars,points,shift=0){
+ if(!Array.isArray(bars)||!Array.isArray(points)||!Number.isInteger(shift)||shift < -500||shift > 500)return [];
+ if(shift===0)return points;
+ const values=new Map(points.map(point=>[point.time,point.value])),result=[];
+ for(let target=0;target<bars.length;target++){
+  const source=target-shift;if(source<0||source>=bars.length)continue;
+  const value=values.get(bars[source].time);if(value!==undefined)result.push({time:bars[target].time,value});
+ }
+ return result;
+}
 function defaults(){return []}
 function restore(account){
  try{
@@ -91,6 +110,10 @@ function restore(account){
 }
 let state=null;
 function getConfigs(){return state?copy(state.configs):[]}
+function readout(time){
+ if(!state)return "";
+ return (state.readouts.get(Number(time))||[]).join(" · ");
+}
 function announce(msg){if(state)state.message.textContent=msg}
 function persist(){
  if(!state)return;
@@ -118,14 +141,33 @@ function refreshSeries(){
   // Hiding is handled by native visibility. Do not erase buffered history.
   if(!cfg.visible)continue;
   const cacheKey=keyFor(cfg);
-  const dataKey=String(state.signature)+":"+cacheKey;
+  const dataKey=String(state.signature)+":"+cacheKey+":"+cfg.displayShift;
   // A styling-only edit must never resend 1000+ historical points.
   if(state.loaded.get(cfg.id)===dataKey)continue;
   if(!cache.has(cacheKey))cache.set(cacheKey,calculate(state.bars,cfg.type,cfg.period,cfg.source));
-  series.setData(cache.get(cacheKey));
+  series.setData(shiftDisplay(state.bars,cache.get(cacheKey),cfg.displayShift));
   state.loaded.set(cfg.id,dataKey);
   state.dataWrites++;
  }
+ const readouts=new Map();
+ for(const cfg of state.configs){
+  if(!cfg.visible)continue;
+  const points=shiftDisplay(state.bars,cache.get(keyFor(cfg))||calculate(state.bars,cfg.type,cfg.period,cfg.source),cfg.displayShift);
+  const byTime=new Map(points.map(point=>[point.time,point.value]));
+  const label=cfg.label.trim()||cfg.type+" "+cfg.period;
+  for(let targetIndex=0;targetIndex<state.bars.length;targetIndex++){
+   const bar=state.bars[targetIndex],rows=readouts.get(bar.time)||[],value=byTime.get(bar.time);
+   let text;
+   if(value!==undefined)text=label+" "+value.toFixed(2);
+   else{
+    const sourceIndex=targetIndex-cfg.displayShift;
+    text=sourceIndex<0||sourceIndex>=state.bars.length?
+     label+" · Anzeigeversatz außerhalb geladener Kerzen":label+" · Warm-up";
+   }
+   rows.push(text);readouts.set(bar.time,rows);
+  }
+ }
+ state.readouts=readouts;
  try{window.StoneCelebration?.refresh?.();}catch(_){}
 }
 function getLiveAverages(){
@@ -178,12 +220,13 @@ function redrawEditor(){
   const row=document.createElement("div");row.className="cs-ma-instance";row.dataset.instance=cfg.id;
   const enabled=input("checkbox",cfg.visible,"Linie anzeigen","visible",cfg.id);
   const type=optionsSelect(TYPES,cfg.type,"Durchschnittstyp","type",cfg.id);
-  const period=input("number",cfg.period,"Periode","period",cfg.id,{min:2,max:MAX_PERIOD,step:1});
+  const period=input("number",cfg.period,"Periode","period",cfg.id,{min:1,max:MAX_PERIOD,step:1});
+  const displayShift=input("number",cfg.displayShift,"Anzeigeversatz in Kerzen","displayShift",cfg.id,{min:-500,max:500,step:1});
   const src=optionsSelect(SOURCES,cfg.source,"Preisquelle","source",cfg.id);
   const color=input("color",cfg.color,"Linienfarbe","color",cfg.id);
   const weight=optionsSelect([1,2,3,4],cfg.lineWidth,"Linienstärke","lineWidth",cfg.id);
   const name=input("text",cfg.label,"Eigener Linienname","label",cfg.id,{maxlength:40,placeholder:"Name (optional)"});
-  for(const [text,control] of [["Sichtbar",enabled],["Typ",type],["Periode",period],
+  for(const [text,control] of [["Sichtbar",enabled],["Typ",type],["Periode",period],["Versatz (Kerzen)",displayShift],
    ["Quelle",src],["Farbe",color],["Breite",weight],["Name",name]]){
    const label=document.createElement("label");label.textContent=text;label.append(control);row.append(label);
   }
@@ -200,6 +243,7 @@ function applySettings(raw){
  const cleaned=normalizeList(raw);
  if(!cleaned){announce("Layout abgelehnt: ungültige Moving-Average-Konfiguration.");return false}
  state.configs=cleaned;persist();redrawEditor();refreshSeries();
+ window.ChartStudioBeta?.refreshDataWindowIndicators();
  return true;
 }
 function newId(){
@@ -213,6 +257,7 @@ function add(type="EMA",period=21){
  const cfg=normalize({id:newId(),type,period,source:"close",
   color:PALETTE[state.configs.length%PALETTE.length],lineWidth:2,visible:true,label:""});
  state.configs.push(cfg);persist();redrawEditor();refreshSeries();
+ window.ChartStudioBeta?.refreshDataWindowIndicators();
  announce("Neue "+type+" "+period+" hinzugefügt.");
  return true;
 }
@@ -221,14 +266,32 @@ function edit(id,field,value){
  const i=state.configs.findIndex(x=>x.id===id);if(i<0)return false;
  const next={...state.configs[i],[field]:value};
  const checked=normalize(next);
- if(!checked){announce("Ungültiger Wert. Erlaubt sind Perioden 2–"+MAX_PERIOD+".");redrawEditor();return false}
+ if(!checked){announce("Ungültiger Wert. Erlaubt sind Perioden 1–"+MAX_PERIOD+".");redrawEditor();return false}
  state.configs[i]=checked;persist();redrawEditor();refreshSeries();
+ window.ChartStudioBeta?.refreshDataWindowIndicators();
  return true;
+}
+function applyDisplayPreset(type="EMA",periods=[9,21,50]){
+ if(!state||!TYPES.includes(type)||!Array.isArray(periods)||periods.some(period=>!Number.isInteger(period)||period<1||period>MAX_PERIOD))return false;
+ const next=copy(state.configs),occupied=new Set(next.map(item=>item.id)),missing=[];
+ let serial=1;
+ const allocate=()=>{let id;do{id="ma"+serial++}while(occupied.has(id));occupied.add(id);return id};
+ for(const period of [...new Set(periods)]){
+  const existing=next.find(item=>item.type===type&&item.period===period);
+  if(existing){existing.visible=true;continue}
+  const cfg=normalize({id:allocate(),type,period,source:"close",color:PALETTE[(next.length+missing.length)%PALETTE.length],
+   lineWidth:2,visible:true,label:"",displayShift:0});
+  if(!cfg)return false;missing.push(cfg);
+ }
+ if(next.length+missing.length>MAX_INSTANCES){announce("Preset benötigt mehr Linien als das Limit von "+MAX_INSTANCES+" erlaubt.");return false}
+ state.configs=[...next,...missing];persist();redrawEditor();refreshSeries();
+ window.ChartStudioBeta?.refreshDataWindowIndicators();announce(type+" "+[...new Set(periods)].join("/")+ " Preset aktiviert.");return true;
 }
 function remove(id){
  if(!state)return false;
  const i=state.configs.findIndex(x=>x.id===id);if(i<0)return false;
- state.configs.splice(i,1);persist();redrawEditor();refreshSeries();return true;
+ state.configs.splice(i,1);persist();redrawEditor();refreshSeries();
+ window.ChartStudioBeta?.refreshDataWindowIndicators();return true;
 }
 function updateBars(bars){
  if(!state||!Array.isArray(bars))return;
@@ -239,6 +302,7 @@ function updateBars(bars){
  if(signature===state.signature)return;
  state.signature=signature;state.bars=rows(bars);state.cache.clear();
  refreshSeries();
+ window.ChartStudioBeta?.refreshDataWindowIndicators();
 }
 function switchAccount(account){
  if(!state)return;
@@ -247,6 +311,7 @@ function switchAccount(account){
  state.series.clear();state.loaded.clear();
  state.account=account;state.bars=[];state.signature=null;state.cache.clear();
  state.configs=restore(account);redrawEditor();refreshSeries();
+ window.ChartStudioBeta?.refreshDataWindowIndicators();
 }
 function mount({chart,panel,account="titan"}){
  if(state||!chart||!panel)return;
@@ -255,25 +320,28 @@ function mount({chart,panel,account="titan"}){
  const title=document.createElement("strong");title.textContent="INDIKATOREN-LABOR · MULTI-MA";
  const counter=document.createElement("span");heading.append(title,counter);
  const info=document.createElement("p");
- info.textContent="Eigene EMA/SMA/WMA-Linien: Typ, Periode, Preisquelle, Farbe, Dicke und Name. Bestehende EMA20/50/200 bleiben separat steuerbar.";
+ info.textContent="Eigene EMA/SMA/WMA/RMA/SMMA-Linien: Typ, Periode, Preisquelle, Farbe, Dicke und Name. Bestehende EMA20/50/200 bleiben separat steuerbar.";
  const commands=document.createElement("div");commands.className="cs-ma-presets";
  for(const [type,period,label] of [["EMA",9,"+ EMA 9"],["EMA",21,"+ EMA 21"],["EMA",50,"+ EMA 50"],
   ["EMA",200,"+ EMA 200"],["SMA",9,"+ SMA 9"],["SMA",20,"+ SMA 20"],["WMA",20,"+ WMA 20"]]){
   const b=document.createElement("button");b.type="button";b.textContent=label;
   b.addEventListener("click",()=>add(type,period));commands.append(b);
  }
+ const displayPreset=document.createElement("button");displayPreset.type="button";
+ displayPreset.textContent="EMA 9/21/50 Preset";displayPreset.setAttribute("aria-label","EMA 9/21/50 Preset");
+ displayPreset.addEventListener("click",()=>applyDisplayPreset());commands.append(displayPreset);
  const instances=document.createElement("div");instances.className="cs-ma-items";
  const message=document.createElement("p");message.className="cs-ma-message";
  message.setAttribute("role","status");message.setAttribute("aria-live","polite");
  root.append(heading,info,commands,instances,message);
  panel.append(root);
- state={chart,root,count:counter,items:instances,message,account,configs:restore(account),
+ state={chart,root,count:counter,items:instances,message,account,configs:restore(account),readouts:new Map(),
   bars:[],signature:null,series:new Map(),cache:new Map(),loaded:new Map(),dataWrites:0};
  instances.addEventListener("change",event=>{
   const target=event.target,id=target?.dataset?.id,field=target?.dataset?.field;
   if(!id||!field)return;
   const value=field==="visible"?target.checked:
-   ["period","lineWidth"].includes(field)?Number(target.value):target.value;
+   ["period","lineWidth","displayShift"].includes(field)?Number(target.value):target.value;
   edit(id,field,value);
  });
  instances.addEventListener("click",event=>{
@@ -285,12 +353,13 @@ function mount({chart,panel,account="titan"}){
    if(cfg&&state.configs.length<MAX_INSTANCES){
     const newCfg={...cfg,id:newId()};state.configs.push(newCfg);
     persist();redrawEditor();refreshSeries();
+    window.ChartStudioBeta?.refreshDataWindowIndicators();
    }else announce("Maximal "+MAX_INSTANCES+" Linien.");
   }
  });
  redrawEditor();refreshSeries();
 }
 window.ChartStudioAverages=Object.freeze({mount,updateBars,switchAccount,getConfigs,getLiveAverages,
- applySettings,add,edit,remove,calculate,normalize,normalizeList,MAX_INSTANCES,
+ applySettings,add,edit,remove,calculate,readout,normalize,normalizeList,MAX_INSTANCES,shiftDisplay,applyPreset:applyDisplayPreset,
  diagnostics:()=>state?{account:state.account,dataWrites:state.dataWrites,seriesCount:state.series.size}:null});
 })();

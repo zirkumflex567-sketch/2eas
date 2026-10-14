@@ -69,7 +69,7 @@ New layout store is an account-aware SQLite WAL database, independently authenti
 
 ## Supplement to Phase 1: ADX/VWAP (tested separately)
 
-Extend the v4 read-only indicator engine with Wilder ADX (+DI/-DI) and VWAP calculated from true broker real volume when available, otherwise explicitly named tick-volume proxy, reset at UTC day boundary. Stored per-account in local layouts and opt-in SQLite documents. This is NOT exchange orderflow and NOT a historical EA decision proof. Keep original candles/MT5 trading unaffected. Full configurable indicator instances, session-aware VWAP and native v5 chart migration remain open.
+Extend the v4 read-only indicator engine with Wilder ADX (+DI/-DI) and VWAP calculated from true broker real volume when available, otherwise explicitly named tick-volume proxy. The original UTC-midnight VWAP and browser toggle shipped in this package. A later completion slice adds selectable IANA timezone and wall-clock session start with DST-aware resets and strict profile validation. VWAP remains a volume-weighted OTC proxy, not exchange orderflow or proof of historical EA decisions. Automatic broker-calendar discovery, measured indicator performance acceptance and native v5 chart migration remain open.
 
 ## Iteration: additional read-only drawing tools
 

@@ -5,9 +5,10 @@
 (()=>{
 "use strict";
 const NAMES=Object.freeze({
- horizontal:"Preislinie",trend:"Trendlinie",rect:"Rechteck",fib:"Fibonacci",
+ horizontal:"Preislinie",vertical:"Zeitlinie",text:"Text",trend:"Trendlinie",rect:"Rechteck",fib:"Fibonacci",
  ray:"Strahl",ruler:"Messung",channel:"Parallelkanal"
 });
+const MAX_DRAWINGS=1000;
 let state=null;
 function make(tag,attrs={},text){
  const node=document.createElement(tag);
@@ -53,7 +54,7 @@ function render(){
   const del=make("button",{type:"button","data-action":"remove","data-index":i,
    "aria-label":"Löschen "+name},"✕");
   up.disabled=i===items.length-1;down.disabled=i===0;
-  duplicate.disabled=items.length>=500;
+  duplicate.disabled=items.length>=MAX_DRAWINGS;
   row.append(picker,label,toggle,lock,up,down,duplicate,del);
   fragment.append(row);
  }

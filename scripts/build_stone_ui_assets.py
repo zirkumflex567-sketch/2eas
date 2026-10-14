@@ -102,6 +102,7 @@ def build():
     # Selected artwork has a different aspect ratio, so preserve all four slices.
     add(N+'nav.stone-asset-nav .account-tab[aria-pressed="true"]','border-image-slice',f'{75/420*100:.8f}% {75/1356*100:.8f}% {75/420*100:.8f}% {75/1356*100:.8f}% fill')
     background(N+'header.stone-asset-header .ticker-bg','linear-gradient(180deg, rgba(4,12,18,.9), rgba(17,28,34,.97)), '+url(7),(7,))
+    background(N+'nav.stone-asset-nav .ticker-bg','linear-gradient(180deg, rgba(4,12,18,.9), rgba(17,28,34,.97)), '+url(7),(7,))
     background(PANEL+' .ticker-bg','linear-gradient(180deg, rgba(4,12,18,.9), rgba(17,28,34,.97)), '+url(7),(7,))
     background(N+'#dd-reset-modal .ticker-bg','linear-gradient(180deg, rgba(4,12,18,.9), rgba(17,28,34,.97)), '+url(7),(7,))
     diagnostic=N+'.stone-asset-panel--diagnostic'
@@ -119,14 +120,21 @@ def build():
     background(N+'#dd-reset-modal #dd-reset-input',url(36),(36,))
     background(PANEL+' button:not([disabled])','linear-gradient(rgba(7,17,23,.22),rgba(7,17,23,.22)), '+url(31),(31,))
     background(N+'header.stone-asset-header .stone-theme-dock button','linear-gradient(rgba(7,17,23,.22),rgba(7,17,23,.22)), '+url(31),(31,))
+    background(N+'nav.stone-asset-nav .stone-theme-dock button','linear-gradient(rgba(7,17,23,.22),rgba(7,17,23,.22)), '+url(31),(31,))
     background(N+'header.stone-asset-header #dd-reset-button','linear-gradient(rgba(7,17,23,.22),rgba(7,17,23,.22)), '+url(31),(31,))
     background(PANEL+' button.bg-blue-600',url(32),(32,))
     background(N+'header.stone-asset-header .stone-theme-dock button[aria-pressed="true"]',url(32),(32,))
+    background(N+'nav.stone-asset-nav .stone-theme-dock button[aria-pressed="true"]',url(32),(32,))
+    # The source button uses its active texture at intrinsic 1255x542 CSS px.
+    # The downscaled copy must keep that scale or its crop shifts visibly.
+    add(N+'header.stone-asset-header .stone-theme-dock button[aria-pressed="true"]','background-size','1255px 542px')
+    add(N+'nav.stone-asset-nav .stone-theme-dock button[aria-pressed="true"]','background-size','1255px 542px')
     border(N+'#dd-reset-modal .glass-card',49,[145]*4)
     background(N+'#dd-reset-modal .glass-card','linear-gradient(rgba(10,18,25,.97),rgba(6,14,19,.97)), '+url(2),(2,))
     background(N+'#stone-rails .left',url(21),(21,))
     background(N+'#stone-rails .right',url(22),(22,))
     border(N+'header.stone-asset-header .stone-theme-dock',15,[130,160,130,160])
+    border(N+'nav.stone-asset-nav .stone-theme-dock',15,[130,160,130,160])
     gradients=[('.53','.85','.88','.56'),('.53','.87','.90','.54'),('.57','.89','.89','.57'),('.52','.87','.89','.55'),('.53','.87','.9','.57')]
     for row,(i,(a,b,c,d)) in enumerate(zip((47,48,17,14,20),gradients)):
         background(N+f'.stone-asset-panel--matrix #matrix-tbody tr.stone-target-row--{row}',f'linear-gradient(90deg,rgba(2,10,17,{a}),rgba(3,11,18,{b}) 17%,rgba(3,11,18,{c}) 79%,rgba(2,10,17,{d})), '+url(i),(i,))

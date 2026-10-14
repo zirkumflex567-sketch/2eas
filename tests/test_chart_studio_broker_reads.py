@@ -13,6 +13,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 import account_gateway as gateway
+from chart_studio.broker_reads import broker_symbol
 
 ROOT = Path(__file__).resolve().parents[1]
 NOW = 1791547200
@@ -50,6 +51,10 @@ def symbol(name='XAUUSD', **changes):
     return NS(**fields)
 
 
+def correlated_rates(scale=1):
+    return [NS(time=1000+i*3600, close=(100+i*i)*scale) for i in range(64)]
+
+
 class MT5Fake:
     def __init__(self):
         self.current = None
@@ -60,6 +65,7 @@ class MT5Fake:
         self.tick = NS(time=RAW, time_msc=RAW*1000+123, bid=4000., ask=4000.05)
         self.symbols = (symbol(), symbol('EURUSD.a', digits=5, point=.00001, trade_tick_size=.00001, trade_mode=1))
         self.wrong = None
+        self.rates = {}
 
     def initialize(self, path, **kwargs):
         self.calls.append(('initialize', path))
@@ -72,7 +78,8 @@ class MT5Fake:
     def account_info(self):
         return NS(login=1 if self.wrong == 'login' else self.current['login'],
                   server='wrong' if self.wrong == 'server' else self.current['server'],
-                  currency='EUR', margin_mode=2)
+                  currency='EUR', currency_digits=2, margin_mode=2, balance=1000., equity=1050.,
+                  margin=50., margin_free=1000.)
 
     def terminal_info(self):
         path = ntpath.dirname(self.current['terminal'])
@@ -102,6 +109,17 @@ class MT5Fake:
         self.calls.append(('orders', self.current['id'], kwargs))
         assert gateway._lock._is_owned()
         return self.orders
+
+    def order_calc_profit(self, action, name, volume, price_open, price_close):
+        assert gateway._lock._is_owned()
+        self.calls.append(('calc_profit', name, action))
+        direction = 1 if action == 0 else -1
+        return (price_close-price_open)*volume*100*direction
+
+    def copy_rates_from_pos(self, name, timeframe, start_pos, count):
+        assert gateway._lock._is_owned()
+        self.calls.append(('rates', name, timeframe, start_pos, count))
+        return self.rates.get(name)
 
     def order_send(self, *args, **kwargs):
         self.writes += 1
@@ -208,6 +226,121 @@ def test_real_symbol_contract(client):
     assert body['currencyBase'] == 'XAU' and body['currencyProfit'] == 'USD'
     assert body['currencyMargin'] == 'USD' and body['tradeMode'] == 4
     assert body['canExecute'] is False
+
+
+def test_portfolio_is_account_scoped_aggregated_and_never_invents_correlation(client, fake):
+    fake.positions = (position(), position(ticket=22, identifier=23, type=1, volume=.2,
+        price_open=4000., sl=4010., profit=4., swap=.5), position(ticket=24, identifier=25, type=1, volume=.2,
+        symbol='EURUSD.a', price_open=1.1, price_current=1.2, sl=1.2, profit=3., swap=-.5))
+    fake.rates = {'XAUUSD':correlated_rates(), 'EURUSD.a':correlated_rates(.01)}
+    response = client.get('/api/chart/v1/portfolio', params={'account':'titan'})
+    assert response.status_code == 200
+    body = response.json()
+    assert body['account'] == 'titan' and body['source'] == 'MT5_VERIFIED'
+    assert body['canExecute'] is False
+    assert body['positionCount'] == 3
+    assert body['symbols'] == [
+        {'symbol':'EURUSD.a', 'buyLots':'0', 'sellLots':'0.2', 'netLots':'-0.2',
+         'floatingPnl':'3', 'swap':'-0.5', 'currency':'EUR'},
+        {'symbol':'XAUUSD', 'buyLots':'0.1', 'sellLots':'0.2', 'netLots':'-0.1',
+         'floatingPnl':'14', 'swap':'-0.5', 'currency':'EUR'},
+    ]
+    assert body['correlation']['state'] == 'AVAILABLE'
+    assert body['correlation']['timeframe'] == 'H1'
+    assert body['correlation']['pairs'] == [{'symbols':['EURUSD.a','XAUUSD'], 'coefficient':'1', 'observations':63}]
+    assert ('rates','EURUSD.a',16385,1,257) in fake.calls
+    assert ('rates','XAUUSD',16385,1,257) in fake.calls
+    assert body['margin'] == {'state':'AVAILABLE', 'used':'50', 'free':'1000', 'equity':'1050',
+                              'balance':'1000', 'currency':'EUR', 'scope':'ACCOUNT'}
+    assert body['stopRisk'] == {'state':'AVAILABLE', 'lossAtStops':'302', 'currency':'EUR', 'source':'MT5_ORDER_CALC_PROFIT'}
+    assert ('positions', 'titan', {}) in fake.calls
+    assert fake.writes == 0
+
+
+def test_portfolio_correlation_fails_closed_when_history_is_unavailable(client, fake):
+    fake.positions = (position(), position(symbol='EURUSD.a'))
+    body = client.get('/api/chart/v1/portfolio', params={'account':'titan'}).json()
+    assert body['correlation'] == {'state':'UNAVAILABLE', 'reason':'HISTORY_UNAVAILABLE',
+                                   'scenarioSymbol':'XAUUSD', 'symbols':['EURUSD.a','XAUUSD']}
+
+
+def test_portfolio_correlation_includes_proposed_scenario_symbol(client, fake):
+    fake.positions = (position(symbol='EURUSD.a'),)
+    fake.rates = {'XAUUSD':correlated_rates(.01), 'EURUSD.a':correlated_rates()}
+    body = client.get('/api/chart/v1/portfolio', params={'account':'titan','scenarioSymbol':'XAUUSD'}).json()
+    assert body['correlation']['state'] == 'AVAILABLE'
+    assert body['correlation']['scenarioSymbol'] == 'XAUUSD'
+    assert body['correlation']['symbols'] == ['EURUSD.a','XAUUSD']
+    assert body['correlation']['pairs'] == [{'symbols':['EURUSD.a','XAUUSD'], 'coefficient':'1', 'observations':63}]
+
+
+def test_portfolio_correlation_symbol_cap_fails_closed_before_history_reads(client, fake):
+    names = [f'S{i:02d}' for i in range(12)]
+    fake.symbols = (*fake.symbols, *(symbol(name) for name in names))
+    fake.positions = tuple(position(ticket=100+i, identifier=200+i, symbol=name) for i,name in enumerate(names))
+    body = client.get('/api/chart/v1/portfolio', params={'account':'titan'}).json()
+    assert body['correlation']['state'] == 'UNAVAILABLE'
+    assert body['correlation']['reason'] == 'SYMBOL_LIMIT_EXCEEDED'
+    assert body['correlation']['scenarioSymbol'] == 'XAUUSD'
+    assert body['correlation']['symbols'] == []
+    assert not any(call[0] == 'rates' for call in fake.calls)
+
+
+def test_portfolio_correlation_requires_aligned_nonconstant_returns(client, fake):
+    fake.positions = (position(), position(symbol='EURUSD.a'))
+    fake.rates['XAUUSD'] = [NS(time=1000+i*3600, close=100+i*i) for i in range(64)]
+    fake.rates['EURUSD.a'] = [NS(time=1000+i*3600+36000, close=2+i*i) for i in range(64)]
+    body = client.get('/api/chart/v1/portfolio', params={'account':'titan'}).json()
+    assert body['correlation']['state'] == 'UNAVAILABLE'
+    assert body['correlation']['reason'] == 'INSUFFICIENT_ALIGNED_HISTORY'
+    fake.rates['EURUSD.a'] = [NS(time=1000+i*3600, close=2+i*i) for i in range(64)]
+    body = client.get('/api/chart/v1/portfolio', params={'account':'titan'}).json()
+    assert body['correlation']['state'] == 'AVAILABLE'
+    fake.rates['EURUSD.a'] = [NS(time=1000+i*3600, close=2.) for i in range(64)]
+    body = client.get('/api/chart/v1/portfolio', params={'account':'titan'}).json()
+    assert body['correlation']['state'] == 'UNAVAILABLE'
+    assert body['correlation']['reason'] == 'INVALID_CORRELATION_SERIES'
+
+
+def test_portfolio_distinguishes_empty_from_unavailable_and_validates_all_rows(client, fake):
+    fake.positions = []
+    response = client.get('/api/chart/v1/portfolio', params={'account':'titan'})
+    assert response.status_code == 200 and response.json()['positionCount'] == 0
+    assert response.json()['symbols'] == []
+    assert response.json()['correlation'] == {'state':'UNAVAILABLE', 'reason':'NO_SYMBOL_PAIRS',
+        'scenarioSymbol':'XAUUSD', 'symbols':['XAUUSD']}
+    fake.positions = None
+    assert client.get('/api/chart/v1/portfolio', params={'account':'titan'}).status_code == 503
+    fake.positions = (position(), position(symbol='UNVERIFIED'))
+    assert client.get('/api/chart/v1/portfolio', params={'account':'titan'}).status_code == 404
+
+
+def test_portfolio_requires_known_account_before_mt5(client, fake):
+    assert client.get('/api/chart/v1/portfolio').status_code == 422
+    assert client.get('/api/chart/v1/portfolio', params={'account':'unknown'}).status_code == 400
+    assert fake.calls == []
+
+
+def test_portfolio_stop_risk_fails_closed_for_missing_stops_or_calc(client, fake):
+    fake.positions = (position(sl=0.),)
+    response = client.get('/api/chart/v1/portfolio', params={'account':'titan'})
+    assert response.status_code == 200
+    assert response.json()['stopRisk'] == {'state':'UNAVAILABLE', 'reason':'MISSING_STOP'}
+    fake.positions = (position(),)
+    fake.order_calc_profit = None
+    response = client.get('/api/chart/v1/portfolio', params={'account':'titan'})
+    assert response.status_code == 200
+    assert response.json()['stopRisk'] == {'state':'UNAVAILABLE', 'reason':'BROKER_CALCULATION_UNAVAILABLE'}
+
+
+def test_portfolio_preserves_negative_free_margin_and_equity(client, fake):
+    fake.account_info = lambda: NS(login=fake.current['login'], server=fake.current['server'],
+        currency='EUR', currency_digits=2, margin_mode=2, balance=-5., equity=-10.,
+        margin=50., margin_free=-60.)
+    result = client.get('/api/chart/v1/portfolio', params={'account':'titan'}).json()
+    assert result['margin']['free'] == '-60'
+    assert result['margin']['equity'] == '-10'
+    assert result['margin']['balance'] == '-5'
 
 
 def test_symbol_search_accepts_sparse_actual_instruments(client, fake):
@@ -453,6 +586,7 @@ def legacy_function(fake):
     node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'api_chart_quotes')
     node.decorator_list = []
     namespace = dict(mt5=fake, SYMBOL='XAUUSD', HTTPException=HTTPException,
+                     broker_symbol=broker_symbol,
                      selected=gateway.selected, verify_identity=gateway.verify_identity,
                      time=NS(time=lambda: NOW+.123))
     if (ROOT/'chart_studio/broker_reads.py').exists():
@@ -469,6 +603,14 @@ def test_legacy_quote_normalizes_broker_clock_and_keeps_numeric_ui(fake):
     assert body['brokerUtcOffsetSeconds'] == 10800
     assert body['freshness'] == 'FRESH' and body['ageSeconds'] == 0
     assert all(isinstance(body[k], float) for k in ('bid','ask','tickSize'))
+
+
+def test_legacy_quote_reads_exact_selected_non_xau_symbol(fake):
+    with gateway.session(fake, 'titan'):
+        body = legacy_function(fake)('titan', symbol='EURUSD.a')
+    assert body['symbol'] == 'EURUSD.a'
+    assert ('tick','EURUSD.a') in fake.calls
+    assert ('symbol_info','EURUSD.a') in fake.calls
 
 
 @pytest.mark.parametrize('field,value', [('bid',float('nan')),('ask',float('inf')),('bid',5000.),('time',0)])

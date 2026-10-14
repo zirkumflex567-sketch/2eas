@@ -46,16 +46,23 @@
 
   function prepareSize(state) {
     const host = state.host.getBoundingClientRect();
-    const plotCell = state.host.querySelector("table tbody tr:first-child td:first-child");
-    const pane = plotCell ? plotCell.getBoundingClientRect() : host;
-    let plotWidth = 0;
-    try { plotWidth = state.chart.timeScale().width(); } catch (_) {}
-    const width = Math.max(0, Math.round(plotWidth || pane.width));
-    const height = Math.max(0, Math.round(pane.height));
+    let width, height, left;
+    try {
+      const timeScale = state.chart.timeScale();
+      const plotWidth = Number(timeScale.width());
+      const timeAxisHeight = Number(timeScale.height());
+      const leftScaleWidth = Number(state.chart.priceScale("left").width());
+      const rightScaleWidth = Number(state.chart.priceScale("right").width());
+      width = Math.round(plotWidth);
+      height = Math.round(host.height - timeAxisHeight);
+      left = Math.round(leftScaleWidth);
+      if (![plotWidth, timeAxisHeight, leftScaleWidth, rightScaleWidth, host.width, host.height].every(Number.isFinite) ||
+          plotWidth < 20 || timeAxisHeight < 0 || leftScaleWidth < 0 || rightScaleWidth < 0 ||
+          left + width + rightScaleWidth > host.width + 1) return false;
+    } catch (_) { return false; }
     if (width < 20 || height < 20) return false;
 
-    const left = Math.max(0, Math.round(pane.left - host.left));
-    const top = Math.max(0, Math.round(pane.top - host.top));
+    const top = 0;
     const cv = state.canvas;
     cv.style.setProperty("left", left + "px", "important");
     cv.style.setProperty("top", top + "px", "important");
@@ -447,7 +454,7 @@
 
   function update({ candles, emas, context = "" }) {
     const state = instance;
-    if (!state || !Array.isArray(candles) || !candles.length) return;
+    if (!state || !Array.isArray(candles)) return;
     if (context !== state.context) {
       state.context = context;
       state.effects = [];
@@ -458,7 +465,7 @@
     state.candles = candles.slice(-550);
     if (Array.isArray(emas)) {
       state.emaData = emas.map(points => Array.isArray(points) ? points.slice(-550) : []);
-    }
+    } else if (!candles.length) state.emaData = [[],[],[]];
     render();
   }
 

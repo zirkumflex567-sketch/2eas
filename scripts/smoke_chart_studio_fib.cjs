@@ -11,7 +11,7 @@ const assert=require("node:assert/strict"),fs=require("node:fs"),path=require("n
    if(i===79)throw Error("Fixture connection timeout");
    await new Promise(resolve=>setTimeout(resolve,250));
   }
-  browser=await chromium.launch({headless:true});
+  browser=await chromium.launch({headless:true,executablePath:process.env.CHART_STUDIO_CHROMIUM_PATH||undefined});
   const page=await browser.newPage({viewport:{width:1360,height:980}});
   const errors=[],writes=[];
   page.on("pageerror",e=>errors.push(e.message));
@@ -20,7 +20,7 @@ const assert=require("node:assert/strict"),fs=require("node:fs"),path=require("n
   await page.waitForFunction(()=>window.__chartSmokeReady);
   await page.locator("#cs-beta-toggle").click();
   const input=page.locator("#cs-fib-levels");
-  await input.fill("0; 25; 50; 100; 161,8");
+  await input.fill("-50; 0; 25; 100; 161,8; 261,8");
   await page.locator('[data-cmd="fib-default"]').click();
   await page.locator('[data-tool="fib"]').click();
   await page.locator(".cs-beta-canvas").scrollIntoViewIfNeeded();
@@ -31,7 +31,7 @@ const assert=require("node:assert/strict"),fs=require("node:fs"),path=require("n
   let drawings=await page.evaluate(()=>ChartStudioBeta.getState().drawings);
   assert.equal(drawings.length,1);
   assert.equal(drawings[0].kind,"fib");
-  assert.ok(Math.abs(drawings[0].levels[4]-1.618)<1e-10);
+  [-.5,0,.25,1,1.618,2.618].forEach((value,index)=>assert.ok(Math.abs(drawings[0].levels[index]-value)<1e-10));
   await page.locator(".cs-object-manager summary").click();
   await page.locator('.cs-object-manager [data-action="select"][data-index="0"]').click();
   await input.fill("0; 33,3; 66,6; 100");
@@ -40,18 +40,18 @@ const assert=require("node:assert/strict"),fs=require("node:fs"),path=require("n
   assert.equal(drawings[0].levels.length,4);
   await page.locator('[data-cmd="undo"]').click();
   drawings=await page.evaluate(()=>ChartStudioBeta.getState().drawings);
-  assert.equal(drawings[0].levels.length,5);
+  assert.equal(drawings[0].levels.length,6);
   // Invalid levels must not mutate the stored object.
   await input.fill("0; 50; 50");
   await page.locator('[data-cmd="fib-selected"]').click();
-  assert.equal((await page.evaluate(()=>ChartStudioBeta.getState().drawings))[0].levels.length,5);
+  assert.equal((await page.evaluate(()=>ChartStudioBeta.getState().drawings))[0].levels.length,6);
   const out=path.join("output","visual-smoke");fs.mkdirSync(out,{recursive:true});
   await page.screenshot({path:path.join(out,"chart-studio-fibonacci-levels.png"),fullPage:true});
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
   assert.equal((await page.evaluate(()=>ChartStudioBeta.getState().drawings)).length,0);
   assert.ok((await input.inputValue()).includes("23,6"));
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
-  assert.equal((await page.evaluate(()=>ChartStudioBeta.getState().drawings))[0].levels.length,5);
+  assert.equal((await page.evaluate(()=>ChartStudioBeta.getState().drawings))[0].levels.length,6);
   assert.deepEqual(errors,[]);
   assert.deepEqual(writes,[]);
   console.log("PASS editable Fibonacci percent levels, undo, account scope, strict no-write browser");

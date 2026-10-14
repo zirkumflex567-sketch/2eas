@@ -9,15 +9,65 @@ It does **not** replace the planned professional v5 engine.
 
 Current features:
 - Enable/disable EMA20/50/200; SMA20/50 and Bollinger 20 overlays.
-- Draw horizontal/trend/rectangle/Fibonacci tools with time+price anchors, drag
+- Draw horizontal/vertical and text annotations plus trend/rectangle/Fibonacci tools with time+price anchors, drag
   existing handles, undo/redo, account-scoped *provisional* browser storage and
-  JSON export through clipboard.
-- Optionally display actual broker position Entry/SL/TP lines and zone overlays
-  **without any trading mutation**.
-- Read-only What-if plan and JSON API endpoints for a verified MT5 XAUUSD
-  quote and `order_calc_profit`/`order_calc_margin` broker pricing.
-- No USD exchange-rate fabrication: previews for non-USD accounts are in
-  account currency, with USD explicitly unavailable.
+  JSON export through clipboard. Local layouts can be copied or renamed, and a
+  confirmed chart reset preserves the saved layouts.
+- Fibonacci levels can be edited per drawing, including negative retracements
+  and extensions such as 261.8%; accepted levels are strictly ascending and
+  bounded to −1000%…+1000%.
+- Display current `MT5_VERIFIED` XAUUSD positions as separate BUY/SELL ticket
+  overlays with entry, SL/TP zones, broker P/L and swap in the verified account
+  currency, plus the account's NETTING/EXCHANGE/HEDGING mode. Failed/stale
+  reads and account changes clear the overlay; there is no guessed USD
+  conversion and no trading mutation.
+- The read-only Brokerbuch searches the verified MT5 symbol catalog and filters
+  positions, pending orders and deal history by selected symbol. Non-XAU rows
+  stay table-only while the displayed chart is XAUUSD; drafts and overlays remain
+  bound to the matching chart symbol.
+- The beta data window shows the hovered or pinned candle's UTC time and OHLC
+  from the loaded chart series, plus calculated values for enabled RSI, MACD,
+  ATR, volume, ADX, and VWAP indicators and visible configurable EMA/SMA/WMA
+  lines at that bar. Warm-up and missing-volume states stay explicit; selected
+  values follow calculation and line-configuration changes while the OHLC bar
+  stays fixed. It labels the source as the chart feed.
+  The full native v5 data window and remaining indicator catalog are still open.
+  After an explicit verified MT5
+  quote read, it also shows bid/ask, price spread, quote time, and freshness
+  as of that read (including broker-reported quote age); invalid provenance
+  clears these values.
+  Unpinning, Escape, account changes, and timeframe changes clear the pinned
+  bar; hover resumes when the pointer selects a candle again.
+- Read-only What-if plan and JSON API endpoints for a verified quote on the
+  current broker-verified chart symbol and `order_calc_profit`/`order_calc_margin`
+  broker pricing. Account/symbol changes clear old quote and entry/SL/TP prices;
+  position-bound stop drafts keep their separate XAUUSD-only restriction.
+- Read-only What-if sizing can use fixed lots, a cash risk budget in account
+  currency, or an equity percentage. Automatic lot size is rounded down across
+  broker volume steps using MT5 stop-profit calculations; missing equity,
+  currency, or broker pricing fails closed.
+- What-if accepts a user assumption for round-trip fees per lot in account
+  currency and adverse exit slippage in broker ticks. MT5 prices the
+  slippage-adjusted exits; the UI keeps broker gross PnL separate from the
+  estimated net values and uses these assumptions in risk-budget sizing. They
+  are not broker-reported costs; actual commission, swap and gaps may differ.
+- USD What-if results also project the assumed net stop risk against the fresh
+  dashboard daily drawdown estimate, with quote time and remaining distance.
+  The EA guard is always shown as unknown unless a separate live authorization
+  source is proven; unavailable history/quotes and non-USD daily-DD projections
+  stay unavailable.
+- For non-USD What-if PnL, USD equivalents use one fresh selected MT5 direct or
+  inverse currency pair. Assets use bid and liabilities use ask in the correct
+  pair direction. Missing, stale, invalid, or ambiguous symbols leave USD
+  amounts unavailable; the broker's original account-currency PnL stays primary.
+- Two broker-verified What-if previews can be saved as account-and-symbol-scoped
+  local A/B snapshots and exported as JSON. XAUUSD remains schema v2 for existing
+  snapshots; other symbols use schema v3. The schema retains the exact preview request
+  and response plus the same-account portfolio exposure, stop risk and
+  descriptive What-if-symbol correlations as read at capture time. Exported
+  portfolio context omits broker login/server identity. Schema-v1 snapshots
+  remain readable with their portfolio context marked unavailable. These are
+  not executable orders and are not synced to the server.
 
 Routes: `GET /api/chart/v1/capabilities`,
 `GET /api/chart/v1/quotes`,
@@ -44,7 +94,17 @@ worktree and mounted static directory. The DB must be an immediate-child
 regular `.sqlite` file; an absent DB can only be initialized by the internal
 trusted-provider append entry point, never by GET. A partial configuration
 remains disabled. Invalid complete configuration or damaged existing storage
-fails closed. No launcher environment allowlist was expanded.
+fails closed. The runtime private-environment allowlist explicitly permits the
+spool-root setting; the data path is never included in public runtime identity.
+
+The local spool reader is also disabled by default. Enabling it requires an
+explicit `CHART_STUDIO_EVIDENCE_SPOOL_ROOT` pointing to a pre-existing private
+directory outside Git worktrees and static mounts, with a private pre-created
+`archive/` child. It tails `<producerId>.active.ndjson` and archives only closed
+`<producerId>.<first>-<last>.ready.ndjson` segments. Startup and shutdown own its
+polling task; records are processed in bounded batches outside the event loop.
+Internal `app.state.evidence_spool_status` reports importer gaps and failures.
+The spool setting does not verify a loaded EA identity or prove file authorship.
 
 Windows ACLs permit only the current user, SYSTEM, and Administrators; POSIX
 requires owner-only root mode 0700 and file mode 0600. Symlinks, reparse points,
@@ -59,6 +119,12 @@ reviewed trusted provider, with transactional correction/reference validation
 and immutable originals. There is no HTTP ingestion endpoint, EA recorder,
 automatic snapshot capture, current original decision history, or renderer in
 this phase. `renderAssetRef` remains null and no rendered files are invented.
+`chart_studio.evidence_spool.SpoolImporter` validates local lines and appends
+with a private atomic cursor. `chart_studio.evidence_spool_service.SpoolFileConsumer`
+is wired to application startup/shutdown only when the explicit private spool
+root is valid; it remains disabled by default and no worker is running unless
+configured. There is still no EA producer, verified loaded EA identity, or
+automatic event source, so this does not establish live recording.
 Recorded versus reconstructed availability follows the validated records on
 the returned page; an empty page, uninitialized store, or disabled store returns
 `NOT_RECORDED`. Every read verifies store-wide canonical bytes, stored hashes,
@@ -107,6 +173,41 @@ Broker SL/TP zero becomes `null`. Every hedged ticket and pending order type is
 retained. Magic zero means `MANUAL`; all other rows are `UNKNOWN` because no
 verified ownership map exists. Comments remain provenance, never EA identity.
 All read models expose `source: MT5_VERIFIED` and `canExecute: false`.
+
+`GET /api/chart/v1/portfolio?account=titan` returns a bounded account-wide
+position aggregate, margin/equity context, and the sum of broker-calculated loss
+at actual position stop levels. A missing SL or failed calculation makes stop
+risk explicitly unavailable. The `scenarioSymbol` query (default `XAUUSD`)
+adds the proposed What-if instrument to the held symbols. For at most 12 unique
+symbols total, the route requests at most 257 completed H1 bars per symbol and
+returns pairwise Pearson correlations using at least 60 exact shared one-hour
+close-to-close UTC intervals. It starts at MT5 bar index 1 to omit the current
+unfinished bar. Missing, invalid or insufficient history is `UNAVAILABLE`; the
+UI labels correlations descriptive and does not apply hedge credit to its
+gross-additive What-if stop risk. All calls execute under the shared verified
+account lock and issue no broker writes.
+
+After a successful same-account What-if preview, the beta also projects gross
+long, gross short and net lots for the proposed symbol using the broker-returned
+final size, including server-sized budget lots. It displays matching completed-H1
+correlations as descriptive context only. These lots are not notional exposure,
+and correlations never reduce projected stop risk; missing preview or portfolio
+data remains unavailable.
+
+The Chart Studio beta's Brokerbuch panel consumes these routes for verified
+account-scoped symbol search and selection, selected-symbol positions and pending
+orders, and `/trades` for a paginated list of actual deals. The current selected
+symbol drives the chart feed and its read-only matching overlays/markers. Position
+stop drafts remain limited to XAUUSD. It requests up to 200
+catalog entries; when the result is truncated, refine the symbol search. Positions,
+orders and deals are validated row-by-row against the selected account, symbol,
+source and read-only flag.
+Ticket, magic and manual/unknown filters are preserved in the UTC history cursor
+scope; changing a filter or date range restarts at page one. A 410 cursor error
+clears pagination and asks the user to reload history. The panel validates
+`MT5_VERIFIED` and `canExecute: false`, clears tables on account changes, and
+renders all broker strings as text. Deal rows are not joined into reconstructed
+positions, and no EA owner is inferred from comments or magic values.
 
 Position and order `revision` values are SHA-256 of compact, sorted-key JSON;
 all schema values are canonical strings, including raw zero SL/TP. Both include
@@ -269,8 +370,12 @@ gross is positive; profitable trailing stops remain valid geometry.
 
 Guard and market-session sources remain UNKNOWN/NONE. Geometry validity is never
 permission: every preview has `canExecute=false` and `canCommit=false`. Persisted EA
-files without a live heartbeat do not authorize anything. Native dragging and commit
-remain unavailable; there is no commit route.
+files without a live heartbeat do not authorize anything. The beta can select a
+verified open position, adjust a transient revision-bound SL/TP draft with chart
+pointer handles or price fields, and request this read-only preview. Account, ticket,
+revision, and request ID are checked before showing a result; a revision conflict or
+chart/account scope change discards the draft. Touch/hardware acceptance remains open,
+and there is still no commit route.
 
 Random preview IDs live only in a locked process-local registry (maximum 256), expire
 at a monotonic 10-second deadline, and disappear on restart or eviction. Internal

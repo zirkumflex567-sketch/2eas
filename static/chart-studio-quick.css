@@ -52,6 +52,26 @@
 .cs-indicator-controls,.cs-indicator-panes,.cs-indicator-pane{
  box-sizing:border-box;max-width:100%;min-width:0}
 #cs-beta-panel{width:100%;overflow-wrap:anywhere}
+#cs-data-window{display:grid;gap:4px;margin:8px 0;padding:8px;border:1px solid rgba(116,178,198,.35);border-radius:7px;background:rgba(8,25,35,.72)}
+#cs-data-window>div{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:#d5edf3;font-size:12px}
+#cs-data-window dl{display:grid;grid-template-columns:repeat(6,minmax(70px,1fr));gap:3px 8px;margin:0;font:11px ui-monospace,Consolas,monospace}
+#cs-data-window dt{color:#a8c5cf}#cs-data-window dd{margin:0;color:#f2fbff;overflow-wrap:anywhere}
+.cs-evidence-panel{margin:8px 0;padding:8px;border:1px solid rgba(116,178,198,.35);border-radius:7px;background:rgba(8,25,35,.72);color:#d5edf3;font-size:12px}
+.cs-evidence-panel>summary{cursor:pointer;font-weight:700}
+.cs-evidence-controls{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:8px}
+.cs-evidence-panel #cs-evidence-status{margin:8px 0;color:#b8d3dd;overflow-wrap:anywhere}
+.cs-evidence-panel #cs-evidence-list{display:grid;gap:6px;padding-left:24px;max-height:340px;overflow:auto}
+.cs-evidence-panel #cs-evidence-list details{border:1px solid rgba(116,178,198,.22);border-radius:5px;padding:5px}
+.cs-evidence-panel #cs-evidence-list summary{cursor:pointer;overflow-wrap:anywhere}
+.cs-evidence-panel #cs-evidence-list pre{max-height:260px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:10px ui-monospace,Consolas,monospace}
+.cs-mtf-panel{margin:8px 0;padding:8px;border:1px solid rgba(116,178,198,.35);border-radius:7px;background:rgba(8,25,35,.72);color:#d5edf3;font-size:12px}
+.cs-mtf-panel>summary{cursor:pointer;font-weight:700}
+.cs-mtf-controls{display:flex;flex-wrap:wrap;align-items:end;gap:8px;margin:8px 0}
+.cs-mtf-controls label{display:grid;gap:4px}
+.cs-mtf-table-wrap{max-width:100%;overflow:auto}
+.cs-mtf-panel table{width:100%;min-width:760px;border-collapse:collapse;text-align:left}
+.cs-mtf-panel th,.cs-mtf-panel td{padding:5px 7px;border-bottom:1px solid rgba(116,178,198,.22);vertical-align:top;white-space:nowrap}
+.cs-mtf-panel [data-mtf-status]{margin:8px 0;color:#b8d3dd;overflow-wrap:anywhere}
 #cs-beta-panel .cs-beta-buttons,
 #cs-beta-panel .cs-beta-profiles,
 #cs-beta-panel .cs-ma-presets,
@@ -70,13 +90,27 @@
 #cs-beta-panel .cs-scenario form{display:flex;flex-wrap:wrap;gap:8px}
 #cs-beta-panel .cs-scenario label{min-width:0;flex:1 1 120px}
 #cs-beta-panel .cs-scenario label input,#cs-beta-panel .cs-scenario label select{width:100%}
+#cs-beta-panel .cs-scenario-ab-actions{display:flex;flex-wrap:wrap;gap:7px;margin:9px 0}
+#cs-beta-panel #cs-scenario-ab{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+#cs-beta-panel #cs-scenario-ab section{min-width:0;padding:8px;border:1px solid rgba(116,178,198,.35);border-radius:7px;overflow-wrap:anywhere}
+#cs-beta-panel #cs-scenario-ab h4{margin:0 0 6px;color:#c5edf5}
+#cs-beta-panel #cs-scenario-ab p{margin:0;font-size:12px;line-height:1.5;color:#d0e6eb}
 #cs-beta-panel .cs-catalog-results{grid-template-columns:repeat(auto-fit,minmax(min(100%,235px),1fr))}
 #cs-beta-panel .cs-beta-keyboard-hint{font-size:11px;opacity:.85;line-height:1.5}
+#cs-tool-preferences{margin:8px 0;padding:8px;border:1px solid rgba(116,178,198,.35);border-radius:8px}
+#cs-tool-preferences>summary{cursor:pointer;font-weight:700}
+#cs-tool-preferences>strong{display:block;margin-top:8px}
+#cs-tool-preferences .cs-tool-preference-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:7px;margin:8px 0}
+#cs-tool-preferences .cs-tool-preference-grid label{display:flex;align-items:center;gap:6px;min-width:0}
+#cs-tool-preferences .cs-tool-preference-grid input[type=text]{width:42px;min-height:32px;text-align:center}
+#cs-tool-preferences>p{font-size:11px;line-height:1.45;opacity:.85}
 @media(max-width:420px){
  #cs-beta-panel{padding:8px}
+ #cs-data-window dl{grid-template-columns:repeat(3,minmax(72px,1fr))}
  #cs-beta-panel .cs-ma-instance label{flex-basis:100%}
  #cs-beta-panel .cs-beta-buttons button{flex:1 1 110px}
  #cs-beta-panel .cs-replay-actions button{flex:1 1 115px}
+ #cs-beta-panel #cs-scenario-ab{grid-template-columns:minmax(0,1fr)}
  .cs-replay-plot{height:220px;min-height:220px}
 }
 @media(prefers-reduced-motion:reduce){
@@ -84,3 +118,29 @@
   animation-duration:0.01ms!important;transition-duration:0.01ms!important;
   scroll-behavior:auto!important}
 }
+
+
+/* Verified broker book and deal history stay in a bounded, horizontally scrollable panel. */
+.cs-broker-read-panel{margin:12px 0;padding:10px;border:1px solid rgba(103,194,211,.45);
+ border-radius:8px;background:rgba(8,26,36,.92);color:#e4f5fa;box-sizing:border-box;max-width:100%}
+.cs-broker-read-panel summary{cursor:pointer;font-weight:700;padding:7px 0}
+.cs-broker-read-content label{display:inline-flex;flex-direction:column;gap:4px;margin:5px 8px 5px 0;font-size:12px}
+.cs-broker-read-panel input,.cs-broker-read-panel select,.cs-broker-read-panel button{min-height:34px;max-width:100%;box-sizing:border-box}
+.cs-broker-read-panel input,.cs-broker-read-panel select{background:#102e3b;color:#fff;border:1px solid #7fa9b7;border-radius:5px;padding:5px}
+.cs-broker-read-panel button{background:#153747;color:#effcff;border:1px solid #6bb7c5;border-radius:5px;padding:6px 10px;cursor:pointer}
+.cs-broker-read-panel button:hover:not(:disabled){background:#20546a;border-color:#8be4f2}
+.cs-broker-read-panel button:focus-visible,.cs-broker-read-panel input:focus-visible,.cs-broker-read-panel select:focus-visible{outline:2px solid #65dded;outline-offset:2px}
+.cs-broker-read-panel button:disabled{opacity:.55;cursor:not-allowed}
+.cs-broker-read-panel [role=status]{font-size:12px;min-height:1.2em;color:#bde0e9;overflow-wrap:anywhere}
+.cs-broker-table-wrap{max-width:100%;overflow-x:auto;margin:6px 0 12px}
+.cs-broker-read-panel table{border-collapse:collapse;white-space:nowrap;width:100%;font-size:12px}
+.cs-broker-read-panel th,.cs-broker-read-panel td{padding:5px 8px;border-bottom:1px solid rgba(130,183,197,.24);text-align:left}
+.cs-broker-read-panel th{color:#bdeaf3}
+.cs-broker-read-panel button,.cs-broker-read-panel summary{touch-action:manipulation}
+.cs-broker-symbol-controls{display:flex;align-items:end;gap:6px;flex-wrap:wrap;margin:8px 0}
+.cs-broker-symbol-controls label{flex:0 1 auto;margin:0 4px 0 0}
+#cs-broker-symbol-favorites{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-basis:100%;min-width:0}
+.cs-symbol-favorite{display:inline-flex;align-items:center;gap:3px;max-width:100%;padding:2px;border:1px solid rgba(103,194,211,.38);border-radius:6px}
+.cs-symbol-favorite button{min-height:30px;padding:4px 7px}
+.cs-symbol-favorite [data-remove-favorite]{min-width:30px;padding-inline:6px}
+@media(max-width:480px){.cs-broker-read-content label{flex:1 1 125px;min-width:0}.cs-broker-read-panel fieldset{padding:7px}}

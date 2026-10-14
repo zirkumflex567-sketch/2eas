@@ -11,19 +11,22 @@ import math
 import re
 import sqlite3
 import time
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pathlib import Path
 from typing import Any
 
 ACCOUNTS = frozenset({"titan", "goldm15"})
 SYMBOL_RE = re.compile(r"^[A-Z0-9._-]{1,32}$")
-DRAWING_TYPES = frozenset({"horizontal", "trend", "rect", "fib", "ray", "ruler", "channel"})
+DRAWING_TYPES = frozenset({"horizontal", "vertical", "text", "trend", "rect", "fib", "ray", "ruler", "channel"})
 UI_FLAGS = frozenset({"ema20", "ema50", "ema200", "sma20", "sma50",
                       "bb", "positions"})
+UI_NUMBERS = frozenset({"bbPeriod", "bbStdDev"})
 INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap"})
 PERIOD_FIELDS = frozenset({"period", "fast", "slow", "signal"})
+SESSION_FIELDS = frozenset({"timeZone", "sessionStart"})
 TIMEFRAMES = frozenset({"M1", "M5", "M15", "M30", "H1", "H4", "D1"})
-MAX_DOCUMENT_BYTES = 131072
-MAX_DRAWINGS = 500
+MAX_DOCUMENT_BYTES = 524288
+MAX_DRAWINGS = 1000
 
 
 class StoreError(ValueError):
@@ -101,9 +104,12 @@ def validate_document(raw: Any) -> dict:
         if not isinstance(kind, str) or kind not in DRAWING_TYPES:
             raise StoreError("Nicht unterstützter Zeichnungstyp.")
         anchors = drawing["anchors"]
-        expected = 1 if kind == "horizontal" else (3 if kind == "channel" else 2)
+        expected = 1 if kind in {"horizontal", "vertical", "text"} else (3 if kind == "channel" else 2)
         if not isinstance(anchors, list) or len(anchors) != expected:
             raise StoreError("Ungültige Ankeranzahl.")
+        if kind == "text" and (not isinstance(drawing.get("label"), str) or
+                                not drawing["label"].strip() or len(drawing["label"]) > 40):
+            raise StoreError("Textannotation benötigt einen Namen mit 1–40 Zeichen.")
         safe_anchors = []
         for anchor in anchors:
             if not isinstance(anchor, dict) or set(anchor) != {"time", "price"}:
@@ -120,11 +126,11 @@ def validate_document(raw: Any) -> dict:
             levels = drawing["levels"]
             if not isinstance(levels, list) or not 1 <= len(levels) <= 16:
                 raise StoreError("Fibonacci-Level müssen 1–16 Werte enthalten.")
-            last = -1.0
+            last = float("-inf")
             clean_levels = []
             for raw_level in levels:
                 value = _number(raw_level, "Fibonacci-Level")
-                if not 0 <= value <= 2 or value <= last + 1e-9:
+                if not -10 <= value <= 10 or value <= last + 1e-9:
                     raise StoreError("Fibonacci-Level ungültig oder nicht streng steigend.")
                 clean_levels.append(value)
                 last = value
@@ -134,17 +140,25 @@ def validate_document(raw: Any) -> dict:
                 normalized[field] = drawing[field]
         out.append(normalized)
     options = raw["options"]
-    if not isinstance(options, dict) or any(k not in UI_FLAGS for k in options):
+    if not isinstance(options, dict) or any(k not in UI_FLAGS | UI_NUMBERS | {"bbFill"} for k in options):
         raise StoreError("Nicht unterstützte Chart-Option.")
-    if any(type(v) is not bool for v in options.values()):
+    if any(type(v) is not bool for k, v in options.items() if k in UI_FLAGS | {"bbFill"}):
         raise StoreError("Chart-Optionen müssen boolesch sein.")
+    if "bbPeriod" in options and (type(options["bbPeriod"]) is not int or not 2 <= options["bbPeriod"] <= 300):
+        raise StoreError("Bollinger-Periode muss zwischen 2 und 300 liegen.")
+    if "bbStdDev" in options:
+        deviation = _number(options["bbStdDev"], "Bollinger-StdDev")
+        if not 0.1 <= deviation <= 10:
+            raise StoreError("Bollinger-StdDev muss zwischen 0.1 und 10 liegen.")
     indicators = raw["indicators"]
     if not isinstance(indicators, dict) or any(k not in INDICATORS for k in indicators):
         raise StoreError("Unbekannter Indikator.")
     clean_indicators = {}
     for kind, values in indicators.items():
+        color_fields = {"upColor", "downColor"} if kind == "volume" else set()
+        session_fields = SESSION_FIELDS if kind == "vwap" else set()
         if not isinstance(values, dict) or any(
-            k not in PERIOD_FIELDS | {"enabled"} for k in values
+            k not in PERIOD_FIELDS | {"enabled"} | color_fields | session_fields for k in values
         ):
             raise StoreError("Ungültige Indikator-Parameter.")
         cleaned = {}
@@ -152,6 +166,20 @@ def validate_document(raw: Any) -> dict:
             if param == "enabled":
                 if type(value) is not bool:
                     raise StoreError("Indikator-Sichtbarkeit muss boolesch sein.")
+            elif param in color_fields:
+                if not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+                    raise StoreError("Ungültige Volumenfarbe.")
+                value = value.lower()
+            elif param in SESSION_FIELDS:
+                if not isinstance(value, str) or len(value) > 64:
+                    raise StoreError("Ungültige VWAP-Session-Einstellung.")
+                if param == "sessionStart" and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
+                    raise StoreError("VWAP-Sessionstart muss HH:MM sein.")
+                if param == "timeZone":
+                    try:
+                        ZoneInfo(value)
+                    except (ZoneInfoNotFoundError, ValueError):
+                        raise StoreError("Ungültige VWAP-IANA-Zeitzone.") from None
             else:
                 _number(value, param, integer=True)
                 if not 2 <= value <= 300:
@@ -169,13 +197,14 @@ def validate_document(raw: Any) -> dict:
         if not isinstance(entries, list) or len(entries) > 16:
             raise StoreError("Maximal 16 gleitende Durchschnitte erlaubt.")
         ids = set()
-        allowed_ma = {"id", "type", "period", "source", "color",
-                      "lineWidth", "visible", "label"}
-        types = {"EMA", "SMA", "WMA"}
+        required_ma = {"id", "type", "period", "source", "color",
+                       "lineWidth", "visible", "label"}
+        optional_ma = {"displayShift"}
+        types = {"EMA", "SMA", "WMA", "RMA", "SMMA"}
         sources = {"close", "open", "high", "low", "hl2", "hlc3", "ohlc4"}
         clean_ma = []
         for item in entries:
-            if not isinstance(item, dict) or set(item) != allowed_ma:
+            if not isinstance(item, dict) or not required_ma.issubset(item) or set(item) - required_ma - optional_ma:
                 raise StoreError("Unbekannte Eigenschaften einer MA-Linie.")
             ident = item["id"]
             if not isinstance(ident, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", ident):
@@ -187,8 +216,12 @@ def validate_document(raw: Any) -> dict:
                 raise StoreError("Unbekannter Moving-Average-Typ.")
             if not isinstance(item["source"], str) or item["source"] not in sources:
                 raise StoreError("Unbekannte MA-Preisquelle.")
-            if type(item["period"]) is not int or not 2 <= item["period"] <= 500:
-                raise StoreError("MA-Periode muss zwischen 2 und 500 liegen.")
+            if type(item["period"]) is not int or not 1 <= item["period"] <= 1000:
+                raise StoreError("MA-Periode muss zwischen 1 und 1000 liegen.")
+            if "displayShift" in item and (
+                type(item["displayShift"]) is not int or not -500 <= item["displayShift"] <= 500
+            ):
+                raise StoreError("MA-Anzeigeversatz muss eine Ganzzahl zwischen -500 und 500 sein.")
             if type(item["lineWidth"]) is not int or not 1 <= item["lineWidth"] <= 4:
                 raise StoreError("Linienbreite außerhalb 1–4.")
             if type(item["visible"]) is not bool:

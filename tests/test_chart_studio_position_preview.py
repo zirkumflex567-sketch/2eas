@@ -61,6 +61,22 @@ def test_conflict_and_strict_candidate(api):
     payload['candidate']={'slPrice':3999.0}
     assert client.post('/api/chart/v1/position/preview-stop',json=payload).status_code==422
 
+@pytest.mark.parametrize('field,value',[
+    ('positionTicket','99'),
+    ('symbol','EURUSD.a'),
+])
+def test_wrong_position_scope_is_rejected_before_money_calculation(api,field,value):
+    client,fake,payload=api
+    if field=='symbol':
+        fake.positions=()
+        fake.orders=()
+    payload[field]=value
+    response=client.post('/api/chart/v1/position/preview-stop',json=payload)
+    assert response.status_code==404
+    assert response.json()['detail']['code']=='POSITION_NOT_FOUND'
+    assert not any(call[0]=='calc_profit' for call in fake.calls)
+    assert fake.writes==0
+
 def test_registry_exact_expiry_and_independent_copies():
     from chart_studio.position_preview import PreviewRegistry
     clock=[0.]

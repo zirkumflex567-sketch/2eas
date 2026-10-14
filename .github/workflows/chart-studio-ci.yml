@@ -69,6 +69,7 @@ jobs:
           node scripts/test_chart_studio_indicators.cjs
           node --check static/stone-chart-effects.js
           node scripts/test_chart_studio_math.cjs
+          node scripts/test_chart_studio_mtf.cjs
           python scripts/check_frontend_syntax.py
       - name: Run tests
         env:
@@ -102,6 +103,7 @@ jobs:
           node scripts/smoke_chart_studio_fib.cjs
           node scripts/smoke_chart_studio_export.cjs
           node scripts/smoke_chart_studio_beta.cjs
+          node scripts/smoke_chart_studio_mtf.cjs
           node scripts/smoke_chart_studio_averages.cjs
           node scripts/smoke_chart_studio_appearance.cjs
           node scripts/smoke_chart_studio_oscillators.cjs

@@ -36,8 +36,8 @@ def isolated(monkeypatch, tmp_path):
     monkeypatch.setattr(app.time, 'time', lambda: clock.now)
     tick = NS(time=int(clock.now), bid=4030., ask=4030.05)
     rates['time'] = (tick.time//900 - 299 + np.arange(300))*900
-    info = NS(login=account['login'], server=account['server'], balance=10000., equity=10000.)
-    sym = NS(time=tick.time, spread=5, trade_contract_size=100., digits=2, point=.01,
+    info = NS(login=account['login'], server=account['server'], balance=10000., equity=10000., currency='USD')
+    sym = NS(name='XAUUSD', time=tick.time, spread=5, trade_contract_size=100., digits=2, point=.01,
              trade_tick_size=.01, trade_stops_level=10, trade_freeze_level=0, filling_mode=2)
     positions = Mock(return_value=[pos])
     history = Mock(return_value=[])
@@ -73,6 +73,117 @@ def isolated(monkeypatch, tmp_path):
     gateway._attached_mt5 = None
     gateway._attached_account = None
     app.JOURNAL_CACHE.clear(); app.JOURNAL_CACHE_AT.clear()
+
+
+def test_whatif_includes_read_only_daily_drawdown_projection(isolated, monkeypatch):
+    isolated.sym.volume_min=.01; isolated.sym.volume_max=5.; isolated.sym.volume_step=.01
+    monkeypatch.setattr(app.mt5,'order_calc_profit',lambda action,symbol,volume,entry,close:(close-entry)*volume*100*(1 if action==app.mt5.ORDER_TYPE_BUY else -1))
+    monkeypatch.setattr(app.mt5,'order_calc_margin',lambda *args:123.4)
+    monkeypatch.setattr(app,'current_daily_drawdown',lambda *args:(
+        {'loss_usd':100.,'limit_pct':3.5,'daily_ref':10000.},
+        {'source_fresh':True,'quote_time_epoch':isolated.clock.now},None))
+    response=isolated.client.post('/api/chart/v1/scenarios/preview?account=titan',json={
+        'account':'titan','symbol':'XAUUSD','side':'BUY','volumeLots':.1,
+        'entryPrice':4100,'slPrice':4090,'tpPrice':4120,
+    })
+    assert response.status_code==200,response.text
+    projection=response.json()['dailyDrawdownProjection']
+    assert projection['state']=='AVAILABLE'
+    assert projection['source']=='DASHBOARD_DD_ESTIMATE'
+    assert projection['currentLoss']==100
+    assert projection['scenarioStopRisk']==100
+    assert projection['projectedLoss']==200
+    assert projection['remainingToLimit']==150
+    assert projection['eaGuard']=={'state':'UNKNOWN','source':'NONE'}
+    assert response.json()['canExecute'] is False
+    isolated.send.assert_not_called()
+
+
+def test_whatif_keeps_broker_preview_when_daily_drawdown_is_unavailable(isolated, monkeypatch):
+    isolated.sym.volume_min=.01; isolated.sym.volume_max=5.; isolated.sym.volume_step=.01
+    monkeypatch.setattr(app.mt5,'order_calc_profit',lambda action,symbol,volume,entry,close:(close-entry)*volume*100*(1 if action==app.mt5.ORDER_TYPE_BUY else -1))
+    monkeypatch.setattr(app.mt5,'order_calc_margin',lambda *args:123.4)
+    monkeypatch.setattr(app,'current_daily_drawdown',lambda *args:(_ for _ in ()).throw(HTTPException(503,'fixture stale quote')))
+    response=isolated.client.post('/api/chart/v1/scenarios/preview?account=titan',json={
+        'account':'titan','symbol':'XAUUSD','side':'BUY','volumeLots':.1,
+        'entryPrice':4100,'slPrice':4090,'tpPrice':4120,
+    })
+    assert response.status_code==200,response.text
+    assert response.json()['pnlAtSl']['amount']==-100
+    assert response.json()['dailyDrawdownProjection']['state']=='UNAVAILABLE'
+    assert response.json()['dailyDrawdownProjection']['eaGuard']=={'state':'UNKNOWN','source':'NONE'}
+    isolated.send.assert_not_called()
+
+
+def test_whatif_uses_exact_non_xau_broker_symbol_without_writes(isolated, monkeypatch):
+    calls=[]
+    isolated.sym.volume_min=.01; isolated.sym.volume_max=5.; isolated.sym.volume_step=.01
+    def symbol_info(name):
+        return NS(name=name, digits=5, point=.00001, trade_tick_size=.00001,
+                  trade_stops_level=10, trade_freeze_level=0, volume_min=.01,
+                  volume_max=5., volume_step=.01, currency_base='EUR',
+                  currency_profit='USD', currency_margin='USD', trade_mode=4)
+    def calc_profit(action, symbol, volume, entry, close):
+        calls.append(('profit', symbol))
+        return (close-entry)*volume*100*(1 if action==app.mt5.ORDER_TYPE_BUY else -1)
+    def calc_margin(action, symbol, volume, entry):
+        calls.append(('margin', symbol))
+        return 123.4
+    monkeypatch.setattr(app.mt5,'symbol_info',symbol_info)
+    monkeypatch.setattr(app.mt5,'order_calc_profit',calc_profit)
+    monkeypatch.setattr(app.mt5,'order_calc_margin',calc_margin)
+    monkeypatch.setattr(app,'current_daily_drawdown',lambda *args:(_ for _ in ()).throw(HTTPException(503,'fixture unavailable')))
+    response=isolated.client.post('/api/chart/v1/scenarios/preview?account=titan',json={
+        'account':'titan','symbol':'EURUSD','side':'BUY','volumeLots':.1,
+        'entryPrice':1.1,'slPrice':1.09,'tpPrice':1.12,
+    })
+    assert response.status_code==200,response.text
+    assert response.json()['symbol']=='EURUSD'
+    assert response.json()['tickSize']==.00001
+    assert calls and set(symbol for _kind,symbol in calls)=={'EURUSD'}
+    assert response.json()['canExecute'] is False
+    isolated.send.assert_not_called()
+
+
+def test_chart_candles_read_exact_requested_verified_symbol(isolated, monkeypatch):
+    calls=[]
+    monkeypatch.setattr(app.mt5,'symbol_info',lambda symbol:NS(
+        name=symbol,digits=5,trade_tick_size=.00001))
+    monkeypatch.setattr(app.mt5,'copy_rates_from_pos',lambda *args:(calls.append(args) or isolated.rates.copy()))
+    response=isolated.client.get('/api/candles?account=titan&tf=M15&symbol=EURUSD')
+    assert response.status_code==200,response.text
+    body=response.json()
+    assert body['symbol']=='EURUSD'
+    assert calls and calls[0][0]=='EURUSD'
+    assert body['candles'][-1]['close']==round(float(isolated.rates[-1]['close']),5)
+    for series in ('candles','ema20','ema50','ema200'):
+        for row in body[series]:
+            for field in (('open','high','low','close') if series=='candles' else ('value',)):
+                assert row[field]==round(row[field],5),f'{series}.{field} must use the verified symbol precision'
+    assert all(value==round(value,5) for value in body['sr_levels'].values())
+    assert body['markers']==[]
+    isolated.send.assert_not_called()
+
+
+def test_chart_candles_reject_unknown_symbol_before_history_read(isolated, monkeypatch):
+    reads=[]
+    monkeypatch.setattr(app.mt5,'symbol_info',lambda symbol:None)
+    monkeypatch.setattr(app.mt5,'copy_rates_from_pos',lambda *args:(reads.append(args) or isolated.rates.copy()))
+    response=isolated.client.get('/api/candles?account=titan&tf=M15&symbol=EURUSD')
+    assert response.status_code==404
+    assert reads==[]
+    isolated.send.assert_not_called()
+
+
+def test_chart_candles_reject_invalid_timeframe_before_history_read(isolated, monkeypatch):
+    reads=[]
+    monkeypatch.setattr(app.mt5,'symbol_info',lambda symbol:NS(
+        name=symbol,digits=2,trade_tick_size=.01))
+    monkeypatch.setattr(app.mt5,'copy_rates_from_pos',lambda *args:(reads.append(args) or isolated.rates.copy()))
+    response=isolated.client.get('/api/candles?account=titan&tf=M99&symbol=EURUSD')
+    assert response.status_code==422
+    assert reads==[]
+    isolated.send.assert_not_called()
 
 
 @pytest.mark.parametrize('model,payload', [

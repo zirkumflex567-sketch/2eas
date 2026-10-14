@@ -536,6 +536,64 @@ def test_private_environment_preflight_rejects_checkout_file(checkout):
         module.validate_environment_file(checkout, private)
 
 
+def test_private_environment_allows_only_external_existing_spool_root(checkout, tmp_path):
+    module = runtime_module()
+    spool = tmp_path.parent / (tmp_path.name + '-private-spool')
+    spool.mkdir()
+    private = tmp_path.parent / (tmp_path.name + '-spool-env.json')
+    private.write_text(json.dumps({'CHART_STUDIO_EVIDENCE_SPOOL_ROOT': str(spool)}))
+    try:
+        module.validate_environment_file(checkout, private)
+        inside = checkout / 'spool'
+        inside.mkdir()
+        private.write_text(json.dumps({'CHART_STUDIO_EVIDENCE_SPOOL_ROOT': str(inside)}))
+        with pytest.raises(ValueError, match='Invalid private environment'):
+            module.validate_environment_file(checkout, private)
+    finally:
+        private.unlink(missing_ok=True)
+        import shutil
+        shutil.rmtree(spool, ignore_errors=True)
+
+
+def test_private_environment_allows_external_evidence_store_and_spool(checkout, tmp_path):
+    module = runtime_module()
+    evidence_root = tmp_path.parent / (tmp_path.name + '-evidence')
+    spool_root = tmp_path.parent / (tmp_path.name + '-evidence-spool')
+    evidence_root.mkdir()
+    spool_root.mkdir()
+    private = tmp_path.parent / (tmp_path.name + '-evidence-env.json')
+    private.write_text(json.dumps({
+        'CHART_STUDIO_EVIDENCE_ROOT': str(evidence_root),
+        'CHART_STUDIO_EVIDENCE_DB': str(evidence_root / 'events.sqlite'),
+        'CHART_STUDIO_EVIDENCE_SPOOL_ROOT': str(spool_root),
+    }))
+    try:
+        module.validate_environment_file(checkout, private)
+        private.write_text(json.dumps({
+            'CHART_STUDIO_EVIDENCE_ROOT': str(checkout / 'private-evidence'),
+            'CHART_STUDIO_EVIDENCE_DB': str(evidence_root / 'events.sqlite'),
+        }))
+        with pytest.raises(ValueError, match='Invalid private environment'):
+            module.validate_environment_file(checkout, private)
+        private.write_text(json.dumps({
+            'CHART_STUDIO_EVIDENCE_ROOT': str(evidence_root),
+            'CHART_STUDIO_EVIDENCE_DB': str(checkout / 'private-evidence.sqlite3'),
+        }))
+        with pytest.raises(ValueError, match='Invalid private environment'):
+            module.validate_environment_file(checkout, private)
+        private.write_text(json.dumps({
+            'CHART_STUDIO_EVIDENCE_ROOT': os.path.relpath(evidence_root),
+            'CHART_STUDIO_EVIDENCE_DB': str(evidence_root / 'events.sqlite'),
+        }))
+        with pytest.raises(ValueError, match='Invalid private environment'):
+            module.validate_environment_file(checkout, private)
+    finally:
+        private.unlink(missing_ok=True)
+        import shutil
+        shutil.rmtree(evidence_root, ignore_errors=True)
+        shutil.rmtree(spool_root, ignore_errors=True)
+
+
 @pytest.mark.skipif(os.name != 'nt', reason='Windows PowerShell operational workflow')
 def test_powershell_refuses_malformed_runtime_identity(checkout):
     runtime_module()

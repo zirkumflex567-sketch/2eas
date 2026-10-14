@@ -22,7 +22,7 @@
 - [x] 1.1 Mount beta toolbar next to fullscreen, leaving old chart operational.
 - [x] 1.2 Toggle EMA20/50/200, overlay correctly calculated SMA20/SMA50/Bollinger20.
 - [x] 1.3 Draw horizontal, trendline, rectangle and Fibonacci using price/time anchors, plus handle editing, Undo/Redo.
-- [x] 1.4 Account-scoped **temporary localStorage** saving/loading drawings, chart toggles, named local layouts (save/load/delete) and JSON-copy export.
+- [x] 1.4 Account-scoped **temporary localStorage** saving/loading drawings, chart toggles, named local layouts (save/load/copy/rename/delete), confirmed active-chart reset that preserves saved layouts, and JSON-copy export.
 - [x] 1.5 Toggle genuine account-scoped MT5 open-position Entry/SL/TP overlays (**view-only**).
 - [x] 1.6 Read-only What-if scenario form + optional verified Bid/Ask fill + backend broker PnL/margin preview; distinct PLAN zones, no trade execution.
 - [~] 1.7 Chromium desktop smoke PASS; responsive 320/390/768/1440 browser matrix, simulated touch, zoom and reduced-motion merged with green CI in PR #23. Real mobile hardware, expanded layout acceptance and broker-connected proof remain open.
@@ -31,10 +31,10 @@
 ## Task 2 — Full chart, drawings and storage
 
 - [ ] 2.1 V5 plugin/primitives and own drawing registry, drag states, snapping and hit-test priorities.
-- [~] 2.2 Configurable indicator instances: EMA/SMA/WMA multi-instance price overlays (up to 16); separate multiple RSI/MACD/ATR/ADX oscillator instances (up to 8), independent periods, panes, color/width/label/visibility, duplicates and deletion, saved in local+SQLite profiles; prior volume + UTC VWAP remain. Native v5 plugin migration and advanced pane manager still open.
-- [~] 2.3 Drawing tool catalog and **object manager**: horizontal, trend, rectangle, Fibonacci, ray, price/time ruler, 3-anchor parallel channel, handles/OHLC snap, Undo, object tree with names, visibility, lock, stacking, duplicates and deletion. Custom Fibonacci retracement levels merged in #24; extensions/fans/time zones, mobile gestures, v5 primitives, hit-test priorities and annotation styles remain open.
+- [~] 2.2 Configurable indicator instances: EMA/SMA/WMA multi-instance price overlays (up to 16); separate multiple RSI/MACD/ATR/ADX oscillator instances (up to 8), independent periods, panes, color/width/label/visibility, duplicates and deletion, saved in local+SQLite profiles; broker tick/real volume has account-local up/down histogram colors with strict SQLite profile validation and roundtrip. RMA and SMMA with Wilder smoothing, moving-average periods 1-1000, display-only shifts of -500 to +500 candle slots, and an idempotent EMA 9/21/50 preset are supported in the editor, searchable catalog, calculation engine and SQLite profiles. ChartStudioBeta also supports account-scoped Bollinger period (2-300), StdDev (0.1-10), middle band and optional fill with strict SQLite workspace validation and Chromium coverage. Session VWAP supports configured IANA timezone and wall-clock start with DST-aware reset, local-profile persistence and strict workspace validation; broker-calendar auto-detection, native v5 plugin migration and advanced pane manager remain open.
+- [~] 2.3 Drawing tool catalog and **object manager**: horizontal/vertical/text, trend, rectangle, Fibonacci, ray, price/time ruler, 3-anchor parallel channel, handles/OHLC snap, Undo, object tree with names, visibility, lock, stacking, duplicates and deletion. Custom Fibonacci levels now include negative values and extensions through 1000%; annotation styles/settings, fans/time zones, mobile gestures, v5 primitives and hit-test priorities remain open.
 - [~] 2.4 Drawing SQLite store, schema migration, revision conflicts, server layout/indicator profiles, import/export. **Merged in main (#7 and extensions):** private schema-v1 SQLite workspace store, optimistic revisions, account-scoped layout JSON, authenticated opt-in REST plus existing browser toolbar server save/load/delete; multi-user ACL, full v5 profile migration and remote conflict merge remain open.
-- [~] 2.5 Chart appearance plus optional Candle/OHLC Bar/Line/Area chart types with account-scoped local+SQLite layouts. Symbol watchlist, synced multi-chart workspaces, additional chart types and native pane/layout management remain open.
+- [~] 2.5 Chart appearance plus optional Candle/OHLC Bar/Line/Area chart types with account-scoped local+SQLite layouts. Daily/Weekly H/L/POC/VAH/VAL have account-local individual visibility toggles and a scrollable legend; native v5 price-axis label, touch and hardware acceptance remain open. Symbol watchlist, synced multi-chart workspaces, additional chart types and native pane/layout management remain open.
 - [~] 2.6 Render performance: whole-history OHLCV fingerprints, SMA/Bollinger last-point updates and merged PR #20 (`e87c345d`), which skips multi-MA full-history `setData` on style-only changes and clears account-scoped series. MT5 paginated history, incremental RSI/MACD/ATR, streaming, benchmarks and AT-025/031 remain open.
 
 ## Task 3 — Broker read-only lifecycle and transparent risk
@@ -42,7 +42,7 @@
 - [ ] 3.1 Broker-authoritative positions/pending/history/quote revisions and all symbol metadata.
 - [ ] 3.2 Move the beta zones into native renderer with labels and correct USD/account conversion; hedging/netting.
 - [~] 3.3 Fully interactive SL/TP drafts (zero writes) with broker-authoritative quote/risk preview. **Started:** draggable *virtual What-if plan* SL/TP grips, tick-size snapping and debounced MT5 profit/margin recalculation; **real ticket-bound stop preview remains open**.
-- [ ] 3.4 A/B What-if extended with lot sizing, guard, margin, currency conversion and correlation.
+- [~] 3.4 A/B What-if has broker lot sizing, margin, gross MT5 PnL, explicit per-lot fee/adverse-slippage assumptions with separate net estimates, a fresh dashboard DD-distance projection with EA guard still UNKNOWN, and descriptive portfolio H1 correlations from aligned completed MT5 bars. Correlations do not reduce the gross-additive risk estimate; correlation-aware scenario modeling, authoritative cross-currency conversion and demo acceptance remain open.
 - [ ] 3.5 Decision event schema, true EA telemetry, Decision Inspector; recorded vs unavailable semantics.
 - [ ] 3.6 Trade Lifecycle and MFE/MAE provenance, immutable entry/exit snapshots and all-strategy journal links.
 
@@ -96,7 +96,7 @@ Branch `test/chart-studio-drag-preview` from merged main `8bbbb74`. New What-if 
 
 ### Follow-up indicator package: ADX and volume-derived VWAP
 
-Branch `test/chart-studio-adx-vwap` from SQLite-workspaces main merge. Added Wilder-smoothed ADX/+DI/-DI pane (first ADX after 2*N−1 bars) and UTC-session VWAP as an optional main-price overlay. VWAP uses broker `real_volume` if >0, otherwise `tick_volume`, explicitly labeled a **volume-weighted OTC proxy** rather than proven institutional orderflow. Added math tests for warm-up, rising/ranging regimes, VWAP day reset and a browser toggle test. Account-based indicator settings and secured server-layout validation now accept these types. Full session-aware VWAP with IANA/broker calendars, selectable anchor session and indicator performance budget still open.
+Branch `test/chart-studio-adx-vwap` from SQLite-workspaces main merge. Added Wilder-smoothed ADX/+DI/-DI pane (first ADX after 2*N−1 bars) and a session VWAP as an optional main-price overlay. VWAP uses broker `real_volume` if >0, otherwise `tick_volume`, explicitly labeled a **volume-weighted OTC proxy** rather than proven institutional orderflow. Added math tests for warm-up, rising/ranging regimes, configurable session reset, timezone DST behavior and browser configuration. Account-based indicator settings and strict server-layout validation accept these types. Broker-specific session-calendar auto-detection and indicator performance acceptance remain open.
 
 ### Current branch: advanced drawing tools
 

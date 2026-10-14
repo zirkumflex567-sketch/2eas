@@ -1,4 +1,5 @@
 """Chart Studio SQLite layout storage and guarded HTTP integration; no real MT5."""
+import json
 import os
 import tempfile
 import threading
@@ -90,17 +91,91 @@ class SqliteLayoutTests(unittest.TestCase):
                 doc["drawings"] = [case]
                 validate_document(doc)
 
+    def test_vertical_time_line_roundtrips_with_one_anchor(self):
+        doc = example()
+        doc["drawings"] = [{"kind": "vertical", "anchors": [
+            {"time": 1700000000, "price": 4175.5}]}]
+        saved = self.store.put("local-owner", "titan", "XAUUSD", "Vertical", doc, 0)
+        self.assertEqual(saved["document"]["drawings"], doc["drawings"])
+        for anchors in [[], doc["drawings"][0]["anchors"] * 2]:
+            with self.subTest(count=len(anchors)), self.assertRaises(StoreError):
+                validate_document({**doc, "drawings": [{"kind": "vertical", "anchors": anchors}]})
+
+    def test_text_annotation_requires_bounded_label_and_roundtrips(self):
+        doc = example()
+        doc["drawings"] = [{"kind": "text", "anchors": [
+            {"time": 1700000000, "price": 4175.5}], "label": "Setup"}]
+        saved = self.store.put("local-owner", "titan", "XAUUSD", "Note", doc, 0)
+        self.assertEqual(saved["document"]["drawings"], doc["drawings"])
+        safe_text = "<script>alert(1)</script>"
+        safe_doc = {**doc, "drawings": [{**doc["drawings"][0], "label": safe_text}]}
+        self.assertEqual(validate_document(safe_doc)["drawings"][0]["label"], safe_text)
+        for label in ["", "  ", "x" * 41, "bad\nline"]:
+            with self.subTest(label=label), self.assertRaises(StoreError):
+                validate_document({**doc, "drawings": [{**doc["drawings"][0], "label": label}]})
+
     def test_reject_unknown_keys_scaling_and_executables(self):
         tests = [
             dict(schemaVersion=2),
             dict(options={"clickToOrder": True}),
             dict(indicators={"evil": {"enabled": True}}),
             dict(timeframe="a script"),
-            dict(drawings=[example()["drawings"][0]] * 501),
+            dict(drawings=[example()["drawings"][0]] * 1001),
         ]
         for change in tests:
             with self.subTest(change=str(change)[:60]), self.assertRaises(StoreError):
                 validate_document({**example(), **change})
+
+    def test_1000_drawings_roundtrip_and_1001_is_rejected_before_persistence(self):
+        drawings = [{
+            "id": f"capacity-{index:04d}",
+            "kind": "horizontal",
+            "anchors": [{"time": 1700000000 + index, "price": 4000 + index / 10}],
+        } for index in range(1000)]
+        doc = {**example(), "drawings": drawings}
+
+        result = self.store.put("local-owner", "titan", "XAUUSD", "Capacity", doc, 0)
+        self.assertEqual(result["revision"], 1)
+        self.assertEqual(len(result["document"]["drawings"]), 1000)
+        reopened = WorkspaceStore(self.path)
+        loaded = reopened.get("local-owner", "titan", "XAUUSD", "Capacity")
+        self.assertEqual(loaded["revision"], 1)
+        self.assertEqual(loaded["document"]["drawings"], drawings)
+
+        oversized = {**doc, "drawings": drawings + [{
+            "id": "capacity-1000",
+            "kind": "horizontal",
+            "anchors": [{"time": 1700001000, "price": 4100}],
+        }]}
+        with self.assertRaises(StoreError):
+            self.store.put("local-owner", "titan", "XAUUSD", "Over capacity", oversized, 0)
+        with self.assertRaises(WorkspaceMissing):
+            self.store.get("local-owner", "titan", "XAUUSD", "Over capacity")
+
+    def test_near_512_kib_workspace_with_1000_custom_fibos_roundtrips(self):
+        levels = [(index - 8) * 1.23456789012345 for index in range(16)]
+        drawings = [{
+            "id": f"x{index:031d}",
+            "kind": "fib",
+            "anchors": [
+                {"time": 7258118400, "price": 1e15},
+                {"time": 7258118399, "price": 999999999999999.0},
+            ],
+            "levels": levels,
+            "label": "x" * 40,
+            "visible": True,
+            "locked": True,
+        } for index in range(1000)]
+        doc = {**example(), "drawings": drawings}
+        encoded_bytes = len(json.dumps(doc, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+        self.assertGreater(encoded_bytes, 500 * 1024)
+        self.assertLessEqual(encoded_bytes, 512 * 1024)
+
+        saved = self.store.put("local-owner", "titan", "XAUUSD", "Large capacity", doc, 0)
+        loaded = WorkspaceStore(self.path).get("local-owner", "titan", "XAUUSD", "Large capacity")
+        self.assertEqual(saved["revision"], 1)
+        self.assertEqual(loaded["revision"], 1)
+        self.assertEqual(loaded["document"]["drawings"], drawings)
 
     def test_malicious_name_and_scope_rejected(self):
         for account, symbol, name in [
@@ -166,6 +241,12 @@ class SqliteLayoutTests(unittest.TestCase):
                "color":"#68dfff","lineWidth":3,"visible":True,"label":"Trend 34"}
         old = example()
         self.assertNotIn("movingAverages", validate_document(old))
+        rma = {**cfg, "type":"RMA", "period":1}
+        smma = {**cfg, "type":"SMMA", "period":1000}
+        shifted = {**cfg, "displayShift":-500}
+        self.assertEqual(validate_document({**old,"movingAverages":[rma]})["movingAverages"],[rma])
+        self.assertEqual(validate_document({**old,"movingAverages":[smma]})["movingAverages"],[smma])
+        self.assertEqual(validate_document({**old,"movingAverages":[shifted]})["movingAverages"],[shifted])
         current = {**old, "movingAverages":[cfg]}
         self.assertEqual(validate_document(current)["movingAverages"], [cfg])
         saved = self.store.put("local-owner","titan","XAUUSD","Multi",current,0)
@@ -173,7 +254,11 @@ class SqliteLayoutTests(unittest.TestCase):
         self.assertEqual(self.store.get("local-owner","titan","XAUUSD","Multi")["document"],current)
         for bad in [
             [cfg, cfg],
-            [{**cfg,"period":501}],
+            [{**cfg,"period":0}],
+            [{**cfg,"period":1001}],
+            [{**cfg,"displayShift":501}],
+            [{**cfg,"displayShift":-501}],
+            [{**cfg,"displayShift":1.5}],
             [{**cfg,"period":2.2}],
             [{**cfg,"color":"red"}],
             [{**cfg,"source":"foo"}],
@@ -186,8 +271,53 @@ class SqliteLayoutTests(unittest.TestCase):
         ]:
             with self.subTest(case=str(bad)[:50]),self.assertRaises(StoreError):
                 validate_document({**old,"movingAverages":bad})
+        volume = {"enabled":True,"upColor":"#22aa66","downColor":"#dd4455"}
+        document = validate_document({**old,"indicators":{"volume":volume}})
+        self.assertEqual(document["indicators"]["volume"],volume)
+        for bad_volume in [
+            {**volume,"upColor":"red"},
+            {**volume,"downColor":"url(https://bad)"},
+            {**volume,"unknown":"#000000"},
+        ]:
+            with self.subTest(bad_volume=bad_volume),self.assertRaises(StoreError):
+                validate_document({**old,"indicators":{"volume":bad_volume}})
         with self.assertRaises(StoreError):
             validate_document({**old,"movingAverages":"no"})
+
+    def test_bollinger_settings_are_backward_compatible_strict_and_scoped(self):
+        old = example()
+        self.assertEqual(validate_document(old)["options"], old["options"])
+        options = {**old["options"], "bbPeriod": 34, "bbStdDev": 1.5, "bbFill": False}
+        document = {**old, "options": options}
+        self.assertEqual(validate_document(document)["options"], options)
+        saved = self.store.put("local-owner", "titan", "XAUUSD", "Bands", document, 0)
+        self.assertEqual(saved["revision"], 1)
+        self.assertEqual(self.store.get("local-owner", "titan", "XAUUSD", "Bands")["document"]["options"], options)
+        for invalid in [
+            {**options, "bbPeriod": True}, {**options, "bbPeriod": 1},
+            {**options, "bbPeriod": 301}, {**options, "bbStdDev": 0},
+            {**options, "bbStdDev": 10.1}, {**options, "bbStdDev": float("nan")},
+            {**options, "bbFill": 0}, {**options, "bbUnknown": True},
+        ]:
+            with self.subTest(invalid=invalid), self.assertRaises(StoreError):
+                validate_document({**old, "options": invalid})
+
+    def test_vwap_session_settings_validate_iana_zone_and_wall_clock(self):
+        old = example()
+        self.assertEqual(validate_document(old)["indicators"], old["indicators"])
+        config = {"enabled": True, "timeZone": "America/New_York", "sessionStart": "09:30"}
+        doc = {**old, "indicators": {**old["indicators"], "vwap": config}}
+        self.assertEqual(validate_document(doc)["indicators"]["vwap"], config)
+        saved = self.store.put("local-owner", "titan", "XAUUSD", "Session VWAP", doc, 0)
+        self.assertEqual(self.store.get("local-owner", "titan", "XAUUSD", "Session VWAP")["document"]["indicators"]["vwap"], config)
+        for invalid in [
+            {**config, "timeZone": "No/Such_Zone"},
+            {**config, "sessionStart": "9:30"},
+            {**config, "sessionStart": "24:00"},
+            {**config, "unknown": "UTC"},
+        ]:
+            with self.subTest(invalid=invalid), self.assertRaises(StoreError):
+                validate_document({**old, "indicators": {"vwap": invalid}})
 
     def test_chart_appearance_document_is_optional_strict_and_scoped(self):
         before = example()

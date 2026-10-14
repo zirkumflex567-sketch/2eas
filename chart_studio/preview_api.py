@@ -124,7 +124,7 @@ def install_preview_routes(app, mt5, *, now=None, monotonic=None):
             with localcontext() as context:
                 context.prec = 64
                 with limiter.acquire(principal):
-                    with gateway.session(mt5,payload.account) as spec:
+                    with gateway.traced_session(mt5,payload.account) as spec:
                         gateway.verify_identity(mt5,spec)
                         position,initial_quote=snapshot(spec,payload)
                         if position['revision']!=payload.expectedRevision:

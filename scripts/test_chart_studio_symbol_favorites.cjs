@@ -1,0 +1,10 @@
+"use strict";
+const fs=require("node:fs"),vm=require("node:vm"),assert=require("node:assert/strict");
+const source=fs.readFileSync("static/chart-studio-broker-panel.js","utf8"),context={window:{}};
+vm.runInNewContext(source,context,{filename:"chart-studio-broker-panel.js"});
+const preferences=context.window.ChartStudioBrokerPanel.symbolPreferences;
+assert.ok(preferences,"Broker panel exposes symbol-favorite validation");
+assert.deepEqual(Array.from(preferences.normalizeFavorites(["XAUUSD","EURUSD","XAUUSD","bad?symbol",null])),["XAUUSD","EURUSD"]);
+assert.equal(preferences.normalizeFavorites(Array.from({length:60},(_,index)=>"SYM"+index)).length,50);
+assert.deepEqual(Array.from(preferences.normalizeFavorites({})),[]);
+console.log("PASS account-scoped symbol favorites accept unique MT5 symbol names and enforce a 50-symbol bound");

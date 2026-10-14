@@ -6,6 +6,7 @@
 <body><div class="glass-card"><div><strong>XAUUSD M15 DEMO · READ ONLY</strong> <button id="stone-chart-expand-btn">GROSS</button></div>
 <div class="frame"><div id="tv-chart"></div></div></div>
 <script src="lightweight-charts.js"></script>
+<script src="stone-chart-effects.js"></script>
 <script src="chart-studio-data-signature.js"></script>
   <script src="chart-studio-indicators.js"></script>
 <script src="chart-studio-server-sync.js"></script>
@@ -19,12 +20,22 @@
   <script src="chart-studio-catalog.js"></script>\n  <script src="chart-studio-replay.js"></script>
   <script src="chart-studio-fib.js"></script>
   <script src="chart-studio-export.js"></script>
+  <script src="chart-studio-broker-panel.js"></script>
+  <script src="chart-studio-mtf.js"></script>
+  <script src="chart-studio-mtf-panel.js"></script>
   <script src="chart-studio-beta.js"></script>
 <script>
 const host=document.getElementById("tv-chart");
 const chart=LightweightCharts.createChart(host,{width:host.clientWidth,height:host.clientHeight,
  layout:{background:{color:"#071721"},textColor:"#c3dbe4"},
  timeScale:{timeVisible:true,rightOffset:7,barSpacing:7}});
+window.__chartCrosshairSubscribers=[];
+const subscribeCrosshairMove=chart.subscribeCrosshairMove.bind(chart);
+const unsubscribeCrosshairMove=chart.unsubscribeCrosshairMove.bind(chart);
+chart.subscribeCrosshairMove=callback=>{window.__chartCrosshairSubscribers.push(callback);subscribeCrosshairMove(callback)};
+chart.unsubscribeCrosshairMove=callback=>{window.__chartCrosshairSubscribers=window.__chartCrosshairSubscribers.filter(item=>item!==callback);unsubscribeCrosshairMove(callback)};
+const scale=chart.timeScale(),timeToCoordinate=scale.timeToCoordinate.bind(scale);
+window.__chartTimeLookups=[];scale.timeToCoordinate=time=>{window.__chartTimeLookups.push(time);return timeToCoordinate(time)};
 const candleSeries=chart.addCandlestickSeries({upColor:"#1acc92",downColor:"#ef6781"});
 const emas=[
  chart.addLineSeries({color:"#2dddfb"}),
@@ -37,9 +48,12 @@ const candles=Array.from({length:120},(_,i)=>{
  return {time:base+i*900,open:price-1,high:price+3,low:price-4,close:price+1,
   tick_volume:800+i*2,real_volume:0};
 });
+window.__chartSmokeCandles=candles;
 candleSeries.setData(candles);
 emas.forEach((series,j)=>series.setData(candles.map(c=>({time:c.time,value:c.close-2+j}))));
 chart.timeScale().fitContent();
+window.StoneChartFX.attach({chart,host,candleSeries,emaSeries:emas});
+window.StoneChartFX.update({candles,emas:emas.map((_,j)=>candles.map(c=>({time:c.time,value:c.close-2+j}))),context:"fixture/titan/M15"});
 ChartStudioBeta.mount({chart,host,candleSeries,emaSeries:emas,account:"titan",timeframe:"M15"});
 ChartStudioBeta.updateCandles(candles);
 ChartStudioBeta.updatePositions("titan",[

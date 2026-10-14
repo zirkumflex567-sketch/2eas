@@ -4,6 +4,8 @@ const source=fs.readFileSync("static/chart-studio-drawing-geometry.js","utf8");
 const window={};vm.runInNewContext(source,{window},{filename:"drawing-geometry.js"});
 const g=window.ChartStudioDrawingGeometry;
 assert.equal(g.expected("horizontal"),1);
+assert.equal(g.expected("vertical"),1);
+assert.equal(g.expected("text"),1);
 assert.equal(g.expected("channel"),3);
 assert.equal(g.expected("ruler"),2);
 assert.equal(g.expected("__proto__"),0);
@@ -11,6 +13,9 @@ const a={time:1700000000,price:4100},b={time:1700000900,price:4120},c={time:1700
 for(const kind of ["trend","rect","fib","ray","ruler"])
  assert.equal(g.validDrawing({kind,anchors:[a,b]}),true);
 assert.equal(g.validDrawing({kind:"channel",anchors:[a,b,c]}),true);
+assert.equal(g.validDrawing({kind:"vertical",anchors:[a]}),true);
+assert.equal(g.validDrawing({kind:"vertical",anchors:[a,b]}),false);
+assert.equal(g.validDrawing({kind:"text",anchors:[a]}),true);
 assert.equal(g.validDrawing({kind:"channel",anchors:[a,b]}),false);
 assert.equal(g.validDrawing({kind:"channel",anchors:[a,b,c,{time:2,price:1}]}),false);
 assert.equal(g.validDrawing({kind:"ruler",anchors:[{time:1,price:NaN},b]}),false);
