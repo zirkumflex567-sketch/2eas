@@ -350,10 +350,10 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  const onPointerDown=(event:PointerEvent)=>{
   if(event.button!==0||!event.isPrimary||!hoveredDrawingId)return;
   const level=priceLevels.get(hoveredDrawingId),marker=timeMarkers.get(hoveredDrawingId),annotation=textAnnotations.get(hoveredDrawingId);
-  if(!level&&!marker&&!annotation)return;
   selectDrawing(hoveredDrawingId);
   if(host.tabIndex<0)host.tabIndex=0;
   host.focus({preventScroll:true});
+  if(!level&&!marker&&!annotation)return;
   if((level?.options.locked??marker?.options.locked??annotation?.options.locked)===true){event.preventDefault();event.stopImmediatePropagation();return}
   if(level)activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"PRICE",original:{...level.options}};
   else if(marker)activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"TIME",original:{...marker.options}};
@@ -403,7 +403,44 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   if(!activeDrag||activeDrag.pointerId!==event.pointerId)return;
   finishDrag(true);
  };
+ function nudgeSelectedDrawing(dx:number,dy:number):boolean{
+  const id=selectedDrawingId;if(!id||(!dx&&!dy)||!bars.length)return false;
+  const current=snapshotDrawing(id);if(!current||current.options.locked)return false;
+  const time=(value:number)=>{
+   const index=bars.findIndex(bar=>bar.time===value),next=index+dx;
+   return index>=0&&next>=0&&next<bars.length?bars[next].time:null;
+  };
+  const priceValue=(value:number)=>{
+   if(!dy)return value;
+   const coordinate=price.priceToCoordinate(value);if(coordinate===null)return null;
+   const next=price.coordinateToPrice(coordinate+dy);
+   return next!==null&&Number.isFinite(next)&&next>0?next:null;
+  };
+  if(current.kind==="PRICE"){
+   if(dx)return false;const moved=priceValue(current.options.price);if(moved===null)return false;
+   updatePriceLevel(id,{price:moved});return true;
+  }
+  if(current.kind==="TIME"){
+   if(dy)return false;const moved=time(current.options.time);if(moved===null)return false;
+   updateTimeMarker(id,{time:moved});return true;
+  }
+  if(current.kind==="TEXT"){
+   const startTime=time(current.options.time),startPrice=priceValue(current.options.price);
+   if(startTime===null||startPrice===null)return false;
+   updateTextAnnotation(id,{time:startTime,price:startPrice});return true;
+  }
+  const startTime=time(current.options.startTime),endTime=time(current.options.endTime);
+  const startPrice=priceValue(current.options.startPrice),endPrice=priceValue(current.options.endPrice);
+  if(startTime===null||endTime===null||startPrice===null||endPrice===null)return false;
+  const patch={startTime,startPrice,endTime,endPrice};
+  if(current.kind==="TREND")updateTrendLine(id,patch);
+  else if(current.kind==="RECT")updateRectangle(id,patch);
+  else if(current.kind==="RAY")updateRay(id,patch);
+  else updateFibonacci(id,patch);
+  return true;
+ }
  const onKeyDown=(event:KeyboardEvent)=>{
+  if(event.target instanceof HTMLElement&&event.target.closest("input,textarea,select,button,[contenteditable=true]"))return;
   if(event.key==="Escape"&&activeDrag){event.preventDefault();event.stopImmediatePropagation();finishDrag(true);return}
   if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="z"){
    event.preventDefault();event.stopImmediatePropagation();if(event.shiftKey)redo();else undo();return;
@@ -411,6 +448,9 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="y"){
    event.preventDefault();event.stopImmediatePropagation();redo();return;
   }
+  const moveKeys:Record<string,[number,number]>={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};
+  const move=moveKeys[event.key],step=event.shiftKey?10:1;
+  if(move&&nudgeSelectedDrawing(move[0]*step,move[1]*step)){event.preventDefault();event.stopImmediatePropagation();return}
   if((event.key==="Delete"||event.key==="Backspace")&&selectedDrawingId){event.preventDefault();event.stopImmediatePropagation();deleteSelectedDrawing();return}
   if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="d"&&selectedDrawingId){event.preventDefault();event.stopImmediatePropagation();duplicateSelectedDrawing()}
   if(!event.ctrlKey&&!event.metaKey&&selectedDrawingId&&event.key.toLowerCase()==="h"){
