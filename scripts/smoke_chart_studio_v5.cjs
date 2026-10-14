@@ -296,6 +296,33 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(fibo.levels[0].price,fibo.options.startPrice);
   assert.equal(fibo.levels[6].price,fibo.options.endPrice);
   assert.ok(fibo.levels.every(level=>Math.abs(level.price-(fibo.options.startPrice+(fibo.options.endPrice-fibo.options.startPrice)*level.ratio))<1e-9));
+  const customLevels=[-100,0,23.6,50,61.8,100,161.8,261.8];
+  await page.evaluate(levels=>window.__v5Screenshot.addFibonacci({id:"visual-fibo-custom",startTime:1700100000+20*900,startPrice:4100,endTime:1700100000+35*900,endPrice:4000,color:"#a78bfa",levels}),customLevels);
+  const customFibo=await page.evaluate(()=>({options:window.__v5Screenshot.readDrawing("visual-fibo-custom"),levels:window.__v5Screenshot.fibonacciLevels("visual-fibo-custom")}));
+  assert.deepEqual(customFibo.options.levels,customLevels);
+  assert.deepEqual(customFibo.levels.map(level=>level.level),customLevels);
+  assert.deepEqual(customFibo.levels.map(level=>level.ratio),customLevels.map(level=>level/100));
+  assert.equal(customFibo.levels[0].price,4200,"Negative levels project beyond the first anchor");
+  assert.equal(customFibo.levels.at(-1).price,4100-100*2.618,"Extension levels project beyond the second anchor");
+  const escapedFiboOptions=await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-fibo-custom"));
+  escapedFiboOptions.levels[0]=999;
+  assert.deepEqual((await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-fibo-custom"))).levels,customLevels,"Reading a drawing cannot mutate its stored Fibonacci levels");
+  const invalidFiboLevels=await page.evaluate(()=>{
+   const base={id:"invalid-fibo",startTime:1700100000+20*900,startPrice:4100,endTime:1700100000+35*900,endPrice:4000,color:"#a78bfa"};
+   const invalid=[[],[20,10],[0,0],[0,1000.01],Array.from({length:17},(_,i)=>i)];
+   return invalid.map((levels,index)=>{try{window.__v5Screenshot.addFibonacci({...base,id:"invalid-fibo-"+index,levels});return ""}catch(error){return error.message}});
+  });
+  assert.ok(invalidFiboLevels.every(Boolean),"Invalid custom Fibonacci values fail closed");
+  const editedCustomLevels=[-50,0,100,261.8];
+  await page.evaluate(levels=>window.__v5Screenshot.updateFibonacci("visual-fibo-custom",{levels}),editedCustomLevels);
+  assert.deepEqual((await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-fibo-custom"))).levels,editedCustomLevels);
+  const rejectedFiboUpdate=await page.evaluate(()=>{try{window.__v5Screenshot.updateFibonacci("visual-fibo-custom",{levels:[10,5]});return ""}catch(error){return error.message}});
+  assert.ok(rejectedFiboUpdate);
+  assert.deepEqual((await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-fibo-custom"))).levels,editedCustomLevels,"Invalid updates leave the previous drawing intact");
+  await page.evaluate(()=>window.__v5Screenshot.undo());
+  assert.deepEqual((await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-fibo-custom"))).levels,customLevels);
+  await page.evaluate(()=>window.__v5Screenshot.redo());
+  assert.deepEqual((await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-fibo-custom"))).levels,editedCustomLevels);
   await page.evaluate(()=>{const options=window.__v5Screenshot.readDrawing("visual-fibo");window.__v5Screenshot.addFibonacci({...options,endPrice:options.endPrice+1})});
   assert.equal((await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-fibo"))).endPrice,fibo.options.endPrice+1);
   await page.evaluate(()=>window.__v5Screenshot.addFibonacci({id:"visual-fibo-rising",startTime:1700100000+35*900,startPrice:4000+35*.4+Math.sin(3.5)*16,endTime:1700100000+20*900,endPrice:4000+20*.4+Math.sin(2)*16,color:"#a78bfa"}));
@@ -326,14 +353,14 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await page.evaluate(()=>window.__v5Screenshot.removeRay("visual-ray-reverse"));
   await page.mouse.move(10,10);
   await page.waitForTimeout(150);
-  const persistedBeforeReload=await page.evaluate(()=>({price:window.__v5Screenshot.readDrawing("visual-level"),time:window.__v5Screenshot.readDrawing("visual-time"),text:window.__v5Screenshot.readDrawing("visual-note"),trend:window.__v5Screenshot.readDrawing("visual-trend"),rectangle:window.__v5Screenshot.readDrawing("visual-zone"),ray:window.__v5Screenshot.readDrawing("visual-ray"),fibo:window.__v5Screenshot.readDrawing("visual-fibo")}));
+  const persistedBeforeReload=await page.evaluate(()=>({price:window.__v5Screenshot.readDrawing("visual-level"),time:window.__v5Screenshot.readDrawing("visual-time"),text:window.__v5Screenshot.readDrawing("visual-note"),trend:window.__v5Screenshot.readDrawing("visual-trend"),rectangle:window.__v5Screenshot.readDrawing("visual-zone"),ray:window.__v5Screenshot.readDrawing("visual-ray"),fibo:window.__v5Screenshot.readDrawing("visual-fibo"),customFibo:window.__v5Screenshot.readDrawing("visual-fibo-custom")}));
   await page.reload({waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartV5Ready===true);
   const persistenceProbe=await page.evaluate(()=>{
    const rows=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2,tick_volume:100+i*3}});
    const scope={symbol:"XAUUSD",timeframe:"M15"};
    let e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",scope);e.setCandles(rows);
-   const restored={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives,price:e.readDrawing("visual-level"),time:e.readDrawing("visual-time"),text:e.readDrawing("visual-note"),trend:e.readDrawing("visual-trend"),rectangle:e.readDrawing("visual-zone"),ray:e.readDrawing("visual-ray"),fibo:e.readDrawing("visual-fibo")};
+   const restored={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives,price:e.readDrawing("visual-level"),time:e.readDrawing("visual-time"),text:e.readDrawing("visual-note"),trend:e.readDrawing("visual-trend"),rectangle:e.readDrawing("visual-zone"),ray:e.readDrawing("visual-ray"),fibo:e.readDrawing("visual-fibo"),customFibo:e.readDrawing("visual-fibo-custom")};
    e.changeAccount("goldm15");e.setCandles(rows);const otherAccount=e.inspect().nativePrimitives;
    e.changeAccount("titan");e.setCandles(rows);const returned=e.inspect().nativePrimitives;
    e.destroy();
@@ -355,7 +382,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    return {restored,otherAccount,returned,otherTimeframe,conflict,externalSnapshot,corrupt};
   });
   assert.equal(persistenceProbe.restored.status,"READY");
-  assert.equal(persistenceProbe.restored.count,7);
+  assert.equal(persistenceProbe.restored.count,8);
   assert.deepEqual(persistenceProbe.restored.price,persistedBeforeReload.price);
   assert.deepEqual(persistenceProbe.restored.time,persistedBeforeReload.time);
   assert.deepEqual(persistenceProbe.restored.text,persistedBeforeReload.text);
@@ -363,8 +390,9 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(persistenceProbe.restored.rectangle,persistedBeforeReload.rectangle);
   assert.deepEqual(persistenceProbe.restored.ray,persistedBeforeReload.ray);
   assert.deepEqual(persistenceProbe.restored.fibo,persistedBeforeReload.fibo);
+  assert.deepEqual(persistenceProbe.restored.customFibo,persistedBeforeReload.customFibo);
   assert.equal(persistenceProbe.otherAccount,0);
-  assert.equal(persistenceProbe.returned,7);
+  assert.equal(persistenceProbe.returned,8);
   assert.equal(persistenceProbe.otherTimeframe,0);
   assert.equal(persistenceProbe.conflict.status,"CONFLICT");
   assert.equal(persistenceProbe.conflict.stored,persistenceProbe.externalSnapshot);
@@ -376,7 +404,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const scope={symbol:"XAUUSD",timeframe:"M15"};
    const source=window.__v5Screenshot.exportDrawings();
    const target=ChartStudioV5.createStudioV5(document.getElementById("chart"),"importtest",scope);target.setCandles(rows);
-   const imported=target.importDrawings(source),restored={count:target.inspect().nativePrimitives,price:target.readDrawing("visual-level"),time:target.readDrawing("visual-time"),text:target.readDrawing("visual-note"),trend:target.readDrawing("visual-trend"),rectangle:target.readDrawing("visual-zone"),ray:target.readDrawing("visual-ray"),fibo:target.readDrawing("visual-fibo")};
+   const imported=target.importDrawings(source),restored={count:target.inspect().nativePrimitives,price:target.readDrawing("visual-level"),time:target.readDrawing("visual-time"),text:target.readDrawing("visual-note"),trend:target.readDrawing("visual-trend"),rectangle:target.readDrawing("visual-zone"),ray:target.readDrawing("visual-ray"),fibo:target.readDrawing("visual-fibo"),customFibo:target.readDrawing("visual-fibo-custom")};
    let fiboPaneCollision="";try{target.addPaneLine({id:"visual-fibo",color:"#ffffff"},rows.map(c=>({time:c.time,value:c.close})))}catch(error){fiboPaneCollision=error.message}
    target.updateTextAnnotation("visual-note",{text:"Edited note"});const edited=target.readDrawing("visual-note");
    target.removeTextAnnotation("visual-note");const removed=target.readDrawing("visual-note");target.undo();
@@ -413,7 +441,10 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const afterMalformedRectangle=malformedTarget.inspect().nativePrimitives;
    const invalidFiboEnvelope={...sourceEnvelope,drawings:[{kind:"FIBO",options:{...sourceEnvelope.drawings.find(item=>item.kind==="FIBO").options,extra:true}}]};
    let malformedFibo="";try{malformedTarget.importDrawings(JSON.stringify(invalidFiboEnvelope))}catch(error){malformedFibo=error.message}
-   const afterMalformedFibo=malformedTarget.inspect().nativePrimitives;malformedTarget.destroy();
+   const afterMalformedFibo=malformedTarget.inspect().nativePrimitives;
+   const invalidCustomFiboEnvelope={...sourceEnvelope,drawings:[{kind:"FIBO",options:{...sourceEnvelope.drawings.find(item=>item.kind==="FIBO"&&item.options.id==="visual-fibo-custom").options,levels:[20,10]}}]};
+   let malformedCustomFibo="";try{malformedTarget.importDrawings(JSON.stringify(invalidCustomFiboEnvelope))}catch(error){malformedCustomFibo=error.message}
+   const afterMalformedCustomFibo=malformedTarget.inspect().nativePrimitives;malformedTarget.destroy();
    const capTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"captest",scope);capTarget.setCandles(rows);
    for(let i=0;i<99;i++)capTarget.addTrendLine({id:`trend${i}`,startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[40].time,endPrice:rows[40].close,color:"#ffffff"});
    capTarget.addFibonacci({id:"last-drawing",startTime:rows[30].time,startPrice:rows[30].close+1,endTime:rows[40].time,endPrice:rows[40].close-1,color:"#ffffff"});
@@ -427,13 +458,13 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const storageConflict={error:storageConflictError,status:storageConflictTarget.inspect().persistenceStatus,count:storageConflictTarget.inspect().nativePrimitives,stored:localStorage.getItem(conflictKey)};storageConflictTarget.destroy();
    const wrongScope=ChartStudioV5.createStudioV5(document.getElementById("chart"),"goldm15",{symbol:"EURUSD",timeframe:"M15"});wrongScope.setCandles(rows);
    let scopeError="";try{wrongScope.importDrawings(source)}catch(error){scopeError=error.message}const wrongScopeCount=wrongScope.inspect().nativePrimitives;wrongScope.destroy();
-   return {source,imported,restored,annotationApi,trendApi,rectangleApi,rayApi,fiboApi,fiboPaneCollision,malformed,afterMalformed,malformedTrend,afterMalformedTrend,malformedRectangle,afterMalformedRectangle,malformedFibo,afterMalformedFibo,capError,capCount,conflictError,conflictCount,storageConflict,scopeError,wrongScopeCount};
+   return {source,imported,restored,annotationApi,trendApi,rectangleApi,rayApi,fiboApi,fiboPaneCollision,malformed,afterMalformed,malformedTrend,afterMalformedTrend,malformedRectangle,afterMalformedRectangle,malformedFibo,afterMalformedFibo,malformedCustomFibo,afterMalformedCustomFibo,capError,capCount,conflictError,conflictCount,storageConflict,scopeError,wrongScopeCount};
   });
   const transferEnvelope=JSON.parse(drawingTransfer.source);
   assert.equal(transferEnvelope.schemaVersion,1);
   assert.equal(transferEnvelope.account,undefined);
-  assert.deepEqual(drawingTransfer.imported,{imported:7});
-  assert.equal(drawingTransfer.restored.count,7);
+  assert.deepEqual(drawingTransfer.imported,{imported:8});
+  assert.equal(drawingTransfer.restored.count,8);
   assert.deepEqual(drawingTransfer.restored.price,persistedBeforeReload.price);
   assert.deepEqual(drawingTransfer.restored.time,persistedBeforeReload.time);
   assert.deepEqual(drawingTransfer.restored.text,persistedBeforeReload.text);
@@ -441,6 +472,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(drawingTransfer.restored.rectangle,persistedBeforeReload.rectangle);
   assert.deepEqual(drawingTransfer.restored.ray,persistedBeforeReload.ray);
   assert.deepEqual(drawingTransfer.restored.fibo,persistedBeforeReload.fibo);
+  assert.deepEqual(drawingTransfer.restored.customFibo,persistedBeforeReload.customFibo);
   assert.equal(drawingTransfer.annotationApi.edited.text,"Edited note");
   assert.equal(drawingTransfer.annotationApi.removed,null);
   assert.deepEqual(drawingTransfer.annotationApi.restoredByUndo,drawingTransfer.annotationApi.edited);
@@ -473,6 +505,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(drawingTransfer.afterMalformedRectangle,0);
   assert.ok(drawingTransfer.malformedFibo);
   assert.equal(drawingTransfer.afterMalformedFibo,0);
+  assert.ok(drawingTransfer.malformedCustomFibo);
+  assert.equal(drawingTransfer.afterMalformedCustomFibo,0);
   assert.ok(drawingTransfer.capError);
   assert.equal(drawingTransfer.capCount,100);
   assert.ok(drawingTransfer.conflictError);
