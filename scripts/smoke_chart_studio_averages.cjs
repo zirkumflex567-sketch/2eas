@@ -151,9 +151,21 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(await page.evaluate(()=>ChartStudioAverages.diagnostics().seriesCount),0);
   await area.locator(".cs-ma-presets button").nth(1).click();
   assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].period,50);
+  await page.evaluate(()=>ChartStudioAverages.edit("ma1","visible",false));
+  const maPreset=area.getByRole("button",{name:"EMA 9/21/50 Preset"});
+  await maPreset.click();
+  let presetConfigs=await page.evaluate(()=>ChartStudioAverages.getConfigs());
+  assert.deepEqual(Array.from(presetConfigs.map(x=>x.period)).sort((a,b)=>a-b),[9,21,50]);
+  assert.equal(presetConfigs.find(x=>x.period===50).visible,true,"Preset re-enables matching hidden instances");
+  await maPreset.click();
+  presetConfigs=await page.evaluate(()=>ChartStudioAverages.getConfigs());
+  assert.equal(presetConfigs.length,3,"Repeated preset is idempotent and adds no duplicates");
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
   assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].period,34);
   assert.equal(await page.evaluate(()=>ChartStudioAverages.getConfigs().length),2);
+  await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
+  assert.deepEqual(Array.from((await page.evaluate(()=>ChartStudioAverages.getConfigs())).map(x=>x.period)).sort((a,b)=>a-b),[9,21,50]);
+  await page.evaluate(()=>ChartStudioBeta.account("titan"));
   // New opt-in SQLite document extension round trip via existing UI.
   const sb=page.locator(".cs-server-sync");
   await sb.locator('input[type="password"]').fill(secret);
@@ -173,6 +185,15 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].period,34);
   assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].displayShift,2);
   assert.equal(await page.evaluate(secret=>Object.values(localStorage).some(v=>v.includes(secret)),secret),false);
+  const limit=await page.evaluate(()=>{
+   const configs=Array.from({length:16},(_,index)=>({id:"limit"+index,type:"EMA",period:100+index,
+    source:"close",color:"#68dfff",lineWidth:1,visible:true,label:"",displayShift:0}));
+   ChartStudioAverages.applySettings(configs);
+   const before=JSON.stringify(ChartStudioAverages.getConfigs());
+   const applied=ChartStudioAverages.applyPreset();
+   return {applied,count:ChartStudioAverages.getConfigs().length,unchanged:JSON.stringify(ChartStudioAverages.getConfigs())===before};
+  });
+  assert.deepEqual(limit,{applied:false,count:16,unchanged:true},"Preset must fail atomically at instance limit");
   assert.deepEqual(errors,[]);
   assert.ok(requests.every(x=>x.url.includes("/api/chart/v1/workspace")));
   const dir=path.join("output","visual-smoke");fs.mkdirSync(dir,{recursive:true});

@@ -244,6 +244,22 @@ function edit(id,field,value){
  window.ChartStudioBeta?.refreshDataWindowIndicators();
  return true;
 }
+function applyDisplayPreset(type="EMA",periods=[9,21,50]){
+ if(!state||!TYPES.includes(type)||!Array.isArray(periods)||periods.some(period=>!Number.isInteger(period)||period<1||period>MAX_PERIOD))return false;
+ const next=copy(state.configs),occupied=new Set(next.map(item=>item.id)),missing=[];
+ let serial=1;
+ const allocate=()=>{let id;do{id="ma"+serial++}while(occupied.has(id));occupied.add(id);return id};
+ for(const period of [...new Set(periods)]){
+  const existing=next.find(item=>item.type===type&&item.period===period);
+  if(existing){existing.visible=true;continue}
+  const cfg=normalize({id:allocate(),type,period,source:"close",color:PALETTE[(next.length+missing.length)%PALETTE.length],
+   lineWidth:2,visible:true,label:"",displayShift:0});
+  if(!cfg)return false;missing.push(cfg);
+ }
+ if(next.length+missing.length>MAX_INSTANCES){announce("Preset benötigt mehr Linien als das Limit von "+MAX_INSTANCES+" erlaubt.");return false}
+ state.configs=[...next,...missing];persist();redrawEditor();refreshSeries();
+ window.ChartStudioBeta?.refreshDataWindowIndicators();announce(type+" "+[...new Set(periods)].join("/")+ " Preset aktiviert.");return true;
+}
 function remove(id){
  if(!state)return false;
  const i=state.configs.findIndex(x=>x.id===id);if(i<0)return false;
@@ -284,6 +300,9 @@ function mount({chart,panel,account="titan"}){
   const b=document.createElement("button");b.type="button";b.textContent=label;
   b.addEventListener("click",()=>add(type,period));commands.append(b);
  }
+ const displayPreset=document.createElement("button");displayPreset.type="button";
+ displayPreset.textContent="EMA 9/21/50 Preset";displayPreset.setAttribute("aria-label","EMA 9/21/50 Preset");
+ displayPreset.addEventListener("click",()=>applyDisplayPreset());commands.append(displayPreset);
  const instances=document.createElement("div");instances.className="cs-ma-items";
  const message=document.createElement("p");message.className="cs-ma-message";
  message.setAttribute("role","status");message.setAttribute("aria-live","polite");
@@ -314,6 +333,6 @@ function mount({chart,panel,account="titan"}){
  redrawEditor();refreshSeries();
 }
 window.ChartStudioAverages=Object.freeze({mount,updateBars,switchAccount,getConfigs,
- applySettings,add,edit,remove,calculate,readout,normalize,normalizeList,MAX_INSTANCES,shiftDisplay,
+ applySettings,add,edit,remove,calculate,readout,normalize,normalizeList,MAX_INSTANCES,shiftDisplay,applyPreset:applyDisplayPreset,
  diagnostics:()=>state?{account:state.account,dataWrites:state.dataWrites,seriesCount:state.series.size}:null});
 })();
