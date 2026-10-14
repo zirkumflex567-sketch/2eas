@@ -342,7 +342,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  let lastPersistedSnapshot:string|null=null;
  const persistenceLimit=65536;
  let selectedDrawingId:string|null=null,hoveredDrawingId:string|null=null;
- type ActiveDrag={pointerId:number;id:string;kind:"PRICE";original:PriceLevelOptions}|{pointerId:number;id:string;kind:"TIME";original:TimeMarkerOptions}|{pointerId:number;id:string;kind:"TEXT";original:TextAnnotationOptions}|{pointerId:number;id:string;kind:"TREND";anchor:"START"|"END";original:TrendLineOptions};
+ type ActiveDrag={pointerId:number;id:string;kind:"PRICE";original:PriceLevelOptions}|{pointerId:number;id:string;kind:"TIME";original:TimeMarkerOptions}|{pointerId:number;id:string;kind:"TEXT";original:TextAnnotationOptions}|{pointerId:number;id:string;kind:"TREND";anchor:"START"|"END";original:TrendLineOptions}|{pointerId:number;id:string;kind:"RECT";anchor:"START"|"END";original:RectangleOptions};
  let activeDrag:ActiveDrag|null=null;
  chart.subscribeCrosshairMove(param=>{
   const objectId=param.hoveredInfo?.objectId;
@@ -353,12 +353,12 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  });
  const onPointerDown=(event:PointerEvent)=>{
   if(event.button!==0||!event.isPrimary||!hoveredDrawingId)return;
-  const level=priceLevels.get(hoveredDrawingId),marker=timeMarkers.get(hoveredDrawingId),annotation=textAnnotations.get(hoveredDrawingId),trend=trendLines.get(hoveredDrawingId);
+  const level=priceLevels.get(hoveredDrawingId),marker=timeMarkers.get(hoveredDrawingId),annotation=textAnnotations.get(hoveredDrawingId),trend=trendLines.get(hoveredDrawingId),rectangle=rectangles.get(hoveredDrawingId);
   selectDrawing(hoveredDrawingId);
   if(host.tabIndex<0)host.tabIndex=0;
   host.focus({preventScroll:true});
-  if(!level&&!marker&&!annotation&&!trend)return;
-  if((level?.options.locked??marker?.options.locked??annotation?.options.locked??trend?.options.locked)===true){event.preventDefault();event.stopImmediatePropagation();return}
+  if(!level&&!marker&&!annotation&&!trend&&!rectangle)return;
+  if((level?.options.locked??marker?.options.locked??annotation?.options.locked??trend?.options.locked??rectangle?.options.locked)===true){event.preventDefault();event.stopImmediatePropagation();return}
   if(level)activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"PRICE",original:{...level.options}};
   else if(marker)activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"TIME",original:{...marker.options}};
   else if(annotation)activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"TEXT",original:{...annotation.options}};
@@ -369,6 +369,14 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    const startDistance=Math.hypot(x-points.x1,y-points.y1),endDistance=Math.hypot(x-points.x2,y-points.y2);
    if(Math.min(startDistance,endDistance)>12)return;
    activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"TREND",anchor:startDistance<=endDistance?"START":"END",original:{...trend.options}};
+  }
+  else if(rectangle){
+   const rect=host.getBoundingClientRect(),start=drawingAnchorPosition(hoveredDrawingId,"START"),end=drawingAnchorPosition(hoveredDrawingId,"END");
+   if(!start||!end)return;
+   const x=event.clientX-rect.left,y=event.clientY-rect.top;
+   const startDistance=Math.hypot(x-(start.x-rect.left),y-(start.y-rect.top)),endDistance=Math.hypot(x-(end.x-rect.left),y-(end.y-rect.top));
+   if(Math.min(startDistance,endDistance)>12)return;
+   activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"RECT",anchor:startDistance<=endDistance?"START":"END",original:{...rectangle.options}};
   }
   else return;
   host.setPointerCapture(event.pointerId);event.preventDefault();event.stopImmediatePropagation();
@@ -388,12 +396,15 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    const logical=chart.timeScale().coordinateToLogical(x),index=logical===null?-1:Math.round(Number(logical));
    const candle=bars[index],value=price.coordinateToPrice(y);
    if(candle&&value!==null&&Number.isFinite(value)&&value>0){const item=textAnnotations.get(activeDrag.id);if(item)updateTextAnnotation(activeDrag.id,{time:candle.time,price:value})}
-  }else{
+  }else if(activeDrag.kind==="TREND"||activeDrag.kind==="RECT"){
    const logical=chart.timeScale().coordinateToLogical(x),index=logical===null?-1:Math.round(Number(logical));
-   const candle=bars[index],value=price.coordinateToPrice(y),item=trendLines.get(activeDrag.id);
+   const candle=bars[index],value=price.coordinateToPrice(y),item=activeDrag.kind==="TREND"?trendLines.get(activeDrag.id):rectangles.get(activeDrag.id);
    if(candle&&value!==null&&Number.isFinite(value)&&value>0&&item){
     const patch=activeDrag.anchor==="START"?{startTime:candle.time,startPrice:value}:{endTime:candle.time,endPrice:value};
-    updateTrendLine(activeDrag.id,patch);
+    const otherTime=activeDrag.anchor==="START"?item.options.endTime:item.options.startTime,otherPrice=activeDrag.anchor==="START"?item.options.endPrice:item.options.startPrice;
+    if(candle.time!==otherTime&&(activeDrag.kind==="TREND"||value!==otherPrice)){
+     if(activeDrag.kind==="TREND")updateTrendLine(activeDrag.id,patch);else updateRectangle(activeDrag.id,patch);
+    }
    }
   }
  };
@@ -404,8 +415,9 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    if(drag.kind==="TIME"&&timeMarkers.has(drag.id))updateTimeMarker(drag.id,{time:drag.original.time,color:drag.original.color});
    if(drag.kind==="TEXT"&&textAnnotations.has(drag.id))updateTextAnnotation(drag.id,drag.original);
    if(drag.kind==="TREND"&&trendLines.has(drag.id))updateTrendLine(drag.id,drag.original);
+   if(drag.kind==="RECT"&&rectangles.has(drag.id))updateRectangle(drag.id,drag.original);
   }else{
-   const before:DrawingSnapshot=drag.kind==="PRICE"?{kind:"PRICE",options:{...drag.original}}:drag.kind==="TIME"?{kind:"TIME",options:{...drag.original}}:drag.kind==="TEXT"?{kind:"TEXT",options:{...drag.original}}:{kind:"TREND",options:{...drag.original}};
+   const before:DrawingSnapshot=drag.kind==="PRICE"?{kind:"PRICE",options:{...drag.original}}:drag.kind==="TIME"?{kind:"TIME",options:{...drag.original}}:drag.kind==="TEXT"?{kind:"TEXT",options:{...drag.original}}:drag.kind==="TREND"?{kind:"TREND",options:{...drag.original}}:{kind:"RECT",options:{...drag.original}};
    recordDrawingChange(drag.id,before,snapshotDrawing(drag.id));
   }
   activeDrag=null;
@@ -851,7 +863,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function updateRectangle(id:string,patch:Partial<Pick<RectangleOptions,"startTime"|"startPrice"|"endTime"|"endPrice"|"color"|"fill"|"visible"|"locked">>){
   guard();const item=rectangles.get(id);if(!item)throw Error("Unknown rectangle");const before=snapshotDrawing(id);
-  const options={...item.options,...patch};validateRectangle(options,patch.startTime!==undefined||patch.endTime!==undefined);item.primitive.set(options);item.options=options;recordDrawingChange(id,before,snapshotDrawing(id));
+  const options={...item.options,...patch};validateRectangle(options,patch.startTime!==undefined||patch.endTime!==undefined);item.primitive.set(options);item.options=options;if(activeDrag?.id!==id)recordDrawingChange(id,before,snapshotDrawing(id));
  }
  function removeRectangle(id:string){
   guard();const item=rectangles.get(id);if(!item)return false;
@@ -913,6 +925,14 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const ray=rays.get(id);if(ray){if(!ray.options.visible)return null;const p=ray.primitive.coordinates();return p===null?null:{x:rect.left+(p.x1+p.x2)/2,y:rect.top+(p.y1+p.y2)/2}}
   const fibo=fibonacci.get(id);if(fibo){if(!fibo.options.visible)return null;const p=fibo.primitive.coordinates();if(!p)return null;const level=p.levels.find(item=>item.ratio===0.5);return level?{x:rect.left+(p.x1+p.x2)/2,y:rect.top+level.y}:null}
   return null;
+ }
+ function drawingAnchorPosition(id:string,anchor:"START"|"END"){
+  guard();const trend=trendLines.get(id),zone=rectangles.get(id),ray=rays.get(id),fibo=fibonacci.get(id);
+  const options=trend?.options??zone?.options??ray?.options??fibo?.options;
+  if(!options||options.visible===false)return null;
+  const time=anchor==="START"?options.startTime:options.endTime,priceValue=anchor==="START"?options.startPrice:options.endPrice;
+  const x=chart.timeScale().timeToCoordinate(time),y=price.priceToCoordinate(priceValue),rect=host.getBoundingClientRect();
+  return x===null||y===null?null:{x:rect.left+x,y:rect.top+y};
  }
  function readDrawing(id:string){
   guard();const level=priceLevels.get(id);if(level)return {...level.options};
@@ -1136,7 +1156,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   paneCount:chart.panes().length,volumeVisible:!!volume,persistenceStatus,persistenceError}}
  function destroy(){if(destroyed)return;finishDrag(true);destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();paneLines.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
  return Object.freeze({setCandles,addAverage,moveAverage,removeAverage,addPriceLevel,updatePriceLevel,removePriceLevel,
-  addTimeMarker,updateTimeMarker,removeTimeMarker,addTextAnnotation,updateTextAnnotation,removeTextAnnotation,addTrendLine,updateTrendLine,removeTrendLine,addRectangle,updateRectangle,removeRectangle,addRay,updateRay,removeRay,addFibonacci,updateFibonacci,removeFibonacci,fibonacciLevels,drawingPosition,readDrawing,exportDrawings,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,
+  addTimeMarker,updateTimeMarker,removeTimeMarker,addTextAnnotation,updateTextAnnotation,removeTextAnnotation,addTrendLine,updateTrendLine,removeTrendLine,addRectangle,updateRectangle,removeRectangle,addRay,updateRay,removeRay,addFibonacci,updateFibonacci,removeFibonacci,fibonacciLevels,drawingPosition,drawingAnchorPosition,readDrawing,exportDrawings,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,
   addPaneLine,movePaneLine,removePaneLine,resizePane,showVolume,visibleLogicalRange,setVisibleLogicalRange,readDataWindow,
   updateLast,changeAccount,inspect,destroy});
 }
