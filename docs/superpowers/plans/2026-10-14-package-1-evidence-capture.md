@@ -47,3 +47,5 @@ A package milestone may close only with independent test/review evidence and an 
 - [ ] Add actual Titan/GoldM15 EA producers after resolving runtime identities; compile and verify without strategy changes.
 - [x] Add an authenticated read-only Beta inspector for Decisions, Lifecycle, and Snapshots with bounded UTC range, account invalidation, cursor paging, explicit coverage/gap/`NOT_RECORDED` states, and inert JSON rendering. Chromium tests cover recorded/empty states, pagination, hostile text, chart immutability, and no POST/write path.
 - [ ] Collect verified Titan/GoldM15 demo records and complete the inspector/journal/snapshot acceptance; all related IDs remain open until then.
+
+- [x] Recorded the user's explicit confirmation that the ICMarkets $10k setup was switched to Marketplace EA `XAUUSD 5 minute`, alongside the separate PU Prime $500 Marketplace setup. Updated the identity ledger and master status. User-confirmed intended assignments are distinct from an in-memory EX5/preset attestation; no chart or EA was edited or reloaded.
