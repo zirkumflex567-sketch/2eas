@@ -7,7 +7,7 @@ Extend the read-only What-if impact panel with projected gross long, gross short
 ## Files and contract
 
 - `static/chart-studio-beta.js`: validate the preview/account association, use the broker-returned final lot size (including auto-sizing), add lots to the correct side, and render the projected symbol-level exposure and matching correlation pairs in the existing impact output.
-- `scripts/smoke_chart_studio_beta.cjs`: assert projected BUY/SELL lots, auto-sized volume, unavailable correlations, account isolation, and no MT5 mutation routes.
+- `scripts/smoke_chart_studio_beta.cjs`: assert projected BUY/SELL lots, auto-sized volume, captured correlation display, unavailable portfolio fallback, account isolation, and no MT5 mutation routes.
 - `docs/OPEN_TASKS.md` and `chart_studio/README.md`: record this tested slice while keeping FR-020/FR-027 partial and demo acceptance open.
 
 ## Verification
@@ -20,5 +20,5 @@ Lots are symbol exposure, not notional or USD risk. Correlations are descriptive
 
 ## Progress update
 
-- [x] Chromium contract first failed on the missing projected-exposure line, then passed for BUY, SELL and server-sized budget lots, including descriptive correlation output.
-- [ ] Run the focused browser/backend regression suite and review; FR-020/FR-027 remain partial pending demo and complete acceptance.
+- [x] Chromium contract first failed on the missing projected-exposure line, then passed for BUY, SELL and server-sized budget lots, including descriptive correlation output. A second RED assertion exposed nested login/server leakage from permissive read payloads; the snapshot now reconstructs every nested object from an explicit field allowlist and rejects unknown saved fields.
+- [x] Chromium smoke, JS syntax checks, `git diff --check`, and 354 focused broker-read/preview/history tests pass; manual review confirms same-account scoping, explicit unknown states, additive stop risk and no broker mutation route. FR-020/FR-027 remain partial pending demo and complete acceptance.

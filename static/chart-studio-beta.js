@@ -118,9 +118,15 @@ function validSavedPortfolioContext(context,account){
  if(context?.schemaVersion!==1||context.account!==account)return false;
  if(context.state==="UNAVAILABLE")return Object.keys(context).every(key=>["schemaVersion","account","state","reason"].includes(key))&&context.reason==="PORTFOLIO_NOT_CURRENT";
  const allowed=["schemaVersion","account","state","capturedAtUtc","source","canExecute","positionCount","currency","margin","stopRisk","symbols","correlation"];
+ const onlyKeys=(value,keys)=>value&&typeof value==="object"&&!Array.isArray(value)&&Object.keys(value).every(key=>keys.includes(key));
+ const nestedKeys=context.state==="AVAILABLE"&&onlyKeys(context.margin,["state","used","free","equity","balance","currency","scope"])&&
+  onlyKeys(context.stopRisk,context.stopRisk?.state==="AVAILABLE"?["state","lossAtStops","currency","source"]:["state","reason"])&&
+  Array.isArray(context.symbols)&&context.symbols.every(row=>onlyKeys(row,["symbol","buyLots","sellLots","netLots","floatingPnl","swap","currency"]))&&
+  (context.correlation?.state==="AVAILABLE"?onlyKeys(context.correlation,["state","timeframe","source","scenarioSymbol","symbols","pairs"])&&Array.isArray(context.correlation.pairs)&&context.correlation.pairs.every(pair=>onlyKeys(pair,["symbols","coefficient","observations"])):
+   onlyKeys(context.correlation,["state","reason","scenarioSymbol","symbols"]));
  return context.state==="AVAILABLE"&&Object.keys(context).every(key=>allowed.includes(key))&&
   typeof context.capturedAtUtc==="string"&&context.capturedAtUtc.length<=32&&Number.isFinite(Date.parse(context.capturedAtUtc))&&
-  new Date(context.capturedAtUtc).toISOString()===context.capturedAtUtc&&validPortfolio(context,account);
+  new Date(context.capturedAtUtc).toISOString()===context.capturedAtUtc&&nestedKeys&&validPortfolio(context,account);
 }
 function validSavedPreview(item,account){
  const preview=item&&item.account===account&&item.symbol==="XAUUSD"&&item.request?.account===account&&item.request?.symbol==="XAUUSD"&&item.result?.account===account&&item.result?.canExecute===false;
@@ -129,9 +135,18 @@ function validSavedPreview(item,account){
 function portfolioContextForSnapshot(account){
  if(!s||s.account!==account||!s.portfolio||s.portfolio.account!==account||!s.portfolioCapturedAtUtc||!validPortfolio(s.portfolio,account))
   return {schemaVersion:1,account,state:"UNAVAILABLE",reason:"PORTFOLIO_NOT_CURRENT"};
- const {source,canExecute,positionCount,currency,margin,stopRisk,symbols,correlation}=s.portfolio;
- return {schemaVersion:1,account,state:"AVAILABLE",capturedAtUtc:s.portfolioCapturedAtUtc,source,canExecute,
-  positionCount,currency,margin:json(margin),stopRisk:json(stopRisk),symbols:json(symbols),correlation:json(correlation)};
+ const data=s.portfolio;
+ const margin={state:data.margin.state,used:data.margin.used,free:data.margin.free,equity:data.margin.equity,balance:data.margin.balance,currency:data.margin.currency,scope:data.margin.scope};
+ const stopRisk=data.stopRisk.state==="AVAILABLE"?
+  {state:data.stopRisk.state,lossAtStops:data.stopRisk.lossAtStops,currency:data.stopRisk.currency,source:data.stopRisk.source}:
+  {state:data.stopRisk.state,reason:data.stopRisk.reason};
+ const symbols=data.symbols.map(row=>({symbol:row.symbol,buyLots:row.buyLots,sellLots:row.sellLots,netLots:row.netLots,floatingPnl:row.floatingPnl,swap:row.swap,currency:row.currency}));
+ const correlation=data.correlation.state==="AVAILABLE"?
+  {state:data.correlation.state,timeframe:data.correlation.timeframe,source:data.correlation.source,scenarioSymbol:data.correlation.scenarioSymbol,
+   symbols:[...data.correlation.symbols],pairs:data.correlation.pairs.map(pair=>({symbols:[...pair.symbols],coefficient:pair.coefficient,observations:pair.observations}))}:
+  {state:data.correlation.state,reason:data.correlation.reason,scenarioSymbol:data.correlation.scenarioSymbol,symbols:[...data.correlation.symbols]};
+ return {schemaVersion:1,account,state:"AVAILABLE",capturedAtUtc:s.portfolioCapturedAtUtc,source:data.source,canExecute:data.canExecute,
+  positionCount:data.positionCount,currency:data.currency,margin,stopRisk,symbols,correlation};
 }
 function savedPortfolioSummary(item){
  if(item.schemaVersion===1)return "Portfolio/Korrelation UNAVAILABLE · nicht im Schema v1 erfasst";
