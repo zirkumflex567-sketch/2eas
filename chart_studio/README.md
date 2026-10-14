@@ -23,9 +23,10 @@ Current features:
   bound to the matching chart symbol.
 - The beta data window shows the hovered or pinned candle's UTC time and OHLC
   from the loaded chart series, plus calculated values for enabled RSI, MACD,
-  ATR, volume, ADX, and VWAP indicators when available at that bar. Warm-up and
-  missing-volume states stay explicit; pinned indicator values follow parameter
-  changes while the selected OHLC bar stays fixed. It labels the source as the chart feed.
+  ATR, volume, ADX, and VWAP indicators and visible configurable EMA/SMA/WMA
+  lines at that bar. Warm-up and missing-volume states stay explicit; selected
+  values follow calculation and line-configuration changes while the OHLC bar
+  stays fixed. It labels the source as the chart feed.
   The full native v5 data window and remaining indicator catalog are still open.
   After an explicit verified MT5
   quote read, it also shows bid/ask, price spread, quote time, and freshness

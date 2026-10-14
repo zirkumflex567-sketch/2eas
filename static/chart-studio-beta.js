@@ -548,6 +548,13 @@ function updateCandles(c){if(s&&Array.isArray(c)){
    window.ChartStudioReplay?.updateBars(c);
  requestDraw()}}
 function updatePositions(accountId,positions){if(s&&s.account===accountId){s.positions=Array.isArray(positions)?positions:[];requestDraw()}}
+function dataWindowIndicators(time){
+ const averages=window.ChartStudioAverages?.readout(time)||"";
+ const paneIndicators=window.ChartStudioIndicators?.readout(time)||"";
+ const parts=paneIndicators&&paneIndicators!=="Keine aktiven Indikatoren"?[paneIndicators]:[];
+ if(averages)parts.push(averages);
+ return parts.filter(Boolean).join(" · ")||"Keine aktiven Indikatoren";
+}
 function dataBar(param){
  if(!s||!param||param.time==null)return null;
  const bar=param.seriesData?.get?.(s.series);if(!bar)return null;
@@ -556,7 +563,7 @@ function dataBar(param){
  if(!values.every(Number.isFinite)||values.some(value=>value<=0)||values[1]<Math.max(values[0],values[2],values[3])||values[2]>Math.min(values[0],values[1],values[3]))return null;
  const time=typeof param.time==="number"?param.time:Date.UTC(param.time.year,param.time.month-1,param.time.day)/1000;
  const date=new Date(time*1000);if(!Number.isFinite(date.getTime()))return null;
- return {time,open:values[0],high:values[1],low:values[2],close:values[3],indicators:window.ChartStudioIndicators?.readout(time)||"Keine aktiven Indikatoren",timeLabel:new Intl.DateTimeFormat("de-DE",{timeZone:"UTC",dateStyle:"medium",timeStyle:"medium"}).format(date)+" UTC",source:"Chart-Feed · geladene OHLC-Kerze"};
+ return {time,open:values[0],high:values[1],low:values[2],close:values[3],indicators:dataWindowIndicators(time),timeLabel:new Intl.DateTimeFormat("de-DE",{timeZone:"UTC",dateStyle:"medium",timeStyle:"medium"}).format(date)+" UTC",source:"Chart-Feed · geladene OHLC-Kerze"};
 }
 function setVerifiedMarketQuote(accountId,data){
  if(!s||s.account!==accountId)return false;
@@ -585,8 +592,8 @@ function handleCrosshair(param){
 }
 function clearDataWindowPin(){if(!s?.dataWindow)return;s.dataWindow.pinned=false;s.dataWindow.snapshot=null;renderDataWindow();requestDraw()}
 function refreshDataWindowIndicators(){
- if(!s?.dataWindow?.pinned||!s.dataWindow.snapshot)return;
- s.dataWindow.snapshot.indicators=window.ChartStudioIndicators?.readout(s.dataWindow.snapshot.time)||"Keine aktiven Indikatoren";
+ if(!s?.dataWindow?.snapshot)return;
+ s.dataWindow.snapshot.indicators=dataWindowIndicators(s.dataWindow.snapshot.time);
  renderDataWindow();
 }
 function updateVerifiedPositions(accountId,envelope){

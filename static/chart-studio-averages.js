@@ -91,6 +91,10 @@ function restore(account){
 }
 let state=null;
 function getConfigs(){return state?copy(state.configs):[]}
+function readout(time){
+ if(!state)return "";
+ return (state.readouts.get(Number(time))||[]).join(" · ");
+}
 function announce(msg){if(state)state.message.textContent=msg}
 function persist(){
  if(!state)return;
@@ -126,6 +130,19 @@ function refreshSeries(){
   state.loaded.set(cfg.id,dataKey);
   state.dataWrites++;
  }
+ const readouts=new Map();
+ for(const cfg of state.configs){
+  if(!cfg.visible)continue;
+  const points=cache.get(keyFor(cfg))||calculate(state.bars,cfg.type,cfg.period,cfg.source);
+  const byTime=new Map(points.map(point=>[point.time,point.value]));
+  const label=cfg.label.trim()||cfg.type+" "+cfg.period;
+  for(const bar of state.bars){
+   const rows=readouts.get(bar.time)||[],value=byTime.get(bar.time);
+   rows.push(value===undefined?label+" · Warm-up":label+" "+value.toFixed(2));
+   readouts.set(bar.time,rows);
+  }
+ }
+ state.readouts=readouts;
 }
 function optionsSelect(values,value,aria,field,id){
  const sel=document.createElement("select");sel.dataset.field=field;sel.dataset.id=id;
@@ -173,6 +190,7 @@ function applySettings(raw){
  const cleaned=normalizeList(raw);
  if(!cleaned){announce("Layout abgelehnt: ungültige Moving-Average-Konfiguration.");return false}
  state.configs=cleaned;persist();redrawEditor();refreshSeries();
+ window.ChartStudioBeta?.refreshDataWindowIndicators();
  return true;
 }
 function newId(){
@@ -186,6 +204,7 @@ function add(type="EMA",period=21){
  const cfg=normalize({id:newId(),type,period,source:"close",
   color:PALETTE[state.configs.length%PALETTE.length],lineWidth:2,visible:true,label:""});
  state.configs.push(cfg);persist();redrawEditor();refreshSeries();
+ window.ChartStudioBeta?.refreshDataWindowIndicators();
  announce("Neue "+type+" "+period+" hinzugefügt.");
  return true;
 }
@@ -196,12 +215,14 @@ function edit(id,field,value){
  const checked=normalize(next);
  if(!checked){announce("Ungültiger Wert. Erlaubt sind Perioden 2–"+MAX_PERIOD+".");redrawEditor();return false}
  state.configs[i]=checked;persist();redrawEditor();refreshSeries();
+ window.ChartStudioBeta?.refreshDataWindowIndicators();
  return true;
 }
 function remove(id){
  if(!state)return false;
  const i=state.configs.findIndex(x=>x.id===id);if(i<0)return false;
- state.configs.splice(i,1);persist();redrawEditor();refreshSeries();return true;
+ state.configs.splice(i,1);persist();redrawEditor();refreshSeries();
+ window.ChartStudioBeta?.refreshDataWindowIndicators();return true;
 }
 function updateBars(bars){
  if(!state||!Array.isArray(bars))return;
@@ -212,6 +233,7 @@ function updateBars(bars){
  if(signature===state.signature)return;
  state.signature=signature;state.bars=rows(bars);state.cache.clear();
  refreshSeries();
+ window.ChartStudioBeta?.refreshDataWindowIndicators();
 }
 function switchAccount(account){
  if(!state)return;
@@ -220,6 +242,7 @@ function switchAccount(account){
  state.series.clear();state.loaded.clear();
  state.account=account;state.bars=[];state.signature=null;state.cache.clear();
  state.configs=restore(account);redrawEditor();refreshSeries();
+ window.ChartStudioBeta?.refreshDataWindowIndicators();
 }
 function mount({chart,panel,account="titan"}){
  if(state||!chart||!panel)return;
@@ -240,7 +263,7 @@ function mount({chart,panel,account="titan"}){
  message.setAttribute("role","status");message.setAttribute("aria-live","polite");
  root.append(heading,info,commands,instances,message);
  panel.append(root);
- state={chart,root,count:counter,items:instances,message,account,configs:restore(account),
+ state={chart,root,count:counter,items:instances,message,account,configs:restore(account),readouts:new Map(),
   bars:[],signature:null,series:new Map(),cache:new Map(),loaded:new Map(),dataWrites:0};
  instances.addEventListener("change",event=>{
   const target=event.target,id=target?.dataset?.id,field=target?.dataset?.field;
@@ -258,12 +281,13 @@ function mount({chart,panel,account="titan"}){
    if(cfg&&state.configs.length<MAX_INSTANCES){
     const newCfg={...cfg,id:newId()};state.configs.push(newCfg);
     persist();redrawEditor();refreshSeries();
+    window.ChartStudioBeta?.refreshDataWindowIndicators();
    }else announce("Maximal "+MAX_INSTANCES+" Linien.");
   }
  });
  redrawEditor();refreshSeries();
 }
 window.ChartStudioAverages=Object.freeze({mount,updateBars,switchAccount,getConfigs,
- applySettings,add,edit,remove,calculate,normalize,normalizeList,MAX_INSTANCES,
+ applySettings,add,edit,remove,calculate,readout,normalize,normalizeList,MAX_INSTANCES,
  diagnostics:()=>state?{account:state.account,dataWrites:state.dataWrites,seriesCount:state.series.size}:null});
 })();
