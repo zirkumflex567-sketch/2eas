@@ -117,7 +117,7 @@ Die folgende Matrix enthält jede verbindliche AT-ID. `Offen (Gesamtabnahme)` be
 | AT-006 | 10 beliebige Zeichnungen bleiben nach Refresh/TF-/Kontowechsel korrekt im Scope | Teilweise: Chromium prüft zehn konkrete native v5-Zeichnungen mit exakter Objektoption nach Reload und JSON-Transfer sowie null Objekte im Fremdkonto und anderen Timeframe. Vollständige Produktionsobjekte/-Chartwechsel und Hardwareabnahme offen. |
 | AT-007 | Objekte lassen sich verstecken, sperren, löschen, duplizieren, undo/redo | Teilweise: Der isolierte v5-Adapter prüft Sichtbarkeit, Sperre, Löschen, Duplizieren und Undo/Redo nach Reload samt atomarer History-Validierung in Chromium. Produktionsintegration, vollständige Layoutpersistenz und Hardware-/Gesamtabnahme fehlen. |
 | AT-008 | Kontospezifische Position erscheint nicht beim falschen Account | Offen (Gesamtabnahme) |
-| AT-009 | Toggle „Positionen“ versteckt Overlay, lässt Backend-Position unverändert | Offen (Gesamtabnahme) |
+| AT-009 | Toggle „Positionen“ versteckt Overlay, lässt Backend-Position unverändert | Teilweise: Beta-Smoke schaltet das Positionsoverlay sichtbar/unsichtbar, vergleicht den unveränderten verifizierten Snapshot und bestätigt, dass der Toggle keinen Positions-Read oder POST auslöst. MT5-Live-/Chart-Gesamtabnahme bleibt offen. |
 | AT-010 | Entry, SL, TP mit korrekter Seite/Preis für BUY und SELL | Offen (Gesamtabnahme) |
 | AT-011 | Drag-SL zeigt Live-Preis, vorläufige USD-Schätzung, verfügbare Broker-Preview | Offen (Gesamtabnahme) |
 | AT-012 | Drag bei StopLimit-Verletzung sichtbar abgelehnt, kein commit möglich | Offen (Gesamtabnahme) |

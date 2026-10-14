@@ -295,6 +295,14 @@ const fs=require("node:fs"),path=require("node:path");
   await page.locator("#cs-broker-positions-refresh").click();
   await page.waitForFunction(()=>ChartStudioBeta.getState().verifiedPositions.length===1);
   assert.equal(await page.locator("#cs-broker-positions tbody tr").first().locator("td").nth(0).textContent(),"9007199254740993");
+  const beforePositionToggle=await page.evaluate(()=>ChartStudioBeta.getState().verifiedPositions),positionReadsBeforeToggle=brokerReadRequests.filter(r=>r.path.endsWith("/positions")).length;
+  await page.locator('[data-opt="positions"]').click();
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().options.positions),true,"Position toggle enables the read-only overlay");
+  assert.deepEqual(await page.evaluate(()=>ChartStudioBeta.getState().verifiedPositions),beforePositionToggle,"Showing the position overlay preserves the broker snapshot");
+  await page.locator('[data-opt="positions"]').click();
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().options.positions),false,"Position toggle hides the overlay");
+  assert.deepEqual(await page.evaluate(()=>ChartStudioBeta.getState().verifiedPositions),beforePositionToggle,"Hiding the position overlay preserves the broker snapshot");
+  assert.equal(brokerReadRequests.filter(r=>r.path.endsWith("/positions")).length,positionReadsBeforeToggle,"Position visibility toggles do not read or mutate the broker");
   await page.locator('[data-opt="positions"]').click();
   const unsetStops=await page.evaluate(async()=>{
     const series=candleSeries,original=series.priceToCoordinate.bind(series);
