@@ -489,10 +489,6 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
     const objectId=param.hoveredInfo?.objectId;
   hoveredDrawingId=typeof objectId==="string"&&(priceLevels.has(objectId)||timeMarkers.has(objectId)||textAnnotations.has(objectId)||trendLines.has(objectId)||rectangles.has(objectId)||rays.has(objectId)||fibonacci.has(objectId)||measurements.has(objectId))?objectId:null;
  });
- chart.subscribeClick(param=>{
-  if(param.sourceEvent?.shiftKey&&hoveredDrawingId)toggleDrawingSelection(hoveredDrawingId);
-  else selectDrawing(hoveredDrawingId);
- });
  const touchAnchorAt=(x:number,y:number)=>{
   let bestId:string|null=null,bestDistance=12;
   const ids=[...trendLines.keys(),...rectangles.keys(),...fibonacci.keys(),...channels.keys()];
@@ -518,10 +514,10 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  const onPointerDown=(event:PointerEvent)=>{
   if(event.button!==0||!event.isPrimary)return;
   const drawingId=hoveredDrawingId??drawingAt(event.clientX,event.clientY)??(event.pointerType==="touch"?touchAnchorAt(event.clientX,event.clientY):null);
-  if(!drawingId)return;
+  if(!drawingId){if(!event.shiftKey)selectDrawing(null);return}
   hoveredDrawingId=drawingId;
   const level=priceLevels.get(drawingId),marker=timeMarkers.get(drawingId),annotation=textAnnotations.get(drawingId),trend=trendLines.get(drawingId),rectangle=rectangles.get(drawingId),fibo=fibonacci.get(drawingId),channel=channels.get(drawingId),measurement=measurements.get(drawingId);
-  selectDrawing(drawingId);
+  if(event.shiftKey)toggleDrawingSelection(drawingId);else selectDrawing(drawingId);
   if(host.tabIndex<0)host.tabIndex=0;
   host.focus({preventScroll:true});
   if(!level&&!marker&&!annotation&&!trend&&!rectangle&&!fibo&&!channel&&!measurement)return;

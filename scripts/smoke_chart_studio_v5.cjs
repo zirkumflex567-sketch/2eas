@@ -524,11 +524,18 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   const initialRectanglePosition=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-zone"));
   await page.mouse.move(initialRectanglePosition.x,initialRectanglePosition.y);await page.waitForTimeout(80);
   assert.equal(await page.evaluate(()=>window.__v5Screenshot.inspect().hoveredDrawingId),"visual-zone");
+  const timeXY=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-time"));
+  await page.mouse.move(timeXY.x,timeXY.y);await page.waitForTimeout(60);
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.inspect().hoveredDrawingId),"visual-time");
+  await page.mouse.click(timeXY.x,timeXY.y);
+  assert.deepEqual(await page.evaluate(()=>window.__v5Screenshot.inspect().selectedDrawingIds),["visual-time"]);
   const priceXY=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-level"));
   const originalPrice=await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-level"));
   await page.mouse.move(priceXY.x,priceXY.y);
   await page.waitForTimeout(80);
   assert.equal(await page.evaluate(()=>window.__v5Screenshot.inspect().hoveredDrawingId),"visual-level");
+  await page.keyboard.down("Shift");await page.mouse.move(priceXY.x,priceXY.y);await page.mouse.down();await page.mouse.up();await page.keyboard.up("Shift");await page.waitForTimeout(50);
+  assert.deepEqual(await page.evaluate(()=>window.__v5Screenshot.inspect().selectedDrawingIds),["visual-time","visual-level"]);
   await page.mouse.down();
   const hasPointerCapture=await page.evaluate(()=>document.getElementById("chart").hasPointerCapture(1));
   await page.mouse.move(priceXY.x,priceXY.y-24,{steps:3});
