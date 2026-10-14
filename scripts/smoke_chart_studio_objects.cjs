@@ -53,6 +53,31 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process");
   await manager.locator(".cs-object-row").first().waitFor({state:"visible"});
   assert.equal(await manager.locator(".cs-object-row").count(),2);
   assert.ok((await manager.locator(".cs-object-count").textContent()).includes("2"));
+  await page.evaluate(()=>{
+   const bars=Array.from({length:5000},(_,index)=>{
+   const close=4000+Math.sin(index/17)*9+index*.001;
+   return {time:1700000000+index*900,open:close-.5,high:close+2,low:close-2,close,
+    tick_volume:500+index,real_volume:100+index};
+   });
+   ChartStudioBeta.updateCandles(bars);window.__capacityBarCount=bars.length;
+  });
+  for(const id of ["ema20","ema50","ema200"])await page.locator('[data-opt="'+id+'"]').click();
+  const indicatorCapacity=await page.evaluate(()=>{
+   const averages=Array.from({length:16},(_,index)=>({id:"capacity-ma-"+index,type:"EMA",period:index+2,
+    source:"close",color:"#68dfff",lineWidth:1,visible:true,label:"",displayShift:0}));
+   const kinds=["rsi","macd","atr","adx"];
+   const oscillators=kinds.map((kind,index)=>({id:"capacity-osc-"+index,kind,visible:true,
+    color:"#e8bb72",lineWidth:1,label:"",...(kind==="macd"?{fast:12,slow:26,signal:9}:{period:14})}));
+   const averagesApplied=ChartStudioAverages.applySettings(averages);
+   const oscillatorsApplied=ChartStudioOscillators.applySettings(oscillators);
+   return {bars:window.__capacityBarCount,
+    averagesApplied,oscillatorsApplied,averages:ChartStudioAverages.getConfigs().length,
+    oscillators:ChartStudioOscillators.settings().length,
+    tailReadoutCount:ChartStudioAverages.readout(1700000000+4999*900).split(" · ").length};
+  });
+  assert.deepEqual(indicatorCapacity,{bars:5000,averagesApplied:true,oscillatorsApplied:true,averages:16,oscillators:4,tailReadoutCount:16},
+   "The production Beta fixture must hold 5,000 bars and 20 overlay/pane indicator instances");
+  assert.equal(await page.locator(".cs-osc-pane").count(),4);
   const originalDocument=await page.evaluate(()=>ChartStudioBeta.exportDocument());
   const capacityDocument=count=>({...originalDocument,drawings:Array.from({length:count},(_,index)=>({
    id:`capacity-${String(index).padStart(4,"0")}`,kind:"horizontal",
@@ -143,6 +168,6 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process");
   assert.ok(requests.every(url=>url.includes("/api/chart/v1/workspace")));
   const dir=path.join("output","visual-smoke");fs.mkdirSync(dir,{recursive:true});
   await page.screenshot({path:path.join(dir,"chart-studio-object-manager.png"),fullPage:true});
-  console.log("PASS Chromium object manager rename/hide/lock/reorder/duplicate/delete Undo, accounts and server layouts");
+  console.log("PASS Chromium Beta AT-025 combined capacity: 5,000 bars, 20 indicators, 1,000 drawings; object manager CRUD and account/server layouts");
  }finally{if(browser)await browser.close();server.kill()}
 })().catch(e=>{console.error(e);process.exitCode=1});
