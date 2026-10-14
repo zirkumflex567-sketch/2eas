@@ -253,7 +253,8 @@ def run_batch(batch: Batch, *, dry_run: bool = False, force: bool = False) -> di
                             successful_attempt = attempt.name
                             break
                 if successful_attempt:
-                    records.append(dict(name=job.name, run_id=successful_attempt, status="skipped_success"))
+                    records.append(dict(name=job.name, strategy_id=job.strategy_id, sample=job.sample,
+                                        run_id=successful_attempt, status='skipped_success'))
                     continue
             if target.exists() and (force or previous.exists()):
                 target = batch.output / (job.run_id + "-retry-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ"))
@@ -323,7 +324,9 @@ def run_batch(batch: Batch, *, dry_run: bool = False, force: bool = False) -> di
         summary = dict(generated_at=utc_now(), dry_run=dry_run, records=records,
                        total=len(records), failed=sum(r["status"] == "failed" for r in records))
         from .analytics import write_csv
+        from .oos import write_comparisons
         write_csv(batch.output / 'batch_metrics.csv', records)
+        write_comparisons(batch.output)
         atomic_json(batch.output / "batch_summary.json", summary)
     return summary
 
