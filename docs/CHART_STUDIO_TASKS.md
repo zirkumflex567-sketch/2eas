@@ -22,7 +22,7 @@
 - [x] 1.1 Mount beta toolbar next to fullscreen, leaving old chart operational.
 - [x] 1.2 Toggle EMA20/50/200, overlay correctly calculated SMA20/SMA50/Bollinger20.
 - [x] 1.3 Draw horizontal, trendline, rectangle and Fibonacci using price/time anchors, plus handle editing, Undo/Redo.
-- [x] 1.4 Account-scoped **temporary localStorage** saving/loading drawings, chart toggles, named local layouts (save/load/delete) and JSON-copy export.
+- [x] 1.4 Account-scoped **temporary localStorage** saving/loading drawings, chart toggles, named local layouts (save/load/copy/rename/delete), confirmed active-chart reset that preserves saved layouts, and JSON-copy export.
 - [x] 1.5 Toggle genuine account-scoped MT5 open-position Entry/SL/TP overlays (**view-only**).
 - [x] 1.6 Read-only What-if scenario form + optional verified Bid/Ask fill + backend broker PnL/margin preview; distinct PLAN zones, no trade execution.
 - [~] 1.7 Chromium desktop smoke PASS; responsive 320/390/768/1440 browser matrix, simulated touch, zoom and reduced-motion merged with green CI in PR #23. Real mobile hardware, expanded layout acceptance and broker-connected proof remain open.

@@ -33,6 +33,40 @@ function saveProfile(){
    chartType:window.ChartStudioChartTypes?.current()||"candles"};
  save(profileKey(),all);refreshProfiles();s.panel.querySelector("#cs-beta-profile").value=trimmed;updateMessage("Layout '"+trimmed+"' lokal gesichert.");
 }
+function checkedProfileName(raw){
+ if(typeof raw!=="string")return null;
+ const name=raw.trim();return name&&name.length<=40&&!/\p{C}/u.test(name)?name:null;
+}
+function copyProfile(){
+ const sourceName=s.panel.querySelector("#cs-beta-profile")?.value,all=profiles(),source=all[sourceName];
+ if(!source){updateMessage("Zuerst ein gespeichertes Layout wählen.");return}
+ const name=checkedProfileName(window.prompt("Name der Layoutkopie (max. 40 Zeichen):",sourceName+" Kopie"));
+ if(!name)return;
+ if(all[name]){updateMessage("Ein Layout mit diesem Namen existiert bereits.");return}
+ if(Object.keys(all).length>=15){updateMessage("Maximal 15 lokale Layouts.");return}
+ all[name]=json(source);save(profileKey(),all);refreshProfiles();s.panel.querySelector("#cs-beta-profile").value=name;
+ updateMessage("Layout '"+sourceName+"' als '"+name+"' kopiert.");
+}
+function renameProfile(){
+ const select=s.panel.querySelector("#cs-beta-profile"),oldName=select?.value,all=profiles();
+ if(!oldName||!all[oldName]){updateMessage("Zuerst ein gespeichertes Layout wählen.");return}
+ const name=checkedProfileName(window.prompt("Neuer Layoutname (max. 40 Zeichen):",oldName));
+ if(!name||name===oldName)return;
+ if(all[name]){updateMessage("Ein Layout mit diesem Namen existiert bereits.");return}
+ all[name]=all[oldName];delete all[oldName];save(profileKey(),all);refreshProfiles();select.value=name;
+ updateMessage("Layout in '"+name+"' umbenannt.");
+}
+function resetChart(){
+ if(!window.confirm("Aktuelle Chartansicht auf Standard zurücksetzen? Gespeicherte Layouts bleiben erhalten."))return;
+ setTool("cursor");
+ snapshot();s.draw=[];s.selected=null;s.opts=optsDefault();persist();save(optKey(),s.opts);showOpts();updateSeries();
+ window.ChartStudioIndicators?.applySettings({});
+ window.ChartStudioAverages?.applySettings([]);
+ window.ChartStudioAppearance?.applySettings({});
+ window.ChartStudioOscillators?.applySettings([]);
+ window.ChartStudioChartTypes?.applySettings("candles");
+ requestDraw();updateMessage("Chartansicht auf Standard zurückgesetzt. Gespeicherte Layouts bleiben erhalten.");
+}
 function loadProfile(){
  const name=s.panel.querySelector("#cs-beta-profile")?.value;const item=profiles()[name];
  if(!item)return;snapshot();s.draw=safeDraw(item.draw);s.selected=null;
@@ -684,6 +718,9 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   '<div class="cs-beta-profiles"><strong>Lokale Layouts</strong> <select id="cs-beta-profile" aria-label="Gespeichertes Chartlayout"></select>'+
  '<button type="button" data-cmd="save-profile">Speichern</button>'+
  '<button type="button" data-cmd="load-profile">Laden</button>'+
+   '<button type="button" data-cmd="copy-profile">Kopieren</button>'+
+   '<button type="button" data-cmd="rename-profile">Umbenennen</button>'+
+  '<button type="button" data-cmd="reset-profile">Zurücksetzen</button>'+
  '<button type="button" data-cmd="delete-profile">Löschen</button></div>'+
  '<p id="cs-beta-message" role="status" aria-live="polite">Dies ist die sichere Beta-Chartansicht. Alle Brokerpositionen sind nur lesbar.</p>'+
  '<details class="cs-scenario"><summary>What-if · Broker-Risiko &amp; Margin (kein Orderversand)</summary>'+
@@ -792,6 +829,9 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   }
   if(b.dataset.cmd==="save-profile")saveProfile();
   if(b.dataset.cmd==="load-profile")loadProfile();
+   if(b.dataset.cmd==="copy-profile")copyProfile();
+   if(b.dataset.cmd==="rename-profile")renameProfile();
+   if(b.dataset.cmd==="reset-profile")resetChart();
   if(b.dataset.cmd==="delete-profile")deleteProfile();
   if(b.dataset.cmd==="undo")undo();if(b.dataset.cmd==="redo")redo();
    if(b.dataset.cmd==="delete-selected")removeSelected();

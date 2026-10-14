@@ -11,7 +11,8 @@ Current features:
 - Enable/disable EMA20/50/200; SMA20/50 and Bollinger 20 overlays.
 - Draw horizontal/vertical and text annotations plus trend/rectangle/Fibonacci tools with time+price anchors, drag
   existing handles, undo/redo, account-scoped *provisional* browser storage and
-  JSON export through clipboard.
+  JSON export through clipboard. Local layouts can be copied or renamed, and a
+  confirmed chart reset preserves the saved layouts.
 - Display current `MT5_VERIFIED` XAUUSD positions as separate BUY/SELL ticket
   overlays with entry, SL/TP zones, broker P/L and swap in the verified account
   currency, plus the account's NETTING/EXCHANGE/HEDGING mode. Failed/stale
