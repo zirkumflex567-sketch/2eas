@@ -85,6 +85,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(result.first.averageCount,1);
   assert.equal(result.first.nativePaneLines,1);
   assert.equal(result.first.volumeVisible,true);
+  assert.equal(result.first.persistenceStatus,"DISABLED");
   assert.equal(result.withPrimitive.nativePrimitives,2);
   assert.equal(result.updatedPrimitive.nativePrimitives,2);
   assert.equal(result.removedPrimitive,true);
@@ -130,7 +131,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(writes,[]);
   // Separate render persists for visual/screenshot inspection even after lifecycle verification above.
   await page.evaluate(()=>{
-   const e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan");
+   const e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",{symbol:"XAUUSD",timeframe:"M15"});
    const rows=Array.from({length:90},(_,i)=>{
     const p=4000+i*.4+Math.sin(i/10)*16;
     return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2,tick_volume:100+i*3};
@@ -226,6 +227,47 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await page.keyboard.press("Control+z");
   assert.equal(await page.evaluate(id=>window.__v5Screenshot.readDrawing(id),duplicateId),null);
   await page.mouse.move(10,10);
+  await page.waitForTimeout(150);
+  const persistedBeforeReload=await page.evaluate(()=>({price:window.__v5Screenshot.readDrawing("visual-level"),time:window.__v5Screenshot.readDrawing("visual-time")}));
+  await page.reload({waitUntil:"networkidle"});
+  await page.waitForFunction(()=>window.__chartV5Ready===true);
+  const persistenceProbe=await page.evaluate(()=>{
+   const rows=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2,tick_volume:100+i*3}});
+   const scope={symbol:"XAUUSD",timeframe:"M15"};
+   let e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",scope);e.setCandles(rows);
+   const restored={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives,price:e.readDrawing("visual-level"),time:e.readDrawing("visual-time")};
+   e.changeAccount("goldm15");e.setCandles(rows);const otherAccount=e.inspect().nativePrimitives;
+   e.changeAccount("titan");e.setCandles(rows);const returned=e.inspect().nativePrimitives;
+   e.destroy();
+   e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",{symbol:"XAUUSD",timeframe:"H1"});e.setCandles(rows);
+   const otherTimeframe=e.inspect().nativePrimitives;e.destroy();
+   const conflictKey="2eas.chartstudio.v5.drawings:titan:EURUSD:M5";
+   e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",{symbol:"EURUSD",timeframe:"M5"});e.setCandles(rows);
+   e.addPriceLevel({id:"local-level",price:4000,color:"#ffffff"});
+   const externalSnapshot=JSON.stringify({external:true});localStorage.setItem(conflictKey,externalSnapshot);
+   e.updatePriceLevel("local-level",{price:4001});
+   const conflict={status:e.inspect().persistenceStatus,stored:localStorage.getItem(conflictKey)};e.destroy();
+   const corruptKey="2eas.chartstudio.v5.drawings:titan:GBPUSD:M5";localStorage.setItem(corruptKey,"not-json");
+   e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",{symbol:"GBPUSD",timeframe:"M5"});e.setCandles(rows);
+   const corrupt={status:e.inspect().persistenceStatus,error:e.inspect().persistenceError,stored:localStorage.getItem(corruptKey)};e.destroy();
+   e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",scope);e.setCandles(rows);
+   e.addAverage({id:"ema21",color:"#61ddf2"},rows.slice(20).map(c=>({time:c.time,value:c.close-1.2})));
+   e.addPaneLine({id:"rsi14",color:"#f7c774"},rows.slice(14).map((c,i)=>({time:c.time,value:45+18*Math.sin(i/8)})));
+   e.showVolume(true);window.__v5Screenshot=e;
+   return {restored,otherAccount,returned,otherTimeframe,conflict,externalSnapshot,corrupt};
+  });
+  assert.equal(persistenceProbe.restored.status,"READY");
+  assert.equal(persistenceProbe.restored.count,2);
+  assert.deepEqual(persistenceProbe.restored.price,persistedBeforeReload.price);
+  assert.deepEqual(persistenceProbe.restored.time,persistedBeforeReload.time);
+  assert.equal(persistenceProbe.otherAccount,0);
+  assert.equal(persistenceProbe.returned,2);
+  assert.equal(persistenceProbe.otherTimeframe,0);
+  assert.equal(persistenceProbe.conflict.status,"CONFLICT");
+  assert.equal(persistenceProbe.conflict.stored,persistenceProbe.externalSnapshot);
+  assert.equal(persistenceProbe.corrupt.status,"UNAVAILABLE");
+  assert.equal(persistenceProbe.corrupt.error,"INVALID_SNAPSHOT");
+  assert.equal(persistenceProbe.corrupt.stored,"not-json");
   await page.waitForTimeout(150);
   assert.ok((await page.locator("#chart canvas").count())>=1);
   const folder=path.join("output","visual-smoke");

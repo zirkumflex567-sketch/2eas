@@ -11,6 +11,7 @@ export type AveragePoint = {time:UTCTimestamp;value:number};
 export type AverageOptions = {id:string;color:string;lineWidth?:1|2|3|4;visible?:boolean;title?:string};
 export type PriceLevelOptions = {id:string;price:number;color:string;visible?:boolean;locked?:boolean};
 export type TimeMarkerOptions = {id:string;time:UTCTimestamp;color:string;visible?:boolean;locked?:boolean};
+export type ChartStorageScope = {symbol:string;timeframe:string};
 export type DataWindowReadout = {
  state:"AVAILABLE"|"UNAVAILABLE";account:string;source:"CHART_FEED";time:number;timeUtc:string;
  reason?:"BAR_NOT_LOADED";ohlc?:{open:number;high:number;low:number;close:number};
@@ -102,8 +103,10 @@ function validSeriesData(data:readonly AveragePoint[]):AveragePoint[]{
  for(let i=1;i<out.length;i++)if(out[i-1].time===out[i].time)throw Error("Duplicate indicator timestamp");
  return out;
 }
-export function createStudioV5(host:HTMLElement,accountId:string){
+export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartStorageScope){
  if(!host || !accountId || !/^[a-zA-Z0-9_-]{1,50}$/.test(accountId))throw Error("Invalid chart host/account");
+ if(scope&&(!/^[a-zA-Z0-9._-]{1,32}$/.test(scope.symbol)||!/^[a-zA-Z0-9_-]{1,24}$/.test(scope.timeframe)))throw Error("Invalid chart storage scope");
+ const drawingScope=scope?Object.freeze({...scope}):null;
  const chart=createChart(host,{autoSize:true,layout:{background:{color:"#091923"},textColor:"#d0e7ee"},
   grid:{vertLines:{visible:false},horzLines:{color:"#233b48"}},
   timeScale:{timeVisible:true,borderVisible:true,rightOffset:8},
@@ -125,6 +128,11 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  type DrawingHistory={id:string;before:DrawingSnapshot|null;after:DrawingSnapshot|null};
  const undoStack:DrawingHistory[]=[],redoStack:DrawingHistory[]=[];
  const historyLimit=100;
+ type PersistenceStatus="DISABLED"|"PENDING"|"READY"|"UNAVAILABLE"|"CONFLICT";
+ let persistenceStatus:PersistenceStatus=drawingScope?"PENDING":"DISABLED";
+ let persistenceError:string|null=null,drawingsHydrated=false,hydratingDrawings=false;
+ let lastPersistedSnapshot:string|null=null;
+ const persistenceLimit=65536;
  let selectedDrawingId:string|null=null,hoveredDrawingId:string|null=null;
  type ActiveDrag={pointerId:number;id:string;kind:"PRICE";original:PriceLevelOptions}|{pointerId:number;id:string;kind:"TIME";original:TimeMarkerOptions};
  let activeDrag:ActiveDrag|null=null;
@@ -220,6 +228,74 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  let volume:VolumeApi|null=null;
  let bars:Candle[]=[],barsByTime=new Map<number,Candle>(),activeAccount=accountId,destroyed=false;
  function guard(){if(destroyed)throw Error("Chart was destroyed")}
+ function persistenceKey(account=activeAccount){
+  if(!drawingScope)return null;
+  return `2eas.chartstudio.v5.drawings:${encodeURIComponent(account)}:${encodeURIComponent(drawingScope.symbol)}:${encodeURIComponent(drawingScope.timeframe)}`;
+ }
+ function localStorageApi():Storage|null{
+  try{return host.ownerDocument.defaultView?.localStorage??null}catch(_){return null}
+ }
+ function persistDrawings(){
+  if(!drawingScope||!drawingsHydrated||hydratingDrawings||persistenceStatus==="CONFLICT"||persistenceStatus==="UNAVAILABLE")return;
+  const storage=localStorageApi(),key=persistenceKey();
+  if(!storage||!key){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_UNAVAILABLE";return}
+  try{
+   if(storage.getItem(key)!==lastPersistedSnapshot){persistenceStatus="CONFLICT";persistenceError="EXTERNAL_CHANGE";return}
+   const drawings:DrawingSnapshot[]=[
+    ...[...priceLevels.values()].map(({options})=>({kind:"PRICE" as const,options:{...options}})),
+    ...[...timeMarkers.values()].map(({options})=>({kind:"TIME" as const,options:{...options}}))];
+   const serialized=JSON.stringify({schemaVersion:1,account:activeAccount,symbol:drawingScope.symbol,
+    timeframe:drawingScope.timeframe,drawings});
+   if(serialized.length>persistenceLimit){persistenceStatus="UNAVAILABLE";persistenceError="SNAPSHOT_TOO_LARGE";return}
+   storage.setItem(key,serialized);lastPersistedSnapshot=serialized;persistenceStatus="READY";persistenceError=null;
+  }catch(_){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_WRITE_FAILED"}
+ }
+ function hydrateDrawings(){
+  if(!drawingScope){drawingsHydrated=true;persistenceStatus="DISABLED";return}
+  if(drawingsHydrated)return;
+  drawingsHydrated=true;const storage=localStorageApi(),key=persistenceKey();
+  if(!storage||!key){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_UNAVAILABLE";return}
+  let raw:string|null;
+  try{raw=storage.getItem(key)}catch(_){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_READ_FAILED";return}
+  lastPersistedSnapshot=raw;
+  if(raw===null){persistenceStatus="READY";persistenceError=null;if(priceLevels.size||timeMarkers.size)persistDrawings();return}
+  if(raw.length>persistenceLimit){persistenceStatus="UNAVAILABLE";persistenceError="SNAPSHOT_TOO_LARGE";return}
+  let parsed:unknown;
+  try{parsed=JSON.parse(raw)}catch(_){persistenceStatus="UNAVAILABLE";persistenceError="INVALID_SNAPSHOT";return}
+  if(!parsed||typeof parsed!=="object") {persistenceStatus="UNAVAILABLE";persistenceError="INVALID_SNAPSHOT";return}
+  const root=parsed as {schemaVersion?:unknown;account?:unknown;symbol?:unknown;timeframe?:unknown;drawings?:unknown};
+  if(root.schemaVersion!==1||root.account!==activeAccount||root.symbol!==drawingScope.symbol||root.timeframe!==drawingScope.timeframe||!Array.isArray(root.drawings)||root.drawings.length>100){
+   persistenceStatus="UNAVAILABLE";persistenceError="INVALID_OR_MISMATCHED_SNAPSHOT";return;
+  }
+  if(priceLevels.size||timeMarkers.size){persistenceStatus="CONFLICT";persistenceError="DRAWINGS_ALREADY_PRESENT";return}
+  const seen=new Set<string>(),snapshots:DrawingSnapshot[]=[];
+  try{
+   for(const entry of root.drawings){
+    if(!entry||typeof entry!=="object")throw Error();
+    const row=entry as {kind?:unknown;options?:unknown};
+    if(!row.options||typeof row.options!=="object")throw Error();
+    const options=row.options as Record<string,unknown>;
+    if(typeof options.id!=="string"||seen.has(options.id)||averages.has(options.id)||paneLines.has(options.id))throw Error();
+    seen.add(options.id);
+    if(row.kind==="PRICE"){
+     const normalized={id:options.id,price:options.price,color:options.color,visible:options.visible,locked:options.locked} as PriceLevelOptions;
+     validatePriceLevel(normalized);snapshots.push({kind:"PRICE",options:{...normalized,visible:normalized.visible??true,locked:normalized.locked??false}});
+    }else if(row.kind==="TIME"){
+     const normalized={id:options.id,time:options.time,color:options.color,visible:options.visible,locked:options.locked} as TimeMarkerOptions;
+     validateTimeMarker(normalized);snapshots.push({kind:"TIME",options:{...normalized,visible:normalized.visible??true,locked:normalized.locked??false}});
+    }else throw Error();
+   }
+  }catch(_){persistenceStatus="UNAVAILABLE";persistenceError="INVALID_OR_UNAVAILABLE_DRAWING";return}
+  hydratingDrawings=true;
+  try{
+   for(const snapshot of snapshots){if(snapshot.kind==="PRICE")addPriceLevel(snapshot.options);else addTimeMarker(snapshot.options)}
+   undoStack.length=0;redoStack.length=0;persistenceStatus="READY";persistenceError=null;
+  }catch(_){
+   for(const item of priceLevels.values())price.detachPrimitive(item.primitive);priceLevels.clear();
+   for(const item of timeMarkers.values())price.detachPrimitive(item.primitive);timeMarkers.clear();
+   undoStack.length=0;redoStack.length=0;persistenceStatus="UNAVAILABLE";persistenceError="RESTORE_FAILED";
+  }finally{hydratingDrawings=false}
+ }
  function selectDrawing(id:string|null){
   if(selectedDrawingId===id){if(id){priceLevels.get(id)?.primitive.setSelected(true);timeMarkers.get(id)?.primitive.setSelected(true)}return}
   if(selectedDrawingId){priceLevels.get(selectedDrawingId)?.primitive.setSelected(false);timeMarkers.get(selectedDrawingId)?.primitive.setSelected(false)}
@@ -234,6 +310,7 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  function recordDrawingChange(id:string,before:DrawingSnapshot|null,after:DrawingSnapshot|null){
   if(JSON.stringify(before)===JSON.stringify(after))return;
   undoStack.push({id,before,after});if(undoStack.length>historyLimit)undoStack.shift();redoStack.length=0;
+  persistDrawings();
  }
  function restoreDrawing(id:string,snapshot:DrawingSnapshot|null):boolean{
   if(snapshot&&(averages.has(id)||paneLines.has(id)))return false;
@@ -259,12 +336,12 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  function undo(){
   guard();if(activeDrag){finishDrag(true);return true}
   const change=undoStack[undoStack.length-1];if(!change||!restoreDrawing(change.id,change.before))return false;
-  undoStack.pop();redoStack.push(change);return true;
+  undoStack.pop();redoStack.push(change);persistDrawings();return true;
  }
  function redo(){
   guard();if(activeDrag){finishDrag(true);return true}
   const change=redoStack[redoStack.length-1];if(!change||!restoreDrawing(change.id,change.after))return false;
-  redoStack.pop();undoStack.push(change);return true;
+  redoStack.pop();undoStack.push(change);persistDrawings();return true;
  }
  function deleteSelectedDrawing(){
   guard();if(!selectedDrawingId)return false;
@@ -285,6 +362,7 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   for(const series of paneLines.values())series.setData([]);
   readoutIndicators.clear();price.setData(bars);
   if(volume)volume.setData(volumeRows());
+  hydrateDrawings();
  }
  function volumeRows(){
   return bars.map(c=>({time:c.time,value:Math.max(0,(c.real_volume??0)>0?c.real_volume!:c.tick_volume??0),
@@ -460,6 +538,7 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   guard();if(!/^[a-zA-Z0-9_-]{1,50}$/.test(next))throw Error("Invalid account");
   finishDrag(true);selectDrawing(null);hoveredDrawingId=null;
   undoStack.length=0;redoStack.length=0;
+  drawingsHydrated=false;lastPersistedSnapshot=null;persistenceError=null;persistenceStatus=drawingScope?"PENDING":"DISABLED";
   activeAccount=next;bars=[];barsByTime.clear();price.setData([]);
   for(const item of priceLevels.values())price.detachPrimitive(item.primitive);priceLevels.clear();
   for(const item of timeMarkers.values())price.detachPrimitive(item.primitive);timeMarkers.clear();selectedDrawingId=null;
@@ -471,7 +550,7 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  function inspect(){guard();return {version:VERSION,account:activeAccount,
   candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
   averageCount:averages.size,nativePaneLines:paneLines.size,nativePrimitives:priceLevels.size+timeMarkers.size,selectedDrawingId,hoveredDrawingId,
-  paneCount:chart.panes().length,volumeVisible:!!volume}}
+  paneCount:chart.panes().length,volumeVisible:!!volume,persistenceStatus,persistenceError}}
  function destroy(){if(destroyed)return;finishDrag(true);destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();paneLines.clear();priceLevels.clear();timeMarkers.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
  return Object.freeze({setCandles,addAverage,moveAverage,removeAverage,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker,updateTimeMarker,removeTimeMarker,drawingPosition,readDrawing,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,
