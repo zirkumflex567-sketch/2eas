@@ -99,6 +99,25 @@ def test_spool_import_is_idempotent_and_marks_sequence_gaps():
     assert len(store.calls) == 2
 
 
+def test_spool_import_rejects_out_of_order_after_a_gap_without_blocking_recovery():
+    store = Store()
+    importer = SpoolImporter(store, account_id='titan', producer_id='titan_demo')
+    event_three = envelope(payload={**envelope()['payload'], 'eventId': 'event_3', 'correlationId': 'corr_3'})
+    event_two = envelope(payload={**envelope()['payload'], 'eventId': 'event_2', 'correlationId': 'corr_2'})
+    event_four = envelope(payload={**envelope()['payload'], 'eventId': 'event_4', 'correlationId': 'corr_4'})
+
+    assert importer.import_line(line(record(seq=1)))['code'] == 'APPENDED'
+    assert importer.import_line(line(record(seq=3, event=event_three)))['code'] == 'APPENDED'
+    out_of_order = importer.import_line(line(record(seq=2, event=event_two)))
+    recovered = importer.import_line(line(record(seq=4, event=event_four)))
+
+    assert out_of_order['code'] == 'OUT_OF_ORDER'
+    assert out_of_order['gapCount'] == 1
+    assert recovered['code'] == 'APPENDED'
+    assert recovered['gapCount'] == 1
+    assert [row['payload']['eventId'] for _, row in store.calls] == ['event_1', 'event_3', 'event_4']
+
+
 def test_spool_import_does_not_advance_after_store_failure():
     store = Store({'ok': False, 'code': 'STORE_UNAVAILABLE', 'recordRef': None, 'gapObserved': True, 'lostCount': 1})
     importer = SpoolImporter(store, account_id='titan', producer_id='titan_demo')
