@@ -25,7 +25,7 @@ from pathlib import Path
 from account_gateway import ACCOUNTS, config_path, public_account, scoped, selected, verify_identity, writes_titan_reset
 from goldm15_dashboard import GUARD_FILE, metrics as gold_metrics, parameters as gold_parameters, read_guard, wilder_rsi
 from chart_studio.money import PreviewError, drawdown_projection, preview_scenario
-from chart_studio.broker_reads import legacy_quote, require_symbol
+from chart_studio.broker_reads import broker_symbol, legacy_quote, require_symbol
 from chart_studio.read_api import install_read_routes, Symbol
 from chart_studio.preview_api import install_preview_routes
 from chart_studio.evidence_api import install_evidence_routes
@@ -91,6 +91,11 @@ class ChartScenarioPreviewRequest(BaseModel):
     riskPercent: Optional[FiniteFloat] = None
     feesPerLot: FiniteFloat = Field(default=0, ge=0, le=10_000)
     slippageTicks: Annotated[int, Field(strict=True, ge=0, le=1000)] = 0
+
+    @field_validator('symbol')
+    @classmethod
+    def verified_symbol_name(cls, value):
+        return broker_symbol(value)
 
     @field_validator('volumeLots', 'riskBudget', 'riskPercent', 'feesPerLot', 'entryPrice', 'slPrice', 'tpPrice', mode='before')
     @classmethod
@@ -1050,8 +1055,7 @@ def api_chart_capabilities():
 @app.get("/api/chart/v1/quotes")
 @scoped(mt5)
 def api_chart_quotes(account: str, symbol: str = SYMBOL):
-    if symbol != SYMBOL:
-        raise HTTPException(status_code=400, detail="Dieses Chart-Modul unterstützt noch ausschließlich XAUUSD.")
+    symbol = broker_symbol(symbol)
     acc = verify_identity(mt5, selected())
     return legacy_quote(mt5, selected(), acc, symbol, now=time.time())
 
@@ -1061,12 +1065,8 @@ def api_chart_quotes(account: str, symbol: str = SYMBOL):
 def api_chart_preview(req: ChartScenarioPreviewRequest, account: str):
     if req.account != account:
         raise HTTPException(status_code=409, detail="Szenario gehört nicht zum angefragten Konto.")
-    if req.symbol != SYMBOL:
-        raise HTTPException(status_code=400, detail="Symbol derzeit nicht freigegeben.")
     acc = verify_identity(mt5, selected())
-    sym = mt5.symbol_info(req.symbol)
-    if sym is None:
-        raise HTTPException(status_code=503, detail="MT5-Symbolinformationen nicht verfügbar.")
+    sym = require_symbol(mt5, req.symbol)
     try:
         result = preview_scenario(
             mt5, acc, sym, symbol=req.symbol, side=req.side,

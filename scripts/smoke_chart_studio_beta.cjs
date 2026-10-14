@@ -24,18 +24,19 @@ const fs=require("node:fs"),path=require("node:path");
     const req=route.request().postDataJSON();
     scenarioPayloads.push(req);
     assert.equal(req.account,"titan");
-    assert.equal(req.symbol,"XAUUSD");
+    assert.match(req.symbol,/^[A-Za-z0-9][A-Za-z0-9_.# /+:-]{0,63}$/);
     const budget=req.riskBudget??(req.riskPercent==null?null:10000*req.riskPercent/100);
-    const slipPerLot=(req.slippageTicks||0)*0.01*100,feePerLot=req.feesPerLot||0;
+    const tickSize=req.symbol==="EURUSD"?0.00001:0.01;
+    const slipPerLot=(req.slippageTicks||0)*tickSize*100,feePerLot=req.feesPerLot||0;
     const volume=req.volumeLots??Math.floor(budget/(Math.abs(req.slPrice-req.entryPrice)*100+slipPerLot+feePerLot)*100)/100;
     const sign=req.side==="BUY"?1:-1;
     const risk=Number(((req.slPrice-req.entryPrice)*volume*100*sign).toFixed(2));
     const reward=Number(((req.tpPrice-req.entryPrice)*volume*100*sign).toFixed(2));
     const fees=Number((feePerLot*volume).toFixed(2)),netStop=Number((risk-slipPerLot*volume-fees).toFixed(2)),netTarget=Number((reward-slipPerLot*volume-fees).toFixed(2));
-    const preview={account:"titan",canExecute:false,pnlAtSl:{amount:risk,currency:"USD"},
+    const preview={account:"titan",symbol:req.symbol,canExecute:false,pnlAtSl:{amount:risk,currency:"USD"},
       pnlAtTp:{amount:reward,currency:"USD"},margin:{amount:95,currency:"USD"},
       riskUsd:-risk,rewardUsd:reward,usdConversion:{state:"AVAILABLE",source:"ACCOUNT_CURRENCY"},
-      riskRewardRatio:Number((reward/-risk).toFixed(3)),tickSize:0.01,
+      riskRewardRatio:Number((reward/-risk).toFixed(3)),tickSize,
       estimatedCosts:{source:"USER_ASSUMPTION",currency:"USD",feesPerLot:feePerLot,feesTotal:fees,slippageTicks:req.slippageTicks||0,slippageAtStop:slipPerLot*volume,slippageAtTarget:slipPerLot*volume},
       netEstimate:{kind:"userAssumptionsEstimate",pnlAtSl:{amount:netStop,currency:"USD"},pnlAtTp:{amount:netTarget,currency:"USD"},riskRewardRatio:netStop<0&&netTarget>0?Number((netTarget/-netStop).toFixed(3)):null},
       dailyDrawdownProjection:{state:"AVAILABLE",source:"DASHBOARD_DD_ESTIMATE",currency:"USD",quoteTimeUtc:"2026-10-14T10:00:00Z",currentLoss:40,dailyLimit:350,scenarioStopRisk:Number(-netStop.toFixed(2)),projectedLoss:Number((40-netStop).toFixed(2)),remainingToLimit:Number((310+netStop).toFixed(2)),wouldExceedLimit:false,eaGuard:{state:"UNKNOWN",source:"NONE"}},
@@ -51,7 +52,8 @@ const fs=require("node:fs"),path=require("node:path");
   });
   await page.route("**/api/chart/v1/quotes?*",async route=>{
     const url=new URL(route.request().url());
-    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),symbol:"XAUUSD",bid:"4100.00",ask:"4100.25",tickSize:0.01,currency:"USD",quoteTimeUtc:"2026-10-14T13:00:00.000000Z",ageSeconds:0,freshness:"FRESH",source:badQuote?"UNVERIFIED":"MT5_VERIFIED",canExecute:false})});
+    const symbol=url.searchParams.get("symbol"),fx=symbol==="EURUSD";
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),symbol,bid:fx?"1.10000":"4100.00",ask:fx?"1.10002":"4100.25",tickSize:fx?0.00001:0.01,digits:fx?5:2,currency:"USD",quoteTimeUtc:"2026-10-14T13:00:00.000000Z",ageSeconds:0,freshness:"FRESH",source:badQuote?"UNVERIFIED":"MT5_VERIFIED",canExecute:false})});
   });
   await page.route("**/api/chart/v1/decisions**",async route=>{
     const url=new URL(route.request().url());evidenceRequests.push({path:url.pathname,params:Object.fromEntries(url.searchParams)});
@@ -84,11 +86,12 @@ const fs=require("node:fs"),path=require("node:path");
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account,login:account==="goldm15"?"53090070":"53087839",server:"ICMarketsEU-Demo",source:"MT5_VERIFIED",canExecute:false,symbol:selectedSymbol,currency,marginMode:currency==="EUR"?0:2,quote:{freshness:"FRESH"},positions,orders:[{account,source:badOrderRow?"UNVERIFIED":"MT5_VERIFIED",canExecute:false,symbol:selectedSymbol,ticket:"9007199254740995",type:"BUY_LIMIT",volume_current:"0.2",price_open:"3995",sl:null,tp:"4010",ownership:"UNKNOWN"}]})});
   });
   await page.route("**/api/chart/v1/portfolio?*",async route=>{
-    const url=new URL(route.request().url()),account=url.searchParams.get("account");portfolioReadRequests.push(account);
+    const url=new URL(route.request().url()),account=url.searchParams.get("account"),scenarioSymbol=url.searchParams.get("scenarioSymbol")||"XAUUSD";portfolioReadRequests.push(account);
     if(portfolioReadUnavailable&&account==="titan")return route.fulfill({status:503,contentType:"application/json",body:JSON.stringify({detail:"portfolio unavailable"})});
     if(deferTitanPortfolio&&account==="titan")await new Promise(resolve=>{releaseTitanPortfolio=resolve});
     const currency=account==="goldm15"?"EUR":"USD";
-    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account,source:"MT5_VERIFIED",canExecute:false,positionCount:2,currency,margin:{state:"AVAILABLE",used:"50",free:"950",equity:"1050",balance:"1000",currency,scope:"ACCOUNT",login:"fixture-private-login",server:"fixture-private-server"},stopRisk:portfolioRiskUnavailable?{state:"UNAVAILABLE",reason:"MISSING_STOP"}:{state:"AVAILABLE",lossAtStops:"35.5",currency,source:"MT5_ORDER_CALC_PROFIT"},symbols:[{symbol:"EURUSD.a",buyLots:"0",sellLots:"0.02",netLots:"-0.02",floatingPnl:"2",swap:"-0.1",currency,login:"fixture-private-login",server:"fixture-private-server"},{symbol:"XAUUSD",buyLots:"0.1",sellLots:"0.02",netLots:"0.08",floatingPnl:"12.5",swap:"-1",currency}],correlation:account==="goldm15"?{state:"UNAVAILABLE",reason:"HISTORY_UNAVAILABLE",scenarioSymbol:"XAUUSD",symbols:["EURUSD.a","XAUUSD"]}:{state:"AVAILABLE",timeframe:"H1",source:"MT5_COMPLETED_BARS",scenarioSymbol:"XAUUSD",symbols:["EURUSD.a","XAUUSD"],pairs:[{symbols:["EURUSD.a","XAUUSD"],coefficient:"0.75",observations:128,server:"fixture-private-server"}]}})});
+    const correlationSymbols=scenarioSymbol==="XAUUSD"?["EURUSD.a","XAUUSD"]:[scenarioSymbol,"XAUUSD"];
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account,source:"MT5_VERIFIED",canExecute:false,positionCount:2,currency,margin:{state:"AVAILABLE",used:"50",free:"950",equity:"1050",balance:"1000",currency,scope:"ACCOUNT",login:"fixture-private-login",server:"fixture-private-server"},stopRisk:portfolioRiskUnavailable?{state:"UNAVAILABLE",reason:"MISSING_STOP"}:{state:"AVAILABLE",lossAtStops:"35.5",currency,source:"MT5_ORDER_CALC_PROFIT"},symbols:[{symbol:"EURUSD.a",buyLots:"0",sellLots:"0.02",netLots:"-0.02",floatingPnl:"2",swap:"-0.1",currency,login:"fixture-private-login",server:"fixture-private-server"},{symbol:"XAUUSD",buyLots:"0.1",sellLots:"0.02",netLots:"0.08",floatingPnl:"12.5",swap:"-1",currency}],correlation:account==="goldm15"?{state:"UNAVAILABLE",reason:"HISTORY_UNAVAILABLE",scenarioSymbol,symbols:correlationSymbols}:{state:"AVAILABLE",timeframe:"H1",source:"MT5_COMPLETED_BARS",scenarioSymbol,symbols:correlationSymbols,pairs:[{symbols:[...correlationSymbols].sort(),coefficient:"0.75",observations:128,server:"fixture-private-server"}]}})});
   });
   await page.route("**/api/chart/v1/symbols?*",async route=>{
     const url=new URL(route.request().url()),account=url.searchParams.get("account");brokerReadRequests.push({path:url.pathname,url:url.pathname,params:Object.fromEntries(url.searchParams)});
@@ -823,9 +826,13 @@ const fs=require("node:fs"),path=require("node:path");
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
   assert.match(await page.locator("#cs-scenario-ab").textContent(),/Keine A\/B-Snapshots für GoldM15/);
   await page.evaluate(()=>{const key="2eas:studio:beta:titan:whatif-snapshots:XAUUSD",saved=JSON.parse(localStorage.getItem(key));saved.A.schemaVersion=99;saved.B.schemaVersion=1;delete saved.B.portfolioContext;localStorage.setItem(key,JSON.stringify(saved));ChartStudioBeta.account("titan")});
+   assert.equal(await page.locator('#cs-scenario-form [name="entryPrice"]').inputValue(),"","Account changes clear previously entered prices");
   assert.doesNotMatch(await page.locator("#cs-scenario-ab").textContent(),/A · Budget 50 USD/);
   assert.match(await page.locator("#cs-scenario-ab").textContent(),/B · FIXED_LOTS/);
   assert.match(await page.locator("#cs-scenario-ab").textContent(),/Portfolio\/Korrelation UNAVAILABLE · nicht im Schema v1 erfasst/);
+   await page.locator('#cs-scenario-form [name="entryPrice"]').fill("4100");
+   await page.locator('#cs-scenario-form [name="slPrice"]').fill("4090");
+   await page.locator('#cs-scenario-form [name="tpPrice"]').fill("4120");
   await page.locator('#cs-scenario-form button[type="submit"]').click();
   await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER"));
   await page.locator("#cs-scenario-save-a").click();
@@ -970,6 +977,27 @@ const fs=require("node:fs"),path=require("node:path");
   await page.evaluate(()=>ChartStudioBeta.symbol("EURUSD"));
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().symbol),"EURUSD","The selected broker symbol is the chart symbol");
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),0,"A new symbol starts with its own empty drawing scope");
+  assert.equal(await page.locator(".cs-scenario").isVisible(),true,"Read-only What-if follows the selected verified chart symbol");
+  assert.equal(await page.locator('#cs-scenario-form [name="entryPrice"]').inputValue(),"","Symbol switches must clear prices from the prior market");
+  assert.match(await page.locator(".cs-scenario summary").textContent(),/What-if EURUSD/);
+  await page.locator('#cs-scenario-form [data-cmd="quote"]').click();
+  await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("MT5-Quote übernommen"));
+  assert.equal(await page.locator('#cs-scenario-form [name="entryPrice"]').inputValue(),"1.10002");
+  await page.locator('#cs-scenario-form [name="lotMode"]').selectOption("BUDGET");
+  await page.locator('#cs-scenario-form [name="riskBudget"]').fill("12.34");
+  await page.locator('#cs-scenario-form [name="slPrice"]').fill("1.09");
+  await page.locator('#cs-scenario-form [name="tpPrice"]').fill("1.12");
+  await page.locator('#cs-scenario-form button[type="submit"]').click();
+  await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER"));
+  assert.equal(scenarioPayloads.at(-1).symbol,"EURUSD");
+  assert.match(await page.locator("#cs-scenario-portfolio-impact").textContent(),/Projektion EURUSD/);
+  await page.locator("#cs-scenario-save-a").click();
+  const eurWhatIf=await page.evaluate(()=>JSON.parse(localStorage.getItem("2eas:studio:beta:titan:whatif-snapshots:EURUSD")));
+  assert.equal(eurWhatIf.A.symbol,"EURUSD","What-if snapshots are scoped to the current chart symbol");
+  assert.equal(eurWhatIf.A.request.riskBudget,12.34);
+  await page.evaluate(()=>ChartStudioBeta.symbol("XAUUSD"));
+  assert.doesNotMatch(await page.locator("#cs-scenario-ab").textContent(),/Budget 12\.34 USD/,"Switching to XAUUSD cannot show the EURUSD A snapshot");
+  assert.match(await page.locator("#cs-scenario-ab").textContent(),/B · FIXED_LOTS/,"The existing XAUUSD B snapshot remains in its own scope");
   await page.evaluate(()=>ChartStudioBeta.symbol("XAUUSD"));
   await page.evaluate(()=>ChartStudioBeta.updateCandles(window.__chartSmokeCandles));
   assert.deepEqual(await page.evaluate(key=>Object.keys(JSON.parse(localStorage.getItem(key)||"{}")).sort(),layoutStorageKey),

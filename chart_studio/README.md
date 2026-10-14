@@ -38,8 +38,10 @@ Current features:
   clears these values.
   Unpinning, Escape, account changes, and timeframe changes clear the pinned
   bar; hover resumes when the pointer selects a candle again.
-- Read-only What-if plan and JSON API endpoints for a verified MT5 XAUUSD
-  quote and `order_calc_profit`/`order_calc_margin` broker pricing.
+- Read-only What-if plan and JSON API endpoints for a verified quote on the
+  current broker-verified chart symbol and `order_calc_profit`/`order_calc_margin`
+  broker pricing. Account/symbol changes clear old quote and entry/SL/TP prices;
+  position-bound stop drafts keep their separate XAUUSD-only restriction.
 - Read-only What-if sizing can use fixed lots, a cash risk budget in account
   currency, or an equity percentage. Automatic lot size is rounded down across
   broker volume steps using MT5 stop-profit calculations; missing equity,
@@ -58,8 +60,9 @@ Current features:
   inverse currency pair. Assets use bid and liabilities use ask in the correct
   pair direction. Missing, stale, invalid, or ambiguous symbols leave USD
   amounts unavailable; the broker's original account-currency PnL stays primary.
-- Two broker-verified What-if previews can be saved as account-scoped local A/B
-  snapshots and exported as JSON. Schema v2 retains the exact preview request
+- Two broker-verified What-if previews can be saved as account-and-symbol-scoped
+  local A/B snapshots and exported as JSON. XAUUSD remains schema v2 for existing
+  snapshots; other symbols use schema v3. The schema retains the exact preview request
   and response plus the same-account portfolio exposure, stop risk and
   descriptive What-if-symbol correlations as read at capture time. Exported
   portfolio context omits broker login/server identity. Schema-v1 snapshots
@@ -193,11 +196,12 @@ data remains unavailable.
 
 The Chart Studio beta's Brokerbuch panel consumes these routes for verified
 account-scoped symbol search and selection, selected-symbol positions and pending
-orders, and `/trades` for a paginated list of actual deals. It requests up to 200
+orders, and `/trades` for a paginated list of actual deals. The current selected
+symbol drives the chart feed and its read-only matching overlays/markers. Position
+stop drafts remain limited to XAUUSD. It requests up to 200
 catalog entries; when the result is truncated, refine the symbol search. Positions,
 orders and deals are validated row-by-row against the selected account, symbol,
-source and read-only flag. Since the beta chart remains XAUUSD, other symbols stay
-in tables and cannot create chart overlays or stop drafts.
+source and read-only flag.
 Ticket, magic and manual/unknown filters are preserved in the UTC history cursor
 scope; changing a filter or date range restarts at page one. A 410 cursor error
 clears pagination and asks the user to reload history. The panel validates

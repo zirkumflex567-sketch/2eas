@@ -13,6 +13,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 import account_gateway as gateway
+from chart_studio.broker_reads import broker_symbol
 
 ROOT = Path(__file__).resolve().parents[1]
 NOW = 1791547200
@@ -585,6 +586,7 @@ def legacy_function(fake):
     node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'api_chart_quotes')
     node.decorator_list = []
     namespace = dict(mt5=fake, SYMBOL='XAUUSD', HTTPException=HTTPException,
+                     broker_symbol=broker_symbol,
                      selected=gateway.selected, verify_identity=gateway.verify_identity,
                      time=NS(time=lambda: NOW+.123))
     if (ROOT/'chart_studio/broker_reads.py').exists():
@@ -601,6 +603,14 @@ def test_legacy_quote_normalizes_broker_clock_and_keeps_numeric_ui(fake):
     assert body['brokerUtcOffsetSeconds'] == 10800
     assert body['freshness'] == 'FRESH' and body['ageSeconds'] == 0
     assert all(isinstance(body[k], float) for k in ('bid','ask','tickSize'))
+
+
+def test_legacy_quote_reads_exact_selected_non_xau_symbol(fake):
+    with gateway.session(fake, 'titan'):
+        body = legacy_function(fake)('titan', symbol='EURUSD.a')
+    assert body['symbol'] == 'EURUSD.a'
+    assert ('tick','EURUSD.a') in fake.calls
+    assert ('symbol_info','EURUSD.a') in fake.calls
 
 
 @pytest.mark.parametrize('field,value', [('bid',float('nan')),('ask',float('inf')),('bid',5000.),('time',0)])

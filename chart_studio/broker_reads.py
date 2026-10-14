@@ -516,8 +516,10 @@ def legacy_quote(mt5, spec, info, symbol, *, now=None):
         if broker_symbol(required(sym, 'name')) != symbol:
             raise BrokerReadError('symbol mismatch')
         tick_size = decimal(required(sym, 'trade_tick_size'), positive=True)
+        digits = integer(required(sym, 'digits'), choices=range(11))
         return {**quote, 'symbol': symbol, 'currency': text(required(info, 'currency')),
-                'bid': float(quote['bid']), 'ask': float(quote['ask']), 'tickSize': float(tick_size)}
+                'bid': float(quote['bid']), 'ask': float(quote['ask']),
+                'tickSize': float(tick_size), 'digits': digits}
     except HTTPException:
         raise
     except Exception as exc:

@@ -108,7 +108,7 @@ function cleanOptions(raw){const out=optsDefault();if(!raw||typeof raw!=="object
 const chartSymbol=()=>s?.symbol||"XAUUSD";
 const drawKey=()=>s.account+":draw:"+chartSymbol(),optKey=()=>s.account+":opts:"+chartSymbol();
 const profileKey=()=>s.account+":profiles:"+chartSymbol()+":"+(s.tf||"M15"),legacyProfileKey=()=>s.account+":profiles:XAUUSD",magnetKey=()=>s.account+":magnet:"+chartSymbol(),fibKey=()=>s.account+":fibLevels:"+chartSymbol();
-const scenarioSnapshotsKey=account=>account+":whatif-snapshots:XAUUSD";
+const scenarioSnapshotsKey=(account,symbol=chartSymbol())=>account+":whatif-snapshots:"+symbol;
 const validProfileScope=item=>item&&typeof item==="object"&&!Array.isArray(item)&&item.schemaVersion===1&&item.symbol===chartSymbol()&&item.timeframe===(s.tf||"M15");
 function profiles(){
  const key=profileKey();let p=get(key,null);
@@ -276,9 +276,11 @@ function validSavedPortfolioContext(context,account){
   typeof context.capturedAtUtc==="string"&&context.capturedAtUtc.length<=32&&Number.isFinite(Date.parse(context.capturedAtUtc))&&
   new Date(context.capturedAtUtc).toISOString()===context.capturedAtUtc&&nestedKeys&&validPortfolio(context,account);
 }
-function validSavedPreview(item,account){
- const preview=item&&item.account===account&&item.symbol==="XAUUSD"&&item.request?.account===account&&item.request?.symbol==="XAUUSD"&&item.result?.account===account&&item.result?.canExecute===false;
- return Boolean(preview&&(item.schemaVersion===1||(item.schemaVersion===2&&validSavedPortfolioContext(item.portfolioContext,account))));
+function validSavedPreview(item,account,symbol=chartSymbol()){
+ const preview=item&&item.account===account&&item.symbol===symbol&&item.request?.account===account&&item.request?.symbol===symbol&&item.result?.account===account&&item.result?.symbol===symbol&&item.result?.canExecute===false;
+ return Boolean(preview&&((symbol==="XAUUSD"&&item.schemaVersion===1)||
+  (symbol==="XAUUSD"&&item.schemaVersion===2&&validSavedPortfolioContext(item.portfolioContext,account))||
+  (item.schemaVersion===3&&validSavedPortfolioContext(item.portfolioContext,account))));
 }
 function portfolioContextForSnapshot(account){
  if(!s||s.account!==account||!s.portfolio||s.portfolio.account!==account||!s.portfolioCapturedAtUtc||!validPortfolio(s.portfolio,account))
@@ -308,8 +310,8 @@ function savedPortfolioSummary(item){
 function renderScenarioSnapshots(){
  if(!s)return;
  const account=s.account,label=account==="goldm15"?"GoldM15":account,host=s.panel.querySelector("#cs-scenario-ab");if(!host)return;
- const stored=get(scenarioSnapshotsKey(account),{}),snapshots={A:null,B:null};
- for(const slot of ["A","B"])if(validSavedPreview(stored?.[slot],account))snapshots[slot]=stored[slot];
+ const symbol=chartSymbol(),stored=get(scenarioSnapshotsKey(account,symbol),{}),snapshots={A:null,B:null};
+ for(const slot of ["A","B"])if(validSavedPreview(stored?.[slot],account,symbol))snapshots[slot]=stored[slot];
  host.replaceChildren();let count=0;
  for(const slot of ["A","B"]){const item=snapshots[slot];if(!item)continue;count++;
   const section=document.createElement("section"),title=document.createElement("h4"),detail=document.createElement("p");
@@ -321,26 +323,27 @@ function renderScenarioSnapshots(){
   detail.textContent="Lots "+(item.result.positionSizing?.volumeLots??"UNKNOWN")+" · GROSS SL/TP "+(item.result.pnlAtSl?.amount??"UNKNOWN")+" / "+(item.result.pnlAtTp?.amount??"UNKNOWN")+" · NETTO-Annahme SL/TP "+(net?.pnlAtSl?.amount??"UNKNOWN")+" / "+(net?.pnlAtTp?.amount??"UNKNOWN")+" · R:R "+(item.result.riskRewardRatio??"UNKNOWN")+" / Netto "+(net?.riskRewardRatio??"UNKNOWN")+" · Gebührannahme "+(costs?.feesPerLot??"UNKNOWN")+" "+currency+"/Lot; Slippage "+(costs?.slippageTicks??"UNKNOWN")+" Ticks · Margin "+(item.result.margin?.amount??"UNKNOWN")+" "+(item.result.margin?.currency||"")+ddText+" · "+savedPortfolioSummary(item)+" · Preview "+item.savedAtUtc;
   section.append(title,detail);host.append(section);
  }
- if(!count){const empty=document.createElement("p");empty.textContent="Keine A/B-Snapshots für "+label+". Erst eine erfolgreiche Broker-Vorschau speichern.";host.append(empty)}
+ if(!count){const empty=document.createElement("p");empty.textContent="Keine A/B-Snapshots für "+label+" / "+symbol+". Erst eine erfolgreiche Broker-Vorschau speichern.";host.append(empty)}
  const exportButton=s.panel.querySelector("#cs-scenario-export");if(exportButton)exportButton.disabled=count===0;
 }
 function saveScenarioSnapshot(slot){
  const status=s?.panel.querySelector("#cs-scenario-ab-status"),latest=s?.lastScenarioPreview;
- if(!latest||latest.account!==s.account||latest.result?.canExecute!==false){if(status)status.textContent="Bitte erst eine erfolgreiche Broker-Vorschau für dieses Konto berechnen.";return}
- const key=scenarioSnapshotsKey(s.account),stored=get(key,{}),snapshots={A:null,B:null};
- for(const name of ["A","B"])if(validSavedPreview(stored?.[name],s.account))snapshots[name]=stored[name];
- snapshots[slot]={schemaVersion:2,account:s.account,symbol:"XAUUSD",savedAtUtc:latest.savedAtUtc,request:latest.request,result:latest.result,portfolioContext:portfolioContextForSnapshot(s.account)};
+ const symbol=chartSymbol();
+ if(!latest||latest.account!==s.account||latest.symbol!==symbol||latest.result?.canExecute!==false){if(status)status.textContent="Bitte erst eine erfolgreiche Broker-Vorschau für dieses Konto und Symbol berechnen.";return}
+ const key=scenarioSnapshotsKey(s.account,symbol),stored=get(key,{}),snapshots={A:null,B:null};
+ for(const name of ["A","B"])if(validSavedPreview(stored?.[name],s.account,symbol))snapshots[name]=stored[name];
+ snapshots[slot]={schemaVersion:symbol==="XAUUSD"?2:3,account:s.account,symbol,savedAtUtc:latest.savedAtUtc,request:latest.request,result:latest.result,portfolioContext:portfolioContextForSnapshot(s.account)};
  try{localStorage.setItem(prefix+key,JSON.stringify(snapshots));if(status)status.textContent=slot+" gespeichert · "+s.account+" · Nur lokaler Snapshot, keine Order.";renderScenarioSnapshots();}
  catch(_){if(status)status.textContent="Lokales Speichern fehlgeschlagen.";}
 }
 function exportScenarioSnapshots(){
  if(!s)return;
- const account=s.account,key=scenarioSnapshotsKey(account),stored=get(key,{}),snapshots={};
- for(const slot of ["A","B"])if(validSavedPreview(stored?.[slot],account))snapshots[slot]=stored[slot];
+ const account=s.account,symbol=chartSymbol(),key=scenarioSnapshotsKey(account,symbol),stored=get(key,{}),snapshots={};
+ for(const slot of ["A","B"])if(validSavedPreview(stored?.[slot],account,symbol))snapshots[slot]=stored[slot];
  if(!Object.keys(snapshots).length)return;
- const blob=new Blob([JSON.stringify({schemaVersion:2,account,symbol:"XAUUSD",exportedAtUtc:new Date().toISOString(),snapshots},null,2)],{type:"application/json"});
+ const blob=new Blob([JSON.stringify({schemaVersion:symbol==="XAUUSD"?2:3,account,symbol,exportedAtUtc:new Date().toISOString(),snapshots},null,2)],{type:"application/json"});
  const url=URL.createObjectURL(blob),anchor=document.createElement("a");
- anchor.href=url;anchor.download="chartstudio-whatif-"+account.replace(/[^A-Za-z0-9_-]/g,"_")+".json";anchor.click();
+ anchor.href=url;anchor.download="chartstudio-whatif-"+account.replace(/[^A-Za-z0-9_-]/g,"_")+ (symbol==="XAUUSD"?"":"-"+symbol.replace(/[^A-Za-z0-9_-]/g,"_"))+".json";anchor.click();
  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function validPortfolio(value,account){
@@ -396,7 +399,7 @@ function renderPortfolioImpact(preview){
  if(!s)return;
  const host=s.panel.querySelector("#cs-scenario-portfolio-impact");if(!host)return;
  const portfolio=s.portfolio,result=preview?.result;
- if(!portfolio||!result||preview.account!==s.account||portfolio.account!==s.account){host.textContent="Portfolio-Gesamtrisiko UNAVAILABLE · Portfolio und Vorschau für dasselbe Konto erforderlich.";return}
+ if(!portfolio||!result||preview.account!==s.account||preview.symbol!==chartSymbol()||preview.request?.symbol!==chartSymbol()||result.symbol!==chartSymbol()||portfolio.account!==s.account||portfolio.correlation?.scenarioSymbol!==chartSymbol()){host.textContent="Portfolio-Gesamtrisiko UNAVAILABLE · Portfolio und Vorschau für dasselbe Konto und Symbol erforderlich.";return}
  const summary=[];
  if(portfolio.stopRisk?.state==="AVAILABLE"&&portfolio.currency===result.pnlAtSl?.currency){
   const current=Number(portfolio.stopRisk.lossAtStops),proposed=Math.max(0,-Number(result.pnlAtSl?.amount));
@@ -417,20 +420,20 @@ function renderPortfolioImpact(preview){
  }else summary.push("Symbol-Exposure-Projektion UNAVAILABLE · Brokerpreview oder Positionsgröße fehlt.");
  host.textContent=summary.join(" ");
 }
-async function loadPortfolio(account){
+async function loadPortfolio(account,symbol=chartSymbol()){
  const nonce=++portfolioGeneration;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioError="";s.portfolioLoading=true;renderPortfolio();
  try{
   const response=await fetch((window.location.pathname.startsWith("/stt")?"/stt":"")+
-   "/api/chart/v1/portfolio?account="+encodeURIComponent(account)+"&scenarioSymbol=XAUUSD",{cache:"no-store"});
+   "/api/chart/v1/portfolio?account="+encodeURIComponent(account)+"&scenarioSymbol="+encodeURIComponent(symbol),{cache:"no-store"});
   const data=await response.json();
-  if(nonce!==portfolioGeneration||account!==s?.account)return;
-  if(!response.ok||!validPortfolio(data,account))throw Error("MT5-Portfolio ungültig oder nicht verfügbar.");
+  if(nonce!==portfolioGeneration||account!==s?.account||symbol!==chartSymbol())return;
+  if(!response.ok||!validPortfolio(data,account)||data.correlation?.scenarioSymbol!==symbol)throw Error("MT5-Portfolio ungültig oder nicht verfügbar.");
   s.portfolio=json(data);s.portfolioCapturedAtUtc=new Date().toISOString();s.portfolioError="";
  }catch(error){
-  if(nonce!==portfolioGeneration||account!==s?.account)return;
+  if(nonce!==portfolioGeneration||account!==s?.account||symbol!==chartSymbol())return;
   s.portfolio=null;s.portfolioError="Portfolio UNAVAILABLE · "+(error?.message||"Lesefehler");
  }finally{
-  if(nonce===portfolioGeneration&&account===s?.account){s.portfolioLoading=false;renderPortfolio();renderPortfolioImpact(s.lastScenarioPreview)}
+  if(nonce===portfolioGeneration&&account===s?.account&&symbol===chartSymbol()){s.portfolioLoading=false;renderPortfolio();renderPortfolioImpact(s.lastScenarioPreview)}
  }
 }
 function sma(c,n){const out=[];let sum=0;for(let i=0;i<c.length;i++){sum+=Number(c[i].close);if(i>=n)sum-=Number(c[i-n].close);if(i>=n-1)out.push({time:c[i].time,value:sum/n})}return out}
@@ -859,6 +862,16 @@ function pointerup(e){
  if(s.positionDraftDrag){s.positionDraftDrag=null;try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){};return}
  if(!s.drag)return;s.drag=null;persist();try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){}
 }
+function clearScenarioDraft(message,clearAccountAssumptions=false){
+ if(!s)return;
+ scenarioGeneration++;s.lastScenarioPreview=null;s.scenario=null;s.validatedScenario=null;
+ s.planDrag=null;s.planOriginal=null;s.planTickSize=null;s.marketQuote=null;
+ const form=s.panel.querySelector("#cs-scenario-form");
+ if(form)for(const name of ["entryPrice","slPrice","tpPrice"])form.elements.namedItem(name).value="";
+ if(clearAccountAssumptions&&form)for(const name of ["riskBudget","feesPerLot"])form.elements.namedItem(name).value="";
+ const output=s.panel.querySelector("#cs-scenario-result");if(output)output.textContent=message;
+ renderPortfolioImpact(null);requestDraw();
+}
 function symbol(value){
  const valid=typeof value==="string"&&/^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$/.test(value);
  if(!s||!valid)return false;if(value===chartSymbol())return true;
@@ -867,16 +880,19 @@ function symbol(value){
  s.symbol=value;s.coordinates.setScope({account:s.account,symbol:value,timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.magnet=get(magnetKey(),false)===true;
  s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
  s.candles=[];s.candleSignature=null;s.positions=[];s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.brokerMarkers=[];
- s.scenario=null;s.validatedScenario=null;s.planDrag=null;s.planOriginal=null;s.marketQuote=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.undo=[];s.redo=[];
+ s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.undo=[];s.redo=[];
+ clearScenarioDraft("Chartsymbol geändert · neue Quote und Preise eingeben; nur read-only.");
  clearDataWindowPin();clearEvidence();
  s.series.setData([]);for(const series of s.emas||[])series.setData([]);
  window.ChartStudioIndicators?.updateBars([]);window.ChartStudioOscillators?.updateBars([]);window.ChartStudioChartTypes?.updateBars([]);window.ChartStudioAverages?.updateBars([]);window.ChartStudioReplay?.updateBars([]);
- const scenario=s.panel.querySelector(".cs-scenario"),scope=s.panel.querySelector("#cs-scenario-scope");if(scenario)scenario.hidden=value!=="XAUUSD";if(scope){scope.hidden=value==="XAUUSD";scope.textContent="What-if- und SL/TP-Vorschau sind derzeit nur für XAUUSD verfügbar."}
+ const scenario=s.panel.querySelector(".cs-scenario"),scope=s.panel.querySelector("#cs-scenario-scope");if(scenario)scenario.hidden=false;if(scope)scope.hidden=true;
+ const scenarioSymbol=s.panel.querySelector("#cs-scenario-symbol");if(scenarioSymbol)scenarioSymbol.textContent=value;
+ renderScenarioSnapshots();loadPortfolio(s.account,value);
  refreshProfiles();showOpts();updateSeries();window.ChartStudioObjectManager?.render();requestDraw();
  window.dispatchEvent(new CustomEvent("chartstudio:symbol-change",{detail:{account:s.account,symbol:value,timeframe:s.tf}}));return true;
 }
 function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});clearEvidence();s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioLoading=false;s.portfolioError="";if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
- s.lastScenarioPreview=null;s.marketQuote=null;clearDataWindowPin();
+ s.lastScenarioPreview=null;s.marketQuote=null;clearScenarioDraft("Konto geändert · neue Quote und Preise eingeben; Gebühren/Risikobudget neu bestätigen.",true);clearDataWindowPin();
   s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
   const fibInput=s.panel.querySelector("#cs-fib-levels");if(fibInput)fibInput.value=window.ChartStudioFib?.display(s.fibLevels)||"";
  scenarioGeneration++;portfolioGeneration++;renderPortfolioImpact(null);if(s.tool==="plan")setTool("cursor");
@@ -890,7 +906,7 @@ function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.coordinates
  window.ChartStudioServerSync?.account(id);
  window.ChartStudioBrokerPanel?.setAccount(id);
  window.ChartStudioReplay?.switchContext(id,s.tf);
- renderScenarioSnapshots();loadPortfolio(id);
+ renderScenarioSnapshots();loadPortfolio(id,chartSymbol());
  const scenarioStatus=s.panel.querySelector("#cs-scenario-ab-status");if(scenarioStatus)scenarioStatus.textContent="A/B-Snapshots für "+id+" · lokal · nur verifizierte Vorschauen.";
  showOpts();refreshProfiles();updateSeries();window.ChartStudioObjectManager?.render();requestDraw()}
 function timeframe(tf){if(s){cancelPlanPreview();if(s.positionDraft)window.ChartStudioBrokerPanel?.invalidateDraft("Timeframe geändert · Positionsentwurf verworfen.");s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.tf=tf;s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});window.ChartStudioBrokerPanel?.setTimeframe(tf);s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");refreshProfiles();
@@ -934,15 +950,16 @@ function dataBar(param){
 function setVerifiedMarketQuote(accountId,data){
  if(!s||s.account!==accountId)return false;
  const bid=Number(data?.bid),ask=Number(data?.ask),age=Number(data?.ageSeconds);
- const valid=data?.account===accountId&&data?.symbol==="XAUUSD"&&chartSymbol()==="XAUUSD"&&data?.source==="MT5_VERIFIED"&&data?.canExecute===false&&/^[A-Z]{3,12}$/.test(data?.currency||"")&&Number.isFinite(bid)&&bid>0&&Number.isFinite(ask)&&ask>=bid&&Number.isFinite(age)&&age>=0&&typeof data?.quoteTimeUtc==="string"&&/(?:Z|\+00:00)$/.test(data.quoteTimeUtc)&&Number.isFinite(Date.parse(data.quoteTimeUtc))&&["FRESH","STALE","FUTURE"].includes(data?.freshness);
- s.marketQuote=valid?{bid,ask,currency:data.currency,quoteTimeUtc:data.quoteTimeUtc,ageSeconds:age,freshness:data.freshness,source:data.source}:null;
+ const digits=data?.digits;
+ const valid=data?.account===accountId&&data?.symbol===chartSymbol()&&data?.source==="MT5_VERIFIED"&&data?.canExecute===false&&/^[A-Z]{3,12}$/.test(data?.currency||"")&&Number.isInteger(digits)&&digits>=0&&digits<=10&&Number.isFinite(bid)&&bid>0&&Number.isFinite(ask)&&ask>=bid&&Number.isFinite(age)&&age>=0&&typeof data?.quoteTimeUtc==="string"&&/(?:Z|\+00:00)$/.test(data.quoteTimeUtc)&&Number.isFinite(Date.parse(data.quoteTimeUtc))&&["FRESH","STALE","FUTURE"].includes(data?.freshness);
+ s.marketQuote=valid?{bid,ask,digits,currency:data.currency,quoteTimeUtc:data.quoteTimeUtc,ageSeconds:age,freshness:data.freshness,source:data.source}:null;
  renderDataWindow();return valid;
 }
 function renderDataWindow(){
  if(!s?.dataWindow)return;const view=s.dataWindow,panel=s.panel;
  panel.querySelector("#cs-data-window-state").textContent=view.pinned?"Angeheftet":"Crosshair";
  panel.querySelector("#cs-data-window-pin").textContent=view.pinned?"Crosshair lösen":"Crosshair anheften";
- const row=view.snapshot,q=s.marketQuote,values={time:row?.timeLabel||"—",open:row?row.open.toFixed(2):"—",high:row?row.high.toFixed(2):"—",low:row?row.low.toFixed(2):"—",close:row?row.close.toFixed(2):"—",source:row?.source||"Chart-Feed · wartet auf Kerze",indicators:row?.indicators||"—",bid:q?q.bid.toFixed(2):"—",ask:q?q.ask.toFixed(2):"—",spread:q?(q.ask-q.bid).toFixed(2):"—","quote-time":q?q.quoteTimeUtc:"—","quote-status":q?q.freshness+" beim Abruf · "+q.ageSeconds.toFixed(1)+"s Broker-Alter beim Abruf · "+q.source:"Noch keine verifizierte Quote"};
+ const row=view.snapshot,q=s.marketQuote,quoteDigits=q?.digits??2,values={time:row?.timeLabel||"—",open:row?row.open.toFixed(2):"—",high:row?row.high.toFixed(2):"—",low:row?row.low.toFixed(2):"—",close:row?row.close.toFixed(2):"—",source:row?.source||"Chart-Feed · wartet auf Kerze",indicators:row?.indicators||"—",bid:q?q.bid.toFixed(quoteDigits):"—",ask:q?q.ask.toFixed(quoteDigits):"—",spread:q?(q.ask-q.bid).toFixed(quoteDigits):"—","quote-time":q?q.quoteTimeUtc:"—","quote-status":q?q.freshness+" beim Abruf · "+q.ageSeconds.toFixed(1)+"s Broker-Alter beim Abruf · "+q.source:"Noch keine verifizierte Quote"};
  for(const [key,value] of Object.entries(values))panel.querySelector("#cs-data-window-"+key).textContent=value;
 }
 function setDataWindowPin(pin){
@@ -1045,7 +1062,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   '<button type="button" data-cmd="reset-profile">Zurücksetzen</button>'+
  '<button type="button" data-cmd="delete-profile">Löschen</button></div>'+
  '<p id="cs-beta-message" role="status" aria-live="polite">Dies ist die sichere Beta-Chartansicht. Alle Brokerpositionen sind nur lesbar.</p>'+
-  '<p id="cs-scenario-scope" role="status" hidden></p><details class="cs-scenario"><summary>What-if XAUUSD · Broker-Risiko &amp; Margin (kein Orderversand)</summary>'+
+  '<p id="cs-scenario-scope" role="status" hidden></p><details class="cs-scenario"><summary>What-if <span id="cs-scenario-symbol">XAUUSD</span> · Broker-Risiko &amp; Margin (kein Orderversand)</summary>'+
  '<section aria-label="MT5 Portfolio-Exposure"><h4>Portfolio-Exposure · MT5</h4><button type="button" id="cs-portfolio-refresh">Portfolio aktualisieren</button><div id="cs-portfolio-summary" aria-live="polite"><p>Portfolio wird geladen …</p></div></section>'+
  '<form id="cs-scenario-form">'+
  '<label>Seite <select name="side"><option>BUY</option><option>SELL</option></select></label>'+
@@ -1203,7 +1220,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   setVerifiedMarketQuote(acc,null);
   output.textContent="Verifizierte MT5-Quote wird geladen ...";
   try{
-   const response=await fetch(scope()+"/api/chart/v1/quotes?account="+encodeURIComponent(acc)+"&symbol=XAUUSD",{cache:"no-store"});
+   const activeSymbol=chartSymbol(),response=await fetch(scope()+"/api/chart/v1/quotes?account="+encodeURIComponent(acc)+"&symbol="+encodeURIComponent(activeSymbol),{cache:"no-store"});
    const data=await response.json();
    if(nonce!==scenarioGeneration||acc!==s.account)return;
    if(!response.ok||data.account!==acc||!setVerifiedMarketQuote(acc,data))throw Error(typeof data.detail==="string"?data.detail:"MT5-Daten ungültig.");
@@ -1215,7 +1232,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  form.addEventListener("submit",async e=>{
   e.preventDefault();const account=s.account,nonce=++scenarioGeneration;
   s.lastScenarioPreview=null;renderPortfolioImpact(null);
-  const payload={account,symbol:"XAUUSD",side:fields.side.value,
+  const payload={account,symbol:chartSymbol(),side:fields.side.value,
    volumeLots:fields.lotMode.value==="FIXED"?Number(fields.volumeLots.value):null,
    riskBudget:fields.lotMode.value==="BUDGET"?Number(fields.riskBudget.value):null,
    riskPercent:fields.lotMode.value==="PERCENT"?Number(fields.riskPercent.value):null,
@@ -1231,12 +1248,12 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
     method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
    const result=await response.json();
    if(nonce!==scenarioGeneration||account!==s.account)return;
-   if(!response.ok||result.account!==account||result.canExecute!==false){
+   if(!response.ok||result.account!==account||result.symbol!==payload.symbol||result.canExecute!==false){
     const detail=result.detail;throw Error(typeof detail==="string"?detail:detail?.message||"Broker-Rechenfehler");
    }
    const actualLots=Number(result.positionSizing?.volumeLots);
    if(!Number.isFinite(actualLots)||actualLots<=0)throw Error("Broker-Lotgröße fehlt in der verifizierten Vorschau.");
-   s.scenario={...payload,volumeLots:actualLots};s.validatedScenario=json(s.scenario);s.lastScenarioPreview={account,symbol:"XAUUSD",savedAtUtc:new Date().toISOString(),request:json(payload),result:json(result)};s.planOriginal=null;renderPortfolioImpact(s.lastScenarioPreview);
+   s.scenario={...payload,volumeLots:actualLots};s.validatedScenario=json(s.scenario);s.lastScenarioPreview={account,symbol:payload.symbol,savedAtUtc:new Date().toISOString(),request:json(payload),result:json(result)};s.planOriginal=null;renderPortfolioImpact(s.lastScenarioPreview);
    if(Number.isFinite(Number(result.tickSize))&&Number(result.tickSize)>0)s.planTickSize=Number(result.tickSize);
    requestDraw();
    const loss=result.pnlAtSl.amount,reward=result.pnlAtTp.amount,cur=result.pnlAtSl.currency;

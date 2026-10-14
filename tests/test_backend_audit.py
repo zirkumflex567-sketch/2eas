@@ -37,7 +37,7 @@ def isolated(monkeypatch, tmp_path):
     tick = NS(time=int(clock.now), bid=4030., ask=4030.05)
     rates['time'] = (tick.time//900 - 299 + np.arange(300))*900
     info = NS(login=account['login'], server=account['server'], balance=10000., equity=10000., currency='USD')
-    sym = NS(time=tick.time, spread=5, trade_contract_size=100., digits=2, point=.01,
+    sym = NS(name='XAUUSD', time=tick.time, spread=5, trade_contract_size=100., digits=2, point=.01,
              trade_tick_size=.01, trade_stops_level=10, trade_freeze_level=0, filling_mode=2)
     positions = Mock(return_value=[pos])
     history = Mock(return_value=[])
@@ -112,6 +112,36 @@ def test_whatif_keeps_broker_preview_when_daily_drawdown_is_unavailable(isolated
     assert response.json()['pnlAtSl']['amount']==-100
     assert response.json()['dailyDrawdownProjection']['state']=='UNAVAILABLE'
     assert response.json()['dailyDrawdownProjection']['eaGuard']=={'state':'UNKNOWN','source':'NONE'}
+    isolated.send.assert_not_called()
+
+
+def test_whatif_uses_exact_non_xau_broker_symbol_without_writes(isolated, monkeypatch):
+    calls=[]
+    isolated.sym.volume_min=.01; isolated.sym.volume_max=5.; isolated.sym.volume_step=.01
+    def symbol_info(name):
+        return NS(name=name, digits=5, point=.00001, trade_tick_size=.00001,
+                  trade_stops_level=10, trade_freeze_level=0, volume_min=.01,
+                  volume_max=5., volume_step=.01, currency_base='EUR',
+                  currency_profit='USD', currency_margin='USD', trade_mode=4)
+    def calc_profit(action, symbol, volume, entry, close):
+        calls.append(('profit', symbol))
+        return (close-entry)*volume*100*(1 if action==app.mt5.ORDER_TYPE_BUY else -1)
+    def calc_margin(action, symbol, volume, entry):
+        calls.append(('margin', symbol))
+        return 123.4
+    monkeypatch.setattr(app.mt5,'symbol_info',symbol_info)
+    monkeypatch.setattr(app.mt5,'order_calc_profit',calc_profit)
+    monkeypatch.setattr(app.mt5,'order_calc_margin',calc_margin)
+    monkeypatch.setattr(app,'current_daily_drawdown',lambda *args:(_ for _ in ()).throw(HTTPException(503,'fixture unavailable')))
+    response=isolated.client.post('/api/chart/v1/scenarios/preview?account=titan',json={
+        'account':'titan','symbol':'EURUSD','side':'BUY','volumeLots':.1,
+        'entryPrice':1.1,'slPrice':1.09,'tpPrice':1.12,
+    })
+    assert response.status_code==200,response.text
+    assert response.json()['symbol']=='EURUSD'
+    assert response.json()['tickSize']==.00001
+    assert calls and set(symbol for _kind,symbol in calls)=={'EURUSD'}
+    assert response.json()['canExecute'] is False
     isolated.send.assert_not_called()
 
 
