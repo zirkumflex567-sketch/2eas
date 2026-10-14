@@ -78,6 +78,19 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.showVolume(true);
    engine.addPriceLevel({id:"risk-stop",price:4100,color:"#ff6677"});
    engine.addTimeMarker({id:"entry-time",time:bars[40].time,color:"#c18bff"});
+   const multiSelect=engine.selectDrawings(["risk-stop","entry-time"]),selectedTogether=engine.inspect().selectedDrawingIds;
+   const groupHidden=engine.setSelectedDrawingsVisible(false),hiddenReadings=[engine.readDrawing("risk-stop").visible,engine.readDrawing("entry-time").visible];
+   const groupLocked=engine.setSelectedDrawingsLocked(true),lockedReadings=[engine.readDrawing("risk-stop").locked,engine.readDrawing("entry-time").locked];
+   engine.setSelectedDrawingsVisible(true);engine.setSelectedDrawingsLocked(false);
+   document.getElementById("chart").dispatchEvent(new KeyboardEvent("keydown",{key:"h",bubbles:true}));
+   const keyboardHidden=[engine.readDrawing("risk-stop").visible,engine.readDrawing("entry-time").visible];
+   document.getElementById("chart").dispatchEvent(new KeyboardEvent("keydown",{key:"l",bubbles:true}));
+   const keyboardLocked=[engine.readDrawing("risk-stop").locked,engine.readDrawing("entry-time").locked];
+   engine.setSelectedDrawingsVisible(true);engine.setSelectedDrawingsLocked(false);
+   const toggledSelection=engine.toggleDrawingSelection("entry-time"),selectedAfterToggle=engine.inspect().selectedDrawingIds;
+   let unknownSelectionRejected=false;try{engine.selectDrawings(["risk-stop","missing-drawing"])}catch(_){unknownSelectionRejected=true}
+   const selectionAfterRejected=engine.inspect().selectedDrawingIds;
+   engine.selectDrawings(["risk-stop","entry-time"]);
    let duplicateDrawingRejected=false;try{engine.addTimeMarker({id:"risk-stop",time:bars[40].time,color:"#ffffff"})}catch(_){duplicateDrawingRejected=true}
    let drawingIndicatorCollisionRejected=false;try{engine.addAverage({id:"risk-stop",color:"#ffffff"},[])}catch(_){drawingIndicatorCollisionRejected=true}
    const withPrimitive=engine.inspect();
@@ -116,6 +129,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    let disposed=false;try{engine.setCandles(bars)}catch(_){disposed=true}
    return {first,updated,staleRejected,invalidRejected,isolated,removed,disposed,badPaneRejected,
     withPrimitive,updatedPrimitive,removedPrimitive,removedTimeMarker,withoutPrimitive,invalidPrimitiveRejected,unknownTimeRejected,duplicateDrawingRejected,
+    multiSelect,selectedTogether,groupHidden,hiddenReadings,groupLocked,lockedReadings,keyboardHidden,keyboardLocked,toggledSelection,selectedAfterToggle,unknownSelectionRejected,selectionAfterRejected,
     staleHistoryMarker,drawingIndicatorCollisionRejected,
     warmupReadout,alignedReadout,noVolumeReadout,missingBarReadout,formingReadout,
     replacementReadout,badVolumeRejected,invalidReadoutTimeRejected,
@@ -427,6 +441,19 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(result.first.volumeVisible,true);
   assert.equal(result.first.persistenceStatus,"DISABLED");
   assert.equal(result.withPrimitive.nativePrimitives,2);
+  assert.deepEqual(result.multiSelect,["risk-stop","entry-time"]);
+  assert.deepEqual(result.selectedTogether,["risk-stop","entry-time"]);
+  assert.deepEqual(result.groupHidden,["risk-stop","entry-time"]);
+  assert.deepEqual(result.hiddenReadings,[false,false]);
+  assert.deepEqual(result.groupLocked,["risk-stop","entry-time"]);
+  assert.deepEqual(result.lockedReadings,[true,true]);
+  assert.deepEqual(result.keyboardHidden,[false,false]);
+  assert.deepEqual(result.keyboardLocked,[true,true]);
+  assert.deepEqual(result.toggledSelection,["risk-stop"]);
+  assert.deepEqual(result.selectedAfterToggle,["risk-stop"]);
+  assert.equal(result.unknownSelectionRejected,true);
+  assert.deepEqual(result.selectionAfterRejected,["risk-stop"]);
+  assert.deepEqual(result.isolated.selectedDrawingIds,[]);
   assert.equal(result.updatedPrimitive.nativePrimitives,2);
   assert.equal(result.removedPrimitive,true);
   assert.equal(result.removedTimeMarker,true);
