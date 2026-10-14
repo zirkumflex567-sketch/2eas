@@ -25,8 +25,8 @@ from pathlib import Path
 from account_gateway import ACCOUNTS, config_path, public_account, scoped, selected, verify_identity, writes_titan_reset
 from goldm15_dashboard import GUARD_FILE, metrics as gold_metrics, parameters as gold_parameters, read_guard, wilder_rsi
 from chart_studio.money import PreviewError, drawdown_projection, preview_scenario
-from chart_studio.broker_reads import legacy_quote
-from chart_studio.read_api import install_read_routes
+from chart_studio.broker_reads import legacy_quote, require_symbol
+from chart_studio.read_api import install_read_routes, Symbol
 from chart_studio.preview_api import install_preview_routes
 from chart_studio.evidence_api import install_evidence_routes
 from dashboard_security import install_control_security
@@ -810,14 +810,20 @@ def api_status(account: str = 'titan', include_journal: bool = True, light: bool
 
 @app.get("/api/candles")
 @scoped(mt5)
-def api_candles(count: int = 150, account: str = 'titan', tf: str = 'M15'):
+def api_candles(count: int = 150, account: str = 'titan', tf: str = 'M15', symbol: Symbol = SYMBOL):
     if not ensure_mt5_init():
         raise HTTPException(status_code=500, detail="MT5 Fehler")
+    symbol_info = require_symbol(mt5, symbol)
+    digits = getattr(symbol_info, 'digits', None)
+    if isinstance(digits, bool) or not isinstance(digits, int) or not 0 <= digits <= 10:
+        raise HTTPException(status_code=503, detail="MT5-Symbolpräzision nicht verfügbar.")
     tf_upper = tf.upper()
-    tf_val = TIMEFRAME_MAP.get(tf_upper, mt5.TIMEFRAME_M15)
+    if tf_upper not in TIMEFRAME_MAP:
+        raise HTTPException(status_code=422, detail="Ungültiger Chart-Timeframe.")
+    tf_val = TIMEFRAME_MAP[tf_upper]
     count = min(1000, max(10, count))
-    fetch_count = max(5000, count+250) if (account=='goldm15' and tf_val==mt5.TIMEFRAME_M15) else (count+250)
-    rates = mt5.copy_rates_from_pos(SYMBOL, tf_val, 0, fetch_count)
+    fetch_count = max(5000, count+250) if (account=='goldm15' and symbol==SYMBOL and tf_val==mt5.TIMEFRAME_M15) else (count+250)
+    rates = mt5.copy_rates_from_pos(symbol, tf_val, 0, fetch_count)
     if rates is None or len(rates)<2:
         raise HTTPException(status_code=500, detail="Konnte Kerzen nicht laden")
         
@@ -830,7 +836,7 @@ def api_candles(count: int = 150, account: str = 'titan', tf: str = 'M15'):
     g = diff.clip(lower=0).rolling(14).mean()
     l = (-diff.clip(upper=0)).rolling(14).mean()
     df['rsi14'] = 100 - (100 / (1 + g / (l + 1e-9)))
-    if account=='goldm15' and tf_val==mt5.TIMEFRAME_M15:
+    if account=='goldm15' and symbol==SYMBOL and tf_val==mt5.TIMEFRAME_M15:
         params = gold_parameters()
         for n in {int(params[f'S{s}_{key}']) for s in range(1,4) for key in ('FastRSI','BuyTrendRSI','SellTrendRSI')}:
             df[f'gold_rsi{n}'] = wilder_rsi(df['close'].to_numpy(), n)
@@ -851,18 +857,18 @@ def api_candles(count: int = 150, account: str = 'titan', tf: str = 'M15'):
         
         candles.append({
             'time': t,
-            'open': round(row['open'], 2),
-            'high': round(row['high'], 2),
-            'low': round(row['low'], 2),
-            'close': round(row['close'], 2),
+            'open': round(row['open'], digits),
+            'high': round(row['high'], digits),
+            'low': round(row['low'], digits),
+            'close': round(row['close'], digits),
             'tick_volume': int(row['tick_volume']),
             'real_volume': int(row['real_volume']) if 'real_volume' in row.index and pd.notna(row['real_volume']) else 0
         })
-        ema20_pts.append({'time': t, 'value': round(row['ema20'], 2)})
-        ema50_pts.append({'time': t, 'value': round(row['ema50'], 2)})
-        ema200_pts.append({'time': t, 'value': round(row['ema200'], 2)})
+        ema20_pts.append({'time': t, 'value': round(row['ema20'], digits)})
+        ema50_pts.append({'time': t, 'value': round(row['ema50'], digits)})
+        ema200_pts.append({'time': t, 'value': round(row['ema200'], digits)})
         
-        if tf_val == mt5.TIMEFRAME_M15:
+        if symbol == SYMBOL and tf_val == mt5.TIMEFRAME_M15:
             prev = df.loc[idx - 1]
             c1, o1 = prev['close'], prev['open']
             e20_1, e50_1, e200_1 = prev['ema20'], prev['ema50'], prev['ema200']
@@ -898,17 +904,21 @@ def api_candles(count: int = 150, account: str = 'titan', tf: str = 'M15'):
     weekly_vp = compute_volume_profile(df[df['dt'].dt.date >= monday_date], num_bins=25)
     
     sr_levels = {
-        'daily_high': daily_vp.get('high', 0.0),
-        'daily_low':  daily_vp.get('low', 0.0),
-        'daily_poc':  daily_vp.get('poc', 0.0),
-        'weekly_high': weekly_vp.get('high', 0.0),
-        'weekly_low':  weekly_vp.get('low', 0.0),
-        'weekly_poc':  weekly_vp.get('poc', 0.0),
+        'daily_high': round(daily_vp.get('high', 0.0), digits),
+        'daily_low':  round(daily_vp.get('low', 0.0), digits),
+        'daily_poc':  round(daily_vp.get('poc', 0.0), digits),
+        'weekly_high': round(weekly_vp.get('high', 0.0), digits),
+        'weekly_low':  round(weekly_vp.get('low', 0.0), digits),
+        'weekly_poc':  round(weekly_vp.get('poc', 0.0), digits),
     }
 
     return {
         "account": public_account(selected()),
+        "accountId": account,
+        "symbol": symbol,
         "timeframe": tf_upper,
+        "source": "MT5_VERIFIED",
+        "canExecute": False,
         "candles": candles,
         "ema20": ema20_pts,
         "ema50": ema50_pts,
@@ -1780,6 +1790,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     const BASE_PATH = window.location.pathname.startsWith('/stt') ? '/stt' : '';
     let activeAccount = 'titan';
     let activeTimeframe = 'M15';
+    let activeChartSymbol = 'XAUUSD';
     const AVAILABLE_TFS = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'];
     let accountGeneration = 0;
     let accounts = {};
@@ -1830,6 +1841,9 @@ HTML_CONTENT = """<!DOCTYPE html>
     let showEAStatusText = localStorage.getItem('chart_show_ea_status') !== 'false';
     let currentChartMarkers = [];
     let matrixSignature = null, vpSignature = null;
+    function clearChartFX() {
+      try { window.StoneChartFX?.update({ candles: [], emas: [[], [], []], context: activeAccount + '/' + activeChartSymbol + '/' + activeTimeframe + '/' + accountGeneration }); } catch (_) {}
+    }
 
     function updateEAStatusButtonUI() {
       const btn = document.getElementById('toggle-ea-status-btn');
@@ -1853,9 +1867,16 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
     }
 
+    function updateChartScopeLabel() {
+      const meta=accounts[activeAccount],detail=document.getElementById('account-detail');
+      if(meta&&detail)detail.textContent=meta.login+' · '+meta.server+' · '+activeChartSymbol+' / '+activeTimeframe;
+    }
+
     function switchTimeframe(tf) {
       if (activeTimeframe === tf) return;
       activeTimeframe = tf;
+      updateChartScopeLabel();
+      clearChartFX();
       try { window.ChartStudioBeta?.timeframe(tf); } catch (_) {}
 
       AVAILABLE_TFS.forEach(t => {
@@ -1870,7 +1891,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
       const titleEl = document.getElementById('chart-title-text');
       if (titleEl) {
-        titleEl.textContent = `XAUUSD ${tf} Chart`;
+        titleEl.textContent = `${activeChartSymbol} ${tf} Chart`;
       }
 
       isInitialLoad = true;
@@ -1878,6 +1899,26 @@ HTML_CONTENT = """<!DOCTYPE html>
       try {window.StoneCelebration?.clearEMAs();}catch(_){}
       loadCandles();
     }
+
+    function switchChartSymbol(symbol) {
+      if (typeof symbol !== 'string' || !/^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$/.test(symbol) || symbol === activeChartSymbol) return;
+      activeChartSymbol = symbol;
+      updateChartScopeLabel();
+      isInitialLoad = true;
+      lastCandleTime = 0;
+      currentCandlesCount = 0;
+      candleSeries?.setData([]);
+      ema20Series?.setData([]); ema50Series?.setData([]); ema200Series?.setData([]);
+      currentChartMarkers = [];
+      candleSeries?.setMarkers([]);
+      updateChartSRLines(null, 0);
+      try { window.StoneCelebration?.clearEMAs(); } catch (_) {}
+      clearChartFX();
+      const titleEl = document.getElementById('chart-title-text');
+      if (titleEl) titleEl.textContent = `${activeChartSymbol} ${activeTimeframe} Chart`;
+      void loadCandles();
+    }
+    window.addEventListener('chartstudio:symbol-change', event => switchChartSymbol(event.detail?.symbol));
 
     function staleRequest() { return new DOMException('Account wurde gewechselt', 'AbortError'); }
     let controlSessionPromise = null;
@@ -1966,6 +2007,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       activeAccount = account;
       try { window.ChartStudioBeta?.account(account); } catch (_) {}
       accountGeneration++;
+      clearChartFX();
       DashboardRuntime.abortAccount();
       localStorage.setItem('gold_dashboard_account', account);
       document.querySelectorAll('.account-tab').forEach(tab => tab.setAttribute('aria-pressed', String(tab.dataset.account===account)));
@@ -1973,7 +2015,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       document.getElementById('strategy-title').textContent = meta.name.toUpperCase();
       document.getElementById('strategy-version').textContent = meta.version;
       document.title = meta.name + ' · ' + meta.login + ' · Live Cockpit';
-      document.getElementById('account-detail').textContent = meta.login + ' · ' + meta.server + ' · XAUUSD / M15';
+      updateChartScopeLabel();
       document.getElementById('account-connection').textContent = 'Verbindung wird geprüft …';
       document.getElementById('account-connection').className = 'text-amber-500 font-bold';
       document.getElementById('matrix-title').textContent = account==='goldm15' ? '🎯 Einstiegsziele · Systeme 1–3' : '🎯 Target-Matrix (Alle 5 Regeln im Direktvergleich)';
@@ -2268,13 +2310,16 @@ HTML_CONTENT = """<!DOCTYPE html>
     // --- SMOOTH CANDLES LOAD (NO JUMPING & PRESERVES ZOOM) ---
     async function loadCandles() {
       const generation = accountGeneration;
-      if (candlesBusy === generation) return;
-      candlesBusy = generation;
+      const reqTf = activeTimeframe;
+      const reqSymbol = activeChartSymbol;
+      const requestKey = generation + '/' + reqSymbol + '/' + reqTf;
+      if (candlesBusy === requestKey) return;
+      candlesBusy = requestKey;
       try {
-        const reqTf = activeTimeframe;
-        const res = await accountFetch('/api/candles?tf=' + encodeURIComponent(reqTf));
+        const res = await accountFetch('/api/candles?tf=' + encodeURIComponent(reqTf) + '&symbol=' + encodeURIComponent(reqSymbol));
         const data = await res.json();
-        if (generation !== accountGeneration || reqTf !== activeTimeframe) throw staleRequest();
+        if (generation !== accountGeneration || reqTf !== activeTimeframe || reqSymbol !== activeChartSymbol) throw staleRequest();
+        if (!res.ok || data.accountId !== activeAccount || data.symbol !== reqSymbol || data.timeframe !== reqTf || data.source !== 'MT5_VERIFIED' || data.canExecute !== false) throw new Error('Chartdaten haben keinen passenden Account-/Symbol-/Timeframe-Read-Scope.');
         if (!data.candles || data.candles.length === 0) return;
 
         currentCandlesCount = data.candles.length;
@@ -2334,7 +2379,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             emas: [data.ema20, data.ema50, data.ema200],
             markers: showEAStatusText ? currentChartMarkers : [],
             newBar: stoneNewBar,
-            context: activeAccount + '/' + activeTimeframe + '/' + accountGeneration
+            context: activeAccount + '/' + activeChartSymbol + '/' + activeTimeframe + '/' + accountGeneration
           });
         } catch (_) { /* Never let decorative effects interfere with MT5 polling. */ }
         try {
@@ -2346,7 +2391,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         } catch (_) { /* Read-only EMA display is optional. */ }
       } catch (err) {
         reportAccountError(err, generation);
-      } finally { if (candlesBusy === generation) candlesBusy = null; }
+      } finally { if (candlesBusy === requestKey) candlesBusy = null; }
     }
 
     // --- LIVE STATUS & TARGET MATRIX ---

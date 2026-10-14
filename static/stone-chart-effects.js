@@ -453,7 +453,7 @@
 
   function update({ candles, emas, context = "" }) {
     const state = instance;
-    if (!state || !Array.isArray(candles) || !candles.length) return;
+    if (!state || !Array.isArray(candles)) return;
     if (context !== state.context) {
       state.context = context;
       state.effects = [];
@@ -464,7 +464,7 @@
     state.candles = candles.slice(-550);
     if (Array.isArray(emas)) {
       state.emaData = emas.map(points => Array.isArray(points) ? points.slice(-550) : []);
-    }
+    } else if (!candles.length) state.emaData = [[],[],[]];
     render();
   }
 

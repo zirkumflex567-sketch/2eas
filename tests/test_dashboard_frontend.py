@@ -86,6 +86,8 @@ class DashboardFrontendTests(unittest.TestCase):
         self.page.on('dialog', lambda dialog: dialog.dismiss())
         self.account_failures = 0; self.journal_fail = False; self.status_fail = False
         self.candle_fail = False
+        self.candle_rows = []
+        self.candle_mismatch_symbol = None
         self.page.route('**/api/**', self.api)
     def tearDown(self):
         if self.trace_enabled:
@@ -109,7 +111,17 @@ class DashboardFrontendTests(unittest.TestCase):
         if parsed.path == '/api/journal_summary':
             route.fulfill(status=503 if self.journal_fail else 200, json=dict(detail='fixture journal failure') if self.journal_fail else journal(account)); return
         if parsed.path == '/api/candles':
-            route.fulfill(status=503 if self.candle_fail else 200, json=dict(detail='fixture candle failure') if self.candle_fail else dict(account=ACCOUNTS[account], candles=[])); return
+            query=parse_qs(parsed.query); symbol=query.get('symbol',['XAUUSD'])[0]; tf=query.get('tf',['M15'])[0]
+            payload=dict(account=ACCOUNTS[account],accountId=account,symbol=symbol,timeframe=tf,source='MT5_VERIFIED',canExecute=False,candles=copy.deepcopy(self.candle_rows),ema20=[],ema50=[],ema200=[],markers=[],sr_levels={})
+            if symbol == self.candle_mismatch_symbol: payload['symbol']='GBPUSD'
+            route.fulfill(status=503 if self.candle_fail else 200, json=dict(detail='fixture candle failure') if self.candle_fail else payload); return
+        if parsed.path == '/api/chart/v1/symbols':
+            query=parse_qs(parsed.query).get('q',[''])[0].casefold()
+            symbols=[dict(account=account,symbol=symbol,source='MT5_VERIFIED',canExecute=False) for symbol in ('XAUUSD','EURUSD') if query in symbol.casefold()]
+            route.fulfill(json=dict(account=account,source='MT5_VERIFIED',canExecute=False,symbols=symbols,limit=200,truncated=False)); return
+        if parsed.path == '/api/chart/v1/positions':
+            symbol=parse_qs(parsed.query).get('symbol',['XAUUSD'])[0]
+            route.fulfill(json=dict(account=account,symbol=symbol,source='MT5_VERIFIED',canExecute=False,currency='USD',marginMode=2,positions=[],orders=[])); return
         route.fulfill(status=404, json=dict(detail='unexpected fixture API'))
     def load(self):
         self.page.goto(self.url)
@@ -127,6 +139,55 @@ class DashboardFrontendTests(unittest.TestCase):
         expect(modal).to_be_hidden(); expect(trigger).to_be_focused()
         self.assertEqual(self.mutations, [])
         self.assertEqual(self.errors, [])
+
+    def test_verified_broker_symbol_changes_chart_candle_feed(self):
+        self.load()
+        self.page.locator('#cs-beta-toggle').click()
+        self.page.locator('.cs-broker-read-panel > summary').click()
+        selector=self.page.locator('#cs-broker-symbol')
+        expect(selector).to_have_value('XAUUSD',timeout=10000)
+        selector.select_option('EURUSD')
+        expect(self.page.locator('#chart-title-text')).to_have_text('EURUSD M15 Chart',timeout=10000)
+        expect(self.page.locator('#account-detail')).to_contain_text('EURUSD / M15')
+        candle_urls=[url for url in self.requests if '/api/candles?' in url]
+        self.assertTrue(any(parse_qs(urlparse(url).query).get('symbol')==['EURUSD'] for url in candle_urls),candle_urls)
+        self.assertEqual(self.page.evaluate('ChartStudioBeta.getState().symbol'),'EURUSD')
+        self.page.locator('#cs-broker-symbol-search').fill('XAUUSD')
+        self.page.locator('#cs-broker-symbol-search-button').click()
+        expect(selector).to_have_value('EURUSD',timeout=10000)
+        expect(self.page.locator('#chart-title-text')).to_have_text('EURUSD M15 Chart')
+        self.page.locator('#tf-btn-M5').click()
+        expect(self.page.locator('#chart-title-text')).to_have_text('EURUSD M5 Chart',timeout=10000)
+        expect(self.page.locator('#account-detail')).to_contain_text('EURUSD / M5')
+        self.assertEqual(self.mutations,[])
+    def test_mismatched_symbol_candle_response_is_rejected_after_old_feed_clears(self):
+        self.candle_rows=[
+            dict(time=1791918000,open=4000.,high=4002.,low=3998.,close=4001.,tick_volume=10,real_volume=0),
+            dict(time=1791918900,open=4001.,high=4003.,low=3999.,close=4002.,tick_volume=11,real_volume=0),
+        ]
+        self.candle_mismatch_symbol='EURUSD'
+        self.load()
+        self.page.evaluate("""() => {
+          const rows=[
+            {time:1791918000,open:4000,high:4002,low:3998,close:4001},
+            {time:1791918900,open:4001,high:4003,low:3999,close:4002}
+          ];
+          const series=document.querySelector('#tv-chart').__candleSeries;
+          series.setData(rows);
+          const original=series.setData.bind(series);
+          window.__candleSetDataLengths=[];
+          series.setData=items=>{window.__candleSetDataLengths.push(items.length);return original(items)};
+        }""")
+        self.page.locator('#cs-beta-toggle').click()
+        self.page.locator('.cs-broker-read-panel > summary').click()
+        self.page.locator('#cs-broker-symbol').select_option('EURUSD')
+        expect(self.page.locator('#chart-title-text')).to_have_text('EURUSD M15 Chart',timeout=10000)
+        self.page.wait_for_function("window.__candleSetDataLengths.length >= 1",timeout=10000)
+        self.assertTrue(self.page.evaluate('window.__candleSetDataLengths.length > 0 && window.__candleSetDataLengths.every(size => size === 0)'),
+            "The prior feed is cleared and mismatched response candles are never applied")
+        self.assertEqual(self.page.evaluate('ChartStudioBeta.getState().symbol'),'EURUSD')
+        self.assertEqual(self.mutations,[])
+        self.assertEqual(self.errors,[])
     def test_reset_invalid_baseline_never_posts(self):
         self.load(); self.page.locator('#dd-reset-button').click()
         self.page.locator('#dd-reset-input').fill('-100')

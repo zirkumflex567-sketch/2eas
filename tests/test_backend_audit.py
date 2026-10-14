@@ -115,6 +115,47 @@ def test_whatif_keeps_broker_preview_when_daily_drawdown_is_unavailable(isolated
     isolated.send.assert_not_called()
 
 
+def test_chart_candles_read_exact_requested_verified_symbol(isolated, monkeypatch):
+    calls=[]
+    monkeypatch.setattr(app.mt5,'symbol_info',lambda symbol:NS(
+        name=symbol,digits=5,trade_tick_size=.00001))
+    monkeypatch.setattr(app.mt5,'copy_rates_from_pos',lambda *args:(calls.append(args) or isolated.rates.copy()))
+    response=isolated.client.get('/api/candles?account=titan&tf=M15&symbol=EURUSD')
+    assert response.status_code==200,response.text
+    body=response.json()
+    assert body['symbol']=='EURUSD'
+    assert calls and calls[0][0]=='EURUSD'
+    assert body['candles'][-1]['close']==round(float(isolated.rates[-1]['close']),5)
+    for series in ('candles','ema20','ema50','ema200'):
+        for row in body[series]:
+            for field in (('open','high','low','close') if series=='candles' else ('value',)):
+                assert row[field]==round(row[field],5),f'{series}.{field} must use the verified symbol precision'
+    assert all(value==round(value,5) for value in body['sr_levels'].values())
+    assert body['markers']==[]
+    isolated.send.assert_not_called()
+
+
+def test_chart_candles_reject_unknown_symbol_before_history_read(isolated, monkeypatch):
+    reads=[]
+    monkeypatch.setattr(app.mt5,'symbol_info',lambda symbol:None)
+    monkeypatch.setattr(app.mt5,'copy_rates_from_pos',lambda *args:(reads.append(args) or isolated.rates.copy()))
+    response=isolated.client.get('/api/candles?account=titan&tf=M15&symbol=EURUSD')
+    assert response.status_code==404
+    assert reads==[]
+    isolated.send.assert_not_called()
+
+
+def test_chart_candles_reject_invalid_timeframe_before_history_read(isolated, monkeypatch):
+    reads=[]
+    monkeypatch.setattr(app.mt5,'symbol_info',lambda symbol:NS(
+        name=symbol,digits=2,trade_tick_size=.01))
+    monkeypatch.setattr(app.mt5,'copy_rates_from_pos',lambda *args:(reads.append(args) or isolated.rates.copy()))
+    response=isolated.client.get('/api/candles?account=titan&tf=M99&symbol=EURUSD')
+    assert response.status_code==422
+    assert reads==[]
+    isolated.send.assert_not_called()
+
+
 @pytest.mark.parametrize('model,payload', [
     (app.ModifyPositionRequest, {'ticket':0}),
     (app.ClosePositionRequest, {'ticket':-1}),
