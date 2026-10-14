@@ -8,10 +8,18 @@ export const VERSION = "5.2.1";
 export type Candle = {time:UTCTimestamp;open:number;high:number;low:number;close:number;tick_volume?:number;real_volume?:number};
 export type AveragePoint = {time:UTCTimestamp;value:number};
 export type AverageOptions = {id:string;color:string;lineWidth?:1|2|3|4;visible?:boolean;title?:string};
+export type DataWindowReadout = {
+ state:"AVAILABLE"|"UNAVAILABLE";account:string;source:"CHART_FEED";time:number;timeUtc:string;
+ reason?:"BAR_NOT_LOADED";ohlc?:{open:number;high:number;low:number;close:number};
+ volume?:{value:number|null;source:"REAL_VOLUME"|"TICK_VOLUME_PROXY"|"UNAVAILABLE"};
+ indicators?:Array<{id:string;title:string;kind:"OVERLAY"|"PANE";value:number|null;state:"AVAILABLE"|"WARMUP_OR_MISSING"}>;
+};
 const colorPattern = /^#[0-9a-fA-F]{6}$/;
 function validBar(c:Candle):boolean {
- return Number.isSafeInteger(c.time) && c.time>0 &&
+ return Number.isSafeInteger(c.time) && c.time>0 && Number.isFinite(new Date(c.time*1000).getTime()) &&
   [c.open,c.high,c.low,c.close].every(n=>Number.isFinite(n)&&n>0) &&
+  (c.tick_volume===undefined||(Number.isFinite(c.tick_volume)&&c.tick_volume>=0)) &&
+  (c.real_volume===undefined||(Number.isFinite(c.real_volume)&&c.real_volume>=0)) &&
   c.high>=Math.max(c.open,c.close,c.low) && c.low<=Math.min(c.open,c.close,c.high);
 }
 function normalizeCandles(data:readonly Candle[]):Candle[] {
@@ -46,6 +54,8 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   title:opts.title??opts.id,priceLineVisible:false,lastValueVisible:true});
  type LineApi=ReturnType<typeof newLine>;
  const averages=new Map<string,LineApi>();
+ type ReadoutIndicator={id:string;title:string;kind:"OVERLAY"|"PANE";values:Map<number,number>};
+ const readoutIndicators=new Map<string,ReadoutIndicator>();
  // Independent native chart panes, not separate chart instances or duplicated time axes.
  const paneLines=new Map<string,LineApi>();
  const createPaneLine=(opts:AverageOptions)=>chart.addSeries(LineSeries,{
@@ -56,10 +66,13 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   priceLineVisible:false,lastValueVisible:false},chart.panes().length);
  type VolumeApi=ReturnType<typeof newVolume>;
  let volume:VolumeApi|null=null;
- let bars:Candle[]=[],activeAccount=accountId,destroyed=false;
+ let bars:Candle[]=[],barsByTime=new Map<number,Candle>(),activeAccount=accountId,destroyed=false;
  function guard(){if(destroyed)throw Error("Chart was destroyed")}
  function setCandles(data:readonly Candle[]){
-  guard();bars=normalizeCandles(data);price.setData(bars);
+  guard();const next=normalizeCandles(data);bars=next;barsByTime=new Map(bars.map(c=>[c.time,c]));
+  for(const series of averages.values())series.setData([]);
+  for(const series of paneLines.values())series.setData([]);
+  readoutIndicators.clear();price.setData(bars);
   if(volume)volume.setData(volumeRows());
  }
  function volumeRows(){
@@ -71,16 +84,19 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color))throw Error("Invalid line options");
   if(averages.size>=16&&!averages.has(opts.id))throw Error("Indicator instance limit");
   if(paneLines.has(opts.id))throw Error("Duplicate overlay and pane identity");
+  const values=validSeriesData(data);
   let series=averages.get(opts.id);
   if(!series){series=newLine(opts);averages.set(opts.id,series)}
   else series.applyOptions({color:opts.color,lineWidth:opts.lineWidth??2,
    visible:opts.visible??true,title:opts.title??opts.id});
-  series.setData(validSeriesData(data));
+  series.setData(values);
+  readoutIndicators.set(opts.id,{id:opts.id,title:opts.title??opts.id,kind:"OVERLAY",values:new Map(values.map(v=>[v.time,v.value]))});
  }
  function addPaneLine(opts:AverageOptions,data:readonly AveragePoint[]){
   guard();
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color))
    throw Error("Invalid pane line");
+  const values=validSeriesData(data);
   if(averages.has(opts.id))throw Error("Duplicate pane and overlay identity");
   if(paneLines.size>=8&&!paneLines.has(opts.id))throw Error("Native pane limit");
   let series=paneLines.get(opts.id);
@@ -89,7 +105,8 @@ export function createStudioV5(host:HTMLElement,accountId:string){
    chart.panes()[chart.panes().length-1]?.setHeight(150);
   }else series.applyOptions({color:opts.color,lineWidth:opts.lineWidth??2,
    visible:opts.visible??true,title:opts.title??opts.id});
-  series.setData(validSeriesData(data));
+  series.setData(values);
+  readoutIndicators.set(opts.id,{id:opts.id,title:opts.title??opts.id,kind:"PANE",values:new Map(values.map(v=>[v.time,v.value]))});
  }
  function movePaneLine(id:string,paneIndex:number){
   guard();
@@ -106,7 +123,7 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  }
  function removePaneLine(id:string){
   guard();const series=paneLines.get(id);if(!series)return false;
-  chart.removeSeries(series);paneLines.delete(id);return true;
+  chart.removeSeries(series);paneLines.delete(id);readoutIndicators.delete(id);return true;
  }
  function moveAverage(id:string,pane:number){
   guard();if(!averages.has(id)||!Number.isInteger(pane)||pane<0||pane>8)throw Error("Invalid pane request");
@@ -127,26 +144,43 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   if(prev&&c.time<prev.time)throw Error("Cannot update historical bar out of order");
   if(prev&&c.time===prev.time)bars[bars.length-1]={...c};
   else bars.push({...c});
+  barsByTime.set(c.time,{...c});
+  for(const indicator of readoutIndicators.values())indicator.values.delete(c.time);
   price.update(c);if(volume)volume.update(volumeRows()[bars.length-1]);
  }
  function removeAverage(id:string){
   guard();const s=averages.get(id);if(!s)return false;
-  chart.removeSeries(s);averages.delete(id);return true;
+  chart.removeSeries(s);averages.delete(id);readoutIndicators.delete(id);return true;
+ }
+ function readDataWindow(time:number):DataWindowReadout{
+  guard();
+  if(!Number.isSafeInteger(time)||time<=0||!Number.isFinite(new Date(time*1000).getTime()))throw Error("Invalid UTC candle time");
+  const candle=barsByTime.get(time);
+  if(!candle)return {state:"UNAVAILABLE",account:activeAccount,source:"CHART_FEED",time, timeUtc:new Date(time*1000).toISOString(),reason:"BAR_NOT_LOADED"};
+  const real=typeof candle.real_volume==="number"&&candle.real_volume>0;
+  const hasTick=typeof candle.tick_volume==="number"&&Number.isFinite(candle.tick_volume)&&candle.tick_volume>=0;
+  return {state:"AVAILABLE",account:activeAccount,source:"CHART_FEED",time,timeUtc:new Date(time*1000).toISOString(),
+   ohlc:{open:candle.open,high:candle.high,low:candle.low,close:candle.close},
+   volume:real?{value:candle.real_volume!,source:"REAL_VOLUME"}:hasTick?{value:candle.tick_volume!,source:"TICK_VOLUME_PROXY"}:{value:null,source:"UNAVAILABLE"},
+   indicators:Array.from(readoutIndicators.values(),indicator=>{
+    const value=indicator.values.get(time),available=value!==undefined;
+    return {id:indicator.id,title:indicator.title,kind:indicator.kind,value:available?value:null,state:available?"AVAILABLE":"WARMUP_OR_MISSING"};
+   })};
  }
  function changeAccount(next:string){
   guard();if(!/^[a-zA-Z0-9_-]{1,50}$/.test(next))throw Error("Invalid account");
-  activeAccount=next;bars=[];price.setData([]);
+  activeAccount=next;bars=[];barsByTime.clear();price.setData([]);
   for(const item of averages.values())chart.removeSeries(item);
   averages.clear();
   for(const line of paneLines.values())chart.removeSeries(line);
-  paneLines.clear();if(volume)volume.setData([]);
+  paneLines.clear();readoutIndicators.clear();if(volume)volume.setData([]);
  }
  function inspect(){guard();return {version:VERSION,account:activeAccount,
   candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
   averageCount:averages.size,nativePaneLines:paneLines.size,
   paneCount:chart.panes().length,volumeVisible:!!volume}}
- function destroy(){if(destroyed)return;destroyed=true;chart.remove();averages.clear();paneLines.clear();volume=null;bars=[]}
+ function destroy(){if(destroyed)return;destroyed=true;chart.remove();averages.clear();paneLines.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
  return Object.freeze({setCandles,addAverage,moveAverage,removeAverage,
-  addPaneLine,movePaneLine,removePaneLine,resizePane,showVolume,
+  addPaneLine,movePaneLine,removePaneLine,resizePane,showVolume,readDataWindow,
   updateLast,changeAccount,inspect,destroy});
 }

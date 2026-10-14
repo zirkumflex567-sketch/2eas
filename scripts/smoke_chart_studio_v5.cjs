@@ -12,7 +12,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    if(i===79)throw Error("Fixture server unavailable");
    await new Promise(resolve=>setTimeout(resolve,250));
   }
-  browser=await chromium.launch({headless:true});
+  browser=await chromium.launch({headless:true,executablePath:process.env.CHART_STUDIO_CHROMIUM_PATH||undefined});
   const page=await browser.newPage({viewport:{width:1280,height:840}});
   const errors=[],writes=[];
   page.on("pageerror",error=>errors.push(error.message));
@@ -23,7 +23,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const engine=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan");
    const bars=Array.from({length:80},(_,i)=>{
     const p=4100+Math.sin(i/7)*10+i*.2;
-    return {time:1700000000+i*900,open:p,high:p+5,low:p-4,close:p+2,tick_volume:100+i};
+    return {time:1700000000+i*900,open:p,high:p+5,low:p-4,close:p+2,
+     ...(i===42?{}:{tick_volume:100+i}),...(i===40?{real_volume:700}: {})};
    });
    engine.setCandles(bars);
    engine.addAverage({id:"ema34",color:"#62deeb",lineWidth:2,title:"EMA 34"},
@@ -34,19 +35,32 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.resizePane(2,175);
    engine.movePaneLine("rsi14",1);
    engine.showVolume(true);
+   const warmupReadout=engine.readDataWindow(bars[10].time);
+   const alignedReadout=engine.readDataWindow(bars[40].time);
+   const noVolumeReadout=engine.readDataWindow(bars[42].time);
+   const missingBarReadout=engine.readDataWindow(bars[40].time+450);
+   let invalidReadoutTimeRejected=false;try{engine.readDataWindow(NaN)}catch(_){invalidReadoutTimeRejected=true}
    const first=engine.inspect();
    engine.updateLast({...bars[79],close:bars[79].close+1});
+   const formingReadout=engine.readDataWindow(bars[79].time);
    const updated=engine.inspect();
    let staleRejected=false;try{engine.updateLast(bars[0])}catch(_){staleRejected=true}
    let invalidRejected=false;try{engine.setCandles([{time:1,open:-4,high:10,low:1,close:2}])}
     catch(_){invalidRejected=true}
+   let badVolumeRejected=false;try{engine.setCandles([{time:1700000000,open:1,high:2,low:.5,close:1.5,tick_volume:NaN}])}
+    catch(_){badVolumeRejected=true}
    let badPaneRejected=false;try{engine.resizePane(0,10)}catch(_){badPaneRejected=true}
+   engine.setCandles([bars[79]]);
+   const replacementReadout=engine.readDataWindow(bars[79].time);
    engine.changeAccount("goldm15");
    const isolated=engine.inspect();
    const removed=engine.removeAverage("ema34");
    engine.destroy();
    let disposed=false;try{engine.setCandles(bars)}catch(_){disposed=true}
-   return {first,updated,staleRejected,invalidRejected,isolated,removed,disposed,badPaneRejected};
+   return {first,updated,staleRejected,invalidRejected,isolated,removed,disposed,badPaneRejected,
+    warmupReadout,alignedReadout,noVolumeReadout,missingBarReadout,formingReadout,
+    replacementReadout,badVolumeRejected,invalidReadoutTimeRejected,
+    expectedWarmupOpen:bars[10].open,expectedWarmupUtc:new Date(bars[10].time*1000).toISOString()};
   });
   assert.equal(result.first.version,"5.2.1");
   assert.equal(result.first.candleCount,80);
@@ -54,6 +68,25 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(result.first.nativePaneLines,1);
   assert.equal(result.first.volumeVisible,true);
   assert.ok(result.first.paneCount>=2);
+  assert.equal(result.warmupReadout.state,"AVAILABLE");
+  assert.equal(result.warmupReadout.source,"CHART_FEED");
+  assert.equal(result.warmupReadout.account,"titan");
+  assert.equal(result.warmupReadout.ohlc.open,result.expectedWarmupOpen);
+  assert.equal(result.warmupReadout.timeUtc,result.expectedWarmupUtc);
+  assert.equal(result.warmupReadout.volume.source,"TICK_VOLUME_PROXY");
+  assert.equal(result.warmupReadout.indicators.find(x=>x.id==="ema34").state,"WARMUP_OR_MISSING");
+  assert.equal(result.alignedReadout.volume.value,700);
+  assert.equal(result.alignedReadout.volume.source,"REAL_VOLUME");
+  assert.equal(result.alignedReadout.indicators.find(x=>x.id==="ema34").value,
+   result.alignedReadout.ohlc.close-.7);
+  assert.equal(result.alignedReadout.indicators.find(x=>x.id==="rsi14").state,"AVAILABLE");
+  assert.equal(result.noVolumeReadout.volume.source,"UNAVAILABLE");
+  assert.equal(result.noVolumeReadout.volume.value,null);
+  assert.equal(result.missingBarReadout.state,"UNAVAILABLE");
+  assert.equal(result.invalidReadoutTimeRejected,true);
+  assert.equal(result.formingReadout.indicators.find(x=>x.id==="ema34").state,"WARMUP_OR_MISSING");
+  assert.equal(result.replacementReadout.indicators.length,0);
+  assert.equal(result.badVolumeRejected,true);
   assert.equal(result.updated.candleCount,80);
   assert.equal(result.staleRejected,true);
   assert.equal(result.invalidRejected,true);
