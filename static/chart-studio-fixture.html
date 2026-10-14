@@ -6,6 +6,7 @@
 <body><div class="glass-card"><div><strong>XAUUSD M15 DEMO · READ ONLY</strong> <button id="stone-chart-expand-btn">GROSS</button></div>
 <div class="frame"><div id="tv-chart"></div></div></div>
 <script src="lightweight-charts.js"></script>
+<script src="stone-chart-effects.js"></script>
 <script src="chart-studio-data-signature.js"></script>
   <script src="chart-studio-indicators.js"></script>
 <script src="chart-studio-server-sync.js"></script>
@@ -47,6 +48,8 @@ window.__chartSmokeCandles=candles;
 candleSeries.setData(candles);
 emas.forEach((series,j)=>series.setData(candles.map(c=>({time:c.time,value:c.close-2+j}))));
 chart.timeScale().fitContent();
+window.StoneChartFX.attach({chart,host,candleSeries,emaSeries:emas});
+window.StoneChartFX.update({candles,emas:emas.map((_,j)=>candles.map(c=>({time:c.time,value:c.close-2+j}))),context:"fixture/titan/M15"});
 ChartStudioBeta.mount({chart,host,candleSeries,emaSeries:emas,account:"titan",timeframe:"M15"});
 ChartStudioBeta.updateCandles(candles);
 ChartStudioBeta.updatePositions("titan",[

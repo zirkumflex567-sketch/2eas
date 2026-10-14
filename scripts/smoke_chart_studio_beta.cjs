@@ -118,6 +118,25 @@ const fs=require("node:fs"),path=require("node:path");
   });
   await page.goto("http://127.0.0.1:8864/static/chart-studio-fixture.html",{waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartSmokeReady===true);
+  const fxGeometry=await page.evaluate(()=>{
+    document.body.classList.add("theme-stone");
+    StoneChartFX.configure({enabled:true,ambient:false});
+    const canvas=document.querySelector("#tv-chart .stone-chart-fx"),host=document.querySelector("#tv-chart"),rect=host.getBoundingClientRect();
+    return {left:Number.parseFloat(canvas.style.left),top:Number.parseFloat(canvas.style.top),width:Number.parseFloat(canvas.style.width),height:Number.parseFloat(canvas.style.height),
+      expectedLeft:chart.priceScale("left").width(),expectedWidth:chart.timeScale().width(),expectedTop:0,expectedHeight:rect.height-chart.timeScale().height()};
+  });
+  for(const key of ["left","top","width","height"])assert.ok(Math.abs(fxGeometry[key]-fxGeometry["expected"+key[0].toUpperCase()+key.slice(1)])<=1,"Chart FX canvas aligns to documented chart geometry: "+key);
+  const resizedFxGeometry=await page.evaluate(async()=>{
+    const host=document.querySelector("#tv-chart");host.style.height="560px";chart.applyOptions({width:host.clientWidth,height:host.clientHeight});
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const canvas=document.querySelector("#tv-chart .stone-chart-fx"),rect=host.getBoundingClientRect();
+    return {left:Number.parseFloat(canvas.style.left),top:Number.parseFloat(canvas.style.top),width:Number.parseFloat(canvas.style.width),height:Number.parseFloat(canvas.style.height),
+      expectedLeft:chart.priceScale("left").width(),expectedWidth:chart.timeScale().width(),expectedTop:0,expectedHeight:rect.height-chart.timeScale().height()};
+  });
+  for(const key of ["left","top","width","height"])assert.ok(Math.abs(resizedFxGeometry[key]-resizedFxGeometry["expected"+key[0].toUpperCase()+key.slice(1)])<=1,"Resized Chart FX canvas follows public chart geometry: "+key);
+  await page.evaluate(()=>{const host=document.querySelector("#tv-chart");host.style.height="520px";chart.applyOptions({width:host.clientWidth,height:host.clientHeight});chart.timeScale().setVisibleLogicalRange({from:5,to:50})});
+  await page.waitForTimeout(40);
+  await page.evaluate(()=>chart.timeScale().fitContent());
   await page.locator("#cs-beta-toggle").click();
   assert.equal(await page.locator("#cs-beta-panel").isVisible(),true);
   assert.equal(await page.locator("#cs-data-window").count(),1,"FR-008 exposes the chart data window");

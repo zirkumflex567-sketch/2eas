@@ -66,11 +66,20 @@ class StoneThemeContractTests(unittest.TestCase):
         self.assertIn("level.title", levels)
         self.assertIn("title:''", app)
         self.assertIn("drawEmaEffect(state,effect,now)", fx)
-        self.assertIn("state.chart.timeScale().width()", fx)
-        self.assertIn('plotCell.getBoundingClientRect()', fx)
+        self.assertIn("const plotWidth = Number(timeScale.width())", fx)
+        self.assertIn("timeScale.height()", fx)
         self.assertIn('cv.style.setProperty("width"', fx)
         self.assertIn("!motionPreference.matches", fx)
         self.assertIn("#chart-level-legend.stone-chart-level-legend", skin)
+
+    def test_chart_fx_uses_public_plot_geometry_apis(self):
+        fx = (STATIC / "stone-chart-effects.js").read_text(encoding="utf-8")
+        self.assertNotIn("table tbody tr:first-child td:first-child", fx)
+        self.assertIn("timeScale.height()", fx)
+        self.assertIn('state.chart.priceScale("left").width()', fx)
+        self.assertIn('state.chart.priceScale("right").width()', fx)
+        self.assertIn("getX(state, c.time)", fx)
+        self.assertIn("getY(state.candleSeries, c.high)", fx)
 
     def test_daily_weekly_price_levels_have_individual_account_scoped_toggles(self):
         app = (ROOT / "app.py").read_text(encoding="utf-8")
