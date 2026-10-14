@@ -8,7 +8,7 @@ import uuid
 import hashlib
 import json
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Callable, Union
 from urllib.parse import urlencode
 import requests
 
@@ -22,12 +22,18 @@ class BitunixClient:
         api_key: str,
         secret_key: str,
         base_url: str = "https://fapi.bitunix.com",
-        timeout: float = 8.0
+        timeout: float = 8.0,
+        writes_enabled: Union[bool, Callable[[], bool]] = False,
     ):
         self.api_key = api_key.strip()
         self.secret_key = secret_key.strip()
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self._writes_enabled = writes_enabled
+
+    def _write_gate_open(self) -> bool:
+        gate = self._writes_enabled
+        return bool(gate() if callable(gate) else gate)
 
     @staticmethod
     def _sha256_hex(val: str) -> str:
@@ -45,6 +51,9 @@ class BitunixClient:
 
     def request(self, method: str, endpoint: str, params: Optional[Dict[str, Any]] = None, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Send an authenticated HTTP request to Bitunix Futures API."""
+        if method.upper() != "GET" and not self._write_gate_open():
+            logger.warning("Blocked Bitunix %s %s: write gate is closed", method, endpoint)
+            return {"code": -403, "msg": "Bitunix write gate is closed", "data": None}
         url = f"{self.base_url}{endpoint}"
         nonce = uuid.uuid4().hex
         timestamp = str(int(time.time() * 1000))

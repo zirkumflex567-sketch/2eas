@@ -5,7 +5,7 @@ from bitunix_bridge import BitunixBridge, load_config, DEFAULT_CONFIG
 
 class BitunixBridgeTests(unittest.TestCase):
     def setUp(self):
-        self.client = BitunixClient(api_key="test_key", secret_key="test_secret")
+        self.client = BitunixClient(api_key="test_key", secret_key="test_secret", writes_enabled=True)
         self.bridge = BitunixBridge(config={
             **DEFAULT_CONFIG,
             "api_key": "test_key",
