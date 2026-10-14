@@ -36,7 +36,7 @@ def isolated(monkeypatch, tmp_path):
     monkeypatch.setattr(app.time, 'time', lambda: clock.now)
     tick = NS(time=int(clock.now), bid=4030., ask=4030.05)
     rates['time'] = (tick.time//900 - 299 + np.arange(300))*900
-    info = NS(login=account['login'], server=account['server'], balance=10000., equity=10000.)
+    info = NS(login=account['login'], server=account['server'], balance=10000., equity=10000., currency='USD')
     sym = NS(time=tick.time, spread=5, trade_contract_size=100., digits=2, point=.01,
              trade_tick_size=.01, trade_stops_level=10, trade_freeze_level=0, filling_mode=2)
     positions = Mock(return_value=[pos])
@@ -73,6 +73,46 @@ def isolated(monkeypatch, tmp_path):
     gateway._attached_mt5 = None
     gateway._attached_account = None
     app.JOURNAL_CACHE.clear(); app.JOURNAL_CACHE_AT.clear()
+
+
+def test_whatif_includes_read_only_daily_drawdown_projection(isolated, monkeypatch):
+    isolated.sym.volume_min=.01; isolated.sym.volume_max=5.; isolated.sym.volume_step=.01
+    monkeypatch.setattr(app.mt5,'order_calc_profit',lambda action,symbol,volume,entry,close:(close-entry)*volume*100*(1 if action==app.mt5.ORDER_TYPE_BUY else -1))
+    monkeypatch.setattr(app.mt5,'order_calc_margin',lambda *args:123.4)
+    monkeypatch.setattr(app,'current_daily_drawdown',lambda *args:(
+        {'loss_usd':100.,'limit_pct':3.5,'daily_ref':10000.},
+        {'source_fresh':True,'quote_time_epoch':isolated.clock.now},None))
+    response=isolated.client.post('/api/chart/v1/scenarios/preview?account=titan',json={
+        'account':'titan','symbol':'XAUUSD','side':'BUY','volumeLots':.1,
+        'entryPrice':4100,'slPrice':4090,'tpPrice':4120,
+    })
+    assert response.status_code==200,response.text
+    projection=response.json()['dailyDrawdownProjection']
+    assert projection['state']=='AVAILABLE'
+    assert projection['source']=='DASHBOARD_DD_ESTIMATE'
+    assert projection['currentLoss']==100
+    assert projection['scenarioStopRisk']==100
+    assert projection['projectedLoss']==200
+    assert projection['remainingToLimit']==150
+    assert projection['eaGuard']=={'state':'UNKNOWN','source':'NONE'}
+    assert response.json()['canExecute'] is False
+    isolated.send.assert_not_called()
+
+
+def test_whatif_keeps_broker_preview_when_daily_drawdown_is_unavailable(isolated, monkeypatch):
+    isolated.sym.volume_min=.01; isolated.sym.volume_max=5.; isolated.sym.volume_step=.01
+    monkeypatch.setattr(app.mt5,'order_calc_profit',lambda action,symbol,volume,entry,close:(close-entry)*volume*100*(1 if action==app.mt5.ORDER_TYPE_BUY else -1))
+    monkeypatch.setattr(app.mt5,'order_calc_margin',lambda *args:123.4)
+    monkeypatch.setattr(app,'current_daily_drawdown',lambda *args:(_ for _ in ()).throw(HTTPException(503,'fixture stale quote')))
+    response=isolated.client.post('/api/chart/v1/scenarios/preview?account=titan',json={
+        'account':'titan','symbol':'XAUUSD','side':'BUY','volumeLots':.1,
+        'entryPrice':4100,'slPrice':4090,'tpPrice':4120,
+    })
+    assert response.status_code==200,response.text
+    assert response.json()['pnlAtSl']['amount']==-100
+    assert response.json()['dailyDrawdownProjection']['state']=='UNAVAILABLE'
+    assert response.json()['dailyDrawdownProjection']['eaGuard']=={'state':'UNKNOWN','source':'NONE'}
+    isolated.send.assert_not_called()
 
 
 @pytest.mark.parametrize('model,payload', [

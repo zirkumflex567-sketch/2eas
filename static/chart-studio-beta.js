@@ -126,7 +126,9 @@ function renderScenarioSnapshots(){
   const mode=item.result.positionSizing?.mode||"UNKNOWN",budget=item.result.positionSizing?.riskBudget;
   title.textContent=""+slot+" · "+(budget==null?mode:"Budget "+budget+" "+(item.result.pnlAtSl?.currency||""));
   const net=item.result.netEstimate,costs=item.result.estimatedCosts,currency=costs?.currency||item.result.pnlAtSl?.currency||"";
-  detail.textContent="Lots "+(item.result.positionSizing?.volumeLots??"UNKNOWN")+" · GROSS SL/TP "+(item.result.pnlAtSl?.amount??"UNKNOWN")+" / "+(item.result.pnlAtTp?.amount??"UNKNOWN")+" · NETTO-Annahme SL/TP "+(net?.pnlAtSl?.amount??"UNKNOWN")+" / "+(net?.pnlAtTp?.amount??"UNKNOWN")+" · R:R "+(item.result.riskRewardRatio??"UNKNOWN")+" / Netto "+(net?.riskRewardRatio??"UNKNOWN")+" · Gebührannahme "+(costs?.feesPerLot??"UNKNOWN")+" "+currency+"/Lot; Slippage "+(costs?.slippageTicks??"UNKNOWN")+" Ticks · Margin "+(item.result.margin?.amount??"UNKNOWN")+" "+(item.result.margin?.currency||"")+" · "+item.savedAtUtc;
+  const dd=item.result.dailyDrawdownProjection;
+  const ddText=dd?.state==="AVAILABLE"?" · Tages-DD-Schätzung Rest "+dd.remainingToLimit+"/Limit "+dd.dailyLimit+" "+dd.currency+" · Quote "+dd.quoteTimeUtc+" · Guard UNKNOWN": " · Tages-DD UNAVAILABLE · Guard UNKNOWN";
+  detail.textContent="Lots "+(item.result.positionSizing?.volumeLots??"UNKNOWN")+" · GROSS SL/TP "+(item.result.pnlAtSl?.amount??"UNKNOWN")+" / "+(item.result.pnlAtTp?.amount??"UNKNOWN")+" · NETTO-Annahme SL/TP "+(net?.pnlAtSl?.amount??"UNKNOWN")+" / "+(net?.pnlAtTp?.amount??"UNKNOWN")+" · R:R "+(item.result.riskRewardRatio??"UNKNOWN")+" / Netto "+(net?.riskRewardRatio??"UNKNOWN")+" · Gebührannahme "+(costs?.feesPerLot??"UNKNOWN")+" "+currency+"/Lot; Slippage "+(costs?.slippageTicks??"UNKNOWN")+" Ticks · Margin "+(item.result.margin?.amount??"UNKNOWN")+" "+(item.result.margin?.currency||"")+ddText+" · "+item.savedAtUtc;
   section.append(title,detail);host.append(section);
  }
  if(!count){const empty=document.createElement("p");empty.textContent="Keine A/B-Snapshots für "+label+". Erst eine erfolgreiche Broker-Vorschau speichern.";host.append(empty)}
@@ -933,6 +935,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
     " · R:R "+result.riskRewardRatio+" · Lots "+result.positionSizing.volumeLots+
     (result.positionSizing.mode==="FIXED_LOTS"?"":" · Budget "+result.positionSizing.riskBudget+" "+cur+" · GROSS-Risiko nach Slippage "+result.positionSizing.grossStopRisk+" "+cur+" · Gesamtrisiko-Annahme "+result.positionSizing.estimatedTotalStopRisk+" "+cur)+
     " · NETTO-Annahme SL "+result.netEstimate.pnlAtSl.amount+" / TP "+result.netEstimate.pnlAtTp.amount+" "+cur+" · Gebühren "+result.estimatedCosts.feesPerLot+" "+cur+"/Lot Roundtrip · adverse Slippage "+result.estimatedCosts.slippageTicks+" Ticks (User-Annahme)"+
+    (result.dailyDrawdownProjection?.state==="AVAILABLE"?" · Tages-DD-Schätzung "+result.dailyDrawdownProjection.projectedLoss+"/"+result.dailyDrawdownProjection.dailyLimit+" "+result.dailyDrawdownProjection.currency+" · Rest "+result.dailyDrawdownProjection.remainingToLimit+" · Quote "+result.dailyDrawdownProjection.quoteTimeUtc+" · EA-Guard UNKNOWN":" · Tages-DD UNAVAILABLE ("+(result.dailyDrawdownProjection?.reason||"Daten fehlen")+") · EA-Guard UNKNOWN")+
     " · Margin "+result.margin.amount+" "+cur+
     (cur==="USD"?"":" · USD-Konversion nicht verfügbar")+
     " · Brutto aus MT5, Netto aus User-Annahmen; tatsächliche Gebühren/Swap/Slippage/Gaps können abweichen · KEINE ORDER";

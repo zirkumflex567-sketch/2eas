@@ -46,9 +46,14 @@ Current features:
   currency, or broker pricing fails closed.
 - What-if accepts a user assumption for round-trip fees per lot in account
   currency and adverse exit slippage in broker ticks. MT5 prices the
-  slippage-adjusted exits; the UI keeps broker gross PnL separate from the estimated net
-  values and uses these assumptions in risk-budget sizing. They are not broker-
-reported costs; actual commission, swap and gaps may differ.
+  slippage-adjusted exits; the UI keeps broker gross PnL separate from the
+  estimated net values and uses these assumptions in risk-budget sizing. They
+  are not broker-reported costs; actual commission, swap and gaps may differ.
+- USD What-if results also project the assumed net stop risk against the fresh
+  dashboard daily drawdown estimate, with quote time and remaining distance.
+  The EA guard is always shown as unknown unless a separate live authorization
+  source is proven; unavailable history/quotes and non-USD accounts stay
+  unavailable without conversion.
 - No USD exchange-rate fabrication: previews for non-USD accounts are in
   account currency, with USD explicitly unavailable.
 - Two broker-verified What-if previews can be saved as account-scoped local A/B

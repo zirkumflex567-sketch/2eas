@@ -36,6 +36,37 @@ def cost_assumptions(fees_per_lot, slippage_ticks):
     return float(fees_per_lot), slippage_ticks
 
 
+def drawdown_projection(*, currency, daily_drawdown, scenario_risk, quote_time_utc):
+    """Project an assumed stop loss against the dashboard's current DD model.
+
+    This is a display estimate only. It is never an EA guard or trade permission.
+    """
+    guard = {"state": "UNKNOWN", "source": "NONE"}
+    def unavailable(reason):
+        return {"state": "UNAVAILABLE", "reason": reason, "currency": currency or None,
+                "source": "NONE", "quoteTimeUtc": None, "eaGuard": guard}
+    if str(currency or "").upper() != "USD":
+        return unavailable("Kontowährung ist nicht USD; keine FX-Umrechnung verfügbar.")
+    if not isinstance(daily_drawdown, dict) or not isinstance(quote_time_utc, str) or not quote_time_utc.strip():
+        return unavailable("Frische Tages-DD-Daten oder Quotezeit fehlen.")
+    if not isinstance(scenario_risk, (int, float)) or isinstance(scenario_risk, bool) or not math.isfinite(scenario_risk) or scenario_risk <= 0:
+        return unavailable("Szenario-Stopprisiko ist nicht verfügbar.")
+    values = (daily_drawdown.get("loss_usd"), daily_drawdown.get("limit_pct"), daily_drawdown.get("daily_ref"))
+    if any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) for value in values):
+        return unavailable("Tagesverlust oder DD-Grenze ist unbekannt.")
+    current_loss, limit_pct, daily_ref = map(float, values)
+    if current_loss < 0 or not 0 < limit_pct <= 100 or daily_ref <= 0:
+        return unavailable("Tages-DD-Daten sind ungültig.")
+    daily_limit = daily_ref * limit_pct / 100
+    projected_loss = current_loss + float(scenario_risk)
+    remaining = daily_limit - projected_loss
+    return {"state": "AVAILABLE", "source": "DASHBOARD_DD_ESTIMATE", "currency": "USD",
+            "quoteTimeUtc": quote_time_utc, "currentLoss": round(current_loss, 2),
+            "dailyLimit": round(daily_limit, 2), "scenarioStopRisk": round(float(scenario_risk), 2),
+            "projectedLoss": round(projected_loss, 2), "remainingToLimit": round(remaining, 2),
+            "wouldExceedLimit": remaining < 0, "eaGuard": guard}
+
+
 def tick_aligned(value, tick_size):
     # Use integer distance, not textual digits or rounded percentage.
     ticks = round(value / tick_size)

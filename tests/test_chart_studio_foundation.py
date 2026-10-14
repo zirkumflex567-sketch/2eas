@@ -2,7 +2,7 @@
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from chart_studio.money import PreviewError, preview_scenario, size_for_risk_budget
+from chart_studio.money import PreviewError, drawdown_projection, preview_scenario, size_for_risk_budget
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -30,6 +30,26 @@ def result(side="BUY",currency="USD",mt5=None,**k):
     return preview_scenario(mt5 or MT5Fake(),SimpleNamespace(currency=currency),SYMBOL,**d)
 
 class ChartStudioFoundationTests(unittest.TestCase):
+    def test_drawdown_projection_uses_fresh_dashboard_buffer_and_keeps_guard_unknown(self):
+        projection=drawdown_projection(currency="USD",daily_drawdown={"risk_status":"available","loss_usd":100,
+            "limit_pct":3.5,"daily_ref":10000},scenario_risk=80,quote_time_utc="2026-10-14T10:00:00Z")
+        self.assertEqual(projection["state"],"AVAILABLE")
+        self.assertEqual(projection["source"],"DASHBOARD_DD_ESTIMATE")
+        self.assertEqual(projection["projectedLoss"],180)
+        self.assertEqual(projection["remainingToLimit"],170)
+        self.assertEqual(projection["eaGuard"],{"state":"UNKNOWN","source":"NONE"})
+
+    def test_drawdown_projection_reports_excess_and_fails_closed_on_unknown_inputs(self):
+        base={"risk_status":"available","loss_usd":300,"limit_pct":3.5,"daily_ref":10000}
+        over=drawdown_projection(currency="USD",daily_drawdown=base,scenario_risk=80,quote_time_utc="2026-10-14T10:00:00Z")
+        self.assertEqual(over["remainingToLimit"],-30)
+        self.assertTrue(over["wouldExceedLimit"])
+        for currency,dd,risk,quote in (("EUR",base,80,"2026-10-14T10:00:00Z"),("USD",None,80,"2026-10-14T10:00:00Z"),
+                                     ("USD",base,float("nan"),"2026-10-14T10:00:00Z"),("USD",base,80,None)):
+            with self.subTest(currency=currency,dd=dd,risk=risk,quote=quote):
+                result=drawdown_projection(currency=currency,daily_drawdown=dd,scenario_risk=risk,quote_time_utc=quote)
+                self.assertEqual(result["state"],"UNAVAILABLE")
+
     def test_risk_budget_sizing_uses_broker_profit_and_rounds_down_to_lot_step(self):
         mt5=MT5Fake()
         sized=size_for_risk_budget(mt5,SimpleNamespace(equity=10000,currency="USD"),SYMBOL,

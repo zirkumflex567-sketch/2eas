@@ -37,6 +37,7 @@ const fs=require("node:fs"),path=require("node:path");
       riskRewardRatio:Number((reward/-risk).toFixed(3)),tickSize:0.01,
       estimatedCosts:{source:"USER_ASSUMPTION",currency:"USD",feesPerLot:feePerLot,feesTotal:fees,slippageTicks:req.slippageTicks||0,slippageAtStop:slipPerLot*volume,slippageAtTarget:slipPerLot*volume},
       netEstimate:{kind:"userAssumptionsEstimate",pnlAtSl:{amount:netStop,currency:"USD"},pnlAtTp:{amount:netTarget,currency:"USD"},riskRewardRatio:netStop<0&&netTarget>0?Number((netTarget/-netStop).toFixed(3)):null},
+      dailyDrawdownProjection:{state:"AVAILABLE",source:"DASHBOARD_DD_ESTIMATE",currency:"USD",quoteTimeUtc:"2026-10-14T10:00:00Z",currentLoss:40,dailyLimit:350,scenarioStopRisk:Number(-netStop.toFixed(2)),projectedLoss:Number((40-netStop).toFixed(2)),remainingToLimit:Number((310+netStop).toFixed(2)),wouldExceedLimit:false,eaGuard:{state:"UNKNOWN",source:"NONE"}},
       positionSizing:req.volumeLots==null?{mode:req.riskBudget==null?"EQUITY_PERCENT":"RISK_BUDGET",volumeLots:volume,riskBudget:budget,grossStopRisk:Number((-risk+slipPerLot*volume).toFixed(2)),estimatedFees:fees,estimatedTotalStopRisk:Number((-netStop).toFixed(2)),currency:"USD"}:{mode:"FIXED_LOTS",volumeLots:volume,currency:"USD"}};
     scenarioResponses.push(preview);
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(preview)});
@@ -522,6 +523,7 @@ const fs=require("node:fs"),path=require("node:path");
   assert.equal(scenarioPayloads.at(-1).feesPerLot,3);
   assert.equal(scenarioPayloads.at(-1).slippageTicks,2);
   assert.match(await page.locator("#cs-scenario-result").textContent(),/NETTO-Annahme SL .* Gebühren 3 USD\/Lot Roundtrip · adverse Slippage 2 Ticks/);
+  assert.match(await page.locator("#cs-scenario-result").textContent(),/Tages-DD-Schätzung .* Quote 2026-10-14T10:00:00Z · EA-Guard UNKNOWN/);
   await page.locator('[name="lotMode"]').selectOption("BUDGET");
   await page.locator('[name="riskBudget"]').fill("50");
   await page.locator('#cs-scenario-form button[type="submit"]').click();

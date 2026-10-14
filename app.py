@@ -24,7 +24,7 @@ from metrics_cache import ClosedBarMetricsCache
 from pathlib import Path
 from account_gateway import ACCOUNTS, config_path, public_account, scoped, selected, verify_identity, writes_titan_reset
 from goldm15_dashboard import GUARD_FILE, metrics as gold_metrics, parameters as gold_parameters, read_guard, wilder_rsi
-from chart_studio.money import PreviewError, preview_scenario
+from chart_studio.money import PreviewError, drawdown_projection, preview_scenario
 from chart_studio.broker_reads import legacy_quote
 from chart_studio.read_api import install_read_routes
 from chart_studio.preview_api import install_preview_routes
@@ -280,6 +280,70 @@ def risk_day_context(now, reset_hour, cfg):
                 risk_day=day, risk_timezone=broker_clock.zone_label(selected()), risk_reset_hour=reset_hour), midnight
 
 
+def current_daily_drawdown(mt5_client, account_info, tick, now, params=None, dd_cfg=None):
+    """Read only the fresh inputs needed for today's dashboard DD estimate."""
+    if not tick or not account_info:
+        raise HTTPException(503, 'MT5-Quote/Kontodaten für Tages-DD fehlen.')
+    params = gold_parameters() if selected()['id'] == 'goldm15' else params
+    reset_hour = int(params['RiskResetHourServer']) if params else 0
+    dd_cfg = load_dd_config() if dd_cfg is None else dd_cfg
+    risk_context, midnight_dt = risk_day_context(now, reset_hour, dd_cfg)
+    source_meta = require_fresh_quote(tick, now, risk_context)
+    if not all(math.isfinite(v) and v > 0 for v in (account_info.balance, account_info.equity)):
+        raise HTTPException(503, 'Kontorisikodaten sind ungültig/unbekannt.')
+
+    manual_active = risk_context['manual_active']
+    reset_ts = dd_cfg.get('reset_timestamp')
+    reset_bal = dd_cfg.get('reset_balance', 10000.0)
+    from_dt = max(midnight_dt, datetime.fromtimestamp(reset_ts, timezone.utc)) if manual_active and reset_ts else midnight_dt
+    offset = broker_clock.offset_seconds(selected())
+    deals = require_mt5_data(mt5_client.history_deals_get(
+        from_dt + timedelta(seconds=offset),
+        datetime.fromtimestamp(now, timezone.utc) + timedelta(seconds=offset)), 'daily_history')
+    realized_today = 0.0
+    if deals:
+        for deal in deals:
+            if deal.type in (mt5_client.DEAL_TYPE_BUY, mt5_client.DEAL_TYPE_SELL):
+                realized_today += deal.profit + deal.swap + deal.commission + getattr(deal, 'fee', 0.)
+    day_start_bal = float(reset_bal) if manual_active and reset_ts else account_info.balance - realized_today
+    if not all(math.isfinite(v) for v in (realized_today, day_start_bal)) or day_start_bal <= 0:
+        raise HTTPException(503, 'Tageshistorie/-baseline ist ungültig; Risiko unbekannt.')
+    daily_ref = max(day_start_bal, account_info.balance)
+    daily_loss = max(0.0, daily_ref - account_info.equity)
+    ea_limit_pct, broker_limit_pct = 3.5, 4.0
+    daily_drawdown = {
+        'loss_usd': round(daily_loss, 2),
+        'pct': round(100 * daily_loss / daily_ref, 2),
+        'limit_pct': ea_limit_pct,
+        'broker_limit_pct': broker_limit_pct,
+        'buffer_usd': round(max(0.0, daily_ref * ea_limit_pct / 100 - daily_loss), 2),
+        'buffer_broker_usd': round(max(0.0, daily_ref * broker_limit_pct / 100 - daily_loss), 2),
+        'day_start_bal': round(day_start_bal, 2),
+        'daily_ref': round(daily_ref, 2),
+        'balance': round(account_info.balance, 2),
+        'equity': round(account_info.equity, 2),
+        'realized_today': round(realized_today, 2),
+        'manual_active': manual_active,
+        'manual_expired': bool(dd_cfg.get('manual_reset_active', False) and not manual_active),
+        'risk_day': risk_context['risk_day'],
+        'risk_timezone': risk_context['risk_timezone'],
+        'risk_reset_hour': reset_hour,
+        'reset_balance': round(float(reset_bal), 2) if manual_active else None,
+        'reset_time_str': datetime.fromtimestamp(reset_ts, timezone.utc).strftime('%H:%M:%S') if manual_active and reset_ts else None,
+    }
+    guard = None
+    if selected()['id'] == 'goldm15':
+        guard = read_guard(GUARD_FILE, broker_clock.to_broker_epoch(now, selected()), account_info.equity,
+                           params, balance=account_info.balance)
+        if guard['baseline_verified'] and not manual_active:
+            daily_loss = max(0, guard['baseline'] - min(account_info.balance, account_info.equity))
+            daily_drawdown.update(loss_usd=round(daily_loss, 2),
+                                  pct=round(100 * daily_loss / params['InitialBalanceUSD'], 2),
+                                  daily_ref=guard['baseline'], day_start_bal=guard['baseline'],
+                                  buffer_usd=round(guard['daily_buffer_usd'], 2))
+    return daily_drawdown, source_meta, guard
+
+
 def require_mt5_data(data, source):
     if data is None:
         error = mt5.last_error() if hasattr(mt5, 'last_error') else None
@@ -379,17 +443,12 @@ def get_live_market_data(include_journal=True):
     tick = mt5.symbol_info_tick(SYMBOL)
     acc = mt5.account_info()
     now = time.time()
-    params = gold_parameters() if selected()['id']=='goldm15' else None
-    reset_hour = int(params['RiskResetHourServer']) if params else 0
-    dd_cfg = load_dd_config()
-    risk_context, midnight_dt = risk_day_context(now, reset_hour, dd_cfg)
-    source_meta = require_fresh_quote(tick, now, risk_context)
-    wall_time = datetime.fromtimestamp(now, timezone.utc)
-    
     if not sym or not tick or not acc:
         return None
-    if not all(math.isfinite(v) and v > 0 for v in (acc.balance, acc.equity)):
-        raise HTTPException(503, 'Kontorisikodaten sind ungültig/unbekannt.')
+    params = gold_parameters() if selected()['id']=='goldm15' else None
+    dd_cfg = load_dd_config()
+    daily_drawdown, source_meta, guard = current_daily_drawdown(mt5, acc, tick, now, params, dd_cfg)
+    wall_time = datetime.fromtimestamp(now, timezone.utc)
         
     rates = mt5.copy_rates_from_pos(SYMBOL, TIMEFRAME, 0, 5000 if selected()['id']=='goldm15' else 1000)
     if rates is None or len(rates) < 200:
@@ -661,64 +720,6 @@ def get_live_market_data(include_journal=True):
             "magic": getattr(p, 'magic', 0)
         })
 
-    # Daily Drawdown Calculation (Blueberry Funded Rule: Day Start Balance / High Water Mark)
-    risk_day = risk_context['risk_day']
-    manual_requested = dd_cfg.get('manual_reset_active', False)
-    reset_ts = dd_cfg.get("reset_timestamp")
-    manual_active = risk_context['manual_active']
-    reset_bal = dd_cfg.get("reset_balance", 10000.0)
-
-    if manual_active and reset_ts:
-        reset_dt = datetime.fromtimestamp(reset_ts, timezone.utc)
-        from_dt = max(midnight_dt, reset_dt)
-        deals = require_mt5_data(mt5.history_deals_get(from_dt+timedelta(seconds=broker_clock.offset_seconds(selected())), wall_time+timedelta(seconds=broker_clock.offset_seconds(selected()))), 'daily_history')
-        realized_today = 0.0
-        if deals:
-            for d in deals:
-                if d.type in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL):
-                    realized_today += (d.profit + d.swap + d.commission + getattr(d, 'fee', 0.))
-        day_start_bal = float(reset_bal)
-    else:
-        deals = require_mt5_data(mt5.history_deals_get(midnight_dt+timedelta(seconds=broker_clock.offset_seconds(selected())), wall_time+timedelta(seconds=broker_clock.offset_seconds(selected()))), 'daily_history')
-        realized_today = 0.0
-        if deals:
-            for d in deals:
-                if d.type in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL):
-                    realized_today += (d.profit + d.swap + d.commission + getattr(d, 'fee', 0.))
-        day_start_bal = acc.balance - realized_today
-
-    if not all(math.isfinite(v) for v in (realized_today, day_start_bal)) or day_start_bal <= 0:
-        raise HTTPException(503, 'Tageshistorie/-baseline ist ungültig; Risiko unbekannt.')
-    daily_ref = max(day_start_bal, acc.balance)
-    daily_loss_usd = max(0.0, daily_ref - acc.equity)
-    daily_dd_pct = (daily_loss_usd / daily_ref) * 100.0 if daily_ref > 0 else 0.0
-
-    ea_limit_pct = 3.5
-    broker_limit_pct = 4.0
-    buffer_ea_usd = max(0.0, (daily_ref * (ea_limit_pct / 100.0)) - daily_loss_usd)
-    buffer_broker_usd = max(0.0, (daily_ref * (broker_limit_pct / 100.0)) - daily_loss_usd)
-
-    daily_drawdown = {
-        "loss_usd": round(daily_loss_usd, 2),
-        "pct": round(daily_dd_pct, 2),
-        "limit_pct": ea_limit_pct,
-        "broker_limit_pct": broker_limit_pct,
-        "buffer_usd": round(buffer_ea_usd, 2),
-        "buffer_broker_usd": round(buffer_broker_usd, 2),
-        "day_start_bal": round(day_start_bal, 2),
-        "daily_ref": round(daily_ref, 2),
-        "balance": round(acc.balance, 2),
-        "equity": round(acc.equity, 2),
-        "realized_today": round(realized_today, 2),
-        "manual_active": manual_active,
-        "manual_expired": bool(manual_requested and not manual_active),
-        "risk_day": risk_day,
-        "risk_timezone": risk_context['risk_timezone'],
-        "risk_reset_hour": reset_hour,
-        "reset_balance": round(float(reset_bal), 2) if manual_active else None,
-        "reset_time_str": datetime.fromtimestamp(reset_ts, timezone.utc).strftime("%H:%M:%S") if (manual_active and reset_ts) else None
-    }
-
     result = {
         **source_meta,
         "risk_status": "available",
@@ -762,7 +763,7 @@ def get_live_market_data(include_journal=True):
         account_id = selected()['id']
         entries = get_cached_trade_journal(account_id, wall_time, local_time)
         result.update(journal=entries, journal_cache={account_id: entries}, journal_meta=journal_metadata(account_id))
-    result.update(account=public_account(selected()), rule_count=len(rules_matrix), exit_goals=[], ea_guard=None)
+    result.update(account=public_account(selected()), rule_count=len(rules_matrix), exit_goals=[], ea_guard=guard)
     preview = df.iloc[-1]
     result.update(
         signal_mode='closed_bar_reference', signal_label='M15-Schluss · Referenzrekonstruktion, keine EA-Freigabe',
@@ -775,13 +776,8 @@ def get_live_market_data(include_journal=True):
     if selected()['id']=='goldm15':
         result.update(GOLD_METRICS_CACHE.get(selected(), SYMBOL, TIMEFRAME, cur_bar['time'],
                                             df['close'].to_numpy(), params, gold_metrics))
-        guard = read_guard(GUARD_FILE, broker_clock.to_broker_epoch(now, selected()), acc.equity, params, balance=acc.balance)
         result['ea_guard'] = guard
         result['signal_bar_time'] = datetime.fromtimestamp(int(df.iloc[-2]['time']), timezone.utc).strftime('%H:%M')
-        if guard['baseline_verified'] and not manual_active:
-            daily_loss = max(0, guard['baseline'] - min(acc.balance, acc.equity))
-            daily_drawdown.update(loss_usd=round(daily_loss, 2), pct=round(100*daily_loss/params['InitialBalanceUSD'], 2),
-                                 daily_ref=guard['baseline'], day_start_bal=guard['baseline'], buffer_usd=round(guard['daily_buffer_usd'], 2))
         result['in_window'] = False if guard['hard_lock'] or guard['daily_lock'] or not guard['baseline_verified'] else None
     return result
 
@@ -1071,6 +1067,29 @@ def api_chart_preview(req: ChartScenarioPreviewRequest, account: str):
         )
     except PreviewError as exc:
         raise HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)}) from exc
+    dd_context = None
+    dd_account = acc
+    if str(getattr(dd_account, "currency", "") or "").upper() == "USD":
+        try:
+            dd_account = verify_identity(mt5, selected())
+            dd_tick = mt5.symbol_info_tick(req.symbol)
+            dd, dd_source, _guard = current_daily_drawdown(mt5, dd_account, dd_tick, time.time())
+            dd_context = {"risk_status": "available", "source_fresh": dd_source.get("source_fresh") is True,
+                          "quote_time_epoch": dd_source.get("quote_time_epoch"), "daily_drawdown": dd}
+        except HTTPException:
+            # Keep the broker What-if result usable while making DD explicitly unavailable.
+            dd_context = None
+    quote_time_utc = None
+    if dd_context and dd_context.get("risk_status") == "available" and dd_context.get("source_fresh") is True:
+        quote_epoch = dd_context.get("quote_time_epoch")
+        if isinstance(quote_epoch, (int, float)) and not isinstance(quote_epoch, bool) and math.isfinite(quote_epoch):
+            quote_time_utc = datetime.fromtimestamp(quote_epoch, timezone.utc).isoformat().replace("+00:00", "Z")
+    result["dailyDrawdownProjection"] = drawdown_projection(
+        currency=getattr(dd_account, "currency", None),
+        daily_drawdown=dd_context.get("daily_drawdown") if quote_time_utc else None,
+        scenario_risk=-result["netEstimate"]["pnlAtSl"]["amount"] if quote_time_utc else None,
+        quote_time_utc=quote_time_utc,
+    )
     result["account"] = account
     result["tickSize"] = float(sym.trade_tick_size)
     return result
