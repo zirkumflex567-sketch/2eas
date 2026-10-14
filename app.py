@@ -126,6 +126,7 @@ class ChartWorkspaceDeleteRequest(BaseModel):
 
 class ClosePositionRequest(BaseModel):
     ticket: Annotated[int, Field(gt=0, strict=True)]
+    volume: Optional[Annotated[FiniteFloat, Field(gt=0)]] = None
 
 class ResetDrawdownRequest(BaseModel):
     action: Literal['reset', 'auto'] = 'reset'
@@ -1471,16 +1472,28 @@ def api_close_position(req: ClosePositionRequest, account: str):
     order_type = mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY
     filling = mt5.ORDER_FILLING_IOC if (sym.filling_mode & 2) != 0 else mt5.ORDER_FILLING_RETURN
     
+    vol_to_close = pos.volume
+    if req.volume is not None:
+        step = getattr(sym, 'volume_step', 0.01) or 0.01
+        min_vol = getattr(sym, 'volume_min', 0.01) or 0.01
+        v = round(round(req.volume / step) * step, 2)
+        if v >= pos.volume or (pos.volume - v) < (min_vol - 1e-5):
+            vol_to_close = pos.volume
+        elif v >= min_vol:
+            vol_to_close = v
+        else:
+            vol_to_close = min_vol
+
     request = {
         "action": mt5.TRADE_ACTION_DEAL,
         "position": req.ticket,
         "symbol": pos.symbol,
-        "volume": pos.volume,
+        "volume": vol_to_close,
         "type": order_type,
         "price": price,
         "deviation": 50,
         "type_filling": filling,
-        "comment": "Webapp_Manual_Close"
+        "comment": f"Webapp_Close_{vol_to_close:.2f}lot" if vol_to_close < pos.volume else "Webapp_Manual_Close"
     }
     verify_identity(mt5, selected())
     tick = mt5.symbol_info_tick(pos.symbol)
@@ -3509,12 +3522,18 @@ HTML_CONTENT = """<!DOCTYPE html>
         const template = document.createElement('template');
         template.innerHTML = positions.map(p => `
         <div data-position-ticket="${p.ticket}" class="p-3 rounded-xl ticker-bg border flex flex-wrap items-center justify-between gap-3 text-xs mb-2">
-          <div class="flex items-center gap-2.5">
+          <div class="flex items-center gap-2.5 flex-wrap">
             <span data-position-type class="px-2 py-1 rounded-md font-bold font-mono text-[11px] text-white ${p.type === 'BUY' ? 'bg-emerald-600' : 'bg-rose-600'}">
               ${escapeHTML(p.type)} ${escapeHTML(p.volume)} Lot
             </span>
             <span data-position-entry class="font-mono font-bold text-xs">#${p.ticket} @ $${p.open_price.toFixed(2)}</span>
             <span data-position-current class="text-sub font-mono text-[10px]">Aktuell: &#36;${p.current_price.toFixed(2)}</span>
+            <span data-position-sl-val class="px-1.5 py-0.5 rounded ticker-bg border font-mono text-[10px] text-rose-400 font-bold">
+              ${p.sl_price > 0 ? 'SL: $' + p.sl_price.toFixed(2) + ' (' + (p.sl_usd >= 0 ? '+' : '') + '$' + p.sl_usd.toFixed(2) + ')' : 'Kein SL'}
+            </span>
+            <span data-position-tp-val class="px-1.5 py-0.5 rounded ticker-bg border font-mono text-[10px] text-emerald-400 font-bold">
+              ${p.tp_price > 0 ? 'TP: $' + p.tp_price.toFixed(2) + ' (' + (p.tp_usd >= 0 ? '+' : '') + '$' + p.tp_usd.toFixed(2) + ')' : 'Kein TP'}
+            </span>
             ${p.ema9 ? `<span data-position-ema9 class="px-2 py-0.5 rounded bg-cyan-950/40 border border-cyan-500/30 text-cyan-300 font-mono text-[10px] font-bold">🎯 EMA9: $${p.ema9.toFixed(2)}${p.dist_to_ema9 !== null && p.dist_to_ema9 !== undefined ? ' (' + p.dist_to_ema9.toFixed(2) + ' Pkt)' : ''}</span>` : ''}
           </div>
 
@@ -3542,9 +3561,19 @@ HTML_CONTENT = """<!DOCTYPE html>
           </div>
           <button aria-label="SL und TP an MT5 senden · Ticket ${p.ticket}" onclick="applySLTP(${p.ticket})" class="px-3 py-2 bg-blue-600 text-white font-bold rounded">SL + TP an MT5 senden</button>
 
-          <button onclick="closePos(${p.ticket})" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs cursor-pointer shadow-sm">
-            Position Schließen
-          </button>
+          <!-- Teilschließen / Schließen -->
+          <div class="flex items-center gap-1.5 flex-wrap font-mono text-xs">
+            <span class="text-sub font-bold">Teilschließen:</span>
+            <button onclick="closePosPct(${p.ticket}, ${p.volume}, 25)" class="px-2 py-1 ticker-bg hover:opacity-80 text-stone-200 border rounded text-[10px] font-bold cursor-pointer" title="25% der Position schließen">25%</button>
+            <button onclick="closePosPct(${p.ticket}, ${p.volume}, 50)" class="px-2 py-1 ticker-bg hover:opacity-80 text-stone-200 border rounded text-[10px] font-bold cursor-pointer" title="50% der Position schließen">50%</button>
+            <button onclick="closePosPct(${p.ticket}, ${p.volume}, 75)" class="px-2 py-1 ticker-bg hover:opacity-80 text-stone-200 border rounded text-[10px] font-bold cursor-pointer" title="75% der Position schließen">75%</button>
+            <button onclick="closePosPct(${p.ticket}, ${p.volume}, 100)" class="px-2 py-1 ticker-bg hover:opacity-80 text-stone-200 border rounded text-[10px] font-bold cursor-pointer" title="100% der Position schließen">100%</button>
+            <label for="close-lot-${p.ticket}" class="sr-only">Lotzahl zum Schließen</label>
+            <input type="number" id="close-lot-${p.ticket}" step="0.01" min="0.01" max="${p.volume}" value="${p.volume.toFixed(2)}" class="w-16 rounded px-1.5 py-0.5 text-center text-xs ticker-bg border text-stone-100 font-bold" title="Gewünschte Lotzahl eingeben">
+            <button onclick="closePosCustom(${p.ticket})" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs cursor-pointer shadow-sm">
+              ✕ Schließen
+            </button>
+          </div>
           <span data-draft-note class="text-amber-500 hidden">Entwurf · noch nicht an MT5 gesendet</span>
         </div>
       `).join('');
@@ -3568,6 +3597,15 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (entry) entry.textContent = '#'+pos.ticket+' @ $'+pos.open_price.toFixed(2);
         const price = row.querySelector('[data-position-current]');
         if (price) price.textContent = 'Aktuell: ' + String.fromCharCode(36) + pos.current_price.toFixed(2);
+        const slVal = row.querySelector('[data-position-sl-val]');
+        if (slVal) slVal.textContent = pos.sl_price > 0 ? 'SL: $' + pos.sl_price.toFixed(2) + ' (' + (pos.sl_usd >= 0 ? '+' : '') + '$' + pos.sl_usd.toFixed(2) + ')' : 'Kein SL';
+        const tpVal = row.querySelector('[data-position-tp-val]');
+        if (tpVal) tpVal.textContent = pos.tp_price > 0 ? 'TP: $' + pos.tp_price.toFixed(2) + ' (' + (pos.tp_usd >= 0 ? '+' : '') + '$' + pos.tp_usd.toFixed(2) + ')' : 'Kein TP';
+        const closeLotInp = row.querySelector('#close-lot-' + pos.ticket);
+        if (closeLotInp && document.activeElement !== closeLotInp) {
+          closeLotInp.max = String(pos.volume);
+          if (parseFloat(closeLotInp.value) > pos.volume) closeLotInp.value = pos.volume.toFixed(2);
+        }
         const emaBadge = row.querySelector('[data-position-ema9]');
         if (emaBadge && pos.ema9) {
           emaBadge.textContent = '🎯 EMA9: $' + pos.ema9.toFixed(2) + (pos.dist_to_ema9 !== null && pos.dist_to_ema9 !== undefined ? ' (' + pos.dist_to_ema9.toFixed(2) + ' Pkt)' : '');
@@ -3992,25 +4030,41 @@ HTML_CONTENT = """<!DOCTYPE html>
       return applySLTP(ticket);
     }
 
-    async function closePos(ticket) {
-      if (!confirm(`Konto ${accounts[activeAccount].login}: Position #${ticket} wirklich sofort zum Marktpreis schließen?`)) return;
+    async function closePos(ticket, volume = null) {
+      const volNum = (volume != null && Number.isFinite(Number(volume)) && Number(volume) > 0) ? Number(volume) : null;
+      const volText = volNum ? `${volNum.toFixed(2)} Lot von Position #${ticket}` : `Position #${ticket}`;
+      if (!confirm(`Konto ${accounts[activeAccount]?.name || accounts[activeAccount]?.login}: ${volText} wirklich sofort zum Marktpreis schließen?`)) return;
       try {
+        const payload = volNum ? { ticket, volume: volNum } : { ticket };
         const res = await accountFetch('/api/close_position', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ticket })
+          body: JSON.stringify(payload)
         });
         const result = await res.json();
         if (result.success) {
-          alert(`Position #${ticket} geschlossen!`);
+          alert(`${volText} erfolgreich geschlossen!`);
           updateStatus();
         } else {
-          alert(`Fehler: ${result.comment || result.error}`);
+          alert(`Fehler: ${result.comment || result.error || 'Schließen fehlgeschlagen'}`);
         }
       } catch (err) {
         if (err.name === 'AbortError') return;
         alert('Netzwerkfehler: ' + err);
       }
+    }
+
+    function closePosPct(ticket, fullVolume, pct) {
+      const vol = Math.max(0.01, Math.round(fullVolume * pct / 100 * 100) / 100);
+      const inp = document.getElementById('close-lot-' + ticket);
+      if (inp) inp.value = vol.toFixed(2);
+      closePos(ticket, vol);
+    }
+
+    function closePosCustom(ticket) {
+      const inp = document.getElementById('close-lot-' + ticket);
+      const vol = inp ? parseFloat(inp.value) : null;
+      closePos(ticket, vol);
     }
 
     // --- DAILY DRAWDOWN RESET MODAL CONTROLS ---

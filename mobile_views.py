@@ -199,6 +199,56 @@ MOBILE_HTML = """<!DOCTYPE html>
     .btn:active { opacity: 0.7; }
     .btn-danger { background: var(--red-bg); color: var(--red); border-color: rgba(239,68,68,0.3); }
     .btn-be { background: rgba(245,158,11,0.15); color: var(--amber); border-color: rgba(245,158,11,0.3); }
+    .btn-pct { background: rgba(255,255,255,0.08); padding: 6px 3px; font-size: 10px; font-weight: 700; }
+    .pos-sl-tp {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 8px;
+      background: rgba(255,255,255,0.03);
+      padding: 6px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-family: ui-monospace, monospace;
+    }
+    .sl-tp-row { display: flex; flex-direction: column; gap: 2px; }
+    .sl-tp-lbl { color: var(--sub); font-size: 10px; font-weight: bold; }
+    .sl-tp-val { font-weight: bold; }
+    .pos-controls-row {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      margin-bottom: 6px;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+    }
+    .pos-input {
+      background: rgba(0,0,0,0.4);
+      border: 1px solid var(--card-border);
+      color: #fff;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 11px;
+      font-family: ui-monospace, monospace;
+      text-align: center;
+    }
+    .pos-input-lot { width: 62px; }
+    .pos-input-usd { width: 66px; }
+    .sound-badge {
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.05);
+      color: #fff;
+    }
+    .sound-badge.active {
+      border-color: rgba(34,197,94,0.4);
+      background: rgba(34,197,94,0.15);
+      color: var(--green);
+    }
     .rule-item {
       display: flex;
       justify-content: space-between;
@@ -225,10 +275,17 @@ MOBILE_HTML = """<!DOCTYPE html>
   <div class="header-bar">
     <div class="title">⚡ TITAN MOBILE <span id="status-dot" style="width:8px; height:8px; border-radius:50%; background:var(--green); display:inline-block;"></span></div>
     <div class="view-switcher">
+      <button id="mob-sound-btn" class="sound-badge active" onclick="toggleMobAudio()" title="Arcade Sounds an/aus">🔊 Ton</button>
       <a id="link-mob" href="/mobile" class="view-btn active">📱 Normal</a>
       <a id="link-asc" href="/ascii" class="view-btn">📟 ASCII</a>
       <a id="link-dsk" href="/" class="view-btn">🖥️ Voll</a>
     </div>
+  </div>
+
+  <div style="display:flex; justify-content:center; gap:6px; margin:4px 0 8px 0; font-family:ui-monospace,monospace;">
+    <button class="btn" style="padding:4px 8px; font-size:10px; background:rgba(6,182,212,0.1); border-color:rgba(6,182,212,0.3); color:var(--cyan);" onclick="ArcadeAudio.unlock(); ArcadeAudio.playTradeSound()">⚡ Trade Sound</button>
+    <button class="btn" style="padding:4px 8px; font-size:10px; background:rgba(34,197,94,0.1); border-color:rgba(34,197,94,0.3); color:var(--green);" onclick="ArcadeAudio.unlock(); ArcadeAudio.playWinSound()">✦ Gewinn Sound</button>
+    <button class="btn" style="padding:4px 8px; font-size:10px; background:rgba(239,68,68,0.1); border-color:rgba(239,68,68,0.3); color:var(--red);" onclick="ArcadeAudio.unlock(); ArcadeAudio.playSlSound()">💥 SL Sound</button>
   </div>
 
   <div class="account-tabs" id="account-tabs"></div>
@@ -328,9 +385,123 @@ MOBILE_HTML = """<!DOCTYPE html>
     let accounts = {};
     let journalData = {};
     let activeJournalFilter = 'all';
+    let soundEnabled = localStorage.getItem('titan_sound_enabled') !== 'false';
+    let tradeObserverInitialized = false;
+    let prevSeenTickets = new Set();
+    let journalInitialized = false;
+    let prevJournalCount = 0;
+
+    const ArcadeAudio = (() => {
+      let ctx = null;
+      function getContext() {
+        if (!ctx) {
+          const A = window.AudioContext || window.webkitAudioContext;
+          if (A) ctx = new A();
+        }
+        return ctx;
+      }
+      function unlock() {
+        const c = getContext();
+        if (c && c.state === 'suspended') c.resume().catch(() => {});
+      }
+      if (typeof window !== 'undefined') {
+        ['click', 'keydown', 'touchstart', 'pointerdown'].forEach(e => {
+          window.addEventListener(e, unlock, { once: true, passive: true });
+        });
+      }
+      function runAudio(fn) {
+        if (!soundEnabled) return;
+        try {
+          const c = getContext(); if (!c) return;
+          const play = () => {
+            try {
+              const t0 = c.currentTime + 0.03;
+              fn(c, t0);
+            } catch (err) { console.warn('Mobile audio render error:', err); }
+          };
+          if (c.state === 'suspended') {
+            c.resume().then(play).catch(err => console.warn('Audio resume error:', err));
+          } else {
+            play();
+          }
+        } catch (err) { console.warn('Audio context error:', err); }
+      }
+      function playTradeSound() {
+        runAudio((c, t0) => {
+          const o1 = c.createOscillator(), g1 = c.createGain();
+          o1.type = 'sine'; o1.frequency.setValueAtTime(987.77, t0); o1.frequency.setValueAtTime(1318.51, t0 + 0.08);
+          g1.gain.setValueAtTime(0.001, t0); g1.gain.exponentialRampToValueAtTime(0.35, t0 + 0.02); g1.gain.exponentialRampToValueAtTime(0.001, t0 + 0.30);
+          o1.connect(g1); g1.connect(c.destination); o1.start(t0); o1.stop(t0 + 0.31);
+          const o2 = c.createOscillator(), flt = c.createBiquadFilter(), g2 = c.createGain();
+          o2.type = 'triangle'; flt.type = 'lowpass'; flt.frequency.setValueAtTime(2800, t0);
+          o2.frequency.setValueAtTime(440, t0); o2.frequency.exponentialRampToValueAtTime(880, t0 + 0.14);
+          g2.gain.setValueAtTime(0.001, t0); g2.gain.linearRampToValueAtTime(0.28, t0 + 0.02); g2.gain.exponentialRampToValueAtTime(0.001, t0 + 0.25);
+          o2.connect(flt); flt.connect(g2); g2.connect(c.destination); o2.start(t0); o2.stop(t0 + 0.26);
+        });
+      }
+      function playWinSound() {
+        runAudio((c, t0) => {
+          const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98];
+          notes.forEach((freq, i) => {
+            const osc = c.createOscillator(), g = c.createGain(), st = t0 + i * 0.07;
+            osc.type = 'triangle'; osc.frequency.setValueAtTime(freq, st);
+            g.gain.setValueAtTime(0.001, st); g.gain.exponentialRampToValueAtTime(0.32, st + 0.01); g.gain.exponentialRampToValueAtTime(0.001, st + 0.25);
+            osc.connect(g); g.connect(c.destination); osc.start(st); osc.stop(st + 0.26);
+          });
+          const coinDts = [0.44, 0.53, 0.62, 0.72, 0.83];
+          const coinP = [2093.0, 2637.0, 2093.0, 3136.0, 2637.0];
+          coinDts.forEach((dt, i) => {
+            const osc = c.createOscillator(), g = c.createGain(), st = t0 + dt;
+            osc.type = 'sine'; osc.frequency.setValueAtTime(coinP[i], st);
+            g.gain.setValueAtTime(0.001, st); g.gain.exponentialRampToValueAtTime(0.30, st + 0.008); g.gain.exponentialRampToValueAtTime(0.001, st + 0.18);
+            osc.connect(g); g.connect(c.destination); osc.start(st); osc.stop(st + 0.19);
+          });
+        });
+      }
+      function playSlSound() {
+        runAudio((c, t0) => {
+          const steps = [{ freq: 349.23, dur: 0.10 }, { freq: 293.66, dur: 0.10 }, { freq: 220.00, dur: 0.12 }, { freq: 146.83, dur: 0.30 }];
+          let cur = t0;
+          steps.forEach(st => {
+            const osc = c.createOscillator(), g = c.createGain();
+            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(st.freq, cur);
+            g.gain.setValueAtTime(0.001, cur); g.gain.exponentialRampToValueAtTime(0.32, cur + 0.01); g.gain.exponentialRampToValueAtTime(0.001, cur + st.dur);
+            osc.connect(g); g.connect(c.destination); osc.start(cur); osc.stop(cur + st.dur + 0.01);
+            cur += st.dur;
+          });
+          try {
+            const bufLen = Math.floor(c.sampleRate * 0.35), buf = c.createBuffer(1, bufLen, c.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (c.sampleRate * 0.07));
+            const noise = c.createBufferSource(); noise.buffer = buf;
+            const flt = c.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.setValueAtTime(900, t0); flt.frequency.linearRampToValueAtTime(140, t0 + 0.35);
+            const gn = c.createGain(); gn.gain.setValueAtTime(0.26, t0); gn.gain.exponentialRampToValueAtTime(0.001, t0 + 0.35);
+            noise.connect(flt); flt.connect(gn); gn.connect(c.destination); noise.start(t0); noise.stop(t0 + 0.36);
+          } catch (_) {}
+        });
+      }
+      return { playTradeSound, playWinSound, playSlSound, unlock };
+    })();
+
+    function syncMobSoundBtn() {
+      const btn = document.getElementById('mob-sound-btn');
+      if (btn) {
+        btn.textContent = soundEnabled ? '🔊 Ton: AN' : '🔇 Ton: AUS';
+        btn.classList.toggle('active', soundEnabled);
+      }
+    }
+
+    function toggleMobAudio() {
+      ArcadeAudio.unlock();
+      soundEnabled = !soundEnabled;
+      localStorage.setItem('titan_sound_enabled', String(soundEnabled));
+      syncMobSoundBtn();
+      if (soundEnabled) ArcadeAudio.playTradeSound();
+    }
 
     async function init() {
       try {
+        syncMobSoundBtn();
         const linkMob = document.getElementById('link-mob');
         if (linkMob) linkMob.href = BASE_PATH + '/mobile';
         const linkAsc = document.getElementById('link-asc');
@@ -404,7 +575,20 @@ MOBILE_HTML = """<!DOCTYPE html>
         }
 
         // Positions
-        renderPositions(d.positions || [], d.indicators?.ema9 || null);
+        const positions = d.positions || [];
+        const curTickets = new Set(positions.map(p => p.ticket));
+        if (tradeObserverInitialized) {
+          for (const p of positions) {
+            if (!prevSeenTickets.has(p.ticket)) {
+              ArcadeAudio.playTradeSound();
+              break;
+            }
+          }
+        }
+        tradeObserverInitialized = true;
+        prevSeenTickets = curTickets;
+
+        renderPositions(positions, d.indicators?.ema9 || null);
 
         // Rules
         if (Array.isArray(d.rules_matrix)) {
@@ -438,6 +622,10 @@ MOBILE_HTML = """<!DOCTYPE html>
         const pnlSign = isProfit ? '+' : '';
         const target = p.target_usd || 28.0;
         const reached = p.profit_usd >= target;
+        const slText = p.sl_price > 0 ? `$${p.sl_price.toFixed(2)} (${p.sl_usd >= 0 ? '+' : ''}$${p.sl_usd.toFixed(2)})` : 'Kein SL';
+        const tpText = p.tp_price > 0 ? `$${p.tp_price.toFixed(2)} (${p.tp_usd >= 0 ? '+' : ''}$${p.tp_usd.toFixed(2)})` : 'Kein TP';
+        const slVal = p.sl_usd ? p.sl_usd.toFixed(2) : '-50.00';
+        const tpVal = p.tp_usd ? p.tp_usd.toFixed(2) : '50.00';
         
         return `
           <div class="pos-card">
@@ -448,6 +636,19 @@ MOBILE_HTML = """<!DOCTYPE html>
             <div class="pos-info">
               #${p.ticket} @ $${p.open_price.toFixed(2)} · Aktuell: $${p.current_price.toFixed(2)}
             </div>
+
+            <!-- SL & TP Werte Anzeige -->
+            <div class="pos-sl-tp">
+              <div class="sl-tp-row">
+                <span class="sl-tp-lbl">STOP-LOSS (SL):</span>
+                <span class="sl-tp-val" style="color:var(--red);">${slText}</span>
+              </div>
+              <div class="sl-tp-row">
+                <span class="sl-tp-lbl">TAKE-PROFIT (TP):</span>
+                <span class="sl-tp-val" style="color:var(--green);">${tpText}</span>
+              </div>
+            </div>
+
             ${p.ema9 ? `
               <div class="pos-ema">
                 <span>🎯 EMA9: <strong>$${p.ema9.toFixed(2)}</strong></span>
@@ -457,18 +658,73 @@ MOBILE_HTML = """<!DOCTYPE html>
                 </span>
               </div>
             ` : ''}
-            <div class="btn-row">
-              <button class="btn btn-be" onclick="quickBE(${p.ticket})">SL +5$</button>
+
+            <!-- SL / TP Bearbeiten & Schnellbuttons -->
+            <div class="pos-controls-row">
+              <span class="sl-tp-lbl" style="min-width:44px;">SL ($):</span>
+              <input id="mob-sl-${p.ticket}" class="pos-input pos-input-usd" type="number" step="1" value="${slVal}" placeholder="SL USD">
+              <span class="sl-tp-lbl" style="min-width:44px;">TP ($):</span>
+              <input id="mob-tp-${p.ticket}" class="pos-input pos-input-usd" type="number" step="1" value="${tpVal}" placeholder="TP USD">
+              <button class="btn" style="flex:1; background:rgba(59,130,246,0.25); border-color:#3b82f6; color:#93c5fd;" onclick="saveMobSLTP(${p.ticket})">✓ Speichern</button>
+            </div>
+            <div class="btn-row" style="margin-bottom:8px;">
+              <button class="btn btn-be" onclick="quickBE(${p.ticket})">BE +5$</button>
               <button class="btn" onclick="quickSL(${p.ticket}, -50)">SL −50$</button>
               <button class="btn" onclick="quickTP(${p.ticket}, 50)">TP +50$</button>
-              <button class="btn btn-danger" onclick="closePos(${p.ticket})">✕ Schließen</button>
+              <button class="btn" onclick="quickTP(${p.ticket}, 100)">TP +100$</button>
+            </div>
+
+            <!-- Teilschließen: 25%, 50%, 75%, 100% und Lots eingeben -->
+            <div class="pos-controls-row" style="margin-top:6px; border-top:1px solid rgba(255,255,255,0.06); padding-top:6px;">
+              <span class="sl-tp-lbl" style="min-width:65px;">Teilclose:</span>
+              <div style="display:flex; gap:4px; flex:1;">
+                <button class="btn btn-pct" style="flex:1;" onclick="closePosPct(${p.ticket}, ${p.volume}, 25)">25%</button>
+                <button class="btn btn-pct" style="flex:1;" onclick="closePosPct(${p.ticket}, ${p.volume}, 50)">50%</button>
+                <button class="btn btn-pct" style="flex:1;" onclick="closePosPct(${p.ticket}, ${p.volume}, 75)">75%</button>
+                <button class="btn btn-pct" style="flex:1;" onclick="closePosPct(${p.ticket}, ${p.volume}, 100)">100%</button>
+              </div>
+            </div>
+            <div class="pos-controls-row">
+              <span class="sl-tp-lbl" style="min-width:65px;">Lot-Zahl:</span>
+              <input id="mob-lot-${p.ticket}" class="pos-input pos-input-lot" type="number" step="0.01" min="0.01" max="${p.volume}" value="${p.volume.toFixed(2)}">
+              <button class="btn btn-danger" style="flex:1;" onclick="closePosCustom(${p.ticket})">✕ Schließen</button>
             </div>
           </div>
         `;
       }).join('');
     }
 
+    async function saveMobSLTP(ticket) {
+      ArcadeAudio.unlock();
+      const slInp = document.getElementById('mob-sl-' + ticket);
+      const tpInp = document.getElementById('mob-tp-' + ticket);
+      const sl = slInp ? parseFloat(slInp.value) : null;
+      const tp = tpInp ? parseFloat(tpInp.value) : null;
+      const body = { ticket };
+      if (Number.isFinite(sl)) body.sl_usd = sl;
+      if (Number.isFinite(tp)) {
+        if (tp === 0) body.remove_tp = true;
+        else body.tp_usd = tp;
+      }
+      try {
+        const res = await fetch(BASE_PATH + '/api/modify_position?account=' + encodeURIComponent(activeAccount), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const d = await res.json();
+        if (d.success) {
+          update();
+        } else {
+          alert('Fehler beim Ändern: ' + (d.detail || d.comment || 'Abgelehnt'));
+        }
+      } catch (err) {
+        alert('Netzwerkfehler: ' + err);
+      }
+    }
+
     async function quickBE(ticket) {
+      ArcadeAudio.unlock();
       await fetch(BASE_PATH + '/api/modify_position?account=' + encodeURIComponent(activeAccount), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -477,6 +733,7 @@ MOBILE_HTML = """<!DOCTYPE html>
       update();
     }
     async function quickSL(ticket, usd) {
+      ArcadeAudio.unlock();
       await fetch(BASE_PATH + '/api/modify_position?account=' + encodeURIComponent(activeAccount), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -485,6 +742,7 @@ MOBILE_HTML = """<!DOCTYPE html>
       update();
     }
     async function quickTP(ticket, usd) {
+      ArcadeAudio.unlock();
       await fetch(BASE_PATH + '/api/modify_position?account=' + encodeURIComponent(activeAccount), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -492,14 +750,41 @@ MOBILE_HTML = """<!DOCTYPE html>
       });
       update();
     }
-    async function closePos(ticket) {
-      if (!confirm('Position #' + ticket + ' wirklich schließen?')) return;
-      await fetch(BASE_PATH + '/api/close_position?account=' + encodeURIComponent(activeAccount), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticket })
-      });
-      update();
+
+    async function closePos(ticket, volume = null) {
+      ArcadeAudio.unlock();
+      const volNum = (volume != null && Number.isFinite(Number(volume)) && Number(volume) > 0) ? Number(volume) : null;
+      const volText = volNum ? `${volNum.toFixed(2)} Lot von Position #${ticket}` : `Position #${ticket}`;
+      if (!confirm(`${volText} wirklich schließen?`)) return;
+      try {
+        const payload = volNum ? { ticket, volume: volNum } : { ticket };
+        const res = await fetch(BASE_PATH + '/api/close_position?account=' + encodeURIComponent(activeAccount), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const d = await res.json();
+        if (d.success) {
+          update();
+        } else {
+          alert('Fehler beim Schließen: ' + (d.detail || d.comment || 'Abgelehnt'));
+        }
+      } catch (err) {
+        alert('Netzwerkfehler: ' + err);
+      }
+    }
+
+    function closePosPct(ticket, fullVol, pct) {
+      const vol = Math.max(0.01, Math.round(fullVol * pct / 100 * 100) / 100);
+      const inp = document.getElementById('mob-lot-' + ticket);
+      if (inp) inp.value = vol.toFixed(2);
+      closePos(ticket, vol);
+    }
+
+    function closePosCustom(ticket) {
+      const inp = document.getElementById('mob-lot-' + ticket);
+      const vol = inp ? parseFloat(inp.value) : null;
+      closePos(ticket, vol);
     }
 
     function switchJournalFilter(val) {
@@ -521,6 +806,20 @@ MOBILE_HTML = """<!DOCTYPE html>
           } catch (_) {}
         }
         
+        allEntries.sort((a, b) => (b.time_ts || 0) - (a.time_ts || 0));
+
+        if (journalInitialized && allEntries.length > prevJournalCount) {
+          const newest = allEntries[0];
+          if (newest && newest.status === 'CLOSED') {
+            if (newest.profit_usd > 0) ArcadeAudio.playWinSound();
+            else if (newest.profit_usd < 0) ArcadeAudio.playSlSound();
+          }
+        }
+        if (allEntries.length > 0) {
+          journalInitialized = true;
+          prevJournalCount = allEntries.length;
+        }
+
         const live = allEntries.filter(it => it.status === 'OPEN');
         const closed = allEntries.filter(it => it.status === 'CLOSED');
         const tot = allEntries.reduce((s, it) => s + (Number.isFinite(it.profit_usd) ? it.profit_usd : 0), 0);
@@ -528,6 +827,7 @@ MOBILE_HTML = """<!DOCTYPE html>
         const cPnl = closed.reduce((s, it) => s + (Number.isFinite(it.profit_usd) ? it.profit_usd : 0), 0);
 
         const formatPnL = (num, el) => {
+          if (!el) return;
           el.textContent = (num >= 0 ? '+' : '') + '$' + Math.abs(num).toFixed(2);
           el.style.color = num >= 0 ? 'var(--green)' : 'var(--red)';
         };
@@ -724,6 +1024,9 @@ ASCII_HTML = """<!DOCTYPE html>
       <button onclick="setTheme('cyan')">[CYAN]</button>
       <span style="margin-left:8px;">[AUDIO]:</span>
       <button id="ascii-sound-btn" onclick="toggleAsciiAudio()">[🔊 SOUND: AN]</button>
+      <button onclick="ArcadeAudio.unlock(); ArcadeAudio.playTradeSound()">[⚡ TRADE]</button>
+      <button onclick="ArcadeAudio.unlock(); ArcadeAudio.playWinSound()">[✦ WIN]</button>
+      <button onclick="ArcadeAudio.unlock(); ArcadeAudio.playSlSound()">[💥 SL]</button>
     </div>
 
     <div id="account-buttons" class="top-bar"></div>
@@ -755,60 +1058,68 @@ ASCII_HTML = """<!DOCTYPE html>
           const A = window.AudioContext || window.webkitAudioContext;
           if (A) ctx = new A();
         }
-        if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
         return ctx;
       }
       function unlock() { const c = getContext(); if (c && c.state === 'suspended') c.resume().catch(() => {}); }
       if (typeof window !== 'undefined') {
-        ['click', 'keydown', 'touchstart'].forEach(e => window.addEventListener(e, unlock, { once: true, passive: true }));
+        ['click', 'keydown', 'touchstart', 'pointerdown'].forEach(e => window.addEventListener(e, unlock, { once: true, passive: true }));
+      }
+      function runAudio(fn) {
+        if (!soundEnabled) return;
+        try {
+          const c = getContext(); if (!c) return;
+          const play = () => {
+            try {
+              const t0 = c.currentTime + 0.03;
+              fn(c, t0);
+            } catch (err) { console.warn('ASCII audio render error:', err); }
+          };
+          if (c.state === 'suspended') {
+            c.resume().then(play).catch(err => console.warn('Audio resume error:', err));
+          } else {
+            play();
+          }
+        } catch (err) { console.warn('Audio context error:', err); }
       }
       function playTradeSound() {
-        if (!soundEnabled) return;
-        try {
-          const c = getContext(); if (!c) return;
-          const t0 = c.currentTime + 0.01;
+        runAudio((c, t0) => {
           const o1 = c.createOscillator(), g1 = c.createGain();
-          o1.type = 'sine'; o1.frequency.setValueAtTime(987.77, t0); o1.frequency.setValueAtTime(1318.51, t0 + 0.07);
-          g1.gain.setValueAtTime(0.001, t0); g1.gain.exponentialRampToValueAtTime(0.24, t0 + 0.015); g1.gain.exponentialRampToValueAtTime(0.001, t0 + 0.28);
-          o1.connect(g1); g1.connect(c.destination); o1.start(t0); o1.stop(t0 + 0.29);
+          o1.type = 'sine'; o1.frequency.setValueAtTime(987.77, t0); o1.frequency.setValueAtTime(1318.51, t0 + 0.08);
+          g1.gain.setValueAtTime(0.001, t0); g1.gain.exponentialRampToValueAtTime(0.35, t0 + 0.02); g1.gain.exponentialRampToValueAtTime(0.001, t0 + 0.30);
+          o1.connect(g1); g1.connect(c.destination); o1.start(t0); o1.stop(t0 + 0.31);
           const o2 = c.createOscillator(), flt = c.createBiquadFilter(), g2 = c.createGain();
-          o2.type = 'triangle'; flt.type = 'lowpass'; flt.frequency.setValueAtTime(2200, t0);
-          o2.frequency.setValueAtTime(440, t0); o2.frequency.exponentialRampToValueAtTime(880, t0 + 0.12);
-          g2.gain.setValueAtTime(0.001, t0); g2.gain.linearRampToValueAtTime(0.18, t0 + 0.02); g2.gain.exponentialRampToValueAtTime(0.001, t0 + 0.22);
-          o2.connect(flt); flt.connect(g2); g2.connect(c.destination); o2.start(t0); o2.stop(t0 + 0.23);
-        } catch (_) {}
+          o2.type = 'triangle'; flt.type = 'lowpass'; flt.frequency.setValueAtTime(2800, t0);
+          o2.frequency.setValueAtTime(440, t0); o2.frequency.exponentialRampToValueAtTime(880, t0 + 0.14);
+          g2.gain.setValueAtTime(0.001, t0); g2.gain.linearRampToValueAtTime(0.28, t0 + 0.02); g2.gain.exponentialRampToValueAtTime(0.001, t0 + 0.25);
+          o2.connect(flt); flt.connect(g2); g2.connect(c.destination); o2.start(t0); o2.stop(t0 + 0.26);
+        });
       }
       function playWinSound() {
-        if (!soundEnabled) return;
-        try {
-          const c = getContext(); if (!c) return;
-          const t0 = c.currentTime + 0.01;
-          [523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98].forEach((f, i) => {
+        runAudio((c, t0) => {
+          const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98];
+          notes.forEach((freq, i) => {
             const osc = c.createOscillator(), g = c.createGain(), st = t0 + i * 0.07;
-            osc.type = 'triangle'; osc.frequency.setValueAtTime(f, st);
-            g.gain.setValueAtTime(0.001, st); g.gain.exponentialRampToValueAtTime(0.22, st + 0.01); g.gain.exponentialRampToValueAtTime(0.001, st + 0.24);
-            osc.connect(g); g.connect(c.destination); osc.start(st); osc.stop(st + 0.25);
+            osc.type = 'triangle'; osc.frequency.setValueAtTime(freq, st);
+            g.gain.setValueAtTime(0.001, st); g.gain.exponentialRampToValueAtTime(0.32, st + 0.01); g.gain.exponentialRampToValueAtTime(0.001, st + 0.25);
+            osc.connect(g); g.connect(c.destination); osc.start(st); osc.stop(st + 0.26);
           });
-          const dts = [0.44, 0.53, 0.62, 0.72, 0.83], ps = [2093.0, 2637.0, 2093.0, 3136.0, 2637.0];
-          dts.forEach((dt, i) => {
+          const coinDts = [0.44, 0.53, 0.62, 0.72, 0.83], ps = [2093.0, 2637.0, 2093.0, 3136.0, 2637.0];
+          coinDts.forEach((dt, i) => {
             const osc = c.createOscillator(), g = c.createGain(), st = t0 + dt;
             osc.type = 'sine'; osc.frequency.setValueAtTime(ps[i], st);
-            g.gain.setValueAtTime(0.001, st); g.gain.exponentialRampToValueAtTime(0.20, st + 0.008); g.gain.exponentialRampToValueAtTime(0.001, st + 0.16);
-            osc.connect(g); g.connect(c.destination); osc.start(st); osc.stop(st + 0.17);
+            g.gain.setValueAtTime(0.001, st); g.gain.exponentialRampToValueAtTime(0.30, st + 0.008); g.gain.exponentialRampToValueAtTime(0.001, st + 0.18);
+            osc.connect(g); g.connect(c.destination); osc.start(st); osc.stop(st + 0.19);
           });
-        } catch (_) {}
+        });
       }
       function playSlSound() {
-        if (!soundEnabled) return;
-        try {
-          const c = getContext(); if (!c) return;
-          const t0 = c.currentTime + 0.01;
-          const steps = [{ f: 349.23, d: 0.10 }, { f: 293.66, d: 0.10 }, { f: 220.00, d: 0.12 }, { f: 146.83, d: 0.28 }];
+        runAudio((c, t0) => {
+          const steps = [{ f: 349.23, d: 0.10 }, { f: 293.66, d: 0.10 }, { f: 220.00, d: 0.12 }, { f: 146.83, d: 0.30 }];
           let cur = t0;
           steps.forEach(st => {
             const osc = c.createOscillator(), g = c.createGain();
             osc.type = 'sawtooth'; osc.frequency.setValueAtTime(st.f, cur);
-            g.gain.setValueAtTime(0.001, cur); g.gain.exponentialRampToValueAtTime(0.22, cur + 0.01); g.gain.exponentialRampToValueAtTime(0.001, cur + st.d);
+            g.gain.setValueAtTime(0.001, cur); g.gain.exponentialRampToValueAtTime(0.32, cur + 0.01); g.gain.exponentialRampToValueAtTime(0.001, cur + st.d);
             osc.connect(g); g.connect(c.destination); osc.start(cur); osc.stop(cur + st.d + 0.01);
             cur += st.d;
           });
@@ -818,10 +1129,10 @@ ASCII_HTML = """<!DOCTYPE html>
             for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (c.sampleRate * 0.07));
             const noise = c.createBufferSource(); noise.buffer = buf;
             const flt = c.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.setValueAtTime(900, t0); flt.frequency.linearRampToValueAtTime(140, t0 + 0.35);
-            const gn = c.createGain(); gn.gain.setValueAtTime(0.18, t0); gn.gain.exponentialRampToValueAtTime(0.001, t0 + 0.35);
+            const gn = c.createGain(); gn.gain.setValueAtTime(0.26, t0); gn.gain.exponentialRampToValueAtTime(0.001, t0 + 0.35);
             noise.connect(flt); flt.connect(gn); gn.connect(c.destination); noise.start(t0); noise.stop(t0 + 0.36);
           } catch (_) {}
-        } catch (_) {}
+        });
       }
       return { playTradeSound, playWinSound, playSlSound, unlock };
     })();
@@ -1150,7 +1461,7 @@ ASCII_HTML = """<!DOCTYPE html>
         if (positions.length === 0) {
           screen += row('KEINE OFFENEN POSITIONEN IM MARKT AUF DIESEM KONTO');
         } else if (!posDetailMode) {
-          screen += row('#TICKET     TYP   LOT    OPEN       LIVE       EMA9-ABST  P&L (USD)   AKTION');
+          screen += row('#TICKET     TYP   LOT    OPEN       LIVE       EMA9-ABST  P&L (USD)   TEILCLOSE / AKTION');
           screen += bDiv();
           for (const p of positions) {
             const tick = fit('#' + p.ticket, 11);
@@ -1160,8 +1471,10 @@ ASCII_HTML = """<!DOCTYPE html>
             const cp = fit('$' + p.current_price.toFixed(2), 10);
             const dist = fit(p.dist_to_ema9 !== null && p.dist_to_ema9 !== undefined ? (p.dist_to_ema9.toFixed(1) + 'pt') : '—', 10);
             const pnl = fit((p.profit_usd >= 0 ? '+' : '') + '$' + p.profit_usd.toFixed(2), 10, 'right');
+            const btn25 = btn('[25%]', `closePosPct(${p.ticket}, ${p.volume}, 25)`);
+            const btn50 = btn('[50%]', `closePosPct(${p.ticket}, ${p.volume}, 50)`);
             const clBtn = btn('[X SCHLIESSEN]', `closePos(${p.ticket})`, 'danger');
-            screen += row(`${tick} ${typ} ${lot} ${op} ${cp} ${dist} ${pnl}  ${clBtn}`);
+            screen += row(`${tick} ${typ} ${lot} ${op} ${cp} ${dist} ${pnl}  ${btn25} ${btn50} ${clBtn}`);
           }
         } else {
           for (let i = 0; i < positions.length; i++) {
@@ -1195,12 +1508,22 @@ ASCII_HTML = """<!DOCTYPE html>
             }
             screen += row('  ' + exitStatus);
 
-            const slStr = p.sl_price ? `SL: $${p.sl_price.toFixed(2)} (${p.sl_usd ? (p.sl_usd >= 0 ? '+' : '') + '$' + p.sl_usd.toFixed(2) : ''})` : 'SL: KEINER';
-            const btnBE = btn('[SL +5$]', `quickBE(${p.ticket})`, 'cyan');
+            const slStr = p.sl_price > 0 ? `SL: $${p.sl_price.toFixed(2)} (${p.sl_usd ? (p.sl_usd >= 0 ? '+' : '') + '$' + p.sl_usd.toFixed(2) : '$0'})` : 'SL: KEIN SL';
+            const tpStr = p.tp_price > 0 ? `TP: $${p.tp_price.toFixed(2)} (${p.tp_usd ? (p.tp_usd >= 0 ? '+' : '') + '$' + p.tp_usd.toFixed(2) : '$0'})` : 'TP: KEIN TP';
+            const btnEdit = btn('[✏️ SL/TP]', `promptEditSLTP(${p.ticket}, ${p.sl_usd || -50}, ${p.tp_usd || 50})`, 'cyan');
+            const btnBE = btn('[BE +5$]', `quickBE(${p.ticket})`, 'cyan');
             const btnSL = btn('[SL -50$]', `quickSL(${p.ticket}, -50)`);
             const btnTP = btn('[TP +50$]', `quickTP(${p.ticket}, 50)`);
+            const btnTP100 = btn('[TP +100$]', `quickTP(${p.ticket}, 100)`);
+            screen += row(`  ${fit(slStr, 24)} │ ${fit(tpStr, 24)} │ ${btnEdit} ${btnBE} ${btnSL} ${btnTP} ${btnTP100}`);
+
+            const btn25 = btn('[25%]', `closePosPct(${p.ticket}, ${p.volume}, 25)`);
+            const btn50 = btn('[50%]', `closePosPct(${p.ticket}, ${p.volume}, 50)`);
+            const btn75 = btn('[75%]', `closePosPct(${p.ticket}, ${p.volume}, 75)`);
+            const btn100 = btn('[100%]', `closePosPct(${p.ticket}, ${p.volume}, 100)`, 'danger');
+            const btnCustom = btn('[✏️ LOT-EINGABE]', `promptCloseLots(${p.ticket}, ${p.volume})`);
             const btnClose = btn('[X SCHLIESSEN]', `closePos(${p.ticket})`, 'danger');
-            screen += row(`  ${fit(slStr, 25)} │ AKTIONEN: ${btnBE}  ${btnSL}  ${btnTP}  ${btnClose}`);
+            screen += row(`  TEILSCHLIESSEN (${p.volume} Lot): ${btn25}  ${btn50}  ${btn75}  ${btn100}  ${btnCustom}  ${btnClose}`);
           }
         }
         screen += bBot();
@@ -1262,7 +1585,36 @@ ASCII_HTML = """<!DOCTYPE html>
       }
     }
 
+    async function promptEditSLTP(ticket, curSl, curTp) {
+      ArcadeAudio.unlock();
+      const newSl = prompt(`Neuer Stop-Loss in USD für Position #${ticket} (z.B. -50 oder 5):`, String(curSl));
+      if (newSl === null) return;
+      const newTp = prompt(`Neuer Take-Profit in USD für Position #${ticket} (z.B. 50 oder 0 für keinen TP):`, String(curTp));
+      if (newTp === null) return;
+      const slNum = parseFloat(newSl);
+      const tpNum = parseFloat(newTp);
+      const body = { ticket };
+      if (Number.isFinite(slNum)) body.sl_usd = slNum;
+      if (Number.isFinite(tpNum)) {
+        if (tpNum === 0) body.remove_tp = true;
+        else body.tp_usd = tpNum;
+      }
+      try {
+        const res = await fetch(BASE_PATH + '/api/modify_position?account=' + encodeURIComponent(activeAccount), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const d = await res.json();
+        if (d.success) update();
+        else alert('Fehler: ' + (d.detail || d.comment || 'Abgelehnt'));
+      } catch (e) {
+        alert('Netzwerkfehler: ' + e);
+      }
+    }
+
     async function quickBE(ticket) {
+      ArcadeAudio.unlock();
       await fetch(BASE_PATH + '/api/modify_position?account=' + encodeURIComponent(activeAccount), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1271,6 +1623,7 @@ ASCII_HTML = """<!DOCTYPE html>
       update();
     }
     async function quickSL(ticket, usd) {
+      ArcadeAudio.unlock();
       await fetch(BASE_PATH + '/api/modify_position?account=' + encodeURIComponent(activeAccount), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1279,6 +1632,7 @@ ASCII_HTML = """<!DOCTYPE html>
       update();
     }
     async function quickTP(ticket, usd) {
+      ArcadeAudio.unlock();
       await fetch(BASE_PATH + '/api/modify_position?account=' + encodeURIComponent(activeAccount), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1286,14 +1640,41 @@ ASCII_HTML = """<!DOCTYPE html>
       });
       update();
     }
-    async function closePos(ticket) {
-      if (!confirm('Position #' + ticket + ' schließen?')) return;
-      await fetch(BASE_PATH + '/api/close_position?account=' + encodeURIComponent(activeAccount), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticket })
-      });
-      update();
+    async function closePos(ticket, volume = null) {
+      ArcadeAudio.unlock();
+      const volNum = (volume != null && Number.isFinite(Number(volume)) && Number(volume) > 0) ? Number(volume) : null;
+      const volText = volNum ? `${volNum.toFixed(2)} Lot von Position #${ticket}` : `Position #${ticket}`;
+      if (!confirm(`${volText} schließen?`)) return;
+      try {
+        const payload = volNum ? { ticket, volume: volNum } : { ticket };
+        const res = await fetch(BASE_PATH + '/api/close_position?account=' + encodeURIComponent(activeAccount), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const d = await res.json();
+        if (d.success) update();
+        else alert('Fehler: ' + (d.detail || d.comment || 'Abgelehnt'));
+      } catch (e) {
+        alert('Netzwerkfehler: ' + e);
+      }
+    }
+
+    function closePosPct(ticket, fullVol, pct) {
+      const vol = Math.max(0.01, Math.round(fullVol * pct / 100 * 100) / 100);
+      closePos(ticket, vol);
+    }
+
+    function promptCloseLots(ticket, fullVol) {
+      ArcadeAudio.unlock();
+      const val = prompt(`Wie viele Lots von Position #${ticket} (${fullVol} Lot aktiv) schließen? (z.B. 0.01):`, String(fullVol));
+      if (!val) return;
+      const vol = parseFloat(val);
+      if (!Number.isFinite(vol) || vol <= 0) {
+        alert('Bitte eine gültige positive Zahl für Lots eingeben.');
+        return;
+      }
+      closePos(ticket, vol);
     }
 
     window.onload = init;

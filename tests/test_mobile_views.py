@@ -52,3 +52,61 @@ def test_index_has_mobile_and_ascii_links():
     assert response.status_code == 200
     assert 'href="/mobile"' in response.text
     assert 'href="/ascii"' in response.text
+
+def test_mobile_has_sltp_partial_close_and_sound():
+    response = client.get("/mobile")
+    assert response.status_code == 200
+    html = response.text
+    assert "mob-sound-btn" in html
+    assert "toggleMobAudio" in html
+    assert "ArcadeAudio" in html
+    assert "pos-sl-tp" in html
+    assert "saveMobSLTP" in html
+    assert "closePosPct" in html
+    assert "closePosCustom" in html
+    assert "mob-lot-" in html
+    assert "25%" in html
+    assert "50%" in html
+    assert "75%" in html
+    assert "100%" in html
+
+def test_ascii_has_sltp_partial_close_and_sound():
+    response = client.get("/ascii")
+    assert response.status_code == 200
+    html = response.text
+    assert "promptEditSLTP" in html
+    assert "promptCloseLots" in html
+    assert "closePosPct" in html
+    assert "TEILSCHLIESSEN" in html
+    assert "25%" in html
+    assert "50%" in html
+    assert "75%" in html
+    assert "100%" in html
+
+def test_desktop_has_sltp_and_partial_close():
+    response = client.get("/")
+    assert response.status_code == 200
+    html = response.text
+    assert "data-position-sl-val" in html
+    assert "data-position-tp-val" in html
+    assert "closePosPct" in html
+    assert "closePosCustom" in html
+    assert "close-lot-" in html
+    assert "Teilschließen" in html
+
+def test_close_position_request_schema():
+    from app import ClosePositionRequest
+    from pydantic import ValidationError
+
+    req1 = ClosePositionRequest(ticket=123)
+    assert req1.ticket == 123
+    assert req1.volume is None
+
+    req2 = ClosePositionRequest(ticket=123, volume=0.01)
+    assert req2.volume == 0.01
+
+    with pytest.raises(ValidationError):
+        ClosePositionRequest(ticket=123, volume=0)
+
+    with pytest.raises(ValidationError):
+        ClosePositionRequest(ticket=123, volume=-0.05)
