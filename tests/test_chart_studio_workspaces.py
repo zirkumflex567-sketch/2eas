@@ -189,6 +189,10 @@ class SqliteLayoutTests(unittest.TestCase):
                "color":"#68dfff","lineWidth":3,"visible":True,"label":"Trend 34"}
         old = example()
         self.assertNotIn("movingAverages", validate_document(old))
+        rma = {**cfg, "type":"RMA", "period":1}
+        smma = {**cfg, "type":"SMMA", "period":1000}
+        self.assertEqual(validate_document({**old,"movingAverages":[rma]})["movingAverages"],[rma])
+        self.assertEqual(validate_document({**old,"movingAverages":[smma]})["movingAverages"],[smma])
         current = {**old, "movingAverages":[cfg]}
         self.assertEqual(validate_document(current)["movingAverages"], [cfg])
         saved = self.store.put("local-owner","titan","XAUUSD","Multi",current,0)
@@ -196,7 +200,8 @@ class SqliteLayoutTests(unittest.TestCase):
         self.assertEqual(self.store.get("local-owner","titan","XAUUSD","Multi")["document"],current)
         for bad in [
             [cfg, cfg],
-            [{**cfg,"period":501}],
+            [{**cfg,"period":0}],
+            [{**cfg,"period":1001}],
             [{**cfg,"period":2.2}],
             [{**cfg,"color":"red"}],
             [{**cfg,"source":"foo"}],

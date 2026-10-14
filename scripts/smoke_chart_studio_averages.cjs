@@ -12,7 +12,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    if(i===79)throw Error("HTTP fixture timeout");
    await new Promise(resolve=>setTimeout(resolve,250));
   }
-  browser=await chromium.launch({headless:true});
+  browser=await chromium.launch({headless:true,executablePath:process.env.CHART_STUDIO_CHROMIUM_PATH||undefined});
   const page=await browser.newPage({viewport:{width:1400,height:960}});
   const errors=[],requests=[],store=new Map();
   page.on("pageerror",e=>errors.push(e.message));
@@ -42,17 +42,17 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   // EMA controls must be directly accessible without opening the beta drawer.
   const quick=page.locator(".cs-ma-quick");
   assert.equal(await quick.isVisible(),true);
-  await quick.locator(".cs-ma-quick-period").fill("89");
+  await quick.locator(".cs-ma-quick-period").fill("1000");
   await quick.getByRole("button",{name:"EMA mit gewählter Periode hinzufügen"}).click();
   assert.equal(await page.locator("#cs-beta-panel").isVisible(),true);
-  assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].period,89);
+  assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].period,1000);
   await quick.getByRole("button",{name:"EMAs einstellen"}).click();
   assert.equal(await page.locator(".cs-ma-editor").isVisible(),true);
   await page.locator('[data-instance="ma1"] [data-action="remove"]').click();
   await page.locator("#cs-beta-toggle").click();
   assert.equal(await page.locator("#cs-beta-panel").isVisible(),false);
   // Invalid quick-entry cannot add an EMA.
-  await quick.locator(".cs-ma-quick-period").fill("501");
+  await quick.locator(".cs-ma-quick-period").fill("1001");
   await quick.getByRole("button",{name:"EMA mit gewählter Periode hinzufügen"}).click();
   assert.equal(await page.evaluate(()=>ChartStudioAverages.getConfigs().length),0);
   await quick.locator(".cs-ma-quick-period").fill("34");
@@ -63,6 +63,14 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(await catalog.locator(".cs-catalog-entry").count(),1);
   await catalog.locator('[data-indicator="wma"] button').click();
   assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].type,"WMA");
+  await areaCleanup();
+  await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("Wilder");
+  await catalog.locator('[data-indicator="rma"] button').click();
+  assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].type,"RMA");
+  await areaCleanup();
+  await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("Smoothed");
+  await catalog.locator('[data-indicator="smma"] button').click();
+  assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].type,"SMMA");
   await areaCleanup();
   await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("RSI");
   await catalog.locator('[data-indicator="rsi"] button').click();
@@ -75,7 +83,12 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   const area=page.locator(".cs-ma-editor");
   assert.equal(await area.isVisible(),true);
   await area.locator(".cs-ma-presets button").first().click();
-  await area.locator('[data-instance="ma1"] [data-field="period"]').fill("34");
+  const periodControl=area.locator('[data-instance="ma1"] [data-field="period"]');
+  assert.equal(await periodControl.getAttribute("min"),"1");
+  assert.equal(await periodControl.getAttribute("max"),"1000");
+  await periodControl.fill("1");await periodControl.press("Tab");
+  assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].period,1);
+  await periodControl.fill("34");
   await area.locator('[data-instance="ma1"] [data-field="period"]').press("Tab");
   await area.locator('[data-instance="ma1"] [data-field="source"]').selectOption("hlc3");
   await area.locator('[data-instance="ma1"] [data-field="lineWidth"]').selectOption("3");

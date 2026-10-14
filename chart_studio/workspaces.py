@@ -174,7 +174,7 @@ def validate_document(raw: Any) -> dict:
         ids = set()
         allowed_ma = {"id", "type", "period", "source", "color",
                       "lineWidth", "visible", "label"}
-        types = {"EMA", "SMA", "WMA"}
+        types = {"EMA", "SMA", "WMA", "RMA", "SMMA"}
         sources = {"close", "open", "high", "low", "hl2", "hlc3", "ohlc4"}
         clean_ma = []
         for item in entries:
@@ -190,8 +190,8 @@ def validate_document(raw: Any) -> dict:
                 raise StoreError("Unbekannter Moving-Average-Typ.")
             if not isinstance(item["source"], str) or item["source"] not in sources:
                 raise StoreError("Unbekannte MA-Preisquelle.")
-            if type(item["period"]) is not int or not 2 <= item["period"] <= 500:
-                raise StoreError("MA-Periode muss zwischen 2 und 500 liegen.")
+            if type(item["period"]) is not int or not 1 <= item["period"] <= 1000:
+                raise StoreError("MA-Periode muss zwischen 1 und 1000 liegen.")
             if type(item["lineWidth"]) is not int or not 1 <= item["lineWidth"] <= 4:
                 raise StoreError("Linienbreite außerhalb 1–4.")
             if type(item["visible"]) is not bool:

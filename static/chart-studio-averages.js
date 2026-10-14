@@ -3,10 +3,10 @@
  */
 (()=>{
 "use strict";
-const TYPES=Object.freeze(["EMA","SMA","WMA"]);
+const TYPES=Object.freeze(["EMA","SMA","WMA","RMA","SMMA"]);
 const SOURCES=Object.freeze(["close","open","high","low","hl2","hlc3","ohlc4"]);
 const PALETTE=Object.freeze(["#68dfff","#f5c66d","#e9a0ff","#7eebac","#ff858a","#9caaff"]);
-const MAX_INSTANCES=16,MAX_PERIOD=500,STORE_PREFIX="2eas:studio:averages:v1:";
+const MAX_INSTANCES=16,MAX_PERIOD=1000,STORE_PREFIX="2eas:studio:averages:v1:";
 const copy=value=>JSON.parse(JSON.stringify(value));
 const isHex=value=>typeof value==="string"&&/^#[0-9a-fA-F]{6}$/.test(value);
 function normalize(raw){
@@ -15,7 +15,7 @@ function normalize(raw){
  if(Object.keys(raw).some(k=>!allowed.includes(k)))return null;
  if(typeof raw.id!=="string"||!/^[a-zA-Z0-9_-]{1,32}$/.test(raw.id))return null;
  if(!TYPES.includes(raw.type)||!SOURCES.includes(raw.source))return null;
- if(!Number.isInteger(raw.period)||raw.period<2||raw.period>MAX_PERIOD)return null;
+ if(!Number.isInteger(raw.period)||raw.period<1||raw.period>MAX_PERIOD)return null;
  if(!isHex(raw.color)||!Number.isInteger(raw.lineWidth)||raw.lineWidth<1||raw.lineWidth>4||
   typeof raw.visible!=="boolean")return null;
  if(typeof raw.label!=="string"||raw.label.length>40||/[\u0000-\u001f]/.test(raw.label))return null;
@@ -56,7 +56,7 @@ function valueFrom(bar,source){
 }
 function calculate(input,type,period,source="close"){
  if(!TYPES.includes(type)||!SOURCES.includes(source)||!Number.isInteger(period)||
-    period<2||period>MAX_PERIOD)return [];
+    period<1||period>MAX_PERIOD)return [];
  const bars=rows(input),result=[];
  if(bars.length<period)return result;
  let sum=0,weighted=0,previous=null;
@@ -64,6 +64,13 @@ function calculate(input,type,period,source="close"){
   const value=valueFrom(bars[i],source);
   if(type==="EMA"){
    previous=previous===null?value:previous+(2/(period+1))*(value-previous);
+   if(i>=period-1)result.push({time:bars[i].time,value:previous});
+   continue;
+  }
+  if(type==="RMA"||type==="SMMA"){
+   if(i<period)sum+=value;
+   if(i===period-1)previous=sum/period;
+   else if(i>=period)previous+=(value-previous)/period;
    if(i>=period-1)result.push({time:bars[i].time,value:previous});
    continue;
   }
@@ -168,7 +175,7 @@ function redrawEditor(){
   const row=document.createElement("div");row.className="cs-ma-instance";row.dataset.instance=cfg.id;
   const enabled=input("checkbox",cfg.visible,"Linie anzeigen","visible",cfg.id);
   const type=optionsSelect(TYPES,cfg.type,"Durchschnittstyp","type",cfg.id);
-  const period=input("number",cfg.period,"Periode","period",cfg.id,{min:2,max:MAX_PERIOD,step:1});
+  const period=input("number",cfg.period,"Periode","period",cfg.id,{min:1,max:MAX_PERIOD,step:1});
   const src=optionsSelect(SOURCES,cfg.source,"Preisquelle","source",cfg.id);
   const color=input("color",cfg.color,"Linienfarbe","color",cfg.id);
   const weight=optionsSelect([1,2,3,4],cfg.lineWidth,"Linienstärke","lineWidth",cfg.id);
@@ -213,7 +220,7 @@ function edit(id,field,value){
  const i=state.configs.findIndex(x=>x.id===id);if(i<0)return false;
  const next={...state.configs[i],[field]:value};
  const checked=normalize(next);
- if(!checked){announce("Ungültiger Wert. Erlaubt sind Perioden 2–"+MAX_PERIOD+".");redrawEditor();return false}
+ if(!checked){announce("Ungültiger Wert. Erlaubt sind Perioden 1–"+MAX_PERIOD+".");redrawEditor();return false}
  state.configs[i]=checked;persist();redrawEditor();refreshSeries();
  window.ChartStudioBeta?.refreshDataWindowIndicators();
  return true;
@@ -251,7 +258,7 @@ function mount({chart,panel,account="titan"}){
  const title=document.createElement("strong");title.textContent="INDIKATOREN-LABOR · MULTI-MA";
  const counter=document.createElement("span");heading.append(title,counter);
  const info=document.createElement("p");
- info.textContent="Eigene EMA/SMA/WMA-Linien: Typ, Periode, Preisquelle, Farbe, Dicke und Name. Bestehende EMA20/50/200 bleiben separat steuerbar.";
+ info.textContent="Eigene EMA/SMA/WMA/RMA/SMMA-Linien: Typ, Periode, Preisquelle, Farbe, Dicke und Name. Bestehende EMA20/50/200 bleiben separat steuerbar.";
  const commands=document.createElement("div");commands.className="cs-ma-presets";
  for(const [type,period,label] of [["EMA",21,"+ EMA 21"],["EMA",50,"+ EMA 50"],
   ["EMA",200,"+ EMA 200"],["SMA",20,"+ SMA 20"],["WMA",20,"+ WMA 20"]]){

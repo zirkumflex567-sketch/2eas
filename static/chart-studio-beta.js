@@ -694,8 +694,8 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  const maOpen=document.createElement("button");maOpen.type="button";
  maOpen.className="cs-ma-quick-open";maOpen.textContent="⚙ EMAs einstellen";
  maOpen.setAttribute("aria-controls","cs-beta-panel");maOpen.setAttribute("aria-expanded","false");
- const maPeriod=document.createElement("input");maPeriod.type="number";maPeriod.min="2";
- maPeriod.max="500";maPeriod.step="1";maPeriod.value="34";maPeriod.className="cs-ma-quick-period";
+ const maPeriod=document.createElement("input");maPeriod.type="number";maPeriod.min="1";
+ maPeriod.max="1000";maPeriod.step="1";maPeriod.value="34";maPeriod.className="cs-ma-quick-period";
  maPeriod.setAttribute("aria-label","Periode für neue EMA");
  const maAdd=document.createElement("button");maAdd.type="button";maAdd.textContent="+ EMA";
  maAdd.setAttribute("aria-label","EMA mit gewählter Periode hinzufügen");
@@ -780,8 +780,8 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  maOpen.addEventListener("click",openAverages);
  maAdd.addEventListener("click",()=>{
   const period=maPeriod.valueAsNumber;
-  if(!Number.isInteger(period)||period<2||period>500){
-   maPeriod.setCustomValidity("EMA-Periode muss zwischen 2 und 500 liegen.");
+  if(!Number.isInteger(period)||period<1||period>1000){
+   maPeriod.setCustomValidity("EMA-Periode muss zwischen 1 und 1000 liegen.");
    maPeriod.reportValidity();return;
   }
   maPeriod.setCustomValidity("");
