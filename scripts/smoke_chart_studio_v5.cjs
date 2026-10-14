@@ -21,6 +21,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(await page.evaluate(()=>window.__chartV5Ready),true);
   await page.addScriptTag({path:path.resolve("chart_studio_v5/node_modules/lightweight-charts/dist/lightweight-charts.standalone.development.js")});
   await page.addScriptTag({path:path.resolve("static/chart-studio-beta.js")});
+  await page.addScriptTag({path:path.resolve("static/chart-studio-averages.js")});
   const coordinateCompatibility=await page.evaluate(async()=>{
    const run=(time,secondTime)=>{
     const host=document.createElement("div");host.style.cssText="width:900px;height:360px";document.body.append(host);
@@ -157,6 +158,64 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await page.mouse.move(paneResizeSetup.x,paneResizeSetup.y);
   await page.mouse.down();await page.mouse.move(paneResizeSetup.x,paneResizeSetup.y-45,{steps:6});await page.mouse.up();
   const paneResizeAfter=await page.evaluate(()=>{const heights=window.__at003Engine.paneHeights();window.__at003Engine.destroy();window.__at003Host.remove();window.scrollTo(0,0);return heights});
+  const movingAverageProbe=await page.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:900px;height:360px;position:fixed;left:-2000px;top:0";document.body.append(host);
+   const engine=ChartStudioV5.createStudioV5(host,"at002-native-ma"),bars=Array.from({length:30},(_,i)=>({
+    time:1700100000+i*60,open:20+i*2,high:30+i*2,low:8+i,close:10+i,tick_volume:10+i
+   }));
+   engine.setCandles(bars);
+   engine.addMovingAverage({id:"ema-close",type:"EMA",period:3,source:"close",color:"#12aacc",lineWidth:1});
+   engine.addMovingAverage({id:"ema-high",type:"EMA",period:3,source:"high",color:"#cc33aa",lineWidth:4,displayShift:1});
+   engine.addMovingAverage({id:"ema20-close",type:"EMA",period:20,source:"close",color:"#18cdef",lineWidth:1});
+   engine.addMovingAverage({id:"ema20-high",type:"EMA",period:20,source:"high",color:"#e531a9",lineWidth:4,displayShift:2});
+   const ema20Styles=[engine.averageOptions("ema20-close"),engine.averageOptions("ema20-high")];
+   const extraTypes=["SMA","WMA","RMA","SMMA"];
+   for(const type of extraTypes)engine.addMovingAverage({id:`ma-${type}`,type,period:3,source:"hlc3",color:"#22cc88"});
+   const independent=engine.readDataWindow(bars[3].time).indicators;
+   const nativeRows=bars.map(bar=>engine.readDataWindow(bar.time).indicators);
+   const reference=Object.fromEntries(extraTypes.map(type=>{const shifted=window.ChartStudioAverages.shiftDisplay(bars,
+    window.ChartStudioAverages.calculate(bars,type,3,"hlc3"),0),byTime=new Map(shifted.map(point=>[point.time,point.value]));
+    return [type,bars.map(bar=>byTime.get(bar.time)??null)]}));
+   const matrixMismatches=[],sources=["close","open","high","low","hl2","hlc3","ohlc4"],types=["EMA","SMA","WMA","RMA","SMMA"],shifts=[-2,-1,0,1,2];let workingBars=bars;
+   for(let index=0;index<types.length*sources.length;index++){
+    const type=types[Math.floor(index/sources.length)],source=sources[index%sources.length],displayShift=shifts[index%shifts.length];
+    engine.addMovingAverage({id:"matrix-ma",type,period:3,source,color:"#7aaacc",displayShift});
+    for(const action of ["forming","append"]){
+     const last=workingBars[workingBars.length-1];let next;
+     if(action==="forming")next={...last,open:last.open+.1,close:last.close+.2,high:Math.max(last.high,last.open+.1,last.close+.2)+.1,low:Math.min(last.low,last.open+.1,last.close+.2)-.1};
+     else{const open=last.open+.3,close=last.close+.4;next={time:last.time+60,open,close,high:Math.max(last.high+.5,open,close),low:Math.min(last.low-.5,open,close),tick_volume:(last.tick_volume||0)+1}}
+     engine.updateLast(next);workingBars=action==="forming"?[...workingBars.slice(0,-1),next]:[...workingBars,next];
+     const expectedPoints=window.ChartStudioAverages.shiftDisplay(workingBars,window.ChartStudioAverages.calculate(workingBars,type,3,source),displayShift),expectedMap=new Map(expectedPoints.map(point=>[point.time,point.value]));
+     for(const bar of workingBars){const actual=engine.readDataWindow(bar.time).indicators.find(item=>item.id==="matrix-ma").value,expected=expectedMap.get(bar.time)??null;
+      if(actual===null?expected!==null:expected===null||Math.abs(actual-expected)>1e-10)matrixMismatches.push({type,source,displayShift,action,time:bar.time,actual,expected});
+     }
+    }
+    engine.removeAverage("matrix-ma");
+   }
+   const ema20Reference=Object.fromEntries([["ema20-close","close",0],["ema20-high","high",2]].map(([id,source,shift])=>{
+    const shifted=window.ChartStudioAverages.shiftDisplay(bars,window.ChartStudioAverages.calculate(bars,"EMA",20,source),shift),byTime=new Map(shifted.map(point=>[point.time,point.value]));
+    return [id,bars.map(bar=>byTime.get(bar.time)??null)];
+   }));
+   engine.addMovingAverage({id:"ema20-close",type:"EMA",period:10,source:"open",color:"#39d6aa",lineWidth:3,displayShift:-1});
+   const editedEma20Style=engine.averageOptions("ema20-close");
+   const ema20Edited=engine.readDataWindow(bars[25].time).indicators;
+   const ema20EditedPoints=window.ChartStudioAverages.shiftDisplay(bars,window.ChartStudioAverages.calculate(bars,"EMA",10,"open"),-1),ema20EditedMap=new Map(ema20EditedPoints.map(point=>[point.time,point.value]));
+   const ema20EditedExpected=ema20EditedMap.get(bars[25].time);
+   const replacementBars=bars.map(bar=>({...bar,open:bar.open+100,high:bar.high+100,low:bar.low+100,close:bar.close+100}));
+   engine.setCandles(replacementBars);
+   const reloaded=engine.readDataWindow(replacementBars[25].time).indicators;
+   const replacementMa=window.ChartStudioAverages.shiftDisplay(replacementBars,window.ChartStudioAverages.calculate(replacementBars,"EMA",10,"open"),-1),replacementMaMap=new Map(replacementMa.map(point=>[point.time,point.value]));
+   const replacementExpected=replacementMaMap.get(replacementBars[25].time);
+   engine.addMovingAverage({id:"ema-close",type:"EMA",period:2,source:"open",color:"#12aacc",lineWidth:2});
+   const edited=engine.readDataWindow(bars[3].time).indicators;
+   const editedExpected=window.ChartStudioAverages.calculate(replacementBars,"EMA",2,"open").find(point=>point.time===bars[3].time).value;
+   const formingBar={...replacementBars.at(-1),close:30,open:30,high:33,low:29};engine.updateLast(formingBar);
+   const forming=engine.readDataWindow(formingBar.time).indicators;
+   const formingExpected=window.ChartStudioAverages.calculate([...replacementBars.slice(0,-1),formingBar],"EMA",2,"open").at(-1).value;
+   let badPeriodRejected=false;try{engine.addMovingAverage({id:"bad-ma",type:"EMA",period:0,source:"close",color:"#ffffff"})}catch(_){badPeriodRejected=true}
+   engine.destroy();host.remove();
+   return {independent,edited,editedExpected,forming,formingExpected,badPeriodRejected,nativeRows,reference,extraTypes,ema20Reference,ema20Edited,ema20EditedExpected,reloaded,replacementExpected,matrixMismatches,ema20Styles,editedEma20Style};
+  });
   const panZoom=await page.evaluate(async()=>{
    const host=document.createElement("div");host.style.cssText="width:1000px;height:420px";document.body.append(host);
    const engine=ChartStudioV5.createStudioV5(host,"panzoom"),bars=Array.from({length:1200},(_,i)=>{
@@ -242,6 +301,39 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(paneResizeSetup.heights.length,2);
   assert.ok(paneResizeAfter[0]<paneResizeSetup.heights[0]-20,`Dragging the native separator shrinks the price pane (${JSON.stringify({before:paneResizeSetup.heights,after:paneResizeAfter,xy:[paneResizeSetup.x,paneResizeSetup.y]})})`);
   assert.ok(paneResizeAfter[1]>paneResizeSetup.heights[1]+20,"Dragging the native separator expands the RSI pane");
+  assert.deepEqual(movingAverageProbe.independent.slice(0,2).map(x=>x.id),["ema-close","ema-high"]);
+  assert.equal(movingAverageProbe.independent[0].value,12.125,"EMA close instance uses its own source and period");
+  assert.equal(movingAverageProbe.independent[1].value,32.5,"EMA high instance uses its own source and display shift");
+  assert.equal(movingAverageProbe.edited.find(x=>x.id==="ema-close").value,movingAverageProbe.editedExpected,"Editing one EMA period/source leaves its instance isolated");
+  assert.equal(movingAverageProbe.edited.find(x=>x.id==="ema-high").value,132.5,"Editing one EMA leaves the second instance unchanged");
+  assert.ok(Math.abs(movingAverageProbe.forming.find(x=>x.id==="ema-close").value-movingAverageProbe.formingExpected)<1e-10,"Forming-bar updates recalculate the managed average");
+  for(const id of ["ema20-close","ema20-high"]){
+   const actual=movingAverageProbe.nativeRows[25].find(x=>x.id===id).value;
+   assert.ok(Math.abs(actual-movingAverageProbe.ema20Reference[id][25])<1e-10,`${id} matches its independent period-20 calculation`);
+  }
+  assert.notEqual(movingAverageProbe.ema20Reference["ema20-close"][25],movingAverageProbe.ema20Reference["ema20-high"][25]);
+  assert.equal(movingAverageProbe.ema20Styles[0].color,"#18cdef");
+  assert.equal(movingAverageProbe.ema20Styles[0].lineWidth,1);
+  assert.equal(movingAverageProbe.ema20Styles[1].color,"#e531a9");
+  assert.equal(movingAverageProbe.ema20Styles[1].lineWidth,4);
+  assert.equal(movingAverageProbe.editedEma20Style.color,"#39d6aa");
+  assert.equal(movingAverageProbe.editedEma20Style.lineWidth,3);
+  assert.equal(movingAverageProbe.ema20Edited.find(x=>x.id==="ema20-high").value,movingAverageProbe.nativeRows[25].find(x=>x.id==="ema20-high").value,
+   "Editing one EMA-20 leaves the other EMA-20 unchanged");
+  assert.equal(movingAverageProbe.ema20Edited.find(x=>x.id==="ema20-close").value,movingAverageProbe.ema20EditedExpected,
+   "Edited EMA-20 recalculates its changed source, period and shift");
+  assert.equal(movingAverageProbe.reloaded.find(x=>x.id==="ema20-close").value,movingAverageProbe.replacementExpected,
+   "Replacing the candle history recalculates managed averages from the new history");
+  assert.deepEqual(movingAverageProbe.matrixMismatches,[],"All MA types, OHLC sources and display-shift directions match production beta calculations");
+  assert.equal(movingAverageProbe.badPeriodRejected,true);
+  for(const type of movingAverageProbe.extraTypes){
+   for(let i=0;i<movingAverageProbe.reference[type].length;i++){
+    const actual=movingAverageProbe.nativeRows[i].find(x=>x.id===`ma-${type}`).value;
+    const expected=movingAverageProbe.reference[type][i];
+    if(expected===null)assert.equal(actual,null,`${type} warm-up remains unavailable at ${i}`);
+    else assert.ok(Math.abs(actual-expected)<1e-10,`${type} matches the production beta calculation at ${i}`);
+   }
+  }
   for(const measurement of panZoom.measurements){
    assert.deepEqual(measurement.anchor,panZoom.original,"Trend anchors remain exact during pan and zoom");
    assert.ok(measurement.midpointError<=1,"Trend geometry stays aligned with exact time/price anchors across 1,200 bars");
@@ -1037,9 +1129,10 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const host=document.createElement("div");host.style.cssText="width:min(1280px,100vw);height:min(720px,100vh);position:fixed;left:0;top:0;z-index:9999;background:#121416";document.body.append(host);
    const rows=Array.from({length:5000},(_,i)=>{const close=4000+i*.01+Math.sin(i/20)*3+2;return {time:1700000000+i*900,open:close-1,high:close+4,low:close-4,close,tick_volume:100+i}});
    const engine=ChartStudioV5.createStudioV5(host,"capacity-source");let t=performance.now();engine.setCandles(rows);const barsMs=performance.now()-t;
-   t=performance.now();for(let i=0;i<16;i++)engine.addAverage({id:`capacity-overlay-${i}`,color:"#61ddf2"},rows.map(c=>({time:c.time,value:c.close+i/100})));
+   t=performance.now();for(let i=0;i<16;i++)engine.addMovingAverage({id:`capacity-overlay-${i}`,type:"EMA",period:9+i,source:"close",color:"#61ddf2",lineWidth:1+(i%4)});
    for(let i=0;i<4;i++)engine.addPaneLine({id:`capacity-pane-${i}`,color:"#f7c774"},rows.map((c,index)=>({time:c.time,value:20+i+Math.sin(index/20)})));
-   const indicatorsMs=performance.now()-t;let combinedIndicatorError="";try{engine.addPaneLine({id:"capacity-pane-over-limit",color:"#ffffff"},rows.map(c=>({time:c.time,value:c.close})))}catch(error){combinedIndicatorError=error.message}
+   const indicatorsMs=performance.now()-t,activeIndicatorCount=engine.inspect().averageCount+engine.inspect().nativePaneLines;let combinedIndicatorError="";try{engine.addPaneLine({id:"capacity-pane-over-limit",color:"#ffffff"},rows.map(c=>({time:c.time,value:c.close})))}catch(error){combinedIndicatorError=error.message}
+   t=performance.now();engine.updateLast({...rows.at(-1),close:rows.at(-1).close+1});const formingUpdateMs=performance.now()-t;
    t=performance.now();let drawingError="",overLimitError="",accepted=0;
    for(let i=0;i<999;i++){
     const start=100+i*4,end=start+50;
@@ -1058,7 +1151,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
     const isolationHost=document.createElement("div");isolationHost.style.cssText="width:1280px;height:720px;position:absolute;left:-2000px;top:0";document.body.append(isolationHost);const otherAccount=ChartStudioV5.createStudioV5(isolationHost,"capacity-other",{symbol:"XAUUSD",timeframe:"M15"});otherAccount.setCandles(rows);otherAccount.addTrendLine({id:"unrelated-account",startTime:rows[200].time,startPrice:rows[200].close,endTime:rows[260].time,endPrice:rows[260].close+1,color:"#ffffff"});otherAccountCount=otherAccount.inspect().nativePrimitives;otherAccount.destroy();const otherTimeframe=ChartStudioV5.createStudioV5(isolationHost,"capacity-target",{symbol:"XAUUSD",timeframe:"H1"});otherTimeframe.setCandles(rows);otherTimeframeCount=otherTimeframe.inspect().nativePrimitives;otherTimeframe.destroy();isolationHost.remove();
    }
    window.__capacityEngine=engine;window.__capacityHost=host;window.__capacityOriginalHost=originalHost;window.__capacityOriginalDisplay=originalDisplay;
-   return {runtime:{viewport:[innerWidth,innerHeight],devicePixelRatio,userAgent:navigator.userAgent},barsMs,indicatorsMs,drawingsMs,accepted,drawingError,overLimitError,countAfterRejectedDrawing,combinedIndicatorError,positions,readback,transferError,transferBytes,transferMs,exportedBytes,exportedCount,reloadMs,reloadedCount,otherAccountCount,otherTimeframeCount};
+   return {runtime:{viewport:[innerWidth,innerHeight],devicePixelRatio,userAgent:navigator.userAgent},barsMs,indicatorsMs,formingUpdateMs,activeIndicatorCount,drawingsMs,accepted,drawingError,overLimitError,countAfterRejectedDrawing,combinedIndicatorError,positions,readback,transferError,transferBytes,transferMs,exportedBytes,exportedCount,reloadMs,reloadedCount,otherAccountCount,otherTimeframeCount};
   });
   const capacitySelectionMs={};
   for(const index of [0,500,998]){
@@ -1068,7 +1161,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    assert.equal(await page.evaluate(()=>window.__capacityEngine.inspect().selectedDrawingId),id,`${id} remains selectable at 1,000 drawings`);capacitySelectionMs[index]=Date.now()-started;
   }
   await page.evaluate(()=>{window.__capacityEngine.destroy();window.__capacityHost.remove();window.__capacityOriginalHost.style.display=window.__capacityOriginalDisplay;delete window.__capacityEngine;delete window.__capacityHost;delete window.__capacityOriginalHost;delete window.__capacityOriginalDisplay});
-  console.log(`AT-025 Chromium capacity evidence ${JSON.stringify({runtime:capacityProbe.runtime,barsMs:capacityProbe.barsMs,indicatorsMs:capacityProbe.indicatorsMs,drawingsMs:capacityProbe.drawingsMs,accepted:capacityProbe.accepted,transferBytes:capacityProbe.transferBytes,transferMs:capacityProbe.transferMs,reloadMs:capacityProbe.reloadMs,reloadedCount:capacityProbe.reloadedCount,otherAccountCount:capacityProbe.otherAccountCount,otherTimeframeCount:capacityProbe.otherTimeframeCount,capacitySelectionMs})}`);
+  console.log(`AT-025 Chromium capacity evidence ${JSON.stringify({runtime:capacityProbe.runtime,barsMs:capacityProbe.barsMs,indicatorsMs:capacityProbe.indicatorsMs,formingUpdateMs:capacityProbe.formingUpdateMs,activeIndicatorCount:capacityProbe.activeIndicatorCount,drawingsMs:capacityProbe.drawingsMs,accepted:capacityProbe.accepted,transferBytes:capacityProbe.transferBytes,transferMs:capacityProbe.transferMs,reloadMs:capacityProbe.reloadMs,reloadedCount:capacityProbe.reloadedCount,otherAccountCount:capacityProbe.otherAccountCount,otherTimeframeCount:capacityProbe.otherTimeframeCount,capacitySelectionMs})}`);
+  assert.equal(capacityProbe.activeIndicatorCount,20,"Capacity setup calculates sixteen moving averages plus four independent panes");
   assert.equal(capacityProbe.accepted,1000,`5k/20/1k target failed at ${capacityProbe.accepted}: ${capacityProbe.drawingError}`);
   assert.ok(capacityProbe.combinedIndicatorError,"20 total overlay/pane instances should be the shared active-indicator limit");
   assert.equal(capacityProbe.drawingError,"","all 1,000 drawings must be accepted");

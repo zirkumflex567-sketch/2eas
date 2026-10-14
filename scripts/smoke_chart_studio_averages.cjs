@@ -77,6 +77,9 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal((await page.evaluate(()=>ChartStudioOscillators.settings())).length,1);
   await page.evaluate(()=>ChartStudioOscillators.applySettings([]));
   await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("");
+  assert.deepEqual(await catalog.locator(".cs-catalog-entry").evaluateAll(rows=>rows.map(row=>row.dataset.indicator)),
+   ["ema","sma","wma","rma","smma","rsi","macd","atr","adx","volume","vwap"],
+   "The searchable catalog lists each P0 indicator family");
   async function areaCleanup(){
     await page.locator('[data-instance="ma1"] [data-action="remove"]').click();
   }
@@ -149,7 +152,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
   assert.equal(await page.evaluate(()=>ChartStudioAverages.getConfigs().length),0);
   assert.equal(await page.evaluate(()=>ChartStudioAverages.diagnostics().seriesCount),0);
-  await area.locator(".cs-ma-presets button").nth(1).click();
+  await area.locator(".cs-ma-presets button").nth(2).click();
   assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].period,50);
   await page.evaluate(()=>ChartStudioAverages.edit("ma1","visible",false));
   const maPreset=area.getByRole("button",{name:"EMA 9/21/50 Preset"});

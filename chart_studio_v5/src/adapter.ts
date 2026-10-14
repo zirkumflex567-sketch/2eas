@@ -9,6 +9,7 @@ export const VERSION = "5.2.1";
 export type Candle = {time:UTCTimestamp;open:number;high:number;low:number;close:number;tick_volume?:number;real_volume?:number};
 export type AveragePoint = {time:UTCTimestamp;value:number};
 export type AverageOptions = {id:string;color:string;lineWidth?:1|2|3|4;visible?:boolean;title?:string};
+export type MovingAverageOptions = AverageOptions&{type:"EMA"|"SMA"|"WMA"|"RMA"|"SMMA";period:number;source?:"close"|"open"|"high"|"low"|"hl2"|"hlc3"|"ohlc4";displayShift?:number};
 export type PriceLevelOptions = {id:string;price:number;color:string;visible?:boolean;locked?:boolean};
 export type TimeMarkerOptions = {id:string;time:UTCTimestamp;color:string;visible?:boolean;locked?:boolean};
 export type TextAnnotationOptions = {id:string;time:UTCTimestamp;price:number;text:string;color:string;visible?:boolean;locked?:boolean};
@@ -380,6 +381,41 @@ function validSeriesData(data:readonly AveragePoint[]):AveragePoint[]{
  for(let i=1;i<out.length;i++)if(out[i-1].time===out[i].time)throw Error("Duplicate indicator timestamp");
  return out;
 }
+function movingAverageData(bars:readonly Candle[],options:MovingAverageOptions):{base:AveragePoint[];points:AveragePoint[]}{
+ const {type,period,source="close",displayShift=0}=options;
+ if(!["EMA","SMA","WMA","RMA","SMMA"].includes(type)||!Number.isInteger(period)||period<1||period>1000||
+  !["close","open","high","low","hl2","hlc3","ohlc4"].includes(source)||!Number.isInteger(displayShift)||displayShift < -500||displayShift>500)
+  throw Error("Invalid moving-average configuration");
+ if(bars.length<period)return {base:[],points:[]};
+ const valueAt=(bar:Candle)=>source==="hl2"?(bar.high+bar.low)/2:source==="hlc3"?(bar.high+bar.low+bar.close)/3:
+  source==="ohlc4"?(bar.open+bar.high+bar.low+bar.close)/4:bar[source];
+ const points:AveragePoint[]=[],shifted:AveragePoint[]=[];
+ let sum=0,weighted=0,previous:number|null=null;
+ for(let i=0;i<bars.length;i++){
+  const value=valueAt(bars[i]);let result:number|null=null;
+  if(type==="EMA"){
+   previous=previous===null?value:previous+(2/(period+1))*(value-previous);
+   if(i>=period-1)result=previous;
+  }else if(type==="RMA"||type==="SMMA"){
+   if(i<period)sum+=value;
+   if(i===period-1)previous=sum/period;
+   else if(i>=period)previous!+=(value-previous!)/period;
+   if(i>=period-1)result=previous;
+  }else{
+   if(i<period){sum+=value;if(type==="WMA")weighted+=(i+1)*value}
+   else{const dropped=valueAt(bars[i-period]);if(type==="WMA")weighted=weighted-sum+period*value;sum+=value-dropped}
+   if(i>=period-1)result=type==="SMA"?sum/period:weighted/(period*(period+1)/2);
+  }
+  if(result!==null)points.push({time:bars[i].time,value:result});
+ }
+ if(displayShift===0)return {base:points,points};
+ const values=new Map(points.map(point=>[point.time,point.value]));
+ for(let target=0;target<bars.length;target++){
+  const sourceIndex=target-displayShift;if(sourceIndex<0||sourceIndex>=bars.length)continue;
+  const result=values.get(bars[sourceIndex].time);if(result!==undefined)shifted.push({time:bars[target].time,value:result});
+ }
+ return {base:points,points:shifted};
+}
 export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartStorageScope){
  if(!host || !accountId || !/^[a-zA-Z0-9_-]{1,50}$/.test(accountId))throw Error("Invalid chart host/account");
  if(scope&&(!/^[a-zA-Z0-9._-]{1,32}$/.test(scope.symbol)||!/^[a-zA-Z0-9_-]{1,24}$/.test(scope.timeframe)))throw Error("Invalid chart storage scope");
@@ -415,6 +451,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   title:opts.title??opts.id,priceLineVisible:false,lastValueVisible:true});
  type LineApi=ReturnType<typeof newLine>;
  const averages=new Map<string,LineApi>();
+ const managedMovingAverages=new Map<string,{options:MovingAverageOptions;base:Map<number,number>}>();
  type ReadoutIndicator={id:string;title:string;kind:"OVERLAY"|"PANE";values:Map<number,number>};
  const readoutIndicators=new Map<string,ReadoutIndicator>();
  // Independent native chart panes, not separate chart instances or duplicated time axes.
@@ -954,7 +991,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   guard();const next=normalizeCandles(data);finishDrag(true);undoStack.length=0;redoStack.length=0;bars=next;barsByTime=new Map(bars.map(c=>[c.time,c]));
   for(const series of averages.values())series.setData([]);
   for(const series of paneLines.values())series.setData([]);
-  readoutIndicators.clear();price.setData(bars);
+  readoutIndicators.clear();price.setData(bars);refreshManagedMovingAverages();
   if(volume)volume.setData(volumeRows());
   hydrateDrawings();
   if(drawingsHydrated&&persistenceStatus==="READY")persistDrawings();
@@ -963,7 +1000,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   return bars.map(c=>({time:c.time,value:Math.max(0,(c.real_volume??0)>0?c.real_volume!:c.tick_volume??0),
    color:c.close>=c.open?"#4bc3d7":"#dc6987"}));
  }
- function addAverage(opts:AverageOptions,data:readonly AveragePoint[]){
+ function applyAverageData(opts:AverageOptions,data:readonly AveragePoint[]){
   guard();
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color))throw Error("Invalid line options");
   if(averages.size+paneLines.size>=maxIndicatorInstances&&!averages.has(opts.id))throw Error("Indicator instance limit");
@@ -975,6 +1012,48 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    visible:opts.visible??true,title:opts.title??opts.id});
   series.setData(values);
   readoutIndicators.set(opts.id,{id:opts.id,title:opts.title??opts.id,kind:"OVERLAY",values:new Map(values.map(v=>[v.time,v.value]))});
+ }
+ function addAverage(opts:AverageOptions,data:readonly AveragePoint[]){managedMovingAverages.delete(opts?.id);applyAverageData(opts,data)}
+ function addMovingAverage(options:MovingAverageOptions){
+  guard();const calculation=movingAverageData(bars,options),normalized={...options,source:options.source??"close",displayShift:options.displayShift??0};
+  applyAverageData({id:options.id,color:options.color,lineWidth:options.lineWidth,visible:options.visible,title:options.title??`${options.type} ${options.period}`},calculation.points);
+  managedMovingAverages.set(options.id,{options:normalized,base:new Map(calculation.base.map(point=>[point.time,point.value]))});
+ }
+ function refreshManagedMovingAverages(){
+  for(const [id,state] of managedMovingAverages){
+   const {options}=state,calculation=movingAverageData(bars,options);
+   state.base=new Map(calculation.base.map(point=>[point.time,point.value]));
+   applyAverageData({id:options.id,color:options.color,lineWidth:options.lineWidth,visible:options.visible,title:options.title??`${options.type} ${options.period}`},calculation.points);
+  }
+ }
+ function updateManagedMovingAverage(id:string,state:{options:MovingAverageOptions;base:Map<number,number>}){
+  const {options}=state,index=bars.length-1,bar=bars[index],{period,type,source="close",displayShift=0}=options;
+  let value:number|null=null;
+  const sourceValue=(item:Candle)=>source==="hl2"?(item.high+item.low)/2:source==="hlc3"?(item.high+item.low+item.close)/3:
+   source==="ohlc4"?(item.open+item.high+item.low+item.close)/4:item[source];
+  if(index>=period-1){
+   const current=sourceValue(bar),prior=index>0?state.base.get(bars[index-1].time):undefined;
+   if(type==="EMA"||type==="RMA"||type==="SMMA"){
+    if(prior!==undefined)value=type==="EMA"?prior+(2/(period+1))*(current-prior):prior+(current-prior)/period;
+    else{const recalculated=movingAverageData(bars,options).base;value=recalculated.length?recalculated[recalculated.length-1].value:null}
+   }else{
+    const start=index-period+1,window=bars.slice(start,index+1);let sum=0,weighted=0;
+    for(let i=0;i<window.length;i++){const sample=sourceValue(window[i]);sum+=sample;if(type==="WMA")weighted+=(i+1)*sample}
+    value=type==="SMA"?sum/period:weighted/(period*(period+1)/2);
+   }
+  }
+  if(value===null)state.base.delete(bar.time);else state.base.set(bar.time,value);
+  const series=averages.get(id),readout=readoutIndicators.get(id);if(!series||!readout)return;
+  const targetIndex=index+displayShift;
+  if(value!==null&&targetIndex>=0&&targetIndex<bars.length){
+   const target=bars[targetIndex];series.update({time:target.time,value});readout.values.set(target.time,value);
+  }
+  if(displayShift>0){
+   const revealedIndex=index-displayShift;
+   if(revealedIndex>=0){const revealed=state.base.get(bars[revealedIndex].time);
+    if(revealed!==undefined){series.update({time:bar.time,value:revealed});readout.values.set(bar.time,revealed)}
+   }
+  }
  }
  function validatePriceLevel(opts:PriceLevelOptions){
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color)||
@@ -1418,11 +1497,13 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   barsByTime.set(c.time,{...c});
   for(const indicator of readoutIndicators.values())indicator.values.delete(c.time);
   price.update(c);if(volume)volume.update(volumeRows()[bars.length-1]);
+  for(const [id,state] of managedMovingAverages)updateManagedMovingAverage(id,state);
  }
  function removeAverage(id:string){
   guard();const s=averages.get(id);if(!s)return false;
-  chart.removeSeries(s);averages.delete(id);readoutIndicators.delete(id);return true;
+  chart.removeSeries(s);averages.delete(id);managedMovingAverages.delete(id);readoutIndicators.delete(id);return true;
  }
+ function averageOptions(id:string){guard();return averages.get(id)?.options()??null}
  function readDataWindow(time:number):DataWindowReadout{
   guard();
   if(!Number.isSafeInteger(time)||time<=0||!Number.isFinite(new Date(time*1000).getTime()))throw Error("Invalid UTC candle time");
@@ -1454,7 +1535,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   for(const item of channels.values())price.detachPrimitive(item.primitive);channels.clear();
   for(const item of measurements.values())price.detachPrimitive(item.primitive);measurements.clear();
   for(const item of averages.values())chart.removeSeries(item);
-  averages.clear();
+  averages.clear();managedMovingAverages.clear();
   for(const line of paneLines.values())chart.removeSeries(line);
   paneLines.clear();readoutIndicators.clear();if(volume)volume.setData([]);
  }
@@ -1463,9 +1544,9 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
   averageCount:averages.size,nativePaneLines:paneLines.size,nativePrimitives:drawingCount(),selectedDrawingId,hoveredDrawingId,
   paneCount:chart.panes().length,volumeVisible:!!volume,persistenceStatus,persistenceError}}
- function destroy(){if(destroyed)return;finishDrag(true);destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();paneLines.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();measurements.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
- return Object.freeze({setCandles,addAverage,moveAverage,removeAverage,addPriceLevel,updatePriceLevel,removePriceLevel,
+ function destroy(){if(destroyed)return;finishDrag(true);destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();managedMovingAverages.clear();paneLines.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();measurements.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
+ return Object.freeze({setCandles,addAverage,addMovingAverage,moveAverage,removeAverage,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,drawingPosition,drawingAnchorPosition,readDrawing,exportDrawings,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,
   addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,resizePane,paneHeights,showVolume,visibleLogicalRange,setVisibleLogicalRange,setDisplayTimeZone,displayTimeZone:()=>displayTimeZone,formatTimeLabel:formatDisplayTime,formatCrosshairTime,readDataWindow,
-  updateLast,changeAccount,inspect,destroy});
+  updateLast,changeAccount,averageOptions,inspect,destroy});
 }

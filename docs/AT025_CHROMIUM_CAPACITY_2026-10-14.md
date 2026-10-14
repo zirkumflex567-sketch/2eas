@@ -22,6 +22,24 @@ These timings are a single local headless-browser run. Bar and indicator numbers
 
 The production ChartStudio Beta Chromium object-manager smoke also passes a simultaneous functional fixture with 5,000 bars, 16 configurable moving-average overlays, four separate oscillator panes and 1,000 drawings. It checks drawing import/listing, 999→1,000 duplication, rejection of duplication at 1,000, and atomic rejection of drawing 1,001. This establishes the requested count combination in the v4 Beta renderer; it records no frame-rate, input-latency, CPU or memory measurement. The SQLite workspace store now separately roundtrips 1,000 schema-v1 drawings in a 519,199-byte document and rejects 1,001.
 
+## 14 October 2026: native moving-average calculation run
+
+The native v5 fixture now sets up 16 calculated EMA overlays (periods 9–24) and four separate pane series from the same 5,000-bar history, then updates the forming bar once. It verifies that the combined 20-instance limit remains active and that the managed overlay formulas, sources, warm-up and shifts match the beta implementation. The additional forming-bar update measured 4.3 ms in this single local run, compared with 141.7 ms before incremental endpoint updates were added. This is a headless Chromium measurement and does not establish sustained frame rate or hardware performance.
+
+| Measurement | Result |
+|---|---:|
+| Browser | HeadlessChrome 141.0.7390.37, viewport 1280×840, DPR 1 |
+| Loading 5,000 bars | 19.1 ms |
+| Setting up 16 calculated EMAs + four pane lines | 133.5 ms |
+| One forming-bar update for 16 calculated EMAs | 4.3 ms |
+| Creating 1,000 drawings | 13.5 ms |
+| Schema-v1 transfer size | 210,000 characters |
+| Importing 1,000 drawings | 22.6 ms |
+| Scoped chart creation and 1,000-drawing reload | 48.8 ms |
+| Pointer selection sequence for drawings 0 / 500 / 999 | 131 / 98 / 104 ms |
+
+These are single-run setup and API timings; they do not wait for paint or measure long-duration CPU/heap behavior. The earlier table above records a separate earlier run with precomputed overlay points, so the two indicator-setup timings are not directly comparable. The forming-bar timing is a direct before/after comparison from the same fixture shape and environment, but still needs repeated and target-device acceptance.
+
 The run does not measure animation-frame stability, sustained pan/zoom FPS, CPU/heap over time, physical Windows 150% DPI or mobile performance. Master-spec reference-desktop/mobile acceptance and production migration to v5 remain open.
 
 Reproduce from the repository root:
