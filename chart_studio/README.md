@@ -171,13 +171,15 @@ All read models expose `source: MT5_VERIFIED` and `canExecute: false`.
 `GET /api/chart/v1/portfolio?account=titan` returns a bounded account-wide
 position aggregate, margin/equity context, and the sum of broker-calculated loss
 at actual position stop levels. A missing SL or failed calculation makes stop
-risk explicitly unavailable. For 2–12 held symbols, the route also requests at
-most 257 completed H1 bars per symbol and returns pairwise Pearson correlations
-using at least 60 exact shared close-to-close UTC intervals. It starts at MT5
-bar index 1 to omit the current unfinished bar. Missing, invalid or insufficient
-history is `UNAVAILABLE`; the UI labels correlations descriptive and does not
-apply hedge credit to its gross-additive What-if stop risk. All calls execute
-under the shared verified account lock and issue no broker writes.
+risk explicitly unavailable. The `scenarioSymbol` query (default `XAUUSD`)
+adds the proposed What-if instrument to the held symbols. For at most 12 unique
+symbols total, the route requests at most 257 completed H1 bars per symbol and
+returns pairwise Pearson correlations using at least 60 exact shared one-hour
+close-to-close UTC intervals. It starts at MT5 bar index 1 to omit the current
+unfinished bar. Missing, invalid or insufficient history is `UNAVAILABLE`; the
+UI labels correlations descriptive and does not apply hedge credit to its
+gross-additive What-if stop risk. All calls execute under the shared verified
+account lock and issue no broker writes.
 
 The Chart Studio beta's Brokerbuch panel consumes these routes for verified
 account-scoped symbol search and selection, selected-symbol positions and pending

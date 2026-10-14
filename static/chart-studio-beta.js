@@ -156,13 +156,19 @@ function exportScenarioSnapshots(){
 function validPortfolio(value,account){
  const amount=(v,signed=false)=>typeof v==="string"&&v.length<=32&&
   (signed?/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]{1,12})?$/:/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,12})?$/).test(v)&&v!=="-0";
- const correlation=value?.correlation,symbolNames=new Set(value?.symbols?.map(row=>row?.symbol)||[]);
+ const correlation=value?.correlation,correlationNames=new Set(correlation?.symbols||[]);
+ const validMarketSymbol=name=>typeof name==="string"&&/^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$/.test(name);
  const correlationValid=correlation?.state==="AVAILABLE"?
-  correlation.timeframe==="H1"&&correlation.source==="MT5_COMPLETED_BARS"&&Array.isArray(correlation.pairs)&&correlation.pairs.length<=66&&
-  correlation.pairs.every(pair=>Array.isArray(pair?.symbols)&&pair.symbols.length===2&&pair.symbols[0]<pair.symbols[1]&&symbolNames.has(pair.symbols[0])&&symbolNames.has(pair.symbols[1])&&
-   typeof pair.coefficient==="string"&&/^-?(?:0|1)(?:\.\d{1,6})?$/.test(pair.coefficient)&&Number(pair.coefficient)>=-1&&Number(pair.coefficient)<=1&&
+  correlation.timeframe==="H1"&&correlation.source==="MT5_COMPLETED_BARS"&&validMarketSymbol(correlation.scenarioSymbol)&&correlationNames.has(correlation.scenarioSymbol)&&
+  Array.isArray(correlation.symbols)&&correlation.symbols.length>=2&&correlation.symbols.length<=12&&correlation.symbols.every(validMarketSymbol)&&new Set(correlation.symbols).size===correlation.symbols.length&&
+  Array.isArray(correlation.pairs)&&correlation.pairs.length===correlation.symbols.length*(correlation.symbols.length-1)/2&&correlation.pairs.length<=66&&
+  new Set(correlation.pairs.map(pair=>Array.isArray(pair?.symbols)?pair.symbols.join("\u0000"):"")).size===correlation.pairs.length&&
+  correlation.pairs.every(pair=>Array.isArray(pair?.symbols)&&pair.symbols.length===2&&pair.symbols[0]<pair.symbols[1]&&correlationNames.has(pair.symbols[0])&&correlationNames.has(pair.symbols[1])&&
+   typeof pair.coefficient==="string"&&pair.coefficient!=="-0"&&/^-?(?:0|1)(?:\.\d{1,6})?$/.test(pair.coefficient)&&Number(pair.coefficient)>=-1&&Number(pair.coefficient)<=1&&
    Number.isInteger(pair.observations)&&pair.observations>=60&&pair.observations<=256):
-  correlation?.state==="UNAVAILABLE"&&["NO_SYMBOL_PAIRS","SYMBOL_LIMIT_EXCEEDED","HISTORY_UNAVAILABLE","INSUFFICIENT_ALIGNED_HISTORY","INVALID_CORRELATION_SERIES"].includes(correlation.reason);
+  correlation?.state==="UNAVAILABLE"&&validMarketSymbol(correlation.scenarioSymbol)&&Array.isArray(correlation.symbols)&&correlation.symbols.length<=12&&correlation.symbols.every(validMarketSymbol)&&
+  (correlation.reason==="SYMBOL_LIMIT_EXCEEDED"?correlation.symbols.length===0:correlation.symbols.includes(correlation.scenarioSymbol))&&new Set(correlation.symbols).size===correlation.symbols.length&&
+  ["NO_SYMBOL_PAIRS","SYMBOL_LIMIT_EXCEEDED","HISTORY_UNAVAILABLE","INSUFFICIENT_ALIGNED_HISTORY","INVALID_CORRELATION_SERIES"].includes(correlation.reason);
  return value&&value.account===account&&value.source==="MT5_VERIFIED"&&value.canExecute===false&&
   Number.isInteger(value.positionCount)&&value.positionCount>=0&&value.positionCount<=500&&
   /^[A-Z]{3,12}$/.test(value.currency||"")&&Array.isArray(value.symbols)&&value.symbols.length<=500&&
@@ -193,8 +199,8 @@ function renderPortfolio(){
  }
  const correlation=document.createElement("p");
  correlation.textContent=data.correlation.state==="AVAILABLE"?
-  "H1-Korrelation (abgeschlossene MT5-Bars; deskriptiv, kein Hedge-Kredit): "+data.correlation.pairs.map(pair=>pair.symbols.join(" ↔ ")+" "+pair.coefficient+" · n="+pair.observations).join("; "):
-  "Korrelation UNAVAILABLE · "+data.correlation.reason+".";host.append(correlation);
+  "What-if "+data.correlation.scenarioSymbol+" · H1-Korrelationen (abgeschlossene MT5-Bars; deskriptiv, kein Hedge-Kredit): "+data.correlation.pairs.filter(pair=>pair.symbols.includes(data.correlation.scenarioSymbol)).map(pair=>pair.symbols.join(" ↔ ")+" "+pair.coefficient+" · n="+pair.observations).join("; "):
+  "Korrelation zu What-if "+data.correlation.scenarioSymbol+" UNAVAILABLE · "+data.correlation.reason+".";host.append(correlation);
 }
 function renderPortfolioImpact(preview){
  if(!s)return;
@@ -210,7 +216,7 @@ async function loadPortfolio(account){
  const nonce=++portfolioGeneration;s.portfolio=null;s.portfolioError="";s.portfolioLoading=true;renderPortfolio();
  try{
   const response=await fetch((window.location.pathname.startsWith("/stt")?"/stt":"")+
-   "/api/chart/v1/portfolio?account="+encodeURIComponent(account),{cache:"no-store"});
+   "/api/chart/v1/portfolio?account="+encodeURIComponent(account)+"&scenarioSymbol=XAUUSD",{cache:"no-store"});
   const data=await response.json();
   if(nonce!==portfolioGeneration||account!==s?.account)return;
   if(!response.ok||!validPortfolio(data,account))throw Error("MT5-Portfolio ungültig oder nicht verfügbar.");

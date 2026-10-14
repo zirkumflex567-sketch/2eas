@@ -259,7 +259,30 @@ def test_portfolio_is_account_scoped_aggregated_and_never_invents_correlation(cl
 def test_portfolio_correlation_fails_closed_when_history_is_unavailable(client, fake):
     fake.positions = (position(), position(symbol='EURUSD.a'))
     body = client.get('/api/chart/v1/portfolio', params={'account':'titan'}).json()
-    assert body['correlation'] == {'state':'UNAVAILABLE', 'reason':'HISTORY_UNAVAILABLE'}
+    assert body['correlation'] == {'state':'UNAVAILABLE', 'reason':'HISTORY_UNAVAILABLE',
+                                   'scenarioSymbol':'XAUUSD', 'symbols':['EURUSD.a','XAUUSD']}
+
+
+def test_portfolio_correlation_includes_proposed_scenario_symbol(client, fake):
+    fake.positions = (position(symbol='EURUSD.a'),)
+    fake.rates = {'XAUUSD':correlated_rates(.01), 'EURUSD.a':correlated_rates()}
+    body = client.get('/api/chart/v1/portfolio', params={'account':'titan','scenarioSymbol':'XAUUSD'}).json()
+    assert body['correlation']['state'] == 'AVAILABLE'
+    assert body['correlation']['scenarioSymbol'] == 'XAUUSD'
+    assert body['correlation']['symbols'] == ['EURUSD.a','XAUUSD']
+    assert body['correlation']['pairs'] == [{'symbols':['EURUSD.a','XAUUSD'], 'coefficient':'1', 'observations':63}]
+
+
+def test_portfolio_correlation_symbol_cap_fails_closed_before_history_reads(client, fake):
+    names = [f'S{i:02d}' for i in range(12)]
+    fake.symbols = (*fake.symbols, *(symbol(name) for name in names))
+    fake.positions = tuple(position(ticket=100+i, identifier=200+i, symbol=name) for i,name in enumerate(names))
+    body = client.get('/api/chart/v1/portfolio', params={'account':'titan'}).json()
+    assert body['correlation']['state'] == 'UNAVAILABLE'
+    assert body['correlation']['reason'] == 'SYMBOL_LIMIT_EXCEEDED'
+    assert body['correlation']['scenarioSymbol'] == 'XAUUSD'
+    assert body['correlation']['symbols'] == []
+    assert not any(call[0] == 'rates' for call in fake.calls)
 
 
 def test_portfolio_correlation_requires_aligned_nonconstant_returns(client, fake):
@@ -267,13 +290,15 @@ def test_portfolio_correlation_requires_aligned_nonconstant_returns(client, fake
     fake.rates['XAUUSD'] = [NS(time=1000+i*3600, close=100+i*i) for i in range(64)]
     fake.rates['EURUSD.a'] = [NS(time=1000+i*3600+36000, close=2+i*i) for i in range(64)]
     body = client.get('/api/chart/v1/portfolio', params={'account':'titan'}).json()
-    assert body['correlation'] == {'state':'UNAVAILABLE', 'reason':'INSUFFICIENT_ALIGNED_HISTORY'}
+    assert body['correlation']['state'] == 'UNAVAILABLE'
+    assert body['correlation']['reason'] == 'INSUFFICIENT_ALIGNED_HISTORY'
     fake.rates['EURUSD.a'] = [NS(time=1000+i*3600, close=2+i*i) for i in range(64)]
     body = client.get('/api/chart/v1/portfolio', params={'account':'titan'}).json()
     assert body['correlation']['state'] == 'AVAILABLE'
     fake.rates['EURUSD.a'] = [NS(time=1000+i*3600, close=2.) for i in range(64)]
     body = client.get('/api/chart/v1/portfolio', params={'account':'titan'}).json()
-    assert body['correlation'] == {'state':'UNAVAILABLE', 'reason':'INVALID_CORRELATION_SERIES'}
+    assert body['correlation']['state'] == 'UNAVAILABLE'
+    assert body['correlation']['reason'] == 'INVALID_CORRELATION_SERIES'
 
 
 def test_portfolio_distinguishes_empty_from_unavailable_and_validates_all_rows(client, fake):
@@ -281,7 +306,8 @@ def test_portfolio_distinguishes_empty_from_unavailable_and_validates_all_rows(c
     response = client.get('/api/chart/v1/portfolio', params={'account':'titan'})
     assert response.status_code == 200 and response.json()['positionCount'] == 0
     assert response.json()['symbols'] == []
-    assert response.json()['correlation'] == {'state':'UNAVAILABLE', 'reason':'NO_SYMBOL_PAIRS'}
+    assert response.json()['correlation'] == {'state':'UNAVAILABLE', 'reason':'NO_SYMBOL_PAIRS',
+        'scenarioSymbol':'XAUUSD', 'symbols':['XAUUSD']}
     fake.positions = None
     assert client.get('/api/chart/v1/portfolio', params={'account':'titan'}).status_code == 503
     fake.positions = (position(), position(symbol='UNVERIFIED'))

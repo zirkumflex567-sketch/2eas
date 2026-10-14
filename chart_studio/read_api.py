@@ -46,8 +46,9 @@ def install_read_routes(app, mt5, *, now=None):
             mt5, spec, symbol, ticket=ticket, magic=magic, manual=manual, now=clock())))
 
     @app.get('/api/chart/v1/portfolio')
-    def portfolio(account: Account):
-        return response(verified_read(mt5, account, lambda spec: portfolio_read(mt5, spec)))
+    def portfolio(account: Account, scenarioSymbol: Symbol = 'XAUUSD'):
+        return response(verified_read(mt5, account,
+                        lambda spec: portfolio_read(mt5, spec, scenarioSymbol)))
 
     @app.get('/api/chart/v1/trades')
     def trades(account: Account, symbol: Symbol,

@@ -257,26 +257,29 @@ CORRELATION_BAR_COUNT = 257
 CORRELATION_MIN_RETURNS = 60
 
 
-def portfolio_correlations(mt5, symbols):
+def portfolio_correlations(mt5, symbols, scenario_symbol):
     """Pairwise Pearson correlations of aligned completed H1 close returns."""
-    names = sorted(set(symbols))
+    names = sorted(set(symbols) | {scenario_symbol})
+    def unavailable(reason):
+        return {'state':'UNAVAILABLE', 'reason':reason,
+                'scenarioSymbol':scenario_symbol, 'symbols':names if len(names) <= CORRELATION_MAX_SYMBOLS else []}
     if len(names) < 2:
-        return {'state':'UNAVAILABLE', 'reason':'NO_SYMBOL_PAIRS'}
+        return unavailable('NO_SYMBOL_PAIRS')
     if len(names) > CORRELATION_MAX_SYMBOLS:
-        return {'state':'UNAVAILABLE', 'reason':'SYMBOL_LIMIT_EXCEEDED'}
+        return unavailable('SYMBOL_LIMIT_EXCEEDED')
     reader = getattr(mt5, 'copy_rates_from_pos', None)
     timeframe = getattr(mt5, 'TIMEFRAME_H1', 16385)
     if not callable(reader):
-        return {'state':'UNAVAILABLE', 'reason':'HISTORY_UNAVAILABLE'}
+        return unavailable('HISTORY_UNAVAILABLE')
     series = {}
     try:
         for name in names:
             raw = reader(name, timeframe, 1, CORRELATION_BAR_COUNT)
             if raw is None:
-                return {'state':'UNAVAILABLE', 'reason':'HISTORY_UNAVAILABLE'}
+                return unavailable('HISTORY_UNAVAILABLE')
             rows = list(raw)
             if len(rows) > CORRELATION_BAR_COUNT:
-                return {'state':'UNAVAILABLE', 'reason':'INVALID_CORRELATION_SERIES'}
+                return unavailable('INVALID_CORRELATION_SERIES')
             values = {}
             for row in rows:
                 try:
@@ -294,9 +297,9 @@ def portfolio_correlations(mt5, symbols):
                     raise BrokerReadError('invalid correlation rate') from exc
             series[name] = values
     except BrokerReadError:
-        return {'state':'UNAVAILABLE', 'reason':'INVALID_CORRELATION_SERIES'}
+        return unavailable('INVALID_CORRELATION_SERIES')
     except Exception:
-        return {'state':'UNAVAILABLE', 'reason':'HISTORY_UNAVAILABLE'}
+        return unavailable('HISTORY_UNAVAILABLE')
 
     pairs = []
     for index, left in enumerate(names):
@@ -306,7 +309,7 @@ def portfolio_correlations(mt5, symbols):
             left_returns = [series[left][b]/series[left][a]-1 for a,b in intervals]
             right_returns = [series[right][b]/series[right][a]-1 for a,b in intervals]
             if len(left_returns) < CORRELATION_MIN_RETURNS:
-                return {'state':'UNAVAILABLE', 'reason':'INSUFFICIENT_ALIGNED_HISTORY'}
+                return unavailable('INSUFFICIENT_ALIGNED_HISTORY')
             mean_left = math.fsum(left_returns)/len(left_returns)
             mean_right = math.fsum(right_returns)/len(right_returns)
             centered_left = [v-mean_left for v in left_returns]
@@ -314,16 +317,17 @@ def portfolio_correlations(mt5, symbols):
             variance_left = math.fsum(v*v for v in centered_left)
             variance_right = math.fsum(v*v for v in centered_right)
             if variance_left <= 0 or variance_right <= 0:
-                return {'state':'UNAVAILABLE', 'reason':'INVALID_CORRELATION_SERIES'}
+                return unavailable('INVALID_CORRELATION_SERIES')
             coefficient = math.fsum(a*b for a,b in zip(centered_left,centered_right))/math.sqrt(variance_left*variance_right)
             if not math.isfinite(coefficient):
-                return {'state':'UNAVAILABLE', 'reason':'INVALID_CORRELATION_SERIES'}
+                return unavailable('INVALID_CORRELATION_SERIES')
             coefficient = max(-1.0,min(1.0,coefficient))
             pairs.append({'symbols':[left,right], 'coefficient':decimal(Decimal(str(coefficient)).quantize(Decimal('0.000001'), rounding=ROUND_HALF_UP), signed=True), 'observations':len(left_returns)})
-    return {'state':'AVAILABLE', 'timeframe':'H1', 'source':'MT5_COMPLETED_BARS', 'pairs':pairs}
+    return {'state':'AVAILABLE', 'timeframe':'H1', 'source':'MT5_COMPLETED_BARS',
+            'scenarioSymbol':scenario_symbol, 'symbols':names, 'pairs':pairs}
 
 
-def portfolio_read(mt5, spec):
+def portfolio_read(mt5, spec, scenario_symbol='XAUUSD'):
     """Read a bounded account-wide position and completed-bar correlation snapshot."""
     info = gateway.verify_identity(mt5, spec)
     currency = text(required(info, 'currency'))
@@ -393,10 +397,12 @@ def portfolio_read(mt5, spec):
     stop_risk = ({'state':'UNAVAILABLE', 'reason':stop_risk_reason} if stop_risk_reason else
                  {'state':'AVAILABLE', 'lossAtStops':decimal(stop_loss.quantize(currency_quantum, rounding=ROUND_HALF_UP)), 'currency':currency,
                   'source':'MT5_ORDER_CALC_PROFIT'})
+    if scenario_symbol not in checked_symbols:
+        require_symbol(mt5, scenario_symbol)
     return {**provenance(spec), 'positionCount': len(rows), 'currency': currency,
             'margin': margin, 'stopRisk': stop_risk,
             'symbols': symbols,
-            'correlation': portfolio_correlations(mt5, checked_symbols)}
+            'correlation': portfolio_correlations(mt5, checked_symbols, scenario_symbol)}
 
 
 # Official DEAL_TYPE values (BUY_CANCELED=13, SELL_CANCELED=14). Unknown newer
