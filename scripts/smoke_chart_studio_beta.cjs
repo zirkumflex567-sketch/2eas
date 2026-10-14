@@ -68,7 +68,8 @@ const fs=require("node:fs"),path=require("node:path");
   await page.route("**/api/chart/v1/portfolio?*",async route=>{
     const url=new URL(route.request().url()),account=url.searchParams.get("account");portfolioReadRequests.push(account);
     if(deferTitanPortfolio&&account==="titan")await new Promise(resolve=>{releaseTitanPortfolio=resolve});
-    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account,source:"MT5_VERIFIED",canExecute:false,positionCount:2,currency:account==="goldm15"?"EUR":"USD",symbols:[{symbol:"XAUUSD",buyLots:"0.1",sellLots:"0.02",netLots:"0.08",floatingPnl:"12.5",swap:"-1",currency:account==="goldm15"?"EUR":"USD"}],correlation:{state:"UNAVAILABLE",reason:"NO_ALIGNED_HISTORY"}})});
+    const currency=account==="goldm15"?"EUR":"USD";
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account,source:"MT5_VERIFIED",canExecute:false,positionCount:2,currency,margin:{state:"AVAILABLE",used:"50",free:"950",equity:"1050",balance:"1000",currency,scope:"ACCOUNT"},stopRisk:{state:"AVAILABLE",lossAtStops:"35.5",currency,source:"MT5_ORDER_CALC_PROFIT"},symbols:[{symbol:"XAUUSD",buyLots:"0.1",sellLots:"0.02",netLots:"0.08",floatingPnl:"12.5",swap:"-1",currency}],correlation:{state:"UNAVAILABLE",reason:"NO_ALIGNED_HISTORY"}})});
   });
   await page.route("**/api/chart/v1/symbols?*",async route=>{
     const url=new URL(route.request().url()),account=url.searchParams.get("account");brokerReadRequests.push({path:url.pathname,url:url.pathname,params:Object.fromEntries(url.searchParams)});

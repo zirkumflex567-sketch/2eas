@@ -1,5 +1,5 @@
 """MT5-only read models. Decimal values and identifiers never lose precision in JSON."""
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
 import json
 import re
@@ -256,11 +256,24 @@ def portfolio_read(mt5, spec):
     """Read a bounded account-wide position snapshot; correlation needs history."""
     info = gateway.verify_identity(mt5, spec)
     currency = text(required(info, 'currency'))
+    currency_digits = integer(required(info, 'currency_digits'), choices=range(0, 9))
+    currency_quantum = Decimal(1).scaleb(-currency_digits)
+    margin = {
+        'state': 'AVAILABLE',
+        'used': decimal(required(info, 'margin')),
+        'free': decimal(required(info, 'margin_free'), signed=True),
+        'equity': decimal(required(info, 'equity'), signed=True),
+        'balance': decimal(required(info, 'balance'), signed=True),
+        'currency': currency,
+        'scope': 'ACCOUNT',
+    }
     rows = broker_rows(mt5.positions_get())
     if len(rows) > PORTFOLIO_MAX_POSITIONS:
         raise BrokerReadError('portfolio position limit exceeded')
     totals = {}
     checked_symbols = set()
+    stop_loss = Decimal(0)
+    stop_risk_reason = None
     for row in rows:
         symbol = broker_symbol(required(row, 'symbol'))
         if symbol not in checked_symbols:
@@ -275,6 +288,27 @@ def portfolio_read(mt5, spec):
         total[side_key] += Decimal(model['volume'])
         total['floatingPnl'] += Decimal(model['profit'])
         total['swap'] += Decimal(model['swap'])
+        if model['sl'] is None:
+            stop_risk_reason = stop_risk_reason or 'MISSING_STOP'
+        elif stop_risk_reason is None:
+            calculator = getattr(mt5, 'order_calc_profit', None)
+            if not callable(calculator):
+                stop_risk_reason = 'BROKER_CALCULATION_UNAVAILABLE'
+            else:
+                action = getattr(mt5, 'ORDER_TYPE_BUY' if model['side'] == 'BUY' else 'ORDER_TYPE_SELL',
+                                 0 if model['side'] == 'BUY' else 1)
+                try:
+                    pnl = calculator(action, symbol, float(model['volume']),
+                                     float(model['priceOpen']), float(model['sl']))
+                    if isinstance(pnl, bool) or not isinstance(pnl, (int, float)):
+                        raise BrokerReadError('invalid broker calculation')
+                    pnl_decimal = Decimal(str(pnl))
+                    if not pnl_decimal.is_finite():
+                        raise BrokerReadError('invalid broker calculation')
+                    pnl_decimal = pnl_decimal.quantize(currency_quantum, rounding=ROUND_HALF_UP)
+                    stop_loss += max(Decimal(0), -pnl_decimal)
+                except Exception:
+                    stop_risk_reason = 'BROKER_CALCULATION_UNAVAILABLE'
     symbols = []
     for name in sorted(totals):
         total = totals[name]
@@ -285,7 +319,11 @@ def portfolio_read(mt5, spec):
             'floatingPnl': decimal(total['floatingPnl'], signed=True),
             'swap': decimal(total['swap'], signed=True), 'currency': currency,
         })
+    stop_risk = ({'state':'UNAVAILABLE', 'reason':stop_risk_reason} if stop_risk_reason else
+                 {'state':'AVAILABLE', 'lossAtStops':decimal(stop_loss.quantize(currency_quantum, rounding=ROUND_HALF_UP)), 'currency':currency,
+                  'source':'MT5_ORDER_CALC_PROFIT'})
     return {**provenance(spec), 'positionCount': len(rows), 'currency': currency,
+            'margin': margin, 'stopRisk': stop_risk,
             'symbols': symbols,
             'correlation': {'state':'UNAVAILABLE', 'reason':'NO_ALIGNED_HISTORY'}}
 

@@ -162,7 +162,12 @@ function validPortfolio(value,account){
   value.symbols.length<=value.positionCount&&new Set(value.symbols.map(row=>row?.symbol)).size===value.symbols.length&&
   value.symbols.every(row=>row&&typeof row.symbol==="string"&&/^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$/.test(row.symbol)&&
    amount(row.buyLots)&&amount(row.sellLots)&&amount(row.netLots,true)&&amount(row.floatingPnl,true)&&amount(row.swap,true)&&
-   row.currency===value.currency)&&value.correlation?.state==="UNAVAILABLE"&&
+   row.currency===value.currency)&&value.margin?.state==="AVAILABLE"&&value.margin.scope==="ACCOUNT"&&
+  amount(value.margin.used)&&amount(value.margin.free,true)&&amount(value.margin.equity,true)&&amount(value.margin.balance,true)&&
+  value.margin.currency===value.currency&&
+  (value.stopRisk?.state==="AVAILABLE"?amount(value.stopRisk.lossAtStops)&&value.stopRisk.currency===value.currency&&value.stopRisk.source==="MT5_ORDER_CALC_PROFIT":
+   value.stopRisk?.state==="UNAVAILABLE"&&["MISSING_STOP","BROKER_CALCULATION_UNAVAILABLE"].includes(value.stopRisk.reason))&&
+  value.correlation?.state==="UNAVAILABLE"&&
   value.correlation.reason==="NO_ALIGNED_HISTORY";
 }
 function renderPortfolio(){
@@ -172,6 +177,10 @@ function renderPortfolio(){
  const status=document.createElement("p");status.setAttribute("role","status");status.setAttribute("aria-live","polite");
  if(!data){status.textContent=s.portfolioLoading?"Portfolio wird aus MT5 geladen …":s.portfolioError||"Portfolio noch nicht verfügbar.";host.append(status);return}
  status.textContent=data.account+" · "+data.positionCount+" offene Positionen · "+data.currency+" · nur lesend";host.append(status);
+ const risk=document.createElement("p");
+ risk.textContent="Account-Margin gebraucht/frei "+data.margin.used+" / "+data.margin.free+" "+data.currency+
+  " · Equity "+data.margin.equity+" · Stop-Risiko "+(data.stopRisk.state==="AVAILABLE"?data.stopRisk.lossAtStops+" "+data.currency:"UNAVAILABLE · "+data.stopRisk.reason);
+ host.append(risk);
  for(const row of data.symbols){
   const line=document.createElement("p");
   line.textContent=row.symbol+" · Long "+row.buyLots+" · Short "+row.sellLots+" · Netto "+row.netLots+

@@ -72,7 +72,8 @@ class MT5Fake:
     def account_info(self):
         return NS(login=1 if self.wrong == 'login' else self.current['login'],
                   server='wrong' if self.wrong == 'server' else self.current['server'],
-                  currency='EUR', margin_mode=2)
+                  currency='EUR', currency_digits=2, margin_mode=2, balance=1000., equity=1050.,
+                  margin=50., margin_free=1000.)
 
     def terminal_info(self):
         path = ntpath.dirname(self.current['terminal'])
@@ -102,6 +103,12 @@ class MT5Fake:
         self.calls.append(('orders', self.current['id'], kwargs))
         assert gateway._lock._is_owned()
         return self.orders
+
+    def order_calc_profit(self, action, name, volume, price_open, price_close):
+        assert gateway._lock._is_owned()
+        self.calls.append(('calc_profit', name, action))
+        direction = 1 if action == 0 else -1
+        return (price_close-price_open)*volume*100*direction
 
     def order_send(self, *args, **kwargs):
         self.writes += 1
@@ -212,8 +219,8 @@ def test_real_symbol_contract(client):
 
 def test_portfolio_is_account_scoped_aggregated_and_never_invents_correlation(client, fake):
     fake.positions = (position(), position(ticket=22, identifier=23, type=1, volume=.2,
-        profit=4., swap=.5), position(ticket=24, identifier=25, type=1, volume=.2,
-        symbol='EURUSD.a', price_open=1.1, price_current=1.2, profit=3., swap=-.5))
+        price_open=4000., sl=4010., profit=4., swap=.5), position(ticket=24, identifier=25, type=1, volume=.2,
+        symbol='EURUSD.a', price_open=1.1, price_current=1.2, sl=1.2, profit=3., swap=-.5))
     response = client.get('/api/chart/v1/portfolio', params={'account':'titan'})
     assert response.status_code == 200
     body = response.json()
@@ -227,6 +234,9 @@ def test_portfolio_is_account_scoped_aggregated_and_never_invents_correlation(cl
          'floatingPnl':'14', 'swap':'-0.5', 'currency':'EUR'},
     ]
     assert body['correlation'] == {'state':'UNAVAILABLE', 'reason':'NO_ALIGNED_HISTORY'}
+    assert body['margin'] == {'state':'AVAILABLE', 'used':'50', 'free':'1000', 'equity':'1050',
+                              'balance':'1000', 'currency':'EUR', 'scope':'ACCOUNT'}
+    assert body['stopRisk'] == {'state':'AVAILABLE', 'lossAtStops':'302', 'currency':'EUR', 'source':'MT5_ORDER_CALC_PROFIT'}
     assert ('positions', 'titan', {}) in fake.calls
     assert fake.writes == 0
 
@@ -247,6 +257,28 @@ def test_portfolio_requires_known_account_before_mt5(client, fake):
     assert client.get('/api/chart/v1/portfolio').status_code == 422
     assert client.get('/api/chart/v1/portfolio', params={'account':'unknown'}).status_code == 400
     assert fake.calls == []
+
+
+def test_portfolio_stop_risk_fails_closed_for_missing_stops_or_calc(client, fake):
+    fake.positions = (position(sl=0.),)
+    response = client.get('/api/chart/v1/portfolio', params={'account':'titan'})
+    assert response.status_code == 200
+    assert response.json()['stopRisk'] == {'state':'UNAVAILABLE', 'reason':'MISSING_STOP'}
+    fake.positions = (position(),)
+    fake.order_calc_profit = None
+    response = client.get('/api/chart/v1/portfolio', params={'account':'titan'})
+    assert response.status_code == 200
+    assert response.json()['stopRisk'] == {'state':'UNAVAILABLE', 'reason':'BROKER_CALCULATION_UNAVAILABLE'}
+
+
+def test_portfolio_preserves_negative_free_margin_and_equity(client, fake):
+    fake.account_info = lambda: NS(login=fake.current['login'], server=fake.current['server'],
+        currency='EUR', currency_digits=2, margin_mode=2, balance=-5., equity=-10.,
+        margin=50., margin_free=-60.)
+    result = client.get('/api/chart/v1/portfolio', params={'account':'titan'}).json()
+    assert result['margin']['free'] == '-60'
+    assert result['margin']['equity'] == '-10'
+    assert result['margin']['balance'] == '-5'
 
 
 def test_symbol_search_accepts_sparse_actual_instruments(client, fake):
