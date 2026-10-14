@@ -22,6 +22,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await page.addScriptTag({path:path.resolve("chart_studio_v5/node_modules/lightweight-charts/dist/lightweight-charts.standalone.development.js")});
   await page.addScriptTag({path:path.resolve("static/chart-studio-beta.js")});
   await page.addScriptTag({path:path.resolve("static/chart-studio-averages.js")});
+  await page.addScriptTag({path:path.resolve("static/chart-studio-indicators.js")});
   const coordinateCompatibility=await page.evaluate(async()=>{
    const run=(time,secondTime)=>{
     const host=document.createElement("div");host.style.cssText="width:900px;height:360px";document.body.append(host);
@@ -146,8 +147,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const engine=ChartStudioV5.createStudioV5(host,"at003-pane-resize"),bars=Array.from({length:80},(_,i)=>{
     const close=100+Math.sin(i/5)*4;return {time:1700000000+i*60,open:close,high:close+1,low:close-1,close};
    });
-   engine.setCandles(bars);engine.addPaneLine({id:"rsi-at003",color:"#b3d5ff",title:"RSI"},
-    bars.map((bar,i)=>({time:bar.time,value:50+20*Math.sin(i/7)})));
+   engine.setCandles(bars);engine.addOscillator({id:"rsi-at003",kind:"rsi",settings:{period:14},color:"#b3d5ff",title:"RSI 14"});
    host.scrollIntoView({block:"center"});
    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
    const handle=[...host.querySelectorAll("*")].find(el=>getComputedStyle(el).cursor==="row-resize"&&el.getBoundingClientRect().height>0);
@@ -215,6 +215,53 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    let badPeriodRejected=false;try{engine.addMovingAverage({id:"bad-ma",type:"EMA",period:0,source:"close",color:"#ffffff"})}catch(_){badPeriodRejected=true}
    engine.destroy();host.remove();
    return {independent,edited,editedExpected,forming,formingExpected,badPeriodRejected,nativeRows,reference,extraTypes,ema20Reference,ema20Edited,ema20EditedExpected,reloaded,replacementExpected,matrixMismatches,ema20Styles,editedEma20Style};
+  });
+  const oscillatorProbe=await page.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:900px;height:420px;position:fixed;left:-2000px;top:0";document.body.append(host);
+   const engine=ChartStudioV5.createStudioV5(host,"at001-native-oscillator",{symbol:"XAUUSD",timeframe:"M5"});
+   const bars=Array.from({length:180},(_,i)=>{const c=2200+Math.sin(i/4)*5+i*.07;return {time:1710000000+i*300,open:c-.4,high:c+1+Math.sin(i)*.1,low:c-1-Math.cos(i)*.1,close:c}});
+   engine.setCandles(bars);
+   const specs=[
+    {id:"rsi-a",kind:"rsi",settings:{period:14},color:"#44aadd"},
+    {id:"rsi-b",kind:"rsi",settings:{period:9},color:"#dd4488",lineWidth:3},
+    {id:"atr-a",kind:"atr",settings:{period:14},color:"#a68eff"},
+    {id:"macd-a",kind:"macd",settings:{fast:12,slow:26,signal:9},color:"#55d7ee"},
+    {id:"adx-a",kind:"adx",settings:{period:14},color:"#e9bc72"}
+   ];
+   for(const spec of specs)engine.addOscillator(spec);
+   let drawingCollisionRejected=false;try{engine.addPriceLevel({id:"rsi-a",price:bars.at(-1).close,color:"#ffffff"})}catch(_){drawingCollisionRejected=true}
+   let averageCollisionRejected=false;try{engine.addAverage({id:"rsi-a",color:"#ffffff"},[])}catch(_){averageCollisionRejected=true}
+   let paneLineCollisionRejected=false;try{engine.addPaneLine({id:"rsi-a",color:"#ffffff"},[])}catch(_){paneLineCollisionRejected=true}
+   const expected=Object.fromEntries(specs.map(spec=>[spec.id,window.ChartStudioIndicators.calculate(spec.kind,bars,spec.settings)]));
+   const references={};
+   for(const spec of specs){const values=expected[spec.id],components=Object.keys(values);references[spec.id]={};for(const component of components){const item=values[component].find(point=>point.time===bars.at(-1).time);references[spec.id][component]=item?.value??null}}
+   const panes=engine.inspect(),before=specs.map(x=>engine.oscillatorOptions(x.id));
+   engine.updateOscillator("rsi-a",{settings:{period:21},color:"#33ccaa"});
+   const updatedRsi=window.ChartStudioIndicators.calculate("rsi",bars,{period:21}).rsi.find(point=>point.time===bars.at(-1).time);
+   references["rsi-a"].rsi=updatedRsi?.value??null;
+   const after=specs.map(x=>engine.oscillatorOptions(x.id)),row=engine.readDataWindow(bars.at(-1).time).indicators;
+   const paneCount=engine.inspect().paneCount;
+   engine.moveOscillator("macd-a",1);
+   const movedMacdPane={paneCount:engine.inspect().paneCount,logicalPaneCount:engine.inspect().oscillatorPaneCount,layout:engine.oscillatorPaneLayout()};
+   let badOrderRejected=false;try{engine.addOscillator({id:"bad-order",kind:"macd",settings:{fast:26,slow:12,signal:9}})}catch(_){badOrderRejected=true}
+   let badPeriodRejected=false;try{engine.addOscillator({id:"bad-period",kind:"rsi",settings:{period:1}})}catch(_){badPeriodRejected=true}
+   const atomicCount=engine.inspect().oscillatorCount;
+   engine.removeOscillator("rsi-b");const afterOneRemoval=engine.inspect().oscillatorCount;
+   engine.changeAccount("other");const isolated=engine.inspect();engine.destroy();host.remove();
+   const limitHost=document.createElement("div");limitHost.style.cssText="width:400px;height:300px;position:fixed;left:-2000px;top:0";document.body.append(limitHost);
+   const limitEngine=ChartStudioV5.createStudioV5(limitHost,"oscillator-pane-limit");limitEngine.setCandles(bars);for(let i=0;i<8;i++)limitEngine.addOscillator({id:`pane-limit-${i}`,kind:"rsi",settings:{period:14},color:"#ffffff"});
+   let paneLimitRejected=false;try{limitEngine.addOscillator({id:"pane-limit-over",kind:"rsi",settings:{period:14},color:"#ffffff"})}catch(_){paneLimitRejected=true}
+   const paneLimitCount=limitEngine.inspect().oscillatorCount;limitEngine.destroy();limitHost.remove();
+   const updateHost=document.createElement("div");updateHost.style.cssText="width:400px;height:300px;position:fixed;left:-2000px;top:0";document.body.append(updateHost);
+   const updateEngine=ChartStudioV5.createStudioV5(updateHost,"oscillator-update");updateEngine.setCandles(bars);for(const spec of specs)updateEngine.addOscillator(spec);
+   const updatedBar={...bars.at(-1),close:bars.at(-1).close+.4,high:bars.at(-1).high+.5};updateEngine.updateLast(updatedBar);
+   const updatedReadout=updateEngine.readDataWindow(updatedBar.time).indicators,updatedReferences=specs.map(spec=>({id:spec.id,values:window.ChartStudioIndicators.calculate(spec.kind,[...bars.slice(0,-1),updatedBar],spec.settings)}));
+   updateEngine.destroy();updateHost.remove();
+   const flatHost=document.createElement("div");flatHost.style.cssText="width:400px;height:300px;position:fixed;left:-2000px;top:0";document.body.append(flatHost);
+   const flatEngine=ChartStudioV5.createStudioV5(flatHost,"oscillator-flat");const flatBars=Array.from({length:40},(_,i)=>({time:1711000000+i*300,open:100,high:100,low:100,close:100}));flatEngine.setCandles(flatBars);
+   for(const spec of [{id:"flat-rsi",kind:"rsi",settings:{period:14}},{id:"flat-atr",kind:"atr",settings:{period:14}},{id:"flat-adx",kind:"adx",settings:{period:14}}])flatEngine.addOscillator({...spec,color:"#ffffff"});
+   const flatRow=flatEngine.readDataWindow(flatBars.at(-1).time).indicators,flatWarmup=flatEngine.readDataWindow(flatBars[1].time).indicators;flatEngine.destroy();flatHost.remove();
+  return {references,panes,before,after,row,paneCount,movedMacdPane,badOrderRejected,badPeriodRejected,atomicCount,afterOneRemoval,isolated,paneLimitRejected,paneLimitCount,updatedReadout,updatedReferences,updatedTime:updatedBar.time,flatRow,flatWarmup,drawingCollisionRejected,averageCollisionRejected,paneLineCollisionRejected};
   });
   const panZoom=await page.evaluate(async()=>{
    const host=document.createElement("div");host.style.cssText="width:1000px;height:420px";document.body.append(host);
@@ -325,6 +372,39 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(movingAverageProbe.reloaded.find(x=>x.id==="ema20-close").value,movingAverageProbe.replacementExpected,
    "Replacing the candle history recalculates managed averages from the new history");
   assert.deepEqual(movingAverageProbe.matrixMismatches,[],"All MA types, OHLC sources and display-shift directions match production beta calculations");
+  assert.equal(oscillatorProbe.panes.oscillatorCount,5,"Each configured oscillator is one logical indicator even when it owns multiple native series");
+  assert.equal(oscillatorProbe.panes.oscillatorPaneCount,5);
+  assert.equal(oscillatorProbe.paneCount,6,"MACD components share one native pane");
+  assert.equal(oscillatorProbe.movedMacdPane.paneCount,5,"Moving the MACD group into an existing native pane collapses its prior pane");
+  assert.equal(oscillatorProbe.movedMacdPane.logicalPaneCount,4,"Diagnostics count distinct oscillator panes after a group move");
+  for(const title of ["MACD","Signal","Histogram"])assert.ok(oscillatorProbe.movedMacdPane.layout[1].titles.includes(title),`${title} moves with the MACD group into one pane`);
+  assert.equal(oscillatorProbe.badOrderRejected,true);
+  assert.equal(oscillatorProbe.badPeriodRejected,true);
+  assert.equal(oscillatorProbe.drawingCollisionRejected,true,"Native drawing IDs cannot collide with oscillator instances");
+  assert.equal(oscillatorProbe.averageCollisionRejected,true,"Overlay IDs cannot collide with oscillator instances");
+  assert.equal(oscillatorProbe.paneLineCollisionRejected,true,"Pane line IDs cannot collide with oscillator instances");
+  assert.equal(oscillatorProbe.atomicCount,5,"Rejected oscillator options do not create partial groups");
+  assert.equal(oscillatorProbe.afterOneRemoval,4,"Removing one oscillator removes its whole group only");
+  assert.equal(oscillatorProbe.paneLimitRejected,true,"A ninth logical oscillator pane is rejected");
+  assert.equal(oscillatorProbe.paneLimitCount,8,"Rejected ninth pane leaves all eight existing groups intact");
+  assert.equal(oscillatorProbe.flatRow.find(row=>row.id==="flat-rsi:rsi").value,50,"Flat RSI uses beta's neutral value");
+  assert.equal(oscillatorProbe.flatRow.find(row=>row.id==="flat-atr:atr").value,0,"Zero true range yields zero ATR");
+  assert.equal(oscillatorProbe.flatRow.find(row=>row.id==="flat-adx:adx").value,0,"Flat directional movement yields zero ADX");
+  assert.equal(oscillatorProbe.flatWarmup.find(row=>row.id==="flat-rsi:rsi").state,"WARMUP_OR_MISSING");
+  assert.equal(oscillatorProbe.after[0].settings.period,21);
+  assert.equal(oscillatorProbe.after[0].color,"#33ccaa");
+  assert.equal(oscillatorProbe.after[1].settings.period,9,"Editing one RSI leaves the second RSI settings independent");
+  assert.equal(oscillatorProbe.after[1].color,"#dd4488");
+  for(const [id,components] of Object.entries(oscillatorProbe.references))for(const [component,value] of Object.entries(components)){
+   const actual=oscillatorProbe.row.find(item=>item.id===id+":"+component)?.value??null;
+   if(value===null)assert.equal(actual,null,`${id}/${component} beta warm-up is preserved`);
+   else assert.ok(Math.abs(actual-value)<1e-8,`${id}/${component} matches beta at the exact UTC candle`);
+  }
+  for(const item of oscillatorProbe.updatedReferences)for(const [component,points] of Object.entries(item.values)){
+   const actual=oscillatorProbe.updatedReadout.find(row=>row.id===item.id+":"+component)?.value??null,expected=points.find(point=>point.time===oscillatorProbe.updatedTime)?.value??null;
+   if(expected===null)assert.equal(actual,null);else assert.ok(Math.abs(actual-expected)<1e-8,`${item.id}/${component} forming-bar update matches beta`);
+  }
+  assert.equal(oscillatorProbe.isolated.oscillatorCount,0,"Account changes clear all scoped oscillator instances");
   assert.equal(movingAverageProbe.badPeriodRejected,true);
   for(const type of movingAverageProbe.extraTypes){
    for(let i=0;i<movingAverageProbe.reference[type].length;i++){
@@ -1130,8 +1210,9 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const rows=Array.from({length:5000},(_,i)=>{const close=4000+i*.01+Math.sin(i/20)*3+2;return {time:1700000000+i*900,open:close-1,high:close+4,low:close-4,close,tick_volume:100+i}});
    const engine=ChartStudioV5.createStudioV5(host,"capacity-source");let t=performance.now();engine.setCandles(rows);const barsMs=performance.now()-t;
    t=performance.now();for(let i=0;i<16;i++)engine.addMovingAverage({id:`capacity-overlay-${i}`,type:"EMA",period:9+i,source:"close",color:"#61ddf2",lineWidth:1+(i%4)});
-   for(let i=0;i<4;i++)engine.addPaneLine({id:`capacity-pane-${i}`,color:"#f7c774"},rows.map((c,index)=>({time:c.time,value:20+i+Math.sin(index/20)})));
-   const indicatorsMs=performance.now()-t,activeIndicatorCount=engine.inspect().averageCount+engine.inspect().nativePaneLines;let combinedIndicatorError="";try{engine.addPaneLine({id:"capacity-pane-over-limit",color:"#ffffff"},rows.map(c=>({time:c.time,value:c.close})))}catch(error){combinedIndicatorError=error.message}
+   const capacityOscillators=[{kind:"rsi",settings:{period:14}},{kind:"atr",settings:{period:14}},{kind:"macd",settings:{fast:12,slow:26,signal:9}},{kind:"adx",settings:{period:14}}];
+   for(let i=0;i<capacityOscillators.length;i++)engine.addOscillator({id:`capacity-oscillator-${i}`,...capacityOscillators[i],color:"#f7c774"});
+   const indicatorsMs=performance.now()-t,activeIndicatorCount=engine.inspect().averageCount+engine.inspect().nativePaneLines+engine.inspect().oscillatorCount;let combinedIndicatorError="";try{engine.addOscillator({id:"capacity-oscillator-over-limit",kind:"rsi",settings:{period:14},color:"#ffffff"})}catch(error){combinedIndicatorError=error.message}const countAfterRejectedIndicator=engine.inspect().averageCount+engine.inspect().nativePaneLines+engine.inspect().oscillatorCount;
    t=performance.now();engine.updateLast({...rows.at(-1),close:rows.at(-1).close+1});const formingUpdateMs=performance.now()-t;
    t=performance.now();let drawingError="",overLimitError="",accepted=0;
    for(let i=0;i<999;i++){
@@ -1151,7 +1232,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
     const isolationHost=document.createElement("div");isolationHost.style.cssText="width:1280px;height:720px;position:absolute;left:-2000px;top:0";document.body.append(isolationHost);const otherAccount=ChartStudioV5.createStudioV5(isolationHost,"capacity-other",{symbol:"XAUUSD",timeframe:"M15"});otherAccount.setCandles(rows);otherAccount.addTrendLine({id:"unrelated-account",startTime:rows[200].time,startPrice:rows[200].close,endTime:rows[260].time,endPrice:rows[260].close+1,color:"#ffffff"});otherAccountCount=otherAccount.inspect().nativePrimitives;otherAccount.destroy();const otherTimeframe=ChartStudioV5.createStudioV5(isolationHost,"capacity-target",{symbol:"XAUUSD",timeframe:"H1"});otherTimeframe.setCandles(rows);otherTimeframeCount=otherTimeframe.inspect().nativePrimitives;otherTimeframe.destroy();isolationHost.remove();
    }
    window.__capacityEngine=engine;window.__capacityHost=host;window.__capacityOriginalHost=originalHost;window.__capacityOriginalDisplay=originalDisplay;
-   return {runtime:{viewport:[innerWidth,innerHeight],devicePixelRatio,userAgent:navigator.userAgent},barsMs,indicatorsMs,formingUpdateMs,activeIndicatorCount,drawingsMs,accepted,drawingError,overLimitError,countAfterRejectedDrawing,combinedIndicatorError,positions,readback,transferError,transferBytes,transferMs,exportedBytes,exportedCount,reloadMs,reloadedCount,otherAccountCount,otherTimeframeCount};
+   return {runtime:{viewport:[innerWidth,innerHeight],devicePixelRatio,userAgent:navigator.userAgent},barsMs,indicatorsMs,formingUpdateMs,activeIndicatorCount,drawingsMs,accepted,drawingError,overLimitError,countAfterRejectedDrawing,combinedIndicatorError,countAfterRejectedIndicator,positions,readback,transferError,transferBytes,transferMs,exportedBytes,exportedCount,reloadMs,reloadedCount,otherAccountCount,otherTimeframeCount};
   });
   const capacitySelectionMs={};
   for(const index of [0,500,998]){
@@ -1162,9 +1243,10 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   }
   await page.evaluate(()=>{window.__capacityEngine.destroy();window.__capacityHost.remove();window.__capacityOriginalHost.style.display=window.__capacityOriginalDisplay;delete window.__capacityEngine;delete window.__capacityHost;delete window.__capacityOriginalHost;delete window.__capacityOriginalDisplay});
   console.log(`AT-025 Chromium capacity evidence ${JSON.stringify({runtime:capacityProbe.runtime,barsMs:capacityProbe.barsMs,indicatorsMs:capacityProbe.indicatorsMs,formingUpdateMs:capacityProbe.formingUpdateMs,activeIndicatorCount:capacityProbe.activeIndicatorCount,drawingsMs:capacityProbe.drawingsMs,accepted:capacityProbe.accepted,transferBytes:capacityProbe.transferBytes,transferMs:capacityProbe.transferMs,reloadMs:capacityProbe.reloadMs,reloadedCount:capacityProbe.reloadedCount,otherAccountCount:capacityProbe.otherAccountCount,otherTimeframeCount:capacityProbe.otherTimeframeCount,capacitySelectionMs})}`);
-  assert.equal(capacityProbe.activeIndicatorCount,20,"Capacity setup calculates sixteen moving averages plus four independent panes");
+  assert.equal(capacityProbe.activeIndicatorCount,20,"Capacity setup calculates sixteen moving averages plus four native oscillator groups");
   assert.equal(capacityProbe.accepted,1000,`5k/20/1k target failed at ${capacityProbe.accepted}: ${capacityProbe.drawingError}`);
   assert.ok(capacityProbe.combinedIndicatorError,"20 total overlay/pane instances should be the shared active-indicator limit");
+  assert.equal(capacityProbe.countAfterRejectedIndicator,20,"Rejected 21st indicator leaves the 20-instance set unchanged");
   assert.equal(capacityProbe.drawingError,"","all 1,000 drawings must be accepted");
   assert.equal(capacityProbe.overLimitError,"Native drawing limit","drawing 1,001 is rejected");
   assert.equal(capacityProbe.countAfterRejectedDrawing,1000,"Rejected drawing 1,001 leaves the 1,000-object set unchanged");

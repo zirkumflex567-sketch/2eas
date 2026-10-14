@@ -42,6 +42,24 @@ These are single-run setup and API timings; they do not wait for paint or measur
 
 The run does not measure animation-frame stability, sustained pan/zoom FPS, CPU/heap over time, physical Windows 150% DPI or mobile performance. Master-spec reference-desktop/mobile acceptance and production migration to v5 remain open.
 
+## 14 October 2026: native oscillator groups
+
+The native v5 capacity fixture now loads 5,000 bars, calculates 16 EMA overlays plus four logical native oscillator groups (RSI, ATR, MACD, ADX), and creates 1,000 drawings. The MACD/ADX component lines each share their indicator's pane. It rejects the 21st logical indicator without changing the count and verifies beta parity at the final UTC timestamp, including forming-bar updates. The displayed oscillator tail uses native series updates; formula state is recalculated from the loaded history on each bar.
+
+| Measurement | Result |
+|---|---:|
+| Browser | HeadlessChrome 141.0.7390.37, viewport 1280×840, DPR 1 |
+| Loading 5,000 bars | 14.7 ms |
+| Setting up 16 calculated EMAs + four oscillator groups | 148.8 ms |
+| One forming-bar update for 20 total indicators | 32.9 ms |
+| Creating 1,000 drawings | 18.3 ms |
+| Schema-v1 transfer size | 210,000 characters |
+| Importing 1,000 drawings | 11.6 ms |
+| Scoped chart creation and 1,000-drawing reload | 28.5 ms |
+| Pointer selection sequence for drawings 0 / 500 / 999 | 128 / 102 / 102 ms |
+
+The fixture also checks native oscillator formulas and readout values against the ChartStudio Beta calculator, two differently configured RSI instances, MACD's shared pane, flat-price RSI/ATR/ADX behavior, pane movement/removal, account cleanup, and atomic 8-pane/20-indicator limits. These are single-run headless setup/API timings, not paint, sustained FPS, hardware or strategy-performance acceptance. Production v5 migration remains open.
+
 Reproduce from the repository root:
 
 ```powershell
