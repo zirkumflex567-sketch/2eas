@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import threading
 import math
 import json
 import hmac
@@ -1731,6 +1732,10 @@ HTML_CONTENT = """<!DOCTYPE html>
           <a id="nav-ascii-link" href="/ascii" target="_blank" class="px-2.5 py-1 rounded-lg ticker-bg border font-mono font-bold hover:bg-amber-500/20 text-amber-400 flex items-center gap-1 text-[11px] cursor-pointer" title="Retro ASCII Art Terminal Cockpit">
             📟 ASCII
           </a>
+          <span id="nav-bitunix-badge" class="px-2 py-1 rounded-lg ticker-bg border font-mono font-bold text-amber-400 hover:bg-amber-500/20 flex items-center gap-1 text-[11px] cursor-pointer" onclick="toggleBitunixBridge()" title="Bitunix XAUUSDT Trade Bridge Status (Klick zum Umschalten)">
+            <span id="nav-bitunix-dot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+            <span id="nav-bitunix-text">Bitunix: Bereit</span>
+          </span>
           <label class="text-sub text-[10px] ml-1" for="ui-motion">UI-Deko:</label>
           <select id="ui-motion" aria-label="Nicht-Chart-Dekoration" class="ticker-bg border rounded-lg px-2 py-0.5 text-[11px]">
             <option value="off">Aus</option><option value="low">Wenig</option><option value="full">Voll</option>
@@ -4264,6 +4269,39 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (lastStatusSuccess && !accountIsFresh()) markStatusStale();
         if (!document.hidden) void updateStatus();
       }, 1500); // freshness watchdog also expires a suspended poll
+      async function updateBitunixUI() {
+        try {
+          const res = await fetch(BASE_PATH + '/api/bitunix/status');
+          if (!res.ok) return;
+          const d = await res.json();
+          const dot = document.getElementById('nav-bitunix-dot');
+          const text = document.getElementById('nav-bitunix-text');
+          if (!d.enabled) {
+            if (dot) dot.className = 'w-1.5 h-1.5 rounded-full bg-slate-500';
+            if (text) text.textContent = 'Bitunix: Aus';
+          } else if (d.connected) {
+            if (dot) dot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse';
+            if (d.active_mapped_trades > 0) {
+              if (text) text.textContent = `Bitunix: ${d.active_mapped_trades} Trades`;
+            } else {
+              const avail = Number(d.usdt_available || 0);
+              if (text) text.textContent = avail > 0 ? `Bitunix: $${avail.toFixed(1)}` : 'Bitunix: Bereit';
+            }
+          } else {
+            if (dot) dot.className = 'w-1.5 h-1.5 rounded-full bg-rose-500';
+            if (text) text.textContent = 'Bitunix: Getrennt';
+          }
+        } catch (_) {}
+      }
+      window.toggleBitunixBridge = async function() {
+        try {
+          const res = await fetch(BASE_PATH + '/api/bitunix/toggle', { method: 'POST' });
+          if (res.ok) updateBitunixUI();
+        } catch (e) { console.error('Toggle bitunix error', e); }
+      };
+
+      updateBitunixUI();
+      setInterval(updateBitunixUI, 10000);
       setInterval(loadCandles, 5000);   // 5s smooth candle update (no reset)
       setInterval(() => { void refreshJournal(); }, 30000); // independent, low-rate journal sync
     };
@@ -4287,6 +4325,35 @@ def mobile_view():
 @app.get("/terminal", response_class=HTMLResponse)
 def ascii_view():
     return HTMLResponse(content=ASCII_HTML)
+
+# --- BITUNIX TRADING BRIDGE INTEGRATION ---
+from bitunix_bridge import BitunixBridge, load_config, save_config
+
+bitunix_bridge_instance = BitunixBridge()
+
+@app.get("/api/bitunix/status")
+def bitunix_status():
+    return bitunix_bridge_instance.get_status()
+
+@app.post("/api/bitunix/toggle")
+def bitunix_toggle():
+    cfg = load_config()
+    cfg["enabled"] = not cfg.get("enabled", True)
+    save_config(cfg)
+    bitunix_bridge_instance.reload()
+    return {"enabled": cfg["enabled"]}
+
+def _bitunix_worker_loop():
+    while True:
+        try:
+            if bitunix_bridge_instance.config.get("enabled", True):
+                bitunix_bridge_instance.sync_once(mt5)
+        except Exception:
+            pass
+        time.sleep(float(bitunix_bridge_instance.config.get("sync_interval_seconds", 2.0)))
+
+_bitunix_thread = threading.Thread(target=_bitunix_worker_loop, daemon=True, name="BitunixBridgeWorker")
+_bitunix_thread.start()
 
 if __name__ == "__main__":
     print("Starte XAU Titan Pro Institutional Cockpit auf http://127.0.0.1:8050 ...")

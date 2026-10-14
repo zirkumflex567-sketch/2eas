@@ -858,48 +858,46 @@ MOBILE_HTML = """<!DOCTYPE html>
         else body.tp_usd = tp;
       }
       try {
-        const res = await fetch(BASE_PATH + '/api/modify_position?account=' + encodeURIComponent(activeAccount), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-        const d = await res.json();
-        if (d.success) {
-          update();
-        } else {
-          alert('Fehler beim Ändern: ' + (d.detail || d.comment || 'Abgelehnt'));
-        }
+        await controlledPost('/api/modify_position', body);
       } catch (err) {
-        alert('Netzwerkfehler: ' + err);
+        alert('Fehler beim Ändern: ' + err.message);
       }
+    }
+
+    async function controlledPost(path, body) {
+      const account = activeAccount;
+      const control = await fetch(BASE_PATH + '/api/control_session', { credentials: 'same-origin', cache: 'no-store' });
+      const session = await control.json();
+      if (!control.ok || !session.control_enabled || !session.csrf_token) {
+        throw new Error(session.detail || 'Steuerung für diesen Zugang nicht freigegeben.');
+      }
+      if (account !== activeAccount) throw new Error('Konto wurde gewechselt; Aktion nicht gesendet.');
+      const response = await fetch(BASE_PATH + path + '?account=' + encodeURIComponent(account), {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-Dashboard-CSRF': session.csrf_token },
+        body: JSON.stringify(body)
+      });
+      const result = await response.json();
+      if (account !== activeAccount) throw new Error('Konto wurde gewechselt; Antwort verworfen.');
+      if (!response.ok || !result.success) throw new Error(result.detail || result.comment || 'Aktion abgelehnt.');
+      update();
+      return result;
     }
 
     async function quickBE(ticket) {
       ArcadeAudio.unlock();
-      await fetch(BASE_PATH + '/api/modify_position?account=' + encodeURIComponent(activeAccount), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticket, sl_usd: 5.0 })
-      });
-      update();
+      try { await controlledPost('/api/modify_position', { ticket, sl_usd: 5.0 }); }
+      catch (err) { alert('BE fehlgeschlagen: ' + err.message); }
     }
     async function quickSL(ticket, usd) {
       ArcadeAudio.unlock();
-      await fetch(BASE_PATH + '/api/modify_position?account=' + encodeURIComponent(activeAccount), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticket, sl_usd: usd })
-      });
-      update();
+      try { await controlledPost('/api/modify_position', { ticket, sl_usd: usd }); }
+      catch (err) { alert('SL fehlgeschlagen: ' + err.message); }
     }
     async function quickTP(ticket, usd) {
       ArcadeAudio.unlock();
-      await fetch(BASE_PATH + '/api/modify_position?account=' + encodeURIComponent(activeAccount), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticket, tp_usd: usd })
-      });
-      update();
+      try { await controlledPost('/api/modify_position', { ticket, tp_usd: usd }); }
+      catch (err) { alert('TP fehlgeschlagen: ' + err.message); }
     }
 
     async function closePos(ticket, volume = null) {
@@ -909,19 +907,9 @@ MOBILE_HTML = """<!DOCTYPE html>
       if (!confirm(`${volText} wirklich schließen?`)) return;
       try {
         const payload = volNum ? { ticket, volume: volNum } : { ticket };
-        const res = await fetch(BASE_PATH + '/api/close_position?account=' + encodeURIComponent(activeAccount), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const d = await res.json();
-        if (d.success) {
-          update();
-        } else {
-          alert('Fehler beim Schließen: ' + (d.detail || d.comment || 'Abgelehnt'));
-        }
+        await controlledPost('/api/close_position', payload);
       } catch (err) {
-        alert('Netzwerkfehler: ' + err);
+        alert('Fehler beim Schließen: ' + err.message);
       }
     }
 
@@ -1057,8 +1045,8 @@ ASCII_HTML = """<!DOCTYPE html>
     }
     @media (max-width: 500px) {
       body {
-        font-size: 9.5px;
-        padding: 6px 4px 20px;
+        font-size: 12px;
+        padding: 8px 8px 32px;
       }
     }
     pre {
@@ -1067,6 +1055,43 @@ ASCII_HTML = """<!DOCTYPE html>
       line-height: 1.25;
       display: block;
       margin: 0 auto;
+    }
+    @media (max-width: 740px) {
+      body { display: block; overflow-x: hidden; }
+      .terminal-container { width: 100%; min-width: 0; margin: 0; }
+      .top-bar { width: 100%; }
+      .top-bar a, .top-bar button { min-height: 36px; display: inline-flex; align-items: center; }
+      .top-bar span[style] { margin-left: 0 !important; }
+      #terminal-screen.compact { width: 100%; margin: 0; white-space: normal; overflow-wrap: anywhere; }
+      .ascii-card { position: relative; border: 1px dashed var(--fg-dim); padding: 12px 10px 10px; margin: 0 0 12px; min-width: 0; background: linear-gradient(135deg, rgba(51,255,102,.04), transparent 52%); }
+      .ascii-card::before { content: '╔'; position: absolute; top: -8px; left: -3px; background: var(--bg); color: var(--fg-bright); font-size: 16px; }
+      .ascii-card::after { content: '╝'; position: absolute; bottom: -8px; right: -3px; background: var(--bg); color: var(--fg-bright); font-size: 16px; }
+      .ascii-card h2 { color: var(--fg-bright); font-size: 12px; margin: 0 0 8px; border-bottom: 1px dashed var(--fg-dim); padding-bottom: 6px; letter-spacing: .08em; }
+      .ascii-card h2::before { content: '> '; color: var(--amber); }
+      .ascii-line { position: relative; display: flex; justify-content: space-between; gap: 8px; margin: 5px 0; padding-left: 12px; }
+      .ascii-line::before { content: '│'; position: absolute; left: 0; color: var(--fg-dim); }
+      .ascii-line span { min-width: 0; overflow-wrap: anywhere; }
+      .ascii-position { border-top: 1px dashed var(--fg-dim); padding-top: 9px; margin-top: 9px; }
+      .ascii-position:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+      .ascii-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-top: 9px; }
+      .ascii-actions button { min-height: 44px; border: 1px solid var(--fg-dim); background: rgba(51,255,102,.08); color: var(--fg-bright); font: inherit; padding: 6px; text-align: center; }
+      .ascii-actions button.danger { color: var(--red); border-color: var(--red); }
+      .ascii-actions button:active { background: var(--fg-dim); }
+      .ascii-plot { position: relative; display: block; width: 100%; overflow: hidden; white-space: pre; font-size: clamp(10px, 3.2vw, 14px); line-height: 1.26; letter-spacing: 0; margin: 4px 0 8px; }
+      .chart-row { display: block; height: 1.26em; }
+      .chart-axis, .chart-grid { color: var(--fg-dim); }
+      .candle-body.up { color: var(--fg-bright); text-shadow: 0 0 7px var(--fg); }
+      .candle-body.down { color: var(--red); text-shadow: 0 0 5px var(--red); }
+      .candle-wick { color: var(--fg); }
+      .candle-current { animation: candle-live 1.4s ease-in-out infinite; }
+      .ascii-chart-meta { display: flex; justify-content: space-between; gap: 8px; color: var(--fg-bright); font-size: 10px; }
+      .ascii-chart-meta span:last-child { color: var(--amber); }
+      .ascii-legend { color: var(--fg-dim); font-size: 10px; margin-top: 7px; }
+      .ascii-legend .up { color: var(--fg-bright); }
+      .ascii-legend .down { color: var(--red); }
+      @keyframes candle-live { 50% { opacity: .5; filter: brightness(1.65); } }
+      @media (prefers-reduced-motion: reduce) { .candle-current { animation: none; } }
+      .ascii-muted { color: var(--fg-dim); }
     }
     .top-bar {
       margin-bottom: 8px;
@@ -1526,6 +1551,116 @@ ASCII_HTML = """<!DOCTYPE html>
       return out;
     }
 
+    function escapeAscii(value) {
+      return String(value ?? '—').replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+    }
+
+    function renderMobileCandleChart(candleList) {
+      const valid = (candleList || []).filter(c => [c.open, c.high, c.low, c.close]
+        .every(v => Number.isFinite(Number(v))) && Number(c.high) >= Number(c.low)).slice(-16);
+      if (valid.length < 4) return '<div class="ascii-muted">[ KERZEN WERDEN GELADEN ... ]</div>';
+      const highs = valid.map(c => Number(c.high));
+      const lows = valid.map(c => Number(c.low));
+      const maxPrice = Math.max(...highs), minPrice = Math.min(...lows);
+      const range = maxPrice - minPrice || 1;
+      const rows = 11;
+      const priceRow = price => Math.max(0, Math.min(rows - 1,
+        Math.round((maxPrice - Number(price)) / range * (rows - 1))));
+      const liveRow = priceRow(valid.at(-1).close);
+      let plot = '';
+      for (let r = 0; r < rows; r++) {
+        const level = maxPrice - r / (rows - 1) * range;
+        const axis = r === 0 || r === rows - 1 || r === liveRow
+          ? level.toFixed(1).padStart(7) : '       ';
+        let cells = '';
+        valid.forEach((c, i) => {
+          const bodyStart = Math.min(priceRow(c.open), priceRow(c.close));
+          const bodyEnd = Math.max(priceRow(c.open), priceRow(c.close));
+          const wickStart = priceRow(c.high), wickEnd = priceRow(c.low);
+          const current = i === valid.length - 1 ? ' candle-current' : '';
+          if (r >= bodyStart && r <= bodyEnd) {
+            cells += `<span class="candle-body ${Number(c.close) >= Number(c.open) ? 'up' : 'down'}${current}">${Number(c.close) >= Number(c.open) ? '█' : '▓'}</span>`;
+          } else if (r >= wickStart && r <= wickEnd) {
+            cells += `<span class="candle-wick${current}">│</span>`;
+          } else {
+            cells += `<span class="chart-grid">${r === liveRow ? '·' : ' '}</span>`;
+          }
+          cells += ' ';
+        });
+        plot += `<span class="chart-row"><span class="chart-axis">${axis} ┤</span>${cells}<span class="chart-axis">│</span></span>`;
+      }
+      const floor = `<span class="chart-row"><span class="chart-axis">       └${'─'.repeat(valid.length * 2)}┘</span></span>`;
+      return `<pre class="ascii-plot" role="img" aria-label="${valid.length} Kerzen mit Preisachse, Körpern und Dochten">${plot}${floor}</pre>
+        <div class="ascii-chart-meta"><span>LOW ${minPrice.toFixed(2)}</span><span>◉ LIVE ${Number(valid.at(-1).close).toFixed(2)}</span><span>HIGH ${maxPrice.toFixed(2)}</span></div>
+        <div class="ascii-legend"><span class="up">█ STEIGEND</span> / <span class="down">▓ FALLEND</span> / │ DOCHT / · LETZTER PREIS</div>`;
+    }
+
+    function renderCompactAscii(d) {
+      const accountName = d.account?.name || accounts[activeAccount]?.name || activeAccount;
+      const tf = escapeAscii(d.account?.timeframe || accounts[activeAccount]?.timeframe || 'M15');
+      const dd = d.daily_drawdown || {};
+      const money = value => '$' + Number(value || 0).toFixed(2);
+      const line = (label, value) => `<div class="ascii-line"><span>${label}</span><span>${escapeAscii(value)}</span></div>`;
+      const compactButton = (label, action, danger = false) =>
+        `<button type="button" class="${danger ? 'danger' : ''}" onclick="${action}">${label}</button>`;
+      const chart = renderMobileCandleChart(candles);
+      const positions = (d.positions || []).map(p => {
+        const ticket = Number(p.ticket);
+        if (!Number.isSafeInteger(ticket) || ticket <= 0) return '';
+        const pnl = Number(p.profit_usd || 0);
+        const volume = Number(p.volume || 0);
+        const safeVolume = Number.isFinite(volume) && volume > 0 ? volume : 0;
+        const slDefault = p.sl_usd == null || !Number.isFinite(Number(p.sl_usd)) ? -50 : Number(p.sl_usd);
+        const tpDefault = p.tp_usd == null || !Number.isFinite(Number(p.tp_usd)) ? 50 : Number(p.tp_usd);
+        return `<div class="ascii-position">
+          ${line('#' + ticket + ' · ' + p.type + ' · ' + safeVolume.toFixed(2) + ' Lot', (pnl >= 0 ? '+' : '') + money(pnl))}
+          ${line('OPEN / LIVE', money(p.open_price) + ' / ' + money(p.current_price))}
+          ${line('SL / TP', (p.sl_price > 0 ? money(p.sl_price) : 'KEIN SL') + ' / ' + (p.tp_price > 0 ? money(p.tp_price) : 'KEIN TP'))}
+          ${line('EMA9-ABSTAND', p.dist_to_ema9 == null ? '—' : Number(p.dist_to_ema9).toFixed(2) + ' Pkt')}
+          <div class="ascii-actions">
+            ${compactButton('[SL/TP]', `promptEditSLTP(${ticket}, ${slDefault}, ${tpDefault})`)}
+            ${compactButton('[BE +5$]', `quickBE(${ticket})`)}
+            ${compactButton('[SL -50$]', `quickSL(${ticket}, -50)`)}
+            ${compactButton('[TP +50$]', `quickTP(${ticket}, 50)`)}
+            ${compactButton('[25%]', `closePosPct(${ticket}, ${safeVolume}, 25)`)}
+            ${compactButton('[50%]', `closePosPct(${ticket}, ${safeVolume}, 50)`)}
+            ${compactButton('[LOT-EINGABE]', `promptCloseLots(${ticket}, ${safeVolume})`)}
+            ${compactButton('[SCHLIESSEN]', `closePos(${ticket})`, true)}
+          </div>
+        </div>`;
+      }).join('');
+      const entries = journalScope === 'all' ? (journalData.all || []) : (journalData.byAccount[activeAccount] || []);
+      const displayed = journalLimit > 0 ? entries.slice(0, journalLimit) : entries;
+      const journal = displayed.map(it => line('#' + it.ticket + ' · ' + it.status,
+        (Number(it.profit_usd || 0) >= 0 ? '+' : '') + money(it.profit_usd))).join('');
+      return `<section class="ascii-card">
+        <h2>[ TITAN GOLD TERMINAL · ${tf} ]</h2>
+        ${line('KONTO', accountName)}
+        ${line('BID / ASK', money(d.bid) + ' / ' + money(d.ask))}
+        ${line('SPREAD / TREND', d.spread + ' / ' + (d.trend_direction || 'NEUTRAL'))}
+        ${line('KERZE / DE-ZEIT', (d.times?.bar_remaining_fmt || '—') + ' / ' + (d.times?.german || '—'))}
+      </section>
+      <section class="ascii-card"><h2>[ 16 KERZEN · ${tf} ]</h2>${chart}</section>
+      <section class="ascii-card"><h2>[ TAGES-RISIKO ]</h2>
+        ${line('BALANCE / EQUITY', money(dd.balance) + ' / ' + money(dd.equity))}
+        ${line('VERLUST HEUTE', money(dd.loss_usd))}
+        ${line('DRAWDOWN / PUFFER', Number(dd.pct || 0).toFixed(2) + '% / ' + (dd.buffer_usd == null ? 'KEIN LIMIT' : money(dd.buffer_usd)))}
+      </section>
+      <section class="ascii-card"><h2>[ OFFENE POSITIONEN · ${(d.positions || []).length} ]</h2>
+        ${positions || '<span class="ascii-muted">KEINE OFFENEN POSITIONEN</span>'}
+      </section>
+      <section class="ascii-card"><h2>[ TRADE JOURNAL ]</h2>
+        <div class="ascii-actions">
+          ${compactButton('[ALLE KONTEN]', "setJournalScope('all')")}
+          ${compactButton('[DIESES KONTO]', "setJournalScope('single')")}
+          ${compactButton('[10]', 'setJournalLimit(10)')}
+          ${compactButton('[ALLE TRADES]', 'setJournalLimit(0)')}
+        </div>
+        ${journal || '<span class="ascii-muted">KEINE TRADES GELADEN</span>'}
+      </section>`;
+    }
+
     async function update() {
       try {
         const res = await fetch(`${BASE_PATH}/api/status?account=${encodeURIComponent(activeAccount)}&include_journal=false`);
@@ -1604,6 +1739,14 @@ ASCII_HTML = """<!DOCTYPE html>
         if (Array.isArray(journalData.all) && journalData.all.length > 0) {
           journalInitialized = true;
           prevJournalCount = journalData.all.length;
+        }
+
+        const terminal = document.getElementById('terminal-screen');
+        const compact = window.matchMedia('(max-width: 740px)').matches;
+        terminal.classList.toggle('compact', compact);
+        if (compact) {
+          terminal.innerHTML = renderCompactAscii(d);
+          return;
         }
 
         const posToggleBtn = btn(posDetailMode ? '[ANSICHT: KOMPAKT]' : '[ANSICHT: DETAIL]', 'togglePosDetail()', 'cyan');
@@ -1751,45 +1894,46 @@ ASCII_HTML = """<!DOCTYPE html>
         else body.tp_usd = tpNum;
       }
       try {
-        const res = await fetch(BASE_PATH + '/api/modify_position?account=' + encodeURIComponent(activeAccount), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-        const d = await res.json();
-        if (d.success) update();
-        else alert('Fehler: ' + (d.detail || d.comment || 'Abgelehnt'));
-      } catch (e) {
-        alert('Netzwerkfehler: ' + e);
+        await controlledPost('/api/modify_position', body);
+      } catch (err) {
+        alert('Änderung fehlgeschlagen: ' + err.message);
       }
+    }
+
+    async function controlledPost(path, body) {
+      const account = activeAccount;
+      const control = await fetch(BASE_PATH + '/api/control_session', { credentials: 'same-origin', cache: 'no-store' });
+      const session = await control.json();
+      if (!control.ok || !session.control_enabled || !session.csrf_token) {
+        throw new Error(session.detail || 'Steuerung für diesen Zugang nicht freigegeben.');
+      }
+      if (account !== activeAccount) throw new Error('Konto wurde gewechselt; Aktion nicht gesendet.');
+      const response = await fetch(BASE_PATH + path + '?account=' + encodeURIComponent(account), {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-Dashboard-CSRF': session.csrf_token },
+        body: JSON.stringify(body)
+      });
+      const result = await response.json();
+      if (account !== activeAccount) throw new Error('Konto wurde gewechselt; Antwort verworfen.');
+      if (!response.ok || !result.success) throw new Error(result.detail || result.comment || 'Aktion abgelehnt.');
+      update();
+      return result;
     }
 
     async function quickBE(ticket) {
       ArcadeAudio.unlock();
-      await fetch(BASE_PATH + '/api/modify_position?account=' + encodeURIComponent(activeAccount), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticket, sl_usd: 5.0 })
-      });
-      update();
+      try { await controlledPost('/api/modify_position', { ticket, sl_usd: 5.0 }); }
+      catch (err) { alert('BE fehlgeschlagen: ' + err.message); }
     }
     async function quickSL(ticket, usd) {
       ArcadeAudio.unlock();
-      await fetch(BASE_PATH + '/api/modify_position?account=' + encodeURIComponent(activeAccount), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticket, sl_usd: usd })
-      });
-      update();
+      try { await controlledPost('/api/modify_position', { ticket, sl_usd: usd }); }
+      catch (err) { alert('SL fehlgeschlagen: ' + err.message); }
     }
     async function quickTP(ticket, usd) {
       ArcadeAudio.unlock();
-      await fetch(BASE_PATH + '/api/modify_position?account=' + encodeURIComponent(activeAccount), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticket, tp_usd: usd })
-      });
-      update();
+      try { await controlledPost('/api/modify_position', { ticket, tp_usd: usd }); }
+      catch (err) { alert('TP fehlgeschlagen: ' + err.message); }
     }
     async function closePos(ticket, volume = null) {
       ArcadeAudio.unlock();
@@ -1798,16 +1942,9 @@ ASCII_HTML = """<!DOCTYPE html>
       if (!confirm(`${volText} schließen?`)) return;
       try {
         const payload = volNum ? { ticket, volume: volNum } : { ticket };
-        const res = await fetch(BASE_PATH + '/api/close_position?account=' + encodeURIComponent(activeAccount), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const d = await res.json();
-        if (d.success) update();
-        else alert('Fehler: ' + (d.detail || d.comment || 'Abgelehnt'));
-      } catch (e) {
-        alert('Netzwerkfehler: ' + e);
+        await controlledPost('/api/close_position', payload);
+      } catch (err) {
+        alert('Schließen fehlgeschlagen: ' + err.message);
       }
     }
 
