@@ -8,6 +8,7 @@
 - v5 replaces `chart.addLineSeries(options)` with `chart.addSeries(LineSeries, options)`, and likewise Candlestick/Histogram. v5 supports `addSeries(..., paneIndex)`, `moveToPane`, `chart.panes()`, and native pane height management.
 - An independent native TypeScript adapter in `chart_studio_v5/src/adapter.ts` currently renders candles, configurable line-instance data, native indicator panes and volume. It rejects invalid/duplicate candles, stale out-of-order updates, unsafe line IDs, and indicator count excess. An account switch clears series and bars; no broker routes are called.
 - The isolated adapter also exposes a read-only exact-time data-window model: OHLC and real volume (or explicitly labeled tick-volume proxy), plus only line-series values whose timestamp exactly matches a loaded candle. Missing/warm-up data stays null, forming-bar updates invalidate indicator readouts, replacing history clears old values, and all fields identify the current account and `CHART_FEED` source. This is adapter capability only; no production sidebar/crosshair wiring is claimed.
+- The isolated adapter now also renders horizontal price-level and vertical UTC-candle primitives. Their hit tests support selection and pointer-capture drag; horizontal lines follow the price coordinate, vertical lines snap to loaded bars, Escape restores the pre-drag anchor, and account/history changes cancel stale edits. The Chromium fixture exercises both paths. This remains a renderer proof without persistence or production drawing migration.
 - Run: `npm install --prefix chart_studio_v5 --package-lock=false --no-audit --no-fund`, `npm --prefix chart_studio_v5 run check`, `npm --prefix chart_studio_v5 run build`, then `node scripts/smoke_chart_studio_v5.cjs` after installing the repository's Playwright Chromium dependencies. CI repeats these steps and stores a screenshot.
 - Source is modular TypeScript. Generated `dist/` is not committed. No LWC 5 script or compiled bundles are shipped to production in this RFC.
 
@@ -20,7 +21,7 @@ Pin must be reviewed for a security update with an explicit PR rather than `late
 ## Next engineering gates (not claimed by this RFC)
 
 1. Replace v4-specific price/time coordinate and mouse-gesture assumptions behind a versioned adapter interface; stable native price and time scale semantics, including multi-symbol/timeframe subscriptions.
-2. Move production indicator math to v5 native panes **without duplicate render or duplicated EMA calculations**. Implement pane resizing, preserving user settings, true canvas-backed drawing primitives and stop/target draft overlays.
+2. Move production indicator math to v5 native panes **without duplicate render or duplicated EMA calculations**. Preserve user settings, complete pane sizing and axis labels, extend the isolated native canvas primitives beyond movable price/time lines, and implement stop/target draft overlays.
 3. Add robust rollback and v4/v5 screenshot parity on real historical broker data (account-scoped; no foreign-account fallback), responsiveness at 320/390/768/1440 px, full-screen, touch and reduced-motion.
 4. Do not permit any new MT5 mutation from adapter or smoke tests; all real stop adjustments remain behind separate auth/CSRF/guard/revision/idempotency, and demo-user-release gates in Tasks 0.7/4.x.
 5. Only after native browser/Windows-MT5 demo testing, migration review and user acceptance may `app.py` switch to v5. Build currently has **no** production switch.
@@ -28,7 +29,7 @@ Pin must be reviewed for a security update with an explicit PR rather than `late
 ## Acceptance evidence
 
 - Task 0.8: version and API/license decision plus isolated proof source exist; CI results must be recorded before treating 0.8 as complete.
-- Task 1.8, 2.1: **not completed**. The renderer is isolated and deliberately does not yet replace the production wrapper or implement v5 drawing primitives.
+- Task 1.8, 2.1: **not completed**. The isolated renderer now proves native price/time line primitives, hit testing, pointer capture, candle snap and Escape rollback. It does not replace the production wrapper; other drawing types, persistence, parity and target-hardware acceptance remain open.
 
 ## Follow-up: native pane lifecycle package (PR #25)
 

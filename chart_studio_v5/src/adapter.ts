@@ -19,41 +19,57 @@ export type DataWindowReadout = {
 };
 class PriceLevelPrimitive implements ISeriesPrimitive {
  private y:number|null=null;
+ private selected=false;
  private series:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]["series"]|null=null;
  private requestUpdate:(()=>void)|null=null;
- constructor(private price:number,private color:string){}
+ constructor(private id:string,private price:number,private color:string){}
  attached(param:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]){
   this.series=param.series;this.requestUpdate=param.requestUpdate;this.updateAllViews();
  }
  detached(){this.series=null;this.requestUpdate=null;this.y=null}
  updateAllViews(){this.y=this.series?.priceToCoordinate(this.price)??null}
+ coordinate(){this.updateAllViews();return this.y}
+ hitTest(_x:number,y:number){
+  const distance=this.y===null?null:Math.abs(this.y-y);
+  if(distance===null||distance>6)return null;
+  return {externalId:this.id,zOrder:"top" as const,cursorStyle:"pointer",hitTestPriority:1,distance};
+ }
  paneViews(){return [{zOrder:()=>"top" as const,renderer:()=>this.y===null?null:{draw:(target:CanvasRenderingTarget2D)=>{
   const y=this.y;if(y===null)return;
   target.useMediaCoordinateSpace(({context,mediaSize})=>{
-   context.save();context.strokeStyle=this.color;context.lineWidth=1;context.setLineDash([5,4]);
+   context.save();context.strokeStyle=this.color;context.lineWidth=this.selected?2:1;context.setLineDash([5,4]);
    context.beginPath();context.moveTo(0,y);context.lineTo(mediaSize.width,y);context.stroke();context.restore();
   });
  }} }]}
  set(price:number,color:string){this.price=price;this.color=color;this.updateAllViews();this.requestUpdate?.()}
+ setSelected(selected:boolean){this.selected=selected;this.requestUpdate?.()}
 }
 class TimeMarkerPrimitive implements ISeriesPrimitive {
  private x:number|null=null;
+ private selected=false;
  private chart:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]["chart"]|null=null;
  private requestUpdate:(()=>void)|null=null;
- constructor(private time:UTCTimestamp,private color:string){}
+ constructor(private id:string,private time:UTCTimestamp,private color:string){}
  attached(param:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]){
   this.chart=param.chart;this.requestUpdate=param.requestUpdate;this.updateAllViews();
  }
  detached(){this.chart=null;this.requestUpdate=null;this.x=null}
  updateAllViews(){this.x=this.chart?.timeScale().timeToCoordinate(this.time)??null}
+ coordinate(){this.updateAllViews();return this.x}
+ hitTest(x:number,_y:number){
+  const distance=this.x===null?null:Math.abs(this.x-x);
+  if(distance===null||distance>6)return null;
+  return {externalId:this.id,zOrder:"top" as const,cursorStyle:"pointer",hitTestPriority:1,distance};
+ }
  paneViews(){return [{zOrder:()=>"top" as const,renderer:()=>this.x===null?null:{draw:(target:CanvasRenderingTarget2D)=>{
   const x=this.x;if(x===null)return;
   target.useMediaCoordinateSpace(({context,mediaSize})=>{
-   context.save();context.strokeStyle=this.color;context.lineWidth=1;context.setLineDash([3,4]);
+   context.save();context.strokeStyle=this.color;context.lineWidth=this.selected?2:1;context.setLineDash([3,4]);
    context.beginPath();context.moveTo(x,0);context.lineTo(x,mediaSize.height);context.stroke();context.restore();
   });
  }} }]}
  set(time:UTCTimestamp,color:string){this.time=time;this.color=color;this.updateAllViews();this.requestUpdate?.()}
+ setSelected(selected:boolean){this.selected=selected;this.requestUpdate?.()}
 }
 const colorPattern = /^#[0-9a-fA-F]{6}$/;
 function validBar(c:Candle):boolean {
@@ -101,6 +117,71 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  const paneLines=new Map<string,LineApi>();
  const priceLevels=new Map<string,{primitive:PriceLevelPrimitive;options:PriceLevelOptions}>();
  const timeMarkers=new Map<string,{primitive:TimeMarkerPrimitive;options:TimeMarkerOptions}>();
+ let selectedDrawingId:string|null=null,hoveredDrawingId:string|null=null;
+ type ActiveDrag={pointerId:number;id:string;kind:"PRICE";original:PriceLevelOptions}|{pointerId:number;id:string;kind:"TIME";original:TimeMarkerOptions};
+ let activeDrag:ActiveDrag|null=null;
+ chart.subscribeCrosshairMove(param=>{
+  const objectId=param.hoveredInfo?.objectId;
+  hoveredDrawingId=typeof objectId==="string"&&(priceLevels.has(objectId)||timeMarkers.has(objectId))?objectId:null;
+ });
+ chart.subscribeClick(param=>{
+  selectDrawing(hoveredDrawingId);
+ });
+ const onPointerDown=(event:PointerEvent)=>{
+  if(event.button!==0||!event.isPrimary||!hoveredDrawingId)return;
+  const level=priceLevels.get(hoveredDrawingId),marker=timeMarkers.get(hoveredDrawingId);
+  if(level)activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"PRICE",original:{...level.options}};
+  else if(marker)activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"TIME",original:{...marker.options}};
+  else return;
+  selectDrawing(hoveredDrawingId);
+  if(host.tabIndex<0)host.tabIndex=0;
+  host.focus({preventScroll:true});
+  host.setPointerCapture(event.pointerId);event.preventDefault();event.stopImmediatePropagation();
+ };
+ const onPointerMove=(event:PointerEvent)=>{
+  if(!activeDrag||activeDrag.pointerId!==event.pointerId)return;
+  event.preventDefault();event.stopImmediatePropagation();
+  const rect=host.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top;
+  if(activeDrag.kind==="PRICE"){
+   const value=price.coordinateToPrice(y);
+   if(value!==null&&Number.isFinite(value)&&value>0){const item=priceLevels.get(activeDrag.id);if(item)updatePriceLevel(activeDrag.id,{price:value,color:item.options.color})}
+  }else{
+   const logical=chart.timeScale().coordinateToLogical(x),index=logical===null?-1:Math.round(Number(logical));
+   const candle=bars[index];
+   if(candle){const item=timeMarkers.get(activeDrag.id);if(item)updateTimeMarker(activeDrag.id,{time:candle.time,color:item.options.color})}
+  }
+ };
+ const finishDrag=(cancel:boolean)=>{
+  const drag=activeDrag;if(!drag)return;
+  if(cancel){
+   if(drag.kind==="PRICE"&&priceLevels.has(drag.id))updatePriceLevel(drag.id,{price:drag.original.price,color:drag.original.color});
+   if(drag.kind==="TIME"&&timeMarkers.has(drag.id))updateTimeMarker(drag.id,{time:drag.original.time,color:drag.original.color});
+  }
+  activeDrag=null;
+  if(host.hasPointerCapture(drag.pointerId))host.releasePointerCapture(drag.pointerId);
+ };
+ const onPointerUp=(event:PointerEvent)=>{
+  if(!activeDrag||activeDrag.pointerId!==event.pointerId)return;
+  event.preventDefault();event.stopImmediatePropagation();finishDrag(false);
+ };
+ const onPointerCancel=(event:PointerEvent)=>{
+  if(!activeDrag||activeDrag.pointerId!==event.pointerId)return;
+  event.preventDefault();event.stopImmediatePropagation();finishDrag(true);
+ };
+ const onLostPointerCapture=(event:PointerEvent)=>{
+  if(!activeDrag||activeDrag.pointerId!==event.pointerId)return;
+  finishDrag(true);
+ };
+ const onKeyDown=(event:KeyboardEvent)=>{
+  if(event.key!=="Escape"||!activeDrag)return;
+  event.preventDefault();event.stopImmediatePropagation();finishDrag(true);
+ };
+ host.addEventListener("pointerdown",onPointerDown,true);
+ host.addEventListener("pointermove",onPointerMove,true);
+ host.addEventListener("pointerup",onPointerUp,true);
+ host.addEventListener("pointercancel",onPointerCancel,true);
+ host.addEventListener("lostpointercapture",onLostPointerCapture,true);
+ host.addEventListener("keydown",onKeyDown,true);
  const createPaneLine=(opts:AverageOptions)=>chart.addSeries(LineSeries,{
   color:opts.color,lineWidth:opts.lineWidth??2,visible:opts.visible??true,
   title:opts.title??opts.id,priceLineVisible:false,lastValueVisible:true,
@@ -111,8 +192,14 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  let volume:VolumeApi|null=null;
  let bars:Candle[]=[],barsByTime=new Map<number,Candle>(),activeAccount=accountId,destroyed=false;
  function guard(){if(destroyed)throw Error("Chart was destroyed")}
+ function selectDrawing(id:string|null){
+  if(selectedDrawingId===id)return;
+  if(selectedDrawingId){priceLevels.get(selectedDrawingId)?.primitive.setSelected(false);timeMarkers.get(selectedDrawingId)?.primitive.setSelected(false)}
+  selectedDrawingId=id;
+  if(id){priceLevels.get(id)?.primitive.setSelected(true);timeMarkers.get(id)?.primitive.setSelected(true)}
+ }
  function setCandles(data:readonly Candle[]){
-  guard();const next=normalizeCandles(data);bars=next;barsByTime=new Map(bars.map(c=>[c.time,c]));
+  guard();const next=normalizeCandles(data);finishDrag(true);bars=next;barsByTime=new Map(bars.map(c=>[c.time,c]));
   for(const series of averages.values())series.setData([]);
   for(const series of paneLines.values())series.setData([]);
   readoutIndicators.clear();price.setData(bars);
@@ -126,7 +213,7 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   guard();
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color))throw Error("Invalid line options");
   if(averages.size>=16&&!averages.has(opts.id))throw Error("Indicator instance limit");
-  if(paneLines.has(opts.id))throw Error("Duplicate overlay and pane identity");
+  if(paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id))throw Error("Duplicate chart object identity");
   const values=validSeriesData(data);
   let series=averages.get(opts.id);
   if(!series){series=newLine(opts);averages.set(opts.id,series)}
@@ -146,7 +233,7 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   if(priceLevels.size+timeMarkers.size>=100)throw Error("Native drawing limit");
   const existing=priceLevels.get(opts.id);
   if(existing){existing.primitive.set(opts.price,opts.color);existing.options={...opts};return}
-  const primitive=new PriceLevelPrimitive(opts.price,opts.color);price.attachPrimitive(primitive);
+  const primitive=new PriceLevelPrimitive(opts.id,opts.price,opts.color);price.attachPrimitive(primitive);
   priceLevels.set(opts.id,{primitive,options:{...opts}});
  }
  function updatePriceLevel(id:string,patch:Pick<PriceLevelOptions,"price"|"color">){
@@ -156,7 +243,8 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  }
  function removePriceLevel(id:string){
   guard();const item=priceLevels.get(id);if(!item)return false;
-  price.detachPrimitive(item.primitive);priceLevels.delete(id);return true;
+  if(activeDrag?.id===id)finishDrag(true);
+  price.detachPrimitive(item.primitive);priceLevels.delete(id);if(selectedDrawingId===id)selectDrawing(null);return true;
  }
  function validateTimeMarker(opts:TimeMarkerOptions){
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color)||
@@ -170,7 +258,7 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   if(priceLevels.size+timeMarkers.size>=100)throw Error("Native drawing limit");
   const existing=timeMarkers.get(opts.id);
   if(existing){existing.primitive.set(opts.time,opts.color);existing.options={...opts};return}
-  const primitive=new TimeMarkerPrimitive(opts.time,opts.color);price.attachPrimitive(primitive);
+  const primitive=new TimeMarkerPrimitive(opts.id,opts.time,opts.color);price.attachPrimitive(primitive);
   timeMarkers.set(opts.id,{primitive,options:{...opts}});
  }
  function updateTimeMarker(id:string,patch:Pick<TimeMarkerOptions,"time"|"color">){
@@ -180,14 +268,26 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  }
  function removeTimeMarker(id:string){
   guard();const item=timeMarkers.get(id);if(!item)return false;
-  price.detachPrimitive(item.primitive);timeMarkers.delete(id);return true;
+  if(activeDrag?.id===id)finishDrag(true);
+  price.detachPrimitive(item.primitive);timeMarkers.delete(id);if(selectedDrawingId===id)selectDrawing(null);return true;
+ }
+ function drawingPosition(id:string){
+  guard();const rect=host.getBoundingClientRect();const priceLevel=priceLevels.get(id);
+  if(priceLevel){const y=priceLevel.primitive.coordinate();return y===null?null:{x:rect.left+Math.min(40,rect.width/2),y:rect.top+y}}
+  const timeMarker=timeMarkers.get(id);if(timeMarker){const x=timeMarker.primitive.coordinate();return x===null?null:{x:rect.left+x,y:rect.top+Math.min(40,rect.height/2)}}
+  return null;
+ }
+ function readDrawing(id:string){
+  guard();const level=priceLevels.get(id);if(level)return {...level.options};
+  const marker=timeMarkers.get(id);if(marker)return {...marker.options};
+  return null;
  }
  function addPaneLine(opts:AverageOptions,data:readonly AveragePoint[]){
   guard();
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color))
    throw Error("Invalid pane line");
   const values=validSeriesData(data);
-  if(averages.has(opts.id))throw Error("Duplicate pane and overlay identity");
+  if(averages.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id))throw Error("Duplicate chart object identity");
   if(paneLines.size>=8&&!paneLines.has(opts.id))throw Error("Native pane limit");
   let series=paneLines.get(opts.id);
   if(!series){
@@ -259,9 +359,10 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  }
  function changeAccount(next:string){
   guard();if(!/^[a-zA-Z0-9_-]{1,50}$/.test(next))throw Error("Invalid account");
+  finishDrag(true);selectDrawing(null);hoveredDrawingId=null;
   activeAccount=next;bars=[];barsByTime.clear();price.setData([]);
   for(const item of priceLevels.values())price.detachPrimitive(item.primitive);priceLevels.clear();
-  for(const item of timeMarkers.values())price.detachPrimitive(item.primitive);timeMarkers.clear();
+  for(const item of timeMarkers.values())price.detachPrimitive(item.primitive);timeMarkers.clear();selectedDrawingId=null;
   for(const item of averages.values())chart.removeSeries(item);
   averages.clear();
   for(const line of paneLines.values())chart.removeSeries(line);
@@ -269,11 +370,11 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  }
  function inspect(){guard();return {version:VERSION,account:activeAccount,
   candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
-  averageCount:averages.size,nativePaneLines:paneLines.size,nativePrimitives:priceLevels.size+timeMarkers.size,
+  averageCount:averages.size,nativePaneLines:paneLines.size,nativePrimitives:priceLevels.size+timeMarkers.size,selectedDrawingId,hoveredDrawingId,
   paneCount:chart.panes().length,volumeVisible:!!volume}}
- function destroy(){if(destroyed)return;destroyed=true;chart.remove();averages.clear();paneLines.clear();priceLevels.clear();timeMarkers.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
+ function destroy(){if(destroyed)return;finishDrag(true);destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();paneLines.clear();priceLevels.clear();timeMarkers.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
  return Object.freeze({setCandles,addAverage,moveAverage,removeAverage,addPriceLevel,updatePriceLevel,removePriceLevel,
-  addTimeMarker,updateTimeMarker,removeTimeMarker,
+  addTimeMarker,updateTimeMarker,removeTimeMarker,drawingPosition,readDrawing,
   addPaneLine,movePaneLine,removePaneLine,resizePane,showVolume,readDataWindow,
   updateLast,changeAccount,inspect,destroy});
 }

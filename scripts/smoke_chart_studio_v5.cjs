@@ -38,6 +38,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.addPriceLevel({id:"risk-stop",price:4100,color:"#ff6677"});
    engine.addTimeMarker({id:"entry-time",time:bars[40].time,color:"#c18bff"});
    let duplicateDrawingRejected=false;try{engine.addTimeMarker({id:"risk-stop",time:bars[40].time,color:"#ffffff"})}catch(_){duplicateDrawingRejected=true}
+   let drawingIndicatorCollisionRejected=false;try{engine.addAverage({id:"risk-stop",color:"#ffffff"},[])}catch(_){drawingIndicatorCollisionRejected=true}
    const withPrimitive=engine.inspect();
    engine.updatePriceLevel("risk-stop",{price:4110,color:"#ffaa66"});
    engine.updateTimeMarker("entry-time",{time:bars[41].time,color:"#d8aaff"});
@@ -62,8 +63,10 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    let badVolumeRejected=false;try{engine.setCandles([{time:1700000000,open:1,high:2,low:.5,close:1.5,tick_volume:NaN}])}
     catch(_){badVolumeRejected=true}
    let badPaneRejected=false;try{engine.resizePane(0,10)}catch(_){badPaneRejected=true}
+   engine.addTimeMarker({id:"history-marker",time:bars[40].time,color:"#ffffff"});
    engine.setCandles([bars[79]]);
    const replacementReadout=engine.readDataWindow(bars[79].time);
+   const staleHistoryMarker=engine.drawingPosition("history-marker");
    engine.addPriceLevel({id:"account-local-level",price:bars[79].close,color:"#62deeb"});
    engine.changeAccount("goldm15");
    const isolated=engine.inspect();
@@ -72,6 +75,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    let disposed=false;try{engine.setCandles(bars)}catch(_){disposed=true}
    return {first,updated,staleRejected,invalidRejected,isolated,removed,disposed,badPaneRejected,
     withPrimitive,updatedPrimitive,removedPrimitive,removedTimeMarker,withoutPrimitive,invalidPrimitiveRejected,unknownTimeRejected,duplicateDrawingRejected,
+    staleHistoryMarker,drawingIndicatorCollisionRejected,
     warmupReadout,alignedReadout,noVolumeReadout,missingBarReadout,formingReadout,
     replacementReadout,badVolumeRejected,invalidReadoutTimeRejected,
     expectedWarmupOpen:bars[10].open,expectedWarmupUtc:new Date(bars[10].time*1000).toISOString()};
@@ -89,6 +93,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(result.invalidPrimitiveRejected,true);
   assert.equal(result.unknownTimeRejected,true);
   assert.equal(result.duplicateDrawingRejected,true);
+  assert.equal(result.staleHistoryMarker,null);
+  assert.equal(result.drawingIndicatorCollisionRejected,true);
   assert.ok(result.first.paneCount>=2);
   assert.equal(result.warmupReadout.state,"AVAILABLE");
   assert.equal(result.warmupReadout.source,"CHART_FEED");
@@ -136,6 +142,43 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    e.addTimeMarker({id:"visual-time",time:rows[45].time,color:"#c18bff"});
    e.showVolume(true);window.__v5Screenshot=e;
   });
+  await page.waitForTimeout(150);
+  const priceXY=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-level"));
+  await page.mouse.move(priceXY.x,priceXY.y);
+  await page.waitForTimeout(80);
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.inspect().hoveredDrawingId),"visual-level");
+  await page.mouse.down();
+  const hasPointerCapture=await page.evaluate(()=>document.getElementById("chart").hasPointerCapture(1));
+  await page.mouse.move(priceXY.x,priceXY.y-24,{steps:3});
+  await page.mouse.up();
+  const movedPrice=await page.evaluate(()=>({drawing:window.__v5Screenshot.readDrawing("visual-level"),position:window.__v5Screenshot.drawingPosition("visual-level")}));
+  const selectedPrice=await page.evaluate(()=>window.__v5Screenshot.inspect().selectedDrawingId);
+  await page.mouse.move(movedPrice.position.x,movedPrice.position.y);
+  await page.waitForTimeout(60);
+  await page.mouse.down();
+  await page.mouse.move(movedPrice.position.x,movedPrice.position.y-30,{steps:2});
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  const escapedPrice=await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-level"));
+  const timePoint=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-time"));
+  await page.mouse.move(timePoint.x,timePoint.y);
+  await page.waitForTimeout(80);
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.inspect().hoveredDrawingId),"visual-time");
+  await page.mouse.down();
+  await page.mouse.move(timePoint.x+35,timePoint.y,{steps:3});
+  await page.mouse.up();
+  const movedTime=await page.evaluate(()=>({drawing:window.__v5Screenshot.readDrawing("visual-time"),position:window.__v5Screenshot.drawingPosition("visual-time")}));
+  const selectedTime=await page.evaluate(()=>window.__v5Screenshot.inspect().selectedDrawingId);
+  assert.equal(hasPointerCapture,true);
+  assert.ok(Number.isFinite(movedPrice.drawing.price));
+  assert.notEqual(movedPrice.position.y,priceXY.y);
+  assert.equal(escapedPrice.price,movedPrice.drawing.price);
+  assert.notEqual(movedTime.drawing.time,1700100000+45*900);
+  assert.equal((movedTime.drawing.time-1700100000)%900,0);
+  assert.notEqual(movedTime.position.x,timePoint.x);
+  assert.equal(selectedPrice,"visual-level");
+  assert.equal(selectedTime,"visual-time");
+  await page.mouse.move(10,10);
   await page.waitForTimeout(150);
   assert.ok((await page.locator("#chart canvas").count())>=1);
   const folder=path.join("output","visual-smoke");
