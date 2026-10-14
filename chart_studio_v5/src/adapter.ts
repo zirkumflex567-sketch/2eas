@@ -11,6 +11,7 @@ export type AveragePoint = {time:UTCTimestamp;value:number};
 export type AverageOptions = {id:string;color:string;lineWidth?:1|2|3|4;visible?:boolean;title?:string};
 export type PriceLevelOptions = {id:string;price:number;color:string;visible?:boolean;locked?:boolean};
 export type TimeMarkerOptions = {id:string;time:UTCTimestamp;color:string;visible?:boolean;locked?:boolean};
+export type TextAnnotationOptions = {id:string;time:UTCTimestamp;price:number;text:string;color:string;visible?:boolean;locked?:boolean};
 export type ChartStorageScope = {symbol:string;timeframe:string};
 export type DataWindowReadout = {
  state:"AVAILABLE"|"UNAVAILABLE";account:string;source:"CHART_FEED";time:number;timeUtc:string;
@@ -76,6 +77,43 @@ class TimeMarkerPrimitive implements ISeriesPrimitive {
  set(time:UTCTimestamp,color:string,visible=true){this.time=time;this.color=color;this.visible=visible;this.updateAllViews();this.requestUpdate?.()}
  setSelected(selected:boolean){this.selected=selected;this.requestUpdate?.()}
 }
+class TextAnnotationPrimitive implements ISeriesPrimitive {
+ private point:{x:number;y:number}|null=null;
+ private selected=false;
+ private visible=true;
+ private chart:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]["chart"]|null=null;
+ private series:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]["series"]|null=null;
+ private requestUpdate:(()=>void)|null=null;
+ constructor(private id:string,private options:TextAnnotationOptions){this.visible=options.visible??true}
+ attached(param:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]){
+  this.chart=param.chart;this.series=param.series;this.requestUpdate=param.requestUpdate;this.updateAllViews();
+ }
+ detached(){this.chart=null;this.series=null;this.requestUpdate=null;this.point=null}
+ updateAllViews(){
+  const x=this.chart?.timeScale().timeToCoordinate(this.options.time)??null;
+  const y=this.series?.priceToCoordinate(this.options.price)??null;
+  this.point=x===null||y===null?null:{x,y};
+ }
+ coordinate(){this.updateAllViews();return this.point}
+ hitTest(x:number,y:number){
+  if(!this.visible||!this.point)return null;
+  const left=this.point.x+7,top=this.point.y-18,width=this.options.text.length*7+12;
+  if(x<left||x>left+width||y<top||y>top+21)return null;
+  return {externalId:this.id,zOrder:"top" as const,cursorStyle:"pointer",hitTestPriority:2,distance:0};
+ }
+ paneViews(){return !this.visible?[]:[{zOrder:()=>"top" as const,renderer:()=>this.point===null?null:{draw:(target:CanvasRenderingTarget2D)=>{
+  const point=this.point;if(!point)return;
+  target.useMediaCoordinateSpace(({context})=>{
+   context.save();context.font="12px sans-serif";
+   const width=context.measureText(this.options.text).width+12,left=point.x+7,top=point.y-18;
+   context.fillStyle="rgba(9,25,35,0.94)";context.strokeStyle=this.options.color;
+   context.lineWidth=this.selected?2:1;context.fillRect(left,top,width,21);context.strokeRect(left,top,width,21);
+   context.fillStyle="#e8f2f6";context.textBaseline="middle";context.fillText(this.options.text,left+6,top+10.5);context.restore();
+  });
+ }} }]}
+ set(options:TextAnnotationOptions){this.options={...options};this.visible=options.visible??true;this.updateAllViews();this.requestUpdate?.()}
+ setSelected(selected:boolean){this.selected=selected;this.requestUpdate?.()}
+}
 const colorPattern = /^#[0-9a-fA-F]{6}$/;
 function validBar(c:Candle):boolean {
  return Number.isSafeInteger(c.time) && c.time>0 && Number.isFinite(new Date(c.time*1000).getTime()) &&
@@ -124,7 +162,9 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  const paneLines=new Map<string,LineApi>();
  const priceLevels=new Map<string,{primitive:PriceLevelPrimitive;options:PriceLevelOptions}>();
  const timeMarkers=new Map<string,{primitive:TimeMarkerPrimitive;options:TimeMarkerOptions}>();
- type DrawingSnapshot={kind:"PRICE";options:PriceLevelOptions}|{kind:"TIME";options:TimeMarkerOptions};
+ const textAnnotations=new Map<string,{primitive:TextAnnotationPrimitive;options:TextAnnotationOptions}>();
+ const drawingCount=()=>priceLevels.size+timeMarkers.size+textAnnotations.size;
+ type DrawingSnapshot={kind:"PRICE";options:PriceLevelOptions}|{kind:"TIME";options:TimeMarkerOptions}|{kind:"TEXT";options:TextAnnotationOptions};
  type DrawingHistory={id:string;before:DrawingSnapshot|null;after:DrawingSnapshot|null};
  const undoStack:DrawingHistory[]=[],redoStack:DrawingHistory[]=[];
  const historyLimit=100;
@@ -138,7 +178,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  let activeDrag:ActiveDrag|null=null;
  chart.subscribeCrosshairMove(param=>{
   const objectId=param.hoveredInfo?.objectId;
-  hoveredDrawingId=typeof objectId==="string"&&(priceLevels.has(objectId)||timeMarkers.has(objectId))?objectId:null;
+  hoveredDrawingId=typeof objectId==="string"&&(priceLevels.has(objectId)||timeMarkers.has(objectId)||textAnnotations.has(objectId))?objectId:null;
  });
  chart.subscribeClick(param=>{
   selectDrawing(hoveredDrawingId);
@@ -243,7 +283,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    if(storage.getItem(key)!==lastPersistedSnapshot){persistenceStatus="CONFLICT";persistenceError="EXTERNAL_CHANGE";return}
    const drawings:DrawingSnapshot[]=[
     ...[...priceLevels.values()].map(({options})=>({kind:"PRICE" as const,options:{...options}})),
-    ...[...timeMarkers.values()].map(({options})=>({kind:"TIME" as const,options:{...options}}))];
+    ...[...timeMarkers.values()].map(({options})=>({kind:"TIME" as const,options:{...options}})),
+    ...[...textAnnotations.values()].map(({options})=>({kind:"TEXT" as const,options:{...options}}))];
    const serialized=JSON.stringify({schemaVersion:1,account:activeAccount,symbol:drawingScope.symbol,
     timeframe:drawingScope.timeframe,drawings});
    if(serialized.length>persistenceLimit){persistenceStatus="UNAVAILABLE";persistenceError="SNAPSHOT_TOO_LARGE";return}
@@ -258,7 +299,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   let raw:string|null;
   try{raw=storage.getItem(key)}catch(_){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_READ_FAILED";return}
   lastPersistedSnapshot=raw;
-  if(raw===null){persistenceStatus="READY";persistenceError=null;if(priceLevels.size||timeMarkers.size)persistDrawings();return}
+  if(raw===null){persistenceStatus="READY";persistenceError=null;if(drawingCount())persistDrawings();return}
   if(raw.length>persistenceLimit){persistenceStatus="UNAVAILABLE";persistenceError="SNAPSHOT_TOO_LARGE";return}
   let parsed:unknown;
   try{parsed=JSON.parse(raw)}catch(_){persistenceStatus="UNAVAILABLE";persistenceError="INVALID_SNAPSHOT";return}
@@ -267,7 +308,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   if(root.schemaVersion!==1||root.account!==activeAccount||root.symbol!==drawingScope.symbol||root.timeframe!==drawingScope.timeframe||!Array.isArray(root.drawings)||root.drawings.length>100){
    persistenceStatus="UNAVAILABLE";persistenceError="INVALID_OR_MISMATCHED_SNAPSHOT";return;
   }
-  if(priceLevels.size||timeMarkers.size){persistenceStatus="CONFLICT";persistenceError="DRAWINGS_ALREADY_PRESENT";return}
+  if(drawingCount()){persistenceStatus="CONFLICT";persistenceError="DRAWINGS_ALREADY_PRESENT";return}
   const seen=new Set<string>(),snapshots:DrawingSnapshot[]=[];
   try{
    for(const entry of root.drawings){
@@ -283,28 +324,33 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
     }else if(row.kind==="TIME"){
      const normalized={id:options.id,time:options.time,color:options.color,visible:options.visible,locked:options.locked} as TimeMarkerOptions;
      validateTimeMarker(normalized);snapshots.push({kind:"TIME",options:{...normalized,visible:normalized.visible??true,locked:normalized.locked??false}});
+    }else if(row.kind==="TEXT"){
+     const normalized={id:options.id,time:options.time,price:options.price,text:options.text,color:options.color,visible:options.visible,locked:options.locked} as TextAnnotationOptions;
+     validateTextAnnotation(normalized);snapshots.push({kind:"TEXT",options:{...normalized,visible:normalized.visible??true,locked:normalized.locked??false}});
     }else throw Error();
    }
   }catch(_){persistenceStatus="UNAVAILABLE";persistenceError="INVALID_OR_UNAVAILABLE_DRAWING";return}
   hydratingDrawings=true;
   try{
-   for(const snapshot of snapshots){if(snapshot.kind==="PRICE")addPriceLevel(snapshot.options);else addTimeMarker(snapshot.options)}
+   for(const snapshot of snapshots){if(snapshot.kind==="PRICE")addPriceLevel(snapshot.options);else if(snapshot.kind==="TIME")addTimeMarker(snapshot.options);else addTextAnnotation(snapshot.options)}
    undoStack.length=0;redoStack.length=0;persistenceStatus="READY";persistenceError=null;
   }catch(_){
    for(const item of priceLevels.values())price.detachPrimitive(item.primitive);priceLevels.clear();
    for(const item of timeMarkers.values())price.detachPrimitive(item.primitive);timeMarkers.clear();
+   for(const item of textAnnotations.values())price.detachPrimitive(item.primitive);textAnnotations.clear();
    undoStack.length=0;redoStack.length=0;persistenceStatus="UNAVAILABLE";persistenceError="RESTORE_FAILED";
   }finally{hydratingDrawings=false}
  }
  function selectDrawing(id:string|null){
-  if(selectedDrawingId===id){if(id){priceLevels.get(id)?.primitive.setSelected(true);timeMarkers.get(id)?.primitive.setSelected(true)}return}
-  if(selectedDrawingId){priceLevels.get(selectedDrawingId)?.primitive.setSelected(false);timeMarkers.get(selectedDrawingId)?.primitive.setSelected(false)}
+  if(selectedDrawingId===id){if(id){priceLevels.get(id)?.primitive.setSelected(true);timeMarkers.get(id)?.primitive.setSelected(true);textAnnotations.get(id)?.primitive.setSelected(true)}return}
+  if(selectedDrawingId){priceLevels.get(selectedDrawingId)?.primitive.setSelected(false);timeMarkers.get(selectedDrawingId)?.primitive.setSelected(false);textAnnotations.get(selectedDrawingId)?.primitive.setSelected(false)}
   selectedDrawingId=id;
-  if(id){priceLevels.get(id)?.primitive.setSelected(true);timeMarkers.get(id)?.primitive.setSelected(true)}
+  if(id){priceLevels.get(id)?.primitive.setSelected(true);timeMarkers.get(id)?.primitive.setSelected(true);textAnnotations.get(id)?.primitive.setSelected(true)}
  }
  function snapshotDrawing(id:string):DrawingSnapshot|null{
   const priceLevel=priceLevels.get(id);if(priceLevel)return {kind:"PRICE",options:{...priceLevel.options}};
   const timeMarker=timeMarkers.get(id);if(timeMarker)return {kind:"TIME",options:{...timeMarker.options}};
+  const textAnnotation=textAnnotations.get(id);if(textAnnotation)return {kind:"TEXT",options:{...textAnnotation.options}};
   return null;
  }
  function recordDrawingChange(id:string,before:DrawingSnapshot|null,after:DrawingSnapshot|null){
@@ -315,20 +361,27 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  function restoreDrawing(id:string,snapshot:DrawingSnapshot|null):boolean{
   if(snapshot&&(averages.has(id)||paneLines.has(id)))return false;
   if(snapshot?.kind==="TIME"&&!barsByTime.has(snapshot.options.time))return false;
+  if(snapshot?.kind==="TEXT"&&!barsByTime.has(snapshot.options.time))return false;
   const wasSelected=selectedDrawingId===id;
   if(wasSelected)selectDrawing(null);
   const oldPrice=priceLevels.get(id);if(oldPrice){price.detachPrimitive(oldPrice.primitive);priceLevels.delete(id)}
   const oldTime=timeMarkers.get(id);if(oldTime){price.detachPrimitive(oldTime.primitive);timeMarkers.delete(id)}
+  const oldText=textAnnotations.get(id);if(oldText){price.detachPrimitive(oldText.primitive);textAnnotations.delete(id)}
   if(snapshot?.kind==="PRICE"){
-   if(priceLevels.size+timeMarkers.size>=100)return false;
+   if(drawingCount()>=100)return false;
    const options={...snapshot.options};validatePriceLevel(options);
    const primitive=new PriceLevelPrimitive(id,options.price,options.color,options.visible??true);price.attachPrimitive(primitive);
    priceLevels.set(id,{primitive,options});
   }else if(snapshot?.kind==="TIME"){
-   if(priceLevels.size+timeMarkers.size>=100)return false;
+   if(drawingCount()>=100)return false;
    const options={...snapshot.options};validateTimeMarker(options);
    const primitive=new TimeMarkerPrimitive(id,options.time,options.color,options.visible??true);price.attachPrimitive(primitive);
    timeMarkers.set(id,{primitive,options});
+  }else if(snapshot?.kind==="TEXT"){
+   if(drawingCount()>=100)return false;
+   const options={...snapshot.options};validateTextAnnotation(options);
+   const primitive=new TextAnnotationPrimitive(id,options);price.attachPrimitive(primitive);
+   textAnnotations.set(id,{primitive,options});
   }
   if(wasSelected&&snapshot)selectDrawing(id);
   return true;
@@ -345,15 +398,18 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function deleteSelectedDrawing(){
   guard();if(!selectedDrawingId)return false;
-  return priceLevels.has(selectedDrawingId)?removePriceLevel(selectedDrawingId):removeTimeMarker(selectedDrawingId);
+  if(priceLevels.has(selectedDrawingId))return removePriceLevel(selectedDrawingId);
+  if(timeMarkers.has(selectedDrawingId))return removeTimeMarker(selectedDrawingId);
+  return removeTextAnnotation(selectedDrawingId);
  }
  function duplicateSelectedDrawing(){
   guard();if(!selectedDrawingId)return null;
   const source=snapshotDrawing(selectedDrawingId);if(!source)return null;
   const base=selectedDrawingId.slice(0,20);let suffix=1,id="";
-  do{id=`${base}-copy${suffix++}`}while(priceLevels.has(id)||timeMarkers.has(id)||averages.has(id)||paneLines.has(id));
+  do{id=`${base}-copy${suffix++}`}while(priceLevels.has(id)||timeMarkers.has(id)||textAnnotations.has(id)||averages.has(id)||paneLines.has(id));
   if(source.kind==="PRICE")addPriceLevel({id,price:source.options.price,color:source.options.color,visible:source.options.visible,locked:source.options.locked});
-  else addTimeMarker({id,time:source.options.time,color:source.options.color,visible:source.options.visible,locked:source.options.locked});
+  else if(source.kind==="TIME")addTimeMarker({id,time:source.options.time,color:source.options.color,visible:source.options.visible,locked:source.options.locked});
+  else addTextAnnotation({...source.options,id});
   selectDrawing(id);return id;
  }
  function setCandles(data:readonly Candle[]){
@@ -372,7 +428,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   guard();
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color))throw Error("Invalid line options");
   if(averages.size>=16&&!averages.has(opts.id))throw Error("Indicator instance limit");
-  if(paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id))throw Error("Duplicate chart object identity");
+  if(paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id))throw Error("Duplicate chart object identity");
   const values=validSeriesData(data);
   let series=averages.get(opts.id);
   if(!series){series=newLine(opts);averages.set(opts.id,series)}
@@ -389,11 +445,11 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function addPriceLevel(opts:PriceLevelOptions){
   guard();validatePriceLevel(opts);
-  if(averages.has(opts.id)||paneLines.has(opts.id)||timeMarkers.has(opts.id))throw Error("Duplicate chart object identity");
+  if(averages.has(opts.id)||paneLines.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id))throw Error("Duplicate chart object identity");
   const existing=priceLevels.get(opts.id);
   const options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};
   if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options.price,options.color,options.visible);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
-  if(priceLevels.size+timeMarkers.size>=100)throw Error("Native drawing limit");
+  if(drawingCount()>=100)throw Error("Native drawing limit");
   const primitive=new PriceLevelPrimitive(opts.id,options.price,options.color,options.visible);price.attachPrimitive(primitive);
   priceLevels.set(opts.id,{primitive,options});recordDrawingChange(opts.id,null,snapshotDrawing(opts.id));
  }
@@ -417,11 +473,11 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function addTimeMarker(opts:TimeMarkerOptions){
   guard();validateTimeMarker(opts);
-  if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id))throw Error("Duplicate chart object identity");
+  if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||textAnnotations.has(opts.id))throw Error("Duplicate chart object identity");
   const existing=timeMarkers.get(opts.id);
   const options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};
   if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options.time,options.color,options.visible);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
-  if(priceLevels.size+timeMarkers.size>=100)throw Error("Native drawing limit");
+  if(drawingCount()>=100)throw Error("Native drawing limit");
   const primitive=new TimeMarkerPrimitive(opts.id,options.time,options.color,options.visible);price.attachPrimitive(primitive);
   timeMarkers.set(opts.id,{primitive,options});recordDrawingChange(opts.id,null,snapshotDrawing(opts.id));
  }
@@ -436,22 +492,52 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   if(activeDrag?.id===id)finishDrag(true);
   const before=snapshotDrawing(id);price.detachPrimitive(item.primitive);timeMarkers.delete(id);if(selectedDrawingId===id)selectDrawing(null);recordDrawingChange(id,before,null);return true;
  }
+ function validateTextAnnotation(opts:TextAnnotationOptions,requireLoadedTime=true){
+  if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color)||
+   !Number.isSafeInteger(opts.time)||opts.time<=0||!Number.isFinite(new Date(opts.time*1000).getTime())||
+   (requireLoadedTime&&!barsByTime.has(opts.time))||!Number.isFinite(opts.price)||opts.price<=0||
+   typeof opts.text!=="string"||! /^[\x20-\x7E]{1,40}$/.test(opts.text)||
+   (opts.visible!==undefined&&typeof opts.visible!=="boolean")||(opts.locked!==undefined&&typeof opts.locked!=="boolean"))
+   throw Error("Invalid or unavailable text annotation");
+ }
+ function addTextAnnotation(opts:TextAnnotationOptions){
+  guard();validateTextAnnotation(opts);
+  if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id))throw Error("Duplicate chart object identity");
+  const existing=textAnnotations.get(opts.id);
+  const options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};
+  if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
+  if(drawingCount()>=100)throw Error("Native drawing limit");
+  const primitive=new TextAnnotationPrimitive(opts.id,options);price.attachPrimitive(primitive);
+  textAnnotations.set(opts.id,{primitive,options});recordDrawingChange(opts.id,null,snapshotDrawing(opts.id));
+ }
+ function updateTextAnnotation(id:string,patch:Partial<Pick<TextAnnotationOptions,"time"|"price"|"text"|"color"|"visible"|"locked">>){
+  guard();const item=textAnnotations.get(id);if(!item)throw Error("Unknown text annotation");const before=snapshotDrawing(id);
+  const options={...item.options,...patch};validateTextAnnotation(options,patch.time!==undefined);item.primitive.set(options);item.options=options;
+  if(activeDrag?.id!==id)recordDrawingChange(id,before,snapshotDrawing(id));
+ }
+ function removeTextAnnotation(id:string){
+  guard();const item=textAnnotations.get(id);if(!item)return false;
+  const before=snapshotDrawing(id);price.detachPrimitive(item.primitive);textAnnotations.delete(id);if(selectedDrawingId===id)selectDrawing(null);recordDrawingChange(id,before,null);return true;
+ }
  function drawingPosition(id:string){
   guard();const rect=host.getBoundingClientRect();const priceLevel=priceLevels.get(id);
   if(priceLevel){if(!priceLevel.options.visible)return null;const y=priceLevel.primitive.coordinate();return y===null?null:{x:rect.left+Math.min(40,rect.width/2),y:rect.top+y}}
   const timeMarker=timeMarkers.get(id);if(timeMarker){if(!timeMarker.options.visible)return null;const x=timeMarker.primitive.coordinate();return x===null?null:{x:rect.left+x,y:rect.top+Math.min(40,rect.height/2)}}
+  const annotation=textAnnotations.get(id);if(annotation){if(!annotation.options.visible)return null;const point=annotation.primitive.coordinate();return point===null?null:{x:rect.left+point.x+12,y:rect.top+point.y-8}}
   return null;
  }
  function readDrawing(id:string){
   guard();const level=priceLevels.get(id);if(level)return {...level.options};
   const marker=timeMarkers.get(id);if(marker)return {...marker.options};
+  const annotation=textAnnotations.get(id);if(annotation)return {...annotation.options};
   return null;
  }
  function exportDrawings():string{
   guard();if(!drawingScope)throw Error("Drawing export requires symbol/timeframe scope");
   const drawings:DrawingSnapshot[]=[
    ...[...priceLevels.values()].map(({options})=>({kind:"PRICE" as const,options:{...options}})),
-   ...[...timeMarkers.values()].map(({options})=>({kind:"TIME" as const,options:{...options}}))];
+    ...[...timeMarkers.values()].map(({options})=>({kind:"TIME" as const,options:{...options}})),
+    ...[...textAnnotations.values()].map(({options})=>({kind:"TEXT" as const,options:{...options}}))];
   const serialized=JSON.stringify({schemaVersion:1,symbol:drawingScope.symbol,timeframe:drawingScope.timeframe,drawings});
   if(serialized.length>persistenceLimit)throw Error("Drawing export exceeds size limit");
   return serialized;
@@ -470,7 +556,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   if(!storage||!key){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_UNAVAILABLE";throw Error("Drawing storage unavailable")}
   try{if(storage.getItem(key)!==lastPersistedSnapshot){persistenceStatus="CONFLICT";persistenceError="EXTERNAL_CHANGE";throw Error("Drawing storage conflict")}}
   catch(error){if(persistenceStatus!=="CONFLICT"){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_READ_FAILED"}throw error}
-  if(priceLevels.size||timeMarkers.size)throw Error("Drawing import conflicts with existing drawings");
+  if(drawingCount())throw Error("Drawing import conflicts with existing drawings");
   const snapshots:DrawingSnapshot[]=[],seen=new Set<string>();
   for(const entry of root.drawings){
    if(!entry||typeof entry!=="object"||Array.isArray(entry))throw Error("Invalid drawing import entry");
@@ -478,24 +564,28 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    if(Object.keys(row).sort().join(",")!=="kind,options"||!row.options||typeof row.options!=="object"||Array.isArray(row.options))
     throw Error("Invalid drawing import entry");
    const options=row.options as Record<string,unknown>,kind=row.kind;
-   const expected=kind==="PRICE"?"color,id,locked,price,visible":kind==="TIME"?"color,id,locked,time,visible":"";
+   const expected=kind==="PRICE"?"color,id,locked,price,visible":kind==="TIME"?"color,id,locked,time,visible":kind==="TEXT"?"color,id,locked,price,text,time,visible":"";
    if(!expected||Object.keys(options).sort().join(",")!==expected||typeof options.id!=="string"||seen.has(options.id)||
-    averages.has(options.id)||paneLines.has(options.id))throw Error("Invalid or conflicting drawing identity/options");
+    averages.has(options.id)||paneLines.has(options.id)||priceLevels.has(options.id)||timeMarkers.has(options.id)||textAnnotations.has(options.id))throw Error("Invalid or conflicting drawing identity/options");
    seen.add(options.id);
    if(kind==="PRICE"){
     const normalized=options as unknown as PriceLevelOptions;validatePriceLevel(normalized);
     snapshots.push({kind:"PRICE",options:{...normalized,visible:normalized.visible??true,locked:normalized.locked??false}});
-   }else{
+   }else if(kind==="TIME"){
     const normalized=options as unknown as TimeMarkerOptions;validateTimeMarker(normalized);
     snapshots.push({kind:"TIME",options:{...normalized,visible:normalized.visible??true,locked:normalized.locked??false}});
+   }else{
+    const normalized=options as unknown as TextAnnotationOptions;validateTextAnnotation(normalized);
+    snapshots.push({kind:"TEXT",options:{...normalized,visible:normalized.visible??true,locked:normalized.locked??false}});
    }
   }
   if(snapshots.length>100)throw Error("Native drawing limit");
   hydratingDrawings=true;
-  try{for(const snapshot of snapshots){if(snapshot.kind==="PRICE")addPriceLevel(snapshot.options);else addTimeMarker(snapshot.options)}}
+  try{for(const snapshot of snapshots){if(snapshot.kind==="PRICE")addPriceLevel(snapshot.options);else if(snapshot.kind==="TIME")addTimeMarker(snapshot.options);else addTextAnnotation(snapshot.options)}}
   catch(error){
    for(const item of priceLevels.values())price.detachPrimitive(item.primitive);priceLevels.clear();
    for(const item of timeMarkers.values())price.detachPrimitive(item.primitive);timeMarkers.clear();
+   for(const item of textAnnotations.values())price.detachPrimitive(item.primitive);textAnnotations.clear();
    undoStack.length=0;redoStack.length=0;throw error;
   }finally{hydratingDrawings=false}
   undoStack.length=0;redoStack.length=0;persistDrawings();
@@ -505,12 +595,14 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   guard();if(typeof visible!=="boolean")throw Error("Invalid drawing visibility");
   const priceLevel=priceLevels.get(id);if(priceLevel){updatePriceLevel(id,{visible});return true}
   const timeMarker=timeMarkers.get(id);if(timeMarker){updateTimeMarker(id,{visible});return true}
+  const annotation=textAnnotations.get(id);if(annotation){updateTextAnnotation(id,{visible});return true}
   return false;
  }
  function setDrawingLocked(id:string,locked:boolean){
   guard();if(typeof locked!=="boolean")throw Error("Invalid drawing lock state");
   const priceLevel=priceLevels.get(id);if(priceLevel){updatePriceLevel(id,{locked});return true}
   const timeMarker=timeMarkers.get(id);if(timeMarker){updateTimeMarker(id,{locked});return true}
+  const annotation=textAnnotations.get(id);if(annotation){updateTextAnnotation(id,{locked});return true}
   return false;
  }
  function addPaneLine(opts:AverageOptions,data:readonly AveragePoint[]){
@@ -518,7 +610,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color))
    throw Error("Invalid pane line");
   const values=validSeriesData(data);
-  if(averages.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id))throw Error("Duplicate chart object identity");
+  if(averages.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id))throw Error("Duplicate chart object identity");
   if(paneLines.size>=8&&!paneLines.has(opts.id))throw Error("Native pane limit");
   let series=paneLines.get(opts.id);
   if(!series){
@@ -596,6 +688,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   activeAccount=next;bars=[];barsByTime.clear();price.setData([]);
   for(const item of priceLevels.values())price.detachPrimitive(item.primitive);priceLevels.clear();
   for(const item of timeMarkers.values())price.detachPrimitive(item.primitive);timeMarkers.clear();selectedDrawingId=null;
+  for(const item of textAnnotations.values())price.detachPrimitive(item.primitive);textAnnotations.clear();
   for(const item of averages.values())chart.removeSeries(item);
   averages.clear();
   for(const line of paneLines.values())chart.removeSeries(line);
@@ -603,11 +696,11 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function inspect(){guard();return {version:VERSION,account:activeAccount,
   candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
-  averageCount:averages.size,nativePaneLines:paneLines.size,nativePrimitives:priceLevels.size+timeMarkers.size,selectedDrawingId,hoveredDrawingId,
+  averageCount:averages.size,nativePaneLines:paneLines.size,nativePrimitives:drawingCount(),selectedDrawingId,hoveredDrawingId,
   paneCount:chart.panes().length,volumeVisible:!!volume,persistenceStatus,persistenceError}}
  function destroy(){if(destroyed)return;finishDrag(true);destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();paneLines.clear();priceLevels.clear();timeMarkers.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
  return Object.freeze({setCandles,addAverage,moveAverage,removeAverage,addPriceLevel,updatePriceLevel,removePriceLevel,
-  addTimeMarker,updateTimeMarker,removeTimeMarker,drawingPosition,readDrawing,exportDrawings,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,
+  addTimeMarker,updateTimeMarker,removeTimeMarker,addTextAnnotation,updateTextAnnotation,removeTextAnnotation,drawingPosition,readDrawing,exportDrawings,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,
   addPaneLine,movePaneLine,removePaneLine,resizePane,showVolume,readDataWindow,
   updateLast,changeAccount,inspect,destroy});
 }

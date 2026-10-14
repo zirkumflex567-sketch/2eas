@@ -21,7 +21,7 @@ Pin must be reviewed for a security update with an explicit PR rather than `late
 ## Next engineering gates (not claimed by this RFC)
 
 1. Replace v4-specific price/time coordinate and mouse-gesture assumptions behind a versioned adapter interface; stable native price and time scale semantics, including multi-symbol/timeframe subscriptions.
-2. Move production indicator math to v5 native panes **without duplicate render or duplicated EMA calculations**. Preserve user settings, complete pane sizing and axis labels, extend the isolated native canvas primitives beyond movable price/time lines, and implement stop/target draft overlays.
+2. Move production indicator math to v5 native panes **without duplicate render or duplicated EMA calculations**. Preserve user settings and complete pane sizing/axis labels; the isolated fixture now includes price/time lines plus bounded anchored text annotations with scoped local persistence and JSON transfer. Additional drawing types and stop/target draft overlays remain separate work.
 3. Add robust rollback and v4/v5 screenshot parity on real historical broker data (account-scoped; no foreign-account fallback), responsiveness at 320/390/768/1440 px, full-screen, touch and reduced-motion.
 4. Do not permit any new MT5 mutation from adapter or smoke tests; all real stop adjustments remain behind separate auth/CSRF/guard/revision/idempotency, and demo-user-release gates in Tasks 0.7/4.x.
 5. Only after native browser/Windows-MT5 demo testing, migration review and user acceptance may `app.py` switch to v5. Build currently has **no** production switch.
@@ -29,7 +29,7 @@ Pin must be reviewed for a security update with an explicit PR rather than `late
 ## Acceptance evidence
 
 - Task 0.8: version and API/license decision plus isolated proof source exist; CI results must be recorded before treating 0.8 as complete.
-- Task 1.8, 2.1: **not completed**. The isolated renderer now proves native price/time line primitives, hit testing, pointer capture, candle snap and Escape rollback. It does not replace the production wrapper; other drawing types, persistence, parity and target-hardware acceptance remain open.
+- Task 1.8, 2.1: **not completed**. The isolated renderer proves native price/time lines and anchored text annotations, drawing persistence/transfer, hit testing, pointer capture, candle snap and Escape rollback for supported line gestures. It does not replace the production wrapper; additional drawing types, annotation gestures, full parity and target-hardware acceptance remain open.
 
 ## Follow-up: native pane lifecycle package (PR #25)
 

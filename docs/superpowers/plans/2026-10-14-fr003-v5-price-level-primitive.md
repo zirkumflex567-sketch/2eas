@@ -1,8 +1,8 @@
-# FR-003 native v5 horizontal price-level primitive
+# FR-003 native v5 chart drawings and text annotations
 
 ## Goal
 
-Add real, isolated Lightweight Charts 5.2.1 drawing primitives to the migration fixture: a horizontal price level and a vertical line anchored to an exact loaded UTC candle. Both have validated identity and can be added, updated and removed without broker access or writes.
+Add real, isolated Lightweight Charts 5.2.1 drawing primitives to the migration fixture: a horizontal price level, a vertical line anchored to an exact loaded UTC candle, and a short text annotation anchored to a loaded candle and price. They have validated identity and can be added, updated and removed without broker access or writes.
 
 ## Boundaries
 
@@ -24,8 +24,9 @@ Add real, isolated Lightweight Charts 5.2.1 drawing primitives to the migration 
 - [x] Run `npm --prefix chart_studio_v5 run check`, `npm --prefix chart_studio_v5 run build`, `node scripts/smoke_chart_studio_v5.cjs`, and `git diff --check`.
 - [x] Add portable schema-v1 JSON export/import for price/time lines. Imports require matching symbol/timeframe scope, ready account-scoped storage, an empty drawing canvas, exact fields, loaded candle anchors, bounded size/count, and all-or-nothing validation. Rejected data leaves existing drawings and storage untouched; exports omit account identity.
 - [x] Chromium smoke covers transfer across accounts within a matching market scope, malformed-data atomicity, existing-canvas conflict, storage conflict, mismatched symbol scope, and no broker writes.
+- [x] Add a bounded native canvas text annotation with validated ASCII text, price/time anchoring, visibility/lock, account cleanup, reload persistence and scoped JSON transfer; Chromium verifies restoration and transfer alongside price/time drawings.
 - [x] Update FR-001/003/005/009/011, AT-006/007, and AT-033 as partial; schema-version migration/merge, full layout transfer, persistent undo history, full gesture catalog and hardware acceptance remain open.
 
 ## Acceptance still required
 
-Multi-select, keyboard movement, schema migration/merge, full layout transfer, persistent undo history, other drawing types and annotations, touch/DPI acceptance, full drawing catalog and production v5 parity require separate slices and full acceptance tests.
+Multi-select, keyboard movement, schema migration/merge, full layout transfer, persistent undo history, additional drawing types, annotation editing gestures, touch/DPI acceptance, full drawing catalog and production v5 parity require separate slices and full acceptance tests.
