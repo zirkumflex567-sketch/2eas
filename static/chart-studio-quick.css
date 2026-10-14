@@ -137,4 +137,10 @@
 .cs-broker-read-panel th,.cs-broker-read-panel td{padding:5px 8px;border-bottom:1px solid rgba(130,183,197,.24);text-align:left}
 .cs-broker-read-panel th{color:#bdeaf3}
 .cs-broker-read-panel button,.cs-broker-read-panel summary{touch-action:manipulation}
+.cs-broker-symbol-controls{display:flex;align-items:end;gap:6px;flex-wrap:wrap;margin:8px 0}
+.cs-broker-symbol-controls label{flex:0 1 auto;margin:0 4px 0 0}
+#cs-broker-symbol-favorites{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-basis:100%;min-width:0}
+.cs-symbol-favorite{display:inline-flex;align-items:center;gap:3px;max-width:100%;padding:2px;border:1px solid rgba(103,194,211,.38);border-radius:6px}
+.cs-symbol-favorite button{min-height:30px;padding:4px 7px}
+.cs-symbol-favorite [data-remove-favorite]{min-width:30px;padding-inline:6px}
 @media(max-width:480px){.cs-broker-read-content label{flex:1 1 125px;min-width:0}.cs-broker-read-panel fieldset{padding:7px}}
