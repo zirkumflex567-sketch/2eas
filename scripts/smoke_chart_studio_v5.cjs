@@ -217,6 +217,17 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.notEqual(movedTime.position.x,timePoint.x);
   assert.equal(selectedPrice,"visual-level");
   assert.equal(selectedTime,"visual-time");
+  const notePoint=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-note"));
+  const originalNote=await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-note"));
+  await page.mouse.move(notePoint.x,notePoint.y);await page.waitForTimeout(80);
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.inspect().hoveredDrawingId),"visual-note");
+  await page.mouse.down();await page.mouse.move(notePoint.x+28,notePoint.y-18,{steps:3});
+  const movedNote=await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-note"));
+  await page.keyboard.press("Escape");await page.mouse.up();
+  assert.notEqual(movedNote.time,originalNote.time);
+  assert.notEqual(movedNote.price,originalNote.price);
+  const restoredNote=await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-note"));
+  assert.deepEqual(restoredNote,originalNote);
   await page.keyboard.press("Control+d");
   const duplicateId=await page.evaluate(()=>window.__v5Screenshot.inspect().selectedDrawingId);
   assert.ok(duplicateId&&duplicateId!=="visual-time");
