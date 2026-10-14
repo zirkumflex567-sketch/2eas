@@ -299,7 +299,7 @@ def journal_metadata(account_id):
 
 
 def journal_magics(account_id):
-    if account_id in ('titan', 'titan_m5'):
+    if account_id in ('titan', 'titan_m5', 'titan_500_2'):
         return {881122}  # XAU_Titan_Pro.mq5 and committed .set reference
     elif account_id == 'titan_25k':
         return {881125, 881122}
@@ -316,7 +316,7 @@ def explain_trade_entry(p_type, magic=None, comment=None, account_id='titan', ve
     side_str = "Short" if is_sell else "Long"
     comment_str = str(comment or '')
 
-    if magic in (881122, 881125) or 'Titan' in comment_str or account_id in ('titan', 'blueberry', 'titan_m5', 'xau5m_m5', 'titan_25k'):
+    if magic in (881122, 881125) or 'Titan' in comment_str or account_id in ('titan', 'blueberry', 'titan_m5', 'titan_500_2', 'xau5m_m5', 'titan_25k'):
         if is_sell:
             base = (
                 "Titan Pro M15 Trendfolge (Short): Kurs notiert unter EMA50 mit intaktem bärischem EMA9 < EMA21 Fächer "
@@ -727,7 +727,7 @@ def get_live_market_data(include_journal=True):
     contract_size = sym.trade_contract_size
     
     for p in pos_objects:
-        if acc_id == 'titan_m5' and getattr(p, 'magic', 0) != 881122:
+        if acc_id in ('titan_m5', 'titan_500_2') and getattr(p, 'magic', 0) != 881122:
             continue
         p_type = "BUY" if p.type == mt5.ORDER_TYPE_BUY else "SELL"
         vol = p.volume
@@ -773,7 +773,7 @@ def get_live_market_data(include_journal=True):
         if deals:
             for d in deals:
                 if d.type in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL):
-                    if acc_id == 'titan_m5' and getattr(d, 'magic', 0) != 881122:
+                    if acc_id in ('titan_m5', 'titan_500_2') and getattr(d, 'magic', 0) != 881122:
                         continue
                     realized_today += (d.profit + d.swap + d.commission + getattr(d, 'fee', 0.))
         day_start_bal = float(reset_bal)
@@ -783,7 +783,7 @@ def get_live_market_data(include_journal=True):
         if deals:
             for d in deals:
                 if d.type in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL):
-                    if acc_id == 'titan_m5' and getattr(d, 'magic', 0) != 881122:
+                    if acc_id in ('titan_m5', 'titan_500_2') and getattr(d, 'magic', 0) != 881122:
                         continue
                     realized_today += (d.profit + d.swap + d.commission + getattr(d, 'fee', 0.))
         day_start_bal = acc.balance - realized_today
@@ -823,13 +823,21 @@ def get_live_market_data(include_journal=True):
     }
 
     exit_goals = []
-    if acc_id in ('blueberry', 'xau5m_m5', 'xau5m_m15'):
+    if acc_id == 'blueberry':
         exit_goals = [
             {'title': 'Prop-Firm Status', 'target': 'Blueberry Funded Prime Phase 1', 'note': 'LIVE PROPFIRMA KONTO (#5120620) · Kein Demo-Konto!', 'status': 'PROPFIRMA'},
             {'title': 'Tages-Verlustgrenze (Daily DD)', 'target': 'Max 4.0% ($400) / EA-Notbremse $350 (3.5%)', 'note': 'Hard stop bei $400 Tages-DD relativ zur Mitternachts-Balance', 'status': 'Aktiv'},
             {'title': 'Maximaler Gesamt-DD', 'target': 'Max 10.0% ($1,000) / Notbremse $9,100', 'note': 'Konto darf niemals unter $9,000.00 Equity fallen (Hebel 1:30)', 'status': 'Aktiv'},
             {'title': 'Struktureller Swing-SL', 'target': '48 M15 Kerzen Lookback', 'note': 'SL-Buffer: 250 pt | Min SL $15.00 | Max SL $150.00', 'status': 'Aktiv'},
             {'title': 'Weekend Protection', 'target': 'Freitag 21:00 UTC Schließung', 'note': 'Automatischer EA-Positionsschluss vor Wochenende (Blueberry Regel)', 'status': 'Aktiv'}
+        ]
+    elif acc_id in ('xau5m_m5', 'xau5m_m15'):
+        exit_goals = [
+            {'title': 'Demokonto Status', 'target': 'PU Prime Demo M5 ($250)', 'note': 'M5 Scalping Konto (#700194619) · Hebel 1:500', 'status': 'DEMO'},
+            {'title': 'M5 Scalping Runner', 'target': 'Dynamisches Scalping-Ziel', 'note': 'Schnelle Gewinnmitnahme auf 5-Minuten-Basis', 'status': 'Aktiv'},
+            {'title': 'Struktureller Swing-SL', 'target': '48 M5 Kerzen Lookback', 'note': 'SL-Buffer: 250 pt | Min SL $10.00 | Max SL $75.00', 'status': 'Aktiv'},
+            {'title': 'Handelsfenster (Server)', 'target': '01:00 - 23:45', 'note': 'PU Prime Demo Handelszeiten', 'status': 'Aktiv'},
+            {'title': 'Challenge-Schutz', 'target': 'Deaktiviert (Demokonto)', 'note': 'Kein Prop-Firm Limit aktiv', 'status': 'Frei'}
         ]
     elif acc_id == 'titan_25k':
         exit_goals = [
@@ -839,7 +847,7 @@ def get_live_market_data(include_journal=True):
             {'title': 'Tages-DD Überwachung', 'target': 'Max 4.0% ($1,000.00)', 'note': 'ICMarketsEU Demo 25k (Hebel 1:10)', 'status': 'Aktiv'},
             {'title': 'Handelsfenster (DE)', 'target': '05:00-12:00 & 15:00-18:00', 'note': 'Golden Hours aktiv', 'status': 'Aktiv'}
         ]
-    elif acc_id == 'titan_m5':
+    elif acc_id in ('titan_m5', 'titan_500_2'):
         exit_goals = [
             {'title': 'Dynamic Runner Target', 'target': 'Min $28.00 Profit', 'note': 'Dynamic Runner Ausstieg ab $28.00 (5.6% auf 500$ Konto)', 'status': 'Aktiv'},
             {'title': 'Struktureller Swing-SL', 'target': '48 M5 Kerzen Lookback', 'note': 'SL-Buffer: 250 pt | Min SL $15.00 | Max SL $150.00', 'status': 'Aktiv'},
@@ -1036,7 +1044,7 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
                         markers.append({'time': t, 'position': 'belowBar' if buys else 'aboveBar', 'color': '#10b981' if buys else '#f43f5e', 'shape': 'arrowUp' if buys else 'arrowDown', 'text': 'S'+'/'.join(systems)+(' L' if buys else ' S')})
                 continue
             
-            if account in ('blueberry', 'titan', 'titan_25k', 'titan_m5', 'xau5m_m5', 'xau5m_m15'):
+            if account in ('blueberry', 'titan', 'titan_25k', 'titan_m5', 'titan_500_2', 'xau5m_m5', 'xau5m_m15'):
                 buy = (c1 > e20_1) and (e20_1 > e50_1) and (c1 > e200_1) and (rsi1 >= 50.0) and (c1 > o1)
                 sell = (c1 < e20_1) and (e20_1 < e50_1) and (c1 < e200_1) and (rsi1 <= 50.0) and (c1 < o1)
                 if buy:
@@ -1547,6 +1555,13 @@ HTML_CONTENT = """<!DOCTYPE html>
           </div>
           <small>700184986 · PUPrime-Demo · $500</small>
         </button>
+        <button class="account-tab" data-account="titan_500_2" aria-pressed="false" onclick="switchAccount('titan_500_2')">
+          <div class="flex items-center justify-between gap-1.5">
+            <strong>XAU Titan Pro (M5 #2)</strong>
+            <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 font-bold border border-slate-600">DEMO</span>
+          </div>
+          <small>700194822 · PUPrime-Demo · $500</small>
+        </button>
         <button class="account-tab" data-account="goldm15" aria-pressed="false" onclick="switchAccount('goldm15')">
           <div class="flex items-center justify-between gap-1.5">
             <strong>GoldM15 Reconstruction</strong>
@@ -1854,6 +1869,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           <option value="blueberry">Blueberry Funded (Prop-Firma)</option>
           <option value="titan">XAU Titan Pro (10k Demo)</option>
           <option value="titan_m5">XAU Titan Pro (M5 $500 Demo)</option>
+          <option value="titan_500_2">XAU Titan Pro (M5 $500 #2 Demo)</option>
           <option value="xau5m_m5">XAUUSD 5 Minute (M5 $250 Demo)</option>
           <option value="goldm15">GoldM15 Reconstruction</option>
         </select>
@@ -1957,8 +1973,8 @@ HTML_CONTENT = """<!DOCTYPE html>
     let accountGeneration = 0;
     let accounts = {};
     const savedJournalFilter = localStorage.getItem('two_eas_journal_filter');
-    let journalFilter = ['all','blueberry','titan','titan_25k','goldm15','titan_m5','xau5m_m5','xau5m_m15'].includes(savedJournalFilter) ? savedJournalFilter : 'all';
-    let journalEntriesByAccount = { blueberry: [], titan: [], titan_25k: [], goldm15: [], titan_m5: [] };
+    let journalFilter = ['all','blueberry','titan','titan_25k','goldm15','titan_m5','titan_500_2','xau5m_m5','xau5m_m15'].includes(savedJournalFilter) ? savedJournalFilter : 'all';
+    let journalEntriesByAccount = { blueberry: [], titan: [], titan_25k: [], goldm15: [], titan_m5: [], titan_500_2: [], xau5m_m5: [] };
     let journalErrors = [];
     let journalLoadedMode = null;
     let journalBusyMode = null;
@@ -2178,12 +2194,24 @@ HTML_CONTENT = """<!DOCTYPE html>
         document.getElementById(side+'-readiness-label').textContent = (side==='sell'?'SHORT':'LONG')+(isRsiSub?' · ERFÜLLTE ZIELE':'-BEREITSCHAFT');
       }
 
-      if (account === 'blueberry' || account === 'xau5m_m5' || account === 'xau5m_m15') {
+      if (account === 'blueberry') {
         document.getElementById('session-label').textContent = 'Prop-Firm Handelsfenster:';
         document.getElementById('session-description').textContent = 'Weekend Close Fr 21:00 UTC · Elite Hours';
         document.getElementById('dd-source-label').textContent = 'Tages-Drawdown (Blueberry Funded):';
         document.getElementById('dd-reset-button').textContent = '🔄 Reset';
         document.getElementById('dd-badge').title = 'Blueberry Funded PROPFIRMA (Phase 1): Max 4.0% Daily DD ($400) / Notbremse $350 (3.5%) · Max 10% Gesamt-DD ($1,000 / Floor $9,000)';
+      } else if (account === 'xau5m_m5' || account === 'xau5m_m15') {
+        document.getElementById('session-label').textContent = 'Handelsfenster (Server):';
+        document.getElementById('session-description').textContent = '01:00-23:45 (M5 Scalping)';
+        document.getElementById('dd-source-label').textContent = 'Tages-Drawdown (250$ Demo):';
+        document.getElementById('dd-reset-button').textContent = '🔄 Reset';
+        document.getElementById('dd-badge').title = 'PU Prime 250$ Demokonto - Scalping M5';
+      } else if (account === 'titan_500_2') {
+        document.getElementById('session-label').textContent = 'Handelsfenster (Server):';
+        document.getElementById('session-description').textContent = '01:00-23:45 (Elite Hours Active)';
+        document.getElementById('dd-source-label').textContent = 'Tages-Drawdown (500$ #2 Demo):';
+        document.getElementById('dd-reset-button').textContent = '🔄 Reset';
+        document.getElementById('dd-badge').title = 'Standard 500$ Demokonto #2 - Kein Challenge-Schutz / unbegrenzter Puffer';
       } else if (account === 'titan_25k') {
         document.getElementById('session-label').textContent = 'Handelsfenster (DE):';
         document.getElementById('session-description').textContent = '05:00-12:00 & 15:00-18:00 (Golden Hours)';
@@ -2238,7 +2266,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
       const titleSpan = container.querySelector('strong');
       if (titleSpan) {
-        titleSpan.textContent = (activeAccount === 'blueberry' || activeAccount === 'titan_25k' || activeAccount === 'titan_m5' || activeAccount === 'titan' || activeAccount === 'xau5m_m5' || activeAccount === 'xau5m_m15') 
+        titleSpan.textContent = (activeAccount === 'blueberry' || activeAccount === 'titan_25k' || activeAccount === 'titan_m5' || activeAccount === 'titan_500_2' || activeAccount === 'titan' || activeAccount === 'xau5m_m5' || activeAccount === 'xau5m_m15') 
           ? '🎯 Ausstiegsregeln & Gewinnziele (' + (accounts[activeAccount]?.name || '') + ')' 
           : '🎯 Momentum-Ausstiegsziele & Schutz';
       }
@@ -2249,11 +2277,13 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
       const noteEl = document.getElementById('goals-footer-note');
       if (noteEl) {
-        if (activeAccount === 'blueberry' || activeAccount === 'xau5m_m5' || activeAccount === 'xau5m_m15') {
+        if (activeAccount === 'blueberry') {
           noteEl.textContent = 'Blueberry Funded PROPFIRMA (Phase 1): Hebel 1:30. Strenges 4.0% Daily DD ($400) und 10.0% Max DD ($1,000 / Floor $9,000). Notbremse bei $350 (3.5%). Positionsschluss vor Wochenende (Fr 21:00 UTC).';
+        } else if (activeAccount === 'xau5m_m5' || activeAccount === 'xau5m_m15') {
+          noteEl.textContent = 'PU Prime Demo M5 ($250): Hebel 1:500. Scalping-Ziele auf M5 Basis.';
         } else if (activeAccount === 'titan_25k') {
           noteEl.textContent = 'Titan Pro 25k (ICMarketsEU Demo): M15-Chart, Hebel 1:10. Dynamischer Runner-Ausstieg ($70), struktureller Swing-SL ($35-$350) und Break-Even Trailing ($100 / $35).';
-        } else if (activeAccount === 'titan' || activeAccount === 'titan_m5') {
+        } else if (activeAccount === 'titan' || activeAccount === 'titan_m5' || activeAccount === 'titan_500_2') {
           noteEl.textContent = 'Titan-Regeln werden bei Kerzenschluss geprüft. Ausstiege erfolgen über dynamische Runner-Ziele, strukturellen Swing-SL und Break-Even Trailing.';
         } else {
           noteEl.textContent = 'RSI-Ziele zeigen das Setup; Slot-Belegung und Schutzfilter werden zusätzlich im EA geprüft. Chartpfeile markieren neue RSI-Setups. Basis: eingesetztes v1.21-Preset.';
@@ -3147,7 +3177,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     // Journal selection is independent from the account that controls orders.
     // Each source is queried under its own verified MT5 session on the server.
     function setJournalFilter(value) {
-      if (!['all', 'titan', 'goldm15', 'titan_m5', 'xau5m_m5', 'xau5m_m15'].includes(value)) return;
+      if (!['all', 'blueberry', 'titan', 'goldm15', 'titan_m5', 'titan_500_2', 'xau5m_m5', 'xau5m_m15', 'titan_25k'].includes(value)) return;
       journalFilter = value;
       localStorage.setItem('two_eas_journal_filter', value);
       const selector = document.getElementById('journal-strategy-filter');
@@ -3210,16 +3240,20 @@ HTML_CONTENT = """<!DOCTYPE html>
       const itemsToRender = wanted.flatMap(id => journalEntriesByAccount[id] || [])
         .sort((a,b) => (Number(b.time_ts) || 0) - (Number(a.time_ts) || 0));
       const stratName = journalFilter === 'all' ? 'ALLE STRATEGIEN'
-        : (journalFilter === 'blueberry' || journalFilter === 'xau5m_m5' || journalFilter === 'xau5m_m15') ? 'BLUEBERRY FUNDED (PROP-FIRMA)'
+        : journalFilter === 'blueberry' ? 'BLUEBERRY FUNDED (PROP-FIRMA)'
+        : (journalFilter === 'xau5m_m5' || journalFilter === 'xau5m_m15') ? 'XAUUSD 5M ($250 DEMO)'
         : journalFilter === 'titan' ? 'XAU TITAN PRO (10K)'
         : journalFilter === 'titan_25k' ? 'XAU TITAN PRO (25K)'
-        : journalFilter === 'titan_m5' ? 'XAU TITAN PRO (M5)'
+        : journalFilter === 'titan_m5' ? 'XAU TITAN PRO (M5 $500 #1)'
+        : journalFilter === 'titan_500_2' ? 'XAU TITAN PRO (M5 $500 #2)'
         : 'GOLDM15 RECONSTRUCTION';
       const stratColor = journalFilter === 'all' ? 'text-sky-300'
-        : (journalFilter === 'blueberry' || journalFilter === 'xau5m_m5' || journalFilter === 'xau5m_m15') ? 'text-amber-400'
+        : journalFilter === 'blueberry' ? 'text-amber-400'
+        : (journalFilter === 'xau5m_m5' || journalFilter === 'xau5m_m15') ? 'text-emerald-400'
         : journalFilter === 'titan' ? 'text-cyan-400'
         : journalFilter === 'titan_25k' ? 'text-emerald-400'
         : journalFilter === 'titan_m5' ? 'text-blue-400'
+        : journalFilter === 'titan_500_2' ? 'text-teal-400'
         : 'text-purple-400';
 
       const stratEl = document.getElementById('journal-strat-badge');
@@ -3362,14 +3396,18 @@ HTML_CONTENT = """<!DOCTYPE html>
           : item.type === 'SELL' ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30">SELL</span>`
           : `<span class="px-2 py-0.5 rounded text-[10px] font-black ticker-bg border text-sub">UNBEKANNT</span>`;
 
-        const stratBadge = (item.account === 'blueberry' || item.account === 'xau5m_m5' || item.account === 'xau5m_m15')
+        const stratBadge = item.account === 'blueberry'
           ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/40">BLUEBERRY [PROPFIRMA]</span>`
+          : (item.account === 'xau5m_m5' || item.account === 'xau5m_m15')
+          ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">XAU 5M $250 [DEMO]</span>`
           : item.account === 'titan'
           ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">TITAN 10k [DEMO]</span>`
           : item.account === 'titan_25k'
           ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">TITAN 25k [DEMO]</span>`
           : item.account === 'titan_m5'
-          ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-blue-500/20 text-blue-300 border border-blue-500/40">TITAN M5 [DEMO]</span>`
+          ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-blue-500/20 text-blue-300 border border-blue-500/40">TITAN M5 #1 [DEMO]</span>`
+          : item.account === 'titan_500_2'
+          ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-teal-500/20 text-teal-300 border border-teal-500/40">TITAN M5 #2 [DEMO]</span>`
           : `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-purple-500/20 text-purple-300 border border-purple-500/40">GOLDM15 [DEMO]</span>`;
 
         const priceDetails = isOpen
