@@ -11,7 +11,7 @@ if(!modes.includes(settings.mode))settings.mode="mystic";
 settings.strength=Math.max(1,Math.min(5,Number(settings.strength)||3));
 const seen=new Map(), motion=window.matchMedia?.("(prefers-reduced-motion: reduce)")||{matches:false};
 const byId=id=>document.getElementById(id);
-let panel=null,toggle=null,emaStrip=null,status=null,emaState=null;
+let panel=null,toggle=null,emaStrip=null,status=null,emaState=null,renderedSig="";
 const save=()=>{try{localStorage.setItem(key,JSON.stringify(settings));}catch(_){}};
 function allowed(){return settings.mode!=="off"&&!motion.matches&&!document.hidden&&document.body.classList.contains("theme-stone");}
 function configureFX(){
@@ -19,16 +19,129 @@ function configureFX(){
   try{window.StoneChartFX?.configure({enabled:settings.mode!=="off",ambient:settings.mode!=="off"});}catch(_){}
 }
 function info(s){if(status)status.textContent=s;}
-function updateEMAs(values){
- emaState=values;
+function collectActiveMAs(values){
+ const beta=window.ChartStudioBeta?.getLiveMAs?.();
+ const avgApi=window.ChartStudioAverages;
+ const customAverages=avgApi?.getLiveAverages?avgApi.getLiveAverages():[];
+ const items=[];
+ const seen=new Set();
+
+ const baseDefs=[
+  {key:"ema20",type:"EMA",period:20,label:"EMA20",colorClass:"stone-ema-blue",color:"#50dbfd",id:"stone-ema-20"},
+  {key:"ema50",type:"EMA",period:50,label:"EMA50",colorClass:"stone-ema-amber",color:"#ffc078",id:"stone-ema-50"},
+  {key:"ema200",type:"EMA",period:200,label:"EMA200",colorClass:"stone-ema-purple",color:"#be9aff",id:"stone-ema-200"}
+ ];
+
+ for(const def of baseDefs){
+  const isVisible=beta?(beta.opts?.[def.key]!==false):true;
+  if(!isVisible)continue;
+  const val=values?.[def.key]!==undefined?values[def.key]:(emaState?.[def.key]!==undefined?emaState[def.key]:null);
+  items.push({
+   id:def.id,
+   type:def.type,
+   period:def.period,
+   label:def.label,
+   colorClass:def.colorClass,
+   color:def.color,
+   value:val
+  });
+  seen.add(def.type+":"+def.period);
+ }
+
+ if(beta&&Array.isArray(beta.extras)){
+  for(const ext of beta.extras){
+   if(!ext||ext.visible===false)continue;
+   const sig=(ext.type||"SMA")+":"+ext.period;
+   if(seen.has(sig))continue;
+   seen.add(sig);
+   items.push({
+    id:"stone-ma-"+(ext.id||sig),
+    type:ext.type||"SMA",
+    period:ext.period,
+    label:ext.label||(ext.type+ext.period),
+    color:ext.color||"#76e9a8",
+    value:ext.value
+   });
+  }
+ }
+
+ if(Array.isArray(customAverages)){
+  for(const ma of customAverages){
+   if(!ma||ma.visible===false)continue;
+   const sig=(ma.type||"EMA")+":"+ma.period;
+   const isBaseDup=(!ma.source||ma.source==="close")&&(!ma.label||ma.label.trim()===""||ma.label.trim()===(ma.type+ma.period))&&seen.has(sig);
+   if(isBaseDup)continue;
+   seen.add(sig);
+   items.push({
+    id:"stone-ma-"+(ma.id||sig),
+    type:ma.type||"EMA",
+    period:ma.period,
+    label:(ma.label&&ma.label.trim())||(ma.type+ma.period),
+    color:ma.color||"#68dfff",
+    value:ma.value
+   });
+  }
+ }
+
+ items.sort((a,b)=>{
+  const pa=Number.isFinite(a.period)?a.period:9999;
+  const pb=Number.isFinite(b.period)?b.period:9999;
+  if(pa!==pb)return pa-pb;
+  return (a.type||"").localeCompare(b.type||"");
+ });
+
+ return items;
+}
+function renderEmaStrip(items,tf){
  if(!emaStrip)return;
  const fmt=n=>n!==null&&n!==undefined&&Number.isFinite(Number(n))?Number(n).toFixed(2):"—";
- for(const [id,k] of [["stone-ema-20","ema20"],["stone-ema-50","ema50"],["stone-ema-200","ema200"]]){
-  const n=byId(id);if(n)n.textContent=fmt(values?.[k]);
+ const allEma=items.length>0&&items.every(it=>(it.type||"EMA").toUpperCase()==="EMA");
+ const badgeText=allEma?"EMAs":"MAs";
+ const currentSig=items.map(it=>it.id+":"+it.label+":"+(it.color||"")+":"+(it.colorClass||"")).join("|")+"::"+badgeText;
+
+ if(currentSig!==renderedSig){
+  renderedSig=currentSig;
+  emaStrip.replaceChildren();
+  const titleB=document.createElement("b");
+  titleB.textContent=badgeText+" ";
+  const tfSpan=document.createElement("span");
+  tfSpan.id="stone-ema-tf";
+  tfSpan.textContent=tf||"—";
+  titleB.append(tfSpan);
+  emaStrip.append(titleB);
+
+  for(const it of items){
+   const span=document.createElement("span");
+   if(it.colorClass)span.className=it.colorClass;
+   if(it.color)span.style.color=it.color;
+   span.textContent=it.label+" ";
+   const strong=document.createElement("strong");
+   strong.id=it.id;
+   strong.textContent=fmt(it.value);
+   span.append(strong);
+   emaStrip.append(span);
+  }
+ }else{
+  const tfSpan=byId("stone-ema-tf");
+  if(tfSpan&&tf!==undefined)tfSpan.textContent=tf||"—";
+  for(const it of items){
+   const strong=byId(it.id);
+   if(strong)strong.textContent=fmt(it.value);
+  }
  }
- const tf=byId("stone-ema-tf");if(tf)tf.textContent=values?.timeframe||"—";
 }
-function clearEMAs(){updateEMAs({timeframe:"—",ema20:null,ema50:null,ema200:null});}
+function updateEMAs(values){
+ if(values&&typeof values==="object")emaState={...(emaState||{}),...values};
+ if(!emaStrip)return;
+ const tf=values?.timeframe||emaState?.timeframe||"—";
+ const items=collectActiveMAs(emaState);
+ renderEmaStrip(items,tf);
+}
+function clearEMAs(){
+ emaState={timeframe:"—",ema20:null,ema50:null,ema200:null};
+ renderedSig="";
+ updateEMAs(emaState);
+}
 function sync(){
  if(!panel)return;
  panel.hidden=!settings.expanded;
@@ -144,12 +257,6 @@ function boot(){
  shell.insertAdjacentElement("beforebegin",panel);
  status=byId("stone-fx-info");
  emaStrip=document.createElement("div");emaStrip.className="stone-ema-live";emaStrip.id="stone-ema-live";
- emaStrip.innerHTML=[
- '<b>EMAs <span id="stone-ema-tf">—</span></b>',
- '<span class="stone-ema-blue">EMA20 <strong id="stone-ema-20">—</strong></span>',
- '<span class="stone-ema-amber">EMA50 <strong id="stone-ema-50">—</strong></span>',
- '<span class="stone-ema-purple">EMA200 <strong id="stone-ema-200">—</strong></span>'
- ].join("");
  shell.insertAdjacentElement("beforebegin",emaStrip);
  panel.addEventListener("click",ev=>{
   const mode=ev.target.closest("[data-fx-mode]")?.dataset.fxMode;
@@ -176,7 +283,7 @@ function boot(){
 if(document.readyState==="complete")boot();
 else window.addEventListener("load",boot,{once:true});
 window.StoneCelebration=Object.freeze({
- observeTrades,updateEMAs,clearEMAs,applyChartSettings:configureFX,test:(kind)=>flash(kind,{demo:true}),
+ observeTrades,updateEMAs,clearEMAs,refresh:()=>updateEMAs(emaState),applyChartSettings:configureFX,test:(kind)=>flash(kind,{demo:true}),
  configure:(patch)=>{settings={...settings,...patch};if(!modes.includes(settings.mode))settings.mode="off";save();sync();},
  settings:()=>({...settings})
 });

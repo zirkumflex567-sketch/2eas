@@ -521,6 +521,30 @@ def test_incomplete_or_extra_dd_schema_not_silently_defaulted(raw,isolated):
         app.load_dd_config()
 
 
+def test_explain_trade_exit_scales_with_volume_and_reports_ema9():
+    # 0.01 Lot target is $28 (280 pts)
+    text_001 = app.explain_trade_exit('OPEN', 'SELL', volume=0.01, ema9=4095.0, current_price=4100.0, profit_usd=-5.0)
+    assert 'Mindestgewinn >= $28' in text_001
+    assert 'Aktuell $4095.00 · Abstand: 5.00 Pkt unter Kurs' in text_001
+    assert 'Mindestgewinn noch offen: -$5.00 / $28, noch $33.00' in text_001
+
+    # 0.04 Lot target is $112 (280 pts * 4)
+    text_004 = app.explain_trade_exit('OPEN', 'BUY', volume=0.04, ema9=4105.0, current_price=4100.0, profit_usd=120.0)
+    assert 'Mindestgewinn >= $112' in text_004
+    assert 'Aktuell $4105.00 · Abstand: 5.00 Pkt über Kurs' in text_004
+    assert 'Mindestgewinn erreicht: +$120.00 >= $112' in text_004
+
+
+def test_live_market_data_positions_include_ema9_and_target(isolated):
+    data = app.get_live_market_data()
+    assert len(data['positions']) > 0
+    pos = data['positions'][0]
+    assert 'ema9' in pos
+    assert 'dist_to_ema9' in pos
+    assert 'target_usd' in pos
+    assert pos['target_usd'] == 28.0
+
+
 
 
 

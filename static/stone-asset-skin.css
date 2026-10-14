@@ -118,7 +118,8 @@ body.theme-stone .stone-asset-panel .font-black {
   letter-spacing: .025em;
 }
 body.theme-stone .stone-asset-panel--chart {
-  border: 22px solid #3f6878 !important;
+  border: 22px solid transparent !important;
+  border-image: url("stone-assets/ready/12_chart_frame_wide.webp") 140 170 150 170 / 25px / 0 stretch !important;
   padding: 16px 18px 20px !important;
   background:
     linear-gradient(rgba(6, 12, 18, .94), rgba(8, 20, 24, .95)),
@@ -134,7 +135,8 @@ body.theme-stone .stone-chart-stage > div:first-child {
   box-shadow: inset 0 0 25px rgba(0,0,0,.75), 0 0 10px rgba(15, 170, 207, .10);
 }
 body.theme-stone .stone-side-volume {
-  border: 17px solid #405e6a !important;
+  border: 17px solid transparent !important;
+  border-image: url("stone-assets/ready/13_volume_frame_tall.webp") 160 130 160 130 / 21px / 0 stretch !important;
   border-radius: 0 !important;
   background:
     linear-gradient(rgba(5, 12, 16, .86),rgba(6, 15, 19, .93)),
@@ -1047,12 +1049,13 @@ body.theme-stone .stone-asset-panel button.stone-chart-expand-primary:hover:not(
    overlay INSIDE the plot area; the original TradingView axis stays numeric. */
 #chart-level-legend.stone-chart-level-legend {
   position: absolute !important;
-  right: 82px !important;
-  bottom: 28px !important;
+  right: 82px;
+  bottom: 28px;
   z-index: 18 !important;
   width: min(228px, calc(100% - 95px)) !important;
-  max-height: min(240px, 52%) !important;
-  overflow: hidden !important;
+  max-height: min(260px, 60%) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
   box-sizing: border-box !important;
   padding: 7px 10px 9px !important;
   color: #ecfaff !important;
@@ -1060,11 +1063,33 @@ body.theme-stone .stone-asset-panel button.stone-chart-expand-primary:hover:not(
   border: 1px solid rgba(96,198,218,.66) !important;
   border-radius: 6px !important;
   box-shadow: 0 4px 18px rgba(0,0,0,.70), inset 0 1px rgba(188,236,251,.18) !important;
-  pointer-events: none !important;
+  pointer-events: auto !important;
   font-family: ui-monospace, Consolas, monospace !important;
+  user-select: none;
+  touch-action: none;
 }
 #chart-level-legend.stone-chart-level-legend[hidden] { display:none !important; }
+#chart-level-legend.is-collapsed {
+  max-height: 30px !important;
+  overflow: hidden !important;
+  padding-bottom: 5px !important;
+}
+#chart-level-legend.is-collapsed .stone-chart-level {
+  display: none !important;
+}
+#chart-level-legend.is-collapsed .stone-chart-level-heading {
+  border-bottom: none !important;
+  margin-bottom: 0 !important;
+  padding-bottom: 0 !important;
+}
+#chart-level-legend.is-dragging {
+  opacity: 0.90;
+  cursor: grabbing !important;
+}
 #chart-level-legend .stone-chart-level-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   font-size: 9px !important;
   font-weight: 800;
   color: #7bdbef !important;
@@ -1072,6 +1097,11 @@ body.theme-stone .stone-asset-panel button.stone-chart-expand-primary:hover:not(
   padding-bottom: 5px;
   margin-bottom: 4px;
   border-bottom: 1px solid rgba(114,197,219,.36);
+  cursor: grab;
+  user-select: none;
+}
+#chart-level-legend.is-dragging .stone-chart-level-heading {
+  cursor: grabbing !important;
 }
 #chart-level-legend .stone-chart-level {
   display: grid;
@@ -1113,9 +1143,9 @@ body.theme-stone .stone-asset-panel button.stone-chart-expand-primary:hover:not(
 #chart-ea-status-box { display:none !important; }
 @media (max-width: 900px) {
   #chart-level-legend.stone-chart-level-legend {
-    right: 66px !important;
+    right: 66px;
     width: min(188px, calc(100% - 75px)) !important;
-    bottom: 25px !important;
+    bottom: 25px;
     padding: 6px !important;
   }
   #chart-level-legend .stone-chart-level-name,
@@ -1124,8 +1154,8 @@ body.theme-stone .stone-asset-panel button.stone-chart-expand-primary:hover:not(
 @media (max-width: 520px) {
   #chart-level-legend.stone-chart-level-legend {
     width: min(158px, calc(100% - 60px)) !important;
-    right: 52px !important;
-    bottom: 23px !important;
+    right: 52px;
+    bottom: 23px;
   }
 }
 

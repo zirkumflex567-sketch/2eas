@@ -160,6 +160,44 @@ function updateSeries(){
   s.extras[key].applyOptions({visible:!!s.opts[option]});
   s.extras[key].setData(data);
  }
+ try{window.StoneCelebration?.refresh?.();}catch(_){}
+}
+function getLiveMAs(){
+ if(!s)return null;
+ const result=[];
+ const getSma=n=>{
+  if(!Array.isArray(s.candles)||s.candles.length<n)return null;
+  let sum=0;for(let i=s.candles.length-n;i<s.candles.length;i++)sum+=Number(s.candles[i].close);
+  return sum/n;
+ };
+ if(s.opts?.sma20){
+  result.push({
+   id:"sma20",
+   type:"SMA",
+   period:20,
+   source:"close",
+   label:"SMA20",
+   color:"#76e9a8",
+   value:getSma(20),
+   visible:true
+  });
+ }
+ if(s.opts?.sma50){
+  result.push({
+   id:"sma50",
+   type:"SMA",
+   period:50,
+   source:"close",
+   label:"SMA50",
+   color:"#ffb675",
+   value:getSma(50),
+   visible:true
+  });
+ }
+ return {
+  opts:s.opts?{...s.opts}:{ema20:true,ema50:true,ema200:true},
+  extras:result
+ };
 }
 function project(anchor){
  let x=null,y=null;
@@ -674,6 +712,6 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();
 }
-window.ChartStudioBeta=Object.freeze({mount,account,timeframe,updateCandles,updatePositions,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,drawings:json(s.draw),options:json(s.opts),
+window.ChartStudioBeta=Object.freeze({mount,account,timeframe,updateCandles,updatePositions,getLiveMAs,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,drawings:json(s.draw),options:json(s.opts),
  scenario:s.scenario?json(s.scenario):null,tool:s.tool,magnet:s.magnet,selected:s.selected}:null});
 })();

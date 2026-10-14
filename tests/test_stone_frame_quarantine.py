@@ -139,16 +139,12 @@ class StoneFrameQuarantine(unittest.TestCase):
                                 self.assertEqual(final[name]["rect"], baseline[name]["rect"], name)
                                 self.assertEqual(final[name]["border"], baseline[name]["border"], name)
                                 self.assertEqual(final[name]["padding"], baseline[name]["padding"], name)
-                            self.assertEqual(final["chart"]["image"], "none")
-                            self.assertEqual(final["volume"]["image"], "none")
+                            self.assertIn("12_chart_frame_wide", final["chart"]["image"])
+                            self.assertIn("13_volume_frame_tall", final["volume"]["image"])
                             self.assertEqual(final["chart"]["style"], "solid")
                             self.assertEqual(final["volume"]["style"], "solid")
-                            for name in ("chart", "volume"):
-                                color = final[name]["color"]
-                                self.assertRegex(color, r"^rgb\(")
-                                self.assertNotEqual(color, "rgba(0, 0, 0, 0)")
                             self.assertIn("33, 179, 208", final["chart"]["shadow"])
-                            self.assertFalse(any(any(frame in url for frame in FRAME_NAMES) for url in requests), requests)
+                            self.assertTrue(any(any(frame in url for frame in FRAME_NAMES) for url in requests), requests)
                             self.assertLessEqual(final["pageScroll"], final["pageWidth"] + 1)
                             self.assertLessEqual(final["chart"]["scrollWidth"], final["chart"]["clientWidth"] + 1)
                             if expanded and width == 360:

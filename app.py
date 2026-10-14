@@ -33,6 +33,7 @@ from dashboard_security import install_control_security
 from chart_studio.workspaces import WorkspaceStore, StoreError, WorkspaceMissing, RevisionConflict
 from functools import lru_cache
 from dashboard_runtime import install_runtime
+from mobile_views import MOBILE_HTML, ASCII_HTML
 
 _dashboard_env = Path.home() / '.dashboard-env.json'
 if _dashboard_env.is_file():
@@ -64,6 +65,15 @@ TIMEFRAME_MAP = {
     'H1': mt5.TIMEFRAME_H1,
     'H4': mt5.TIMEFRAME_H4,
     'D1': mt5.TIMEFRAME_D1,
+}
+TIMEFRAME_SECONDS = {
+    'M1': 60,
+    'M5': 300,
+    'M15': 900,
+    'M30': 1800,
+    'H1': 3600,
+    'H4': 14400,
+    'D1': 86400,
 }
 TERMINAL_PATH = r"C:\Program Files\PU Prime MT5 Terminal\terminal64.exe"
 
@@ -280,13 +290,13 @@ def require_mt5_data(data, source):
     return data
 
 
-def get_cached_trade_journal(account_id, server_time, local_time):
+def get_cached_trade_journal(account_id, server_time, local_time, ema9=None):
     # Called inside the account-verified MT5 lock. Never used for trade/risk writes.
     now = time.monotonic()
     if (account_id in JOURNAL_CACHE and
             now - JOURNAL_CACHE_AT.get(account_id, -1e12) < JOURNAL_CACHE_TTL_SEC):
         return JOURNAL_CACHE[account_id]
-    entries = build_trade_journal(account_id, server_time, local_time)
+    entries = build_trade_journal(account_id, server_time, local_time, ema9)
     JOURNAL_CACHE[account_id] = entries
     JOURNAL_CACHE_AT[account_id] = now
     return entries
@@ -340,17 +350,47 @@ def explain_trade_entry(p_type, magic=None, comment=None, account_id='titan', ve
 
 
 def explain_trade_exit(status, p_type, sl_price=0.0, tp_price=0.0, profit_usd=0.0,
-                       deal_reason=None, magic=None, comment=None, account_id='titan', close_price=None):
+                       deal_reason=None, magic=None, comment=None, account_id='titan', close_price=None,
+                       volume=0.01, ema9=None, current_price=None, timeframe=None):
     if status == 'OPEN':
         sl_desc = f"${sl_price:.2f}" if (sl_price and sl_price > 0) else "Kein fixer SL"
         tp_desc = f"${tp_price:.2f}" if (tp_price and tp_price > 0) else "Dynamic Runner (kein starres TP)"
         
-        target_usd = 28.0
-        if magic == 881125 or '25k' in str(comment or '') or account_id == 'titan_25k':
-            target_usd = 112.0
+        acc_meta = ACCOUNTS.get(account_id, {})
+        tf_str = timeframe or acc_meta.get('timeframe', 'M15')
+        
+        # Base Titan logic targets 280 points.
+        # On 0.01 lot -> $28.00. On 0.04 lot (e.g. 25k account) -> $112.00 ($28 * 4).
+        vol = float(volume) if volume and volume > 0 else 0.01
+        target_usd = round(28.0 * (vol / 0.01), 2)
+        if target_usd <= 0:
+            target_usd = 28.0
             
+        ema_info = ""
+        if ema9 is not None and math.isfinite(ema9) and ema9 > 0:
+            if current_price and current_price > 0:
+                dist = abs(current_price - ema9)
+                side_info = "unter Kurs" if ema9 < current_price else "über Kurs"
+                ema_info = f" (Aktuell ${ema9:.2f} · Abstand: {dist:.2f} Pkt {side_info})"
+            else:
+                ema_info = f" (Aktuell ${ema9:.2f})"
+                
+        pnl_status = ""
+        if profit_usd is not None and math.isfinite(profit_usd):
+            if profit_usd >= target_usd:
+                pnl_status = f" [✅ Mindestgewinn erreicht: +${profit_usd:.2f} >= ${target_usd:.0f} · Ausstieg scharf bei EMA9-Schnitt]"
+            else:
+                diff_to_target = target_usd - profit_usd
+                sign_str = f"+${profit_usd:.2f}" if profit_usd >= 0 else f"-${abs(profit_usd):.2f}"
+                pnl_status = f" [⏳ Mindestgewinn noch offen: {sign_str} / ${target_usd:.0f}, noch ${diff_to_target:.2f}]"
+                
+        runner_rule = (
+            f"🎯 Dynamic Runner (Hauptziel): Schließt im Gewinn an {tf_str} EMA9{ema_info}, "
+            f"sobald Mindestgewinn >= ${target_usd:.0f} (280 Pkt) erreicht ist und das Momentum abflacht{pnl_status}."
+        )
+
         rules = [
-            f"🎯 Dynamic Runner (Hauptziel): Schließt im Gewinn an M15 EMA9, sobald Mindestgewinn >= ${target_usd:.0f} erreicht ist und das Momentum abflacht.",
+            runner_rule,
             f"🛡️ Swing Stop-Loss: Gesichert bei {sl_desc} (48-Kerzen / 12h Swing-Struktur mit Sicherheitsabstand).",
             "🔒 Break-Even: Zieht ab $40.00 Buchgewinn den SL automatisch auf +$15.00 nach."
         ]
@@ -391,10 +431,20 @@ def explain_trade_exit(status, p_type, sl_price=0.0, tp_price=0.0, profit_usd=0.
             return f"Position geschlossen durch EA / Broker-Routing ({pnl_str}). (Ausstiegs-Tick im Voraus unbekannt)."
 
 
-def build_trade_journal(account_id, server_time, local_time):
+def build_trade_journal(account_id, server_time, local_time, ema9=None):
     if server_time.tzinfo is None:
         server_time = server_time.replace(tzinfo=timezone.utc)
     sym_name = ACCOUNTS.get(account_id, {}).get('symbol', 'XAUUSD')
+    acc_tf_str = ACCOUNTS.get(account_id, {}).get('timeframe', 'M15')
+    if ema9 is None:
+        try:
+            acc_tf = TIMEFRAME_MAP.get(acc_tf_str, getattr(mt5, 'TIMEFRAME_M15', 15))
+            rates = mt5.copy_rates_from_pos(sym_name, acc_tf, 0, 50)
+            if rates is not None and len(rates) >= 15:
+                closes = pd.Series([r['close'] for r in rates])
+                ema9 = float(closes.ewm(span=9, adjust=False).mean().iloc[-1])
+        except Exception:
+            ema9 = None
     deals = require_mt5_data(mt5.history_deals_get(
         journal_accounting.CUTOFF+timedelta(seconds=broker_clock.offset_seconds(selected())),
         server_time+timedelta(seconds=broker_clock.offset_seconds(selected()))), 'journal_history')
@@ -412,22 +462,31 @@ def build_trade_journal(account_id, server_time, local_time):
         p_type_str = 'BUY' if p.type == mt5.ORDER_TYPE_BUY else 'SELL'
         sl_val = round(float(p.sl), 2)
         tp_val = round(float(p.tp), 2)
+        vol = float(p.volume)
+        target_usd = round(28.0 * (vol / 0.01), 2)
+        dist_ema9 = round(abs(cur_price - ema9), 2) if (ema9 is not None and math.isfinite(ema9)) else None
         why_trig = explain_trade_entry(p_type_str, magic=p.magic, comment=getattr(p, 'comment', None), account_id=account_id)
         prof_goal = explain_trade_exit('OPEN', p_type_str, sl_price=sl_val, tp_price=tp_val,
-                                       profit_usd=net, magic=p.magic, comment=getattr(p, 'comment', None), account_id=account_id)
+                                       profit_usd=net, magic=p.magic, comment=getattr(p, 'comment', None),
+                                       account_id=account_id, volume=vol, ema9=ema9,
+                                       current_price=cur_price, timeframe=acc_tf_str)
         entries.append({
             'ticket': int(p.ticket), 'time_ts': int(p.time),
             'strategy': strategy, 'account': account_id, 'status': 'OPEN',
             'symbol': p.symbol, 'magic': p.magic,
             'slot': slot_by_magic.get(p.magic),
             'type': p_type_str,
-            'volume': float(p.volume), 'open_price': open_price, 'current_price': cur_price,
+            'volume': vol, 'open_price': open_price, 'current_price': cur_price,
             'points': round((cur_price-open_price) if p.type == mt5.ORDER_TYPE_BUY else (open_price-cur_price),2),
             'sl_price': sl_val, 'tp_price': tp_val,
             'profit_usd': net, 'net_profit_usd': net, 'gross_profit_usd': round(float(p.profit),2),
             'pnl_basis': 'unrealized_profit_plus_swap; entry costs excluded',
             'reason_verified': False, 'why_triggered': why_trig,
-            'profit_goal': prof_goal, **journal_accounting.times(p.time, broker_clock.offset_seconds(selected()))
+            'profit_goal': prof_goal,
+            'ema9': round(float(ema9), 2) if (ema9 is not None and math.isfinite(ema9)) else None,
+            'dist_to_ema9': dist_ema9,
+            'target_usd': target_usd,
+            **journal_accounting.times(p.time, broker_clock.offset_seconds(selected()))
         })
     by_position = {}
     for d in {int(d.ticket):d for d in deals}.values():
@@ -494,6 +553,25 @@ def get_live_market_data(include_journal=True):
         
     df = pd.DataFrame(rates)
     df['dt'] = pd.to_datetime(df['time'], unit='s')
+
+    bar_duration = TIMEFRAME_SECONDS.get(acc_tf_str.upper(), 900)
+    tick_epoch = int(tick.time)
+    current_bar_start = (tick_epoch // bar_duration) * bar_duration
+
+    if int(df.iloc[-1]['time']) < current_bar_start:
+        cur_price = float(tick.bid) if tick and hasattr(tick, 'bid') and tick.bid else float(df.iloc[-1]['close'])
+        forming_row = pd.DataFrame([{
+            'time': current_bar_start,
+            'open': cur_price,
+            'high': cur_price,
+            'low': cur_price,
+            'close': cur_price,
+            'tick_volume': 1,
+            'spread': getattr(sym, 'spread', 0) if sym else 0,
+            'real_volume': 0,
+            'dt': pd.to_datetime(current_bar_start, unit='s')
+        }])
+        df = pd.concat([df, forming_row], ignore_index=True)
     
     # Indicators
     df['ema9'] = df['close'].ewm(span=9, adjust=False).mean()
@@ -518,10 +596,10 @@ def get_live_market_data(include_journal=True):
     # Time/config alone cannot prove EA activity or execution permission.
     in_window = None
                  
-    bar_duration = 5 * 60 if acc_tf_str == 'M5' else 15 * 60
-    bar_start = int(open_bar['time'])
-    bar_elapsed = tick.time - bar_start
-    bar_remaining = max(0, bar_duration - bar_elapsed)
+    bar_elapsed = tick_epoch % bar_duration
+    bar_remaining = bar_duration - bar_elapsed
+    if bar_remaining <= 0:
+        bar_remaining = bar_duration
     
     # 1. Volume Profiles (Daily & Weekly)
     today_date = cur_bar['dt'].date()
@@ -744,6 +822,10 @@ def get_live_market_data(include_journal=True):
         if p.tp > 0:
             tp_usd = ((p.tp - op) if p_type == "BUY" else (op - p.tp)) * vol * contract_size
             
+        ema9_val = round(float(open_bar['ema9']), 2) if (pd.notnull(open_bar.get('ema9')) and math.isfinite(open_bar['ema9'])) else None
+        dist_ema9 = round(abs(cp - ema9_val), 2) if ema9_val is not None else None
+        target_usd = round(28.0 * (vol / 0.01), 2)
+
         positions.append({
             "ticket": p.ticket,
             "type": p_type,
@@ -757,7 +839,10 @@ def get_live_market_data(include_journal=True):
             "tp_price": p.tp,
             "tp_usd": tp_usd,
             "time": datetime.fromtimestamp(p.time, timezone.utc).strftime("%H:%M:%S"),
-            "magic": getattr(p, 'magic', 0)
+            "magic": getattr(p, 'magic', 0),
+            "ema9": ema9_val,
+            "dist_to_ema9": dist_ema9,
+            "target_usd": target_usd
         })
 
     # Daily Drawdown Calculation (Blueberry Funded Rule: Day Start Balance / High Water Mark)
@@ -889,6 +974,7 @@ def get_live_market_data(include_journal=True):
         },
         "indicators": {
             "close": cur_bar['close'],
+            "ema9": round(float(cur_bar['ema9']), 2) if (pd.notnull(cur_bar.get('ema9')) and math.isfinite(cur_bar['ema9'])) else None,
             "ema20": cur_bar['ema20'],
             "ema50": cur_bar['ema50'],
             "ema200": cur_bar['ema200'],
@@ -915,7 +1001,7 @@ def get_live_market_data(include_journal=True):
     }
     if include_journal:
         account_id = current_acc['id']
-        entries = get_cached_trade_journal(account_id, wall_time, local_time)
+        entries = get_cached_trade_journal(account_id, wall_time, local_time, ema9=float(open_bar['ema9']) if pd.notnull(open_bar.get('ema9')) else None)
         result.update(journal=entries, journal_cache={account_id: entries}, journal_meta=journal_metadata(account_id))
     result.update(account=public_account(current_acc), rule_count=len(rules_matrix), exit_goals=exit_goals, ea_guard=None)
     preview = df.iloc[-1]
@@ -995,6 +1081,34 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
         
     df = pd.DataFrame(rates)
     df['dt'] = pd.to_datetime(df['time'], unit='s')
+
+    tf_seconds = TIMEFRAME_SECONDS.get(tf_upper, 900)
+    tick = mt5.symbol_info_tick(sym_name)
+    if tick and hasattr(tick, 'time') and tick.time:
+        tick_epoch = int(tick.time)
+        current_bar_start = (tick_epoch // tf_seconds) * tf_seconds
+        if int(df.iloc[-1]['time']) < current_bar_start:
+            cur_price = round(float(tick.bid), 2) if tick.bid else round(float(df.iloc[-1]['close']), 2)
+            forming_row = pd.DataFrame([{
+                'time': current_bar_start,
+                'open': cur_price,
+                'high': cur_price,
+                'low': cur_price,
+                'close': cur_price,
+                'tick_volume': 1,
+                'real_volume': 0,
+                'spread': getattr(tick, 'spread', 0) if hasattr(tick, 'spread') else 0,
+                'dt': pd.to_datetime(current_bar_start, unit='s')
+            }])
+            df = pd.concat([df, forming_row], ignore_index=True)
+        elif tick.bid:
+            cur_price = round(float(tick.bid), 2)
+            last_idx = df.index[-1]
+            df.at[last_idx, 'close'] = cur_price
+            if cur_price > df.at[last_idx, 'high']:
+                df.at[last_idx, 'high'] = cur_price
+            if cur_price < df.at[last_idx, 'low']:
+                df.at[last_idx, 'low'] = cur_price
     df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()
     df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
     df['ema200'] = df['close'].ewm(span=200, adjust=False).mean()
@@ -1023,10 +1137,10 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
         
         candles.append({
             'time': t,
-            'open': round(row['open'], 2),
-            'high': round(row['high'], 2),
-            'low': round(row['low'], 2),
-            'close': round(row['close'], 2),
+            'open': round(float(row['open']), 2),
+            'high': round(float(row['high']), 2),
+            'low': round(float(row['low']), 2),
+            'close': round(float(row['close']), 2),
             'tick_volume': int(row['tick_volume']),
             'real_volume': int(row['real_volume']) if 'real_volume' in row.index and pd.notna(row['real_volume']) else 0
         })
@@ -1635,6 +1749,12 @@ HTML_CONTENT = """<!DOCTYPE html>
       <button onclick="toggleTheme()" class="px-3 py-1 rounded-lg ticker-bg border font-sans font-bold hover:opacity-80 flex items-center gap-1.5 text-[11px] cursor-pointer">
         <span id="theme-icon">☀️</span> <span id="theme-label">Hell</span>
       </button>
+      <a id="nav-mobile-link" href="/mobile" target="_blank" class="px-2.5 py-1 rounded-lg ticker-bg border font-sans font-bold hover:bg-emerald-500/20 text-emerald-400 flex items-center gap-1 text-[11px] cursor-pointer" title="Lightweight Mobile Version fürs Smartphone (ohne Animationen)">
+        📱 Mobile
+      </a>
+      <a id="nav-ascii-link" href="/ascii" target="_blank" class="px-2.5 py-1 rounded-lg ticker-bg border font-mono font-bold hover:bg-amber-500/20 text-amber-400 flex items-center gap-1 text-[11px] cursor-pointer" title="Retro ASCII Art Terminal Cockpit">
+        📟 ASCII
+      </a>
     </div>
   </header>
 
@@ -1687,6 +1807,9 @@ HTML_CONTENT = """<!DOCTYPE html>
             </button>
             <button id="toggle-positions-btn" onclick="toggleChartPositions()" class="px-2 py-1 rounded ticker-bg border font-bold cursor-pointer transition flex items-center gap-1 bg-emerald-600/30 text-emerald-300 border-emerald-500/50 shadow-sm" title="Offene Positionen, SL und TP im Chart ein-/ausblenden">
               <span id="toggle-positions-icon">🎯</span> <span id="toggle-positions-label">Positionen: AN</span>
+            </button>
+            <button id="toggle-levels-btn" onclick="togglePriceLevelLegend()" class="px-2 py-1 rounded ticker-bg border font-bold cursor-pointer transition flex items-center gap-1 bg-cyan-600/30 text-cyan-300 border-cyan-500/50 shadow-sm" title="Preislevel-Infobox (POC, VAH, VAL, High, Low) im Chart ein-/ausblenden">
+              <span id="toggle-levels-icon">📊</span> <span id="toggle-levels-label">Level: AN</span>
             </button>
             <button onclick="adjustChartMargin(0.08)" class="px-2 py-1 rounded ticker-bg border hover:bg-blue-600 hover:text-white font-bold cursor-pointer" title="Kurs nach oben schieben / mehr Platz unten">
               ⬇️ Platz (+)
@@ -1876,6 +1999,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           <option value="titan_m5">XAU Titan Pro (M5 $500 Demo)</option>
           <option value="xau5m_m5">XAUUSD 5 Minute (M5 $250 Demo)</option>
           <option value="xau5m_500">XAUUSD 5 Minute (M15 $500 Demo)</option>
+          <option value="goldm15">GoldM15 Reconstruction (Demo)</option>
         </select>
         <div class="text-[11px] text-sub font-mono">
           <span id="journal-recording-start">Historie ab: <strong class="text-white">08.10.2026 23:00 UTC · Offene Positionen unabhängig vom Einstiegstag</strong></span>
@@ -2066,6 +2190,39 @@ HTML_CONTENT = """<!DOCTYPE html>
       localStorage.setItem('chart_show_positions', String(showChartPositions));
       updateChartPositionsButtonUI();
       updateChartPositionLines(lastKnownPositions);
+    }
+
+    let showPriceLevelLegend = localStorage.getItem('chart_show_price_levels') !== 'false';
+
+    function updatePriceLevelLegendButtonUI() {
+      const btn = document.getElementById('toggle-levels-btn');
+      const lbl = document.getElementById('toggle-levels-label');
+      if (lbl) lbl.textContent = showPriceLevelLegend ? 'Level: AN' : 'Level: AUS';
+      if (btn) {
+        if (showPriceLevelLegend) {
+          btn.className = 'px-2 py-1 rounded ticker-bg border font-bold cursor-pointer transition flex items-center gap-1 bg-cyan-600/30 text-cyan-300 border-cyan-500/50 shadow-sm';
+        } else {
+          btn.className = 'px-2 py-1 rounded ticker-bg border font-bold cursor-pointer transition flex items-center gap-1 text-sub hover:text-white opacity-60';
+        }
+      }
+    }
+
+    function togglePriceLevelLegend(forceState) {
+      if (typeof forceState === 'boolean') {
+        showPriceLevelLegend = forceState;
+      } else {
+        showPriceLevelLegend = !showPriceLevelLegend;
+      }
+      localStorage.setItem('chart_show_price_levels', String(showPriceLevelLegend));
+      updatePriceLevelLegendButtonUI();
+      const box = document.getElementById('chart-level-legend');
+      if (box) {
+        if (!showPriceLevelLegend) {
+          box.hidden = true;
+        } else if (lastKnownVisibleLevels && lastKnownVisibleLevels.length) {
+          renderChartLevelLegend(lastKnownVisibleLevels);
+        }
+      }
     }
 
     function switchTimeframe(tf) {
@@ -2486,6 +2643,8 @@ HTML_CONTENT = """<!DOCTYPE html>
       ro.observe(container);
       updateEAStatusButtonUI();
       updateChartPositionsButtonUI();
+      updatePriceLevelLegendButtonUI();
+      initChartLevelLegendDrag();
       if (lastKnownPositions && lastKnownPositions.length > 0) {
         try { updateChartPositionLines(lastKnownPositions); } catch (_) {}
       }
@@ -2595,17 +2754,169 @@ HTML_CONTENT = """<!DOCTYPE html>
       renderChartLevelLegend(visibleLevels);
     }
 
+    let lastKnownVisibleLevels = [];
+
+    function initChartLevelLegendDrag() {
+      const box = document.getElementById('chart-level-legend');
+      if (!box || box._dragInitialized) return;
+      box._dragInitialized = true;
+
+      try {
+        const saved = localStorage.getItem('stone_price_levels_pos');
+        if (saved) {
+          const pos = JSON.parse(saved);
+          if (Number.isFinite(pos.left) && Number.isFinite(pos.top)) {
+            box.style.setProperty('left', pos.left + 'px', 'important');
+            box.style.setProperty('top', pos.top + 'px', 'important');
+            box.style.setProperty('right', 'auto', 'important');
+            box.style.setProperty('bottom', 'auto', 'important');
+          }
+        }
+      } catch (_) {}
+
+      let isDragging = false;
+      let startX = 0, startY = 0;
+      let initialLeft = 0, initialTop = 0;
+
+      const onPointerDown = (e) => {
+        if (e.button !== undefined && e.button !== 0) return;
+        if (e.target.closest('button')) return;
+
+        const parent = box.parentElement;
+        if (!parent) return;
+
+        isDragging = true;
+        box.classList.add('is-dragging');
+        startX = e.clientX;
+        startY = e.clientY;
+
+        const boxRect = box.getBoundingClientRect();
+        const parentRect = parent.getBoundingClientRect();
+
+        initialLeft = boxRect.left - parentRect.left;
+        initialTop = boxRect.top - parentRect.top;
+
+        box.style.setProperty('left', initialLeft + 'px', 'important');
+        box.style.setProperty('top', initialTop + 'px', 'important');
+        box.style.setProperty('right', 'auto', 'important');
+        box.style.setProperty('bottom', 'auto', 'important');
+
+        if (box.setPointerCapture && e.pointerId !== undefined) {
+          try { box.setPointerCapture(e.pointerId); } catch (_) {}
+        }
+        e.preventDefault();
+      };
+
+      const onPointerMove = (e) => {
+        if (!isDragging) return;
+        const parent = box.parentElement;
+        if (!parent) return;
+
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+
+        const maxLeft = Math.max(0, parent.clientWidth - box.offsetWidth);
+        const maxTop = Math.max(0, parent.clientHeight - box.offsetHeight);
+
+        const newLeft = Math.max(0, Math.min(maxLeft, initialLeft + dx));
+        const newTop = Math.max(0, Math.min(maxTop, initialTop + dy));
+
+        box.style.setProperty('left', Math.round(newLeft) + 'px', 'important');
+        box.style.setProperty('top', Math.round(newTop) + 'px', 'important');
+      };
+
+      const onPointerUp = (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        box.classList.remove('is-dragging');
+        if (box.releasePointerCapture && e.pointerId !== undefined) {
+          try { box.releasePointerCapture(e.pointerId); } catch (_) {}
+        }
+        const left = parseInt(box.style.left, 10);
+        const top = parseInt(box.style.top, 10);
+        if (Number.isFinite(left) && Number.isFinite(top)) {
+          try {
+            localStorage.setItem('stone_price_levels_pos', JSON.stringify({ left, top }));
+          } catch (_) {}
+        }
+      };
+
+      box.addEventListener('pointerdown', onPointerDown);
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerUp);
+    }
+
     function renderChartLevelLegend(levels) {
+      if (Array.isArray(levels)) lastKnownVisibleLevels = levels;
+      const currentLevels = levels || lastKnownVisibleLevels;
       const box = document.getElementById('chart-level-legend');
       if (!box) return;
       box.replaceChildren();
-      box.hidden = !levels.length;
-      if (!levels.length) return;
+      if (!showPriceLevelLegend || !currentLevels.length) {
+        box.hidden = true;
+        return;
+      }
+      box.hidden = false;
+      initChartLevelLegendDrag();
+
+      let isCollapsed = localStorage.getItem('stone_price_levels_collapsed') === 'true';
+      if (isCollapsed) box.classList.add('is-collapsed');
+      else box.classList.remove('is-collapsed');
+
       const heading = document.createElement('div');
       heading.className = 'stone-chart-level-heading';
-      heading.textContent = 'PREISLEVEL';
+      
+      const titleSpan = document.createElement('span');
+      titleSpan.style.display = 'inline-flex';
+      titleSpan.style.alignItems = 'center';
+      titleSpan.style.gap = '5px';
+      titleSpan.innerHTML = '<span style="opacity:0.6; font-size:11px; cursor:grab;" title="Verschieben">⠿</span> PREISLEVEL';
+      
+      const actionsSpan = document.createElement('div');
+      actionsSpan.style.display = 'inline-flex';
+      actionsSpan.style.alignItems = 'center';
+      actionsSpan.style.gap = '6px';
+
+      const collapseBtn = document.createElement('button');
+      collapseBtn.type = 'button';
+      collapseBtn.textContent = isCollapsed ? '▼' : '▲';
+      collapseBtn.title = isCollapsed ? 'Aufklappen' : 'Einklappen';
+      collapseBtn.style.background = 'transparent';
+      collapseBtn.style.border = 'none';
+      collapseBtn.style.color = '#7bdbef';
+      collapseBtn.style.cursor = 'pointer';
+      collapseBtn.style.fontSize = '10px';
+      collapseBtn.style.padding = '0 2px';
+      collapseBtn.onclick = (e) => {
+        e.stopPropagation();
+        isCollapsed = !isCollapsed;
+        localStorage.setItem('stone_price_levels_collapsed', String(isCollapsed));
+        collapseBtn.textContent = isCollapsed ? '▼' : '▲';
+        collapseBtn.title = isCollapsed ? 'Aufklappen' : 'Einklappen';
+        box.classList.toggle('is-collapsed', isCollapsed);
+      };
+
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.textContent = '✕';
+      closeBtn.title = 'Infobox schließen';
+      closeBtn.style.background = 'transparent';
+      closeBtn.style.border = 'none';
+      closeBtn.style.color = '#7bdbef';
+      closeBtn.style.cursor = 'pointer';
+      closeBtn.style.fontSize = '12px';
+      closeBtn.style.padding = '0 2px';
+      closeBtn.onclick = (e) => {
+        e.stopPropagation();
+        togglePriceLevelLegend(false);
+      };
+      
+      actionsSpan.append(collapseBtn, closeBtn);
+      heading.append(titleSpan, actionsSpan);
       box.append(heading);
-      for (const level of levels) {
+
+      for (const level of currentLevels) {
         const row = document.createElement('div');
         row.className = 'stone-chart-level';
         row.style.setProperty('--level-color',level.color);
@@ -2944,6 +3255,37 @@ HTML_CONTENT = """<!DOCTYPE html>
 
         // Render Positions
         renderPositions(data.positions);
+        if (Array.isArray(data.positions) && data.positions.length > 0 && journalEntriesByAccount[data.account.id]) {
+          let journalChanged = false;
+          for (const pos of data.positions) {
+            const entry = journalEntriesByAccount[data.account.id].find(e => e.ticket === pos.ticket && e.status === 'OPEN');
+            if (entry) {
+              entry.current_price = pos.current_price;
+              entry.profit_usd = pos.profit_usd;
+              entry.points = pos.type === 'BUY' ? Math.round((pos.current_price - entry.open_price) * 100) / 100 : Math.round((entry.open_price - pos.current_price) * 100) / 100;
+              if (pos.ema9 !== undefined && pos.ema9 !== null) {
+                entry.ema9 = pos.ema9;
+                entry.dist_to_ema9 = pos.dist_to_ema9;
+                entry.target_usd = pos.target_usd;
+                const tf = accounts[data.account.id]?.timeframe || 'M15';
+                const distStr = pos.dist_to_ema9 !== null && pos.dist_to_ema9 !== undefined ? ` (Aktuell $${pos.ema9.toFixed(2)} · Abstand: ${pos.dist_to_ema9.toFixed(2)} Pkt ${pos.ema9 < pos.current_price ? 'unter Kurs' : 'über Kurs'})` : ` (Aktuell $${pos.ema9.toFixed(2)})`;
+                const targetUsd = pos.target_usd || 28.0;
+                let pnlStatus = '';
+                if (pos.profit_usd >= targetUsd) {
+                  pnlStatus = ` [✅ Mindestgewinn erreicht: +$${pos.profit_usd.toFixed(2)} >= $${targetUsd.toFixed(0)} · Ausstieg scharf bei EMA9-Schnitt]`;
+                } else {
+                  pnlStatus = ` [⏳ Mindestgewinn noch offen: $${pos.profit_usd >= 0 ? '+' : ''}${pos.profit_usd.toFixed(2)} / $${targetUsd.toFixed(0)}, noch $${(targetUsd - pos.profit_usd).toFixed(2)}]`;
+                }
+                const parts = entry.profit_goal.split(' | ');
+                const newRunner = `🎯 Dynamic Runner (Hauptziel): Schließt im Gewinn an ${tf} EMA9${distStr}, sobald Mindestgewinn >= $${targetUsd.toFixed(0)} (280 Pkt) erreicht ist und das Momentum abflacht${pnlStatus}.`;
+                parts[0] = newRunner;
+                entry.profit_goal = parts.join(' | ');
+              }
+              journalChanged = true;
+            }
+          }
+          if (journalChanged) renderJournal();
+        }
         if (!quoteIsFresh()) markStatusStale(new Error('MT5-Quote veraltet oder Quellzeit unbestätigt'));
         else gateAccountActions(true);
         if (!document.getElementById('dd-reset-modal').classList.contains('hidden')) refreshResetModalValues();
@@ -3104,6 +3446,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             </span>
             <span data-position-entry class="font-mono font-bold text-xs">#${p.ticket} @ $${p.open_price.toFixed(2)}</span>
             <span data-position-current class="text-sub font-mono text-[10px]">Aktuell: &#36;${p.current_price.toFixed(2)}</span>
+            ${p.ema9 ? `<span data-position-ema9 class="px-2 py-0.5 rounded bg-cyan-950/40 border border-cyan-500/30 text-cyan-300 font-mono text-[10px] font-bold">🎯 EMA9: $${p.ema9.toFixed(2)}${p.dist_to_ema9 !== null && p.dist_to_ema9 !== undefined ? ' (' + p.dist_to_ema9.toFixed(2) + ' Pkt)' : ''}</span>` : ''}
           </div>
 
           <div class="font-mono text-right">
@@ -3156,6 +3499,10 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (entry) entry.textContent = '#'+pos.ticket+' @ $'+pos.open_price.toFixed(2);
         const price = row.querySelector('[data-position-current]');
         if (price) price.textContent = 'Aktuell: ' + String.fromCharCode(36) + pos.current_price.toFixed(2);
+        const emaBadge = row.querySelector('[data-position-ema9]');
+        if (emaBadge && pos.ema9) {
+          emaBadge.textContent = '🎯 EMA9: $' + pos.ema9.toFixed(2) + (pos.dist_to_ema9 !== null && pos.dist_to_ema9 !== undefined ? ' (' + pos.dist_to_ema9.toFixed(2) + ' Pkt)' : '');
+        }
         const pnl = row.querySelector('[data-position-pnl]');
         if (pnl) {
           pnl.textContent = (pos.profit_usd >= 0 ? '+' : '') + String.fromCharCode(36) + pos.profit_usd.toFixed(2) +
@@ -3309,17 +3656,31 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
 
       // Calculations
-      const totalUnknown = journalErrors.length > 0 || itemsToRender.some(it => !Number.isFinite(it.profit_usd) || it.net_complete === false);
+      const isAllMode = journalFilter === 'all';
+      const allFailed = wanted.length > 0 && journalErrors.length >= wanted.length;
+      const totalUnknown = isAllMode 
+        ? allFailed 
+        : (journalErrors.length > 0 || itemsToRender.some(it => !Number.isFinite(it.profit_usd) || it.net_complete === false));
       const totalPnL = itemsToRender.reduce((sum, it) => sum + (Number.isFinite(it.profit_usd) ? it.profit_usd : 0), 0);
       const liveItems = itemsToRender.filter(it => it.status === 'OPEN');
       const closedItems = itemsToRender.filter(it => it.status === 'CLOSED');
       const livePnL = liveItems.reduce((sum, it) => sum + (it.profit_usd || 0), 0);
       const closedPnL = closedItems.reduce((sum, it) => sum + (it.profit_usd || 0), 0);
-      const liveUnknown = journalErrors.length > 0 || liveItems.some(it => !Number.isFinite(it.profit_usd));
-      const closedUnknown = journalErrors.length > 0 || closedItems.some(it => !Number.isFinite(it.profit_usd) || it.net_complete === false);
+      const liveUnknown = isAllMode 
+        ? allFailed 
+        : (journalErrors.length > 0 || liveItems.some(it => !Number.isFinite(it.profit_usd)));
+      const closedUnknown = isAllMode 
+        ? allFailed 
+        : (journalErrors.length > 0 || closedItems.some(it => !Number.isFinite(it.profit_usd) || it.net_complete === false));
 
       if (countBadge) {
-        countBadge.innerText = journalErrors.length ? `${itemsToRender.length} zuletzt bekannte Trades · unvollständig` : `${itemsToRender.length} Trades (${liveItems.length} Live · ${closedItems.length} Hist)`;
+        if (isAllMode && journalErrors.length > 0) {
+          const totalAccs = Object.keys(accounts).length;
+          const activeAccs = Math.max(1, totalAccs - journalErrors.length);
+          countBadge.innerText = `${itemsToRender.length} Trades (${liveItems.length} Live · ${closedItems.length} Hist) · ${activeAccs}/${totalAccs} Konten`;
+        } else {
+          countBadge.innerText = journalErrors.length ? `${itemsToRender.length} zuletzt bekannte Trades · unvollständig` : `${itemsToRender.length} Trades (${liveItems.length} Live · ${closedItems.length} Hist)`;
+        }
         countBadge.className = 'px-2 py-0.5 rounded font-mono text-[10px] ticker-bg border font-bold text-white';
       }
 
@@ -3461,6 +3822,19 @@ HTML_CONTENT = """<!DOCTYPE html>
                     <span>Was ist das Profitziel / die Ausstiegsregel?</span>
                   </div>
                   <p class="text-[11px] leading-relaxed text-sub">${escapeHTML(item.profit_goal)}</p>
+                  ${isOpen && item.ema9 ? `
+                    <div class="mt-2.5 pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
+                      <div class="flex items-center gap-2">
+                        <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">🎯 EMA9 Live: $${item.ema9.toFixed(2)}</span>
+                        <span class="text-white font-bold">${item.dist_to_ema9 !== null && item.dist_to_ema9 !== undefined ? `Abstand: ${item.dist_to_ema9.toFixed(2)} Pkt` : ''}</span>
+                      </div>
+                      <div>
+                        <span class="${item.profit_usd >= (item.target_usd || 28) ? 'text-emerald-400 font-bold' : 'text-amber-400'}">
+                          ${item.profit_usd >= (item.target_usd || 28) ? `✅ Mindestgewinn erreicht ($${item.profit_usd.toFixed(2)} >= $${(item.target_usd || 28).toFixed(0)}) · Ausstieg scharf` : `⏳ Mindestgewinn: Noch $${((item.target_usd || 28) - item.profit_usd).toFixed(2)} bis $${(item.target_usd || 28).toFixed(0)}`}
+                        </span>
+                      </div>
+                    </div>
+                  ` : ''}
                 </div>
                 ${item.sl_price ? `<div class="mt-2 text-[10px] font-mono text-sub flex gap-3">
                   <span>SL: <strong class="text-rose-400">$${item.sl_price.toFixed(2)}</strong></span>
@@ -3711,6 +4085,20 @@ HTML_CONTENT = """<!DOCTYPE html>
         const data = await response.json();
         if (!Array.isArray(data.accounts) || !data.accounts.length || !data.accounts.some(a => a.id === data.default)) throw new Error('Kontoliste ungültig');
         accounts = Object.fromEntries(data.accounts.map(a => [a.id,a]));
+        const switcher = document.getElementById('account-switcher');
+        if (switcher) {
+          for (const acc of data.accounts) {
+            if (!switcher.querySelector(`[data-account="${acc.id}"]`)) {
+              const btn = document.createElement('button');
+              btn.className = 'account-tab';
+              btn.dataset.account = acc.id;
+              btn.setAttribute('aria-pressed', 'false');
+              btn.onclick = () => switchAccount(acc.id);
+              btn.innerHTML = `<div class="flex items-center justify-between gap-1.5"><strong>${escapeHTML(acc.name)}</strong><span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 font-bold border border-slate-600">DEMO</span></div><small>${escapeHTML(acc.login)} · ${escapeHTML(acc.server)}</small>`;
+              switcher.append(btn);
+            }
+          }
+        }
         const journalSelect = document.getElementById('journal-strategy-filter');
         if (journalSelect) journalSelect.value = journalFilter;
         void refreshJournal();
@@ -3731,7 +4119,13 @@ HTML_CONTENT = """<!DOCTYPE html>
     window.onload = async () => {
       clearAccountView(); // Unknown state also when the first accounts request fails.
       initTheme();
+      const navMobile = document.getElementById('nav-mobile-link');
+      if (navMobile) navMobile.href = BASE_PATH + '/mobile';
+      const navAscii = document.getElementById('nav-ascii-link');
+      if (navAscii) navAscii.href = BASE_PATH + '/ascii';
       updateChartPositionsButtonUI();
+      updatePriceLevelLegendButtonUI();
+      initChartLevelLegendDrag();
       try { initChart(); }
       catch (error) { console.warn('Optionale Chartinitialisierung fehlgeschlagen:', error); }
       // Apply theme to freshly created chart instance
@@ -3754,6 +4148,16 @@ HTML_CONTENT = """<!DOCTYPE html>
 @app.get("/", response_class=HTMLResponse)
 def index():
     return HTMLResponse(content=HTML_CONTENT)
+
+@app.get("/mobile", response_class=HTMLResponse)
+@app.get("/light", response_class=HTMLResponse)
+def mobile_view():
+    return HTMLResponse(content=MOBILE_HTML)
+
+@app.get("/ascii", response_class=HTMLResponse)
+@app.get("/terminal", response_class=HTMLResponse)
+def ascii_view():
+    return HTMLResponse(content=ASCII_HTML)
 
 if __name__ == "__main__":
     print("Starte XAU Titan Pro Institutional Cockpit auf http://127.0.0.1:8050 ...")
