@@ -22,8 +22,10 @@ Add real, isolated Lightweight Charts 5.2.1 drawing primitives to the migration 
 - [x] Add bounded version-1 local snapshot persistence with account/symbol/timeframe namespace, reload restoration, conflict detection, fail-closed corrupt/mismatched data handling, and disabled-by-default behavior when scope is omitted.
 - [x] Extend the isolated Chromium fixture with primitive lifecycle, visible rendering, both drag paths, snap, Escape rollback, lock enforcement, visibility, undo/redo, duplicate/delete shortcuts, actual page reload restoration, account/timeframe isolation, storage conflict/corruption handling, and zero non-GET requests.
 - [x] Run `npm --prefix chart_studio_v5 run check`, `npm --prefix chart_studio_v5 run build`, `node scripts/smoke_chart_studio_v5.cjs`, and `git diff --check`.
-- [x] Update FR-001/003/005/009/011 and AT-006/007 as partial; import/export, schema migration/merge, persistent undo history, full gesture catalog and hardware acceptance remain open.
+- [x] Add portable schema-v1 JSON export/import for price/time lines. Imports require matching symbol/timeframe scope, ready account-scoped storage, an empty drawing canvas, exact fields, loaded candle anchors, bounded size/count, and all-or-nothing validation. Rejected data leaves existing drawings and storage untouched; exports omit account identity.
+- [x] Chromium smoke covers transfer across accounts within a matching market scope, malformed-data atomicity, existing-canvas conflict, storage conflict, mismatched symbol scope, and no broker writes.
+- [x] Update FR-001/003/005/009/011, AT-006/007, and AT-033 as partial; schema-version migration/merge, full layout transfer, persistent undo history, full gesture catalog and hardware acceptance remain open.
 
 ## Acceptance still required
 
-Multi-select, keyboard movement, JSON import/export, schema migration/merge, persistent undo history, other drawing types and annotations, touch/DPI acceptance, full drawing catalog and production v5 parity require separate slices and full acceptance tests.
+Multi-select, keyboard movement, schema migration/merge, full layout transfer, persistent undo history, other drawing types and annotations, touch/DPI acceptance, full drawing catalog and production v5 parity require separate slices and full acceptance tests.

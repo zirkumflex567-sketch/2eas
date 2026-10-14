@@ -268,6 +268,43 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(persistenceProbe.corrupt.status,"UNAVAILABLE");
   assert.equal(persistenceProbe.corrupt.error,"INVALID_SNAPSHOT");
   assert.equal(persistenceProbe.corrupt.stored,"not-json");
+  const drawingTransfer=await page.evaluate(()=>{
+   const rows=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2,tick_volume:100+i*3}});
+   const scope={symbol:"XAUUSD",timeframe:"M15"};
+   const source=window.__v5Screenshot.exportDrawings();
+   const target=ChartStudioV5.createStudioV5(document.getElementById("chart"),"importtest",scope);target.setCandles(rows);
+   const imported=target.importDrawings(source),restored={count:target.inspect().nativePrimitives,price:target.readDrawing("visual-level"),time:target.readDrawing("visual-time")};
+   target.destroy();
+   const malformedTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"malformedtest",scope);malformedTarget.setCandles(rows);
+   let malformed="";try{malformedTarget.importDrawings('{"schemaVersion":1,"symbol":"XAUUSD","timeframe":"M15","drawings":[{"kind":"PRICE","options":{"id":"ok","price":4001,"color":"#ffffff","visible":true,"locked":false}},{"kind":"PRICE","options":{"id":"bad","price":null,"color":"#ffffff","visible":true,"locked":false}}]}')}catch(error){malformed=error.message}
+   const afterMalformed=malformedTarget.inspect().nativePrimitives;malformedTarget.destroy();
+   const conflictTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"conflicttest",scope);conflictTarget.setCandles(rows);conflictTarget.addPriceLevel({id:"existing",price:4000,color:"#ffffff"});
+   let conflictError="";try{conflictTarget.importDrawings(source)}catch(error){conflictError=error.message}const conflictCount=conflictTarget.inspect().nativePrimitives;conflictTarget.destroy();
+   const storageConflictTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"storageconflict",scope);storageConflictTarget.setCandles(rows);
+   const conflictKey="2eas.chartstudio.v5.drawings:storageconflict:XAUUSD:M15",external=JSON.stringify({external:true});localStorage.setItem(conflictKey,external);
+   let storageConflictError="";try{storageConflictTarget.importDrawings(source)}catch(error){storageConflictError=error.message}
+   const storageConflict={error:storageConflictError,status:storageConflictTarget.inspect().persistenceStatus,count:storageConflictTarget.inspect().nativePrimitives,stored:localStorage.getItem(conflictKey)};storageConflictTarget.destroy();
+   const wrongScope=ChartStudioV5.createStudioV5(document.getElementById("chart"),"goldm15",{symbol:"EURUSD",timeframe:"M15"});wrongScope.setCandles(rows);
+   let scopeError="";try{wrongScope.importDrawings(source)}catch(error){scopeError=error.message}const wrongScopeCount=wrongScope.inspect().nativePrimitives;wrongScope.destroy();
+   return {source,imported,restored,malformed,afterMalformed,conflictError,conflictCount,storageConflict,scopeError,wrongScopeCount};
+  });
+  const transferEnvelope=JSON.parse(drawingTransfer.source);
+  assert.equal(transferEnvelope.schemaVersion,1);
+  assert.equal(transferEnvelope.account,undefined);
+  assert.deepEqual(drawingTransfer.imported,{imported:2});
+  assert.equal(drawingTransfer.restored.count,2);
+  assert.deepEqual(drawingTransfer.restored.price,persistedBeforeReload.price);
+  assert.deepEqual(drawingTransfer.restored.time,persistedBeforeReload.time);
+  assert.ok(drawingTransfer.malformed);
+  assert.equal(drawingTransfer.afterMalformed,0);
+  assert.ok(drawingTransfer.conflictError);
+  assert.equal(drawingTransfer.conflictCount,1);
+  assert.ok(drawingTransfer.storageConflict.error);
+  assert.equal(drawingTransfer.storageConflict.status,"CONFLICT");
+  assert.equal(drawingTransfer.storageConflict.count,0);
+  assert.equal(drawingTransfer.storageConflict.stored,JSON.stringify({external:true}));
+  assert.ok(drawingTransfer.scopeError);
+  assert.equal(drawingTransfer.wrongScopeCount,0);
   await page.waitForTimeout(150);
   assert.ok((await page.locator("#chart canvas").count())>=1);
   const folder=path.join("output","visual-smoke");

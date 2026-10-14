@@ -447,6 +447,60 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const marker=timeMarkers.get(id);if(marker)return {...marker.options};
   return null;
  }
+ function exportDrawings():string{
+  guard();if(!drawingScope)throw Error("Drawing export requires symbol/timeframe scope");
+  const drawings:DrawingSnapshot[]=[
+   ...[...priceLevels.values()].map(({options})=>({kind:"PRICE" as const,options:{...options}})),
+   ...[...timeMarkers.values()].map(({options})=>({kind:"TIME" as const,options:{...options}}))];
+  const serialized=JSON.stringify({schemaVersion:1,symbol:drawingScope.symbol,timeframe:drawingScope.timeframe,drawings});
+  if(serialized.length>persistenceLimit)throw Error("Drawing export exceeds size limit");
+  return serialized;
+ }
+ function importDrawings(serialized:string):{imported:number}{
+  guard();if(!drawingScope)throw Error("Drawing import requires symbol/timeframe scope");
+  if(typeof serialized!=="string"||serialized.length>persistenceLimit)throw Error("Invalid drawing import size");
+  let parsed:unknown;try{parsed=JSON.parse(serialized)}catch(_){throw Error("Invalid drawing import JSON")}
+  if(!parsed||typeof parsed!=="object"||Array.isArray(parsed))throw Error("Invalid drawing import envelope");
+  const root=parsed as Record<string,unknown>;
+  if(Object.keys(root).sort().join(",")!=="drawings,schemaVersion,symbol,timeframe"||root.schemaVersion!==1||
+   root.symbol!==drawingScope.symbol||root.timeframe!==drawingScope.timeframe||!Array.isArray(root.drawings)||root.drawings.length>100)
+   throw Error("Unsupported or mismatched drawing import");
+  if(!drawingsHydrated||persistenceStatus!=="READY")throw Error("Drawing import requires ready storage");
+  const storage=localStorageApi(),key=persistenceKey();
+  if(!storage||!key){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_UNAVAILABLE";throw Error("Drawing storage unavailable")}
+  try{if(storage.getItem(key)!==lastPersistedSnapshot){persistenceStatus="CONFLICT";persistenceError="EXTERNAL_CHANGE";throw Error("Drawing storage conflict")}}
+  catch(error){if(persistenceStatus!=="CONFLICT"){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_READ_FAILED"}throw error}
+  if(priceLevels.size||timeMarkers.size)throw Error("Drawing import conflicts with existing drawings");
+  const snapshots:DrawingSnapshot[]=[],seen=new Set<string>();
+  for(const entry of root.drawings){
+   if(!entry||typeof entry!=="object"||Array.isArray(entry))throw Error("Invalid drawing import entry");
+   const row=entry as Record<string,unknown>;
+   if(Object.keys(row).sort().join(",")!=="kind,options"||!row.options||typeof row.options!=="object"||Array.isArray(row.options))
+    throw Error("Invalid drawing import entry");
+   const options=row.options as Record<string,unknown>,kind=row.kind;
+   const expected=kind==="PRICE"?"color,id,locked,price,visible":kind==="TIME"?"color,id,locked,time,visible":"";
+   if(!expected||Object.keys(options).sort().join(",")!==expected||typeof options.id!=="string"||seen.has(options.id)||
+    averages.has(options.id)||paneLines.has(options.id))throw Error("Invalid or conflicting drawing identity/options");
+   seen.add(options.id);
+   if(kind==="PRICE"){
+    const normalized=options as unknown as PriceLevelOptions;validatePriceLevel(normalized);
+    snapshots.push({kind:"PRICE",options:{...normalized,visible:normalized.visible??true,locked:normalized.locked??false}});
+   }else{
+    const normalized=options as unknown as TimeMarkerOptions;validateTimeMarker(normalized);
+    snapshots.push({kind:"TIME",options:{...normalized,visible:normalized.visible??true,locked:normalized.locked??false}});
+   }
+  }
+  if(snapshots.length>100)throw Error("Native drawing limit");
+  hydratingDrawings=true;
+  try{for(const snapshot of snapshots){if(snapshot.kind==="PRICE")addPriceLevel(snapshot.options);else addTimeMarker(snapshot.options)}}
+  catch(error){
+   for(const item of priceLevels.values())price.detachPrimitive(item.primitive);priceLevels.clear();
+   for(const item of timeMarkers.values())price.detachPrimitive(item.primitive);timeMarkers.clear();
+   undoStack.length=0;redoStack.length=0;throw error;
+  }finally{hydratingDrawings=false}
+  undoStack.length=0;redoStack.length=0;persistDrawings();
+  return {imported:snapshots.length};
+ }
  function setDrawingVisible(id:string,visible:boolean){
   guard();if(typeof visible!=="boolean")throw Error("Invalid drawing visibility");
   const priceLevel=priceLevels.get(id);if(priceLevel){updatePriceLevel(id,{visible});return true}
@@ -553,7 +607,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   paneCount:chart.panes().length,volumeVisible:!!volume,persistenceStatus,persistenceError}}
  function destroy(){if(destroyed)return;finishDrag(true);destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();paneLines.clear();priceLevels.clear();timeMarkers.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
  return Object.freeze({setCandles,addAverage,moveAverage,removeAverage,addPriceLevel,updatePriceLevel,removePriceLevel,
-  addTimeMarker,updateTimeMarker,removeTimeMarker,drawingPosition,readDrawing,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,
+  addTimeMarker,updateTimeMarker,removeTimeMarker,drawingPosition,readDrawing,exportDrawings,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,
   addPaneLine,movePaneLine,removePaneLine,resizePane,showVolume,readDataWindow,
   updateLast,changeAccount,inspect,destroy});
 }
