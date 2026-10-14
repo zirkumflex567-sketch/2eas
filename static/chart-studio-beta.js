@@ -16,9 +16,22 @@ function cleanOptions(raw){const out=optsDefault();if(!raw||typeof raw!=="object
  if(Number.isInteger(raw.bbPeriod)&&raw.bbPeriod>=2&&raw.bbPeriod<=300)out.bbPeriod=raw.bbPeriod;
  if(typeof raw.bbStdDev==="number"&&Number.isFinite(raw.bbStdDev)&&raw.bbStdDev>=.1&&raw.bbStdDev<=10)out.bbStdDev=raw.bbStdDev;return out}
 const drawKey=()=>s.account+":draw:XAUUSD",optKey=()=>s.account+":opts:XAUUSD";
-const profileKey=()=>s.account+":profiles:XAUUSD",magnetKey=()=>s.account+":magnet:XAUUSD",fibKey=()=>s.account+":fibLevels:XAUUSD";
+const profileKey=()=>s.account+":profiles:XAUUSD:"+(s.tf||"M15"),legacyProfileKey=()=>s.account+":profiles:XAUUSD",magnetKey=()=>s.account+":magnet:XAUUSD",fibKey=()=>s.account+":fibLevels:XAUUSD";
 const scenarioSnapshotsKey=account=>account+":whatif-snapshots:XAUUSD";
-function profiles(){const p=get(profileKey(),{});return p&&typeof p==="object"&&!Array.isArray(p)?p:{}}
+const validProfileScope=item=>item&&typeof item==="object"&&!Array.isArray(item)&&item.schemaVersion===1&&item.symbol==="XAUUSD"&&item.timeframe===(s.tf||"M15");
+function profiles(){
+ const key=profileKey();let p=get(key,null);
+ if(p===null&&s.tf==="M15"){
+  const legacy=get(legacyProfileKey(),null);
+  if(legacy&&typeof legacy==="object"&&!Array.isArray(legacy)){
+   p={};for(const [name,item] of Object.entries(legacy))if(item&&typeof item==="object"&&!Array.isArray(item))p[name]={...item,schemaVersion:1,symbol:"XAUUSD",timeframe:"M15"};
+   save(key,p);
+  }
+ }
+ if(!p||typeof p!=="object"||Array.isArray(p))return{};
+ return Object.fromEntries(Object.entries(p).filter(([,item])=>validProfileScope(item)))
+}
+function saveProfiles(value){const current=get(profileKey(),{}),preserved=current&&typeof current==="object"&&!Array.isArray(current)?Object.fromEntries(Object.entries(current).filter(([,item])=>!validProfileScope(item))):{};save(profileKey(),{...preserved,...value})}
 function refreshProfiles(){
  if(!s)return;const sel=s.panel.querySelector("#cs-beta-profile");
  if(!sel)return;sel.replaceChildren();
@@ -30,13 +43,13 @@ function saveProfile(){
  if(!name)return;const trimmed=name.trim().slice(0,40);if(!trimmed)return;
  const all=profiles();if(Object.keys(all).length>=15&&!all[trimmed]){updateMessage("Maximal 15 lokale Layouts.");return}
  if(all[trimmed]&&!window.confirm("Gespeichertes Layout überschreiben?"))return;
- all[trimmed]={draw:json(s.draw),opts:json(s.opts),
+ all[trimmed]={schemaVersion:1,symbol:"XAUUSD",timeframe:s.tf||"M15",draw:json(s.draw),opts:json(s.opts),
   indicators:window.ChartStudioIndicators?.settings()||null,
    movingAverages:window.ChartStudioAverages?.getConfigs()||[],
    chartAppearance:window.ChartStudioAppearance?.settings()||{},
    oscillatorInstances:window.ChartStudioOscillators?.settings()||[],
    chartType:window.ChartStudioChartTypes?.current()||"candles"};
- save(profileKey(),all);refreshProfiles();s.panel.querySelector("#cs-beta-profile").value=trimmed;updateMessage("Layout '"+trimmed+"' lokal gesichert.");
+ saveProfiles(all);refreshProfiles();s.panel.querySelector("#cs-beta-profile").value=trimmed;updateMessage("Layout '"+trimmed+"' lokal gesichert.");
 }
 function checkedProfileName(raw){
  if(typeof raw!=="string")return null;
@@ -49,7 +62,7 @@ function copyProfile(){
  if(!name)return;
  if(all[name]){updateMessage("Ein Layout mit diesem Namen existiert bereits.");return}
  if(Object.keys(all).length>=15){updateMessage("Maximal 15 lokale Layouts.");return}
- all[name]=json(source);save(profileKey(),all);refreshProfiles();s.panel.querySelector("#cs-beta-profile").value=name;
+ all[name]=json(source);saveProfiles(all);refreshProfiles();s.panel.querySelector("#cs-beta-profile").value=name;
  updateMessage("Layout '"+sourceName+"' als '"+name+"' kopiert.");
 }
 function renameProfile(){
@@ -58,7 +71,7 @@ function renameProfile(){
  const name=checkedProfileName(window.prompt("Neuer Layoutname (max. 40 Zeichen):",oldName));
  if(!name||name===oldName)return;
  if(all[name]){updateMessage("Ein Layout mit diesem Namen existiert bereits.");return}
- all[name]=all[oldName];delete all[oldName];save(profileKey(),all);refreshProfiles();select.value=name;
+ all[name]=all[oldName];delete all[oldName];saveProfiles(all);refreshProfiles();select.value=name;
  updateMessage("Layout in '"+name+"' umbenannt.");
 }
 function resetChart(){
@@ -74,7 +87,7 @@ function resetChart(){
 }
 function loadProfile(){
  const name=s.panel.querySelector("#cs-beta-profile")?.value;const item=profiles()[name];
- if(!item)return;snapshot();s.draw=safeDraw(item.draw);s.selected=null;
+ if(!item)return;if(item.schemaVersion!==1||item.symbol!=="XAUUSD"||item.timeframe!==(s.tf||"M15")){updateMessage("Layout gehört zu einem anderen Symbol oder Timeframe.");return}snapshot();s.draw=safeDraw(item.draw);s.selected=null;
  s.opts=cleanOptions(item.opts);persist();save(optKey(),s.opts);showOpts();updateSeries();
  if(item.indicators)window.ChartStudioIndicators?.applySettings(item.indicators);
  window.ChartStudioAverages?.applySettings(item.movingAverages||[]);
@@ -112,7 +125,7 @@ function importWorkspaceDocument(document){
 function deleteProfile(){
  const name=s.panel.querySelector("#cs-beta-profile")?.value;
  if(!name||!window.confirm("Layout '"+name+"' dauerhaft lokal löschen?"))return;
- const all=profiles();delete all[name];save(profileKey(),all);refreshProfiles();updateMessage("Layout gelöscht.");
+ const all=profiles();delete all[name];saveProfiles(all);refreshProfiles();updateMessage("Layout gelöscht.");
 }
 function updateMessage(x){if(s?.status)s.status.textContent=x}
 function validSavedPortfolioContext(context,account){
@@ -729,7 +742,7 @@ function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.verifiedPos
  renderScenarioSnapshots();loadPortfolio(id);
  const scenarioStatus=s.panel.querySelector("#cs-scenario-ab-status");if(scenarioStatus)scenarioStatus.textContent="A/B-Snapshots für "+id+" · lokal · nur verifizierte Vorschauen.";
  showOpts();refreshProfiles();updateSeries();window.ChartStudioObjectManager?.render();requestDraw()}
-function timeframe(tf){if(s){cancelPlanPreview();if(s.positionDraft)window.ChartStudioBrokerPanel?.invalidateDraft("Timeframe geändert · Positionsentwurf verworfen.");s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.tf=tf;s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");
+function timeframe(tf){if(s){cancelPlanPreview();if(s.positionDraft)window.ChartStudioBrokerPanel?.invalidateDraft("Timeframe geändert · Positionsentwurf verworfen.");s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.tf=tf;s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");refreshProfiles();
  clearDataWindowPin();
  window.ChartStudioIndicators?.updateBars([]);
   window.ChartStudioOscillators?.updateBars([]);
