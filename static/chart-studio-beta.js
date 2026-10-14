@@ -556,7 +556,7 @@ function dataBar(param){
  if(!values.every(Number.isFinite)||values.some(value=>value<=0)||values[1]<Math.max(values[0],values[2],values[3])||values[2]>Math.min(values[0],values[1],values[3]))return null;
  const time=typeof param.time==="number"?param.time:Date.UTC(param.time.year,param.time.month-1,param.time.day)/1000;
  const date=new Date(time*1000);if(!Number.isFinite(date.getTime()))return null;
- return {time,open:values[0],high:values[1],low:values[2],close:values[3],timeLabel:new Intl.DateTimeFormat("de-DE",{timeZone:"UTC",dateStyle:"medium",timeStyle:"medium"}).format(date)+" UTC",source:"Chart-Feed · geladene OHLC-Kerze"};
+ return {time,open:values[0],high:values[1],low:values[2],close:values[3],indicators:window.ChartStudioIndicators?.readout(time)||"Keine aktiven Indikatoren",timeLabel:new Intl.DateTimeFormat("de-DE",{timeZone:"UTC",dateStyle:"medium",timeStyle:"medium"}).format(date)+" UTC",source:"Chart-Feed · geladene OHLC-Kerze"};
 }
 function setVerifiedMarketQuote(accountId,data){
  if(!s||s.account!==accountId)return false;
@@ -569,7 +569,7 @@ function renderDataWindow(){
  if(!s?.dataWindow)return;const view=s.dataWindow,panel=s.panel;
  panel.querySelector("#cs-data-window-state").textContent=view.pinned?"Angeheftet":"Crosshair";
  panel.querySelector("#cs-data-window-pin").textContent=view.pinned?"Crosshair lösen":"Crosshair anheften";
- const row=view.snapshot,q=s.marketQuote,values={time:row?.timeLabel||"—",open:row?row.open.toFixed(2):"—",high:row?row.high.toFixed(2):"—",low:row?row.low.toFixed(2):"—",close:row?row.close.toFixed(2):"—",source:row?.source||"Chart-Feed · wartet auf Kerze",bid:q?q.bid.toFixed(2):"—",ask:q?q.ask.toFixed(2):"—",spread:q?(q.ask-q.bid).toFixed(2):"—","quote-time":q?q.quoteTimeUtc:"—","quote-status":q?q.freshness+" beim Abruf · "+q.ageSeconds.toFixed(1)+"s Broker-Alter beim Abruf · "+q.source:"Noch keine verifizierte Quote"};
+ const row=view.snapshot,q=s.marketQuote,values={time:row?.timeLabel||"—",open:row?row.open.toFixed(2):"—",high:row?row.high.toFixed(2):"—",low:row?row.low.toFixed(2):"—",close:row?row.close.toFixed(2):"—",source:row?.source||"Chart-Feed · wartet auf Kerze",indicators:row?.indicators||"—",bid:q?q.bid.toFixed(2):"—",ask:q?q.ask.toFixed(2):"—",spread:q?(q.ask-q.bid).toFixed(2):"—","quote-time":q?q.quoteTimeUtc:"—","quote-status":q?q.freshness+" beim Abruf · "+q.ageSeconds.toFixed(1)+"s Broker-Alter beim Abruf · "+q.source:"Noch keine verifizierte Quote"};
  for(const [key,value] of Object.entries(values))panel.querySelector("#cs-data-window-"+key).textContent=value;
 }
 function setDataWindowPin(pin){
@@ -584,6 +584,11 @@ function handleCrosshair(param){
  const row=dataBar(param);if(row){s.dataWindow.snapshot=row;renderDataWindow()}
 }
 function clearDataWindowPin(){if(!s?.dataWindow)return;s.dataWindow.pinned=false;s.dataWindow.snapshot=null;renderDataWindow();requestDraw()}
+function refreshDataWindowIndicators(){
+ if(!s?.dataWindow?.pinned||!s.dataWindow.snapshot)return;
+ s.dataWindow.snapshot.indicators=window.ChartStudioIndicators?.readout(s.dataWindow.snapshot.time)||"Keine aktiven Indikatoren";
+ renderDataWindow();
+}
 function updateVerifiedPositions(accountId,envelope){
  if(!s||s.account!==accountId)return false;
  if(envelope===null){s.verifiedPositions=[];s.positionContext=null;requestDraw();return true}
@@ -649,7 +654,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  const optLabels=[["ema20","EMA20"],["ema50","EMA50"],["ema200","EMA200"],["sma20","SMA20"],["sma50","SMA50"],["bb","Bollinger20"],["positions","Positionen & SL/TP"]];
  panel.innerHTML=
   '<div class="cs-beta-head"><strong>CHART STUDIO · EXPERIMENTELL</strong><span>Keine Handelsausführung</span></div>'+
-  '<section id="cs-data-window" aria-label="Datenfenster"><div><strong>Datenfenster</strong> · <span id="cs-data-window-state">Crosshair</span> <button type="button" id="cs-data-window-pin">Crosshair anheften</button></div><dl><div><dt>Kerzenzeit (UTC)</dt><dd id="cs-data-window-time">—</dd></div><div><dt>Open</dt><dd id="cs-data-window-open">—</dd></div><div><dt>High</dt><dd id="cs-data-window-high">—</dd></div><div><dt>Low</dt><dd id="cs-data-window-low">—</dd></div><div><dt>Close</dt><dd id="cs-data-window-close">—</dd></div><div><dt>Quelle</dt><dd id="cs-data-window-source">Chart-Feed · wartet auf Kerze</dd></div><div><dt>Bid</dt><dd id="cs-data-window-bid">—</dd></div><div><dt>Ask</dt><dd id="cs-data-window-ask">—</dd></div><div><dt>Spread (Preis)</dt><dd id="cs-data-window-spread">—</dd></div><div><dt>Quotezeit</dt><dd id="cs-data-window-quote-time">—</dd></div><div><dt>Quote-Status</dt><dd id="cs-data-window-quote-status">Noch keine verifizierte Quote</dd></div></dl></section>'+
+  '<section id="cs-data-window" aria-label="Datenfenster"><div><strong>Datenfenster</strong> · <span id="cs-data-window-state">Crosshair</span> <button type="button" id="cs-data-window-pin">Crosshair anheften</button></div><dl><div><dt>Kerzenzeit (UTC)</dt><dd id="cs-data-window-time">—</dd></div><div><dt>Open</dt><dd id="cs-data-window-open">—</dd></div><div><dt>High</dt><dd id="cs-data-window-high">—</dd></div><div><dt>Low</dt><dd id="cs-data-window-low">—</dd></div><div><dt>Close</dt><dd id="cs-data-window-close">—</dd></div><div><dt>Indikatoren</dt><dd id="cs-data-window-indicators">—</dd></div><div><dt>Quelle</dt><dd id="cs-data-window-source">Chart-Feed · wartet auf Kerze</dd></div><div><dt>Bid</dt><dd id="cs-data-window-bid">—</dd></div><div><dt>Ask</dt><dd id="cs-data-window-ask">—</dd></div><div><dt>Spread (Preis)</dt><dd id="cs-data-window-spread">—</dd></div><div><dt>Quotezeit</dt><dd id="cs-data-window-quote-time">—</dd></div><div><dt>Quote-Status</dt><dd id="cs-data-window-quote-status">Noch keine verifizierte Quote</dd></div></dl></section>'+
   '<div class="cs-beta-buttons">'+toolLabels.map(([id,label])=>'<button type="button" data-tool="'+id+'">'+label+'</button>').join("")+
   ["undo","redo","delete-selected","export","save-png","clear"].map(id=>'<button type="button" data-cmd="'+id+'">'+({undo:"↶ Undo",redo:"↷ Redo","delete-selected":"Ausgewählte löschen",export:"JSON kopieren","save-png":"Bild (PNG) speichern",clear:"Alle Zeichnungen löschen"}[id])+'</button>').join("")+'</div>'+
   '<p class="cs-beta-keyboard-hint">Kürzel: V Navigation · E Bearbeiten · H Linie · T Trend · R Zone · F Fibonacci · C Kanal · M Messen · Strg+Z Rückgängig · Entf Löschen</p>'+
@@ -880,6 +885,6 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();
 }
-window.ChartStudioBeta=Object.freeze({mount,account,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
+window.ChartStudioBeta=Object.freeze({mount,account,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
  scenario:s.scenario?json(s.scenario):null,tool:s.tool,magnet:s.magnet,selected:s.selected}:null});
 })();

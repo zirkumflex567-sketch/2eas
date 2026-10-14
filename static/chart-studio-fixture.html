@@ -26,6 +26,9 @@ const host=document.getElementById("tv-chart");
 const chart=LightweightCharts.createChart(host,{width:host.clientWidth,height:host.clientHeight,
  layout:{background:{color:"#071721"},textColor:"#c3dbe4"},
  timeScale:{timeVisible:true,rightOffset:7,barSpacing:7}});
+window.__chartCrosshairSubscribers=[];
+const subscribeCrosshairMove=chart.subscribeCrosshairMove.bind(chart);
+chart.subscribeCrosshairMove=callback=>{window.__chartCrosshairSubscribers.push(callback);subscribeCrosshairMove(callback)};
 const scale=chart.timeScale(),timeToCoordinate=scale.timeToCoordinate.bind(scale);
 window.__chartTimeLookups=[];scale.timeToCoordinate=time=>{window.__chartTimeLookups.push(time);return timeToCoordinate(time)};
 const candleSeries=chart.addCandlestickSeries({upColor:"#1acc92",downColor:"#ef6781"});

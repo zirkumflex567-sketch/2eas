@@ -189,6 +189,14 @@ function syncPanel(){
  for(const id of Object.keys(REGISTRY))state.controls.append(box(id));
 }
 function data(kind){return calc(kind,state.bars,state.settings[kind])}
+function addReadout(kind,calculated){
+ const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],vwap:["VWAP"]}[kind];
+ const keys=Object.keys(calculated);
+ for(let i=0;i<keys.length;i++)for(const point of calculated[keys[i]]||[]){
+  const rows=state.readouts.get(point.time)||[];
+  rows.push({kind,label:labels[i],value:point.value});state.readouts.set(point.time,rows);
+ }
+}
 function syncRanges(){
  if(!state)return;
  let range=null;
@@ -240,21 +248,25 @@ function createPane(kind){
 }
 function renderPanes(){
  if(!state)return;
+ state.readouts=new Map();
  for(const id of Object.keys(REGISTRY)){
   if(id==="vwap"){
+   const calculated=state.settings.vwap.enabled?data("vwap"):null;
+   if(calculated)addReadout(id,calculated);
    if(state.settings.vwap.enabled&&!state.vwapOverlay){
     state.vwapOverlay=state.chart.addLineSeries({title:"VWAP UTC · Tick-/Realvolumenproxy",
      color:"#f1da9b",lineWidth:2,lastValueVisible:true,priceLineVisible:false});
    }
    if(state.vwapOverlay){
     state.vwapOverlay.applyOptions({visible:!!state.settings.vwap.enabled});
-    if(state.settings.vwap.enabled)state.vwapOverlay.setData(data("vwap").vwap);
+    if(calculated)state.vwapOverlay.setData(calculated.vwap);
    }
    continue;
   }
   if(!state.settings[id].enabled){destroyPane(id);continue}
   const pane=state.panes.get(id)||createPane(id);
   const calculated=data(id);
+  addReadout(id,calculated);
   for(const [key,series] of Object.entries(pane.lines)){
    // Align warm-up bars to the primary chart's logical coordinates.
    const byTime=new Map((calculated[key]||[]).map(p=>[p.time,p]));
@@ -262,6 +274,21 @@ function renderPanes(){
   }
  }
  syncRanges();
+ window.ChartStudioBeta?.refreshDataWindowIndicators();
+}
+function readout(time){
+ if(!state)return "";
+ const rows=state.readouts.get(Number(time))||[];
+ const values=[];
+ const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],vwap:["VWAP"]};
+ for(const id of Object.keys(REGISTRY))if(state.settings[id].enabled){
+  for(const label of components[id]){
+   const row=rows.find(item=>item.kind===id&&item.label===label);
+   if(row)values.push(row.label+" "+(row.kind==="volume"?row.value.toFixed(0):row.value.toFixed(2)));
+   else values.push(id==="vwap"?"VWAP · Kein Volumen":label+" · Warm-up");
+  }
+ }
+ return values.join(" · ")||"Keine aktiven Indikatoren";
 }
 function updateBars(bars){
  if(!state||!Array.isArray(bars))return;
@@ -317,7 +344,7 @@ function mount({chart,host,panel,account="titan"}){
  head.textContent="Zusätzliche Indikator-Panes · unabhängig ein-/ausblendbar";panel.append(head,controls);
  const notice=document.createElement("p");notice.className="cs-indicator-notice";notice.textContent="Indikatoren basieren auf geladenen Brokerkerzen. Warm-up erforderlich.";
  panel.append(notice);
- state={chart,host,stack,controls,notice,account,settings:restore(account),bars:[],signature:null,panes:new Map(),vwapOverlay:null};
+ state={chart,host,stack,controls,notice,account,settings:restore(account),bars:[],signature:null,panes:new Map(),vwapOverlay:null,readouts:new Map()};
  controls.addEventListener("change",evt=>{
   const target=evt.target;
   if(!target.dataset.kind)return;
@@ -327,6 +354,6 @@ function mount({chart,host,panel,account="titan"}){
  chart.timeScale().subscribeVisibleLogicalRangeChange(syncRanges);
  syncPanel();renderPanes();
 }
-window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,updateConfig,settings,
+window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,updateConfig,settings,readout,
  registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,macd,atr,adx,vwap,volumes})});
 })();

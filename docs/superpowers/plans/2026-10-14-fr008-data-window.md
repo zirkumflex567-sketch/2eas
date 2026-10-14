@@ -21,7 +21,10 @@ data window or native v5 sidebar.
    matching account/symbol, `MT5_VERIFIED`, `canExecute=false`, finite prices,
    UTC timestamp and freshness. Show freshness and broker age explicitly as of
    retrieval; invalid/error responses clear the quote display.
-5. Run Chromium smoke, JS syntax checks, focused ChartStudio Python tests, and
+5. Show enabled RSI/MACD/ATR/volume/ADX/VWAP values for the hovered or pinned
+   bar from the existing indicator calculations; preserve per-component warm-up
+   and missing-volume states, and refresh pinned indicator values after setting changes.
+6. Run Chromium smoke, JS syntax checks, focused ChartStudio Python tests, and
    independent review. Keep FR-008 partial until indicator values and
    full v5/hardware acceptance are implemented.
 
@@ -30,5 +33,6 @@ data window or native v5 sidebar.
 - [x] Browser contract failed before implementation because the data window did not exist.
 - [x] Crosshair OHLC/time and accessible pin interaction work with explicit source.
 - [x] Verified quote bid/ask spread, time and freshness render; bad provenance clears it.
-- [x] Chromium smoke, Chart Studio foundation Python tests, syntax/diff checks pass for the quote extension.
-- [x] Independent review passes for the quote extension with no findings.
+- [x] Enabled indicator-pane values render for the selected bar; warm-up remains explicit.
+- [x] Chromium smoke, Chart Studio foundation Python tests, syntax/diff checks pass for the indicator extension, including pin-refresh, per-component MACD/ADX warm-up and VWAP no-volume cases.
+- [x] Independent review passes for the indicator extension with no remaining findings.

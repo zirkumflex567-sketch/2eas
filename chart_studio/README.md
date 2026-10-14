@@ -18,8 +18,12 @@ Current features:
   reads and account changes clear the overlay; there is no guessed USD
   conversion and no trading mutation.
 - The beta data window shows the hovered or pinned candle's UTC time and OHLC
-  from the loaded chart series. It labels the source as the chart feed; live
-  indicator values are not part of this slice. After an explicit verified MT5
+  from the loaded chart series, plus calculated values for enabled RSI, MACD,
+  ATR, volume, ADX, and VWAP indicators when available at that bar. Warm-up and
+  missing-volume states stay explicit; pinned indicator values follow parameter
+  changes while the selected OHLC bar stays fixed. It labels the source as the chart feed.
+  The full native v5 data window and remaining indicator catalog are still open.
+  After an explicit verified MT5
   quote read, it also shows bid/ask, price spread, quote time, and freshness
   as of that read (including broker-reported quote age); invalid provenance
   clears these values.
