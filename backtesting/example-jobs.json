@@ -6,7 +6,22 @@
   "timeout_seconds": 14400,
   "jobs": [
     {
-      "name": "Titan M15 2025 baseline",
+      "name": "Titan M15 training 2024",
+      "expert": "XAU_Titan_Pro.ex5",
+      "set_file": "XAU_Titan_Pro_guter5er_Champion_001Lot.set",
+      "symbol": "XAUUSD",
+      "period": "M15",
+      "from": "2024.01.01",
+      "to": "2024.12.31",
+      "deposit": 10000,
+      "currency": "USD",
+      "leverage": 100,
+      "execution_mode_ms": 0,
+      "strategy_id": "Titan-M15-baseline",
+      "sample": "in_sample"
+    },
+    {
+      "name": "Titan M15 unseen 2025",
       "expert": "XAU_Titan_Pro.ex5",
       "set_file": "XAU_Titan_Pro_guter5er_Champion_001Lot.set",
       "symbol": "XAUUSD",
@@ -16,7 +31,9 @@
       "deposit": 10000,
       "currency": "USD",
       "leverage": 100,
-      "execution_mode_ms": 0
+      "execution_mode_ms": 0,
+      "strategy_id": "Titan-M15-baseline",
+      "sample": "out_of_sample"
     },
     {
       "name": "GoldM15 2025 baseline",
@@ -29,7 +46,15 @@
       "deposit": 10000,
       "currency": "USD",
       "leverage": 100,
-      "execution_mode_ms": 0
+      "execution_mode_ms": 0,
+      "strategy_id": "GoldM15-baseline",
+      "sample": "full"
     }
-  ]
+  ],
+  "screening_limits": {
+    "min_trades": 30,
+    "min_profit_factor": 1.15,
+    "max_equity_drawdown_pct": 12,
+    "min_history_quality_pct": 95
+  }
 }
