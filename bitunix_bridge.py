@@ -8,12 +8,13 @@ to Bitunix XAUUSDT Perpetual Futures.
 import os
 import json
 import time
+import hashlib
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
 from bitunix_client import BitunixClient
-from account_gateway import session, ACCOUNTS, terminal_running
+from account_gateway import session, ACCOUNTS
 
 logger = logging.getLogger("bitunix_bridge")
 BASE_DIR = Path(__file__).resolve().parent
@@ -24,9 +25,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "api_key": "",
     "secret_key": "",
     "base_url": "https://fapi.bitunix.com",
-    "enabled": True,
+    "enabled": False,
     "symbol": "XAUUSDT",
-    "tracked_accounts": ["xau5m_m5", "blueberry", "titan"],
+    "tracked_accounts": [],
     "copy_market_ea": True,
     "copy_titan_ea": True,
     "sizing_mode": "fixed_qty",
@@ -83,22 +84,26 @@ def save_state(state: Dict[str, Any]) -> None:
 
 class BitunixBridge:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        self.config = config or load_config()
-        self.client = BitunixClient(
-            api_key=self.config.get("api_key", ""),
-            secret_key=self.config.get("secret_key", ""),
-            base_url=self.config.get("base_url", "https://fapi.bitunix.com")
-        )
+        self.config = config if config is not None else load_config()
+        self.client = self._make_client()
         self.state = load_state()
         self.failed_cooldown: Dict[str, float] = {}
 
-    def reload(self) -> None:
-        self.config = load_config()
-        self.client = BitunixClient(
+    @property
+    def write_gate_open(self) -> bool:
+        return self.config.get("enabled") is True and os.environ.get("BITUNIX_BRIDGE_WRITE_APPROVED") == "1"
+
+    def _make_client(self) -> BitunixClient:
+        return BitunixClient(
             api_key=self.config.get("api_key", ""),
             secret_key=self.config.get("secret_key", ""),
-            base_url=self.config.get("base_url", "https://fapi.bitunix.com")
+            base_url=self.config.get("base_url", "https://fapi.bitunix.com"),
+            writes_enabled=lambda: self.write_gate_open,
         )
+
+    def reload(self) -> None:
+        self.config = load_config()
+        self.client = self._make_client()
         self.state = load_state()
 
     def is_eligible_ea(self, position) -> tuple[bool, str]:
@@ -132,139 +137,183 @@ class BitunixBridge:
 
         return max(qty, min_qty)
 
+    @staticmethod
+    def _mapping_key(account_id: str, ticket: Any) -> str:
+        return f"{account_id}:{ticket}"
+
+    @staticmethod
+    def _client_order_id(account_id: str, ticket: Any) -> str:
+        digest = hashlib.sha256(f"{account_id}:{ticket}".encode("utf-8")).hexdigest()[:27]
+        return f"mt5_{digest}"
+
     def sync_once(self, mt5) -> Dict[str, Any]:
         """Performs one scan across tracked accounts and syncs new, modified or closed orders."""
-        if not self.config.get("enabled", True):
-            return {"status": "disabled", "actions": []}
+        if not self.write_gate_open:
+            return {"status": "write_gate_closed", "actions": []}
 
         actions: List[Dict[str, Any]] = []
         current_mapped = self.state.setdefault("mapped_positions", {})
-        active_mt5_tickets = set()
+        active_mt5_positions = set()
+        successfully_scanned_accounts = set()
 
-        tracked = [a for a in self.config.get("tracked_accounts", []) if a in ACCOUNTS]
+        tracked = []
+        for account_id in self.config.get("tracked_accounts", []):
+            account = ACCOUNTS.get(account_id)
+            if account is None:
+                continue
+            if account.get("is_demo") is not True:
+                logger.warning("Skipping non-demo Bitunix source account %s", account_id)
+                continue
+            tracked.append(account_id)
+        # Migrate the earlier single-account key format using its stored account
+        # identity. Unknown records remain untouched and are never auto-closed.
+        for old_key, info in list(current_mapped.items()):
+            account_id = info.get("source_account")
+            ticket = info.get("ticket", old_key)
+            if isinstance(account_id, str) and account_id in ACCOUNTS:
+                canonical_account_id = ACCOUNTS[account_id].get("id", account_id)
+                new_key = self._mapping_key(canonical_account_id, ticket)
+                info["source_account"] = canonical_account_id
+                info.setdefault("ticket", ticket)
+                if new_key != old_key:
+                    if new_key in current_mapped:
+                        # Two keys for the same account/ticket are one mapping;
+                        # retain the canonical record and fill any older fields.
+                        canonical_info = current_mapped[new_key]
+                        for field, value in info.items():
+                            canonical_info.setdefault(field, value)
+                        current_mapped.pop(old_key)
+                    else:
+                        current_mapped[new_key] = current_mapped.pop(old_key)
 
         for acc_id in tracked:
-            spec = ACCOUNTS[acc_id]
-            if not terminal_running(spec["terminal"]):
-                continue
-
             try:
                 with session(mt5, acc_id):
                     positions = mt5.positions_get()
-                    active_account_tickets = set()
+                    if positions is None:
+                        logger.warning("MT5 position scan returned unknown data for %s; retaining mapped trades", acc_id)
+                        continue
+                    account_active_tickets = set()
+                    canonical_account_id = ACCOUNTS[acc_id].get("id", acc_id)
 
-                    if positions:
-                        for p in positions:
-                            sym = str(p.symbol)
-                            if not sym.startswith("XAUUSD"):
+                    for p in positions:
+                        sym = str(p.symbol)
+                        if not sym.startswith("XAUUSD"):
+                            continue
+
+                        ticket_str = str(p.ticket)
+                        account_active_tickets.add(ticket_str)
+                        position_key = self._mapping_key(canonical_account_id, ticket_str)
+
+                        eligible, ea_name = self.is_eligible_ea(p)
+                        if not eligible:
+                            continue
+
+                        # Check if trade is not yet mapped to Bitunix and not in failure cooldown
+                        if position_key not in current_mapped:
+                            if time.time() < self.failed_cooldown.get(position_key, 0):
+                                continue
+                            # Verify max position limit
+                            if len(current_mapped) >= self.config.get("max_open_positions", 5):
+                                logger.warning("Max Bitunix positions reached (%d), skipping ticket %s", len(current_mapped), ticket_str)
                                 continue
 
-                            ticket_str = str(p.ticket)
-                            active_account_tickets.add(ticket_str)
+                            side = "BUY" if p.type == 0 else "SELL"
+                            qty = self.compute_qty(p.volume)
+                            sl_price = p.sl if (self.config.get("copy_sl_tp", True) and p.sl > 0) else None
+                            tp_price = p.tp if (self.config.get("copy_sl_tp", True) and p.tp > 0) else None
 
-                            eligible, ea_name = self.is_eligible_ea(p)
-                            if not eligible:
-                                continue
-
-                            # Check if trade is not yet mapped to Bitunix and not in failure cooldown
-                            if ticket_str not in current_mapped:
-                                if time.time() < self.failed_cooldown.get(ticket_str, 0):
-                                    continue
-                                if time.time() < getattr(self, "balance_cooldown", 0):
-                                    continue
-                                # Verify max position limit
-                                if len(current_mapped) >= self.config.get("max_open_positions", 5):
-                                    logger.warning("Max Bitunix positions reached (%d), skipping ticket %s", len(current_mapped), ticket_str)
-                                    continue
-
-                                side = "BUY" if p.type == 0 else "SELL"
-                                qty = self.compute_qty(p.volume)
-                                sl_price = p.sl if (self.config.get("copy_sl_tp", True) and p.sl > 0) else None
-                                tp_price = p.tp if (self.config.get("copy_sl_tp", True) and p.tp > 0) else None
-
-                                logger.info("Opening Bitunix trade for %s (%s): %s %s XAU (SL: %s, TP: %s)",
-                                            ticket_str, ea_name, side, qty, sl_price, tp_price)
-
-                                resp = self.client.place_order(
-                                    symbol=self.config.get("symbol", "XAUUSDT"),
-                                    side=side,
-                                    trade_side="OPEN",
-                                    qty=qty,
-                                    order_type="MARKET",
-                                    sl_price=sl_price,
-                                    tp_price=tp_price,
-                                    client_id=f"mt5_{ticket_str}"
-                                )
-
-                                action_info = {
-                                    "action": "open",
-                                    "ticket": p.ticket,
-                                    "source_account": acc_id,
-                                    "ea": ea_name,
-                                    "side": side,
-                                    "qty": qty,
-                                    "mt5_open_price": p.price_open,
-                                    "bitunix_response": resp
-                                }
-                                actions.append(action_info)
-
-                                if resp.get("code") == 0:
-                                    current_mapped[ticket_str] = {
-                                        "ticket": p.ticket,
-                                        "source_account": acc_id,
-                                        "ea": ea_name,
-                                        "symbol": self.config.get("symbol", "XAUUSDT"),
-                                        "side": side,
-                                        "qty": qty,
-                                        "sl_price": p.sl,
-                                        "tp_price": p.tp,
-                                        "mt5_open_price": p.price_open,
-                                        "open_time": p.time,
-                                        "synced_at": time.time(),
-                                        "last_response": resp
-                                    }
-                                else:
-                                    if resp.get("code") == 20003:
-                                        self.balance_cooldown = time.time() + 60.0
-                                    self.failed_cooldown[ticket_str] = time.time() + 60.0
-                                    logger.warning("Bitunix order rejected for ticket %s: %s (cooldown 60s)", ticket_str, resp.get("msg"))
-
-                    # Safely check for closed positions strictly belonging to this scanned account
-                    for t_str in list(current_mapped.keys()):
-                        info = current_mapped[t_str]
-                        if info.get("source_account") == acc_id and t_str not in active_account_tickets:
-                            close_side = "SELL" if info["side"] == "BUY" else "BUY"
-                            logger.info("Closing Bitunix trade for closed MT5 ticket %s: %s %s XAU",
-                                        t_str, close_side, info["qty"])
+                            logger.info("Opening Bitunix trade for %s (%s): %s %s XAU (SL: %s, TP: %s)",
+                                        ticket_str, ea_name, side, qty, sl_price, tp_price)
 
                             resp = self.client.place_order(
-                                symbol=info.get("symbol", "XAUUSDT"),
-                                side=close_side,
-                                trade_side="CLOSE",
-                                qty=info["qty"],
+                                symbol=self.config.get("symbol", "XAUUSDT"),
+                                side=side,
+                                trade_side="OPEN",
+                                qty=qty,
                                 order_type="MARKET",
-                                reduce_only=True
+                                sl_price=sl_price,
+                                tp_price=tp_price,
+                                client_id=self._client_order_id(canonical_account_id, ticket_str)
                             )
 
-                            actions.append({
-                                "action": "close",
-                                "ticket": int(t_str),
-                                "source_account": acc_id,
-                                "ea": info.get("ea"),
-                                "close_side": close_side,
-                                "qty": info["qty"],
+                            action_info = {
+                                "action": "open",
+                                "ticket": p.ticket,
+                                "source_account": canonical_account_id,
+                                "ea": ea_name,
+                                "side": side,
+                                "qty": qty,
+                                "mt5_open_price": p.price_open,
                                 "bitunix_response": resp
-                            })
+                            }
+                            actions.append(action_info)
 
-                            info["closed_at"] = time.time()
-                            info["close_response"] = resp
-                            self.state.setdefault("history", []).append(info)
-                            if len(self.state["history"]) > 50:
-                                self.state["history"] = self.state["history"][-50:]
-                            del current_mapped[t_str]
-
+                            # Record mapping only if Bitunix accepted the order
+                            if resp.get("code") == 0:
+                                current_mapped[position_key] = {
+                                    "ticket": p.ticket,
+                                    "source_account": canonical_account_id,
+                                    "ea": ea_name,
+                                    "symbol": self.config.get("symbol", "XAUUSDT"),
+                                    "side": side,
+                                    "qty": qty,
+                                    "sl_price": p.sl,
+                                    "tp_price": p.tp,
+                                    "mt5_open_price": p.price_open,
+                                    "open_time": p.time,
+                                    "synced_at": time.time(),
+                                    "last_response": resp
+                                }
+                            else:
+                                self.failed_cooldown[position_key] = time.time() + 60.0
+                                logger.warning("Bitunix order rejected for ticket %s: %s (cooldown 60s)", ticket_str, resp.get("msg"))
+                    active_mt5_positions.update((canonical_account_id, ticket) for ticket in account_active_tickets)
+                    successfully_scanned_accounts.add(canonical_account_id)
             except Exception as e:
                 logger.error("Error reading positions on %s: %s", acc_id, e)
+
+        # Check for closed positions (previously mapped, but no longer in MT5)
+        closed_tickets = [
+            key for key, info in list(current_mapped.items())
+            if info.get("source_account") in successfully_scanned_accounts
+            and info.get("ticket") is not None
+            and (info.get("source_account"), str(info["ticket"])) not in active_mt5_positions
+        ]
+        for mapping_key in closed_tickets:
+            info = current_mapped[mapping_key]
+            ticket = info.get("ticket", mapping_key)
+            close_side = "SELL" if info["side"] == "BUY" else "BUY"
+            logger.info("Closing Bitunix trade for closed MT5 ticket %s: %s %s XAU",
+                        ticket, close_side, info["qty"])
+
+            resp = self.client.place_order(
+                symbol=info.get("symbol", "XAUUSDT"),
+                side=close_side,
+                trade_side="CLOSE",
+                qty=info["qty"],
+                order_type="MARKET",
+                reduce_only=True
+            )
+
+            actions.append({
+                "action": "close",
+                "ticket": int(ticket),
+                "source_account": info.get("source_account"),
+                "ea": info.get("ea"),
+                "close_side": close_side,
+                "qty": info["qty"],
+                "bitunix_response": resp
+            })
+
+            # Move to history
+            info["closed_at"] = time.time()
+            info["close_response"] = resp
+            self.state.setdefault("history", []).append(info)
+            # Keep history to last 50 items
+            if len(self.state["history"]) > 50:
+                self.state["history"] = self.state["history"][-50:]
+            del current_mapped[mapping_key]
 
         self.state["last_sync"] = time.time()
         save_state(self.state)
@@ -278,6 +327,13 @@ class BitunixBridge:
 
     def get_status(self) -> Dict[str, Any]:
         """Provides status summary for dashboard and health check."""
+        if not self.write_gate_open:
+            return {
+                "enabled": False,
+                "write_gate": "CLOSED",
+                "active_mapped_trades": len(self.state.get("mapped_positions", {})),
+                "last_sync": self.state.get("last_sync", 0),
+            }
         account_res = self.client.get_account()
         positions_res = self.client.get_pending_positions()
 
@@ -291,7 +347,8 @@ class BitunixBridge:
                     break
 
         return {
-            "enabled": bool(self.config.get("enabled", True)),
+            "enabled": self.write_gate_open,
+            "write_gate": "OPEN",
             "symbol": self.config.get("symbol", "XAUUSDT"),
             "connected": account_res.get("code") == 0,
             "usdt_balance": usdt_bal,

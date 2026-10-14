@@ -2,13 +2,9 @@
   "api_key": "YOUR_BITUNIX_API_KEY",
   "secret_key": "YOUR_BITUNIX_SECRET_KEY",
   "base_url": "https://fapi.bitunix.com",
-  "enabled": true,
+  "enabled": false,
   "symbol": "XAUUSDT",
-  "tracked_accounts": [
-    "xau5m_m5",
-    "blueberry",
-    "titan"
-  ],
+  "tracked_accounts": [],
   "copy_market_ea": true,
   "copy_titan_ea": true,
   "sizing_mode": "fixed_qty",

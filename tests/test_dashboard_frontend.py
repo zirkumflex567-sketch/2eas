@@ -167,6 +167,10 @@ def probe_incomplete_text_target(page, selector, threshold=4.5):
         from PIL import Image
         import io
         size = Image.open(io.BytesIO(visible)).size
+        coverage_sizes = [Image.open(io.BytesIO(png)).size for png in (sentinel_magenta, sentinel_green)]
+        if any(mask_size != size for mask_size in coverage_sizes):
+            return {'classification': 'unresolved',
+                    'reason': 'contrast-probe screenshots changed dimensions during capture'}
         scale_x, scale_y = size[0] / visible_box['width'], size[1] / visible_box['height']
         if not (.5 <= scale_x <= 4 and .5 <= scale_y <= 4):
             return {'classification': 'unresolved', 'reason': 'screenshot has unsupported pixel scale'}
