@@ -342,7 +342,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  let lastPersistedSnapshot:string|null=null;
  const persistenceLimit=65536;
  let selectedDrawingId:string|null=null,hoveredDrawingId:string|null=null;
- type ActiveDrag={pointerId:number;id:string;kind:"PRICE";original:PriceLevelOptions}|{pointerId:number;id:string;kind:"TIME";original:TimeMarkerOptions}|{pointerId:number;id:string;kind:"TEXT";original:TextAnnotationOptions};
+ type ActiveDrag={pointerId:number;id:string;kind:"PRICE";original:PriceLevelOptions}|{pointerId:number;id:string;kind:"TIME";original:TimeMarkerOptions}|{pointerId:number;id:string;kind:"TEXT";original:TextAnnotationOptions}|{pointerId:number;id:string;kind:"TREND";anchor:"START"|"END";original:TrendLineOptions};
  let activeDrag:ActiveDrag|null=null;
  chart.subscribeCrosshairMove(param=>{
   const objectId=param.hoveredInfo?.objectId;
@@ -353,15 +353,23 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  });
  const onPointerDown=(event:PointerEvent)=>{
   if(event.button!==0||!event.isPrimary||!hoveredDrawingId)return;
-  const level=priceLevels.get(hoveredDrawingId),marker=timeMarkers.get(hoveredDrawingId),annotation=textAnnotations.get(hoveredDrawingId);
+  const level=priceLevels.get(hoveredDrawingId),marker=timeMarkers.get(hoveredDrawingId),annotation=textAnnotations.get(hoveredDrawingId),trend=trendLines.get(hoveredDrawingId);
   selectDrawing(hoveredDrawingId);
   if(host.tabIndex<0)host.tabIndex=0;
   host.focus({preventScroll:true});
-  if(!level&&!marker&&!annotation)return;
-  if((level?.options.locked??marker?.options.locked??annotation?.options.locked)===true){event.preventDefault();event.stopImmediatePropagation();return}
+  if(!level&&!marker&&!annotation&&!trend)return;
+  if((level?.options.locked??marker?.options.locked??annotation?.options.locked??trend?.options.locked)===true){event.preventDefault();event.stopImmediatePropagation();return}
   if(level)activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"PRICE",original:{...level.options}};
   else if(marker)activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"TIME",original:{...marker.options}};
   else if(annotation)activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"TEXT",original:{...annotation.options}};
+  else if(trend){
+   const points=trend.primitive.coordinates(),rect=host.getBoundingClientRect();
+   if(!points)return;
+   const x=event.clientX-rect.left,y=event.clientY-rect.top;
+   const startDistance=Math.hypot(x-points.x1,y-points.y1),endDistance=Math.hypot(x-points.x2,y-points.y2);
+   if(Math.min(startDistance,endDistance)>12)return;
+   activeDrag={pointerId:event.pointerId,id:hoveredDrawingId,kind:"TREND",anchor:startDistance<=endDistance?"START":"END",original:{...trend.options}};
+  }
   else return;
   host.setPointerCapture(event.pointerId);event.preventDefault();event.stopImmediatePropagation();
  };
@@ -376,10 +384,17 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    const logical=chart.timeScale().coordinateToLogical(x),index=logical===null?-1:Math.round(Number(logical));
    const candle=bars[index];
    if(candle){const item=timeMarkers.get(activeDrag.id);if(item)updateTimeMarker(activeDrag.id,{time:candle.time,color:item.options.color})}
-  }else{
+  }else if(activeDrag.kind==="TEXT"){
    const logical=chart.timeScale().coordinateToLogical(x),index=logical===null?-1:Math.round(Number(logical));
    const candle=bars[index],value=price.coordinateToPrice(y);
    if(candle&&value!==null&&Number.isFinite(value)&&value>0){const item=textAnnotations.get(activeDrag.id);if(item)updateTextAnnotation(activeDrag.id,{time:candle.time,price:value})}
+  }else{
+   const logical=chart.timeScale().coordinateToLogical(x),index=logical===null?-1:Math.round(Number(logical));
+   const candle=bars[index],value=price.coordinateToPrice(y),item=trendLines.get(activeDrag.id);
+   if(candle&&value!==null&&Number.isFinite(value)&&value>0&&item){
+    const patch=activeDrag.anchor==="START"?{startTime:candle.time,startPrice:value}:{endTime:candle.time,endPrice:value};
+    updateTrendLine(activeDrag.id,patch);
+   }
   }
  };
  const finishDrag=(cancel:boolean)=>{
@@ -388,8 +403,9 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    if(drag.kind==="PRICE"&&priceLevels.has(drag.id))updatePriceLevel(drag.id,{price:drag.original.price,color:drag.original.color});
    if(drag.kind==="TIME"&&timeMarkers.has(drag.id))updateTimeMarker(drag.id,{time:drag.original.time,color:drag.original.color});
    if(drag.kind==="TEXT"&&textAnnotations.has(drag.id))updateTextAnnotation(drag.id,drag.original);
+   if(drag.kind==="TREND"&&trendLines.has(drag.id))updateTrendLine(drag.id,drag.original);
   }else{
-   const before:DrawingSnapshot=drag.kind==="PRICE"?{kind:"PRICE",options:{...drag.original}}:drag.kind==="TIME"?{kind:"TIME",options:{...drag.original}}:{kind:"TEXT",options:{...drag.original}};
+   const before:DrawingSnapshot=drag.kind==="PRICE"?{kind:"PRICE",options:{...drag.original}}:drag.kind==="TIME"?{kind:"TIME",options:{...drag.original}}:drag.kind==="TEXT"?{kind:"TEXT",options:{...drag.original}}:{kind:"TREND",options:{...drag.original}};
    recordDrawingChange(drag.id,before,snapshotDrawing(drag.id));
   }
   activeDrag=null;
@@ -814,7 +830,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function updateTrendLine(id:string,patch:Partial<Pick<TrendLineOptions,"startTime"|"startPrice"|"endTime"|"endPrice"|"color"|"visible"|"locked">>){
   guard();const item=trendLines.get(id);if(!item)throw Error("Unknown trend line");const before=snapshotDrawing(id);
-  const options={...item.options,...patch};validateTrendLine(options,patch.startTime!==undefined||patch.endTime!==undefined);item.primitive.set(options);item.options=options;recordDrawingChange(id,before,snapshotDrawing(id));
+  const options={...item.options,...patch};validateTrendLine(options,patch.startTime!==undefined||patch.endTime!==undefined);item.primitive.set(options);item.options=options;if(activeDrag?.id!==id)recordDrawingChange(id,before,snapshotDrawing(id));
  }
  function removeTrendLine(id:string){
   guard();const item=trendLines.get(id);if(!item)return false;

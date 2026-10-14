@@ -302,6 +302,56 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.notEqual(movedNote.price,originalNote.price);
   const restoredNote=await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-note"));
   assert.deepEqual(restoredNote,originalNote);
+  const trendHandleStart=await page.evaluate(()=>{
+   const e=window.__v5Screenshot,original=e.readDrawing("visual-trend");
+   e.addTimeMarker({id:"trend-handle-start-time",time:original.startTime,color:"#ffffff"});
+   e.addPriceLevel({id:"trend-handle-start-price",price:original.startPrice,color:"#ffffff"});
+   return {original,x:e.drawingPosition("trend-handle-start-time").x,y:e.drawingPosition("trend-handle-start-price").y};
+  });
+  await page.mouse.move(trendHandleStart.x,trendHandleStart.y);await page.waitForTimeout(80);
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.inspect().hoveredDrawingId),"visual-trend");
+  await page.mouse.down();await page.mouse.move(trendHandleStart.x+30,trendHandleStart.y-20,{steps:3});await page.mouse.up();
+  let draggedTrend=await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-trend"));
+  assert.notDeepEqual([draggedTrend.startTime,draggedTrend.startPrice],[trendHandleStart.original.startTime,trendHandleStart.original.startPrice]);
+  assert.deepEqual([draggedTrend.endTime,draggedTrend.endPrice],[trendHandleStart.original.endTime,trendHandleStart.original.endPrice],"Dragging one trend handle preserves the other anchor");
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.undo()),true);
+  assert.deepEqual(await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-trend")),trendHandleStart.original,"A trend handle gesture is one undo step");
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.redo()),true);
+  assert.deepEqual(await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-trend")),draggedTrend,"A trend handle gesture is one redo step");
+  const trendHandleEnd=await page.evaluate(()=>{
+   const e=window.__v5Screenshot,original=e.readDrawing("visual-trend");
+   e.updateTimeMarker("trend-handle-start-time",{time:original.endTime});e.updatePriceLevel("trend-handle-start-price",{price:original.endPrice});
+   return {original,x:e.drawingPosition("trend-handle-start-time").x,y:e.drawingPosition("trend-handle-start-price").y};
+  });
+  await page.mouse.move(trendHandleEnd.x,trendHandleEnd.y);await page.waitForTimeout(80);
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.inspect().hoveredDrawingId),"visual-trend");
+  await page.mouse.down();await page.mouse.move(trendHandleEnd.x-30,trendHandleEnd.y+20,{steps:3});await page.mouse.up();
+  const draggedTrendEnd=await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-trend"));
+  assert.notDeepEqual([draggedTrendEnd.endTime,draggedTrendEnd.endPrice],[trendHandleEnd.original.endTime,trendHandleEnd.original.endPrice]);
+  assert.deepEqual([draggedTrendEnd.startTime,draggedTrendEnd.startPrice],[trendHandleEnd.original.startTime,trendHandleEnd.original.startPrice],"Dragging the end trend handle preserves the start anchor");
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.undo()),true);
+  assert.deepEqual(await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-trend")),draggedTrend);
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.redo()),true);
+  draggedTrend=await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-trend"));
+  const escapeTrendPoint=await page.evaluate(()=>{
+   const e=window.__v5Screenshot,trend=e.readDrawing("visual-trend");
+   e.updateTimeMarker("trend-handle-start-time",{time:trend.startTime});e.updatePriceLevel("trend-handle-start-price",{price:trend.startPrice});
+   return {x:e.drawingPosition("trend-handle-start-time").x,y:e.drawingPosition("trend-handle-start-price").y};
+  });
+  await page.mouse.move(escapeTrendPoint.x,escapeTrendPoint.y);await page.waitForTimeout(80);await page.mouse.down();
+  await page.mouse.move(escapeTrendPoint.x+25,escapeTrendPoint.y+18,{steps:3});
+  assert.notDeepEqual(await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-trend")),draggedTrend,"Trend handle moves before Escape rollback");
+  await page.keyboard.press("Escape");await page.mouse.up();
+  assert.deepEqual(await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-trend")),draggedTrend,"Escape restores both trend anchors");
+  await page.evaluate(()=>window.__v5Screenshot.updateTrendLine("visual-trend",{locked:true}));
+  await page.mouse.move(escapeTrendPoint.x,escapeTrendPoint.y);await page.waitForTimeout(80);await page.mouse.down();
+  await page.mouse.move(escapeTrendPoint.x+25,escapeTrendPoint.y-18,{steps:3});await page.mouse.up();
+  const lockedTrend=await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-trend"));
+  assert.deepEqual([lockedTrend.startTime,lockedTrend.startPrice,lockedTrend.endTime,lockedTrend.endPrice],[draggedTrend.startTime,draggedTrend.startPrice,draggedTrend.endTime,draggedTrend.endPrice],"Locked trend handles reject pointer drag");
+  await page.evaluate(()=>{
+   const e=window.__v5Screenshot;e.updateTrendLine("visual-trend",{locked:false});
+   e.removeTimeMarker("trend-handle-start-time");e.removePriceLevel("trend-handle-start-price");
+  });
   const trendPoint=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-trend"));
   assert.ok(Number.isFinite(trendPoint.x)&&Number.isFinite(trendPoint.y));
   const rectanglePoint=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-zone"));
