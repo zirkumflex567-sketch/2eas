@@ -189,6 +189,16 @@ function renderPortfolio(){
  const correlation=document.createElement("p");
  correlation.textContent="Korrelation nicht verfügbar · gemeinsame Historie fehlt.";host.append(correlation);
 }
+function renderPortfolioImpact(preview){
+ if(!s)return;
+ const host=s.panel.querySelector("#cs-scenario-portfolio-impact");if(!host)return;
+ const portfolio=s.portfolio,result=preview?.result;
+ if(!portfolio||!result||preview.account!==s.account||portfolio.account!==s.account){host.textContent="Portfolio-Gesamtrisiko UNAVAILABLE · Portfolio und Vorschau für dasselbe Konto erforderlich.";return}
+ if(portfolio.stopRisk?.state!=="AVAILABLE"||portfolio.currency!==result.pnlAtSl?.currency){host.textContent="Portfolio-Gesamtrisiko UNAVAILABLE · Stop-Risiko oder gemeinsame Kontowährung fehlt.";return}
+ const current=Number(portfolio.stopRisk.lossAtStops),proposed=Math.max(0,-Number(result.pnlAtSl?.amount));
+ if(!Number.isFinite(current)||!Number.isFinite(proposed)){host.textContent="Portfolio-Gesamtrisiko UNAVAILABLE · Brokerwerte ungültig.";return}
+ host.textContent="Portfolio-Stop-Risiko inkl. neuem Trade: "+String(Number((current+proposed).toPrecision(12)))+" "+portfolio.currency+" · Brutto additiv; keine Korrelation oder Hedging-Anrechnung.";
+}
 async function loadPortfolio(account){
  const nonce=++portfolioGeneration;s.portfolio=null;s.portfolioError="";s.portfolioLoading=true;renderPortfolio();
  try{
@@ -202,7 +212,7 @@ async function loadPortfolio(account){
   if(nonce!==portfolioGeneration||account!==s?.account)return;
   s.portfolio=null;s.portfolioError="Portfolio UNAVAILABLE · "+(error?.message||"Lesefehler");
  }finally{
-  if(nonce===portfolioGeneration&&account===s?.account){s.portfolioLoading=false;renderPortfolio()}
+  if(nonce===portfolioGeneration&&account===s?.account){s.portfolioLoading=false;renderPortfolio();renderPortfolioImpact(s.lastScenarioPreview)}
  }
 }
 function sma(c,n){const out=[];let sum=0;for(let i=0;i<c.length;i++){sum+=Number(c[i].close);if(i>=n)sum-=Number(c[i-n].close);if(i>=n-1)out.push({time:c[i].time,value:sum/n})}return out}
@@ -634,7 +644,7 @@ function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.verifiedPos
  s.lastScenarioPreview=null;s.marketQuote=null;clearDataWindowPin();
   s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
   const fibInput=s.panel.querySelector("#cs-fib-levels");if(fibInput)fibInput.value=window.ChartStudioFib?.display(s.fibLevels)||"";
- scenarioGeneration++;portfolioGeneration++;if(s.tool==="plan")setTool("cursor");
+ scenarioGeneration++;portfolioGeneration++;renderPortfolioImpact(null);if(s.tool==="plan")setTool("cursor");
  s.panel.querySelector('[data-cmd="magnet"]')?.setAttribute("aria-pressed",String(s.magnet));
  const mag=s.panel.querySelector('[data-cmd="magnet"]');if(mag)mag.textContent="Magnet: "+(s.magnet?"AN":"AUS")+" · Kerzen-OHLC";
  window.ChartStudioIndicators?.switchAccount(id);
@@ -815,7 +825,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  '<button type="submit">Broker-Vorschau berechnen</button>'+
  '<button type="button" data-cmd="drag-plan" aria-pressed="false">↕ SL/TP-Plan am Chart ziehen</button>'+
  '<button type="button" data-cmd="clear-plan">Plan ausblenden</button>'+
- '</form><output id="cs-scenario-result" role="status" aria-live="polite">Nur Schätzung. Keine Brokeränderungen.</output><div class="cs-scenario-ab-actions"><button type="button" id="cs-scenario-save-a">Vorschau in A speichern</button><button type="button" id="cs-scenario-save-b">Vorschau in B speichern</button><button type="button" id="cs-scenario-export" disabled>A/B als JSON exportieren</button></div><p id="cs-scenario-ab-status" role="status" aria-live="polite">Nur lokal gespeicherte, verifizierte Broker-Vorschauen.</p><div id="cs-scenario-ab" aria-label="Gespeicherte What-if A/B-Vergleiche"></div></details>';
+ '</form><output id="cs-scenario-result" role="status" aria-live="polite">Nur Schätzung. Keine Brokeränderungen.</output><p id="cs-scenario-portfolio-impact" role="status" aria-live="polite">Portfolio-Gesamtrisiko UNAVAILABLE · Portfolio und Vorschau für dasselbe Konto erforderlich.</p><div class="cs-scenario-ab-actions"><button type="button" id="cs-scenario-save-a">Vorschau in A speichern</button><button type="button" id="cs-scenario-save-b">Vorschau in B speichern</button><button type="button" id="cs-scenario-export" disabled>A/B als JSON exportieren</button></div><p id="cs-scenario-ab-status" role="status" aria-live="polite">Nur lokal gespeicherte, verifizierte Broker-Vorschauen.</p><div id="cs-scenario-ab" aria-label="Gespeicherte What-if A/B-Vergleiche"></div></details>';
  host.parentElement.insertAdjacentElement("beforebegin",panel);
  const canvas=document.createElement("canvas");canvas.className="cs-beta-canvas";canvas.style.pointerEvents="none";canvas.setAttribute("aria-hidden","true");
  host.style.position="relative";host.appendChild(canvas);
@@ -936,7 +946,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  const output=panel.querySelector("#cs-scenario-result");
  function scope(){return window.location.pathname.startsWith("/stt")?"/stt":""}
  const fields={};for(const name of ["side","volumeLots","lotMode","riskBudget","riskPercent","feesPerLot","slippageTicks","entryPrice","slPrice","tpPrice"])fields[name]=form.elements.namedItem(name);
- form.addEventListener("input",()=>{scenarioGeneration++;s.lastScenarioPreview=null});
+ form.addEventListener("input",()=>{scenarioGeneration++;s.lastScenarioPreview=null;renderPortfolioImpact(null)});
  fields.lotMode.addEventListener("change",()=>{
   fields.volumeLots.disabled=fields.lotMode.value!=="FIXED";
   fields.riskBudget.disabled=fields.lotMode.value!=="BUDGET";
@@ -944,7 +954,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  });
  form.querySelector('[data-cmd="quote"]').addEventListener("click",async()=>{
   const acc=s.account,nonce=++scenarioGeneration;
-  s.lastScenarioPreview=null;
+  s.lastScenarioPreview=null;renderPortfolioImpact(null);
   setVerifiedMarketQuote(acc,null);
   output.textContent="Verifizierte MT5-Quote wird geladen ...";
   try{
@@ -959,7 +969,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  });
  form.addEventListener("submit",async e=>{
   e.preventDefault();const account=s.account,nonce=++scenarioGeneration;
-  s.lastScenarioPreview=null;
+  s.lastScenarioPreview=null;renderPortfolioImpact(null);
   const payload={account,symbol:"XAUUSD",side:fields.side.value,
    volumeLots:fields.lotMode.value==="FIXED"?Number(fields.volumeLots.value):null,
    riskBudget:fields.lotMode.value==="BUDGET"?Number(fields.riskBudget.value):null,
@@ -981,7 +991,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
    }
    const actualLots=Number(result.positionSizing?.volumeLots);
    if(!Number.isFinite(actualLots)||actualLots<=0)throw Error("Broker-Lotgröße fehlt in der verifizierten Vorschau.");
-   s.scenario={...payload,volumeLots:actualLots};s.validatedScenario=json(s.scenario);s.lastScenarioPreview={account,symbol:"XAUUSD",savedAtUtc:new Date().toISOString(),request:json(payload),result:json(result)};s.planOriginal=null;
+   s.scenario={...payload,volumeLots:actualLots};s.validatedScenario=json(s.scenario);s.lastScenarioPreview={account,symbol:"XAUUSD",savedAtUtc:new Date().toISOString(),request:json(payload),result:json(result)};s.planOriginal=null;renderPortfolioImpact(s.lastScenarioPreview);
    if(Number.isFinite(Number(result.tickSize))&&Number(result.tickSize)>0)s.planTickSize=Number(result.tickSize);
    requestDraw();
    const loss=result.pnlAtSl.amount,reward=result.pnlAtTp.amount,cur=result.pnlAtSl.currency;
