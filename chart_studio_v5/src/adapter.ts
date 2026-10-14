@@ -142,8 +142,8 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  }
  function addPriceLevel(opts:PriceLevelOptions){
   guard();validatePriceLevel(opts);
-  if(averages.has(opts.id)||paneLines.has(opts.id))throw Error("Duplicate chart object identity");
-  if(priceLevels.size>=100)throw Error("Native drawing limit");
+  if(averages.has(opts.id)||paneLines.has(opts.id)||timeMarkers.has(opts.id))throw Error("Duplicate chart object identity");
+  if(priceLevels.size+timeMarkers.size>=100)throw Error("Native drawing limit");
   const existing=priceLevels.get(opts.id);
   if(existing){existing.primitive.set(opts.price,opts.color);existing.options={...opts};return}
   const primitive=new PriceLevelPrimitive(opts.price,opts.color);price.attachPrimitive(primitive);
@@ -167,7 +167,7 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  function addTimeMarker(opts:TimeMarkerOptions){
   guard();validateTimeMarker(opts);
   if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id))throw Error("Duplicate chart object identity");
-  if(timeMarkers.size>=100)throw Error("Native drawing limit");
+  if(priceLevels.size+timeMarkers.size>=100)throw Error("Native drawing limit");
   const existing=timeMarkers.get(opts.id);
   if(existing){existing.primitive.set(opts.time,opts.color);existing.options={...opts};return}
   const primitive=new TimeMarkerPrimitive(opts.time,opts.color);price.attachPrimitive(primitive);

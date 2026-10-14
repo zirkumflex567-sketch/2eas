@@ -37,6 +37,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.showVolume(true);
    engine.addPriceLevel({id:"risk-stop",price:4100,color:"#ff6677"});
    engine.addTimeMarker({id:"entry-time",time:bars[40].time,color:"#c18bff"});
+   let duplicateDrawingRejected=false;try{engine.addTimeMarker({id:"risk-stop",time:bars[40].time,color:"#ffffff"})}catch(_){duplicateDrawingRejected=true}
    const withPrimitive=engine.inspect();
    engine.updatePriceLevel("risk-stop",{price:4110,color:"#ffaa66"});
    engine.updateTimeMarker("entry-time",{time:bars[41].time,color:"#d8aaff"});
@@ -70,7 +71,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.destroy();
    let disposed=false;try{engine.setCandles(bars)}catch(_){disposed=true}
    return {first,updated,staleRejected,invalidRejected,isolated,removed,disposed,badPaneRejected,
-    withPrimitive,updatedPrimitive,removedPrimitive,removedTimeMarker,withoutPrimitive,invalidPrimitiveRejected,unknownTimeRejected,
+    withPrimitive,updatedPrimitive,removedPrimitive,removedTimeMarker,withoutPrimitive,invalidPrimitiveRejected,unknownTimeRejected,duplicateDrawingRejected,
     warmupReadout,alignedReadout,noVolumeReadout,missingBarReadout,formingReadout,
     replacementReadout,badVolumeRejected,invalidReadoutTimeRejected,
     expectedWarmupOpen:bars[10].open,expectedWarmupUtc:new Date(bars[10].time*1000).toISOString()};
@@ -87,6 +88,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(result.withoutPrimitive.nativePrimitives,0);
   assert.equal(result.invalidPrimitiveRejected,true);
   assert.equal(result.unknownTimeRejected,true);
+  assert.equal(result.duplicateDrawingRejected,true);
   assert.ok(result.first.paneCount>=2);
   assert.equal(result.warmupReadout.state,"AVAILABLE");
   assert.equal(result.warmupReadout.source,"CHART_FEED");
