@@ -191,8 +191,10 @@ class SqliteLayoutTests(unittest.TestCase):
         self.assertNotIn("movingAverages", validate_document(old))
         rma = {**cfg, "type":"RMA", "period":1}
         smma = {**cfg, "type":"SMMA", "period":1000}
+        shifted = {**cfg, "displayShift":-500}
         self.assertEqual(validate_document({**old,"movingAverages":[rma]})["movingAverages"],[rma])
         self.assertEqual(validate_document({**old,"movingAverages":[smma]})["movingAverages"],[smma])
+        self.assertEqual(validate_document({**old,"movingAverages":[shifted]})["movingAverages"],[shifted])
         current = {**old, "movingAverages":[cfg]}
         self.assertEqual(validate_document(current)["movingAverages"], [cfg])
         saved = self.store.put("local-owner","titan","XAUUSD","Multi",current,0)
@@ -202,6 +204,9 @@ class SqliteLayoutTests(unittest.TestCase):
             [cfg, cfg],
             [{**cfg,"period":0}],
             [{**cfg,"period":1001}],
+            [{**cfg,"displayShift":501}],
+            [{**cfg,"displayShift":-501}],
+            [{**cfg,"displayShift":1.5}],
             [{**cfg,"period":2.2}],
             [{**cfg,"color":"red"}],
             [{**cfg,"source":"foo"}],

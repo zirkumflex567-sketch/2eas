@@ -11,16 +11,18 @@ const copy=value=>JSON.parse(JSON.stringify(value));
 const isHex=value=>typeof value==="string"&&/^#[0-9a-fA-F]{6}$/.test(value);
 function normalize(raw){
  if(!raw||typeof raw!=="object"||Array.isArray(raw))return null;
- const allowed=["id","type","period","source","color","lineWidth","visible","label"];
+ const allowed=["id","type","period","source","color","lineWidth","visible","label","displayShift"];
  if(Object.keys(raw).some(k=>!allowed.includes(k)))return null;
  if(typeof raw.id!=="string"||!/^[a-zA-Z0-9_-]{1,32}$/.test(raw.id))return null;
  if(!TYPES.includes(raw.type)||!SOURCES.includes(raw.source))return null;
  if(!Number.isInteger(raw.period)||raw.period<1||raw.period>MAX_PERIOD)return null;
+ const displayShift=raw.displayShift===undefined?0:raw.displayShift;
+ if(!Number.isInteger(displayShift)||displayShift < -500||displayShift > 500)return null;
  if(!isHex(raw.color)||!Number.isInteger(raw.lineWidth)||raw.lineWidth<1||raw.lineWidth>4||
   typeof raw.visible!=="boolean")return null;
  if(typeof raw.label!=="string"||raw.label.length>40||/[\u0000-\u001f]/.test(raw.label))return null;
  return {id:raw.id,type:raw.type,period:raw.period,source:raw.source,
-  color:raw.color.toLowerCase(),lineWidth:raw.lineWidth,visible:raw.visible,label:raw.label};
+  color:raw.color.toLowerCase(),lineWidth:raw.lineWidth,visible:raw.visible,label:raw.label,displayShift};
 }
 function normalizeList(data){
  if(!Array.isArray(data)||data.length>MAX_INSTANCES)return null;
@@ -89,6 +91,16 @@ function calculate(input,type,period,source="close"){
  }
  return result;
 }
+function shiftDisplay(bars,points,shift=0){
+ if(!Array.isArray(bars)||!Array.isArray(points)||!Number.isInteger(shift)||shift < -500||shift > 500)return [];
+ if(shift===0)return points;
+ const values=new Map(points.map(point=>[point.time,point.value])),result=[];
+ for(let target=0;target<bars.length;target++){
+  const source=target-shift;if(source<0||source>=bars.length)continue;
+  const value=values.get(bars[source].time);if(value!==undefined)result.push({time:bars[target].time,value});
+ }
+ return result;
+}
 function defaults(){return []}
 function restore(account){
  try{
@@ -129,24 +141,30 @@ function refreshSeries(){
   // Hiding is handled by native visibility. Do not erase buffered history.
   if(!cfg.visible)continue;
   const cacheKey=keyFor(cfg);
-  const dataKey=String(state.signature)+":"+cacheKey;
+  const dataKey=String(state.signature)+":"+cacheKey+":"+cfg.displayShift;
   // A styling-only edit must never resend 1000+ historical points.
   if(state.loaded.get(cfg.id)===dataKey)continue;
   if(!cache.has(cacheKey))cache.set(cacheKey,calculate(state.bars,cfg.type,cfg.period,cfg.source));
-  series.setData(cache.get(cacheKey));
+  series.setData(shiftDisplay(state.bars,cache.get(cacheKey),cfg.displayShift));
   state.loaded.set(cfg.id,dataKey);
   state.dataWrites++;
  }
  const readouts=new Map();
  for(const cfg of state.configs){
   if(!cfg.visible)continue;
-  const points=cache.get(keyFor(cfg))||calculate(state.bars,cfg.type,cfg.period,cfg.source);
+  const points=shiftDisplay(state.bars,cache.get(keyFor(cfg))||calculate(state.bars,cfg.type,cfg.period,cfg.source),cfg.displayShift);
   const byTime=new Map(points.map(point=>[point.time,point.value]));
   const label=cfg.label.trim()||cfg.type+" "+cfg.period;
-  for(const bar of state.bars){
-   const rows=readouts.get(bar.time)||[],value=byTime.get(bar.time);
-   rows.push(value===undefined?label+" · Warm-up":label+" "+value.toFixed(2));
-   readouts.set(bar.time,rows);
+  for(let targetIndex=0;targetIndex<state.bars.length;targetIndex++){
+   const bar=state.bars[targetIndex],rows=readouts.get(bar.time)||[],value=byTime.get(bar.time);
+   let text;
+   if(value!==undefined)text=label+" "+value.toFixed(2);
+   else{
+    const sourceIndex=targetIndex-cfg.displayShift;
+    text=sourceIndex<0||sourceIndex>=state.bars.length?
+     label+" · Anzeigeversatz außerhalb geladener Kerzen":label+" · Warm-up";
+   }
+   rows.push(text);readouts.set(bar.time,rows);
   }
  }
  state.readouts=readouts;
@@ -176,11 +194,12 @@ function redrawEditor(){
   const enabled=input("checkbox",cfg.visible,"Linie anzeigen","visible",cfg.id);
   const type=optionsSelect(TYPES,cfg.type,"Durchschnittstyp","type",cfg.id);
   const period=input("number",cfg.period,"Periode","period",cfg.id,{min:1,max:MAX_PERIOD,step:1});
+  const displayShift=input("number",cfg.displayShift,"Anzeigeversatz in Kerzen","displayShift",cfg.id,{min:-500,max:500,step:1});
   const src=optionsSelect(SOURCES,cfg.source,"Preisquelle","source",cfg.id);
   const color=input("color",cfg.color,"Linienfarbe","color",cfg.id);
   const weight=optionsSelect([1,2,3,4],cfg.lineWidth,"Linienstärke","lineWidth",cfg.id);
   const name=input("text",cfg.label,"Eigener Linienname","label",cfg.id,{maxlength:40,placeholder:"Name (optional)"});
-  for(const [text,control] of [["Sichtbar",enabled],["Typ",type],["Periode",period],
+  for(const [text,control] of [["Sichtbar",enabled],["Typ",type],["Periode",period],["Versatz (Kerzen)",displayShift],
    ["Quelle",src],["Farbe",color],["Breite",weight],["Name",name]]){
    const label=document.createElement("label");label.textContent=text;label.append(control);row.append(label);
   }
@@ -276,7 +295,7 @@ function mount({chart,panel,account="titan"}){
   const target=event.target,id=target?.dataset?.id,field=target?.dataset?.field;
   if(!id||!field)return;
   const value=field==="visible"?target.checked:
-   ["period","lineWidth"].includes(field)?Number(target.value):target.value;
+   ["period","lineWidth","displayShift"].includes(field)?Number(target.value):target.value;
   edit(id,field,value);
  });
  instances.addEventListener("click",event=>{
@@ -295,6 +314,6 @@ function mount({chart,panel,account="titan"}){
  redrawEditor();refreshSeries();
 }
 window.ChartStudioAverages=Object.freeze({mount,updateBars,switchAccount,getConfigs,
- applySettings,add,edit,remove,calculate,readout,normalize,normalizeList,MAX_INSTANCES,
+ applySettings,add,edit,remove,calculate,readout,normalize,normalizeList,MAX_INSTANCES,shiftDisplay,
  diagnostics:()=>state?{account:state.account,dataWrites:state.dataWrites,seriesCount:state.series.size}:null});
 })();

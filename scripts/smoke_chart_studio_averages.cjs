@@ -101,6 +101,25 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(cfg[0].period,34);assert.equal(cfg[0].source,"hlc3");
   assert.equal(cfg[0].color,"#44ffaa");assert.equal(cfg[0].lineWidth,3);
   assert.equal(cfg[0].label,"Trend EMA 34");
+  const shiftControl=area.locator('[data-instance="ma1"] [data-field="displayShift"]');
+  assert.equal(await shiftControl.getAttribute("min"),"-500");
+  assert.equal(await shiftControl.getAttribute("max"),"500");
+  await shiftControl.fill("2");await shiftControl.press("Tab");
+  assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].displayShift,2);
+  const aligned=await page.evaluate(()=>{
+   const bars=window.__chartSmokeCandles,source=bars[98],target=bars[100];
+   const point=ChartStudioAverages.calculate(bars,"EMA",34,"hlc3").find(x=>x.time===source.time);
+   return {display:ChartStudioAverages.readout(target.time),expected:point.value.toFixed(2)};
+  });
+  assert.ok(aligned.display.includes("Trend EMA 34 "+aligned.expected),"Shifted readout value aligns with its destination candle");
+  const edge=await page.evaluate(()=>{
+   const bars=window.__chartSmokeCandles;
+   ChartStudioAverages.edit("ma1","period",1);
+   ChartStudioAverages.edit("ma1","displayShift",-1);
+   return ChartStudioAverages.readout(bars.at(-1).time);
+  });
+  assert.ok(edge.includes("Anzeigeversatz")&&edge.includes("außerhalb geladener Kerzen"),"Shift gap is distinct from indicator warm-up");
+  await page.evaluate(()=>{ChartStudioAverages.edit("ma1","period",34);ChartStudioAverages.edit("ma1","displayShift",2)});
   // Changing only style must not re-transfer the historical series.
   const priorWrites=await page.evaluate(()=>ChartStudioAverages.diagnostics().dataWrites);
   await page.evaluate(()=>ChartStudioAverages.edit("ma1","lineWidth",2));
@@ -125,6 +144,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].period,56);
   await page.locator('[data-cmd="load-profile"]').click();
   assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].period,34);
+  assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].displayShift,2);
   // Account isolation, including persisted original.
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
   assert.equal(await page.evaluate(()=>ChartStudioAverages.getConfigs().length),0);
@@ -145,11 +165,13 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   const saved=store.get("titan:XAUUSD:MultiEMA").document;
   assert.equal(saved.movingAverages.length,2);
   assert.equal(saved.movingAverages[0].period,34);
+  assert.equal(saved.movingAverages[0].displayShift,2);
   await area.locator('[data-instance="ma1"] [data-field="period"]').fill("77");
   await area.locator('[data-instance="ma1"] [data-field="period"]').press("Tab");
   await sb.getByRole("button",{name:"Server laden"}).click();
   await page.waitForFunction(()=>document.querySelector(".cs-server-sync p").textContent.includes("geladen"));
   assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].period,34);
+  assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].displayShift,2);
   assert.equal(await page.evaluate(secret=>Object.values(localStorage).some(v=>v.includes(secret)),secret),false);
   assert.deepEqual(errors,[]);
   assert.ok(requests.every(x=>x.url.includes("/api/chart/v1/workspace")));

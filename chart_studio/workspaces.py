@@ -172,13 +172,14 @@ def validate_document(raw: Any) -> dict:
         if not isinstance(entries, list) or len(entries) > 16:
             raise StoreError("Maximal 16 gleitende Durchschnitte erlaubt.")
         ids = set()
-        allowed_ma = {"id", "type", "period", "source", "color",
-                      "lineWidth", "visible", "label"}
+        required_ma = {"id", "type", "period", "source", "color",
+                       "lineWidth", "visible", "label"}
+        optional_ma = {"displayShift"}
         types = {"EMA", "SMA", "WMA", "RMA", "SMMA"}
         sources = {"close", "open", "high", "low", "hl2", "hlc3", "ohlc4"}
         clean_ma = []
         for item in entries:
-            if not isinstance(item, dict) or set(item) != allowed_ma:
+            if not isinstance(item, dict) or not required_ma.issubset(item) or set(item) - required_ma - optional_ma:
                 raise StoreError("Unbekannte Eigenschaften einer MA-Linie.")
             ident = item["id"]
             if not isinstance(ident, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", ident):
@@ -192,6 +193,10 @@ def validate_document(raw: Any) -> dict:
                 raise StoreError("Unbekannte MA-Preisquelle.")
             if type(item["period"]) is not int or not 1 <= item["period"] <= 1000:
                 raise StoreError("MA-Periode muss zwischen 1 und 1000 liegen.")
+            if "displayShift" in item and (
+                type(item["displayShift"]) is not int or not -500 <= item["displayShift"] <= 500
+            ):
+                raise StoreError("MA-Anzeigeversatz muss eine Ganzzahl zwischen -500 und 500 sein.")
             if type(item["lineWidth"]) is not int or not 1 <= item["lineWidth"] <= 4:
                 raise StoreError("Linienbreite außerhalb 1–4.")
             if type(item["visible"]) is not bool:
