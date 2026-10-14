@@ -4,6 +4,7 @@ on:
     paths:
       - 'backtesting/**'
       - 'tests/test_mt5_batch_backtesting.py'
+      - 'tests/test_mt5_backtest_analytics.py'
       - '.github/workflows/backtesting-contracts.yml'
   workflow_dispatch:
 permissions:
@@ -16,4 +17,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
-      - run: python -m unittest discover -s tests -p test_mt5_batch_backtesting.py -v
+      - run: python -m unittest discover -s tests -p 'test_mt5_backtest*.py' -v
+      - run: python -m unittest discover -s tests -p 'test_mt5_batch_backtesting.py' -v
