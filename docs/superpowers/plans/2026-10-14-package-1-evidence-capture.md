@@ -34,6 +34,7 @@ A package milestone may close only with independent test/review evidence and an 
 
 ## Progress
 
+- [x] Mapped checked-in Titan and GoldM15 candidate hooks with SHA-256 manifests and identified decision, risk-reject, order-intent and protective-exit points in [`EA_EVENT_HOOK_MAP_2026-10-14.md`](../../EA_EVENT_HOOK_MAP_2026-10-14.md). This is source-only review; runtime chart identities remain unverified and neither EA was changed.
 - [x] Bounded schema-v1 line validation, configured account/terminal/producer binding, atomic private write-ahead cursor, idempotent replay, sequence conflict rejection, first/interior gap counts, and store-loss reporting implemented in `chart_studio/evidence_spool.py`.
 - [x] Unit tests first observed the missing-module failure; reviewer findings for first-sequence gaps, lost cursor state across restarts, and parser recursion were reproduced before fixes.
 - [x] Add an opt-in single-consumer private file reader/rotation protocol and application startup/shutdown wiring; bounded reads run off the event loop and expose internal gap/loss diagnostics. It remains disabled without an explicit private spool root; it has not yet been enabled for live EA producers.
