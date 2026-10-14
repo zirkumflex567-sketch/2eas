@@ -181,8 +181,15 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    e.addTextAnnotation({id:"visual-note",time:rows[52].time,price:rows[52].close,text:"Plan is ready",color:"#7dd3fc"});
    e.addTrendLine({id:"visual-trend",startTime:rows[42].time,startPrice:rows[42].close,endTime:rows[64].time,endPrice:rows[64].close,color:"#9be564"});
    e.addRectangle({id:"visual-zone",startTime:rows[25].time,startPrice:rows[25].close+10,endTime:rows[35].time,endPrice:rows[35].close-10,color:"#f59e0b",fill:true});
+   e.addChannel({id:"visual-channel",startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[42].time,endPrice:rows[42].close+8,offsetTime:rows[32].time,offsetPrice:rows[32].close+14,color:"#38bdf8"});
    e.showVolume(true);window.__v5Screenshot=e;
+   return {drawing:e.readDrawing("visual-channel"),start:e.drawingAnchorPosition("visual-channel","START"),end:e.drawingAnchorPosition("visual-channel","END"),offset:e.drawingAnchorPosition("visual-channel","OFFSET"),position:e.drawingPosition("visual-channel"),transfer:JSON.parse(e.exportDrawings())};
   });
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.inspect().nativePrimitives),6);
+  const initialChannel=await page.evaluate(()=>({drawing:window.__v5Screenshot.readDrawing("visual-channel"),start:window.__v5Screenshot.drawingAnchorPosition("visual-channel","START"),end:window.__v5Screenshot.drawingAnchorPosition("visual-channel","END"),offset:window.__v5Screenshot.drawingAnchorPosition("visual-channel","OFFSET"),position:window.__v5Screenshot.drawingPosition("visual-channel"),transfer:JSON.parse(window.__v5Screenshot.exportDrawings())}));
+  assert.equal(initialChannel.drawing.offsetTime,1700100000+32*900);
+  assert.ok(initialChannel.start&&initialChannel.end&&initialChannel.offset&&initialChannel.position);
+  assert.ok(initialChannel.transfer.drawings.some(item=>item.kind==="CHANNEL"&&item.options.id==="visual-channel"));
   await page.waitForTimeout(150);
   const initialRectanglePosition=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-zone"));
   await page.mouse.move(initialRectanglePosition.x,initialRectanglePosition.y);await page.waitForTimeout(80);
@@ -513,7 +520,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   });
   await page.mouse.move(10,10);
   await page.waitForTimeout(150);
-  const persistedBeforeReload=await page.evaluate(()=>({price:window.__v5Screenshot.readDrawing("visual-level"),priceSecond:window.__v5Screenshot.readDrawing("visual-level-second"),time:window.__v5Screenshot.readDrawing("visual-time"),timeSecond:window.__v5Screenshot.readDrawing("visual-time-second"),text:window.__v5Screenshot.readDrawing("visual-note"),trend:window.__v5Screenshot.readDrawing("visual-trend"),rectangle:window.__v5Screenshot.readDrawing("visual-zone"),ray:window.__v5Screenshot.readDrawing("visual-ray"),fibo:window.__v5Screenshot.readDrawing("visual-fibo"),customFibo:window.__v5Screenshot.readDrawing("visual-fibo-custom")}));
+  const persistedBeforeReload=await page.evaluate(()=>({price:window.__v5Screenshot.readDrawing("visual-level"),priceSecond:window.__v5Screenshot.readDrawing("visual-level-second"),time:window.__v5Screenshot.readDrawing("visual-time"),timeSecond:window.__v5Screenshot.readDrawing("visual-time-second"),text:window.__v5Screenshot.readDrawing("visual-note"),trend:window.__v5Screenshot.readDrawing("visual-trend"),rectangle:window.__v5Screenshot.readDrawing("visual-zone"),channel:window.__v5Screenshot.readDrawing("visual-channel"),ray:window.__v5Screenshot.readDrawing("visual-ray"),fibo:window.__v5Screenshot.readDrawing("visual-fibo"),customFibo:window.__v5Screenshot.readDrawing("visual-fibo-custom")}));
   await page.evaluate(()=>{
    const rows=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2}});
    const key="2eas.chartstudio.v5.drawings:historycontract:XAUUSD:M15";localStorage.removeItem(key);
@@ -522,7 +529,10 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    e.addPriceLevel({id:"history-edit",price:4001,color:"#ffffff"});e.updatePriceLevel("history-edit",{price:4002});e.updatePriceLevel("history-edit",{price:4003});e.destroy();
    const createHost=document.createElement("div");createHost.style.cssText="width:800px;height:400px";document.body.append(createHost);
    const created=ChartStudioV5.createStudioV5(createHost,"historycreated",{symbol:"XAUUSD",timeframe:"M15"});created.setCandles(rows);
-   created.addPriceLevel({id:"history-created",price:4011,color:"#ffffff"});created.removePriceLevel("history-created");created.destroy();createHost.remove();host.remove();
+   created.addPriceLevel({id:"history-created",price:4011,color:"#ffffff"});created.removePriceLevel("history-created");created.destroy();createHost.remove();
+   const windowHost=document.createElement("div");windowHost.style.cssText="width:800px;height:400px";document.body.append(windowHost);
+   const windowed=ChartStudioV5.createStudioV5(windowHost,"windowpersist",{symbol:"XAUUSD",timeframe:"M15"});windowed.setCandles(rows);
+   windowed.addTimeMarker({id:"outside-window-anchor",time:rows[10].time,color:"#ffffff"});windowed.destroy();windowHost.remove();host.remove();
   });
   await page.reload({waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartV5Ready===true);
@@ -535,7 +545,14 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const createHost=document.createElement("div");createHost.style.cssText="width:800px;height:400px";document.body.append(createHost);
    const created=ChartStudioV5.createStudioV5(createHost,"historycreated",{symbol:"XAUUSD",timeframe:"M15"});created.setCandles(rows);
    const deleteUndo=created.undo(),restored=created.readDrawing("history-created"),createUndo=created.undo(),removed=created.readDrawing("history-created"),createRedo=created.redo(),createdAgain=created.readDrawing("history-created"),deleteRedo=created.redo(),deletedAgain=created.readDrawing("history-created");created.destroy();createHost.remove();
-   return {before,undo,undone,undoAgain,undoneAgain,redo,redone,redoAgain,redoneAgain,afterBarsReplacement,createDelete:{deleteUndo,restored,createUndo,removed,createRedo,createdAgain,deleteRedo,deletedAgain}};
+   const windowHost=document.createElement("div");windowHost.style.cssText="width:800px;height:400px";document.body.append(windowHost);
+   const windowed=ChartStudioV5.createStudioV5(windowHost,"windowpersist",{symbol:"XAUUSD",timeframe:"M15"});windowed.setCandles(rows.slice(20));
+   windowed.addChannel({id:"outside-window-channel",startTime:rows[20].time,startPrice:rows[20].close,endTime:rows[30].time,endPrice:rows[30].close+8,offsetTime:rows[25].time,offsetPrice:rows[25].close+15,color:"#38bdf8"});
+   windowed.setCandles(rows.slice(50));const outsideWindow={status:windowed.inspect().persistenceStatus,drawing:windowed.readDrawing("outside-window-channel"),hiddenPosition:windowed.drawingPosition("outside-window-channel")};windowed.destroy();windowHost.remove();
+   const reloadHost=document.createElement("div");reloadHost.style.cssText="width:800px;height:400px";document.body.append(reloadHost);
+   const reload=ChartStudioV5.createStudioV5(reloadHost,"windowpersist",{symbol:"XAUUSD",timeframe:"M15"});reload.setCandles(rows.slice(50));const reloadedOutsideWindow={status:reload.inspect().persistenceStatus,drawing:reload.readDrawing("outside-window-channel"),position:reload.drawingPosition("outside-window-channel")};
+   reload.setCandles(rows);const loadedAgain={drawing:reload.readDrawing("outside-window-channel"),position:reload.drawingPosition("outside-window-channel")};reload.destroy();reloadHost.remove();
+   return {before,undo,undone,undoAgain,undoneAgain,redo,redone,redoAgain,redoneAgain,afterBarsReplacement,createDelete:{deleteUndo,restored,createUndo,removed,createRedo,createdAgain,deleteRedo,deletedAgain},outsideWindow,reloadedOutsideWindow,loadedAgain};
   });
   assert.equal(persistedHistoryProbe.before.price,4003);
   assert.equal(persistedHistoryProbe.undo,true,"scoped undo history should survive browser reload");
@@ -557,11 +574,19 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(persistedHistoryProbe.createDelete.createdAgain.price,4011);
   assert.equal(persistedHistoryProbe.createDelete.deleteRedo,true);
   assert.equal(persistedHistoryProbe.createDelete.deletedAgain,null);
+  assert.equal(persistedHistoryProbe.outsideWindow.status,"READY");
+  assert.equal(persistedHistoryProbe.outsideWindow.drawing.startTime,1700100000+20*900);
+  assert.equal(persistedHistoryProbe.outsideWindow.hiddenPosition,null);
+  assert.equal(persistedHistoryProbe.reloadedOutsideWindow.status,"READY");
+  assert.deepEqual(persistedHistoryProbe.reloadedOutsideWindow.drawing,persistedHistoryProbe.outsideWindow.drawing);
+  assert.equal(persistedHistoryProbe.reloadedOutsideWindow.position,null);
+  assert.deepEqual(persistedHistoryProbe.loadedAgain.drawing,persistedHistoryProbe.outsideWindow.drawing);
+  assert.ok(persistedHistoryProbe.loadedAgain.position);
   const persistenceProbe=await page.evaluate(()=>{
    const rows=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2,tick_volume:100+i*3}});
    const scope={symbol:"XAUUSD",timeframe:"M15"};
    let e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",scope);e.setCandles(rows);
-   const restored={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives,price:e.readDrawing("visual-level"),priceSecond:e.readDrawing("visual-level-second"),time:e.readDrawing("visual-time"),timeSecond:e.readDrawing("visual-time-second"),text:e.readDrawing("visual-note"),trend:e.readDrawing("visual-trend"),rectangle:e.readDrawing("visual-zone"),ray:e.readDrawing("visual-ray"),fibo:e.readDrawing("visual-fibo"),customFibo:e.readDrawing("visual-fibo-custom")};
+   const restored={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives,price:e.readDrawing("visual-level"),priceSecond:e.readDrawing("visual-level-second"),time:e.readDrawing("visual-time"),timeSecond:e.readDrawing("visual-time-second"),text:e.readDrawing("visual-note"),trend:e.readDrawing("visual-trend"),rectangle:e.readDrawing("visual-zone"),channel:e.readDrawing("visual-channel"),ray:e.readDrawing("visual-ray"),fibo:e.readDrawing("visual-fibo"),customFibo:e.readDrawing("visual-fibo-custom")};
    e.changeAccount("goldm15");e.setCandles(rows);const otherAccount=e.inspect().nativePrimitives;
    e.changeAccount("titan");e.setCandles(rows);const returned=e.inspect().nativePrimitives;
    e.destroy();
@@ -600,7 +625,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    return {restored,otherAccount,returned,otherTimeframe,conflict,externalSnapshot,corrupt,migrated,legacy,badHistory,malformedHistory,migrationFailure,failedMigration,sizeBound};
   });
   assert.equal(persistenceProbe.restored.status,"READY");
-  assert.equal(persistenceProbe.restored.count,10);
+  assert.equal(persistenceProbe.restored.count,11);
   assert.deepEqual(persistenceProbe.restored.price,persistedBeforeReload.price);
   assert.deepEqual(persistenceProbe.restored.priceSecond,persistedBeforeReload.priceSecond);
   assert.deepEqual(persistenceProbe.restored.time,persistedBeforeReload.time);
@@ -608,11 +633,12 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(persistenceProbe.restored.text,persistedBeforeReload.text);
   assert.deepEqual(persistenceProbe.restored.trend,persistedBeforeReload.trend);
   assert.deepEqual(persistenceProbe.restored.rectangle,persistedBeforeReload.rectangle);
+  assert.deepEqual(persistenceProbe.restored.channel,persistedBeforeReload.channel);
   assert.deepEqual(persistenceProbe.restored.ray,persistedBeforeReload.ray);
   assert.deepEqual(persistenceProbe.restored.fibo,persistedBeforeReload.fibo);
   assert.deepEqual(persistenceProbe.restored.customFibo,persistedBeforeReload.customFibo);
   assert.equal(persistenceProbe.otherAccount,0);
-  assert.equal(persistenceProbe.returned,10);
+  assert.equal(persistenceProbe.returned,11);
   assert.equal(persistenceProbe.otherTimeframe,0);
   assert.equal(persistenceProbe.conflict.status,"CONFLICT");
   assert.equal(persistenceProbe.conflict.stored,persistenceProbe.externalSnapshot);
@@ -640,7 +666,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const scope={symbol:"XAUUSD",timeframe:"M15"};
    const source=window.__v5Screenshot.exportDrawings();
    const target=ChartStudioV5.createStudioV5(document.getElementById("chart"),"importtest",scope);target.setCandles(rows);
-   const imported=target.importDrawings(source),restored={count:target.inspect().nativePrimitives,price:target.readDrawing("visual-level"),priceSecond:target.readDrawing("visual-level-second"),time:target.readDrawing("visual-time"),timeSecond:target.readDrawing("visual-time-second"),text:target.readDrawing("visual-note"),trend:target.readDrawing("visual-trend"),rectangle:target.readDrawing("visual-zone"),ray:target.readDrawing("visual-ray"),fibo:target.readDrawing("visual-fibo"),customFibo:target.readDrawing("visual-fibo-custom")};
+   const imported=target.importDrawings(source),restored={count:target.inspect().nativePrimitives,price:target.readDrawing("visual-level"),priceSecond:target.readDrawing("visual-level-second"),time:target.readDrawing("visual-time"),timeSecond:target.readDrawing("visual-time-second"),text:target.readDrawing("visual-note"),trend:target.readDrawing("visual-trend"),rectangle:target.readDrawing("visual-zone"),channel:target.readDrawing("visual-channel"),ray:target.readDrawing("visual-ray"),fibo:target.readDrawing("visual-fibo"),customFibo:target.readDrawing("visual-fibo-custom")};
    let fiboPaneCollision="";try{target.addPaneLine({id:"visual-fibo",color:"#ffffff"},rows.map(c=>({time:c.time,value:c.close})))}catch(error){fiboPaneCollision=error.message}
    target.updateTextAnnotation("visual-note",{text:"Edited note"});const edited=target.readDrawing("visual-note");
    target.removeTextAnnotation("visual-note");const removed=target.readDrawing("visual-note");target.undo();
@@ -665,6 +691,14 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    target.removeFibonacci("visual-fibo");const removedFibo=target.readDrawing("visual-fibo");target.undo();const restoredFiboByUndo=target.readDrawing("visual-fibo");
    const fiboApi={editedFibo,removedFibo,restoredFiboByUndo};
    const annotationApi={edited,removed,restoredByUndo,invalidText};
+   const channelOriginal=target.readDrawing("visual-channel");
+   target.updateChannel("visual-channel",{offsetPrice:channelOriginal.offsetPrice+3});const editedChannel=target.readDrawing("visual-channel");
+   target.undo();const channelUndo=target.readDrawing("visual-channel");target.redo();const channelRedo=target.readDrawing("visual-channel");
+   target.removeChannel("visual-channel");const removedChannel=target.readDrawing("visual-channel");target.undo();const restoredChannelByUndo=target.readDrawing("visual-channel");
+   target.addChannel({id:"vertical-channel",startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[30].time,endPrice:rows[30].close+10,offsetTime:rows[32].time,offsetPrice:rows[32].close+20,color:"#38bdf8"});const verticalChannel=target.readDrawing("vertical-channel");target.removeChannel("vertical-channel");
+   let invalidChannel="";try{target.addChannel({id:"invalid-channel",startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[42].time,endPrice:rows[42].close+8,offsetTime:rows[30].time,offsetPrice:rows[30].close,color:"#38bdf8"})}catch(error){invalidChannel=error.message}
+   let unloadedChannel="";try{target.addChannel({id:"unloaded-channel",startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[42].time,endPrice:rows[42].close+8,offsetTime:rows[89].time+900,offsetPrice:rows[89].close+14,color:"#38bdf8"})}catch(error){unloadedChannel=error.message}
+   const channelApi={editedChannel,channelUndo,channelRedo,removedChannel,restoredChannelByUndo,invalidChannel,unloadedChannel,verticalChannel};
    target.destroy();
    const malformedTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"malformedtest",scope);malformedTarget.setCandles(rows);
    let malformed="";try{malformedTarget.importDrawings('{"schemaVersion":1,"symbol":"XAUUSD","timeframe":"M15","drawings":[{"kind":"PRICE","options":{"id":"ok","price":4001,"color":"#ffffff","visible":true,"locked":false}},{"kind":"PRICE","options":{"id":"bad","price":null,"color":"#ffffff","visible":true,"locked":false}}]}')}catch(error){malformed=error.message}
@@ -681,9 +715,13 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const invalidCustomFiboEnvelope={...sourceEnvelope,drawings:[{kind:"FIBO",options:{...sourceEnvelope.drawings.find(item=>item.kind==="FIBO"&&item.options.id==="visual-fibo-custom").options,levels:[20,10]}}]};
    let malformedCustomFibo="";try{malformedTarget.importDrawings(JSON.stringify(invalidCustomFiboEnvelope))}catch(error){malformedCustomFibo=error.message}
    const afterMalformedCustomFibo=malformedTarget.inspect().nativePrimitives;malformedTarget.destroy();
+   const missingChannelEnvelope={...sourceEnvelope,drawings:[{kind:"CHANNEL",options:{...sourceEnvelope.drawings.find(item=>item.kind==="CHANNEL").options}}]};delete missingChannelEnvelope.drawings[0].options.offsetTime;
+   const missingChannelTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"missingchannel",scope);missingChannelTarget.setCandles(rows);
+   let missingChannel="";try{missingChannelTarget.importDrawings(JSON.stringify(missingChannelEnvelope))}catch(error){missingChannel=error.message}const missingChannelCount=missingChannelTarget.inspect().nativePrimitives;missingChannelTarget.destroy();
    const capTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"captest",scope);capTarget.setCandles(rows);
-   for(let i=0;i<99;i++)capTarget.addTrendLine({id:`trend${i}`,startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[40].time,endPrice:rows[40].close,color:"#ffffff"});
+   for(let i=0;i<98;i++)capTarget.addTrendLine({id:`trend${i}`,startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[40].time,endPrice:rows[40].close,color:"#ffffff"});
    capTarget.addFibonacci({id:"last-drawing",startTime:rows[30].time,startPrice:rows[30].close+1,endTime:rows[40].time,endPrice:rows[40].close-1,color:"#ffffff"});
+   capTarget.addChannel({id:"last-channel",startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[40].time,endPrice:rows[40].close+2,offsetTime:rows[32].time,offsetPrice:rows[32].close+12,color:"#ffffff"});
    let capError="";try{capTarget.addTrendLine({id:"trend-over-cap",startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[40].time,endPrice:rows[40].close,color:"#ffffff"})}catch(error){capError=error.message}
    const capCount=capTarget.inspect().nativePrimitives;capTarget.destroy();
    const conflictTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"conflicttest",scope);conflictTarget.setCandles(rows);conflictTarget.addPriceLevel({id:"existing",price:4000,color:"#ffffff"});
@@ -694,14 +732,14 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const storageConflict={error:storageConflictError,status:storageConflictTarget.inspect().persistenceStatus,count:storageConflictTarget.inspect().nativePrimitives,stored:localStorage.getItem(conflictKey)};storageConflictTarget.destroy();
    const wrongScope=ChartStudioV5.createStudioV5(document.getElementById("chart"),"goldm15",{symbol:"EURUSD",timeframe:"M15"});wrongScope.setCandles(rows);
    let scopeError="";try{wrongScope.importDrawings(source)}catch(error){scopeError=error.message}const wrongScopeCount=wrongScope.inspect().nativePrimitives;wrongScope.destroy();
-   return {source,imported,restored,annotationApi,trendApi,rectangleApi,rayApi,fiboApi,fiboPaneCollision,malformed,afterMalformed,malformedTrend,afterMalformedTrend,malformedRectangle,afterMalformedRectangle,malformedFibo,afterMalformedFibo,malformedCustomFibo,afterMalformedCustomFibo,capError,capCount,conflictError,conflictCount,storageConflict,scopeError,wrongScopeCount};
+   return {source,imported,restored,annotationApi,channelApi,trendApi,rectangleApi,rayApi,fiboApi,fiboPaneCollision,malformed,afterMalformed,malformedTrend,afterMalformedTrend,malformedRectangle,afterMalformedRectangle,malformedFibo,afterMalformedFibo,malformedCustomFibo,afterMalformedCustomFibo,missingChannel,missingChannelCount,capError,capCount,conflictError,conflictCount,storageConflict,scopeError,wrongScopeCount};
   });
   const transferEnvelope=JSON.parse(drawingTransfer.source);
   assert.equal(transferEnvelope.schemaVersion,1);
   assert.deepEqual(Object.keys(transferEnvelope).sort(),["drawings","schemaVersion","symbol","timeframe"]);
   assert.equal(transferEnvelope.account,undefined);
-  assert.deepEqual(drawingTransfer.imported,{imported:10});
-  assert.equal(drawingTransfer.restored.count,10);
+  assert.deepEqual(drawingTransfer.imported,{imported:11});
+  assert.equal(drawingTransfer.restored.count,11);
   assert.deepEqual(drawingTransfer.restored.price,persistedBeforeReload.price);
   assert.deepEqual(drawingTransfer.restored.priceSecond,persistedBeforeReload.priceSecond);
   assert.deepEqual(drawingTransfer.restored.time,persistedBeforeReload.time);
@@ -709,6 +747,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(drawingTransfer.restored.text,persistedBeforeReload.text);
   assert.deepEqual(drawingTransfer.restored.trend,persistedBeforeReload.trend);
   assert.deepEqual(drawingTransfer.restored.rectangle,persistedBeforeReload.rectangle);
+  assert.deepEqual(drawingTransfer.restored.channel,persistedBeforeReload.channel);
   assert.deepEqual(drawingTransfer.restored.ray,persistedBeforeReload.ray);
   assert.deepEqual(drawingTransfer.restored.fibo,persistedBeforeReload.fibo);
   assert.deepEqual(drawingTransfer.restored.customFibo,persistedBeforeReload.customFibo);
@@ -716,6 +755,16 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(drawingTransfer.annotationApi.removed,null);
   assert.deepEqual(drawingTransfer.annotationApi.restoredByUndo,drawingTransfer.annotationApi.edited);
   assert.ok(drawingTransfer.annotationApi.invalidText);
+  assert.equal(drawingTransfer.channelApi.editedChannel.offsetPrice,persistedBeforeReload.channel.offsetPrice+3);
+  assert.deepEqual(drawingTransfer.channelApi.channelUndo,persistedBeforeReload.channel);
+  assert.deepEqual(drawingTransfer.channelApi.channelRedo,drawingTransfer.channelApi.editedChannel);
+  assert.equal(drawingTransfer.channelApi.removedChannel,null);
+  assert.deepEqual(drawingTransfer.channelApi.restoredChannelByUndo,drawingTransfer.channelApi.editedChannel);
+  assert.ok(drawingTransfer.channelApi.invalidChannel);
+  assert.ok(drawingTransfer.channelApi.unloadedChannel);
+  assert.equal(drawingTransfer.channelApi.verticalChannel.startTime,drawingTransfer.channelApi.verticalChannel.endTime,"vertical baseline channel is supported");
+  assert.ok(drawingTransfer.missingChannel);
+  assert.equal(drawingTransfer.missingChannelCount,0,"missing channel anchors reject import atomically");
   assert.equal(drawingTransfer.trendApi.reverseError,"");
   assert.equal(drawingTransfer.trendApi.unavailableAnchorLock,true);
   assert.equal(drawingTransfer.trendApi.reversedTrend.startTime,persistedBeforeReload.trend.endTime);
@@ -776,8 +825,10 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    e.addTrendLine({id:"keyboard-trend",startTime:base+15*900,startPrice:4003,endTime:base+28*900,endPrice:4010,color:"#ffffff"});
    e.addRay({id:"keyboard-ray",startTime:base+32*900,startPrice:4015,endTime:base+46*900,endPrice:4021,color:"#ffffff"});
    e.addFibonacci({id:"keyboard-fibo",startTime:base+50*900,startPrice:4020,endTime:base+65*900,endPrice:4030,color:"#ffffff"});
+   const close=i=>4000+i*.4+Math.sin(i/10)*16+2;
+   e.addChannel({id:"keyboard-channel",startTime:base+70*900,startPrice:close(70),endTime:base+82*900,endPrice:close(82)+5,offsetTime:base+74*900,offsetPrice:close(74)+12,color:"#ffffff"});
   });
-  for(const id of ["keyboard-text","keyboard-trend","keyboard-ray","keyboard-fibo"]){
+  for(const id of ["keyboard-text","keyboard-trend","keyboard-ray","keyboard-fibo","keyboard-channel"]){
    const point=await page.evaluate(drawingId=>drawingId==="keyboard-trend"||drawingId==="keyboard-fibo"?window.__v5Screenshot.drawingAnchorPosition(drawingId,"START"):window.__v5Screenshot.drawingPosition(drawingId),id);
    assert.ok(point&&Number.isFinite(point.x)&&Number.isFinite(point.y),`${id} has a keyboard hit target`);
    await page.mouse.move(point.x,point.y);await page.waitForTimeout(80);await page.mouse.click(point.x,point.y);await page.waitForTimeout(30);
@@ -786,12 +837,27 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    await page.keyboard.press("ArrowRight");
    const after=await page.evaluate(drawingId=>window.__v5Screenshot.readDrawing(drawingId),id);
    if(id==="keyboard-text")assert.equal(after.time,before.time+900);
-   else {assert.equal(after.startTime,before.startTime+900);assert.equal(after.endTime,before.endTime+900)}
+   else {assert.equal(after.startTime,before.startTime+900);assert.equal(after.endTime,before.endTime+900);if(id==="keyboard-channel")assert.equal(after.offsetTime,before.offsetTime+900)}
    assert.equal(await page.evaluate(()=>window.__v5Screenshot.undo()),true,`${id} nudge has one undo entry`);
    assert.deepEqual(await page.evaluate(drawingId=>window.__v5Screenshot.readDrawing(drawingId),id),before);
    assert.equal(await page.evaluate(()=>window.__v5Screenshot.redo()),true);
    assert.deepEqual(await page.evaluate(drawingId=>window.__v5Screenshot.readDrawing(drawingId),id),after);
   }
+  const channelAnchors={START:["startTime","startPrice"],END:["endTime","endPrice"],OFFSET:["offsetTime","offsetPrice"]};
+  for(const anchor of Object.keys(channelAnchors)){
+   const before=await page.evaluate(()=>window.__v5Screenshot.readDrawing("keyboard-channel"));
+   const point=await page.evaluate(anchor=>window.__v5Screenshot.drawingAnchorPosition("keyboard-channel",anchor),anchor);
+   await page.mouse.move(point.x,point.y);await page.waitForTimeout(80);await page.mouse.down();await page.mouse.move(point.x+15,point.y-12,{steps:3});await page.mouse.up();
+   const after=await page.evaluate(()=>window.__v5Screenshot.readDrawing("keyboard-channel"));
+   const [timeKey,priceKey]=channelAnchors[anchor];assert.notDeepEqual([after[timeKey],after[priceKey]],[before[timeKey],before[priceKey]],`${anchor} channel handle moves`);
+   for(const other of Object.keys(channelAnchors).filter(key=>key!==anchor))for(const field of channelAnchors[other])assert.equal(after[field],before[field],`${anchor} drag preserves ${other} ${field}`);
+  }
+  const beforeChannelEscape=await page.evaluate(()=>window.__v5Screenshot.readDrawing("keyboard-channel")),escapeAnchor=await page.evaluate(()=>window.__v5Screenshot.drawingAnchorPosition("keyboard-channel","OFFSET"));
+  await page.mouse.move(escapeAnchor.x,escapeAnchor.y);await page.waitForTimeout(80);await page.mouse.down();await page.mouse.move(escapeAnchor.x+15,escapeAnchor.y-12,{steps:2});await page.keyboard.press("Escape");await page.mouse.up();
+  assert.deepEqual(await page.evaluate(()=>window.__v5Screenshot.readDrawing("keyboard-channel")),beforeChannelEscape,"Escape restores the channel anchor snapshot");
+  const beforeLockedChannel=await page.evaluate(()=>window.__v5Screenshot.readDrawing("keyboard-channel"));await page.evaluate(()=>window.__v5Screenshot.setDrawingLocked("keyboard-channel",true));
+  const lockedAnchor=await page.evaluate(()=>window.__v5Screenshot.drawingAnchorPosition("keyboard-channel","START"));await page.mouse.move(lockedAnchor.x,lockedAnchor.y);await page.waitForTimeout(80);await page.mouse.down();await page.mouse.move(lockedAnchor.x+20,lockedAnchor.y-15,{steps:2});await page.mouse.up();
+  const afterLockedChannel=await page.evaluate(()=>window.__v5Screenshot.readDrawing("keyboard-channel"));assert.deepEqual([afterLockedChannel.startTime,afterLockedChannel.startPrice],[beforeLockedChannel.startTime,beforeLockedChannel.startPrice],"Locked channel rejects anchor drags");await page.evaluate(()=>window.__v5Screenshot.setDrawingLocked("keyboard-channel",false));
   const touchContext=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:1.5,hasTouch:true,isMobile:true});
   try{
    const touchPage=await touchContext.newPage();await touchPage.goto("http://127.0.0.1:8872/chart_studio_v5/fixture.html",{waitUntil:"networkidle"});await touchPage.waitForFunction(()=>window.__chartV5Ready===true);
