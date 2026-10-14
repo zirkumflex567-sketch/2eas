@@ -664,8 +664,10 @@ def get_live_market_data(include_journal=True):
     recent_res = float(swing_lookback['high'].max()) if len(swing_lookback) > 0 else float(cur_bar['close']) + 10.0
     recent_sup = float(swing_lookback['low'].min()) if len(swing_lookback) > 0 else float(cur_bar['close']) - 10.0
     min_sr_room = 300 * float(getattr(sym, 'point', .01))
-    buy_c8_sr_ok = not (recent_res > cur_bar['close'] and (recent_res - cur_bar['close']) < min_sr_room)
-    sell_c8_sr_ok = not (cur_bar['close'] > recent_sup and (cur_bar['close'] - recent_sup) < min_sr_room)
+    sup_buffer = float(cur_bar['close'] - recent_sup)
+    res_buffer = float(recent_res - cur_bar['close'])
+    buy_c8_sr_ok = not (recent_res > cur_bar['close'] and res_buffer < min_sr_room)
+    sell_c8_sr_ok = not (cur_bar['close'] > recent_sup and sup_buffer < min_sr_room)
 
     rules_matrix = [
         {
@@ -734,11 +736,11 @@ def get_live_market_data(include_journal=True):
         {
             "id": "sr_room",
             "name": "8. Anti-Trap: S/R-Widerstandspuffer",
-            "current_val": f"Widerstand ${recent_res:.2f} (Puffer ${recent_res-cur_bar['close']:.2f})",
+            "current_val": f"Sup ${recent_sup:.2f} (Puffer ${sup_buffer:.2f}) · Res ${recent_res:.2f} (Puffer ${res_buffer:.2f})",
             "short_met": bool(sell_c8_sr_ok),
             "long_met": bool(buy_c8_sr_ok),
-            "short_note": "Genügend Support-Freiraum" if sell_c8_sr_ok else "Direkt auf Support (< $3 Puffer)",
-            "long_note": "Genügend Widerstands-Freiraum" if buy_c8_sr_ok else "Direkt unter Widerstand (< $3 Puffer)"
+            "short_note": f"Genügend Support-Puffer (${sup_buffer:.2f} >= ${min_sr_room:.2f})" if sell_c8_sr_ok else f"Direkt auf Support: nur ${sup_buffer:.2f} Puffer (< ${min_sr_room:.2f})",
+            "long_note": f"Genügend Widerstands-Puffer (${res_buffer:.2f} >= ${min_sr_room:.2f})" if buy_c8_sr_ok else f"Direkt unter Widerstand: nur ${res_buffer:.2f} Puffer (< ${min_sr_room:.2f})"
         }
     ]
     
@@ -771,7 +773,7 @@ def get_live_market_data(include_journal=True):
         elif not buy_c7_climax_ok:
             trend_diagnosis = f"ANTI-TRAP AKTIV: Bereits {green_streak} grüne Kerzen in Folge. Warten auf Pause/Pullback!"
         elif not buy_c8_sr_ok:
-            trend_diagnosis = f"ANTI-TRAP AKTIV: Zu nah am Widerstand (${recent_res:.2f}). Kauf in Supply gesperrt!"
+            trend_diagnosis = f"ANTI-TRAP AKTIV: Zu nah am Widerstand (${recent_res:.2f}, Puffer ${res_buffer:.2f} < ${min_sr_room:.2f}). Kauf in Supply gesperrt!"
         else:
             trend_diagnosis = "ALLE REGELN ERFÜLLT INKL. ANTI-TRAP SCHUTZ! Bereit für M15-Schluss."
     else:
@@ -793,7 +795,7 @@ def get_live_market_data(include_journal=True):
         elif not sell_c7_climax_ok:
             trend_diagnosis = f"ANTI-TRAP AKTIV: Bereits {red_streak} rote Kerzen in Folge. Warten auf Pause/Pullback!"
         elif not sell_c8_sr_ok:
-            trend_diagnosis = f"ANTI-TRAP AKTIV: Zu nah am Support (${recent_sup:.2f}). Verkauf in Demand gesperrt!"
+            trend_diagnosis = f"ANTI-TRAP AKTIV: Zu nah am Support (${recent_sup:.2f}, Puffer ${sup_buffer:.2f} < ${min_sr_room:.2f}). Verkauf in Demand gesperrt!"
         else:
             trend_diagnosis = f"ALLE REGELN ERFÜLLT INKL. ANTI-TRAP SCHUTZ! Bereit für {acc_tf_str}-Schluss."
 
@@ -1716,7 +1718,11 @@ HTML_CONTENT = """<!DOCTYPE html>
       <div class="flex flex-wrap items-center gap-3">
         <!-- TOP NAV THEME & VIEW TOOLBAR -->
         <div id="top-nav-theme-container" class="flex flex-wrap items-center gap-2 font-mono text-[11px]">
-          <!-- stone-theme-dock is injected here by addSwitcher() -->
+          <div class="stone-theme-dock" role="group" aria-label="Cockpit Design wählen">
+            <button type="button" data-mode="stone" aria-pressed="true" aria-label="Design Stein">ᛟ STEIN</button>
+            <button type="button" data-mode="dark" aria-pressed="false" aria-label="Design Dunkel">◈ DUNKEL</button>
+            <button type="button" data-mode="light" aria-pressed="false" aria-label="Design Hell">☼ HELL</button>
+          </div>
           <a id="nav-mobile-link" href="/mobile" target="_blank" class="px-2.5 py-1 rounded-lg ticker-bg border font-sans font-bold hover:bg-emerald-500/20 text-emerald-400 flex items-center gap-1 text-[11px] cursor-pointer" title="Lightweight Mobile Version fürs Smartphone (ohne Animationen)">
             📱 Mobile
           </a>
@@ -1740,64 +1746,87 @@ HTML_CONTENT = """<!DOCTYPE html>
   </nav>
 
   <!-- 1. TOP NAVBAR -->
-  <header class="glass-card rounded-xl px-4 py-2 mb-3 flex flex-wrap gap-3 items-center justify-between shrink-0 shadow-sm">
-    <div class="flex items-center gap-3">
-      <div class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></div>
-      <h1 class="font-black text-sm tracking-wider flex items-center gap-2">
-        <span id="strategy-title">BLUEBERRY FUNDED (PROP-FIRMA)</span> <span id="strategy-version" class="text-[10px] px-2 py-0.5 rounded bg-amber-600 text-white font-bold tracking-normal">Phase 1 LIVE PROP</span>
-      </h1>
-      <span class="opacity-40">|</span>
-      <span class="text-sub font-medium">Gold (XAUUSD) Cockpit</span>
+  <header class="glass-card rounded-xl px-4 py-2.5 mb-3 flex flex-col gap-2 shrink-0 shadow-sm">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></div>
+        <h1 class="font-black text-sm tracking-wider flex items-center gap-2">
+          <span id="strategy-title">BLUEBERRY FUNDED (PROP-FIRMA)</span> <span id="strategy-version" class="text-[10px] px-2 py-0.5 rounded bg-amber-600 text-white font-bold tracking-normal">Phase 1 LIVE PROP</span>
+        </h1>
+        <span class="opacity-40">|</span>
+        <span class="text-sub font-medium">Gold (XAUUSD) Cockpit</span>
+      </div>
     </div>
 
-    <!-- Live Prices, Drawdown, Account & Timers -->
-    <div class="flex flex-wrap items-center gap-3 font-mono">
-      <div class="flex items-center gap-2 px-3 py-1 rounded-lg ticker-bg border">
-        <span class="font-sans font-bold text-sub">XAUUSD:</span>
-        <span id="live-bid" class="font-bold text-emerald-500 text-sm">----.--</span>
-        <span class="opacity-40">/</span>
-        <span id="live-ask" class="font-bold text-rose-500 text-sm">----.--</span>
-        <span id="live-spread" class="text-[10px] text-sub px-1 rounded bg-black/10">Spr: --</span>
+    <!-- Live Prices, Drawdown, Account & Timers (5 strictly equal boxes via 5-col CSS grid) -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 w-full font-mono">
+      <!-- 1. XAUUSD KURS -->
+      <div class="header-stat-box h-12 px-3 py-1.5 rounded-xl ticker-bg border flex items-center justify-between font-mono text-[11px]">
+        <div class="flex items-center gap-1.5">
+          <span class="font-sans font-black text-amber-400 text-xs tracking-wide">XAUUSD</span>
+          <span id="live-spread" class="text-[9px] text-sub px-1 py-0.5 rounded bg-black/20 font-bold">Spr: --</span>
+        </div>
+        <div class="flex items-center gap-1 font-bold text-xs">
+          <span id="live-bid" class="text-emerald-400">----.--</span>
+          <span class="opacity-30">/</span>
+          <span id="live-ask" class="text-rose-400">----.--</span>
+        </div>
       </div>
 
-      <!-- DAILY DRAWDOWN BADGE -->
-      <div id="dd-badge" class="flex items-center gap-2 px-3 py-1 rounded-lg ticker-bg border text-[11px]" title="Blueberry Funded Tages-Drawdown (Tages-Start / High-Water Mark)">
-        <span class="font-sans font-bold text-sub flex items-center gap-1.5">
-          <span id="dd-dot" class="w-2 h-2 rounded-full bg-emerald-500"></span>
-          TAGES-DD:
-        </span>
-        <span id="dd-pct" class="font-bold text-emerald-400">--%</span>
-        <span class="text-sub text-[10px]" id="dd-usd">(-$--.--)</span>
-        <span class="opacity-30">|</span>
-        <span class="text-sub text-[10px]">Puffer:</span>
-        <span id="dd-buffer" class="font-bold text-emerald-400">$----.--</span>
-        <span id="dd-reset-tag" class="hidden text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40 font-mono font-bold">Reset: $10k</span>
-        <button id="dd-reset-button" onclick="openDrawdownResetModal()" class="ml-1 px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-sans font-bold text-[10px] cursor-pointer transition-all flex items-center gap-1 shadow-sm" title="Tages-Drawdown auf 0.00% zurücksetzen">
-          🔄 Reset
-        </button>
+      <!-- 2. DAILY DRAWDOWN BADGE -->
+      <div id="dd-badge" class="header-stat-box h-12 px-3 py-1.5 rounded-xl ticker-bg border flex items-center justify-between font-mono text-[11px]" title="Tages-Drawdown (Tages-Start / High-Water Mark)">
+        <div class="flex items-center gap-1.5">
+          <span id="dd-dot" class="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+          <span class="font-sans font-bold text-sub text-[10px]">TAGES-DD:</span>
+          <span id="dd-pct" class="font-bold text-emerald-400 text-xs">--%</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <div class="text-right text-[10px]">
+            <span class="text-sub">Puf: </span><span id="dd-buffer" class="font-bold text-emerald-400">$----</span>
+          </div>
+          <span id="dd-usd" class="hidden">(-$--.--)</span>
+          <span id="dd-reset-tag" class="hidden text-[9px] px-1 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40 font-mono font-bold">Reset</span>
+          <button id="dd-reset-button" onclick="openDrawdownResetModal()" class="px-1.5 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-sans font-bold text-[9px] cursor-pointer transition-all shadow-sm shrink-0" title="Tages-Drawdown auf 0.00% zurücksetzen">
+            🔄
+          </button>
+        </div>
       </div>
 
-      <!-- LIVE ACCOUNT BALANCE & FLOATING PNL BADGE -->
-      <div id="account-balance-badge" class="flex items-center gap-2 px-3 py-1 rounded-lg ticker-bg border text-[11px]" title="Aktueller Kontostand, Equity und laufende offene PnL">
-        <span class="font-sans font-bold text-sub">KONTO:</span>
-        <span id="live-balance" class="font-bold text-sky-400">$----.--</span>
-        <span class="opacity-30">|</span>
-        <span class="text-sub">EQ:</span>
-        <span id="live-equity" class="font-bold text-slate-200">$----.--</span>
-        <span class="opacity-30">|</span>
-        <span class="text-sub">OFFEN:</span>
-        <span id="live-floating-pnl" class="font-bold text-emerald-400">+$0.00</span>
-        <span id="live-floating-pnl-pct" class="text-sub text-[10px]">(+0.00%)</span>
+      <!-- 3. LIVE ACCOUNT BALANCE & FLOATING PNL BADGE -->
+      <div id="account-balance-badge" class="header-stat-box h-12 px-3 py-1.5 rounded-xl ticker-bg border flex items-center justify-between font-mono text-[11px]" title="Aktueller Kontostand, Equity und offene PnL">
+        <div class="flex items-center gap-1.5">
+          <span class="font-sans font-bold text-sub text-[10px]">KONTO:</span>
+          <span id="live-balance" class="font-bold text-sky-400 text-xs">$----.--</span>
+        </div>
+        <div class="text-right text-[10px] flex items-center gap-1">
+          <span class="text-sub">OFFEN:</span>
+          <span id="live-floating-pnl" class="font-bold text-emerald-400">+$0.00</span>
+          <span id="live-floating-pnl-pct" class="text-[9px] text-emerald-400/80">(+0%)</span>
+          <span id="live-equity" class="hidden">$----.--</span>
+        </div>
       </div>
 
-      <div class="flex items-center gap-3 px-3 py-1 rounded-lg ticker-bg border text-[11px]">
-        <div><span class="text-sub">SERVER:</span> <span id="time-server" class="font-bold">--:--:--</span></div>
-        <div><span class="text-sub">DE:</span> <span id="time-german" class="text-emerald-500 font-bold">--:--:--</span></div>
+      <!-- 4. ZEITEN (SERVER / DE) -->
+      <div class="header-stat-box h-12 px-3 py-1.5 rounded-xl ticker-bg border flex items-center justify-between font-mono text-[11px]">
+        <div class="flex items-center gap-1">
+          <span class="text-sub text-[10px]">SRV:</span>
+          <span id="time-server" class="font-bold text-xs">--:--:--</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <span class="text-sub text-[10px]">DE:</span>
+          <span id="time-german" class="text-emerald-400 font-bold text-xs">--:--:--</span>
+        </div>
       </div>
 
-      <div class="flex items-center gap-1.5 px-3 py-1 bg-blue-600/15 text-blue-500 rounded-lg border border-blue-500/40 text-[11px]">
-        <span class="font-bold">⏳ M15-SCHLUSS:</span>
-        <span id="bar-countdown" class="font-bold text-xs">--:--</span>
+      <!-- 5. KERZENSCHLUSS COUNTDOWN -->
+      <div class="header-stat-box h-12 px-3 py-1.5 rounded-xl ticker-bg border flex items-center justify-between font-mono text-[11px]">
+        <div class="flex items-center gap-1 text-blue-400">
+          <span>⏳</span>
+          <span class="font-bold text-[10px]">KERZENSCHLUSS:</span>
+        </div>
+        <div>
+          <span id="bar-countdown" class="font-bold text-xs text-blue-400">--:--</span>
+        </div>
       </div>
     </div>
   </header>

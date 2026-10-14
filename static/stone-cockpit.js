@@ -478,33 +478,39 @@
   }
 
   function addSwitcher() {
-    const target = document.getElementById("top-nav-theme-container") || document.querySelector("header.glass-card");
-    if (!target || document.querySelector(".stone-theme-dock")) return;
-    const dock = document.createElement("div");
-    dock.className = "stone-theme-dock";
-    dock.setAttribute("role", "group");
-    dock.setAttribute("aria-label","Cockpit Design wählen");
-    for (const [mode, label] of [
-      ["stone","ᛟ STEIN"],["dark","◈ DUNKEL"],["light","☼ HELL"]
-    ]) {
-      const button = document.createElement("button");
-      button.type="button";
-      button.dataset.mode=mode;
-      button.setAttribute("aria-pressed","false");
-      button.setAttribute("aria-label","Design "+(mode==="stone"?"Stein":mode==="dark"?"Dunkel":"Hell"));
-      button.textContent=label;
-      button.addEventListener("click",()=>setMode(mode));
-      dock.append(button);
-    }
-    if (target.id === "top-nav-theme-container") {
+    // Purge any accidental docks inside header.glass-card so it is never rendered there:
+    document.querySelectorAll("header.glass-card .stone-theme-dock").forEach(el => el.remove());
+
+    const target = document.getElementById("top-nav-theme-container");
+    if (!target) return;
+    let dock = target.querySelector(".stone-theme-dock");
+    if (!dock) {
+      dock = document.createElement("div");
+      dock.className = "stone-theme-dock";
+      dock.setAttribute("role", "group");
+      dock.setAttribute("aria-label","Cockpit Design wählen");
+      for (const [mode, label] of [
+        ["stone","ᛟ STEIN"],["dark","◈ DUNKEL"],["light","☼ HELL"]
+      ]) {
+        const button = document.createElement("button");
+        button.type="button";
+        button.dataset.mode=mode;
+        button.setAttribute("aria-pressed","false");
+        button.setAttribute("aria-label","Design "+(mode==="stone"?"Stein":mode==="dark"?"Dunkel":"Hell"));
+        button.textContent=label;
+        dock.append(button);
+      }
       target.prepend(dock);
-    } else {
-      target.append(dock);
     }
+    dock.querySelectorAll("button[data-mode]").forEach(button => {
+      button.onclick = () => setMode(button.dataset.mode);
+      button.setAttribute("aria-pressed", String(button.dataset.mode === selected));
+    });
 
     // Keep the existing old theme toggle operational outside stone mode.
     const legacyToggle = byId("theme-label")?.closest("button");
-    if (legacyToggle) {
+    if (legacyToggle && !legacyToggle.dataset.bound) {
+      legacyToggle.dataset.bound = "true";
       legacyToggle.addEventListener("click", () => {
         document.body.classList.remove("theme-stone");
         selected = document.body.classList.contains("theme-light") ? "light" : "dark";

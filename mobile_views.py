@@ -343,11 +343,49 @@ MOBILE_HTML = """<!DOCTYPE html>
 
   <!-- TREND RULES CHECKLIST -->
   <div class="card">
-    <details>
-      <summary style="cursor:pointer; font-size:11px; font-weight:800; color:var(--sub); text-transform:uppercase;">
-        ▶ Strategie & M15 Indikatoren
+    <details open>
+      <summary style="cursor:pointer; font-size:11px; font-weight:800; color:var(--sub); text-transform:uppercase; display:flex; justify-content:space-between; align-items:center;">
+        <span>🎯 Strategie & Indikatoren</span>
+        <span id="mob-rule-summary" class="badge badge-cyan">Lade...</span>
       </summary>
-      <div id="rules-list" style="margin-top:10px;"></div>
+
+      <!-- Readiness Bars (Short & Long) -->
+      <div style="margin-top:10px; display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+        <div style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.25); border-radius:8px; padding:6px 8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; font-weight:bold; margin-bottom:4px;">
+            <span style="color:var(--red);">SHORT</span>
+            <span id="mob-sell-readiness" style="color:var(--red); font-family:ui-monospace,monospace;">0/8 (0%)</span>
+          </div>
+          <div class="progress-bar" style="margin-top:0; height:5px;">
+            <div class="progress-fill" id="mob-sell-bar" style="width:0%; background:var(--red);"></div>
+          </div>
+        </div>
+
+        <div style="background:rgba(34,197,94,0.08); border:1px solid rgba(34,197,94,0.25); border-radius:8px; padding:6px 8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; font-weight:bold; margin-bottom:4px;">
+            <span style="color:var(--green);">LONG</span>
+            <span id="mob-buy-readiness" style="color:var(--green); font-family:ui-monospace,monospace;">0/8 (0%)</span>
+          </div>
+          <div class="progress-bar" style="margin-top:0; height:5px;">
+            <div class="progress-fill" id="mob-buy-bar" style="width:0%; background:var(--green);"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Diagnosis / Status Text -->
+      <div id="mob-trend-diag" style="margin-top:8px; padding:6px 8px; border-radius:6px; background:rgba(255,255,255,0.03); border:1px solid var(--card-border); font-size:11px; line-height:1.4; color:#fff;">
+        Lade Strategie-Status...
+      </div>
+
+      <!-- Filter Buttons -->
+      <div style="display:flex; gap:4px; margin-top:8px;">
+        <button id="rule-tab-all" class="btn" style="flex:1; padding:4px; font-size:10px; background:rgba(6,182,212,0.15); border-color:rgba(6,182,212,0.4); color:var(--cyan);" onclick="setRuleFilter('all')">Alle (8)</button>
+        <button id="rule-tab-short" class="btn" style="flex:1; padding:4px; font-size:10px;" onclick="setRuleFilter('short')">Nur Short</button>
+        <button id="rule-tab-long" class="btn" style="flex:1; padding:4px; font-size:10px;" onclick="setRuleFilter('long')">Nur Long</button>
+      </div>
+
+      <!-- Detailed Rules List -->
+      <div id="rules-list" style="margin-top:8px; display:flex; flex-direction:column; gap:6px;"></div>
     </details>
   </div>
 
@@ -390,6 +428,8 @@ MOBILE_HTML = """<!DOCTYPE html>
     let prevSeenTickets = new Set();
     let journalInitialized = false;
     let prevJournalCount = 0;
+    let currentRuleFilter = 'all';
+    let lastStatusData = null;
 
     const ArcadeAudio = (() => {
       let ctx = null;
@@ -591,21 +631,132 @@ MOBILE_HTML = """<!DOCTYPE html>
         renderPositions(positions, d.indicators?.ema9 || null);
 
         // Rules
-        if (Array.isArray(d.rules_matrix)) {
-          const rList = document.getElementById('rules-list');
-          rList.innerHTML = d.rules_matrix.map(r => `
-            <div class="rule-item">
-              <span style="color:var(--sub);">${r.name}</span>
-              <span class="badge ${r.short_met || r.long_met ? 'badge-green' : 'badge-red'}">
-                ${r.current_val}
-              </span>
-            </div>
-          `).join('');
-        }
+        lastStatusData = d;
+        renderRules(d);
         document.getElementById('status-dot').style.background = 'var(--green)';
       } catch (err) {
         document.getElementById('status-dot').style.background = 'var(--red)';
       }
+    }
+
+    function setRuleFilter(filter) {
+      currentRuleFilter = filter;
+      ['all', 'short', 'long'].forEach(f => {
+        const btn = document.getElementById(`rule-tab-${f}`);
+        if (btn) {
+          if (f === filter) {
+            btn.style.background = 'rgba(6,182,212,0.2)';
+            btn.style.borderColor = 'rgba(6,182,212,0.5)';
+            btn.style.color = 'var(--cyan)';
+          } else {
+            btn.style.background = 'rgba(255,255,255,0.05)';
+            btn.style.borderColor = 'var(--card-border)';
+            btn.style.color = '#fff';
+          }
+        }
+      });
+      if (lastStatusData) renderRules(lastStatusData);
+    }
+
+    function renderRules(d) {
+      if (!Array.isArray(d?.rules_matrix)) return;
+      const sellMet = d.sell_met_count !== undefined ? d.sell_met_count : d.rules_matrix.filter(r => r.short_met).length;
+      const buyMet = d.buy_met_count !== undefined ? d.buy_met_count : d.rules_matrix.filter(r => r.long_met).length;
+      const total = d.rule_count || d.rules_matrix.length || 8;
+      const sellPct = d.sell_readiness !== undefined ? d.sell_readiness : Math.round((sellMet / total) * 100);
+      const buyPct = d.buy_readiness !== undefined ? d.buy_readiness : Math.round((buyMet / total) * 100);
+
+      const sellReadEl = document.getElementById('mob-sell-readiness');
+      if (sellReadEl) sellReadEl.textContent = `${sellMet}/${total} (${sellPct}%)`;
+      const sellBarEl = document.getElementById('mob-sell-bar');
+      if (sellBarEl) sellBarEl.style.width = `${sellPct}%`;
+
+      const buyReadEl = document.getElementById('mob-buy-readiness');
+      if (buyReadEl) buyReadEl.textContent = `${buyMet}/${total} (${buyPct}%)`;
+      const buyBarEl = document.getElementById('mob-buy-bar');
+      if (buyBarEl) buyBarEl.style.width = `${buyPct}%`;
+
+      const summaryEl = document.getElementById('mob-rule-summary');
+      if (summaryEl) {
+        const focus = d.active_focus || (d.trend_direction === 'BULLISH' ? 'LONG' : 'SHORT');
+        summaryEl.textContent = `${focus} · ${d.trend_direction || ''}`;
+        summaryEl.className = 'badge ' + (d.trend_direction === 'BULLISH' ? 'badge-green' : 'badge-red');
+      }
+
+      const diagEl = document.getElementById('mob-trend-diag');
+      if (diagEl) {
+        diagEl.textContent = d.trend_diagnosis || d.short_missing || 'Keine Diagnose verfügbar';
+      }
+
+      const rList = document.getElementById('rules-list');
+      if (!rList) return;
+
+      rList.innerHTML = d.rules_matrix.map(r => {
+        const showShort = currentRuleFilter === 'all' || currentRuleFilter === 'short';
+        const showLong = currentRuleFilter === 'all' || currentRuleFilter === 'long';
+
+        let colsHtml = '';
+        if (showShort && showLong) {
+          colsHtml = `
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:10px; font-family:ui-monospace,monospace;">
+              <div style="padding:4px 6px; border-radius:5px; background:${r.short_met ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)'}; border:1px solid ${r.short_met ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'};">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                  <span style="font-weight:800; color:var(--red);">SHORT:</span>
+                  <span class="badge ${r.short_met ? 'badge-green' : 'badge-red'}" style="padding:1px 4px; font-size:9px;">
+                    ${r.short_met ? '✓ ERFÜLLT' : '✕ FEHLT'}
+                  </span>
+                </div>
+                <div style="font-size:9px; color:var(--sub); line-height:1.2;">${r.short_note || ''}</div>
+              </div>
+              <div style="padding:4px 6px; border-radius:5px; background:${r.long_met ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)'}; border:1px solid ${r.long_met ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'};">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                  <span style="font-weight:800; color:var(--green);">LONG:</span>
+                  <span class="badge ${r.long_met ? 'badge-green' : 'badge-red'}" style="padding:1px 4px; font-size:9px;">
+                    ${r.long_met ? '✓ ERFÜLLT' : '✕ FEHLT'}
+                  </span>
+                </div>
+                <div style="font-size:9px; color:var(--sub); line-height:1.2;">${r.long_note || ''}</div>
+              </div>
+            </div>
+          `;
+        } else if (showShort) {
+          colsHtml = `
+            <div style="padding:5px 8px; border-radius:5px; background:${r.short_met ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)'}; border:1px solid ${r.short_met ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}; font-family:ui-monospace,monospace;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                <span style="font-weight:800; color:var(--red); font-size:11px;">SHORT-STATUS:</span>
+                <span class="badge ${r.short_met ? 'badge-green' : 'badge-red'}" style="padding:2px 6px; font-size:10px;">
+                  ${r.short_met ? '✓ ERFÜLLT' : '✕ FEHLT'}
+                </span>
+              </div>
+              <div style="font-size:10px; color:var(--sub); line-height:1.3;">${r.short_note || ''}</div>
+            </div>
+          `;
+        } else {
+          colsHtml = `
+            <div style="padding:5px 8px; border-radius:5px; background:${r.long_met ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)'}; border:1px solid ${r.long_met ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}; font-family:ui-monospace,monospace;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                <span style="font-weight:800; color:var(--green); font-size:11px;">LONG-STATUS:</span>
+                <span class="badge ${r.long_met ? 'badge-green' : 'badge-red'}" style="padding:2px 6px; font-size:10px;">
+                  ${r.long_met ? '✓ ERFÜLLT' : '✕ FEHLT'}
+                </span>
+              </div>
+              <div style="font-size:10px; color:var(--sub); line-height:1.3;">${r.long_note || ''}</div>
+            </div>
+          `;
+        }
+
+        return `
+          <div style="padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.03); border:1px solid var(--card-border);">
+            <div style="font-weight:bold; font-size:11px; color:#fff; margin-bottom:4px;">
+              ${r.name}
+            </div>
+            <div style="font-size:10px; font-family:ui-monospace,monospace; color:var(--cyan); margin-bottom:6px; background:rgba(6,182,212,0.08); padding:3px 6px; border-radius:4px; border:1px solid rgba(6,182,212,0.15); word-break:break-all;">
+              Wert: <strong>${r.current_val}</strong>
+            </div>
+            ${colsHtml}
+          </div>
+        `;
+      }).join('');
     }
 
     function renderPositions(positions, ema9) {
