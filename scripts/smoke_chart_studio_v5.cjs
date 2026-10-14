@@ -770,6 +770,28 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(await page.evaluate(()=>window.__v5Screenshot.inspect().selectedDrawingId),"visual-trend");
   assert.ok(await page.evaluate(()=>window.__trendHandleArcs>=2),"Selected trend line renders two visible endpoint handles");
   await page.screenshot({path:path.join(folder,"chart-studio-v5-selected-handles.png"),fullPage:true});
+  await page.evaluate(()=>{
+   const e=window.__v5Screenshot,base=1700100000;
+   e.addTextAnnotation({id:"keyboard-text",time:base+12*900,price:4004,text:"Nudge text",color:"#ffffff"});
+   e.addTrendLine({id:"keyboard-trend",startTime:base+15*900,startPrice:4003,endTime:base+28*900,endPrice:4010,color:"#ffffff"});
+   e.addRay({id:"keyboard-ray",startTime:base+32*900,startPrice:4015,endTime:base+46*900,endPrice:4021,color:"#ffffff"});
+   e.addFibonacci({id:"keyboard-fibo",startTime:base+50*900,startPrice:4020,endTime:base+65*900,endPrice:4030,color:"#ffffff"});
+  });
+  for(const id of ["keyboard-text","keyboard-trend","keyboard-ray","keyboard-fibo"]){
+   const point=await page.evaluate(drawingId=>drawingId==="keyboard-trend"||drawingId==="keyboard-fibo"?window.__v5Screenshot.drawingAnchorPosition(drawingId,"START"):window.__v5Screenshot.drawingPosition(drawingId),id);
+   assert.ok(point&&Number.isFinite(point.x)&&Number.isFinite(point.y),`${id} has a keyboard hit target`);
+   await page.mouse.move(point.x,point.y);await page.waitForTimeout(80);await page.mouse.click(point.x,point.y);await page.waitForTimeout(30);
+   assert.equal(await page.evaluate(()=>window.__v5Screenshot.inspect().selectedDrawingId),id,`${id} is selectable`);
+   const before=await page.evaluate(drawingId=>window.__v5Screenshot.readDrawing(drawingId),id);
+   await page.keyboard.press("ArrowRight");
+   const after=await page.evaluate(drawingId=>window.__v5Screenshot.readDrawing(drawingId),id);
+   if(id==="keyboard-text")assert.equal(after.time,before.time+900);
+   else {assert.equal(after.startTime,before.startTime+900);assert.equal(after.endTime,before.endTime+900)}
+   assert.equal(await page.evaluate(()=>window.__v5Screenshot.undo()),true,`${id} nudge has one undo entry`);
+   assert.deepEqual(await page.evaluate(drawingId=>window.__v5Screenshot.readDrawing(drawingId),id),before);
+   assert.equal(await page.evaluate(()=>window.__v5Screenshot.redo()),true);
+   assert.deepEqual(await page.evaluate(drawingId=>window.__v5Screenshot.readDrawing(drawingId),id),after);
+  }
   const touchContext=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:1.5,hasTouch:true,isMobile:true});
   try{
    const touchPage=await touchContext.newPage();await touchPage.goto("http://127.0.0.1:8872/chart_studio_v5/fixture.html",{waitUntil:"networkidle"});await touchPage.waitForFunction(()=>window.__chartV5Ready===true);
