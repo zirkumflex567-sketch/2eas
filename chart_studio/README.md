@@ -13,6 +13,9 @@ Current features:
   existing handles, undo/redo, account-scoped *provisional* browser storage and
   JSON export through clipboard. Local layouts can be copied or renamed, and a
   confirmed chart reset preserves the saved layouts.
+- Fibonacci levels can be edited per drawing, including negative retracements
+  and extensions such as 261.8%; accepted levels are strictly ascending and
+  bounded to −1000%…+1000%.
 - Display current `MT5_VERIFIED` XAUUSD positions as separate BUY/SELL ticket
   overlays with entry, SL/TP zones, broker P/L and swap in the verified account
   currency, plus the account's NETTING/EXCHANGE/HEDGING mode. Failed/stale

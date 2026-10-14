@@ -123,11 +123,11 @@ def validate_document(raw: Any) -> dict:
             levels = drawing["levels"]
             if not isinstance(levels, list) or not 1 <= len(levels) <= 16:
                 raise StoreError("Fibonacci-Level müssen 1–16 Werte enthalten.")
-            last = -1.0
+            last = float("-inf")
             clean_levels = []
             for raw_level in levels:
                 value = _number(raw_level, "Fibonacci-Level")
-                if not 0 <= value <= 2 or value <= last + 1e-9:
+                if not -10 <= value <= 10 or value <= last + 1e-9:
                     raise StoreError("Fibonacci-Level ungültig oder nicht streng steigend.")
                 clean_levels.append(value)
                 last = value

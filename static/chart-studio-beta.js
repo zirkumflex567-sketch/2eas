@@ -802,7 +802,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   if(b.dataset.opt){s.opts[b.dataset.opt]=!s.opts[b.dataset.opt];save(optKey(),s.opts);showOpts();updateSeries();requestDraw();return}
   if(b.dataset.cmd==="fib-default"||b.dataset.cmd==="fib-selected"){
    const levels=window.ChartStudioFib?.parsePercent(panel.querySelector("#cs-fib-levels").value);
-   if(!levels){updateMessage("Fibo-Ebenen ungültig: 1–16 steigende Prozentwerte zwischen 0 und 200; Trennzeichen ;");return}
+   if(!levels){updateMessage("Fibo-Ebenen ungültig: 1–16 streng steigende Prozentwerte zwischen −1000 und 1000; Trennzeichen ;");return}
    if(b.dataset.cmd==="fib-default"){
     s.fibLevels=levels;save(fibKey(),levels);updateMessage("Fibonacci-Vorlage für neue Zeichnungen gespeichert.");
    }else{
