@@ -309,9 +309,12 @@ function drawObject(ctx,o,d){
  ctx.restore();
 }
 function drawPositions(ctx,d){
+ const context=s.positionContext;if(!context)return;
+ const modes={0:"NETTING",1:"EXCHANGE",2:"HEDGING"},mode=modes[context.marginMode]||"UNKNOWN";
+ ctx.save();ctx.font="10px monospace";ctx.fillStyle="#e9f4fb";ctx.fillText(mode+" · "+context.currency+" · MT5_VERIFIED",5,12);ctx.restore();
  const fmt=n=>Number(n).toFixed(2);
- for(const p of s.positions.slice(0,30)){
-  const entry=Number(p.open_price),sl=Number(p.sl_price),tp=Number(p.tp_price);
+ for(const p of s.verifiedPositions){
+  const entry=Number(p.price_open),sl=Number(p.sl),tp=Number(p.tp);
   if(!Number.isFinite(entry)||entry<=0)continue;
   const yEntry=s.series.priceToCoordinate(entry);if(!Number.isFinite(yEntry))continue;
   for(const [price,type] of [[sl,"SL"],[tp,"TP"]]){
@@ -323,7 +326,10 @@ function drawPositions(ctx,d){
    ctx.fillStyle="#f6faff";ctx.font="11px monospace";ctx.fillText(type+" "+fmt(price),5,Math.max(11,Math.min(d.h-5,y-4)));
   }
   ctx.strokeStyle="#e6eef7";ctx.setLineDash([7,4]);ctx.beginPath();ctx.moveTo(0,yEntry);ctx.lineTo(d.w-70,yEntry);ctx.stroke();ctx.setLineDash([]);
-  ctx.fillStyle="#f8fcff";ctx.font="11px monospace";ctx.fillText((p.type||"")+" #"+p.ticket+" @ "+fmt(entry),5,Math.max(12,Math.min(d.h-5,yEntry-4)));
+  const profit=Number(p.profit),swap=Number(p.swap),volume=Number(p.volume);
+  ctx.fillStyle="#f8fcff";ctx.font="10px monospace";
+  const label=(p.side||p.type)+" "+volume.toFixed(2)+"L #"+p.ticket+" @ "+fmt(entry)+" · P/L "+fmt(profit)+" "+context.currency+" · Swap "+fmt(swap)+" "+context.currency;
+  ctx.fillText(label,5,Math.max(12,Math.min(d.h-5,yEntry-4)),d.w-10);
  }
 }
 function drawBrokerDeals(ctx,d){
@@ -496,7 +502,7 @@ function pointerup(e){
  if(s.positionDraftDrag){s.positionDraftDrag=null;try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){};return}
  if(!s.drag)return;s.drag=null;persist();try{s.canvas.releasePointerCapture(e.pointerId)}catch(_){}
 }
-function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
+function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.draw=safeDraw(get(drawKey(),[]));s.opts={...optsDefault(),...get(optKey(),{})};s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
  s.lastScenarioPreview=null;
   s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
   const fibInput=s.panel.querySelector("#cs-fib-levels");if(fibInput)fibInput.value=window.ChartStudioFib?.display(s.fibLevels)||"";
@@ -534,6 +540,23 @@ function updateCandles(c){if(s&&Array.isArray(c)){
    window.ChartStudioReplay?.updateBars(c);
  requestDraw()}}
 function updatePositions(accountId,positions){if(s&&s.account===accountId){s.positions=Array.isArray(positions)?positions:[];requestDraw()}}
+function updateVerifiedPositions(accountId,envelope){
+ if(!s||s.account!==accountId)return false;
+ if(envelope===null){s.verifiedPositions=[];s.positionContext=null;requestDraw();return true}
+ if(!envelope||envelope.account!==accountId||envelope.symbol!=="XAUUSD"||envelope.source!=="MT5_VERIFIED"||envelope.canExecute!==false||!/^([A-Z]{3,12})$/.test(envelope.currency)||![0,1,2].includes(envelope.marginMode)||!Array.isArray(envelope.positions)||envelope.positions.length>500){s.verifiedPositions=[];s.positionContext=null;requestDraw();return false}
+ const rows=[];
+ for(const p of envelope.positions){
+  const ticket=String(p?.ticket),revision=p?.revision,side=p?.side||p?.type;
+  const values=[p?.price_open,p?.volume,p?.profit,p?.swap].map(Number);
+  const optionalPrice=value=>value===null||value===undefined||Number(value)===0||Number.isFinite(Number(value))&&Number(value)>0;
+  if(p?.account!==accountId||p?.symbol!=="XAUUSD"||p?.source!=="MT5_VERIFIED"||p?.canExecute!==false||!/^[1-9][0-9]{0,19}$/.test(ticket)||!/^([0-9a-f]{64})$/.test(revision)||!["BUY","SELL"].includes(side)||!values.every(Number.isFinite)||values[0]<=0||values[1]<=0||p?.currency!==envelope.currency||!optionalPrice(p?.sl)||!optionalPrice(p?.tp)){
+   s.verifiedPositions=[];s.positionContext=null;requestDraw();return false;
+  }
+  rows.push({...p,ticket,side,source:"MT5_VERIFIED"});
+ }
+ const modeLabels={0:"NETTING",1:"EXCHANGE",2:"HEDGING"};
+ s.verifiedPositions=rows;s.positionContext={account:accountId,symbol:"XAUUSD",currency:envelope.currency,marginMode:envelope.marginMode,modeLabel:modeLabels[envelope.marginMode],source:envelope.source};requestDraw();return true;
+}
 function updatePositionDraft(accountId,draft){
  if(!s||s.account!==accountId)return false;
  if(draft===null){s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");requestDraw();return true}
@@ -612,7 +635,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  const canvas=document.createElement("canvas");canvas.className="cs-beta-canvas";canvas.style.pointerEvents="none";canvas.setAttribute("aria-hidden","true");
  host.style.position="relative";host.appendChild(canvas);
  s={chart,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
-  account:accountId,tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,positionDraft:null,positionDraftDrag:null,
+  account:accountId,tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,positionDraft:null,positionDraftDrag:null,verifiedPositions:[],positionContext:null,
   lastScenarioPreview:null,
   draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],brokerMarkers:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null,fibLevels:[...ratios]};
  try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}
@@ -808,6 +831,6 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();
 }
-window.ChartStudioBeta=Object.freeze({mount,account,timeframe,updateCandles,updatePositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),positionDraft:s.positionDraft?json(s.positionDraft):null,
+window.ChartStudioBeta=Object.freeze({mount,account,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),verifiedPositions:json(s.verifiedPositions),positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
  scenario:s.scenario?json(s.scenario):null,tool:s.tool,magnet:s.magnet,selected:s.selected}:null});
 })();

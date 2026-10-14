@@ -12,8 +12,11 @@ Current features:
 - Draw horizontal/trend/rectangle/Fibonacci tools with time+price anchors, drag
   existing handles, undo/redo, account-scoped *provisional* browser storage and
   JSON export through clipboard.
-- Optionally display actual broker position Entry/SL/TP lines and zone overlays
-  **without any trading mutation**.
+- Display current `MT5_VERIFIED` XAUUSD positions as separate BUY/SELL ticket
+  overlays with entry, SL/TP zones, broker P/L and swap in the verified account
+  currency, plus the account's NETTING/EXCHANGE/HEDGING mode. Failed/stale
+  reads and account changes clear the overlay; there is no guessed USD
+  conversion and no trading mutation.
 - Read-only What-if plan and JSON API endpoints for a verified MT5 XAUUSD
   quote and `order_calc_profit`/`order_calc_margin` broker pricing.
 - Read-only What-if sizing can use fixed lots, a cash risk budget in account

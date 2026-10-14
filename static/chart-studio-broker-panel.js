@@ -68,6 +68,7 @@ function clear(){
  table(state.trades,["Deal","Seite","Entry","Preis","Lots","P/L","Kosten","Währung"],[]);
 }
 function clearBrokerMarkers(){window.ChartStudioBeta?.updateBrokerDeals(state?.account,[])}
+function clearVerifiedPositions(){window.ChartStudioBeta?.updateVerifiedPositions(state?.account,null)}
 function markerSummary(counts){
  if(!state?.historyBaseStatus)return;
  state.markerCounts=counts||{plotted:0,unplotted:0};
@@ -84,6 +85,7 @@ function apiScope(){return window.location.pathname.startsWith("/stt")?"/stt":""
 async function loadPositions(){
  if(!state)return;
  if(state.draft)closeDraft("Brokerpositionen werden aktualisiert · Entwurf verworfen.");
+ clearVerifiedPositions();
  const token=++state.positionToken,account=state.account;
  table(state.positions,["Ticket","Seite","Lots","Einstieg","SL","TP","P/L (MT5)","Swap (MT5)","Währung"],[]);
  table(state.orders,["Ticket","Typ","Lots","Preis","Stop-Limit","SL","TP"],[]);
@@ -94,12 +96,14 @@ async function loadPositions(){
   if(token!==state.positionToken||account!==state.account)return;
   if(!response.ok)throw new Error(response.status===503?"Brokerdaten sind nicht verfügbar.":"Brokerdaten konnten nicht geladen werden (HTTP "+response.status+").");
   const data=await response.json();
+  if(token!==state.positionToken||account!==state.account)return;
   if(data.account!==account||data.symbol!=="XAUUSD"||data.source!=="MT5_VERIFIED"||data.canExecute!==false)throw new Error("Brokerantwort hat keinen gültigen Read-only-Scope.");
+  if(!window.ChartStudioBeta?.updateVerifiedPositions(account,data))throw new Error("Brokerpositionen haben keinen gültigen Overlay-Scope.");
   if(state.draft){const current=(data.positions||[]).find(x=>x.ticket===state.draft.ticket);if(!current||current.revision!==state.draft.revision)closeDraft("Positionsrevision geändert · Entwurf und Vorschau verworfen.")}
   renderPositions(data.positions||[]);
   table(state.orders,["Ticket","Typ","Lots","Preis","Stop-Limit","SL","TP"],(data.orders||[]).map(x=>[x.ticket,x.type,x.volume_current,x.price_open,x.price_stoplimit,x.sl,x.tp]));
   state.positionStatus.textContent="Quelle MT5_VERIFIED · "+(data.positions.length||0)+" Position(en), "+(data.orders.length||0)+" Pending Order(s) · Nur lesen";
- }catch(error){if(token===state.positionToken)state.positionStatus.textContent=error.message;}
+ }catch(error){if(token===state.positionToken){clearVerifiedPositions();state.positionStatus.textContent=error.message}}
 }
 function utcRange(){
  const from=state.fields.from.value,to=state.fields.to.value;
@@ -153,7 +157,7 @@ function mount({panel,account}){
  for(const field of [fields.from,fields.to])field.addEventListener("change",()=>{state.cursor=null;state.historyToken++;state.historyBaseStatus=null;clearBrokerMarkers();table(state.trades,["Deal","Seite","Entry","Preis","Lots","P/L","Kosten","Währung"],[]);state.historyStatus.textContent="Zeitraum geändert · Historie ab Seite eins neu laden.";state.next.disabled=true});
  loadPositions();
 }
-function setAccount(account){if(!state||typeof account!=="string")return;closeDraft("Konto gewechselt · Entwurf verworfen.");state.account=account;state.positionToken++;state.historyToken++;state.historyBaseStatus=null;state.cursor=null;state.fields.ticket.value="";state.fields.magic.value="";state.fields.ownership.value="ANY";clear();clearBrokerMarkers();state.positionStatus.textContent="Konto gewechselt · Brokerbuch wird neu geladen …";state.historyStatus.textContent="Konto gewechselt · Historie erneut laden.";state.next.disabled=true;loadPositions();}
+function setAccount(account){if(!state||typeof account!=="string")return;closeDraft("Konto gewechselt · Entwurf verworfen.");clearVerifiedPositions();state.account=account;state.positionToken++;state.historyToken++;state.historyBaseStatus=null;state.cursor=null;state.fields.ticket.value="";state.fields.magic.value="";state.fields.ownership.value="ANY";clear();clearBrokerMarkers();state.positionStatus.textContent="Konto gewechselt · Brokerbuch wird neu geladen …";state.historyStatus.textContent="Konto gewechselt · Historie erneut laden.";state.next.disabled=true;loadPositions();}
 function updateDraftPrice(leg,value){if(!state?.draft)return;state.draftToken++;state.draft[leg]=String(value);state.draftForm.elements.namedItem(leg).value=String(value);state.draftPreview=null;state.draftStatus.textContent="Entwurf geändert · Vorschau erneut berechnen · keine Änderung"}
 function invalidateDraft(message){if(state?.draft)closeDraft(message||"Chart-Kontext geändert · Entwurf verworfen.")}
 window.ChartStudioBrokerPanel=Object.freeze({mount,setAccount,updateMarkerAvailability:markerSummary,updateDraftPrice,invalidateDraft});
