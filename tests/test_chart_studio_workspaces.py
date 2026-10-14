@@ -100,6 +100,19 @@ class SqliteLayoutTests(unittest.TestCase):
             with self.subTest(count=len(anchors)), self.assertRaises(StoreError):
                 validate_document({**doc, "drawings": [{"kind": "vertical", "anchors": anchors}]})
 
+    def test_text_annotation_requires_bounded_label_and_roundtrips(self):
+        doc = example()
+        doc["drawings"] = [{"kind": "text", "anchors": [
+            {"time": 1700000000, "price": 4175.5}], "label": "Setup"}]
+        saved = self.store.put("local-owner", "titan", "XAUUSD", "Note", doc, 0)
+        self.assertEqual(saved["document"]["drawings"], doc["drawings"])
+        safe_text = "<script>alert(1)</script>"
+        safe_doc = {**doc, "drawings": [{**doc["drawings"][0], "label": safe_text}]}
+        self.assertEqual(validate_document(safe_doc)["drawings"][0]["label"], safe_text)
+        for label in ["", "  ", "x" * 41, "bad\nline"]:
+            with self.subTest(label=label), self.assertRaises(StoreError):
+                validate_document({**doc, "drawings": [{**doc["drawings"][0], "label": label}]})
+
     def test_reject_unknown_keys_scaling_and_executables(self):
         tests = [
             dict(schemaVersion=2),

@@ -3,7 +3,7 @@
    No broker write calls or chart trading mutations in this module. */
 (()=>{
 "use strict";
-const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","vertical","trend","rect","fib","ray","ruler","channel","plan","position-draft"];
+const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","vertical","text","trend","rect","fib","ray","ruler","channel","plan","position-draft"];
 const ratios=[0,.236,.382,.5,.618,.786,1];
 let s=null,requestId=0,scenarioGeneration=0,planTimer=null;
 const json=v=>JSON.parse(JSON.stringify(v));
@@ -126,6 +126,7 @@ function safeDraw(list){
    !/^[A-Za-z0-9_-]{1,32}$/.test(o.id)||used.has(o.id)))continue;
   if(o.label!==undefined&&(typeof o.label!=="string"||o.label.length>40||
    /[\u0000-\u001f]/.test(o.label)))continue;
+  if(o.kind==="text"&&(!o.label||!o.label.trim()))continue;
   if(o.visible!==undefined&&typeof o.visible!=="boolean")continue;
   if(o.locked!==undefined&&typeof o.locked!=="boolean")continue;
   if(o.levels!==undefined&&o.kind!=="fib")continue;
@@ -231,6 +232,10 @@ function operateObject(i,action,value){
   (typeof value!=="string"||value.length>40||/[\u0000-\u001f]/.test(value))){
   updateMessage("Ungültiger Name (maximal 40 Zeichen).");return false;
  }
+ if(action==="rename"&&obj.kind==="text"&&!value.trim()){
+  updateMessage("Textannotation benötigt mindestens ein druckbares Zeichen.");
+  window.ChartStudioObjectManager?.render();return false;
+ }
  if(action==="duplicate"&&s.draw.length>=500){updateMessage("Maximal 500 Objekte.");return false}
  if(action==="up"&&i===s.draw.length-1)return false;
  if(action==="down"&&i===0)return false;
@@ -266,6 +271,7 @@ function drawObject(ctx,o,d){
  ctx.save();ctx.lineWidth=o.selected?2.5:1.5;ctx.strokeStyle=o.preview?"#f7e1af":o.locked?"#8b9aa3":o.selected?"#ffe3a5":"#6fe6ed";ctx.fillStyle="rgba(48,190,230,.12)";
  if(o.kind==="horizontal"){ctx.setLineDash([5,4]);ctx.beginPath();ctx.moveTo(0,a.y);ctx.lineTo(d.w,a.y);ctx.stroke()}
  if(o.kind==="vertical"){ctx.setLineDash([5,4]);ctx.beginPath();ctx.moveTo(a.x,0);ctx.lineTo(a.x,d.h);ctx.stroke()}
+ if(o.kind==="text"){ctx.fillStyle=o.selected?"#ffe3a5":o.locked?"#aab8bf":"#f3f7fa";ctx.font="12px sans-serif";ctx.textBaseline="bottom";ctx.fillText(o.label,a.x+5,a.y-5,260)}
  if(b&&o.kind==="trend"){ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
  if(b&&o.kind==="rect"){ctx.fillRect(a.x,a.y,b.x-a.x,b.y-a.y);ctx.strokeRect(a.x,a.y,b.x-a.x,b.y-a.y)}
  if(b&&o.kind==="fib"){for(const k of (o.levels||ratios)){const y=a.y+(b.y-a.y)*k;ctx.strokeStyle=k===.618?"#f7c874":"#8da8f9";
@@ -462,6 +468,12 @@ function pointerdown(e){
   s.selected=hit.i;window.ChartStudioObjectManager?.render();snapshot();s.drag=hit;s.canvas.setPointerCapture(e.pointerId);e.preventDefault();return;
  }
  if(s.tool==="horizontal"||s.tool==="vertical"){snapshot();s.draw.push({kind:s.tool,anchors:[p]});persist();requestDraw();updateMessage(s.tool==="vertical"?"Zeitlinie gespeichert.":"Preislinie gespeichert.");return}
+ if(s.tool==="text"){
+  const label=window.prompt("Text für die Chart-Annotation (max. 40 Zeichen):","");
+  if(typeof label!=="string")return;
+  const text=label.trim();if(!text||text.length>40||/[\u0000-\u001f]/.test(text)){updateMessage("Textannotation benötigt 1–40 druckbare Zeichen.");return}
+  snapshot();s.draw.push({kind:"text",anchors:[p],label:text});persist();requestDraw();updateMessage("Textannotation gespeichert.");return;
+ }
  const required=window.ChartStudioDrawingGeometry?.expected(s.tool)||2;
  if(!s.pending.length){s.begin=p;s.pending=[p];s.preview=p;updateMessage("Nächsten Anker setzen · Esc bricht ab.");}
  else{
@@ -658,7 +670,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  maQuick.append(maOpen,maPeriod,maAdd,maHint);
  toggle.insertAdjacentElement("afterend",maQuick);
  const panel=document.createElement("section");panel.id="cs-beta-panel";panel.className="cs-beta-panel";panel.hidden=true;
- const toolLabels=[["cursor","Navigation"],["edit","Griffe bearbeiten"],["horizontal","Preislinie"],["vertical","Zeitlinie"],["trend","Trendlinie"],["ray","Strahl"],["rect","Zone"],["channel","Parallelkanal"],["fib","Fibonacci"],["ruler","Preis-/Zeitmessung"]];
+ const toolLabels=[["cursor","Navigation"],["edit","Griffe bearbeiten"],["horizontal","Preislinie"],["vertical","Zeitlinie"],["text","Text"],["trend","Trendlinie"],["ray","Strahl"],["rect","Zone"],["channel","Parallelkanal"],["fib","Fibonacci"],["ruler","Preis-/Zeitmessung"]];
  const optLabels=[["ema20","EMA20"],["ema50","EMA50"],["ema200","EMA200"],["sma20","SMA20"],["sma50","SMA50"],["bb","Bollinger20"],["positions","Positionen & SL/TP"]];
  panel.innerHTML=
   '<div class="cs-beta-head"><strong>CHART STUDIO · EXPERIMENTELL</strong><span>Keine Handelsausführung</span></div>'+

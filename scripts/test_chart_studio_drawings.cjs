@@ -5,6 +5,7 @@ const window={};vm.runInNewContext(source,{window},{filename:"drawing-geometry.j
 const g=window.ChartStudioDrawingGeometry;
 assert.equal(g.expected("horizontal"),1);
 assert.equal(g.expected("vertical"),1);
+assert.equal(g.expected("text"),1);
 assert.equal(g.expected("channel"),3);
 assert.equal(g.expected("ruler"),2);
 assert.equal(g.expected("__proto__"),0);
@@ -14,6 +15,7 @@ for(const kind of ["trend","rect","fib","ray","ruler"])
 assert.equal(g.validDrawing({kind:"channel",anchors:[a,b,c]}),true);
 assert.equal(g.validDrawing({kind:"vertical",anchors:[a]}),true);
 assert.equal(g.validDrawing({kind:"vertical",anchors:[a,b]}),false);
+assert.equal(g.validDrawing({kind:"text",anchors:[a]}),true);
 assert.equal(g.validDrawing({kind:"channel",anchors:[a,b]}),false);
 assert.equal(g.validDrawing({kind:"channel",anchors:[a,b,c,{time:2,price:1}]}),false);
 assert.equal(g.validDrawing({kind:"ruler",anchors:[{time:1,price:NaN},b]}),false);

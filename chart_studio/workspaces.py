@@ -16,7 +16,7 @@ from typing import Any
 
 ACCOUNTS = frozenset({"titan", "goldm15"})
 SYMBOL_RE = re.compile(r"^[A-Z0-9._-]{1,32}$")
-DRAWING_TYPES = frozenset({"horizontal", "vertical", "trend", "rect", "fib", "ray", "ruler", "channel"})
+DRAWING_TYPES = frozenset({"horizontal", "vertical", "text", "trend", "rect", "fib", "ray", "ruler", "channel"})
 UI_FLAGS = frozenset({"ema20", "ema50", "ema200", "sma20", "sma50",
                       "bb", "positions"})
 INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap"})
@@ -101,9 +101,12 @@ def validate_document(raw: Any) -> dict:
         if not isinstance(kind, str) or kind not in DRAWING_TYPES:
             raise StoreError("Nicht unterstützter Zeichnungstyp.")
         anchors = drawing["anchors"]
-        expected = 1 if kind in {"horizontal", "vertical"} else (3 if kind == "channel" else 2)
+        expected = 1 if kind in {"horizontal", "vertical", "text"} else (3 if kind == "channel" else 2)
         if not isinstance(anchors, list) or len(anchors) != expected:
             raise StoreError("Ungültige Ankeranzahl.")
+        if kind == "text" and (not isinstance(drawing.get("label"), str) or
+                                not drawing["label"].strip() or len(drawing["label"]) > 40):
+            raise StoreError("Textannotation benötigt einen Namen mit 1–40 Zeichen.")
         safe_anchors = []
         for anchor in anchors:
             if not isinstance(anchor, dict) or set(anchor) != {"time", "price"}:
