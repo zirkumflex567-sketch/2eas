@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add one real, isolated Lightweight Charts 5.2.1 drawing primitive to the migration fixture. The primitive is a horizontal price level with validated identity, price and color; it can be added, updated and removed without broker access or writes.
+Add real, isolated Lightweight Charts 5.2.1 drawing primitives to the migration fixture: a horizontal price level and a vertical line anchored to an exact loaded UTC candle. Both have validated identity and can be added, updated and removed without broker access or writes.
 
 ## Boundaries
 
@@ -15,7 +15,7 @@ Add one real, isolated Lightweight Charts 5.2.1 drawing primitive to the migrati
 
 - [x] Confirm the pinned v5 `ISeriesPrimitive` attach/detach and pane renderer contract against official Lightweight Charts documentation and installed 5.2.1 types.
 - [x] Add browser assertions first and observe RED (`addPriceLevel is not a function`).
-- [x] Implement a native canvas pane renderer, validated add/update/remove API, account cleanup, and renderer count inspection.
+- [x] Implement native canvas pane renderers, validated price/time add/update/remove APIs, exact loaded-candle validation, account cleanup, and renderer count inspection.
 - [x] Extend the isolated Chromium fixture with primitive lifecycle and visible-render-path coverage; assert zero non-GET requests.
 - [x] Run `npm --prefix chart_studio_v5 run check`, `npm --prefix chart_studio_v5 run build`, `node scripts/smoke_chart_studio_v5.cjs`, and `git diff --check`.
 - [x] Update FR-003/005/011 as partial; FR-003 gesture, object persistence and hardware acceptance remain open.

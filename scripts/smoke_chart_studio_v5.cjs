@@ -35,13 +35,17 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.resizePane(2,175);
    engine.movePaneLine("rsi14",1);
    engine.showVolume(true);
-   engine.addPriceLevel({id:"risk-stop",price:4100,color:"#ff6677",title:"Demo stop"});
+   engine.addPriceLevel({id:"risk-stop",price:4100,color:"#ff6677"});
+   engine.addTimeMarker({id:"entry-time",time:bars[40].time,color:"#c18bff"});
    const withPrimitive=engine.inspect();
    engine.updatePriceLevel("risk-stop",{price:4110,color:"#ffaa66"});
+   engine.updateTimeMarker("entry-time",{time:bars[41].time,color:"#d8aaff"});
    const updatedPrimitive=engine.inspect();
    const removedPrimitive=engine.removePriceLevel("risk-stop");
+   const removedTimeMarker=engine.removeTimeMarker("entry-time");
    const withoutPrimitive=engine.inspect();
    let invalidPrimitiveRejected=false;try{engine.addPriceLevel({id:"bad",price:0,color:"red"})}catch(_){invalidPrimitiveRejected=true}
+   let unknownTimeRejected=false;try{engine.addTimeMarker({id:"unknown-time",time:bars[40].time+1,color:"#ffffff"})}catch(_){unknownTimeRejected=true}
    const warmupReadout=engine.readDataWindow(bars[10].time);
    const alignedReadout=engine.readDataWindow(bars[40].time);
    const noVolumeReadout=engine.readDataWindow(bars[42].time);
@@ -66,7 +70,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.destroy();
    let disposed=false;try{engine.setCandles(bars)}catch(_){disposed=true}
    return {first,updated,staleRejected,invalidRejected,isolated,removed,disposed,badPaneRejected,
-    withPrimitive,updatedPrimitive,removedPrimitive,withoutPrimitive,invalidPrimitiveRejected,
+    withPrimitive,updatedPrimitive,removedPrimitive,removedTimeMarker,withoutPrimitive,invalidPrimitiveRejected,unknownTimeRejected,
     warmupReadout,alignedReadout,noVolumeReadout,missingBarReadout,formingReadout,
     replacementReadout,badVolumeRejected,invalidReadoutTimeRejected,
     expectedWarmupOpen:bars[10].open,expectedWarmupUtc:new Date(bars[10].time*1000).toISOString()};
@@ -76,11 +80,13 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(result.first.averageCount,1);
   assert.equal(result.first.nativePaneLines,1);
   assert.equal(result.first.volumeVisible,true);
-  assert.equal(result.withPrimitive.nativePrimitives,1);
-  assert.equal(result.updatedPrimitive.nativePrimitives,1);
+  assert.equal(result.withPrimitive.nativePrimitives,2);
+  assert.equal(result.updatedPrimitive.nativePrimitives,2);
   assert.equal(result.removedPrimitive,true);
+  assert.equal(result.removedTimeMarker,true);
   assert.equal(result.withoutPrimitive.nativePrimitives,0);
   assert.equal(result.invalidPrimitiveRejected,true);
+  assert.equal(result.unknownTimeRejected,true);
   assert.ok(result.first.paneCount>=2);
   assert.equal(result.warmupReadout.state,"AVAILABLE");
   assert.equal(result.warmupReadout.source,"CHART_FEED");
@@ -124,7 +130,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    e.setCandles(rows);
    e.addAverage({id:"ema21",color:"#61ddf2"},rows.slice(20).map(c=>({time:c.time,value:c.close-1.2})));
    e.addPaneLine({id:"rsi14",color:"#f7c774"},rows.slice(14).map((c,i)=>({time:c.time,value:45+18*Math.sin(i/8)})));
-   e.addPriceLevel({id:"visual-level",price:rows[52].close,color:"#ffb86b",title:"Read-only level"});
+   e.addPriceLevel({id:"visual-level",price:rows[52].close,color:"#ffb86b"});
+   e.addTimeMarker({id:"visual-time",time:rows[45].time,color:"#c18bff"});
    e.showVolume(true);window.__v5Screenshot=e;
   });
   await page.waitForTimeout(150);

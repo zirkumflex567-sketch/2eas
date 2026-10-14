@@ -9,7 +9,8 @@ export const VERSION = "5.2.1";
 export type Candle = {time:UTCTimestamp;open:number;high:number;low:number;close:number;tick_volume?:number;real_volume?:number};
 export type AveragePoint = {time:UTCTimestamp;value:number};
 export type AverageOptions = {id:string;color:string;lineWidth?:1|2|3|4;visible?:boolean;title?:string};
-export type PriceLevelOptions = {id:string;price:number;color:string;title?:string};
+export type PriceLevelOptions = {id:string;price:number;color:string};
+export type TimeMarkerOptions = {id:string;time:UTCTimestamp;color:string};
 export type DataWindowReadout = {
  state:"AVAILABLE"|"UNAVAILABLE";account:string;source:"CHART_FEED";time:number;timeUtc:string;
  reason?:"BAR_NOT_LOADED";ohlc?:{open:number;high:number;low:number;close:number};
@@ -34,6 +35,25 @@ class PriceLevelPrimitive implements ISeriesPrimitive {
   });
  }} }]}
  set(price:number,color:string){this.price=price;this.color=color;this.updateAllViews();this.requestUpdate?.()}
+}
+class TimeMarkerPrimitive implements ISeriesPrimitive {
+ private x:number|null=null;
+ private chart:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]["chart"]|null=null;
+ private requestUpdate:(()=>void)|null=null;
+ constructor(private time:UTCTimestamp,private color:string){}
+ attached(param:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]){
+  this.chart=param.chart;this.requestUpdate=param.requestUpdate;this.updateAllViews();
+ }
+ detached(){this.chart=null;this.requestUpdate=null;this.x=null}
+ updateAllViews(){this.x=this.chart?.timeScale().timeToCoordinate(this.time)??null}
+ paneViews(){return [{zOrder:()=>"top" as const,renderer:()=>this.x===null?null:{draw:(target:CanvasRenderingTarget2D)=>{
+  const x=this.x;if(x===null)return;
+  target.useMediaCoordinateSpace(({context,mediaSize})=>{
+   context.save();context.strokeStyle=this.color;context.lineWidth=1;context.setLineDash([3,4]);
+   context.beginPath();context.moveTo(x,0);context.lineTo(x,mediaSize.height);context.stroke();context.restore();
+  });
+ }} }]}
+ set(time:UTCTimestamp,color:string){this.time=time;this.color=color;this.updateAllViews();this.requestUpdate?.()}
 }
 const colorPattern = /^#[0-9a-fA-F]{6}$/;
 function validBar(c:Candle):boolean {
@@ -80,6 +100,7 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  // Independent native chart panes, not separate chart instances or duplicated time axes.
  const paneLines=new Map<string,LineApi>();
  const priceLevels=new Map<string,{primitive:PriceLevelPrimitive;options:PriceLevelOptions}>();
+ const timeMarkers=new Map<string,{primitive:TimeMarkerPrimitive;options:TimeMarkerOptions}>();
  const createPaneLine=(opts:AverageOptions)=>chart.addSeries(LineSeries,{
   color:opts.color,lineWidth:opts.lineWidth??2,visible:opts.visible??true,
   title:opts.title??opts.id,priceLineVisible:false,lastValueVisible:true,
@@ -116,7 +137,7 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  }
  function validatePriceLevel(opts:PriceLevelOptions){
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color)||
-   !Number.isFinite(opts.price)||opts.price<=0||typeof (opts.title??"")!=="string"||(opts.title??"").length>40)
+   !Number.isFinite(opts.price)||opts.price<=0)
    throw Error("Invalid price level");
  }
  function addPriceLevel(opts:PriceLevelOptions){
@@ -136,6 +157,30 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  function removePriceLevel(id:string){
   guard();const item=priceLevels.get(id);if(!item)return false;
   price.detachPrimitive(item.primitive);priceLevels.delete(id);return true;
+ }
+ function validateTimeMarker(opts:TimeMarkerOptions){
+  if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color)||
+   !Number.isSafeInteger(opts.time)||opts.time<=0||!Number.isFinite(new Date(opts.time*1000).getTime())||
+   !barsByTime.has(opts.time))
+   throw Error("Invalid or unloaded UTC time marker");
+ }
+ function addTimeMarker(opts:TimeMarkerOptions){
+  guard();validateTimeMarker(opts);
+  if(averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id))throw Error("Duplicate chart object identity");
+  if(timeMarkers.size>=100)throw Error("Native drawing limit");
+  const existing=timeMarkers.get(opts.id);
+  if(existing){existing.primitive.set(opts.time,opts.color);existing.options={...opts};return}
+  const primitive=new TimeMarkerPrimitive(opts.time,opts.color);price.attachPrimitive(primitive);
+  timeMarkers.set(opts.id,{primitive,options:{...opts}});
+ }
+ function updateTimeMarker(id:string,patch:Pick<TimeMarkerOptions,"time"|"color">){
+  guard();const item=timeMarkers.get(id);if(!item)throw Error("Unknown time marker");
+  validateTimeMarker({...item.options,...patch});item.primitive.set(patch.time,patch.color);
+  item.options={...item.options,...patch};
+ }
+ function removeTimeMarker(id:string){
+  guard();const item=timeMarkers.get(id);if(!item)return false;
+  price.detachPrimitive(item.primitive);timeMarkers.delete(id);return true;
  }
  function addPaneLine(opts:AverageOptions,data:readonly AveragePoint[]){
   guard();
@@ -216,6 +261,7 @@ export function createStudioV5(host:HTMLElement,accountId:string){
   guard();if(!/^[a-zA-Z0-9_-]{1,50}$/.test(next))throw Error("Invalid account");
   activeAccount=next;bars=[];barsByTime.clear();price.setData([]);
   for(const item of priceLevels.values())price.detachPrimitive(item.primitive);priceLevels.clear();
+  for(const item of timeMarkers.values())price.detachPrimitive(item.primitive);timeMarkers.clear();
   for(const item of averages.values())chart.removeSeries(item);
   averages.clear();
   for(const line of paneLines.values())chart.removeSeries(line);
@@ -223,10 +269,11 @@ export function createStudioV5(host:HTMLElement,accountId:string){
  }
  function inspect(){guard();return {version:VERSION,account:activeAccount,
   candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
-  averageCount:averages.size,nativePaneLines:paneLines.size,nativePrimitives:priceLevels.size,
+  averageCount:averages.size,nativePaneLines:paneLines.size,nativePrimitives:priceLevels.size+timeMarkers.size,
   paneCount:chart.panes().length,volumeVisible:!!volume}}
- function destroy(){if(destroyed)return;destroyed=true;chart.remove();averages.clear();paneLines.clear();priceLevels.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
+ function destroy(){if(destroyed)return;destroyed=true;chart.remove();averages.clear();paneLines.clear();priceLevels.clear();timeMarkers.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
  return Object.freeze({setCandles,addAverage,moveAverage,removeAverage,addPriceLevel,updatePriceLevel,removePriceLevel,
+  addTimeMarker,updateTimeMarker,removeTimeMarker,
   addPaneLine,movePaneLine,removePaneLine,resizePane,showVolume,readDataWindow,
   updateLast,changeAccount,inspect,destroy});
 }
