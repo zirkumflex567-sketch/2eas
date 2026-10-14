@@ -22,4 +22,4 @@ Observe the source-contract test fail first. Run the isolated Chromium chart smo
 ## Progress
 
 - [x] Source-contract test first failed against the table-cell selector, then passed after migration to documented v4.1 time-/price-scale measurements.
-- [x] Chromium browser smoke verifies overlay bounds against time-/price-scale APIs within one CSS pixel at device scale 1.5; candle/EMA positioning remains series-coordinate based. All 11 Stone theme contract tests (10 subtests), Chromium geometry smoke at DPR 1.5 including resize/range change, JS syntax and `git diff --check` pass. Physical target-hardware resize/TF acceptance and dynamic price-axis label reflow remain open.
+- [x] Chromium browser smoke verifies overlay bounds against time-/price-scale APIs within one CSS pixel at device scale 1.5; candle/EMA positioning remains series-coordinate based. All 11 Stone theme contract tests (10 subtests), Chromium geometry smoke at DPR 1.5 including host resize, visible-range change and forced public price-scale minimum-width reflow pass. Automatic axis-label growth and physical target-hardware resize/TF acceptance remain open.

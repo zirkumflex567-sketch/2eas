@@ -134,6 +134,16 @@ const fs=require("node:fs"),path=require("node:path");
       expectedLeft:chart.priceScale("left").width(),expectedWidth:chart.timeScale().width(),expectedTop:0,expectedHeight:rect.height-chart.timeScale().height()};
   });
   for(const key of ["left","top","width","height"])assert.ok(Math.abs(resizedFxGeometry[key]-resizedFxGeometry["expected"+key[0].toUpperCase()+key.slice(1)])<=1,"Resized Chart FX canvas follows public chart geometry: "+key);
+  const reflowedFxGeometry=await page.evaluate(async()=>{
+    chart.applyOptions({rightPriceScale:{minimumWidth:110}});
+    window.dispatchEvent(new PointerEvent("pointerup",{bubbles:true}));
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const canvas=document.querySelector("#tv-chart .stone-chart-fx"),rect=host.getBoundingClientRect();
+    return {left:Number.parseFloat(canvas.style.left),top:Number.parseFloat(canvas.style.top),width:Number.parseFloat(canvas.style.width),height:Number.parseFloat(canvas.style.height),
+      expectedLeft:chart.priceScale("left").width(),expectedWidth:chart.timeScale().width(),expectedTop:0,expectedHeight:rect.height-chart.timeScale().height()};
+  });
+  assert.ok(reflowedFxGeometry.expectedWidth<resizedFxGeometry.expectedWidth,"The fixture must force a public price-scale width change");
+  for(const key of ["left","top","width","height"])assert.ok(Math.abs(reflowedFxGeometry[key]-reflowedFxGeometry["expected"+key[0].toUpperCase()+key.slice(1)])<=1,"Chart FX canvas follows a price-scale reflow: "+key);
   await page.evaluate(()=>{const host=document.querySelector("#tv-chart");host.style.height="520px";chart.applyOptions({width:host.clientWidth,height:host.clientHeight});chart.timeScale().setVisibleLogicalRange({from:5,to:50})});
   await page.waitForTimeout(40);
   await page.evaluate(()=>chart.timeScale().fitContent());
