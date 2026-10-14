@@ -31,3 +31,14 @@ These are local working aliases, not application account configuration. Terminal
 The Market XAUUSD 5 minute binary appears in installed folders with differing hashes; a saved chart profile alone does not prove it is attached. The provided boss.set hash is D3734028E87C09E8C9017E271E7AFD76B73F7556E70ADD557AA612A82A2C9733. Saved chart-profile inputs differ from that preset in some fields, and the API/logs cannot prove which setfile is loaded in memory.
 
 This corrects the earlier two-terminal/unknown-Gold observation. Four live terminal processes and four chart setups still do not equal four fully attested strategy identities: logs prove EA names and symbols/timeframes, while installed-file hashes do not prove which binary image is loaded. Do not replace or attach binaries, restart terminals, change trading switches, or claim recorder data until each setup's alias, chart identity, loaded binary and preset are confirmed. Preserve the local Titan Friday/weekend protections.
+## Saved chart profile evidence (not in-memory proof)
+
+| Setup | Saved chart file | Symbol/timeframe | Saved EA path | Chart-file SHA-256 |
+|---|---|---|---|---|
+| Titan-Demo-A-M15 | Default/chart03.chr (12:40 local) | XAUUSD.pi M15 | Experts/XAU_Titan_Pro.ex5 | B64C06D4E4EBA2D3F283C68CDFEAA0FF0076176A18B8B327B694161E62430680 |
+| Titan-Demo-B-M15 | Default/chart03.chr (17:17 local) | XAUUSD.p M15 | Experts/PrimeTitan/XAU_Titan_Pro.ex5 | 7CC50CC1C31B068AACC33877CDECD770CDC63A91AD119D7BBFB3B8B1E5928A7C |
+| Titan-Demo-C-M5 | Default/chart02.chr (06:52 local) | XAUUSD.p M5 | Experts/XAU_Titan_Pro.ex5 | A06B4906FB982AEE79504CDC40AF615B5939C73DE9482DF8F2A35DB3A27DC99F |
+| GoldM15-Demo-D-M15 | Default/chart05.chr (07:20 local) | XAUUSD M15 | Experts/GoldM15_Reconstruction.ex5 | 70392B53C1083B8687A5396A188099AF877BA461DE8740B025C6E206B7372A80 |
+| XAUUSD-5Minute-Demo-B-M5 | Default/chart02.chr (17:17 local) | XAUUSD.p M5 | Experts/Market/XAUUSD 5 minute.ex5 | FEB5DAFA9F97CD7ABA2576CCA27AF9D8608591BEF7161C6BA97778B4187BBDB6 |
+
+The first four profile entries line up with the four working aliases and the recent EA initialization logs. The XAUUSD 5 minute entry is an additional saved chart in the same terminal as Titan-Demo-B; no matching initialization message was found in that day's inspected Expert log, so it remains a profile-only candidate and may represent a fifth setup. Chart file hashes cover saved configuration bytes, not a binary loaded into process memory. Profile modification times are local machine time; Expert log times are not assumed UTC.
