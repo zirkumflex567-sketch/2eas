@@ -9,6 +9,6 @@
 1. [x] Add failing HTTP contract tests requiring `no-store` on dashboard HTML and `no-cache` on dashboard static assets.
 2. [x] Set the cache policy in the application response middleware without changing API caching or frontend behavior.
 3. [x] Run focused tests, relevant security/frontend regressions, and `git diff --check`.
-4. [ ] Recheck the actual response headers after deployment and record the result; browser hard-reload confirmation remains user-visible acceptance.
+4. [x] Recheck actual response headers after the guarded restart and record the result; browser hard-reload confirmation remains user-visible acceptance.
 
-**Safety:** No browser UI automation, MT5 operation, broker write, deployment, or backtest.
+**Safety:** No browser UI automation, MT5 operation, broker write, or backtest. The guarded local dashboard restart also updated its htown reverse-tunnel upstream.
