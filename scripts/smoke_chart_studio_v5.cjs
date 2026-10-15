@@ -1288,8 +1288,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const host=document.createElement("div");host.style.cssText="width:min(1280px,100vw);height:min(720px,100vh);position:fixed;left:0;top:0;z-index:9999;background:#121416";document.body.append(host);
    const rows=Array.from({length:5000},(_,i)=>{const close=4000+i*.01+Math.sin(i/20)*3+2;return {time:1700000000+i*900,open:close-1,high:close+4,low:close-4,close,tick_volume:100+i}});
    const engine=ChartStudioV5.createStudioV5(host,"capacity-source");let t=performance.now();engine.setCandles(rows);const barsMs=performance.now()-t;
-   t=performance.now();for(let i=0;i<16;i++)engine.addMovingAverage({id:`capacity-overlay-${i}`,type:"EMA",period:9+i,source:"close",color:"#61ddf2",lineWidth:1+(i%4)});
-   const capacityOscillators=[{kind:"rsi",settings:{period:14}},{kind:"atr",settings:{period:14}},{kind:"macd",settings:{fast:12,slow:26,signal:9}},{kind:"adx",settings:{period:14}}];
+   t=performance.now();for(let i=0;i<15;i++)engine.addMovingAverage({id:`capacity-overlay-${i}`,type:"EMA",period:9+i,source:"close",color:"#61ddf2",lineWidth:1+(i%4)});
+   const capacityOscillators=[{kind:"rsi",settings:{period:14}},{kind:"atr",settings:{period:14}},{kind:"macd",settings:{fast:12,slow:26,signal:9}},{kind:"adx",settings:{period:14}},{kind:"stochastic",settings:{period:14,smoothK:3,smoothD:3}}];
    for(let i=0;i<capacityOscillators.length;i++)engine.addOscillator({id:`capacity-oscillator-${i}`,...capacityOscillators[i],color:"#f7c774"});
    const indicatorsMs=performance.now()-t,activeIndicatorCount=engine.inspect().averageCount+engine.inspect().nativePaneLines+engine.inspect().oscillatorCount;let combinedIndicatorError="";try{engine.addOscillator({id:"capacity-oscillator-over-limit",kind:"rsi",settings:{period:14},color:"#ffffff"})}catch(error){combinedIndicatorError=error.message}const countAfterRejectedIndicator=engine.inspect().averageCount+engine.inspect().nativePaneLines+engine.inspect().oscillatorCount;
    t=performance.now();engine.updateLast({...rows.at(-1),close:rows.at(-1).close+1});const formingUpdateMs=performance.now()-t;
@@ -1322,7 +1322,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   }
   await page.evaluate(()=>{window.__capacityEngine.destroy();window.__capacityHost.remove();window.__capacityOriginalHost.style.display=window.__capacityOriginalDisplay;delete window.__capacityEngine;delete window.__capacityHost;delete window.__capacityOriginalHost;delete window.__capacityOriginalDisplay});
   console.log(`AT-025 Chromium capacity evidence ${JSON.stringify({runtime:capacityProbe.runtime,barsMs:capacityProbe.barsMs,indicatorsMs:capacityProbe.indicatorsMs,formingUpdateMs:capacityProbe.formingUpdateMs,activeIndicatorCount:capacityProbe.activeIndicatorCount,drawingsMs:capacityProbe.drawingsMs,accepted:capacityProbe.accepted,transferBytes:capacityProbe.transferBytes,transferMs:capacityProbe.transferMs,reloadMs:capacityProbe.reloadMs,reloadedCount:capacityProbe.reloadedCount,otherAccountCount:capacityProbe.otherAccountCount,otherTimeframeCount:capacityProbe.otherTimeframeCount,capacitySelectionMs})}`);
-  assert.equal(capacityProbe.activeIndicatorCount,20,"Capacity setup calculates sixteen moving averages plus four native oscillator groups");
+  assert.equal(capacityProbe.activeIndicatorCount,20,"Capacity setup calculates fifteen moving averages plus five native oscillator groups, including Stochastic");
   assert.equal(capacityProbe.accepted,1000,`5k/20/1k target failed at ${capacityProbe.accepted}: ${capacityProbe.drawingError}`);
   assert.ok(capacityProbe.combinedIndicatorError,"20 total overlay/pane instances should be the shared active-indicator limit");
   assert.equal(capacityProbe.countAfterRejectedIndicator,20,"Rejected 21st indicator leaves the 20-instance set unchanged");

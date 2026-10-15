@@ -60,6 +60,10 @@ The native v5 capacity fixture now loads 5,000 bars, calculates 16 EMA overlays 
 
 The fixture also checks native oscillator formulas and readout values against the ChartStudio Beta calculator, two differently configured RSI instances, MACD's shared pane, flat-price RSI/ATR/ADX behavior, pane movement/removal, account cleanup, and atomic 8-pane/20-indicator limits. These are single-run headless setup/API timings, not paint, sustained FPS, hardware or strategy-performance acceptance. Production v5 migration remains open.
 
+## Stochastic follow-up (15 October 2026)
+
+After adding native Stochastic %K/%D, the 20-indicator fixture now uses 15 EMA overlays plus RSI, ATR, MACD, ADX and Stochastic. It still rejects indicator 21 atomically and creates/reloads all 1,000 drawings. One HeadlessChrome run measured 13.3 ms for 5,000 bars, 204.9 ms to set up all indicators, 37.2 ms for a forming-bar update, 10.6 ms to create 1,000 drawings, 16.5 ms to import them, and 40.2 ms to reload the scoped chart. Stochastic's formula/readout, flat-range behavior and limits are separately parity-checked against the beta calculator. This updates the mix in the capacity fixture; the original 14 October measurements above remain historical.
+
 Reproduce from the repository root:
 
 ```powershell
