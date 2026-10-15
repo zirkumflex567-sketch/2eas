@@ -46,8 +46,8 @@ def journal(account):
         profit_usd=100., net_profit_usd=95., points=10., time_ts=100, time_de='11:00', time_server='12:00',
         why_triggered='Fixture-Begründung', profit_goal='Fixture-Ziel', sl_price=3990., tp_price=0.)])
 
-def measure_opaque_glyph_contrast(foreground, visible_png, hidden_png, rectangles=None, coverage_pngs=None, tolerance=1):
-    """Measure exact opaque foreground pixels against paired background pixels."""
+def measure_glyph_contrast(foreground, visible_png, hidden_png, rectangles=None, coverage_pngs=None, tolerance=1):
+    """Measure visible text against paired background pixels, including antialiased coverage."""
     import io
     from PIL import Image
     visible = Image.open(io.BytesIO(visible_png)).convert('RGB')
@@ -71,20 +71,42 @@ def measure_opaque_glyph_contrast(foreground, visible_png, hidden_png, rectangle
     results = []
     for left, top, right, bottom in rectangles:
         ratios = []
+        samples = []
         x0, y0 = max(0, int(left)), max(0, int(top))
         x1, y1 = min(visible.width, int(right + .999)), min(visible.height, int(bottom + .999))
         for y in range(y0, y1):
             for x in range(x0, x1):
                 index = y * visible.width + x
                 pixel, background = visible_pixels[index], hidden_pixels[index]
-                glyph_covered = (any(mask[index] != background for mask in coverage_pixels)
-                                 if coverage_pixels else pixel != background)
-                if (glyph_covered and
-                    all(abs(channel - expected) <= tolerance for channel, expected in zip(pixel, foreground))):
-                    background_luminance = luminance(background)
-                    ratios.append((max(foreground_luminance, background_luminance) + .05) /
-                                  (min(foreground_luminance, background_luminance) + .05))
-        results.append({'opaque_glyph_pixels': len(ratios), 'minimum_ratio': min(ratios) if ratios else None})
+                coverage = None
+                if len(coverage_pixels) >= 2:
+                    sentinel_colors = ((255, 0, 255), (0, 255, 0))
+                    estimates = []
+                    for mask, sentinel in zip(coverage_pixels[:2], sentinel_colors):
+                        for observed, base, source in zip(mask[index], background, sentinel):
+                            denominator = source - base
+                            if denominator:
+                                estimate = (observed - base) / denominator
+                                if 0 <= estimate <= 1.05:
+                                    estimates.append(estimate)
+                    if estimates:
+                        coverage = sorted(estimates)[len(estimates) // 2]
+                else:
+                    glyph_covered = any(mask[index] != background for mask in coverage_pixels) if coverage_pixels else pixel != background
+                    if glyph_covered and all(abs(channel - expected) <= tolerance for channel, expected in zip(pixel, foreground)):
+                        coverage = 1.0
+                if coverage is not None and coverage >= .2:
+                    recovered = [base + (observed - base) / coverage
+                                 for observed, base in zip(pixel, background)]
+                    if all(abs(channel - expected) <= max(tolerance, 4) for channel, expected in zip(recovered, foreground)):
+                        background_luminance = luminance(background)
+                        ratio = ((max(foreground_luminance, background_luminance) + .05) /
+                                 (min(foreground_luminance, background_luminance) + .05))
+                        ratios.append(ratio)
+                        samples.append((ratio, x, y, pixel, background, coverage, recovered))
+        worst = min(samples) if samples else None
+        results.append({'measured_glyph_pixels': len(ratios), 'minimum_ratio': min(ratios) if ratios else None,
+                        'worst_sample': worst})
     return results
 
 def probe_incomplete_text_target(page, selector, threshold=4.5):
@@ -178,16 +200,17 @@ def probe_incomplete_text_target(page, selector, threshold=4.5):
         for foreground, rectangles in parsed:
             for rect in rectangles:
                 scaled_rect = (rect[0]*scale_x, rect[1]*scale_y, rect[2]*scale_x, rect[3]*scale_y)
-                result = measure_opaque_glyph_contrast(foreground, visible, hidden, [scaled_rect],
+                result = measure_glyph_contrast(foreground, visible, hidden, [scaled_rect],
                     coverage_pngs=[sentinel_magenta, sentinel_green])[0]
-                if not result['opaque_glyph_pixels']:
-                    return {'classification': 'unresolved', 'reason': 'no fully covered glyph pixels found'}
+                if not result['measured_glyph_pixels']:
+                    return {'classification': 'unresolved', 'reason': 'no measurable glyph coverage found'}
                 measurements.append(result)
         minimum = min(item['minimum_ratio'] for item in measurements)
         return {'classification': 'measured', 'foregroundColors': [list(color) for color, _ in parsed],
                 'fragments': len(measurements),
-                'opaqueGlyphPixels': sum(item['opaque_glyph_pixels'] for item in measurements),
-                'minimumRatio': minimum, 'threshold': threshold,
+                'measuredGlyphPixels': sum(item['measured_glyph_pixels'] for item in measurements),
+                'minimumRatio': minimum, 'worstSample': min(measurements, key=lambda item:item['minimum_ratio'])['worst_sample'],
+                'threshold': threshold,
                 'result': 'pass' if minimum >= threshold else 'fail'}
     except PlaywrightError as exc:
         return {'classification': 'unresolved', 'reason': f'browser probe failed: {str(exc).splitlines()[0]}'}
@@ -504,7 +527,7 @@ class DashboardFrontendTests(unittest.TestCase):
             unresolved=sum(item['classification']=='unresolved' for item in items),
             non_text=sum(item['classification']=='non-text' for item in items))
             for theme,items in pixel_audit.items()}
-        audit_path.write_text(json.dumps(dict(projectThreshold=4.5, method='paired opaque-glyph pixel probe',
+        audit_path.write_text(json.dumps(dict(projectThreshold=4.5, method='paired sentinel antialias-reconstructed glyph probe',
             measurementStatus='per-target; unsupported cases remain unresolved', summary=pixel_audit_summary,
             themes=pixel_audit),
             ensure_ascii=False, indent=2), encoding='utf-8')
@@ -517,6 +540,7 @@ class DashboardFrontendTests(unittest.TestCase):
                 self.assertEqual(failed_measurements, [], f'project 4.5:1 threshold failures: {failed_measurements}')
     def test_contrast_text_fill_probe_preserves_currentcolor_pseudo_background(self):
         self.load()
+        self.page.set_content('<!doctype html><html><body style="margin:0;background:#fff"></body></html>')
         self.page.evaluate('''() => {
           const fixture = document.createElement('div');
           fixture.id = 'contrast-probe-fixture';
@@ -544,8 +568,8 @@ class DashboardFrontendTests(unittest.TestCase):
         self.assertEqual(after['pseudoBackground'], after['pseudoColor'])
         self.assertIn('pseudo label', after['pseudoContent'])
         self.page.evaluate('''() => {
-          const target=document.createElement('span');target.id='contrast-probe-cleanup-fixture';
-          target.textContent='opaque text';target.style.cssText='position:fixed;left:10px;top:80px;font:24px Arial;color:#000;background:#fff';
+          const target=document.createElement('div');target.id='contrast-probe-cleanup-fixture';
+          target.textContent='opaque text';target.style.cssText='position:fixed;left:10px;top:80px;width:160px;padding:2px;font:24px Arial;color:#000;background:#fff;text-shadow:none!important;filter:none!important';
           document.body.append(target);
         }''')
         result = probe_incomplete_text_target(self.page, '#contrast-probe-cleanup-fixture')
@@ -576,9 +600,9 @@ class DashboardFrontendTests(unittest.TestCase):
             element.evaluate("el=>el.style.setProperty('-webkit-text-fill-color','rgb(0,255,0)','important')")
             mask_green = element.screenshot()
             element.evaluate("el=>el.style.removeProperty('-webkit-text-fill-color')")
-            result = measure_opaque_glyph_contrast(foreground, visible, hidden,
+            result = measure_glyph_contrast(foreground, visible, hidden,
                 coverage_pngs=[mask_magenta, mask_green])[0]
-            self.assertGreater(result['opaque_glyph_pixels'], 0, (selector, result))
+            self.assertGreater(result['measured_glyph_pixels'], 0, (selector, result))
             self.assertEqual(result['minimum_ratio'] >= 4.5, should_pass, (selector, result))
         equal = self.page.locator('#contrast-equal')
         foreground = [0, 0, 0]
@@ -590,10 +614,27 @@ class DashboardFrontendTests(unittest.TestCase):
         equal.evaluate("el=>el.style.setProperty('-webkit-text-fill-color','rgb(0,255,0)','important')")
         mask_green = equal.screenshot()
         equal.evaluate("el=>el.style.removeProperty('-webkit-text-fill-color')")
-        result = measure_opaque_glyph_contrast(foreground, visible, hidden,
+        result = measure_glyph_contrast(foreground, visible, hidden,
             coverage_pngs=[mask_magenta, mask_green])[0]
         self.assertEqual(result['minimum_ratio'], 1.0, ('foreground-matching background strip was omitted', result))
         self.assertEqual(self.mutations, [])
+    def test_paired_pixel_probe_recovers_antialiased_glyph_coverage(self):
+        from PIL import Image
+        import io
+        def png(rgb):
+            image = Image.new('RGB', (1, 1), rgb)
+            result = io.BytesIO(); image.save(result, format='PNG'); return result.getvalue()
+        background = (0, 0, 0)
+        foreground = (140, 140, 140)
+        # Each sentinel is alpha-composited over black at 50% glyph coverage.
+        visible = png((70, 70, 70))
+        hidden = png(background)
+        magenta = png((128, 0, 128))
+        green = png((0, 128, 0))
+        result = measure_glyph_contrast(foreground, visible, hidden,
+            coverage_pngs=[magenta, green])[0]
+        self.assertGreater(result['measured_glyph_pixels'], 0, result)
+        self.assertAlmostEqual(result['minimum_ratio'], 6.25, delta=.05, msg=str(result))
     def test_journal_keyed_rows_and_expanded_details_survive_poll(self):
         self.load(); expect(self.page.locator('#journal-count-badge')).to_contain_text('2 Trades')
         self.page.evaluate("window.firstJournalRow = document.querySelector('[data-journal-key]'); window.rowChanges = 0; new MutationObserver(ms=>{window.rowChanges += ms.length}).observe(document.getElementById('journal-list'),{childList:true})")

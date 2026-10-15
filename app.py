@@ -2115,7 +2115,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         <span id="journal-closed-pnl" class="px-2 py-0.5 rounded-md font-mono text-[10px] font-bold border border-slate-500/20 bg-slate-500/10 text-slate-300 hidden">Hist: —</span>
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        <label for="journal-strategy-filter" class="text-[11px] font-bold text-sub">Journal-Ansicht:</label>
+        <label for="journal-strategy-filter" class="stone-journal-filter-label text-[11px] font-bold text-sub">Journal-Ansicht:</label>
         <select id="journal-strategy-filter" onchange="setJournalFilter(this.value)"
           class="ticker-bg border rounded-lg px-2.5 py-1.5 font-bold font-mono text-[11px] cursor-pointer"
           aria-label="Strategien im Trade-Journal auswählen">
