@@ -8,12 +8,12 @@ Advance FR-033 / AT-050 without a backtest by reporting favorable/adverse price 
 
 ## Implementation
 
-1. Add pure RED/GREEN tests for long/short direction, entry/exit boundary exclusion, `asOf`/hash/link integrity, one-entry/one-exit requirements, duplicates, partial/missing data, and unavailable states.
-2. Implement a pure read-model function that computes price deltas from only full OHLC bars inside the broker fill interval. Return unavailable rather than estimate across unsupported legs or missing evidence.
-3. Add an authenticated, account-scoped GET beneath the lifecycle evidence routes. Reuse EvidenceStore integrity validation and bounded position filters; no new append/write route or MT5 call.
-4. Test authentication, unknown/funded account, scope isolation, no mutating HTTP methods, history limits, and store errors.
-5. Add an inspector affordance with source, bar count, broker interval and explicit OHLC-estimate/coverage labels; test no writes and stale-account isolation.
-6. Verify on the four authorized demo accounts read-only, update FR-033/AT-050 only to observed coverage, run CI, and deploy clean Main through the guarded local/hTown runtime. Blueberry and backtesting remain excluded.
+1. [x] Add pure RED/GREEN tests for long/short direction, entry/exit boundary exclusion, `asOf`/hash/link integrity, one-entry/one-exit requirements, duplicates, partial/missing data, and unavailable states.
+2. [x] Implement a pure read-model function that computes price deltas from only full OHLC bars inside the broker fill interval. Return unavailable rather than estimate across unsupported legs or missing evidence.
+3. [x] Add an authenticated, account-scoped GET beneath the lifecycle evidence routes. Reuse EvidenceStore integrity validation and bounded position filters; no new append/write route or MT5 call.
+4. [x] Test authentication, unknown/funded account, scope isolation, no mutating HTTP methods, history limits, and store errors.
+5. [x] Add an inspector affordance with source, bar count, broker interval and explicit OHLC-estimate/coverage labels; test no writes and stale-account isolation.
+6. [x] Verify four authorized demo accounts read-only, update FR-033/AT-050 to observed coverage, and deploy clean Main through the guarded local/hTown runtime. GitHub CI and independent hardware acceptance remain open. Blueberry and backtesting remain excluded.
 
 ## Acceptance
 
@@ -22,3 +22,7 @@ Advance FR-033 / AT-050 without a backtest by reporting favorable/adverse price 
 - MFE/MAE are price-distance estimates, never currency PnL, and make no claim about tick-level extrema or intrabar sequence.
 - Any unsupported trade lifecycle or ambiguous coverage is `UNAVAILABLE` with a stable reason code.
 - Only authenticated GET reads are added; no MT5 call or trade mutation is allowed.
+
+## Verification result
+
+Pure/API regression set: 148 passed. `node --check` passed for the beta UI and both smoke scripts; Chromium beta smoke passed. Live read-only GETs returned AVAILABLE on all four authorized demo accounts with 28, 51, 15 and 36 observed M15 bars respectively. No Blueberry request, MT5 mutation, or backtest. Main and the htown `/stt` upstream are on `fbadc661`; local and SSH runtime identities agree and report clean source with no restart required.
