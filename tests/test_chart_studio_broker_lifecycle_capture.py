@@ -65,6 +65,13 @@ def test_deal_mapping_preserves_broker_identity_event_time_and_capture_time():
     assert (payload['commission'], payload['fee'], payload['swap'], payload['profit']) == ('-0.25', '0', '0', '-1.35')
 
 
+def test_deal_mapping_normalizes_mt5_binary_float_artifacts_in_money_fields():
+    row = deal(swap='1.1400000000000001', profit='5.9399999999999995')
+    payload = api().deal_envelope(context(), row, '2026-10-15T18:16:00Z')['payload']
+    assert payload['swap'] == '1.14'
+    assert payload['profit'] == '5.94'
+
+
 @pytest.mark.parametrize('entry,event', [('OUT', 'EXIT'), ('OUT_BY', 'EXIT'), ('INOUT', 'POSITION_OBSERVED')])
 def test_deal_mapping_does_not_infer_reversal_as_simple_entry_or_exit(entry, event):
     payload = api().deal_envelope(context(), deal(entry=entry, type='SELL'), '2026-10-15T18:16:00Z')['payload']

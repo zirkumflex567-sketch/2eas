@@ -1,6 +1,7 @@
 """Opt-in, read-only capture of verified MT5 deal facts for demo accounts."""
 import asyncio
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import ntpath
 import time
 
@@ -13,6 +14,7 @@ INITIAL_LOOKBACK_SECONDS = 48 * 60 * 60
 OVERLAP_SECONDS = 5 * 60
 PAGE_SIZE = 500
 MAX_PAGES_PER_ACCOUNT = 100
+MONEY_QUANTUM = Decimal('0.000000000001')
 
 
 def parse_demo_allowlist(raw, *, accounts=None):
@@ -44,6 +46,23 @@ def _deal_time(value):
     seconds, milliseconds = divmod(value, 1000)
     return models.utc_timestamp((datetime.fromtimestamp(seconds, timezone.utc) +
                                  timedelta(milliseconds=milliseconds)).isoformat(timespec='microseconds'))
+
+
+def _money_string(value):
+    """Fit MT5's binary-float text to the evidence schema's 12-place decimal contract."""
+    if not isinstance(value, str) or len(value) > 64:
+        raise ValueError('invalid broker amount')
+    try:
+        amount = Decimal(value)
+        if not amount.is_finite():
+            raise ValueError('invalid broker amount')
+        normalized = amount.quantize(MONEY_QUANTUM, rounding=ROUND_HALF_UP)
+    except InvalidOperation as exc:
+        raise ValueError('invalid broker amount') from exc
+    text = format(normalized, 'f')
+    if '.' in text:
+        text = text.rstrip('0').rstrip('.')
+    return models.decimal_string(text or '0', signed=True)
 
 
 def deal_envelope(context, row, captured_at_utc):
@@ -96,7 +115,7 @@ def deal_envelope(context, row, captured_at_utc):
     }
     for field in ('commission', 'fee', 'swap', 'profit'):
         if field in row:
-            body[field] = models.decimal_string(row[field], signed=True)
+            body[field] = _money_string(row[field])
     body = models.seal_lifecycle(body, context=context)
     envelope = {
         'schemaVersion': 1, 'type': 'LIFECYCLE', 'id': body['id'],
