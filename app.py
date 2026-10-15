@@ -1745,10 +1745,29 @@ HTML_CONTENT = """<!DOCTYPE html>
     }
 
     #tv-chart {
+      position: relative;
       width: 100% !important;
       height: 520px !important;
       min-height: 520px;
     }
+    #chart-load-status {
+      position: absolute;
+      z-index: 20;
+      top: 10px;
+      left: 12px;
+      max-width: calc(100% - 24px);
+      padding: 7px 10px;
+      border: 1px solid rgba(245, 182, 106, .7);
+      border-radius: 6px;
+      background: rgba(15, 23, 42, .94);
+      color: #f8fafc;
+      font: 700 12px/1.4 system-ui, sans-serif;
+      box-shadow: 0 3px 12px rgba(0, 0, 0, .35);
+      pointer-events: none;
+    }
+    #chart-load-status[data-kind="loading"] { border-color: rgba(96, 165, 250, .75); }
+    #chart-load-status[data-kind="empty"] { border-color: rgba(148, 163, 184, .75); }
+    #chart-load-status[hidden] { display: none; }
     .vp-bar { transition: width 0.3s ease; }
     .account-switcher { display:flex; flex-wrap:wrap; gap:8px; }
     .account-tab { text-align:left; padding:10px 16px; border:1px solid #334155; border-radius:10px; min-width:235px; transition:background .2s,border-color .2s; }
@@ -2023,7 +2042,9 @@ HTML_CONTENT = """<!DOCTYPE html>
         <div class="w-full relative rounded-lg overflow-hidden border table-border chart-frame-container" style="height: 520px;">
           <!-- Complete names of chart price levels; native axis shows only numbers. -->
           <div id="chart-level-legend" class="stone-chart-level-legend" role="group" aria-label="Aktuelle Daily- und Weekly-Level" hidden></div>
-          <div id="tv-chart" class="w-full h-full"></div>
+          <div id="tv-chart" class="w-full h-full">
+            <div id="chart-load-status" role="status" aria-live="polite" hidden></div>
+          </div>
         </div>
       </div>
 
@@ -2324,6 +2345,14 @@ HTML_CONTENT = """<!DOCTYPE html>
     let showEAStatusText = localStorage.getItem('chart_show_ea_status') !== 'false';
     let currentChartMarkers = [];
     let matrixSignature = null, vpSignature = null;
+    function setChartLoadStatus(message, kind = 'error') {
+      const status = document.getElementById('chart-load-status');
+      if (!status) return;
+      const text = typeof message === 'string' ? message.trim().slice(0, 240) : '';
+      status.textContent = text;
+      status.dataset.kind = kind;
+      status.hidden = text.length === 0;
+    }
     function clearChartFX() {
       try { window.StoneChartFX?.update({ candles: [], emas: [[], [], []], context: activeAccount + '/' + activeChartSymbol + '/' + activeTimeframe + '/' + accountGeneration }); } catch (_) {}
     }
@@ -2498,6 +2527,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     function clearAccountView() {
       currentData = null;
       lastStatusSuccess = 0;
+      setChartLoadStatus('Kerzen werden geladen …', 'loading');
       gateAccountActions(false);
       try {window.StoneCelebration?.clearEMAs();}catch(_){};
       document.getElementById('account-content').dataset.connected = 'false';
@@ -3271,7 +3301,13 @@ HTML_CONTENT = """<!DOCTYPE html>
         const data = await res.json();
         if (generation !== accountGeneration || reqTf !== activeTimeframe || reqSymbol !== activeChartSymbol) throw staleRequest();
         const expectedSymbol = accounts[activeAccount]?.symbol || reqSymbol;
-        if (!res.ok || data.accountId !== activeAccount || (data.symbol !== reqSymbol && data.symbol !== expectedSymbol) || data.timeframe !== reqTf || data.source !== 'MT5_VERIFIED' || data.canExecute !== false) {
+        if (!res.ok) {
+          const detail = typeof data.detail === 'string' && data.detail.trim()
+            ? data.detail.trim().slice(0, 200)
+            : `Kerzenabruf fehlgeschlagen (HTTP ${res.status}).`;
+          throw new Error(detail);
+        }
+        if (data.accountId !== activeAccount || (data.symbol !== reqSymbol && data.symbol !== expectedSymbol) || data.timeframe !== reqTf || data.source !== 'MT5_VERIFIED' || data.canExecute !== false) {
           throw new Error('Chartdaten haben keinen passenden Account-/Symbol-/Timeframe-Read-Scope.');
         }
         if (data.symbol && data.symbol !== activeChartSymbol && accounts[activeAccount]?.symbol === data.symbol) {
@@ -3282,7 +3318,11 @@ HTML_CONTENT = """<!DOCTYPE html>
           if (title) title.textContent = `${activeChartSymbol} ${reqTf} Chart`;
           try { window.ChartStudioBeta?.symbol(activeChartSymbol); } catch (_) {}
         }
-        if (!data.candles || data.candles.length === 0) return;
+        if (!Array.isArray(data.candles) || data.candles.length === 0) {
+          setChartLoadStatus(`${activeChartSymbol} ${activeTimeframe}: keine MT5-Kerzen verfügbar.`, 'empty');
+          return;
+        }
+        setChartLoadStatus('');
         const previousLatest = candleHistory.latest;
         const nextLatestTime = data.candles[0].time;
         if (candleHistory.pages.length && previousLatest?.candles?.length && Number.isFinite(nextLatestTime)) {
@@ -3373,6 +3413,9 @@ HTML_CONTENT = """<!DOCTYPE html>
       } catch (err) {
         console.error('[Cockpit] Kerzen-Ladefehler:', err);
         reportAccountError(err, generation);
+        if (generation === accountGeneration && err.name !== 'AbortError') {
+          setChartLoadStatus(`Kerzen nicht verfügbar: ${err.message || 'MT5-Feed prüfen.'}`, 'error');
+        }
       } finally { if (candlesBusy === requestKey) candlesBusy = null; }
     }
 
