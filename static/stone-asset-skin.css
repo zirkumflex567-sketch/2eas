@@ -1468,7 +1468,6 @@ body.theme-stone #stone-fx-panel button:focus-visible {
  position:absolute!important;z-index:16!important;pointer-events:none;
  background:transparent!important;touch-action:none;user-select:none;
 }
-@media(max-width:680px){.cs-beta-buttons button{min-height:38px;padding:8px 9px}.cs-beta-head{gap:5px}}
 @media(prefers-reduced-motion:reduce){.cs-beta-toggle,.cs-beta-buttons button{transition:none!important}}
 
 /* Scenario plan remains visibly separate from genuine MT5 position overlays. */
@@ -1527,12 +1526,6 @@ body.theme-stone #stone-fx-panel button:focus-visible {
 .cs-indicator-pane-title button{cursor:pointer;padding:0 5px;border-radius:4px;
  border:1px solid #497b87;color:#b2d3dd;background:#142e3c;line-height:22px}
 .cs-indicator-pane-plot{height:calc(100% - 31px);min-height:80px;width:100%}
-@media(max-width:690px){
- .cs-indicator-control{flex:1 1 auto;min-width:145px}
- .cs-indicator-pane{height:147px}
- .cs-indicator-pane-title{font-size:9px}
-}
-
 /* Broker-verified What-if grip: visual draft only, never a live stop button. */
 .cs-scenario button[data-cmd="drag-plan"][aria-pressed="true"]{
  background:linear-gradient(140deg,#4b351e,#142e39);color:#fff4c3;
@@ -1552,8 +1545,6 @@ body.theme-stone #stone-fx-panel button:focus-visible {
  border:1px solid #5a8595;border-radius:5px;background:#214151;color:#e7f7fc}
 .cs-server-sync button:hover{filter:brightness(1.17)}
 .cs-server-sync p{margin:9px 0 0;color:#b7cbd4;overflow-wrap:anywhere}
-@media(max-width:650px){.cs-server-sync-row>*{flex:1 1 110px}}
-
 /* Chart Studio multi-instance moving-average editor: read-only chart overlays. */
 .cs-ma-editor{margin:14px 0;padding:13px;border:1px solid #5c8495;border-radius:10px;
  background:linear-gradient(122deg,rgba(10,26,39,.97),rgba(30,49,63,.93));
@@ -1581,9 +1572,6 @@ body.theme-stone #stone-fx-panel button:focus-visible {
 .cs-ma-instance input[type=checkbox]{width:19px;height:23px;accent-color:#6cd9e0}
 .cs-ma-instance button[data-action=remove]{border-color:#915c67;color:#ffd8da}
 .cs-ma-message{min-height:16px;margin:9px 0 0;color:#b8dadc}
-@media(max-width:700px){.cs-ma-instance{gap:7px}.cs-ma-instance label{flex:1 1 90px}
- .cs-ma-instance button{flex:1 1 110px}}
-
 /* Account-local chart appearance controls; opt-in renderer style, never broker I/O. */
 .cs-appearance{margin:13px 0;padding:10px;border:1px solid #527d8c;
  border-radius:8px;background:linear-gradient(120deg,#122b39,#091925);
@@ -1628,9 +1616,6 @@ body.theme-stone #stone-fx-panel button:focus-visible {
 .cs-osc-panes:empty{display:none}
 .cs-osc-pane{height:178px}
 .cs-osc-message{min-height:14px;overflow-wrap:anywhere}
-@media(max-width:700px){.cs-osc-instance label{flex:1 1 85px}
- .cs-osc-instance button{flex:1 1 110px}}
-
 /* Price presentation selector: original candle series stays available for anchor mapping. */
 .cs-chart-type-editor{margin:12px 0;padding:12px;border:1px solid #5a8697;
  background:linear-gradient(110deg,#132b38,#0a1b2a);border-radius:8px;
@@ -1664,7 +1649,23 @@ body.theme-stone #stone-fx-panel button:focus-visible {
 .cs-object-row button[data-action=remove]{color:#ffc9d0;border-color:#915f6a}
 .cs-object-row button:disabled{opacity:.35;cursor:not-allowed}
 .cs-object-empty{padding:9px;margin:0;color:#b4ccd7}
-@media(max-width:700px){.cs-object-row input{flex:1 1 100%}.cs-object-row button{flex:1 1 60px}}
+
+/* Chart Studio controls use one mobile transition to preserve usable touch targets. */
+@media (max-width: 700px) {
+  .cs-beta-buttons button { min-height: 38px; padding: 8px 9px; }
+  .cs-beta-head { gap: 5px; }
+  .cs-indicator-control { flex: 1 1 auto; min-width: 145px; }
+  .cs-indicator-pane { height: 147px; }
+  .cs-indicator-pane-title { font-size: 9px; }
+  .cs-server-sync-row > * { flex: 1 1 110px; }
+  .cs-ma-instance { gap: 7px; }
+  .cs-ma-instance label { flex: 1 1 90px; }
+  .cs-ma-instance button { flex: 1 1 110px; }
+  .cs-osc-instance label { flex: 1 1 85px; }
+  .cs-osc-instance button { flex: 1 1 110px; }
+  .cs-object-row input { flex: 1 1 100%; }
+  .cs-object-row button { flex: 1 1 60px; }
+}
 
 /* ========================================================
    LIGHT THEME (HELL) COMPLETE OVERRIDES

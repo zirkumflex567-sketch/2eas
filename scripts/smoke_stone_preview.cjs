@@ -44,6 +44,21 @@ const {pathToFileURL} = require('node:url');
     assert.equal(themeTokens.text,'rgb(228, 238, 242)','Layered text token resolves');
     assert.equal(themeTokens.accent,'rgb(99, 234, 255)','Layered accent token resolves');
     assert.equal(themeTokens.cardBorder,'rgba(117, 159, 171, 0.52)','Layered border token resolves');
+    const probeMinHeight = () => page.evaluate(() => {
+      const group = document.createElement('div');
+      group.className = 'cs-beta-buttons';
+      group.innerHTML = '<button type="button">Breakpoint probe</button>';
+      document.body.append(group);
+      const value = getComputedStyle(group.querySelector('button')).minHeight;
+      group.remove();
+      return value;
+    });
+    await page.setViewportSize({width:700,height:900});
+    assert.equal(await probeMinHeight(),'38px',
+      'Chart Studio control uses the mobile breakpoint at 700px');
+    await page.setViewportSize({width:701,height:900});
+    assert.equal(await probeMinHeight(),'33px','Chart Studio control returns to desktop sizing at 701px');
+    await page.setViewportSize({width:1440,height:900});
     assert.ok(await page.locator('#tv-chart canvas').count()>0,'Demo chart needs canvas');
     assert.ok(await page.locator('button:disabled').count()>0,'Simulated order buttons disabled');
 

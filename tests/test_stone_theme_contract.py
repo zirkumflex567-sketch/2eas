@@ -35,6 +35,34 @@ class StoneThemeContractTests(unittest.TestCase):
                 self.assertRegex(token_layer.group(1), re.escape(token) + r"\s*:")
                 self.assertIn(f"var({token})", css)
 
+    def test_chart_studio_controls_share_one_mobile_breakpoint(self):
+        css = (STATIC / "stone-asset-skin.css").read_text(encoding="utf-8")
+        narrow_queries = re.findall(
+            r"@media\s*\(\s*max-width\s*:\s*(?:650|680|690)px\s*\)\s*\{([\s\S]*?)\n\}", css
+        )
+        selectors = (
+            ".cs-beta-buttons button",
+            ".cs-indicator-control",
+            ".cs-server-sync-row",
+            ".cs-ma-instance",
+            ".cs-osc-instance",
+            ".cs-object-row",
+        )
+        self.assertFalse(
+            any(any(selector in query for selector in selectors) for query in narrow_queries),
+            "Chart Studio controls must not diverge onto 650/680/690px breakpoints",
+        )
+        mobile_queries = re.findall(
+            r"@media\s*\(\s*max-width\s*:\s*700px\s*\)\s*\{([\s\S]*?)\n\}", css
+        )
+        self.assertTrue(
+            any(all(selector in query for selector in selectors) for query in mobile_queries),
+            "All Chart Studio controls share the 700px mobile query",
+        )
+        for selector in selectors:
+            with self.subTest(selector=selector):
+                self.assertTrue(any(selector in query for query in mobile_queries))
+
     def test_assets_exist(self):
         for name in ("stone-cockpit.css", "stone-cockpit.js", "stone-texture.svg", "stone-preview.html"):
             with self.subTest(asset=name):
