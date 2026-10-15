@@ -100,6 +100,7 @@ def ensure_mt5_init():
 
 _MT5_READ_SPANS = {
     'copy_rates_from_pos': 'mt5_rates',
+    'copy_rates_from': 'mt5_rates',
     'history_deals_get': 'mt5_history',
     'history_orders_get': 'mt5_history',
 }
@@ -1106,7 +1107,10 @@ def api_mt5_traces(request: Request, limit: int = 50):
 
 @app.get("/api/candles")
 @scoped(mt5)
-def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] = None, symbol: Optional[Symbol] = None):
+def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] = None,
+                symbol: Optional[Symbol] = None, before: Optional[int] = None):
+    if before is not None and not 0 < before <= 4102444800:
+        raise HTTPException(status_code=422, detail="Ungültiger historischer Kerzencursor.")
     if not ensure_mt5_init():
         raise HTTPException(status_code=500, detail="MT5 Fehler")
     current_acc = selected()
@@ -1135,8 +1139,19 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
     tf_val = TIMEFRAME_MAP[tf_upper]
     count = min(1000, max(10, count))
     fetch_count = max(5000, count+250) if (account == 'goldm15' and sym_name == SYMBOL and tf_val == mt5.TIMEFRAME_M15) else (count+250)
-    rates = _mt5_read('copy_rates_from_pos', sym_name, tf_val, 0, fetch_count)
-    if rates is None or len(rates)<2:
+    if before is None:
+        rates = _mt5_read('copy_rates_from_pos', sym_name, tf_val, 0, fetch_count)
+    else:
+        # MT5 date cursors are inclusive; trim the cursor bar so adjacent pages
+        # cannot duplicate a candle. Fetch an additional row for that boundary.
+        fetch_count = count + 251
+        historical_from = datetime.fromtimestamp(before, timezone.utc)
+        rates = _mt5_read('copy_rates_from', sym_name, tf_val, historical_from, fetch_count)
+        if rates is not None and len(rates):
+            rates = rates[rates['time'] < before]
+    if rates is None or len(rates) == 0 or (before is None and len(rates) < 2):
+        if before is not None:
+            raise HTTPException(status_code=404, detail="Keine älteren MT5-Kerzen vor diesem Cursor verfügbar.")
         raise HTTPException(status_code=500, detail="Konnte Kerzen nicht laden")
 
     df = pd.DataFrame(rates)
@@ -1158,6 +1173,8 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
         for n in {int(params[f'S{s}_{key}']) for s in range(1,4) for key in ('FastRSI','BuyTrendRSI','SellTrendRSI')}:
             df[f'gold_rsi{n}'] = wilder_rsi(df['close'].to_numpy(), n)
 
+    # The page may be shorter than requested at the history boundary. Keep all
+    # available bars; the first row is still excluded from marker comparisons.
     sub = df.tail(count).copy()
 
     candles = []
@@ -1168,7 +1185,7 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
     markers = []
     previous_gold_signals = {}
 
-    for i in range(1, len(sub)):
+    for i in range(len(sub)):
         idx = sub.index[i]
         row = sub.loc[idx]
         t = int(row['time'])
@@ -1186,6 +1203,9 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
         ema20_pts.append({'time': t, 'value': round(row['ema20'], digits)})
         ema50_pts.append({'time': t, 'value': round(row['ema50'], digits)})
         ema200_pts.append({'time': t, 'value': round(row['ema200'], digits)})
+
+        if i == 0:
+            continue
 
         if (sym_name == SYMBOL or sym_name == current_acc.get('symbol', SYMBOL)) and tf_val == mt5.TIMEFRAME_M15:
             prev = df.loc[idx - 1]
@@ -1232,6 +1252,8 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
         'weekly_poc':  round(weekly_vp.get('poc', 0.0), digits),
     }
 
+    oldest_time = int(candles[0]['time']) if candles else None
+    has_older = bool(oldest_time is not None and len(df) > len(sub))
     return {
         "account": public_account(selected()),
         "accountId": account,
@@ -1241,6 +1263,12 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
         "source": "MT5_VERIFIED",
         "canExecute": False,
         "candles": candles,
+        "page": {
+            "requestedCount": count,
+            "oldestTime": oldest_time,
+            "nextBefore": oldest_time if has_older else None,
+            "hasMore": has_older,
+        },
         "ema9": ema9_pts,
         "ema20": ema20_pts,
         "ema50": ema50_pts,

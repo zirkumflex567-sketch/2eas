@@ -165,6 +165,52 @@ def test_chart_candles_read_exact_requested_verified_symbol(isolated, monkeypatc
     isolated.send.assert_not_called()
 
 
+def test_chart_candles_supports_exclusive_historical_cursor_with_warmup(isolated, monkeypatch):
+    calls=[]
+    cursor=int(isolated.rates['time'][290])
+    def copy_from(symbol, timeframe, date_from, count):
+        calls.append((symbol, timeframe, date_from, count))
+        eligible=isolated.rates[isolated.rates['time'] <= int(date_from.timestamp())]
+        return eligible[-count:].copy()
+    monkeypatch.setattr(app.mt5, 'symbol_info', lambda name: NS(name=name, digits=2, trade_tick_size=.01))
+    monkeypatch.setattr(app.mt5, 'copy_rates_from', copy_from, raising=False)
+    response=isolated.client.get(f'/api/candles?account=titan&tf=M15&symbol=XAUUSD&count=10&before={cursor}')
+    assert response.status_code==200,response.text
+    body=response.json()
+    assert calls and calls[0][0]=='XAUUSD'
+    assert calls[0][2].tzinfo is not None and calls[0][2].utcoffset().total_seconds()==0
+    assert calls[0][3]>=260, 'historical indicator warm-up must be fetched in addition to the visible page'
+    assert body['candles'] and len(body['candles'])==10
+    assert all(row['time'] < cursor for row in body['candles']), 'cursor bar must be excluded'
+    assert body['candles'][-1]['time']==int(isolated.rates['time'][289])
+    assert body['page']['nextBefore']==body['candles'][0]['time']
+    assert body['page']['hasMore'] is True
+    isolated.send.assert_not_called()
+
+
+def test_chart_candles_rejects_nonpositive_history_cursor(isolated, monkeypatch):
+    reads=[]
+    monkeypatch.setattr(app.mt5, 'copy_rates_from', lambda *args: reads.append(args), raising=False)
+    response=isolated.client.get('/api/candles?account=titan&tf=M15&symbol=XAUUSD&before=0')
+    assert response.status_code==422
+    assert reads==[]
+
+
+def test_chart_candles_returns_single_bar_on_short_final_history_page(isolated, monkeypatch):
+    cursor=int(isolated.rates['time'][1])
+    monkeypatch.setattr(app.mt5, 'symbol_info', lambda name: NS(name=name, digits=2, trade_tick_size=.01))
+    monkeypatch.setattr(app.mt5, 'copy_rates_from', lambda symbol, timeframe, date_from, count:
+                        isolated.rates[isolated.rates['time'] <= int(date_from.timestamp())][-count:].copy(),
+                        raising=False)
+    response=isolated.client.get(f'/api/candles?account=titan&tf=M15&symbol=XAUUSD&count=10&before={cursor}')
+    assert response.status_code==200,response.text
+    body=response.json()
+    assert len(body['candles'])==1
+    assert body['candles'][0]['time']==int(isolated.rates['time'][0])
+    assert len(body['ema9'])==1
+    assert body['page']=={'requestedCount':10,'oldestTime':int(isolated.rates['time'][0]),'nextBefore':None,'hasMore':False}
+
+
 @pytest.mark.parametrize('account_id', ['titan', 'xau5m_500'])
 def test_marketplace_status_keeps_indicators_but_has_no_strategy_reconstruction(isolated, monkeypatch, account_id):
     def account_info():
