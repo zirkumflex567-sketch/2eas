@@ -312,7 +312,7 @@ class DashboardFrontendTests(unittest.TestCase):
             query=parse_qs(parsed.query).get('q',[''])[0].casefold()
             available = ('XAUUSD','EURUSD',self.account_overrides.get(account,{}).get('symbol'))
             symbols=[dict(account=account,symbol=symbol,source='MT5_VERIFIED',canExecute=False) for symbol in available if symbol and query in symbol.casefold()]
-            route.fulfill(json=dict(account=account,source='MT5_VERIFIED',canExecute=False,symbols=symbols,limit=200,truncated=False)); return
+            route.fulfill(json=dict(account=account,source='MT5_VERIFIED',canExecute=False,symbols=symbols,limit=200,truncated=False,invalidCount=0)); return
         if parsed.path == '/api/chart/v1/positions':
             symbol=parse_qs(parsed.query).get('symbol',['XAUUSD'])[0]
             route.fulfill(json=dict(account=account,symbol=symbol,source='MT5_VERIFIED',canExecute=False,currency='USD',marginMode=2,positions=[],orders=[])); return

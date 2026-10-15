@@ -32,6 +32,24 @@ _ENV_KEYS = {'DASHBOARD_ALLOWED_HOSTS', 'DASHBOARD_PROXY_SECRET', 'DASHBOARD_PRO
              'CHART_STUDIO_EVIDENCE_SPOOL_ROOT', 'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS'}
 
 
+def _path_is_within(path, root):
+    """Containment check that also handles Windows short/long path aliases."""
+    path, root = Path(path).resolve(), Path(root).resolve()
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        current = path if path.exists() else path.parent
+        while current != current.parent:
+            try:
+                if current.exists() and root.exists() and os.path.samefile(current, root):
+                    return True
+            except OSError:
+                pass
+            current = current.parent
+        return False
+
+
 def validate_environment_file(root, private_path):
     """Validate launch configuration without returning/logging any private values."""
     def unique(pairs):
@@ -44,7 +62,7 @@ def validate_environment_file(root, private_path):
 
     try:
         private_path = Path(private_path).resolve()
-        if private_path.is_relative_to(Path(root).resolve()):
+        if _path_is_within(private_path, root):
             raise ValueError('private file in checkout')
         values = json.loads(private_path.read_text(encoding='utf-8-sig'), object_pairs_hook=unique)
         if not isinstance(values, dict) or any(k not in _ENV_KEYS or not isinstance(v, str)
@@ -54,7 +72,7 @@ def validate_environment_file(root, private_path):
             raise ValueError('short secret')
         if 'CHART_STUDIO_EVIDENCE_SPOOL_ROOT' in values:
             spool_root = Path(values['CHART_STUDIO_EVIDENCE_SPOOL_ROOT'])
-            if not spool_root.is_absolute() or not spool_root.is_dir() or spool_root.resolve().is_relative_to(Path(root).resolve()):
+            if not spool_root.is_absolute() or not spool_root.is_dir() or _path_is_within(spool_root, root):
                 raise ValueError('invalid spool root')
         if 'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS' in values:
             aliases = [item.strip() for item in values['CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS'].split(',')]
@@ -74,7 +92,7 @@ def validate_environment_file(root, private_path):
             evidence_db = raw_evidence_db.resolve()
             checkout = Path(root).resolve()
             if (not evidence_root.is_absolute() or not evidence_root.is_dir() or
-                    evidence_root.is_relative_to(checkout) or evidence_db.is_relative_to(checkout) or
+                    _path_is_within(evidence_root, checkout) or _path_is_within(evidence_db, checkout) or
                     evidence_db.parent != evidence_root or evidence_db.suffix != '.sqlite'):
                 raise ValueError('invalid evidence store')
         users = json.loads(values.get('DASHBOARD_PROXY_USERS', '{}'), object_pairs_hook=unique)

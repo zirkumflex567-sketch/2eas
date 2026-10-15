@@ -28,6 +28,42 @@ SAFE_NAME = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9 _.-]{0,79}$")
 DATE = re.compile(r"^\d{4}\.\d{2}\.\d{2}$")
 
 
+def path_is_within(path: Path, root: Path) -> bool:
+    """Check containment across Windows short/long aliases and drive boundaries."""
+    path, root = Path(path).resolve(), Path(root).resolve()
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        current = path if path.exists() else path.parent
+        while current != current.parent:
+            try:
+                if current.exists() and root.exists() and os.path.samefile(current, root):
+                    return True
+            except OSError:
+                pass
+            current = current.parent
+        return False
+
+
+def relative_to_root(path: Path, root: Path) -> Path:
+    """Return a root-relative path even when Windows reports an 8.3 alias."""
+    path, root = Path(path).resolve(), Path(root).resolve()
+    try:
+        return path.relative_to(root)
+    except ValueError:
+        current, suffix = path, []
+        while current != current.parent:
+            try:
+                if current.exists() and root.exists() and os.path.samefile(current, root):
+                    return Path(*reversed(suffix))
+            except OSError:
+                pass
+            suffix.append(current.name)
+            current = current.parent
+        raise ValueError("Path is not inside repository")
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -67,7 +103,7 @@ def source_file(path: Any, root: Path, suffix: str) -> Path:
     if not isinstance(path, str) or not path or any(c in path for c in "\r\n\0"):
         raise ValueError("Invalid source file path")
     candidate = (root / path).resolve()
-    if (not candidate.is_relative_to(root.resolve()) or candidate.suffix.lower() != suffix
+    if (not path_is_within(candidate, root) or candidate.suffix.lower() != suffix
             or not candidate.is_file() or not candidate.stat().st_size):
         raise ValueError(f"Required repository file not found: {path}")
     clean(candidate.stem, "EA/set basename")
@@ -114,7 +150,7 @@ def load_config(path: Path, root: Path = PROJECT_ROOT) -> Batch:
     if not terminal.is_absolute() or terminal.name.lower() != "terminal64.exe" or not terminal.is_file():
         raise ValueError("Use the absolute path of a dedicated terminal64.exe")
     terminal = terminal.resolve()
-    if terminal.is_relative_to(root.resolve()) or "program files" in str(terminal.parent).lower():
+    if path_is_within(terminal, root) or "program files" in str(terminal.parent).lower():
         raise ValueError("Tester must be isolated outside repository and Program Files")
     if not (terminal.parent / "MQL5" / "Experts").is_dir() or not (terminal.parent / "MQL5" / "Profiles" / "Tester").is_dir():
         raise ValueError("First initialize dedicated /portable MT5; MQL5/Experts and MQL5/Profiles/Tester required")
@@ -125,7 +161,7 @@ def load_config(path: Path, root: Path = PROJECT_ROOT) -> Batch:
     if not output.is_absolute():
         output = root / output
     output = output.resolve()
-    if output.is_relative_to(terminal.parent):
+    if path_is_within(output, terminal.parent):
         raise ValueError("Report output must not be inside terminal installation")
     timeout = data.get("timeout_seconds", 14400)
     if type(timeout) is not int or not 30 <= timeout <= 172800:
@@ -175,8 +211,8 @@ def load_config(path: Path, root: Path = PROJECT_ROOT) -> Batch:
             raise ValueError("login must be a positive integer")
         expert_hash = sha256(expert)
         preset_hash = sha256(preset) if preset else None
-        spec = dict(name=name, expert=str(expert.relative_to(root)), expert_sha256=expert_hash,
-                    preset=str(preset.relative_to(root)) if preset else None, preset_sha256=preset_hash,
+        spec = dict(name=name, expert=relative_to_root(expert, root).as_posix(), expert_sha256=expert_hash,
+                    preset=relative_to_root(preset, root).as_posix() if preset else None, preset_sha256=preset_hash,
                     symbol=symbol, period=period, start=start, end=end, deposit=deposit,
                     leverage=leverage, currency=currency, execution=execution, login=login,
                     terminal=str(terminal), broker=broker, model=4, strategy_id=strategy_id, sample=sample)
