@@ -3,9 +3,11 @@ import type {Candle,AveragePoint} from "./adapter";
 export type OscillatorKind="rsi"|"atr"|"macd"|"adx"|"stochastic";
 export type OscillatorSettings={period:number}|{fast:number;slow:number;signal:number}|{period:number;smoothK:number;smoothD:number};
 export type OscillatorValues=Record<string,AveragePoint[]>;
+export type IncrementalOscillator={snapshot():OscillatorValues;updateLast(bar:Candle):OscillatorValues};
+export const MAX_OSCILLATOR_BARS=150000;
 const bounded=(value:number,min:number,max:number)=>Number.isInteger(value)&&value>=min&&value<=max;
 function checkBars(input:readonly Candle[]):Candle[]{
- if(!Array.isArray(input)||input.length>150000)throw Error("Invalid oscillator history");
+ if(!Array.isArray(input)||input.length>MAX_OSCILLATOR_BARS)throw Error("Invalid oscillator history");
  let previous=0;
  for(const bar of input){
   if(!Number.isSafeInteger(bar.time)||bar.time<=previous||!Number.isFinite(bar.open)||!Number.isFinite(bar.high)||!Number.isFinite(bar.low)||!Number.isFinite(bar.close))throw Error("Invalid oscillator candles");
@@ -66,19 +68,125 @@ function adx(bars:readonly Candle[],period:number):OscillatorValues{
 }
 export function calculateOscillator(input:readonly Candle[],kind:OscillatorKind,settings:OscillatorSettings):OscillatorValues{
  const bars=checkBars(input);
+ validateSettings(kind,settings);
+ if(kind==="macd")return macd(bars,(settings as {fast:number}).fast,(settings as {slow:number}).slow,(settings as {signal:number}).signal);
+ if(kind==="stochastic")return stochastic(bars,(settings as {period:number}).period,(settings as {smoothK:number}).smoothK,(settings as {smoothD:number}).smoothD);
+ if(kind==="rsi")return {rsi:rsi(bars,(settings as {period:number}).period)};
+ if(kind==="atr")return {atr:atr(bars,(settings as {period:number}).period)};
+ if(kind==="adx")return adx(bars,(settings as {period:number}).period);
+ throw Error("Unknown oscillator kind");
+}
+
+type StreamState=
+ |{kind:"rsi";count:number;gainSum:number;lossSum:number;gain:number|null;loss:number|null}
+ |{kind:"atr";count:number;sum:number;average:number|null}
+ |{kind:"macd";fast:number|null;slow:number|null;signal:number|null;ready:number}
+ |{kind:"adx";tr:number;plus:number;minus:number;dxCount:number;dxSum:number;average:number|null}
+ |{kind:"stochastic";raw:number[];k:number[];sumRaw:number;sumK:number};
+type StreamStep={state:StreamState;points:OscillatorValues};
+function initialState(kind:OscillatorKind):StreamState{
+ if(kind==="rsi")return {kind,count:0,gainSum:0,lossSum:0,gain:null,loss:null};
+ if(kind==="atr")return {kind,count:0,sum:0,average:null};
+ if(kind==="macd")return {kind,fast:null,slow:null,signal:null,ready:0};
+ if(kind==="adx")return {kind,tr:0,plus:0,minus:0,dxCount:0,dxSum:0,average:null};
+ return {kind,raw:[],k:[],sumRaw:0,sumK:0};
+}
+function oscillatorStep(state:StreamState,bar:Candle,index:number,previous:Candle|undefined,bars:readonly Candle[],settings:OscillatorSettings):StreamStep{
+ const points:OscillatorValues={};
+ const add=(key:string,value:number,color?:string)=>{
+  const row:AveragePoint&{color?:string}={time:bar.time,value};if(color)row.color=color;points[key]=[row];
+ };
+ if(state.kind==="rsi"){
+  const period=(settings as {period:number}).period;
+  if(index===0)return {state,points};
+  const delta=bar.close-previous!.close;let gain=state.gain,loss=state.loss,count=state.count,gainSum=state.gainSum,lossSum=state.lossSum;
+  if(count<period){gainSum+=Math.max(delta,0);lossSum+=Math.max(-delta,0);count++;if(count===period){gain=gainSum/period;loss=lossSum/period}}
+  else{gain=(gain!*(period-1)+Math.max(delta,0))/period;loss=(loss!*(period-1)+Math.max(-delta,0))/period}
+  if(count>=period){const g=gain!,d=loss!,value=g===0&&d===0?50:d===0?100:g===0?0:100-100/(1+g/d);add("rsi",value)}
+  return {state:{kind:"rsi",count,gainSum,lossSum,gain,loss},points};
+ }
+ if(state.kind==="atr"){
+  const period=(settings as {period:number}).period,current=tr(bars,index);let count=state.count,sum=state.sum,average=state.average;
+  if(count<period){sum+=current;count++;if(count===period)average=sum/period}
+  else average=(average!*(period-1)+current)/period;
+  if(average!==null)add("atr",average);
+  return {state:{kind:"atr",count,sum,average},points};
+ }
+ if(state.kind==="macd"){
+  const {fast,slow,signal}=settings as {fast:number;slow:number;signal:number};
+  const fastValue=state.fast===null?bar.close:state.fast+2/(fast+1)*(bar.close-state.fast);
+  const slowValue=state.slow===null?bar.close:state.slow+2/(slow+1)*(bar.close-state.slow);
+  let ready=state.ready,signalValue=state.signal;
+  if(index>=slow-1){const value=fastValue-slowValue;ready++;signalValue=signalValue===null?value:signalValue+2/(signal+1)*(value-signalValue);add("macd",value);if(ready>=signal){add("signal",signalValue);add("histogram",value-signalValue,value>=signalValue?"rgba(66,213,178,.75)":"rgba(249,107,126,.75)")}}
+  return {state:{kind:"macd",fast:fastValue,slow:slowValue,signal:signalValue,ready},points};
+ }
+ if(state.kind==="adx"){
+  const period=(settings as {period:number}).period;
+  if(index===0)return {state,points};
+  const up=bar.high-previous!.high,down=previous!.low-bar.low,currentTr=tr(bars,index);
+  const currentPlus=up>down&&up>0?up:0,currentMinus=down>up&&down>0?down:0;
+  let total=state.tr,plus=state.plus,minus=state.minus;
+  if(index<=period){total+=currentTr;plus+=currentPlus;minus+=currentMinus}
+  else{total=total-total/period+currentTr;plus=plus-plus/period+currentPlus;minus=minus-minus/period+currentMinus}
+  if(index<period)return {state:{...state,tr:total,plus,minus},points};
+  const pd=total>0?100*plus/total:0,md=total>0?100*minus/total:0,sum=pd+md,dx=sum>0?100*Math.abs(pd-md)/sum:0;
+  let dxCount=state.dxCount,dxSum=state.dxSum,average=state.average;
+  if(dxCount<period){dxCount++;dxSum+=dx;if(dxCount===period)average=dxSum/period}
+  else average=(average!*(period-1)+dx)/period;
+  add("plusDi",pd);add("minusDi",md);if(average!==null)add("adx",average);
+  return {state:{kind:"adx",tr:total,plus,minus,dxCount,dxSum,average},points};
+ }
+ const {period,smoothK,smoothD}=settings as {period:number;smoothK:number;smoothD:number};
+ let raw=state.raw,k=state.k,sumRaw=state.sumRaw,sumK=state.sumK;
+ if(index>=period-1){
+  let high=-Infinity,low=Infinity;
+  for(let i=index-period+1;i<index;i++){high=Math.max(high,bars[i].high);low=Math.min(low,bars[i].low)}
+  high=Math.max(high,bar.high);low=Math.min(low,bar.low);
+  const rawValue=high===low?50:100*(bar.close-low)/(high-low),nextRaw=[...raw,rawValue];sumRaw+=rawValue;
+  if(nextRaw.length>smoothK)sumRaw-=nextRaw.shift()!;
+  raw=nextRaw;
+  if(raw.length===smoothK){const kValue=sumRaw/smoothK;add("stochK",kValue);const nextK=[...k,kValue];sumK+=kValue;if(nextK.length>smoothD)sumK-=nextK.shift()!;k=nextK;if(k.length===smoothD)add("stochD",sumK/smoothD)}
+ }
+ return {state:{kind:"stochastic",raw,k,sumRaw,sumK},points};
+}
+export function createIncrementalOscillator(input:readonly Candle[],kind:OscillatorKind,settings:OscillatorSettings):IncrementalOscillator{
+ validateSettings(kind,settings);
+ const bars=checkBars(input),configuration={...settings};
+ const keys=kind==="rsi"?["rsi"]:kind==="atr"?["atr"]:kind==="macd"?["macd","signal","histogram"]:kind==="adx"?["adx","plusDi","minusDi"]:["stochK","stochD"];
+ const values:OscillatorValues=Object.fromEntries(keys.map(key=>[key,[]]));
+ const snapshot=()=>Object.fromEntries(Object.entries(values).map(([key,points])=>[key,points.map(point=>({...point}))]));
+ let state=initialState(kind),beforeCurrent=state;
+ for(let index=0;index<bars.length;index++){
+  beforeCurrent=state;const step=oscillatorStep(state,bars[index],index,bars[index-1],bars,configuration);state=step.state;
+  for(const [key,points] of Object.entries(step.points))values[key].push(...points);
+ }
+ return {snapshot,updateLast(bar:Candle){
+  if(!bar||!Number.isSafeInteger(bar.time)||bar.time<=0||![bar.open,bar.high,bar.low,bar.close].every(Number.isFinite)||bar.low>Math.min(bar.open,bar.close)||bar.high<Math.max(bar.open,bar.close)||bar.high<bar.low)throw Error("Invalid oscillator candle");
+  const last=bars[bars.length-1],replace=last?.time===bar.time;
+  if(last&&bar.time<last.time)throw Error("Cannot update oscillator history out of order");
+  if(!replace&&bars.length>=MAX_OSCILLATOR_BARS)throw Error("Oscillator history limit reached");
+  let index:number,previous:Candle|undefined,baseline:StreamState;
+  if(replace){index=bars.length-1;previous=bars[index-1];baseline=beforeCurrent;bars[index]={...bar}}
+  else{index=bars.length;previous=last;beforeCurrent=state;baseline=state;bars.push({...bar})}
+  const step=oscillatorStep(baseline,bar,index,previous,bars,configuration);state=step.state;
+  const delta:OscillatorValues={};
+  for(const key of keys){const rows=step.points[key]??[],current=values[key];if(replace&&current.length&&current[current.length-1].time===bar.time)current.pop();
+   if(rows.length){current.push(...rows);delta[key]=rows.map(point=>({...point}))}else delta[key]=[];
+  }
+  return delta;
+ }};
+}
+function validateSettings(kind:OscillatorKind,settings:OscillatorSettings){
  if(kind==="macd"){
   if(!("fast" in settings)||!bounded(settings.fast,2,300)||!bounded(settings.slow,3,300)||settings.fast>=settings.slow||!bounded(settings.signal,2,200))throw Error("Invalid MACD settings");
-  return macd(bars,settings.fast,settings.slow,settings.signal);
+  return;
  }
  if(kind==="stochastic"){
   if(!("period" in settings)||!("smoothK" in settings)||!("smoothD" in settings)||
    !bounded(settings.period,2,200)||!bounded(settings.smoothK,1,100)||!bounded(settings.smoothD,1,100))
    throw Error("Invalid Stochastic settings");
-  return stochastic(bars,settings.period,settings.smoothK,settings.smoothD);
+  return;
  }
  if(!("period" in settings)||!bounded(settings.period,2,200))throw Error("Invalid oscillator period");
- if(kind==="rsi")return {rsi:rsi(bars,settings.period)};
- if(kind==="atr")return {atr:atr(bars,settings.period)};
- if(kind==="adx")return adx(bars,settings.period);
- throw Error("Unknown oscillator kind");
+ if(kind!=="rsi"&&kind!=="atr"&&kind!=="adx")throw Error("Unknown oscillator kind");
 }

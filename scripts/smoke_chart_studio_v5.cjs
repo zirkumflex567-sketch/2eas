@@ -302,15 +302,68 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const paneLimitCount=limitEngine.inspect().oscillatorCount;limitEngine.destroy();limitHost.remove();
    const updateHost=document.createElement("div");updateHost.style.cssText="width:400px;height:300px;position:fixed;left:-2000px;top:0";document.body.append(updateHost);
    const updateEngine=ChartStudioV5.createStudioV5(updateHost,"oscillator-update");updateEngine.setCandles(bars);for(const spec of specs)updateEngine.addOscillator(spec);
-   const updatedBar={...bars.at(-1),close:bars.at(-1).close+.4,high:bars.at(-1).high+.5};updateEngine.updateLast(updatedBar);
-   const updatedReadout=updateEngine.readDataWindow(updatedBar.time).indicators,updatedReferences=specs.map(spec=>({id:spec.id,values:window.ChartStudioIndicators.calculate(spec.kind,[...bars.slice(0,-1),updatedBar],spec.settings)}));
+   let adapterRows=[...bars];
+   const updateAdapterBar=(bar)=>{updateEngine.updateLast(bar);adapterRows=bar.time===adapterRows.at(-1).time?[...adapterRows.slice(0,-1),bar]:[...adapterRows,bar]};
+   const referenceAt=(spec,rows,time)=>{const result=window.ChartStudioIndicators.calculate(spec.kind,rows,spec.settings);return Object.fromEntries(Object.entries(result).map(([key,points])=>[key,points.find(point=>point.time===time)?.value??null]))};
+   const closeReadout=(actual,expected)=>{const byId=new Map(actual.map(item=>[item.id,item]));for(const spec of specs){const reference=expected[spec.id],components=Object.keys(reference);for(const component of components){const item=byId.get(spec.id+":"+component);if(reference[component]===null){if(item?.state==="AVAILABLE")return false}else if(!item||item.state!=="AVAILABLE"||Math.abs(item.value-reference[component])>1e-8)return false}}return true};
+   const historicalTime=bars[120].time,readoutAt=(time)=>updateEngine.readDataWindow(time).indicators;
+   updateAdapterBar({...adapterRows.at(-1),close:adapterRows.at(-1).close+.4,high:adapterRows.at(-1).high+.5});
+   updateAdapterBar({...adapterRows.at(-1),close:adapterRows.at(-1).close-.2,low:adapterRows.at(-1).low-.3});
+   let updatedReadout=readoutAt(adapterRows.at(-1).time),updatedReferences=specs.map(spec=>({id:spec.id,values:referenceAt(spec,adapterRows,adapterRows.at(-1).time)}));
+   const repeatedFormingReadoutMatches=closeReadout(updatedReadout,Object.fromEntries(updatedReferences.map(item=>[item.id,item.values]))),historicalReadoutSurvivesUpdate=closeReadout(readoutAt(historicalTime),Object.fromEntries(specs.map(spec=>[spec.id,referenceAt(spec,adapterRows,historicalTime)])));
+   updateAdapterBar({...adapterRows.at(-1),time:adapterRows.at(-1).time+300,open:adapterRows.at(-1).close,close:adapterRows.at(-1).close+.7,high:adapterRows.at(-1).close+1.1,low:adapterRows.at(-1).close-.5});
+   updatedReadout=readoutAt(adapterRows.at(-1).time);updatedReferences=specs.map(spec=>({id:spec.id,values:referenceAt(spec,adapterRows,adapterRows.at(-1).time)}));
+   const appendedReadoutMatches=closeReadout(updatedReadout,Object.fromEntries(updatedReferences.map(item=>[item.id,item.values])));
+   updateEngine.updateOscillator("rsi-a",{settings:{period:21}});const settingsReference=referenceAt({...specs[0],settings:{period:21}},adapterRows,adapterRows.at(-1).time),settingsReadout=readoutAt(adapterRows.at(-1).time).find(item=>item.id==="rsi-a:rsi");
+   const settingsRebuildMatches=settingsReference.rsi===null?settingsReadout?.state!=="AVAILABLE":settingsReadout?.state==="AVAILABLE"&&Math.abs(settingsReadout.value-settingsReference.rsi)<1e-8;
+   const replacement=adapterRows.map(bar=>({...bar,open:bar.open+50,high:bar.high+50,low:bar.low+50,close:bar.close+50}));updateEngine.setCandles(replacement);const replacementReadout=readoutAt(replacement.at(-1).time),replacementReferences=Object.fromEntries(specs.map(spec=>[spec.id,referenceAt(spec.id==="rsi-a"?{...spec,settings:{period:21}}:spec,replacement,replacement.at(-1).time)]));
+   const replacementReadoutMatches=closeReadout(replacementReadout,replacementReferences),replacementHistoricalMatches=closeReadout(readoutAt(historicalTime),Object.fromEntries(specs.map(spec=>[spec.id,referenceAt(spec.id==="rsi-a"?{...spec,settings:{period:21}}:spec,replacement,historicalTime)])));
    updateEngine.destroy();updateHost.remove();
    const flatHost=document.createElement("div");flatHost.style.cssText="width:400px;height:300px;position:fixed;left:-2000px;top:0";document.body.append(flatHost);
    const flatEngine=ChartStudioV5.createStudioV5(flatHost,"oscillator-flat");const flatBars=Array.from({length:40},(_,i)=>({time:1711000000+i*300,open:100,high:100,low:100,close:100}));flatEngine.setCandles(flatBars);
    for(const spec of [{id:"flat-rsi",kind:"rsi",settings:{period:14}},{id:"flat-atr",kind:"atr",settings:{period:14}},{id:"flat-adx",kind:"adx",settings:{period:14}},{id:"flat-stoch",kind:"stochastic",settings:{period:3,smoothK:2,smoothD:2}}])flatEngine.addOscillator({...spec,color:"#ffffff"});
    const flatRow=flatEngine.readDataWindow(flatBars.at(-1).time).indicators,flatWarmup=flatEngine.readDataWindow(flatBars[1].time).indicators;flatEngine.destroy();flatHost.remove();
-  return {references,panes,before,after,row,paneCount,movedMacdPane,badOrderRejected,badPeriodRejected,badStochasticRejected,atomicCount,afterOneRemoval,isolated,paneLimitRejected,paneLimitCount,updatedReadout,updatedReferences,updatedTime:updatedBar.time,flatRow,flatWarmup,drawingCollisionRejected,averageCollisionRejected,paneLineCollisionRejected};
+  return {references,panes,before,after,row,paneCount,movedMacdPane,badOrderRejected,badPeriodRejected,badStochasticRejected,atomicCount,afterOneRemoval,isolated,paneLimitRejected,paneLimitCount,updatedReadout,updatedReferences,repeatedFormingReadoutMatches,historicalReadoutSurvivesUpdate,appendedReadoutMatches,settingsRebuildMatches,replacementReadoutMatches,replacementHistoricalMatches,flatRow,flatWarmup,drawingCollisionRejected,averageCollisionRejected,paneLineCollisionRejected};
   });
+  const incrementalOscillatorProbe=await page.evaluate(()=>{
+   const factory=ChartStudioV5.createIncrementalOscillator;
+   if(typeof factory!=="function")return {available:false,mismatches:[]};
+   const specs=[
+    {kind:"rsi",settings:{period:14}},
+    {kind:"atr",settings:{period:14}},
+    {kind:"macd",settings:{fast:12,slow:26,signal:9}},
+    {kind:"adx",settings:{period:14}},
+    {kind:"stochastic",settings:{period:14,smoothK:3,smoothD:3}}
+   ];
+   const original=Array.from({length:240},(_,i)=>{const close=2000+Math.sin(i/7)*8+i*.04;return {time:1715000000+i*300,open:close-.2,high:close+1+Math.cos(i/5)*.2,low:close-1-Math.sin(i/9)*.2,close}});
+   const mismatches=[];
+   const compare=(kind,settings,stream,rows)=>{
+    const expected=window.ChartStudioIndicators.calculate(kind,rows,settings),actual=stream.snapshot();
+    for(const key of Object.keys(expected)){
+     const a=actual[key]??[],e=expected[key]??[];
+     if(a.length!==e.length){mismatches.push(`${kind}/${key}:length ${a.length}/${e.length}`);continue}
+     for(let i=0;i<e.length;i++)if(a[i].time!==e[i].time||Math.abs(a[i].value-e[i].value)>1e-8||a[i].color!==e[i].color){mismatches.push(`${kind}/${key}:point ${i}`);break}
+    }
+   };
+   for(const spec of specs){
+    const stream=factory(original,spec.kind,spec.settings);let rows=[...original];
+    for(const [step,delta] of [["forming-a",.31],["forming-b",-.22]]){
+     const prev=rows.at(-1),next={...prev,close:prev.close+delta,high:prev.high+Math.abs(delta)*.8,low:prev.low-Math.abs(delta)*.5};
+     stream.updateLast(next);rows=[...rows.slice(0,-1),next];compare(spec.kind,spec.settings,stream,rows);
+    }
+    const prev=rows.at(-1),next={...prev,time:prev.time+300,open:prev.close,close:prev.close+.7,high:prev.close+1.1,low:prev.close-.5};
+    stream.updateLast(next);rows=[...rows,next];compare(spec.kind,spec.settings,stream,rows);
+   }
+   const boundedBars=Array.from({length:150000},(_,i)=>({time:1600000000+i*60,open:100,high:101,low:99,close:100}));
+   const boundedStream=factory(boundedBars,"rsi",{period:14}),boundedBefore=boundedStream.snapshot().rsi.length;
+   let capacityRejected=false;try{boundedStream.updateLast({time:boundedBars.at(-1).time+60,open:100,high:101,low:99,close:100})}catch(error){capacityRejected=/history limit/i.test(error.message)}
+   const boundedAfter=boundedStream.snapshot().rsi.length;
+   return {available:true,mismatches,capacityRejected,boundedBefore,boundedAfter};
+  });
+  assert.equal(incrementalOscillatorProbe.available,true,"Native oscillator updates expose the incremental calculation stream");
+  assert.deepEqual(incrementalOscillatorProbe.mismatches,[],"Incremental RSI/ATR/MACD/ADX/Stochastic snapshots match the beta after repeated forming bars and a new bar");
+  assert.equal(incrementalOscillatorProbe.capacityRejected,true,"Incremental oscillator history cannot grow past the chart history budget");
+  assert.equal(incrementalOscillatorProbe.boundedAfter,incrementalOscillatorProbe.boundedBefore,"A rejected history append leaves the oscillator snapshot unchanged");
   const panZoom=await page.evaluate(async()=>{
    const host=document.createElement("div");host.style.cssText="width:1000px;height:420px";document.body.append(host);
    const engine=ChartStudioV5.createStudioV5(host,"panzoom"),bars=Array.from({length:1200},(_,i)=>{
@@ -436,6 +489,12 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(oscillatorProbe.afterOneRemoval,5,"Removing one oscillator removes its whole group only");
   assert.equal(oscillatorProbe.paneLimitRejected,true,"A ninth logical oscillator pane is rejected");
   assert.equal(oscillatorProbe.paneLimitCount,8,"Rejected ninth pane leaves all eight existing groups intact");
+  assert.equal(oscillatorProbe.repeatedFormingReadoutMatches,true,"The adapter readout follows repeated same-candle oscillator replacements");
+  assert.equal(oscillatorProbe.historicalReadoutSurvivesUpdate,true,"Incremental oscillator updates retain correct historical readouts");
+  assert.equal(oscillatorProbe.appendedReadoutMatches,true,"The adapter readout advances when a new candle is appended");
+  assert.equal(oscillatorProbe.settingsRebuildMatches,true,"Changing oscillator settings rebuilds the readout from current candle history");
+  assert.equal(oscillatorProbe.replacementReadoutMatches,true,"Replacing candle history rebuilds every oscillator readout");
+  assert.equal(oscillatorProbe.replacementHistoricalMatches,true,"History replacement also recalculates retained historical readouts");
   assert.equal(oscillatorProbe.flatRow.find(row=>row.id==="flat-rsi:rsi").value,50,"Flat RSI uses beta's neutral value");
   assert.equal(oscillatorProbe.flatRow.find(row=>row.id==="flat-atr:atr").value,0,"Zero true range yields zero ATR");
   assert.equal(oscillatorProbe.flatRow.find(row=>row.id==="flat-adx:adx").value,0,"Flat directional movement yields zero ADX");
@@ -451,8 +510,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    if(value===null)assert.equal(actual,null,`${id}/${component} beta warm-up is preserved`);
    else assert.ok(Math.abs(actual-value)<1e-8,`${id}/${component} matches beta at the exact UTC candle`);
   }
-  for(const item of oscillatorProbe.updatedReferences)for(const [component,points] of Object.entries(item.values)){
-   const actual=oscillatorProbe.updatedReadout.find(row=>row.id===item.id+":"+component)?.value??null,expected=points.find(point=>point.time===oscillatorProbe.updatedTime)?.value??null;
+  for(const item of oscillatorProbe.updatedReferences)for(const [component,expected] of Object.entries(item.values)){
+   const actual=oscillatorProbe.updatedReadout.find(row=>row.id===item.id+":"+component)?.value??null;
    if(expected===null)assert.equal(actual,null);else assert.ok(Math.abs(actual-expected)<1e-8,`${item.id}/${component} forming-bar update matches beta`);
   }
   assert.equal(oscillatorProbe.isolated.oscillatorCount,0,"Account changes clear all scoped oscillator instances");

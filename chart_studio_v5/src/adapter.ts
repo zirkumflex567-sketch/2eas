@@ -5,7 +5,8 @@
  */
 import {createChart, CandlestickSeries, LineSeries, HistogramSeries, TickMarkType, type ISeriesPrimitive, type LogicalRange, type Time, type UTCTimestamp} from "lightweight-charts";
 import type {CanvasRenderingTarget2D} from "fancy-canvas";
-import {calculateOscillator,type OscillatorKind,type OscillatorSettings} from "./oscillators";
+import {calculateOscillator,createIncrementalOscillator,MAX_OSCILLATOR_BARS,type IncrementalOscillator,type OscillatorKind,type OscillatorSettings} from "./oscillators";
+export {createIncrementalOscillator};
 export const VERSION = "5.2.1";
 export type Candle = {time:UTCTimestamp;open:number;high:number;low:number;close:number;tick_volume?:number;real_volume?:number};
 export type AveragePoint = {time:UTCTimestamp;value:number};
@@ -366,7 +367,7 @@ function validBar(c:Candle):boolean {
 }
 function normalizeCandles(data:readonly Candle[]):Candle[] {
  if(!Array.isArray(data)) throw Error("Invalid bars");
- if(data.length>150000)throw Error("History budget exceeded");
+ if(data.length>MAX_OSCILLATOR_BARS)throw Error("History budget exceeded");
  const set=new Set<number>(),out:Candle[]=[];
  for(const item of data){
   if(!validBar(item))throw Error("Invalid OHLC candle");
@@ -459,7 +460,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  // Independent native chart panes, not separate chart instances or duplicated time axes.
  const paneLines=new Map<string,LineApi>();
  const paneHeightOverrides=new Map<number,number>();
- type OscillatorGroup={options:OscillatorOptions;paneIndex:number;series:Map<string,ReturnType<typeof newLine>|ReturnType<typeof newHistogram>>;values:Map<string,Map<number,number>>};
+ type OscillatorGroup={options:OscillatorOptions;paneIndex:number;series:Map<string,ReturnType<typeof newLine>|ReturnType<typeof newHistogram>>;values:Map<string,Map<number,number>>;calculator:IncrementalOscillator};
  const oscillators=new Map<string,OscillatorGroup>();
  const priceLevels=new Map<string,{primitive:PriceLevelPrimitive;options:PriceLevelOptions}>();
  const timeMarkers=new Map<string,{primitive:TimeMarkerPrimitive;options:TimeMarkerOptions}>();
@@ -1555,23 +1556,27 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  const oscillatorComponents=(kind:OscillatorKind):string[]=>kind==="rsi"?["rsi"]:kind==="atr"?["atr"]:kind==="macd"?["macd","signal","histogram"]:kind==="stochastic"?["stochK","stochD"]:["adx","plusDi","minusDi"];
  const oscillatorTitles=(kind:OscillatorKind):Record<string,string>=>kind==="macd"?{macd:"MACD",signal:"Signal",histogram:"Histogram"}:kind==="adx"?{adx:"ADX",plusDi:"+DI",minusDi:"−DI"}:kind==="stochastic"?{stochK:"%K",stochD:"%D"}:kind==="rsi"?{rsi:"RSI"}:{atr:"ATR"};
- function oscillatorRows(options:OscillatorOptions){return calculateOscillator(bars,options.kind,options.settings)}
  function replaceOscillatorData(group:OscillatorGroup,incremental=false){
-  const rows=oscillatorRows(group.options),components=oscillatorComponents(group.options.kind),titles=oscillatorTitles(group.options.kind);
+  const rows=incremental
+   ?group.calculator.updateLast(bars[bars.length-1])
+   :(group.calculator=createIncrementalOscillator(bars,group.options.kind,group.options.settings),group.calculator.snapshot());
+  const currentTime=bars[bars.length-1]?.time,components=oscillatorComponents(group.options.kind),titles=oscillatorTitles(group.options.kind);
   const nextValues=new Map<string,Map<number,number>>();
   for(const key of components){const points=rows[key]??[];let series=group.series.get(key);
    if(!series){if(key==="histogram")series=newHistogram(group.paneIndex);else series=createPaneLine({id:group.options.id+":"+key,color:key==="signal"||key==="stochD"?"#f3c56a":key==="plusDi"?"#55deaa":key==="minusDi"?"#f17e97":group.options.color,lineWidth:group.options.lineWidth,title:titles[key]},group.paneIndex);series.priceScale().applyOptions({autoScale:true,borderVisible:true,scaleMargins:{top:.08,bottom:.08}});group.series.set(key,series);}
    if(key==="histogram"){
     const histogram=series as ReturnType<typeof newHistogram>;histogram.applyOptions({visible:group.options.visible??true,title:titles[key],priceLineVisible:false,lastValueVisible:true});
-    const rowsWithColor=points.map(p=>({time:p.time,value:p.value,color:(p as AveragePoint&{color?:string}).color??(p.value>=0?"rgba(66,213,178,.75)":"rgba(249,107,126,.75)")}));
+    const chartPoints=incremental?points.filter(p=>p.time===currentTime):points;
+    const rowsWithColor=chartPoints.map(p=>({time:p.time,value:p.value,color:(p as AveragePoint&{color?:string}).color??(p.value>=0?"rgba(66,213,178,.75)":"rgba(249,107,126,.75)")}));
     if(incremental){const last=rowsWithColor[rowsWithColor.length-1];if(last)histogram.update(last)}else histogram.setData(rowsWithColor);
    }else{
     const line=series as ReturnType<typeof newLine>,color=key==="signal"||key==="stochD"?"#f3c56a":key==="plusDi"?"#55deaa":key==="minusDi"?"#f17e97":group.options.color;
     line.applyOptions({color,lineWidth:group.options.lineWidth??2,visible:group.options.visible??true,title:titles[key],priceLineVisible:false,lastValueVisible:true});
-    if(incremental){const last=points[points.length-1];if(last)line.update(last)}else line.setData(points);
+    const chartPoints=incremental?points.filter(p=>p.time===currentTime):points;
+    if(incremental){const last=chartPoints[chartPoints.length-1];if(last)line.update(last)}else line.setData(points);
    }
    const values=incremental?(group.values.get(key)??new Map<number,number>()):new Map(points.map(p=>[p.time,p.value]));
-   if(incremental){const last=points[points.length-1];if(last)values.set(last.time,last.value);else if(bars.length)values.delete(bars[bars.length-1].time)}
+   if(incremental&&currentTime!==undefined){values.delete(currentTime);const last=points.find(p=>p.time===currentTime);if(last)values.set(last.time,last.value)}
    nextValues.set(key,values);
    readoutIndicators.set(group.options.id+":"+key,{id:group.options.id+":"+key,title:(group.options.title??group.options.id)+" "+titles[key],kind:"PANE",values});
   }
@@ -1585,8 +1590,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   if(averages.size+paneLines.size+oscillators.size>=maxIndicatorInstances)throw Error("Indicator instance limit");
   if(paneLines.size+oscillators.size>=8)throw Error("Native pane limit");
   const normalized={...options,settings:{...options.settings}} as OscillatorOptions;
-  const rows=calculateOscillator(bars,normalized.kind,normalized.settings);
-  const group:OscillatorGroup={options:normalized,paneIndex:chart.panes().length,series:new Map(),values:new Map()};oscillators.set(options.id,group);
+  const calculator=createIncrementalOscillator([],normalized.kind,normalized.settings);
+  const group:OscillatorGroup={options:normalized,paneIndex:chart.panes().length,series:new Map(),values:new Map(),calculator};oscillators.set(options.id,group);
   try{const paneIndex=chart.panes().length-1;chart.panes()[paneIndex]?.setHeight(150);paneHeightOverrides.set(paneIndex,150);replaceOscillatorData(group);persistDrawings()}catch(error){oscillators.delete(options.id);for(const series of group.series.values())chart.removeSeries(series);for(const key of oscillatorComponents(normalized.kind))readoutIndicators.delete(normalized.id+":"+key);throw error}
  }
  function updateOscillator(id:string,patch:Partial<Pick<OscillatorOptions,"settings"|"color"|"lineWidth"|"visible"|"title">>){
@@ -1651,6 +1656,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   guard();if(!validBar(c))throw Error("Invalid candle");
   const prev=bars[bars.length-1];
   if(prev&&c.time<prev.time)throw Error("Cannot update historical bar out of order");
+  if((!prev||c.time>prev.time)&&bars.length>=MAX_OSCILLATOR_BARS)throw Error("Chart history limit reached");
   if(prev&&c.time===prev.time)bars[bars.length-1]={...c};
   else bars.push({...c});
   barsByTime.set(c.time,{...c});
