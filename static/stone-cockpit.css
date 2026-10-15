@@ -94,21 +94,21 @@ body.theme-stone #strategy-version, body.theme-stone #journal-strat-badge {
   border-radius: 6px;
 }
 body.theme-stone #journal-strat-badge {
-  background: #081116 !important;
+  background: var(--stone-color-label-surface) !important;
   border-color: rgba(136,191,204,.55) !important;
-  color: #e4f4f6 !important;
+  color: var(--stone-color-label-text) !important;
   box-shadow: none !important;
 }
 body.theme-stone #session-label {
-  color: #e4f4f6 !important;
-  background: #081116 !important;
+  color: var(--stone-color-label-text) !important;
+  background: var(--stone-color-label-surface) !important;
   border-radius: 4px;
   padding: 2px 4px;
 }
 body.theme-stone .text-sub { color: var(--stone-muted) !important; }
 body.theme-stone #account-content .glass-card span.font-black.text-xs {
-  color: #e4f4f6 !important;
-  background: #081116 !important;
+  color: var(--stone-color-label-text) !important;
+  background: var(--stone-color-label-surface) !important;
   border-radius: 4px;
   padding: 2px 4px;
 }
@@ -206,11 +206,11 @@ body.theme-stone table td { padding: 8px 7px !important; }
 body.theme-stone #positions-list > * { border-color:rgba(113,143,155,.36) !important; }
 body.theme-stone #journal-list > * {
   border-color: rgba(109,138,147,.27) !important;
-  background: #0b151b !important;
+  background: var(--stone-color-inset-surface) !important;
   box-shadow: inset 0 0 16px rgba(0,0,0,.22);
 }
 body.theme-stone #journal-list .stone-journal-detail {
-  background: #0b151b !important;
+  background: var(--stone-color-inset-surface) !important;
   border-color: rgba(109,138,147,.4) !important;
 }
 body.theme-stone #journal-list .stone-journal-detail .text-sub { color: #cbd8dd !important; }

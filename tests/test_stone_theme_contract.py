@@ -15,6 +15,8 @@ STATIC = ROOT / "static"
 class StoneThemeContractTests(unittest.TestCase):
     def test_stone_skin_uses_shared_theme_tokens_for_core_surfaces(self):
         css = (STATIC / "stone-asset-skin.css").read_text(encoding="utf-8")
+        cockpit_css = (STATIC / "stone-cockpit.css").read_text(encoding="utf-8")
+        combined_css = css + "\n" + cockpit_css
         self.assertIn(
             "@layer stone-reset, stone-tokens, stone-base, stone-theme, stone-overrides;",
             css,
@@ -30,10 +32,13 @@ class StoneThemeContractTests(unittest.TestCase):
             "--stone-color-accent",
             "--stone-color-warning",
             "--stone-color-border",
+            "--stone-color-inset-surface",
+            "--stone-color-label-surface",
+            "--stone-color-label-text",
         ):
             with self.subTest(token=token):
                 self.assertRegex(token_layer.group(1), re.escape(token) + r"\s*:")
-                self.assertIn(f"var({token})", css)
+                self.assertIn(f"var({token})", combined_css)
 
     def test_chart_studio_controls_share_one_mobile_breakpoint(self):
         css = (STATIC / "stone-asset-skin.css").read_text(encoding="utf-8")

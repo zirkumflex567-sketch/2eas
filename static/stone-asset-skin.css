@@ -16,6 +16,9 @@ body.theme-stone {
   --stone-color-accent: #63eaff;
   --stone-color-warning: #f5b66a;
   --stone-color-border: rgba(117, 159, 171, .52);
+  --stone-color-inset-surface: #0b151b;
+  --stone-color-label-surface: #081116;
+  --stone-color-label-text: #e4f4f6;
 }
 }
 
@@ -113,14 +116,14 @@ body.theme-stone .account-tab[aria-pressed="true"] {
 }
 body.theme-stone nav.stone-asset-nav .account-tab:not([aria-pressed="true"]) strong {
   color: #dbe7eb !important;
-  background: #0b151b !important;
+  background: var(--stone-color-inset-surface) !important;
   border-radius: 3px;
   padding: 2px 4px;
 }
 body.theme-stone nav.stone-asset-nav .account-tab small:not([class]) {
   color: var(--stone-color-muted-text) !important;
   opacity: 1 !important;
-  background: #0b151b !important;
+  background: var(--stone-color-inset-surface) !important;
   border-radius: 3px;
   padding: 2px 4px;
 }
@@ -137,8 +140,8 @@ body.theme-stone #journal-list .bg-cyan-500\/20 {
   border-color: rgba(95,220,239,.58) !important;
 }
 body.theme-stone .stone-journal-filter-label {
-  color: #e4f4f6 !important;
-  background: #081116 !important;
+  color: var(--stone-color-label-text) !important;
+  background: var(--stone-color-label-surface) !important;
   border: 1px solid rgba(136,191,204,.48);
   border-radius: 4px;
   padding: 2px 5px;
