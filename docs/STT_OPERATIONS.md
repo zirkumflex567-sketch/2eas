@@ -14,9 +14,9 @@ passes `proxy_headers=False` to uvicorn. For a CLI/service launch, use
 `uvicorn app:app --host 127.0.0.1 --port 8050 --no-proxy-headers`. Never enable
 `--proxy-headers`, trusted forwarded middleware, or PROXY protocol handling that
 replaces the TCP peer before `dashboard_security` verifies it. The current Windows
-application keeps its default port 8050 (`python app.py`, or `DASHBOARD_PORT=8050`).
-The reverse SSH tunnel maps remote loopback port 8055 to the Windows loopback
-backend on port 8050; nginx's `proxy_pass` therefore remains port 8055. If nginx
+the live main application runs on port 8056 (`DASHBOARD_PORT=8056`). The reverse
+SSH tunnel maps remote loopback port 8055 to the Windows loopback backend on
+port 8056; nginx's `proxy_pass` therefore remains port 8055. If nginx
 and the application instead run on the same host without that SSH tunnel, match
 the backend port to `proxy_pass`: for example, explicitly set
 `DASHBOARD_PORT=8055` for `python app.py`, or CLI `--port 8055`.
@@ -130,9 +130,9 @@ Supply explicit absolute repository/Python paths and backend port. These
 examples are operator commands; they are not executed by this change:
 
 ```powershell
-.\scripts\dashboard_runtime.ps1 -Action Status -Repo 'C:\path\dashboard' -Python 'C:\Python314\python.exe' -Port 8050
-.\scripts\dashboard_runtime.ps1 -Action Start -Repo 'C:\path\dashboard' -Python 'C:\Python314\python.exe' -Port 8050 -PrivateEnvJson 'C:\protected\dashboard-env.json'
-.\scripts\dashboard_runtime.ps1 -Action Restart -Repo 'C:\path\dashboard' -Python 'C:\Python314\python.exe' -Port 8050 -PrivateEnvJson 'C:\protected\dashboard-env.json'
+.\scripts\dashboard_runtime.ps1 -Action Status -Repo 'C:\path\dashboard' -Python 'C:\Python314\python.exe' -Port 8056
+.\scripts\dashboard_runtime.ps1 -Action Start -Repo 'C:\path\dashboard' -Python 'C:\Python314\python.exe' -Port 8056 -PrivateEnvJson 'C:\protected\dashboard-env.json'
+.\scripts\dashboard_runtime.ps1 -Action Restart -Repo 'C:\path\dashboard' -Python 'C:\Python314\python.exe' -Port 8056 -PrivateEnvJson 'C:\protected\dashboard-env.json'
 ```
 
 The private file must be outside the resolved checkout and protected by local

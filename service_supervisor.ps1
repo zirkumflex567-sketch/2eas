@@ -13,7 +13,7 @@ $tunnelPath = Join-Path $repo 'start_stt_tunnel.ps1'
 $hostExe = (Get-Process -Id $PID).Path
 
 while ($true) {
-    & $hostExe -NoProfile -ExecutionPolicy Bypass -File $ensurePath -Repo $repo -Python $pythonExe -Port 8050 -PrivateEnvJson $privateEnv
+    & $hostExe -NoProfile -ExecutionPolicy Bypass -File $ensurePath -Repo $repo -Python $pythonExe -Port 8056 -PrivateEnvJson $privateEnv
     if ($LASTEXITCODE -ne 0) { throw 'Guarded main dashboard is not ready; supervisor stopped.' }
 
     # start_stt_tunnel.ps1 owns reconnects. Track that long-lived supervisor,
@@ -21,7 +21,7 @@ while ($true) {
     $tunnel = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -in @('powershell.exe','pwsh.exe') -and $_.CommandLine -like "*$tunnelPath*" }
     if (-not $tunnel) {
-        Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$tunnelPath) -WindowStyle Hidden
+        Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$tunnelPath,'-BackendPort','8056') -WindowStyle Hidden
         Start-Sleep -Seconds 3
         $tunnel = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -in @('powershell.exe','pwsh.exe') -and $_.CommandLine -like "*$tunnelPath*" }

@@ -12,7 +12,7 @@ set "PYTHON_EXE=C:\Python314\python.exe"
 if not exist "%PYTHON_EXE%" set "PYTHON_EXE=python.exe"
 set "PRIVATE_ENV=%USERPROFILE%\.dashboard-env.json"
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%DASHBOARD_REPO_PATH%\scripts\ensure_dashboard_runtime.ps1" -Repo "%DASHBOARD_REPO_PATH%" -Python "%PYTHON_EXE%" -Port 8050 -PrivateEnvJson "%PRIVATE_ENV%"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%DASHBOARD_REPO_PATH%\scripts\ensure_dashboard_runtime.ps1" -Repo "%DASHBOARD_REPO_PATH%" -Python "%PYTHON_EXE%" -Port 8056 -PrivateEnvJson "%PRIVATE_ENV%"
 if errorlevel 1 exit /b 1
 
 start "" "https://h-town.duckdns.org/stt/"

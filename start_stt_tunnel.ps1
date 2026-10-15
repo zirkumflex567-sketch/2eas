@@ -1,15 +1,21 @@
 # STT SSH Reverse Tunnel Service
-# Forwards h-town.duckdns.org:8055 -> 127.0.0.1:8050
+param(
+    [ValidateRange(1024, 65535)]
+    [int]$BackendPort = 8056
+)
+
+# Forwards h-town.duckdns.org:8055 -> the guarded local main runtime.
+$ErrorActionPreference = 'Stop'
 $keyPath = "$env:USERPROFILE\.ssh\id_ed25519"
 $remoteHost = "kevin@h-town.duckdns.org"
 
 Write-Host "=========================================================="
-Write-Host " STT Reverse Tunnel: h-town.duckdns.org/stt -> Local :8050"
+Write-Host " STT Reverse Tunnel: h-town.duckdns.org/stt -> Local :$BackendPort"
 Write-Host "=========================================================="
 
 while ($true) {
-    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Starte SSH Reverse-Tunnel (Port 8055 -> 8050)..."
-    ssh -N -R 8055:127.0.0.1:8050 `
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Starte SSH Reverse-Tunnel (Port 8055 -> $BackendPort)..."
+    ssh -N -R "8055:127.0.0.1:$BackendPort" `
         -i "$keyPath" `
         -o ServerAliveInterval=15 `
         -o ServerAliveCountMax=3 `

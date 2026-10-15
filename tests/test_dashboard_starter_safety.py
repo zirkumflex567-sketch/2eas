@@ -69,6 +69,15 @@ class DashboardStarterSafetyTests(unittest.TestCase):
         self.assertIn("Name -in @('powershell.exe','pwsh.exe')", source)
         self.assertNotIn("Name = 'ssh.exe'", source)
 
+    def test_live_supervisor_and_reconnecting_tunnel_target_main_runtime_port(self):
+        supervisor = (ROOT / 'service_supervisor.ps1').read_text(encoding='utf-8')
+        tunnel = (ROOT / 'start_stt_tunnel.ps1').read_text(encoding='utf-8')
+        self.assertIn('-Port 8056', supervisor)
+        self.assertIn("'-BackendPort','8056'", supervisor)
+        self.assertIn('[int]$BackendPort = 8056', tunnel)
+        self.assertIn('8055:127.0.0.1:$BackendPort', tunnel)
+        self.assertNotRegex(tunnel, r'8055:127\.0\.0\.1:8050\b')
+
 
 if __name__ == '__main__':
     unittest.main()

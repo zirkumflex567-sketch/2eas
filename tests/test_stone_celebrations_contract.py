@@ -45,7 +45,7 @@ class CelebrationContracts(unittest.TestCase):
         self.assertIn("StoneCelebration?.clearEMAs()", self.app)
         self.assertIn('fx-onema', self.ui)
         self.assertIn("motion.matches", self.ui)
-        self.assertIn('prefers-reduced-motion:reduce', self.skin)
+        self.assertRegex(self.skin, r'prefers-reduced-motion:\s*reduce')
         self.assertIn("window.StoneChartFX?.trigger(kind,settings.strength)", self.ui)
 
     def test_no_order_or_execution_calls(self):
