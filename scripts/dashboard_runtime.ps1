@@ -122,7 +122,9 @@ try {
     if ($expected.applicationCodeDirty -ne $false) { Reject 'Tracked application code is dirty; commit or restore it before launch.' }
     $allowedKeys = @('DASHBOARD_ALLOWED_HOSTS','DASHBOARD_PROXY_SECRET','DASHBOARD_PROXY_USERS','DASHBOARD_PROXY_PREFIX',
                      'DASHBOARD_CONTROL_TOKEN','DASHBOARD_QUOTE_MAX_AGE_SECONDS','CHART_STUDIO_STORAGE_TOKEN',
-                     'CHART_STUDIO_STORAGE_ENABLED','CHART_STUDIO_DB')
+                     'CHART_STUDIO_STORAGE_ENABLED','CHART_STUDIO_DB','CHART_STUDIO_EVIDENCE_ROOT',
+                     'CHART_STUDIO_EVIDENCE_DB','CHART_STUDIO_EVIDENCE_SPOOL_ROOT',
+                     'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS')
     $environment = @{}
     if ($PrivateEnvJson) {
         $privatePath = (Resolve-Path -LiteralPath $PrivateEnvJson).Path

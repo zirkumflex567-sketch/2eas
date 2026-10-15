@@ -101,6 +101,19 @@ def test_private_untracked_generated_and_mutable_files_are_excluded(checkout, mo
     assert 'never-emit-this-secret' not in serialized
 
 
+def test_private_environment_accepts_only_well_formed_demo_capture_allowlist(checkout, tmp_path):
+    private = tmp_path.parent / (tmp_path.name + '-deal-capture.json')
+    private.write_text(json.dumps({'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS': 'titan,xau5m_m5'}))
+    try:
+        runtime_module().validate_environment_file(checkout, private)
+        for value in ('titan,,xau5m_m5', 'titan,titan', 'Titan'):
+            private.write_text(json.dumps({'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS': value}))
+            with pytest.raises(ValueError, match='Invalid private environment'):
+                runtime_module().validate_environment_file(checkout, private)
+    finally:
+        private.unlink(missing_ok=True)
+
+
 def test_checkout_identity_distinguishes_identical_worktrees(checkout, tmp_path):
     module = runtime_module()
     other = tmp_path / 'other'
@@ -217,6 +230,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
+        if self.path == '/fixture/demo-allowlist-proof':
+            self.wfile.write(json.dumps({'demoAllowlistMatches': os.environ.get('CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS') == 'titan,xau5m_m5'}).encode())
+            return
         if self.path == '/fixture/env-proof':
             matches = hashlib.sha256(os.environ.get('DASHBOARD_CONTROL_TOKEN', '').encode()).hexdigest() == 'b0a9b0c0a1a43b72218766d72d6e64d8ad0b7a677db3ab8e3a1e0c03539a761a'
             self.wfile.write(json.dumps({'privateEnvironmentMatches': matches}).encode())
@@ -281,7 +297,8 @@ def test_powershell_cross_shell_runtime_timestamp_and_private_environment(checko
     port = prepare_mock_checkout(checkout)
     env_file = tmp_path.parent / (tmp_path.name + '-cross-shell-private.json')
     secret = 'fixture-secret-never-emit'
-    env_file.write_text(json.dumps({'DASHBOARD_CONTROL_TOKEN': secret}))
+    env_file.write_text(json.dumps({'DASHBOARD_CONTROL_TOKEN': secret,
+                                    'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS': 'titan,xau5m_m5'}))
     results = []
     try:
         started = run_control(checkout, port, 'Start', env_file)
@@ -289,6 +306,7 @@ def test_powershell_cross_shell_runtime_timestamp_and_private_environment(checko
         assert started.returncode == 0, started.stdout + started.stderr
         original = mock_endpoint(port)
         assert mock_endpoint(port, '/fixture/env-proof') == {'privateEnvironmentMatches': True}
+        assert mock_endpoint(port, '/fixture/demo-allowlist-proof') == {'demoAllowlistMatches': True}
         status = run_control(checkout, port, 'Status', shell=PWSH)
         results.append(status)
         assert status.returncode == 0, status.stdout + status.stderr
@@ -303,6 +321,7 @@ def test_powershell_cross_shell_runtime_timestamp_and_private_environment(checko
         assert replacement['applicationCodeDirty'] is False
         assert replacement['restart_required'] is False
         assert mock_endpoint(port, '/fixture/env-proof') == {'privateEnvironmentMatches': True}
+        assert mock_endpoint(port, '/fixture/demo-allowlist-proof') == {'demoAllowlistMatches': True}
         for shell in ('powershell.exe', PWSH):
             status = run_control(checkout, port, 'Status', shell=shell)
             results.append(status)

@@ -29,7 +29,7 @@ _ENV_KEYS = {'DASHBOARD_ALLOWED_HOSTS', 'DASHBOARD_PROXY_SECRET', 'DASHBOARD_PRO
              'DASHBOARD_PROXY_PREFIX', 'DASHBOARD_CONTROL_TOKEN', 'DASHBOARD_QUOTE_MAX_AGE_SECONDS',
              'CHART_STUDIO_STORAGE_TOKEN', 'CHART_STUDIO_STORAGE_ENABLED', 'CHART_STUDIO_DB',
              'CHART_STUDIO_EVIDENCE_ROOT', 'CHART_STUDIO_EVIDENCE_DB',
-             'CHART_STUDIO_EVIDENCE_SPOOL_ROOT'}
+             'CHART_STUDIO_EVIDENCE_SPOOL_ROOT', 'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS'}
 
 
 def validate_environment_file(root, private_path):
@@ -56,6 +56,11 @@ def validate_environment_file(root, private_path):
             spool_root = Path(values['CHART_STUDIO_EVIDENCE_SPOOL_ROOT'])
             if not spool_root.is_absolute() or not spool_root.is_dir() or spool_root.resolve().is_relative_to(Path(root).resolve()):
                 raise ValueError('invalid spool root')
+        if 'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS' in values:
+            aliases = [item.strip() for item in values['CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS'].split(',')]
+            if (any(not re.fullmatch(r'[a-z0-9_-]{1,32}', item) for item in aliases) or
+                    len(aliases) != len(set(aliases))):
+                raise ValueError('invalid evidence account allowlist')
         has_evidence_root = 'CHART_STUDIO_EVIDENCE_ROOT' in values
         has_evidence_db = 'CHART_STUDIO_EVIDENCE_DB' in values
         if has_evidence_root != has_evidence_db:

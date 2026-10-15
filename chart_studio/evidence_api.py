@@ -17,6 +17,8 @@ from starlette._utils import get_route_path
 from chart_studio import evidence_models as models
 from chart_studio.evidence_store import EvidenceStore, StoreUnavailable, StoreReplaced
 from chart_studio.evidence_spool_service import SpoolFileConsumer, run_spool_service
+from chart_studio.broker_lifecycle_capture import (DemoBrokerLifecycleCapture,
+    parse_demo_allowlist, run_demo_broker_lifecycle_capture)
 
 DEFAULT_EVIDENCE_PRODUCERS = {
     # Account aliases come from the user's five-preset inventory. The two
@@ -70,7 +72,7 @@ class CursorCodec:
             raise CursorInvalid() from exc
 
 
-def install_evidence_routes(app, *, store=None, clock=time.time):
+def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
     """Configure only from explicit private root. GET never initializes files."""
     configuration_error = False
     excluded = [Path(__file__).resolve().parents[1]]
@@ -89,6 +91,9 @@ def install_evidence_routes(app, *, store=None, clock=time.time):
     app.state.evidence_spool_service = None
     app.state.evidence_spool_status = {}
     app.state.evidence_spool_task = None
+    app.state.evidence_deal_capture_service = None
+    app.state.evidence_deal_capture_status = {}
+    app.state.evidence_deal_capture_task = None
     spool_root = os.environ.get('CHART_STUDIO_EVIDENCE_SPOOL_ROOT')
     if spool_root:
         try:
@@ -113,6 +118,32 @@ def install_evidence_routes(app, *, store=None, clock=time.time):
 
             app.router.add_event_handler('startup', start_spool_service)
             app.router.add_event_handler('shutdown', stop_spool_service)
+    deal_accounts = os.environ.get('CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS')
+    if deal_accounts:
+        try:
+            if not store.root or mt5 is None:
+                raise ValueError('private store and MT5 adapter are required')
+            aliases = parse_demo_allowlist(deal_accounts)
+            service = DemoBrokerLifecycleCapture(store, mt5, aliases, clock=clock)
+        except (OSError, TypeError, ValueError, StoreUnavailable):
+            app.state.evidence_deal_capture_status = {'service': {'code': 'CONFIG_INVALID'}}
+        else:
+            app.state.evidence_deal_capture_service = service
+
+            async def start_demo_deal_capture():
+                app.state.evidence_deal_capture_task = asyncio.create_task(
+                    run_demo_broker_lifecycle_capture(app, service))
+
+            async def stop_demo_deal_capture():
+                task = app.state.evidence_deal_capture_task
+                if task is None: return
+                task.cancel()
+                try: await task
+                except asyncio.CancelledError: pass
+                app.state.evidence_deal_capture_task = None
+
+            app.router.add_event_handler('startup', start_demo_deal_capture)
+            app.router.add_event_handler('shutdown', stop_demo_deal_capture)
     codec = CursorCodec(clock)
     app.state.evidence_cursors = codec
     paths = ('/api/chart/v1/decisions','/api/chart/v1/lifecycle','/api/chart/v1/snapshots')

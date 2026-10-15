@@ -69,7 +69,7 @@ async def dashboard_cache_policy(request: Request, call_next):
     return response
 
 
-install_evidence_routes(app)
+install_evidence_routes(app, mt5=mt5)
 
 SYMBOL = "XAUUSD"
 TIMEFRAME = mt5.TIMEFRAME_M15
@@ -377,7 +377,7 @@ def current_daily_drawdown(mt5_client, account_info, tick, now, params=None, dd_
         raise HTTPException(503, 'Tageshistorie/-baseline ist ungültig; Risiko unbekannt.')
     daily_ref = max(day_start_bal, account_info.balance)
     daily_loss = max(0.0, daily_ref - account_info.equity)
-    challenge_protection = bool(current_account.get('challenge_protection', True))
+    challenge_protection = current_account.get('challenge_protection') is True
     ea_limit_pct, broker_limit_pct = (3.5, 4.0) if challenge_protection else (None, None)
     daily_drawdown = {
         'loss_usd': round(daily_loss, 2),
@@ -3453,7 +3453,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         document.getElementById('bar-countdown').innerText = data.times.bar_remaining_fmt;
 
         // Daily Drawdown & Account Update
-        const isChallenge = data.account?.challenge_protection !== false;
+        const isChallenge = data.account?.challenge_protection === true;
         const hasValidDD = data.daily_drawdown && ['pct','loss_usd','balance','equity'].every(key => Number.isFinite(data.daily_drawdown[key])) && (!isChallenge || Number.isFinite(data.daily_drawdown.buffer_usd));
         if (hasValidDD) {
           const dd = data.daily_drawdown;
@@ -4347,7 +4347,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     function openDrawdownResetModal() {
       if (!accountActionsReady()) return;
       const acc = accounts[activeAccount];
-      const isChallenge = acc?.challenge_protection !== false;
+      const isChallenge = acc?.challenge_protection === true;
       document.getElementById('reset-description').textContent = activeAccount==='goldm15'
         ? 'Konto '+acc.login+': Dieser Reset betrifft ausschließlich die Dashboard-Anzeige. Er verändert weder die feste $350-Tagesgrenze noch die EA-Baseline oder bestehende Handelssperren.'
         : !isChallenge

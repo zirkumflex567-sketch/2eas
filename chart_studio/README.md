@@ -130,6 +130,22 @@ polling task; records are processed in bounded batches outside the event loop.
 Internal `app.state.evidence_spool_status` reports importer gaps and failures.
 The spool setting does not verify a loaded EA identity or prove file authorship.
 
+The independent broker-deal recorder is disabled by default as well. Enable it
+only with the private evidence store and an explicit comma-separated
+`CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS` allowlist. Every alias must resolve to a
+unique configured demo terminal; funded accounts such as Blueberry and duplicate
+terminal aliases are rejected. It reads MT5 deal history under the normal
+verified account lock, then appends the normalized deal ticket, position/order
+IDs, side, entry kind, price, volume, commission, fee, swap, profit, broker event
+time, and capture time to the same immutable store. It polls off the event loop,
+pages at most 50,000 deals per account per pass, starts with a 48-hour recovery
+window, and keeps a five-minute overlap after successful passes. Failed reads,
+store writes, invalid records, or a page cap leave the watermark behind and show
+unknown coverage/gap state internally so the next pass retries. `INOUT` reversal
+deals remain `POSITION_OBSERVED`; the recorder never claims a full position exit
+or reconstructs EA decisions. This data is broker history, not an EA decision
+trace, and the rolling recovery window does not establish older history.
+
 Windows ACLs permit only the current user, SYSTEM, and Administrators; POSIX
 requires owner-only root mode 0700 and file mode 0600. Symlinks, reparse points,
 multilink files, replacement, WAL storage, and unsupported permission verifiers
@@ -147,8 +163,9 @@ this phase. `renderAssetRef` remains null and no rendered files are invented.
 with a private atomic cursor. `chart_studio.evidence_spool_service.SpoolFileConsumer`
 is wired to application startup/shutdown only when the explicit private spool
 root is valid; it remains disabled by default and no worker is running unless
-configured. There is still no EA producer, verified loaded EA identity, or
-automatic event source, so this does not establish live recording.
+configured. The broker-deal reader described above is a separate opt-in event
+source. There is still no EA producer or verified loaded EA identity, so this
+does not establish live EA decision recording.
 Recorded versus reconstructed availability follows the validated records on
 the returned page; an empty page, uninitialized store, or disabled store returns
 `NOT_RECORDED`. Every read verifies store-wide canonical bytes, stored hashes,

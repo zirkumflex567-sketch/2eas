@@ -275,8 +275,19 @@ def _lifecycle(value, context, with_revision=True):
         asOfUtc=utc_timestamp,actor=choice('EA','USER','BROKER','UNKNOWN'),dataQuality=choice('OBSERVED','RECONSTRUCTED','UNAVAILABLE'))
     if with_revision:
         required['revision'] = hash_string
-    return _object(value,required,dict(orderTicket=ticket,dealTicket=ticket,price=decimal_string,volume=decimal_string,
+    result = _object(value,required,dict(orderTicket=ticket,dealTicket=ticket,dealEntry=choice(*'IN OUT INOUT OUT_BY'.split()),
+        dealSide=choice('BUY','SELL'),commission=lambda v: decimal_string(v,signed=True),
+        fee=lambda v: decimal_string(v,signed=True),swap=lambda v: decimal_string(v,signed=True),
+        profit=lambda v: decimal_string(v,signed=True),
+        capturedAtUtc=utc_timestamp,price=decimal_string,volume=decimal_string,
         slBefore=nullable(decimal_string),slAfter=nullable(decimal_string),tpBefore=nullable(decimal_string),tpAfter=nullable(decimal_string)))
+    if ('dealEntry' in result) != ('dealSide' in result):
+        _fail()
+    if 'capturedAtUtc' in result:
+        if 'dealEntry' not in result:
+            _fail()
+        _ordered(result['asOfUtc'], result['capturedAtUtc'])
+    return result
 
 
 def lifecycle_hash(value, *, context):

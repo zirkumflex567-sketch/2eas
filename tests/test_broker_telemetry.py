@@ -190,6 +190,33 @@ def test_titan_m5_daily_drawdown_filters_other_strategy_deals_and_disables_chall
     assert result['buffer_broker_usd'] is None
 
 
+def test_missing_challenge_flag_does_not_enable_protection_for_demo_accounts():
+    import app
+    from datetime import datetime, timezone
+
+    fake = SimpleNamespace(
+        history_deals_get=lambda *_args, **_kwargs: [],
+        DEAL_TYPE_BUY=0,
+        DEAL_TYPE_SELL=1,
+    )
+    demo_without_flag = dict(app.ACCOUNTS['titan'])
+    demo_without_flag.pop('challenge_protection')
+    risk_context = dict(manual_active=False, risk_day='2026-10-14', risk_timezone='UTC', risk_reset_hour=0)
+    with patch.object(app, 'mt5', fake), \
+            patch.object(app, 'risk_day_context', return_value=(risk_context, datetime(2026, 10, 14, tzinfo=timezone.utc))), \
+            patch.object(app, 'require_fresh_quote', return_value={}), \
+            patch.object(app, 'selected', return_value=demo_without_flag):
+        result, _, _ = app.current_daily_drawdown(
+            fake, SimpleNamespace(balance=10_000., equity=9_900.),
+            SimpleNamespace(time=1_792_000_000), 1_792_000_000,
+            params=None, dd_cfg={},
+        )
+
+    assert result['challenge_protection'] is False
+    assert result['limit_pct'] is None
+    assert result['buffer_usd'] is None
+
+
 def test_mt5_trace_diagnostics_require_authorized_read_identity(monkeypatch):
     from fastapi.testclient import TestClient
     import app
