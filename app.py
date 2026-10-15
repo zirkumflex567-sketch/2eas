@@ -418,6 +418,8 @@ def journal_metadata(account_id):
 
 
 def journal_magics(account_id):
+    if account_id in ('titan', 'xau5m_500', 'titan_500_2'):
+        return lambda m: True  # Closed-source Marketplace EA: account is dedicated; magic is not a reliable filter.
     if account_id in ('titan', 'titan_m5'):
         return {881122}  # XAU_Titan_Pro.mq5 and committed .set reference
     elif account_id == 'titan_25k':
@@ -434,6 +436,10 @@ def explain_trade_entry(p_type, magic=None, comment=None, account_id='titan', ve
     is_sell = (p_type == 'SELL' or p_type == getattr(mt5, 'ORDER_TYPE_SELL', 1) or p_type == getattr(mt5, 'DEAL_TYPE_SELL', 1))
     side_str = "Short" if is_sell else "Long"
     comment_str = str(comment or '')
+
+    if account_id in ('titan', 'xau5m_500', 'titan_500_2'):
+        base = f"Einstieg {side_str}: EA-Strategie unbekannt (Marketplace-EA, EX5 ohne Quellcode)."
+        return base + (" Broker-Kommentar: " + comment_str if comment_str else "")
 
     if magic in (881122, 881125) or 'Titan' in comment_str or account_id in ('titan', 'blueberry', 'titan_m5', 'titan_25k'):
         if is_sell:
@@ -462,6 +468,11 @@ def explain_trade_exit(status, p_type, sl_price=0.0, tp_price=0.0, profit_usd=0.
                        deal_reason=None, magic=None, comment=None, account_id='titan', close_price=None,
                        volume=0.01, ema9=None, current_price=None, timeframe=None):
     if status == 'OPEN':
+        if account_id in ('titan', 'xau5m_500', 'titan_500_2'):
+            facts = []
+            if sl_price and sl_price > 0: facts.append(f"Broker-SL bei ${sl_price:.2f}")
+            if tp_price and tp_price > 0: facts.append(f"Broker-TP bei ${tp_price:.2f}")
+            return "EA-Ausstiegsregeln unbekannt (Marketplace-EA, EX5 ohne Quellcode). " + ("; ".join(facts) if facts else "Kein Broker-SL/TP gesetzt.")
         sl_desc = f"${sl_price:.2f}" if (sl_price and sl_price > 0) else "Kein fixer SL"
         tp_desc = f"${tp_price:.2f}" if (tp_price and tp_price > 0) else "Dynamic Runner (kein starres TP)"
 
@@ -528,6 +539,8 @@ def explain_trade_exit(status, p_type, sl_price=0.0, tp_price=0.0, profit_usd=0.
         elif deal_reason == tp_val:
             return f"Take Profit ausgelöst: Kursziel erreicht{close_str} ({pnl_str})."
         elif deal_reason == exp_val:
+            if account_id in ('titan', 'xau5m_500', 'titan_500_2'):
+                return f"EA hat die Position geschlossen; interne Ausstiegsregel unbekannt ({pnl_str})."
             if profit_usd is not None and profit_usd > 0:
                 return f"Dynamic Runner Exit an EMA9: Gewinnmitnahme durch EA ({pnl_str})."
             else:
@@ -572,7 +585,7 @@ def build_trade_journal(account_id, server_time, local_time, ema9=None):
         sl_val = round(float(p.sl), 2)
         tp_val = round(float(p.tp), 2)
         vol = float(p.volume)
-        target_usd = round(28.0 * (vol / 0.01), 2)
+        target_usd = None if account_id in ('titan', 'xau5m_500', 'titan_500_2') else round(28.0 * (vol / 0.01), 2)
         dist_ema9 = round(abs(cur_price - ema9), 2) if (ema9 is not None and math.isfinite(ema9)) else None
         why_trig = explain_trade_entry(p_type_str, magic=p.magic, comment=getattr(p, 'comment', None), account_id=account_id)
         prof_goal = explain_trade_exit('OPEN', p_type_str, sl_price=sl_val, tp_price=tp_val,
@@ -904,6 +917,16 @@ def get_live_market_data(include_journal=True):
 
     trend_diagnosis = f'{acc_tf_str}-Schluss · Referenzkriterien: ' + trend_diagnosis + ' Live-EA-Freigabe unbekannt.'
     short_missing = trend_diagnosis
+    indicators_only = current_acc.get('analysis_mode') == 'INDICATORS_ONLY'
+    if indicators_only:
+        trend_direction = None
+        trend_name = 'Nur klassische Indikatoren'
+        active_focus = None
+        trend_diagnosis = 'EA-Strategie unbekannt · EMA/RSI sind reine Marktindikatoren und keine EA-Signale.'
+        short_missing = trend_diagnosis
+        rules_matrix = []
+        sell_met_count = buy_met_count = total_rules = 0
+        sell_readiness = buy_readiness = None
 
     # Positions
     pos_objects = mt5.positions_get(symbol=sym_name)
@@ -930,7 +953,7 @@ def get_live_market_data(include_journal=True):
 
         ema9_val = round(float(open_bar['ema9']), 2) if (pd.notnull(open_bar.get('ema9')) and math.isfinite(open_bar['ema9'])) else None
         dist_ema9 = round(abs(cp - ema9_val), 2) if ema9_val is not None else None
-        target_usd = round(28.0 * (vol / 0.01), 2)
+        target_usd = None if indicators_only else round(28.0 * (vol / 0.01), 2)
 
         positions.append({
             "ticket": p.ticket,
@@ -954,6 +977,7 @@ def get_live_market_data(include_journal=True):
     result = {
         **source_meta,
         "risk_status": "available",
+        "analysis_mode": current_acc.get('analysis_mode', 'TITAN_REFERENCE'),
         "symbol": sym_name,
         "bid": tick.bid,
         "ask": tick.ask,
@@ -998,11 +1022,11 @@ def get_live_market_data(include_journal=True):
     result.update(account=public_account(selected()), rule_count=len(rules_matrix), exit_goals=[], ea_guard=guard)
     preview = df.iloc[-1]
     result.update(
-        signal_mode='closed_bar_reference', signal_label=f'{acc_tf_str}-Schluss · Referenzrekonstruktion, keine EA-Freigabe',
+        signal_mode='INDICATORS_ONLY' if indicators_only else 'closed_bar_reference', signal_label='Nur Indikatoren · EA-Strategie unbekannt' if indicators_only else f'{acc_tf_str}-Schluss · Referenzrekonstruktion, keine EA-Freigabe',
         signal_bar_time=datetime.fromtimestamp(int(cur_bar['time']), timezone.utc).strftime('%H:%M'),
         signal_bar_time_utc=datetime.fromtimestamp(broker_clock.to_utc_epoch(int(cur_bar['time']), current_acc), timezone.utc).isoformat(),
         ea_execution_verified=False, ea_execution_status='unknown',
-        signal_preview={'mode': 'forming_bar_preview', 'label': f'Laufende {acc_tf_str}-Kerze · unverbindliche Vorschau',
+        signal_preview={'mode': 'indicators_only' if indicators_only else 'forming_bar_preview', 'label': 'EMA/RSI-Indikatoren · kein EA-Signal' if indicators_only else f'Laufende {acc_tf_str}-Kerze · unverbindliche Vorschau',
                         'close': float(preview['close']), 'rsi14': float(preview['rsi14']),
                         'ema9': float(preview['ema9']), 'ema21': float(preview['ema21']), 'ema50': float(preview['ema50'])})
     if acc_id == 'goldm15':
@@ -1153,7 +1177,7 @@ def api_candles(count: int = 150, account: str = 'titan', tf: Optional[str] = No
                         markers.append({'time': t, 'position': 'belowBar' if buys else 'aboveBar', 'color': '#10b981' if buys else '#f43f5e', 'shape': 'arrowUp' if buys else 'arrowDown', 'text': 'S'+'/'.join(systems)+(' L' if buys else ' S')})
                 continue
 
-            if account in ('blueberry', 'titan', 'titan_25k', 'titan_m5', 'titan_500_2', 'xau5m_500', 'xau5m_m5', 'xau5m_m15'):
+            if current_acc.get('analysis_mode') != 'INDICATORS_ONLY' and account in ('blueberry', 'titan', 'titan_25k', 'titan_m5', 'titan_500_2', 'xau5m_500', 'xau5m_m5', 'xau5m_m15'):
                 buy = (c1 > e20_1) and (e20_1 > e50_1) and (c1 > e200_1) and (rsi1 >= 50.0) and (c1 > o1)
                 sell = (c1 < e20_1) and (e20_1 < e50_1) and (c1 < e200_1) and (rsi1 <= 50.0) and (c1 < o1)
                 if buy:
@@ -1179,6 +1203,7 @@ def api_candles(count: int = 150, account: str = 'titan', tf: Optional[str] = No
     return {
         "account": public_account(selected()),
         "accountId": account,
+        "analysis_mode": current_acc.get('analysis_mode', 'TITAN_REFERENCE'),
         "symbol": symbol,
         "timeframe": tf_upper,
         "source": "MT5_VERIFIED",
@@ -1710,7 +1735,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         </button>
         <button class="account-tab" data-account="titan" aria-pressed="false" onclick="switchAccount('titan')">
           <div class="flex items-center justify-between gap-1.5">
-            <strong>XAU Titan Pro (10k)</strong>
+            <strong>Marketplace XAUUSD 5 minute (ICMarkets 10k)</strong>
             <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 font-bold border border-slate-600">DEMO</span>
           </div>
           <small>53087839 · ICMarketsEU-Demo · $10k</small>
@@ -3341,10 +3366,11 @@ HTML_CONTENT = """<!DOCTYPE html>
         }
 
         // Dynamic Trend & AI Diagnose
+        const indicatorOnly = data.analysis_mode === 'INDICATORS_ONLY';
         const trendBadge = document.getElementById('trend-badge');
         if (trendBadge && data.trend_name) {
           trendBadge.innerText = data.trend_name;
-          trendBadge.className = `px-2 py-0.5 rounded font-bold text-[9px] ${data.trend_direction === 'BULLISH' ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40' : 'bg-rose-950 text-rose-300 border border-rose-500/40'}`;
+          trendBadge.className = `px-2 py-0.5 rounded font-bold text-[9px] ${indicatorOnly ? 'bg-cyan-950 text-cyan-300 border border-cyan-500/40' : data.trend_direction === 'BULLISH' ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40' : 'bg-rose-950 text-rose-300 border border-rose-500/40'}`;
         }
 
         const cardElem = document.getElementById('diagnose-card');
@@ -3353,19 +3379,20 @@ HTML_CONTENT = """<!DOCTYPE html>
           cardElem.classList.toggle('border-l-emerald-500', data.trend_direction === 'BULLISH');
           cardElem.classList.toggle('border-l-rose-500', data.trend_direction !== 'BULLISH');
         }
+        if (cardElem && indicatorOnly) cardElem.classList.remove('border-l-emerald-500', 'border-l-rose-500');
 
-        const statusPrefix = data.account.id==='goldm15' ? '<span class="text-blue-400 font-black">RSI-Setup:</span>' : (data.trend_direction === 'BULLISH')
+        const statusPrefix = indicatorOnly ? '<span class="text-cyan-300 font-black">Indikatoren:</span>' : data.account.id==='goldm15' ? '<span class="text-blue-400 font-black">RSI-Setup:</span>' : (data.trend_direction === 'BULLISH')
           ? `<span class="text-emerald-400 font-black">Aktiver Trend (Long):</span>`
           : `<span class="text-rose-400 font-black">Aktiver Trend (Short):</span>`;
 
         document.getElementById('short-missing-text').innerHTML = `${statusPrefix} ${escapeHTML(data.trend_diagnosis || data.short_missing)}`;
-        document.getElementById('sell-pct').innerText = `${data.sell_readiness}% (${data.sell_met_count}/${data.rule_count})`;
-        document.getElementById('sell-bar').style.width = `${data.sell_readiness}%`;
-        document.getElementById('buy-pct').innerText = `${data.buy_readiness}% (${data.buy_met_count}/${data.rule_count})`;
-        document.getElementById('buy-bar').style.width = `${data.buy_readiness}%`;
+        document.getElementById('sell-pct').innerText = indicatorOnly ? 'Nicht verfügbar' : `${data.sell_readiness}% (${data.sell_met_count}/${data.rule_count})`;
+        document.getElementById('sell-bar').style.width = indicatorOnly ? '0%' : `${data.sell_readiness}%`;
+        document.getElementById('buy-pct').innerText = indicatorOnly ? 'Nicht verfügbar' : `${data.buy_readiness}% (${data.buy_met_count}/${data.rule_count})`;
+        document.getElementById('buy-bar').style.width = indicatorOnly ? '0%' : `${data.buy_readiness}%`;
 
         // Render Matrix Table
-        renderMatrix(data.rules_matrix);
+        renderMatrix(indicatorOnly ? [{name:'EA-Strategie unbekannt',short_met:false,long_met:false,short_note:'Marketplace-EA ohne Quellcode',long_note:'EMA/RSI werden nur als Indikatoren angezeigt',current_val:'Keine Signalrekonstruktion'}] : data.rules_matrix);
 
         // Render Volume Profile Card
         renderVolumeProfile(data);
@@ -3380,7 +3407,7 @@ HTML_CONTENT = """<!DOCTYPE html>
               entry.current_price = pos.current_price;
               entry.profit_usd = pos.profit_usd;
               entry.points = pos.type === 'BUY' ? Math.round((pos.current_price - entry.open_price) * 100) / 100 : Math.round((entry.open_price - pos.current_price) * 100) / 100;
-              if (pos.ema9 !== undefined && pos.ema9 !== null) {
+              if (data.analysis_mode !== 'INDICATORS_ONLY' && pos.ema9 !== undefined && pos.ema9 !== null) {
                 entry.ema9 = pos.ema9;
                 entry.dist_to_ema9 = pos.dist_to_ema9;
                 entry.target_usd = pos.target_usd;
@@ -3908,13 +3935,13 @@ HTML_CONTENT = """<!DOCTYPE html>
           : (item.account === 'xau5m_m5' || item.account === 'xau5m_m15')
           ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">XAU 5M $250 [DEMO]</span>`
           : item.account === 'titan'
-          ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">TITAN 10k [DEMO]</span>`
+          ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">MARKETPLACE 10k [DEMO]</span>`
           : item.account === 'titan_25k'
           ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">TITAN 25k [DEMO]</span>`
           : item.account === 'titan_m5'
           ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-blue-500/20 text-blue-300 border border-blue-500/40">TITAN M5 #1 [DEMO]</span>`
           : (item.account === 'xau5m_500' || item.account === 'titan_500_2')
-          ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-teal-500/20 text-teal-300 border border-teal-500/40">XAU 5M $500 [DEMO]</span>`
+          ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-teal-500/20 text-teal-300 border border-teal-500/40">MARKETPLACE $500 [DEMO]</span>`
           : `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-purple-500/20 text-purple-300 border border-purple-500/40">GOLDM15 [DEMO]</span>`;
 
         const priceDetails = isOpen
@@ -3971,8 +3998,8 @@ HTML_CONTENT = """<!DOCTYPE html>
                         <span class="text-white font-bold">${item.dist_to_ema9 !== null && item.dist_to_ema9 !== undefined ? `Abstand: ${item.dist_to_ema9.toFixed(2)} Pkt` : ''}</span>
                       </div>
                       <div>
-                        <span class="${item.profit_usd >= (item.target_usd || 28) ? 'text-emerald-400 font-bold' : 'text-amber-400'}">
-                          ${item.profit_usd >= (item.target_usd || 28) ? `✅ Mindestgewinn erreicht ($${item.profit_usd.toFixed(2)} >= $${(item.target_usd || 28).toFixed(0)}) · Ausstieg scharf` : `⏳ Mindestgewinn: Noch $${((item.target_usd || 28) - item.profit_usd).toFixed(2)} bis $${(item.target_usd || 28).toFixed(0)}`}
+                        <span class="${item.target_usd == null ? 'text-sub' : item.profit_usd >= item.target_usd ? 'text-emerald-400 font-bold' : 'text-amber-400'}">
+                          ${item.target_usd == null ? 'EA-Ausstiegsziel unbekannt' : item.profit_usd >= item.target_usd ? `✅ Mindestgewinn erreicht ($${item.profit_usd.toFixed(2)} >= $${item.target_usd.toFixed(0)}) · Ausstieg scharf` : `⏳ Mindestgewinn: Noch $${(item.target_usd - item.profit_usd).toFixed(2)} bis $${item.target_usd.toFixed(0)}`}
                         </span>
                       </div>
                     </div>
@@ -3980,7 +4007,7 @@ HTML_CONTENT = """<!DOCTYPE html>
                 </div>
                 ${item.sl_price ? `<div class="mt-2 text-[10px] font-mono text-sub flex gap-3">
                   <span>SL: <strong class="text-rose-400">$${item.sl_price.toFixed(2)}</strong></span>
-                  <span>TP: <strong class="text-emerald-400">${item.tp_price > 0 ? '$'+item.tp_price.toFixed(2) : 'Dynamic Runner'}</strong></span>
+                  <span>TP: <strong class="text-emerald-400">${item.tp_price > 0 ? '$'+item.tp_price.toFixed(2) : (item.target_usd == null ? 'Kein Broker-TP' : 'Dynamic Runner')}</strong></span>
                 </div>` : ''}
               </div>
             </div>

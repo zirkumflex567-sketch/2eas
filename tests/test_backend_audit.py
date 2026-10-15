@@ -165,6 +165,69 @@ def test_chart_candles_read_exact_requested_verified_symbol(isolated, monkeypatc
     isolated.send.assert_not_called()
 
 
+@pytest.mark.parametrize('account_id', ['titan', 'xau5m_500'])
+def test_marketplace_status_keeps_indicators_but_has_no_strategy_reconstruction(isolated, monkeypatch, account_id):
+    def account_info():
+        account = gateway.selected()
+        return NS(login=account['login'], server=account['server'], balance=account['initial_balance'],
+                  equity=account['initial_balance'], currency='USD')
+
+    monkeypatch.setattr(app.mt5, 'account_info', account_info)
+    response = isolated.client.get(f'/api/status?account={account_id}&light=true')
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body['source_fresh'] is True
+    assert body['account']['analysis_mode'] == 'INDICATORS_ONLY'
+    assert body['analysis_mode'] == 'INDICATORS_ONLY'
+    assert body['indicators']['ema9'] is not None
+    assert body['signal_mode'] == 'INDICATORS_ONLY'
+    assert body['signal_preview']['ema9'] is not None
+    assert body['buy_readiness'] is None
+    assert body['sell_readiness'] is None
+    assert body['rules_matrix'] == []
+    assert body['rule_count'] == 0
+    assert 'Strategie unbekannt' in body['trend_diagnosis']
+    isolated.send.assert_not_called()
+
+
+@pytest.mark.parametrize('account_id', ['titan', 'xau5m_500'])
+def test_marketplace_candles_keep_ema_and_suppress_inferred_buy_sell_markers(isolated, monkeypatch, account_id):
+    def account_info():
+        account = gateway.selected()
+        return NS(login=account['login'], server=account['server'], balance=account['initial_balance'],
+                  equity=account['initial_balance'], currency='USD')
+
+    monkeypatch.setattr(app.mt5, 'account_info', account_info)
+    monkeypatch.setattr(app.mt5, 'symbol_info', lambda name: NS(name=name, digits=2, trade_tick_size=.01))
+    monkeypatch.setattr(app.mt5, 'copy_rates_from_pos', lambda *args: isolated.rates.copy())
+    response = isolated.client.get(f'/api/candles?account={account_id}&tf=M15&symbol=XAUUSD')
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body['analysis_mode'] == 'INDICATORS_ONLY'
+    assert body['ema20'] and body['ema50'] and body['ema200']
+    assert body['markers'] == []
+    isolated.send.assert_not_called()
+
+
+def test_marketplace_journal_includes_positions_without_titan_magic_or_exit_rules(isolated):
+    foreign = NS(**vars(isolated.pos))
+    foreign.ticket = 12
+    foreign.magic = 999
+    isolated.positions.return_value = [isolated.pos, foreign]
+    entries = app.build_trade_journal('titan', datetime.fromtimestamp(isolated.tick.time, timezone.utc), None)
+
+    assert {entry['ticket'] for entry in entries} == {11, 12}
+    assert all('unbekannt' in entry['why_triggered'].lower() for entry in entries)
+    assert all('titan' not in entry['why_triggered'].lower() for entry in entries)
+    assert all('unbekannt' in entry['profit_goal'].lower() for entry in entries)
+    assert all('mindestgewinn' not in entry['profit_goal'].lower() for entry in entries)
+    assert all(entry['target_usd'] is None for entry in entries)
+    assert 'interne Ausstiegsregel unbekannt' in app.explain_trade_exit(
+        'CLOSED', 'BUY', deal_reason=app.mt5.DEAL_REASON_EXPERT, profit_usd=10., account_id='titan')
+    assert 'Stop Loss ausgelöst' in app.explain_trade_exit(
+        'CLOSED', 'BUY', deal_reason=app.mt5.DEAL_REASON_SL, profit_usd=-10., account_id='titan')
+
+
 def test_chart_candles_reject_unknown_symbol_before_history_read(isolated, monkeypatch):
     reads=[]
     monkeypatch.setattr(app.mt5,'symbol_info',lambda symbol:None)
@@ -339,7 +402,7 @@ def test_journal_unknown_reasons_scope_and_net_swap(isolated):
     foreign = NS(**vars(isolated.pos)); foreign.ticket=12; foreign.magic=999
     isolated.positions.return_value=[isolated.pos, foreign]
     entries=app.build_trade_journal('titan', datetime.fromtimestamp(isolated.tick.time, timezone.utc), None)
-    assert [e['ticket'] for e in entries] == [11]
+    assert [e['ticket'] for e in entries] == [11, 12]
     row=entries[0]
     assert row['reason_verified'] is False
     assert 'unbekannt' in row['why_triggered'].lower()
@@ -367,7 +430,8 @@ def test_journal_partial_close_allocates_older_entry_cost_once(isolated):
     assert any(c.kwargs.get('position')==55 for c in isolated.history.call_args_list)
 
 
-def test_titan_confirmed_signal_invariant_to_open_bar_with_preview(isolated):
+def test_titan_confirmed_signal_invariant_to_open_bar_with_preview(isolated, monkeypatch):
+    monkeypatch.setitem(gateway.ACCOUNTS['titan'], 'analysis_mode', 'TITAN_REFERENCE')
     a=app.get_live_market_data()
     isolated.rates['close'][-1]=1000.
     isolated.rates['high'][-1]=6000.
@@ -591,7 +655,8 @@ def test_cache_returns_detached_copies_and_account_identity_is_keyed(isolated):
     assert len(cache.entries)==2
 
 
-def test_titan_default_reference_closed_gates_match_ea_indices(isolated):
+def test_titan_default_reference_closed_gates_match_ea_indices(isolated, monkeypatch):
+    monkeypatch.setitem(gateway.ACCOUNTS['titan'], 'analysis_mode', 'TITAN_REFERENCE')
     isolated.rates['open'][-4:-1]=isolated.rates['close'][-4:-1]-1
     isolated.rates['high'][-4]=isolated.rates['close'][-2]+1
     isolated.rates['high'][-49:-4]=isolated.rates['close'][-2]-1
@@ -634,19 +699,20 @@ def test_incomplete_or_extra_dd_schema_not_silently_defaulted(raw,isolated):
 
 def test_explain_trade_exit_scales_with_volume_and_reports_ema9():
     # 0.01 Lot target is $28 (280 pts)
-    text_001 = app.explain_trade_exit('OPEN', 'SELL', volume=0.01, ema9=4095.0, current_price=4100.0, profit_usd=-5.0)
+    text_001 = app.explain_trade_exit('OPEN', 'SELL', volume=0.01, ema9=4095.0, current_price=4100.0, profit_usd=-5.0, account_id='titan_m5')
     assert 'Mindestgewinn >= $28' in text_001
     assert 'Aktuell $4095.00 · Abstand: 5.00 Pkt unter Kurs' in text_001
     assert 'Mindestgewinn noch offen: -$5.00 / $28, noch $33.00' in text_001
 
     # 0.04 Lot target is $112 (280 pts * 4)
-    text_004 = app.explain_trade_exit('OPEN', 'BUY', volume=0.04, ema9=4105.0, current_price=4100.0, profit_usd=120.0)
+    text_004 = app.explain_trade_exit('OPEN', 'BUY', volume=0.04, ema9=4105.0, current_price=4100.0, profit_usd=120.0, account_id='titan_m5')
     assert 'Mindestgewinn >= $112' in text_004
     assert 'Aktuell $4105.00 · Abstand: 5.00 Pkt über Kurs' in text_004
     assert 'Mindestgewinn erreicht: +$120.00 >= $112' in text_004
 
 
-def test_live_market_data_positions_include_ema9_and_target(isolated):
+def test_live_market_data_positions_include_ema9_and_target(isolated, monkeypatch):
+    monkeypatch.setitem(gateway.ACCOUNTS['titan'], 'analysis_mode', 'TITAN_REFERENCE')
     data = app.get_live_market_data()
     assert len(data['positions']) > 0
     pos = data['positions'][0]

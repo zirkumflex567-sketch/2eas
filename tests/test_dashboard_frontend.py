@@ -19,7 +19,7 @@ from playwright.sync_api import sync_playwright, expect
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / 'output' / 'audit-ui'
 ACCOUNTS = {
-    'titan': dict(id='titan', name='XAU Titan Pro', login=53087839, server='FAKE-DEMO', version='fixture', capacity=3),
+    'titan': dict(id='titan', name='Marketplace XAUUSD 5 minute', login=53087839, server='FAKE-DEMO', version='fixture', capacity=3),
     'goldm15': dict(id='goldm15', name='GoldM15 Reconstruction', login=53090070, server='FAKE-DEMO', version='fixture', capacity=2),
 }
 POSITION = dict(ticket=101, type='BUY', volume=.1, open_price=4000., current_price=4010., profit_usd=100., profit_pct=1., sl_usd=-30., tp_usd=0.)
@@ -234,6 +234,7 @@ class DashboardFrontendTests(unittest.TestCase):
         self.candle_fail = False
         self.candle_rows = []
         self.candle_mismatch_symbol = None
+        self.marketplace_mode = False
         self.page.route('**/api/**', self.api)
     def tearDown(self):
         if self.trace_enabled:
@@ -253,7 +254,15 @@ class DashboardFrontendTests(unittest.TestCase):
         if parsed.path == '/api/control_session':
             route.fulfill(json=dict(csrf_token='fixture-control-csrf', control_enabled=True)); return
         if parsed.path == '/api/status':
-            route.fulfill(status=503 if self.status_fail else 200, json=dict(detail='fixture status failure') if self.status_fail else status(account)); return
+            payload = status(account)
+            if account == 'titan' and self.marketplace_mode:
+                payload.update(analysis_mode='INDICATORS_ONLY', signal_mode='INDICATORS_ONLY',
+                    trend_name='Nur klassische Indikatoren', trend_direction=None,
+                    trend_diagnosis='EA-Strategie unbekannt · EMA/RSI sind reine Marktindikatoren',
+                    sell_readiness=None, buy_readiness=None, sell_met_count=0, buy_met_count=0,
+                    rule_count=0, rules_matrix=[])
+                payload['account']['analysis_mode'] = 'INDICATORS_ONLY'
+            route.fulfill(status=503 if self.status_fail else 200, json=dict(detail='fixture status failure') if self.status_fail else payload); return
         if parsed.path == '/api/journal_summary':
             route.fulfill(status=503 if self.journal_fail else 200, json=dict(detail='fixture journal failure') if self.journal_fail else journal(account)); return
         if parsed.path == '/api/candles':
@@ -272,6 +281,15 @@ class DashboardFrontendTests(unittest.TestCase):
     def load(self):
         self.page.goto(self.url)
         expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=10000)
+    def test_marketplace_account_shows_indicators_without_strategy_readiness(self):
+        self.marketplace_mode = True
+        self.load()
+        expect(self.page.locator('#short-missing-text')).to_contain_text('EA-Strategie unbekannt')
+        expect(self.page.locator('#sell-pct')).to_have_text('Nicht verfügbar')
+        expect(self.page.locator('#buy-pct')).to_have_text('Nicht verfügbar')
+        expect(self.page.locator('#matrix-tbody')).to_contain_text('Keine Signalrekonstruktion')
+        self.assertEqual(self.errors, [])
+        self.assertEqual(self.mutations, [])
     def test_dialog_keyboard_focus_escape_returns_to_trigger(self):
         self.load()
         trigger = self.page.locator('#dd-reset-button'); trigger.click()
