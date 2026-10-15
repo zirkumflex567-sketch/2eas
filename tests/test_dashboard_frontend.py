@@ -491,7 +491,12 @@ class DashboardFrontendTests(unittest.TestCase):
           const style=document.createElement('style');style.dataset.axeVisualFreeze='1';
           style.textContent='*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}';
           document.head.append(style);
+          window.updateStatus=()=>Promise.resolve();
+          window.refreshJournal=()=>Promise.resolve();
+          window.loadCandles=()=>Promise.resolve();
         }''')
+        # Let a status request started immediately before the static snapshot settle.
+        self.page.wait_for_timeout(1600)
         self.page.add_script_tag(path=str(ROOT/'tests/vendor/axe.min.js'))
         reports = {}
         pixel_audit = {}
@@ -535,6 +540,16 @@ class DashboardFrontendTests(unittest.TestCase):
             with self.subTest(theme=theme):
                 self.assertEqual([n['target'] for v in report['violations'] for n in v['nodes']], [])
                 self.assertEqual(len(pixel_audit[theme]), sum(len(v.get('nodes', [])) for v in report['incomplete']))
+            if theme == 'stone':
+                german_time = next(item for item in pixel_audit[theme] if '#time-german' in item['target'])
+                self.assertEqual(german_time['classification'], 'measured', german_time)
+                strategy_badge = next(item for item in pixel_audit[theme] if '#journal-strat-badge' in item['target'])
+                self.assertEqual(strategy_badge['classification'], 'measured', strategy_badge)
+                self.assertEqual(strategy_badge['probe']['result'], 'pass', strategy_badge)
+                live_badge_text = next(item for item in pixel_audit[theme]
+                    if '.inline-flex.border-emerald-500' in item['target'][0] and 'span:nth-child(2)' in item['target'][0])
+                self.assertEqual(live_badge_text['classification'], 'measured', live_badge_text)
+                self.assertEqual(live_badge_text['probe']['result'], 'pass', live_badge_text)
                 failed_measurements = [item for item in pixel_audit[theme]
                     if item.get('probe', {}).get('result') == 'fail']
                 self.assertEqual(failed_measurements, [], f'project 4.5:1 threshold failures: {failed_measurements}')
