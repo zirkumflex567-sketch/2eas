@@ -177,17 +177,23 @@ COMMON_FILES_DIR = os.path.expanduser(r"~\AppData\Roaming\MetaQuotes\Terminal\Co
 
 def load_dd_config():
     try:
-        return dd_persistence.load(config_path(BASE_DIR))
+        targets = drawdown_config_targets()
+        dd_persistence.recover(targets)
+        return dd_persistence.load(targets[0])
     except (OSError, ValueError) as exc:
         raise HTTPException(503, 'Drawdown-Konfiguration ungültig oder nicht lesbar.') from exc
 
 
-def save_dd_config(cfg):
+def drawdown_config_targets():
     targets = [config_path(BASE_DIR)]
     if writes_titan_reset():
         targets.append(Path(COMMON_FILES_DIR) / 'titan_dd_reset.json')
+    return targets
+
+
+def save_dd_config(cfg):
     try:
-        return dd_persistence.save(cfg, targets)
+        return dd_persistence.save(cfg, drawdown_config_targets())
     except (OSError, ValueError) as exc:
         raise HTTPException(503, str(exc)) from exc
 

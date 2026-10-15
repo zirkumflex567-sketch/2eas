@@ -19,6 +19,7 @@ dashboard-backups/
 .codex-remote-attachments/
 *.tmp
 *.state
+.dashboard-drawdown-transaction-*.json
 
 # Temp backtest exports
 kacki.xlsx

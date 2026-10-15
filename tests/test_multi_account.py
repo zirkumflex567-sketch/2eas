@@ -254,7 +254,7 @@ class MultiAccountTests(unittest.TestCase):
             self.assertEqual(response.status_code, 409)
             send.assert_not_called()
 
-    def test_status_keeps_existing_titan_contract_and_broker_time(self):
+    def test_marketplace_status_keeps_indicators_and_broker_time(self):
         import app
         fake = self.fake()
         dtype=[('time','i8'),('open','f8'),('high','f8'),('low','f8'),('close','f8'),('tick_volume','i8')]
@@ -276,9 +276,13 @@ class MultiAccountTests(unittest.TestCase):
         with patch.object(app,'mt5',fake),patch.object(app,'load_dd_config',return_value={}),patch.object(app.time,'time',return_value=float(tick_time - 10800)):
             with self.gateway.session(fake,'titan'):
                 data=app.get_live_market_data()
-        for field in ['daily_vp','weekly_vp','sr_levels','positions','indicators','daily_drawdown','rules_matrix','buy_readiness','sell_readiness']:
+        for field in ['daily_vp','weekly_vp','sr_levels','positions','indicators','daily_drawdown','rules_matrix','buy_readiness','sell_readiness','analysis_mode']:
             self.assertIn(field,data)
-        self.assertEqual(len(data['rules_matrix']),8)  # 5 champion rules + 3 anti-trap guards
+        self.assertEqual(data['analysis_mode'], 'INDICATORS_ONLY')
+        self.assertEqual(data['rules_matrix'], [])
+        self.assertIsNone(data['buy_readiness'])
+        self.assertIsNone(data['sell_readiness'])
+        self.assertIn('ema9', data['indicators'])
         self.assertEqual(data['account']['login'],53087839)
         from datetime import datetime,timezone
         self.assertEqual(data['times']['server'],datetime.fromtimestamp(tick_time,timezone.utc).strftime('%H:%M:%S'))

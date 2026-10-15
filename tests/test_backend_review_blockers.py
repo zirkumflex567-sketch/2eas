@@ -120,7 +120,10 @@ def test_mixed_consumed_owners_do_not_attribute_whole_exit(foreign_first, path, 
     else:
         isolated.positions.return_value = []
         isolated.history.return_value = lifecycle
-        row = app.build_trade_journal('titan', datetime.fromtimestamp(stamp+1, timezone.utc), None)[0]
+        # The ICMarkets `titan` alias is now a closed-source Marketplace EA
+        # account where every account trade is owned. Exercise magic-filtered
+        # Titan accounting on the separate Titan Pro demo instead.
+        row = app.build_trade_journal('titan_m5', datetime.fromtimestamp(stamp+1, timezone.utc), None)[0]
     assert row['net_complete'] is False
     for field in ('volume', 'net_profit_usd', 'entry_cost_usd', 'gross_profit_usd', 'exit_net_usd', 'open_price'):
         assert row[field] is None
