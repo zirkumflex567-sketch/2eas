@@ -362,7 +362,8 @@ void OnTick()
 
          if(daily_dd_pct >= InpMaxDailyDrawdownPercent && !m_daily_lockout)
          {
-            PrintFormat("BLUEBERRY RISK BREACH: Daily DD %.2f%% >= Limit %.2f%%. Closing all positions.",
+            PrintFormat("RISK GUARD BREACH [%s | %s | %s]: Daily DD %.2f%% >= Limit %.2f%%. Closing all positions.",
+                        AccountInfoString(ACCOUNT_SERVER), _Symbol, EnumToString(Period()),
                         daily_dd_pct, InpMaxDailyDrawdownPercent);
             CloseAllPositionsForMagic();
             if(InpDailyLockoutUntilMidnight)
@@ -398,7 +399,8 @@ void OnTick()
 
          if(total_dd_pct >= InpMaxTotalDrawdownPercent && !m_total_lockout)
          {
-            PrintFormat("BLUEBERRY RISK BREACH: Total DD %.2f%% >= Limit %.2f%%. Closing all positions and halting EA permanently.",
+            PrintFormat("RISK GUARD BREACH [%s | %s | %s]: Total DD %.2f%% >= Limit %.2f%%. Closing all positions and halting EA permanently.",
+                        AccountInfoString(ACCOUNT_SERVER), _Symbol, EnumToString(Period()),
                         total_dd_pct, InpMaxTotalDrawdownPercent);
             CloseAllPositionsForMagic();
             m_total_lockout = true;

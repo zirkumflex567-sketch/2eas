@@ -8,7 +8,7 @@ The candidate sources below are tracked at commit `84f3d18`. Their hashes are re
 
 | Candidate | SHA-256 | Supporting file hashes |
 |---|---|---|
-| `XAU_Titan_Pro.mq5` v7.10, 38,694 bytes | `518BFF6D8F729261BA807C5D8F1FCA023CF6AD2BAF46D7D2BE9E907EA24DC0D2` | standard MetaTrader `Trade`, `SymbolInfo`, `PositionInfo` includes |
+| `XAU_Titan_Pro.mq5` v7.10, 40,291 bytes (2026-10-15 account-neutral risk-log labels) | `B3879DB6800FF31A421BA7D353EC107BDE739E20F9102E34C2FA62F2E1F6CB3A` | standard MetaTrader `Trade`, `SymbolInfo`, `PositionInfo` includes |
 | `goldm15/GoldM15_Reconstruction.mq5` v1.22, 17,267 bytes | `9651F8D86B6243510251A8898D0A0B96ABEA50B57B3D425709A232AA8736FEFC` | `GoldM15_Core.mqh` `F85F2E6A7499884E950EDF715F462F6E92FFE204B4F4F84F12C6A8E7004C91E1`; `GoldM15_Risk.mqh` `A7597935174B7283E8DF57902FB01AB8D7CCA0C584B5ADC6ED83920230EBE3B5`; `GoldM15_RiskCore.mqh` `096D2B4D98DA67001B381028C615AD5612135482F7D58CB585574A293968335A`; `GoldM15_News.mqh` `54CF4DD2884D90FB2040B3E78AC246B22D1E8B5A168318EE75814431C2DA70B6`; `GoldM15_Reconstruction.set` `E6C517DD9E5FC26A4D257506A493163D43BBC52A3B1032479EB8AED89D6EFA40` |
 
 `docs/EA_RUNTIME_IDENTITY_2026-10-14.md` records that Titan's installed source file matched a different, user-local source and differed from the checked-in source by Friday/weekend protections. Its in-memory EX5 and preset remain unverified. For GoldM15, several source/binary candidates exist and the currently attached chart is unknown. The `.set` hash above is only the repository candidate preset. Neither candidate may be substituted for the active chart identity.
@@ -45,6 +45,10 @@ This is explicitly the reconstructed candidate, not a verified original strategy
 Source locations, repository file hashes and hook semantics were inspected with read-only repository commands. No MQL compiler run is claimed by this map. Before any EA edit, collect the requested chart-bound terminal/account alias, terminal path, symbol/timeframe, attached EA/version, loaded EX5 identity, preset identity and attach/reload time for each chart. Re-hash source and preset files from those exact terminal data folders; source and installed-file hashes still cannot attest an already loaded in-memory binary. Until that manifest is available, retain the existing recorder as opt-in and disabled and do not claim live captures.
 
 ## Additional observed EA artifacts
+
+### 2026-10-15 drawdown-label correction
+
+The checked-in Titan 7.10 candidate previously prefixed daily and total drawdown guard messages with `BLUEBERRY RISK BREACH` on every account. The PU Prime $250 `xau5m_m5` log therefore used a misleading account label. The candidate now uses the account-neutral `RISK GUARD BREACH` label and includes broker server, chart symbol, and chart timeframe in those two messages. The change does not modify thresholds, branch conditions, close calls, or lockout behavior. A source contract test failed before the edit and passes afterward; the copied source compiles with MetaEditor 5.0.0.6230 with zero errors and warnings. The isolated compiled artifact SHA-256 is `EF84A873D56132AAD973E3E700575906A87B947A21D360DCC43754741EA65DB7`. This candidate has not been installed or attached, and the log finding does not attest that this exact candidate produced the live message; the running EX5/source identity remains unresolved.
 
 | Artifact | Evidence | Recorder implication |
 |---|---|---|
