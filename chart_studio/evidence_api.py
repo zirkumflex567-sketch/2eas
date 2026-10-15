@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette._utils import get_route_path
 from chart_studio import evidence_models as models
 from chart_studio.evidence_store import EvidenceStore, StoreUnavailable, StoreReplaced
+from chart_studio.evidence_mfe_mae import estimate_ohlc_mfe_mae
 from chart_studio.evidence_spool_service import SpoolFileConsumer, run_spool_service
 from chart_studio.broker_lifecycle_capture import (DemoBrokerLifecycleCapture,
     parse_demo_allowlist, run_demo_broker_lifecycle_capture)
@@ -285,6 +286,44 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
             safe_status = {'code': 'NOT_STARTED', 'coverage': 'UNKNOWN'}
         return JSONResponse({'schemaVersion': 1, 'account': account, 'status': safe_status},
                             headers={'Cache-Control': 'no-store'})
+
+    @app.get(paths[1] + '/positions/{position_id}/mfe-mae')
+    def lifecycle_position_mfe_mae(position_id: str, request: Request):
+        identity = getattr(request.state, 'control_identity', None)
+        peer = getattr(request.state, 'raw_peer', None)
+        if (not isinstance(identity, tuple) or len(identity) != 3 or
+                not all(isinstance(x, str) and x for x in identity) or
+                identity[0] not in ('local', 'bearer', 'proxy') or
+                identity[2] not in ('read', 'layout', 'trade') or
+                not isinstance(peer, str) or not peer):
+            return error(403, 'IDENTITY_REQUIRED')
+        params = request.query_params
+        account = params.get('account')
+        if (set(params) != {'account'} or len(params.getlist('account')) != 1 or
+                not isinstance(account, str) or not re.fullmatch('[a-z0-9_-]{1,32}', account)):
+            return error(422, 'INVALID_REQUEST')
+        spec = models.gateway.ACCOUNTS.get(account)
+        if spec is None:
+            return error(400, 'UNKNOWN_ACCOUNT')
+        if spec.get('is_demo') is not True or spec.get('challenge_protection') is True:
+            return error(403, 'DEMO_ACCOUNT_REQUIRED', account)
+        try:
+            position_id = models.ticket(position_id)
+            if configuration_error:
+                raise StoreUnavailable()
+            context = models.AccountContext.from_config(account)
+            lifecycle = store.read(context, kind='LIFECYCLE', filters={'position_id': position_id}, limit=201)
+            snapshots = store.read(context, kind='SNAPSHOT', filters={'position_id': position_id}, limit=201)
+            if lifecycle.get('hasMore') or snapshots.get('hasMore'):
+                result = {'status': 'UNAVAILABLE', 'reason': 'POSITION_HISTORY_LIMIT'}
+            else:
+                result = estimate_ohlc_mfe_mae(position_id, lifecycle.get('records'), snapshots.get('records'))
+            return JSONResponse({'schemaVersion': 1, 'account': account, 'canExecute': False,
+                                 'result': result}, headers={'Cache-Control': 'no-store'})
+        except (StoreUnavailable, StoreReplaced):
+            return error(503, 'STORE_UNAVAILABLE', account)
+        except (ValueError, TypeError):
+            return error(422, 'INVALID_REQUEST', account)
 
     @app.get(paths[2])
     def snapshots(request: Request):

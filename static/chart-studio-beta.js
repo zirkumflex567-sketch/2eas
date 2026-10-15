@@ -304,7 +304,7 @@ function renderEvidence(){
    const caption=document.createElement("p");caption.className="cs-evidence-chart-caption";caption.textContent=p.marketData.source+" · "+p.chartView.timeframe+" · gespeicherte OHLC bis "+p.asOfUtc+" · historische Indikatoren/Zeichnungen nicht aufgezeichnet.";
    const canvas=document.createElement("canvas");canvas.className="cs-evidence-chart";canvas.setAttribute("role","img");canvas.setAttribute("aria-label","Historischer Candlestick-Snapshot "+p.chartView.symbol+" "+p.chartView.timeframe+" bis "+p.asOfUtc);
    drawEvidenceSnapshot(canvas,p.marketData.bars);
-   const exportButton=document.createElement("button");exportButton.type="button";exportButton.className="cs-evidence-snapshot-export";exportButton.textContent="PNG aus Snapshot speichern";
+   const exportButton=document.createElement("button");exportButton.type="button";exportButton.className="cs-evidence-snapshot-export cs-evidence-png-export";exportButton.textContent="PNG aus Snapshot speichern";
    exportButton.setAttribute("aria-label","Gespeicherten Chart-Snapshot als PNG speichern");
    exportButton.addEventListener("click",()=>{
     canvas.toBlob(blob=>{
@@ -315,7 +315,38 @@ function renderEvidence(){
      link.click();setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);
     },"image/png");
    });
-   details.append(summary,caption,canvas,exportButton,pre);
+   const excursionButton=document.createElement("button");excursionButton.type="button";excursionButton.className="cs-evidence-snapshot-export cs-evidence-mfe-mae";excursionButton.textContent="OHLC-MFE/MAE prüfen";
+   excursionButton.setAttribute("aria-label","Beobachtete OHLC-MFE/MAE-Schätzung für diese Brokerposition abrufen");
+   const excursionStatus=document.createElement("p");excursionStatus.className="cs-evidence-mfe-mae-result";excursionStatus.setAttribute("role","status");excursionStatus.setAttribute("aria-live","polite");excursionStatus.hidden=true;
+   excursionButton.addEventListener("click",async()=>{
+    const accountId=record.accountId||p.accountId,positionId=p.positionIdentifier,generation=s?.evidence?.generation;
+    if(!accountId||!positionId||s?.account!==accountId)return;
+    excursionButton.disabled=true;excursionStatus.hidden=false;excursionStatus.textContent="OHLC-MFE/MAE wird read-only geprüft …";
+    try{
+     const root=window.location.pathname.startsWith("/stt")?"/stt":"";
+     const url=root+"/api/chart/v1/lifecycle/positions/"+encodeURIComponent(positionId)+"/mfe-mae?account="+encodeURIComponent(accountId);
+     const response=window.DashboardRuntime?.request
+      ? await window.DashboardRuntime.request(url,{method:"GET",cache:"no-store"},10000,false)
+      : await fetch(url,{method:"GET",cache:"no-store",credentials:"same-origin"});
+     const data=await response.json();
+     if(s?.account!==accountId||s.evidence.generation!==generation)return;
+     if(!response.ok||data?.schemaVersion!==1||data?.account!==accountId||data?.canExecute!==false||!data?.result||typeof data.result.status!=="string")throw Error(data?.detail?.code||"INVALID_READ_RESPONSE");
+     const result=data.result;
+     if(result.status==="AVAILABLE"){
+      if(result.quality!=="OHLC_ESTIMATE"||result.coverage!=="OBSERVED_BARS_ONLY"||result.intrabarOrder!=="UNKNOWN"||
+         ![result.mfePriceDistance,result.maePriceDistance].every(value=>typeof value==="string"&&/^(?:0|[0-9]+(?:\.[0-9]+)?)$/.test(value))||
+         !Number.isInteger(result.barsUsed)||result.barsUsed<1||result.barsUsed>150)throw Error("INVALID_ESTIMATE");
+      excursionStatus.textContent="OHLC-Schätzung · MFE "+result.mfePriceDistance+" · MAE "+result.maePriceDistance+" Preisabstand · "+result.timeframe+" / "+result.barsUsed+" vollständige Kerzen · nur erfasste Kerzen · Intrabar-Reihenfolge unbekannt.";
+     }else if(result.status==="UNAVAILABLE"&&typeof result.reason==="string"){
+      excursionStatus.textContent="MFE/MAE nicht verfügbar · "+result.reason;
+     }else throw Error("INVALID_ESTIMATE_STATUS");
+    }catch(error){
+     if(s?.account===accountId&&s.evidence.generation===generation)excursionStatus.textContent="MFE/MAE nicht verfügbar · "+String(error?.message||"READ_ERROR");
+    }finally{
+     if(s?.account===accountId&&s.evidence.generation===generation)excursionButton.disabled=false;
+    }
+   });
+   details.append(summary,caption,canvas,exportButton,excursionButton,excursionStatus,pre);
   }else details.append(summary,pre);
   li.append(details);list.append(li);
  }

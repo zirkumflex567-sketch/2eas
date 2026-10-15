@@ -1,0 +1,112 @@
+from hashlib import sha256
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from chart_studio import evidence_models
+from chart_studio.evidence_api import install_evidence_routes
+from dashboard_security import install_control_security
+
+
+def _deal(ticket, kind, time, side, price):
+    return {"type": "LIFECYCLE", "id": f"mt5_deal_{ticket}", "provenance": "RECORDED",
+            "payload": {"accountId": "titan", "positionIdentifier": "9001", "dealTicket": ticket,
+                        "dealEntry": kind, "dealSide": side, "price": price, "asOfUtc": time}}
+
+
+def _snapshot(kind, ticket, time, bars):
+    digest = sha256(evidence_models.canonical_bytes(bars)).hexdigest()
+    return {"type": "SNAPSHOT", "id": f"snap_{kind.lower()}_{ticket}", "provenance": "RECORDED",
+            "payload": {"accountId": "titan", "positionIdentifier": "9001", "dealTicket": ticket,
+                        "captureType": kind, "asOfUtc": time,
+                        "chartView": {"symbol": "XAUUSD.pi", "timeframe": "M15"},
+                        "lifecycleEventIds": [{"type": "LIFECYCLE", "id": f"mt5_deal_{ticket}"}],
+                        "marketData": {"source": "MT5_COMPLETED_BARS", "bars": bars, "sha256": digest}}}
+
+
+def _fixture_store():
+    entry_time, exit_time = "2026-10-14T10:00:00Z", "2026-10-14T10:45:00Z"
+    bars = []
+    for minute, high, low, opening, close in ((0, "102", "99", "100", "101"),
+                                               (15, "105", "100", "101", "104"),
+                                               (30, "104", "98", "104", "100")):
+        bars.append({"timeUtc": f"2026-10-14T10:{minute:02}:00Z", "open": opening,
+                     "high": high, "low": low, "close": close,
+                     "tickVolume": 100, "spread": 2, "realVolume": 0})
+    return {
+        "LIFECYCLE": [_deal("5001", "IN", entry_time, "BUY", "101"),
+                      _deal("5002", "OUT", exit_time, "SELL", "100")],
+        "SNAPSHOT": [_snapshot("ENTRY", "5001", entry_time, bars[:1]),
+                     _snapshot("EXIT", "5002", exit_time, bars)],
+    }
+
+
+class Store:
+    root = Path("private-test-root")
+
+    def __init__(self, *, has_more=False, fail=False):
+        self.records = _fixture_store()
+        self.has_more = has_more
+        self.fail = fail
+        self.calls = []
+
+    def gaps(self, _account=None):
+        return []
+
+    def read(self, context, *, kind, filters=None, limit=200, **kwargs):
+        self.calls.append((context.account_id, kind, filters, limit, kwargs))
+        if self.fail:
+            from chart_studio.evidence_store import StoreUnavailable
+            raise StoreUnavailable()
+        return {"records": self.records[kind], "hasMore": self.has_more}
+
+
+def _client(store):
+    app = FastAPI()
+    install_control_security(app)
+    install_evidence_routes(app, store=store)
+    return TestClient(app)
+
+
+def test_position_mfe_mae_get_is_authenticated_account_scoped_and_read_only():
+    store = Store()
+    client = _client(store)
+
+    unauthenticated_app = FastAPI()
+    install_evidence_routes(unauthenticated_app, store=Store())
+    denied = TestClient(unauthenticated_app).get("/api/chart/v1/lifecycle/positions/9001/mfe-mae",
+                                                params={"account": "titan"})
+    assert denied.status_code == 403
+    result = client.get("/api/chart/v1/lifecycle/positions/9001/mfe-mae", params={"account": "titan"})
+
+    assert result.status_code == 200
+    assert result.json()["canExecute"] is False
+    assert result.json()["result"]["quality"] == "OHLC_ESTIMATE"
+    assert result.json()["result"]["mfePriceDistance"] == "4"
+    assert [call[1] for call in store.calls] == ["LIFECYCLE", "SNAPSHOT"]
+    assert all(call[0] == "titan" and call[2] == {"position_id": "9001"} and call[3] == 201 for call in store.calls)
+    assert client.post("/api/chart/v1/lifecycle/positions/9001/mfe-mae", params={"account": "titan"}).status_code == 405
+
+
+def test_position_mfe_mae_denies_challenge_and_unknown_accounts():
+    store = Store()
+    client = _client(store)
+
+    challenge = client.get("/api/chart/v1/lifecycle/positions/9001/mfe-mae", params={"account": "blueberry"})
+    unknown = client.get("/api/chart/v1/lifecycle/positions/9001/mfe-mae", params={"account": "missing"})
+
+    assert challenge.status_code == 403
+    assert unknown.status_code == 400
+    assert store.calls == []
+
+
+def test_position_mfe_mae_fails_closed_on_history_limit_or_store_error():
+    limited = _client(Store(has_more=True)).get("/api/chart/v1/lifecycle/positions/9001/mfe-mae",
+                                                params={"account": "titan"})
+    failed = _client(Store(fail=True)).get("/api/chart/v1/lifecycle/positions/9001/mfe-mae",
+                                           params={"account": "titan"})
+
+    assert limited.status_code == 200
+    assert limited.json()["result"] == {"status": "UNAVAILABLE", "reason": "POSITION_HISTORY_LIMIT"}
+    assert failed.status_code == 503

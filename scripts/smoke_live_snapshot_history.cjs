@@ -87,7 +87,7 @@ const forbiddenAccounts = new Set(["blueberry"]);
       assert.match(caption, /M15 · gespeicherte OHLC/);
       if (index === 0) {
         const pngDownloadPromise = page.waitForEvent("download");
-        await rows.first().locator("button.cs-evidence-snapshot-export").click();
+        await rows.first().locator("button.cs-evidence-png-export").click();
         const pngDownload = await pngDownloadPromise;
         assert.equal(pngDownload.suggestedFilename(), `chart-snapshot-${account}-${records[0].id}.png`);
         const pngBytes = fs.readFileSync(await pngDownload.path());
