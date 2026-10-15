@@ -254,6 +254,7 @@ class DashboardFrontendTests(unittest.TestCase):
             self.context.tracing.start(screenshots=True, snapshots=True, sources=False)
         self.page.on('dialog', lambda dialog: dialog.dismiss())
         self.account_failures = 0; self.journal_fail = False; self.status_fail = False
+        self.account_overrides = {}
         self.candle_fail = False
         self.candle_rows = []
         self.candle_mismatch_symbol = None
@@ -273,7 +274,10 @@ class DashboardFrontendTests(unittest.TestCase):
         if parsed.path == '/api/accounts':
             if self.account_failures:
                 self.account_failures -= 1; route.fulfill(status=503, json=dict(detail='fixture bootstrap failure')); return
-            route.fulfill(json=dict(accounts=list(ACCOUNTS.values()), default='titan', csrf_token='fixture-csrf')); return
+            accounts = copy.deepcopy(list(ACCOUNTS.values()))
+            for account_row in accounts:
+                account_row.update(self.account_overrides.get(account_row['id'], {}))
+            route.fulfill(json=dict(accounts=accounts, default='titan', csrf_token='fixture-csrf')); return
         if parsed.path == '/api/control_session':
             route.fulfill(json=dict(csrf_token='fixture-control-csrf', control_enabled=True)); return
         if parsed.path == '/api/status':
@@ -295,7 +299,8 @@ class DashboardFrontendTests(unittest.TestCase):
             route.fulfill(status=503 if self.candle_fail else 200, json=dict(detail='fixture candle failure') if self.candle_fail else payload); return
         if parsed.path == '/api/chart/v1/symbols':
             query=parse_qs(parsed.query).get('q',[''])[0].casefold()
-            symbols=[dict(account=account,symbol=symbol,source='MT5_VERIFIED',canExecute=False) for symbol in ('XAUUSD','EURUSD') if query in symbol.casefold()]
+            available = ('XAUUSD','EURUSD',self.account_overrides.get(account,{}).get('symbol'))
+            symbols=[dict(account=account,symbol=symbol,source='MT5_VERIFIED',canExecute=False) for symbol in available if symbol and query in symbol.casefold()]
             route.fulfill(json=dict(account=account,source='MT5_VERIFIED',canExecute=False,symbols=symbols,limit=200,truncated=False)); return
         if parsed.path == '/api/chart/v1/positions':
             symbol=parse_qs(parsed.query).get('symbol',['XAUUSD'])[0]
@@ -304,6 +309,20 @@ class DashboardFrontendTests(unittest.TestCase):
     def load(self):
         self.page.goto(self.url)
         expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=10000)
+    def test_bootstrap_uses_configured_broker_symbol_for_chart_feed(self):
+        self.account_overrides = {'titan': dict(symbol='XAUUSD.pi', timeframe='M15')}
+        self.candle_rows = [
+            dict(time=1791918000,open=4000.,high=4002.,low=3998.,close=4001.,tick_volume=10,real_volume=0),
+            dict(time=1791918900,open=4001.,high=4003.,low=3999.,close=4002.,tick_volume=11,real_volume=0),
+        ]
+        self.load()
+        expect(self.page.locator('#chart-title-text')).to_have_text('XAUUSD.pi M15 Chart', timeout=10000)
+        expect(self.page.locator('#account-detail')).to_contain_text('XAUUSD.pi / M15')
+        candle_urls=[url for url in self.requests if '/api/candles?' in url]
+        self.assertTrue(any(parse_qs(urlparse(url).query).get('symbol')==['XAUUSD.pi'] for url in candle_urls),candle_urls)
+        self.assertEqual(self.page.evaluate('activeChartSymbol'), 'XAUUSD.pi')
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.errors, [])
     def test_marketplace_account_shows_indicators_without_strategy_readiness(self):
         self.marketplace_mode = True
         self.load()
@@ -587,7 +606,8 @@ class DashboardFrontendTests(unittest.TestCase):
                 self.assertEqual(strategy_badge['classification'], 'measured', strategy_badge)
                 self.assertEqual(strategy_badge['probe']['result'], 'pass', strategy_badge)
                 live_badge_text = next(item for item in pixel_audit[theme]
-                    if '.inline-flex.border-emerald-500' in item['target'][0] and 'span:nth-child(2)' in item['target'][0])
+                    if '.inline-flex.border-emerald-500' in item['target'][0] and
+                    ('span:nth-child(2)' in item['target'][0] or '.stone-rule-state-label' in item['target'][0]))
                 self.assertEqual(live_badge_text['classification'], 'measured', live_badge_text)
                 self.assertEqual(live_badge_text['probe']['result'], 'pass', live_badge_text)
                 failed_measurements = [item for item in pixel_audit[theme]

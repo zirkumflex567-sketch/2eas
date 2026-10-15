@@ -975,7 +975,7 @@ function symbol(value){
  refreshProfiles();showOpts();updateSeries();window.ChartStudioObjectManager?.render();requestDraw();
  window.dispatchEvent(new CustomEvent("chartstudio:symbol-change",{detail:{account:s.account,symbol:value,timeframe:s.tf}}));return true;
 }
-function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.favorites=normalizeFavorites(get(favoritesKey(),[]));s.shortcuts=normalizeShortcuts(get(shortcutsKey(),{}));renderToolPreferences();s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});clearEvidence();s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioLoading=false;s.portfolioError="";if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
+function account(id,preferredSymbol){if(!s)return;cancelPlanPreview();s.account=id;s.favorites=normalizeFavorites(get(favoritesKey(),[]));s.shortcuts=normalizeShortcuts(get(shortcutsKey(),{}));renderToolPreferences();s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});clearEvidence();s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioLoading=false;s.portfolioError="";if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
  s.lastScenarioPreview=null;s.marketQuote=null;clearScenarioDraft("Konto geändert · neue Quote und Preise eingeben; Gebühren/Risikobudget neu bestätigen.",true);clearDataWindowPin();
   s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
   const fibInput=s.panel.querySelector("#cs-fib-levels");if(fibInput)fibInput.value=window.ChartStudioFib?.display(s.fibLevels)||"";
@@ -988,7 +988,7 @@ function account(id){if(!s)return;cancelPlanPreview();s.account=id;s.favorites=n
  window.ChartStudioOscillators?.switchAccount(id);
  window.ChartStudioChartTypes?.switchAccount(id);
  window.ChartStudioServerSync?.account(id);
- window.ChartStudioBrokerPanel?.setAccount(id);
+ window.ChartStudioBrokerPanel?.setAccount(id,preferredSymbol);
  window.ChartStudioReplay?.switchContext(id,s.tf);
  renderScenarioSnapshots();loadPortfolio(id,chartSymbol());
  const scenarioStatus=s.panel.querySelector("#cs-scenario-ab-status");if(scenarioStatus)scenarioStatus.textContent="A/B-Snapshots für "+id+" · lokal · nur verifizierte Vorschauen.";

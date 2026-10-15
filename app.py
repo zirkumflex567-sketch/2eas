@@ -2078,7 +2078,7 @@ HTML_CONTENT = """<!DOCTYPE html>
               <button onclick="openDrawdownResetModal()" class="text-[9px] px-2 py-0.5 rounded bg-blue-600/20 hover:bg-blue-600 border border-blue-500/40 text-blue-400 hover:text-white font-bold cursor-pointer transition-colors" title="Tages-Drawdown Resetten">🔄 Reset</button>
             </div>
           </div>
-          <div class="flex items-center justify-between">
+          <div class="flex items-center justify-between stone-account-balance-row">
             <span>Kontostand / Equity:</span>
             <span id="acc-matrix-bal" class="font-bold font-mono text-sub">$----.-- / $----.--</span>
           </div>
@@ -2492,13 +2492,19 @@ HTML_CONTENT = """<!DOCTYPE html>
     async function switchAccount(account) {
       if (!accounts[account]) return;
       activeAccount = account;
-      try { window.ChartStudioBeta?.account(account); } catch (_) {}
       accountGeneration++;
       clearChartFX();
       DashboardRuntime.abortAccount();
       localStorage.setItem('gold_dashboard_account', account);
       document.querySelectorAll('.account-tab').forEach(tab => tab.setAttribute('aria-pressed', String(tab.dataset.account===account)));
       const meta = accounts[account];
+      activeChartSymbol = meta.symbol || 'XAUUSD';
+      activeTimeframe = meta.timeframe || 'M15';
+      try {
+        window.ChartStudioBeta?.account(account, activeChartSymbol);
+        window.ChartStudioBeta?.timeframe(activeTimeframe);
+        window.ChartStudioBeta?.symbol(activeChartSymbol);
+      } catch (_) {}
       document.getElementById('strategy-title').textContent = meta.name.toUpperCase();
       document.getElementById('strategy-version').textContent = meta.version;
       document.title = meta.name + ' · ' + meta.login + ' · Live Cockpit';
@@ -3448,14 +3454,14 @@ HTML_CONTENT = """<!DOCTYPE html>
           <td class="py-2 px-2 text-center whitespace-nowrap">
             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${r.short_met ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'}">
               <span>${r.short_met ? '✅' : '❌'}</span>
-              <span>${r.short_met ? 'ERFÜLLT' : 'FEHLT'}</span>
+              <span class="stone-rule-state-label">${r.short_met ? 'ERFÜLLT' : 'FEHLT'}</span>
             </span>
             <div class="text-[9px] text-sub mt-1 whitespace-normal">${escapeHTML(r.short_note)}</div>
           </td>
           <td class="py-2 px-2 text-center whitespace-nowrap">
             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${r.long_met ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'}">
               <span>${r.long_met ? '✅' : '❌'}</span>
-              <span>${r.long_met ? 'ERFÜLLT' : 'FEHLT'}</span>
+              <span class="stone-rule-state-label">${r.long_met ? 'ERFÜLLT' : 'FEHLT'}</span>
             </span>
             <div class="text-[9px] text-sub mt-1 whitespace-normal">${escapeHTML(r.long_note)}</div>
           </td>
@@ -3580,7 +3586,7 @@ HTML_CONTENT = """<!DOCTYPE html>
               ${escapeHTML(p.type)} ${escapeHTML(p.volume)} Lot
             </span>
             <span data-position-entry class="font-mono font-bold text-xs">#${p.ticket} @ $${p.open_price.toFixed(2)}</span>
-            <span data-position-current class="text-sub font-mono text-[10px]">Aktuell: &#36;${p.current_price.toFixed(2)}</span>
+            <span data-position-current class="text-sub font-mono text-[10px] stone-position-current-label">Aktuell: &#36;${p.current_price.toFixed(2)}</span>
             <span data-position-sl-val class="px-1.5 py-0.5 rounded ticker-bg border font-mono text-[10px] text-rose-400 font-bold">
               ${p.sl_price > 0 ? 'SL: $' + p.sl_price.toFixed(2) + ' (' + (p.sl_usd >= 0 ? '+' : '') + '$' + p.sl_usd.toFixed(2) + ')' : 'Kein SL'}
             </span>
@@ -3959,7 +3965,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
             <!-- 2 INFO BOXES -->
             <details ${isOpen ? 'open' : ''} class="mt-1">
-              <summary class="cursor-pointer text-[11px] font-semibold text-amber-300 hover:text-amber-200 py-0.5">
+              <summary class="cursor-pointer text-[11px] font-semibold text-amber-300 hover:text-amber-200 py-0.5 stone-journal-details-toggle">
                 ${isOpen ? '▼ Begründung und Ausstiegsregeln (Aktiv)' : '▶ Begründung und Ausstiegsregel anzeigen'}
               </summary>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs mt-1.5">
