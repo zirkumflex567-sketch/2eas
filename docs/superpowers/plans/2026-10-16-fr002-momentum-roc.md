@@ -56,6 +56,6 @@
 
 - [x] Update FR-002 with the formulas, warm-up, persistence and tests actually delivered; retain open items for the rest of the catalog, production wiring, target-hardware and long-run budget.
 - [x] Run the focused frontend/workspace suite and `git diff --check`.
-- [ ] Commit only intended source, test and plan files on `main`; wait for both main CI workflows to finish and report their exact results.
+- [x] Commit intended source, test and plan files on `main` as `603c2f1`; both resulting Main CI workflows passed: 38821902797 (performance/UX) and 38821902825 (Chart Studio).
 
 Strategy backtests and Strategy Tester parity are out of scope. No MT5 trading write or demo mutation is required by this feature.
