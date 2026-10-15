@@ -209,3 +209,17 @@ Die fünf im Main konfigurierten Statusfeeds antworteten lesend mit frischer Que
 Der PU-Prime-$250-Demoalias `xau5m_m5` meldete 36,44 % Tagesverlust (USD 91,03 bei Tagesreferenz USD 249,80), ein offenes Ticket und `challenge_protection=false`. Das ist ein read-only Dashboard-/Brokerstatus und kein Nachweis, dass ein EA aktuell weiterhandelt oder dass der historische DD-Bruch auf Blueberry liegt. Die Nutzervorgabe bleibt maßgeblich: Blueberry ist das einzige kritische Challengekonto, die übrigen Konten sind Demo/Test; an keinem Konto wurde etwas geändert.
 
 Lokaler Main-Chart-Smoke und `/stt`-Tunnelstatus sind in `OPEN_TASKS.md` für denselben Zeitpunkt dokumentiert. Keine Oberfläche wurde bedient, kein Terminal/EA/Preset geändert, kein Auftrag gesendet und kein Backtest gestartet. Aktuelle Chart-Anhangs-/EX5-/Presetidentität und echter EA-Guard bleiben unbestätigt.
+
+
+## Read-only aktive Demo-Charttitel (15.10.2026, 20:40 UTC)
+
+Über Windows-Prozessmetadaten wurden ausschließlich die vier vom Nutzer freigegebenen Demo-Installationspfade geprüft. Alle vier MT5-Prozesse antworteten. Die Fenstertitel nennen Goldsymbole in jedem aktiven Hauptchart; drei stehen auf M15. Das Research-/PU-Prime-$250-Terminal `xau5m_m5` zeigt aktuell `XAUUSD.p/H1`, obwohl sein konfigurierter Dashboardfeed M15 ist und der Nutzer Gold/M15 als Ziel angegeben hat. Ich habe den Zeitrahmen nicht geändert, um eine mögliche EA-Auswertung nicht zu beeinflussen.
+
+| Alias | Installationspfadzuordnung | Aktiver Hauptfenstertitel (redigiert) | Befund |
+|---|---|---|---|
+| `titan` | PU-Prime-Terminalinstallation; verbunden mit ICMarketsEU-Demo | ICMarketsEU-Demo · `XAUUSD/M15` | Goldsymbol und M15; kein EA-Anhang oder Preset aus dem Titel ableitbar. |
+| `xau5m_m5` | Research-portable PU-Prime-Demo | PUPrime-Demo · `XAUUSD.p/H1` | H1 weicht vom konfigurierten Dashboard-M15-Feed ab; nicht geändert. |
+| `titan_m5` | `.mt5-puprime` | PUPrime-Demo · `XAUUSD.p/M15` | Goldsymbol/M15. |
+| `xau5m_500` | `.mt5-puprime-700194822` | PUPrime-Demo · `XAUUSD.p/M15` | Goldsymbol/M15. |
+
+Das belegt nur den jeweils aktiven Fenstertitel im Terminal, nicht weitere Charttabs, EA-Anhang, in-memory-EX5-Hash, geladenes Preset oder Attach-Zeitpunkt. Die drei nicht-Marketplace-Demo-Charts bleiben ohne vollständige Chart-/EA-/Presetidentität für Producer-Instrumentierung; Marketplace bleibt closed-source. Blueberry wurde weder abgefragt noch in diese Prozessauswertung aufgenommen. Keine Chart-, EA-, Preset- oder Brokeränderung, keine Order und kein Backtest.
