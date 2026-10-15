@@ -264,6 +264,10 @@ class DashboardFrontendTests(unittest.TestCase):
         self.candle_resolved_symbol = None
         self.candle_mismatch_symbol = None
         self.marketplace_mode = False
+        self.lifecycle_status = 200
+        self.lifecycle_record = dict(id='mt5_deal_201',type='LIFECYCLE',accountId='titan',provenance='RECORDED',
+            payload=dict(accountId='titan',dealTicket=201,source='MT5_DEAL',dataQuality='OBSERVED',
+            eventType='EXIT',asOfUtc='2026-10-15T18:00:00Z',capturedAtUtc='2026-10-15T18:00:01Z'))
         self.page.route('**/api/**', self.api)
     def tearDown(self):
         if self.trace_enabled:
@@ -320,6 +324,8 @@ class DashboardFrontendTests(unittest.TestCase):
         if parsed.path == '/api/chart/v1/positions':
             symbol=parse_qs(parsed.query).get('symbol',['XAUUSD'])[0]
             route.fulfill(json=dict(account=account,symbol=symbol,source='MT5_VERIFIED',canExecute=False,currency='USD',marginMode=2,positions=[],orders=[])); return
+        if parsed.path == '/api/chart/v1/lifecycle/mt5_deal_201':
+            route.fulfill(status=self.lifecycle_status, json=dict(record=copy.deepcopy(self.lifecycle_record)) if self.lifecycle_status == 200 else dict(detail=dict(code='RECORD_NOT_FOUND'))); return
         route.fulfill(status=404, json=dict(detail='unexpected fixture API'))
     def load(self):
         self.page.goto(self.url)
@@ -574,6 +580,41 @@ class DashboardFrontendTests(unittest.TestCase):
         expect(self.page.locator('#journal-sync-status')).to_contain_text('unvollständig')
         self.journal_fail = False; self.page.evaluate('refreshJournal()')
         expect(self.page.locator('#journal-total-pnl')).not_to_contain_text('unvollständig')
+    def test_closed_journal_row_loads_exact_lifecycle_evidence_only_on_click(self):
+        self.load()
+        row = self.page.locator('[data-journal-key="titan:201:CLOSED"]')
+        expect(row).to_contain_text('201')
+        button = row.get_by_role('button', name='Lifecycle-Beleg prüfen')
+        expect(button).to_be_visible()
+        self.assertFalse(any('/api/chart/v1/lifecycle/' in url for url in self.requests), self.requests)
+        button.click()
+        expect(row).to_contain_text('RECORDED · EXIT')
+        lifecycle = [url for url in self.requests if '/api/chart/v1/lifecycle/' in url]
+        self.assertEqual(len(lifecycle), 1, lifecycle)
+        parsed = urlparse(lifecycle[0])
+        self.assertEqual(parsed.path, '/api/chart/v1/lifecycle/mt5_deal_201')
+        self.assertEqual(parse_qs(parsed.query), {'account': ['titan']})
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.errors, [])
+    def test_closed_journal_evidence_rejects_mismatch_and_marks_missing_record(self):
+        self.load()
+        row = self.page.locator('[data-journal-key="titan:201:CLOSED"]')
+        self.lifecycle_record['accountId'] = 'goldm15'
+        self.lifecycle_record['payload']['accountId'] = 'goldm15'
+        row.get_by_role('button', name='Lifecycle-Beleg prüfen').click()
+        expect(row).to_contain_text('UNKNOWN · Belegidentität stimmt nicht überein')
+        self.lifecycle_record['accountId'] = 'titan'
+        self.lifecycle_record['payload']['accountId'] = 'titan'
+        self.lifecycle_record['payload']['dealTicket'] = 999
+        row.get_by_role('button', name='Lifecycle-Beleg prüfen').click()
+        expect(row).to_contain_text('UNKNOWN · Belegidentität stimmt nicht überein')
+        self.lifecycle_status = 404
+        row.get_by_role('button', name='Lifecycle-Beleg prüfen').click()
+        expect(row).to_contain_text('NOT_RECORDED · kein gespeicherter Broker-Beleg')
+        lifecycle = [url for url in self.requests if '/api/chart/v1/lifecycle/' in url]
+        self.assertEqual(len(lifecycle), 3, lifecycle)
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.errors, [])
     def test_all_accounts_journal_filter_survives_reload(self):
         self.load()
         self.page.locator('#journal-strategy-filter').select_option('all')

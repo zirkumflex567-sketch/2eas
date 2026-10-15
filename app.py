@@ -3981,6 +3981,57 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
 
       const list = document.getElementById('journal-list');
+      if (list && list.dataset.lifecycleEvidenceBound !== 'true') {
+        list.dataset.lifecycleEvidenceBound = 'true';
+        list.addEventListener('click', async event => {
+          const button = event.target.closest('[data-lifecycle-evidence-ticket]');
+          if (!button || !list.contains(button) || button.disabled) return;
+          const row = button.closest('[data-journal-key]');
+          const accountId = button.dataset.lifecycleEvidenceAccount;
+          const ticket = button.dataset.lifecycleEvidenceTicket;
+          const output = row?.querySelector('[data-lifecycle-evidence-result]');
+          if (!row || !output || row.dataset.journalKey !== `${accountId}:${ticket}:CLOSED` ||
+              !/^[a-z0-9_-]{1,32}$/.test(accountId || '') || !/^[0-9]{1,20}$/.test(ticket || '')) return;
+          button.disabled = true;
+          output.textContent = 'Beleg wird geprüft …';
+          try {
+            const url = BASE_PATH + '/api/chart/v1/lifecycle/mt5_deal_' + encodeURIComponent(ticket) +
+              '?account=' + encodeURIComponent(accountId);
+            const response = await DashboardRuntime.request(url);
+            if (!row.isConnected || row.dataset.journalKey !== `${accountId}:${ticket}:CLOSED` ||
+                output !== row.querySelector('[data-lifecycle-evidence-result]')) return;
+            if (response.status === 404) {
+              output.textContent = 'NOT_RECORDED · kein gespeicherter Broker-Beleg';
+              return;
+            }
+            if (!response.ok) {
+              output.textContent = 'UNKNOWN · Beleg nicht verfügbar';
+              return;
+            }
+            const body = await response.json();
+            if (!row.isConnected || row.dataset.journalKey !== `${accountId}:${ticket}:CLOSED` ||
+                output !== row.querySelector('[data-lifecycle-evidence-result]')) return;
+            const record = body?.record;
+            const payload = record?.payload;
+            const exactMatch = record?.type === 'LIFECYCLE' && record?.id === 'mt5_deal_' + ticket &&
+              record?.accountId === accountId && record?.provenance === 'RECORDED' &&
+              payload?.accountId === accountId && String(payload?.dealTicket) === ticket &&
+              payload?.source === 'MT5_DEAL' && payload?.dataQuality === 'OBSERVED';
+            if (!exactMatch) {
+              output.textContent = 'UNKNOWN · Belegidentität stimmt nicht überein';
+              return;
+            }
+            const eventType = typeof payload.eventType === 'string' ? payload.eventType : 'unbekanntes Ereignis';
+            const eventTime = typeof payload.asOfUtc === 'string' ? payload.asOfUtc : 'Zeit unbekannt';
+            output.textContent = `RECORDED · ${eventType} · ${eventTime}`;
+          } catch (_) {
+            if (row.isConnected && output === row.querySelector('[data-lifecycle-evidence-result]'))
+              output.textContent = 'UNKNOWN · Beleg nicht verfügbar';
+          } finally {
+            if (row.isConnected && button.isConnected) button.disabled = false;
+          }
+        });
+      }
       const countBadge = document.getElementById('journal-count-badge');
       const totBadge = document.getElementById('journal-total-pnl');
       const liveBadge = document.getElementById('journal-live-pnl');
@@ -4210,6 +4261,13 @@ HTML_CONTENT = """<!DOCTYPE html>
               </div>
             </div>
             </details>
+            ${!isOpen ? `<div class="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
+              <button type="button" data-lifecycle-evidence-ticket="${escapeHTML(item.ticket)}"
+                data-lifecycle-evidence-account="${escapeHTML(item.account)}"
+                class="px-2 py-1 rounded border border-sky-400/30 text-sky-300 hover:bg-sky-400/10"
+                aria-label="Lifecycle-Beleg prüfen">Lifecycle-Beleg prüfen</button>
+              <span data-lifecycle-evidence-result class="text-sub" aria-live="polite"></span>
+            </div>` : ''}
           </div>
         `;
       }).join('');
