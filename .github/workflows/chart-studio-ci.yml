@@ -50,6 +50,7 @@ jobs:
           node scripts/test_chart_studio_fib.cjs
           node --check static/chart-studio-export.js
           node --check static/chart-studio-beta.js
+          node --check scripts/smoke_live_snapshot_history.cjs
           node --check static/chart-studio-data-signature.js
           node scripts/test_chart_studio_data_signature.cjs
           node --check static/chart-studio-object-manager.js

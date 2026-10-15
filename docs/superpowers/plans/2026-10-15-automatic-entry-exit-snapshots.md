@@ -28,8 +28,9 @@ Implement the data-only P0 slice of FR-035/AT-055: after a confirmed, observed d
 - [x] Added a read-only MT5 `copy_rates_range` capture using the existing verified terminal lock. It excludes the forming candle, emits stable entry/exit IDs, retries safely through store idempotency, and surfaces missing history without discarding the lifecycle fact.
 - [x] Added a responsive canvas Candle view in the existing evidence inspector. It uses only frozen OHLC rows, labels the source/as-of time, and explicitly says historical indicators/drawings were not recorded.
 - [x] Regression verification: all 137 broker capture/model/store tests pass under `C:\Python314\python.exe` with the actual installed `MetaTrader5` package; four existing FastAPI lifecycle deprecation warnings remain. The source JavaScript passes `node --check`; the full headless Chromium Chart Studio smoke passes, renders stored snapshot candles, and verifies no trading POST.
-- [ ] Commit/push exact Main, verify CI, deploy local/hTown `/stt`, and observe four-demo snapshot coverage/status read-only. No Blueberry request.
-- [ ] Preserve original indicator/drawing/position state, PNG/export, v5 panes, and complete browser account/timeframe E2E as open work.
+- [x] Commit/push exact Main (`9256d29`), verify both GitHub CI workflows, deploy clean local/hTown `/stt` through the guarded launcher with the private four-demo allowlist, and read back all four accounts without a Blueberry request. All 77 persisted snapshots have valid entry/exit kind, lifecycle reference, and 1–150 frozen bars; every account reports `OK`, rolling coverage, zero capture gaps and unavailable snapshots. Live acceptance and this checklist update are recorded in the follow-up Main change.
+- [x] Add and run `scripts/smoke_live_snapshot_history.cjs`: Chromium loads each of the four demo scopes directly, reads and renders stored snapshot candles, verifies account isolation and preserved M15 history through an active M5 chart switch, and observes no browser errors, mutation requests or Blueberry request.
+- [ ] Preserve original indicator/drawing/position state, PNG/export, v5 panes, and complete browser account/timeframe E2E for the reconstructed original view as open work.
 
 ## Gates
 
