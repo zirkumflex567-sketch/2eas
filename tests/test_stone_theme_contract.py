@@ -40,6 +40,33 @@ class StoneThemeContractTests(unittest.TestCase):
                 self.assertRegex(token_layer.group(1), re.escape(token) + r"\s*:")
                 self.assertIn(f"var({token})", combined_css)
 
+    def test_light_theme_repeated_palette_uses_scoped_tokens(self):
+        css = (STATIC / "stone-asset-skin.css").read_text(encoding="utf-8")
+        token_layers = re.findall(r"@layer stone-tokens\s*\{([\s\S]*?)\n\}", css)
+        light_token_layer = next((block for block in token_layers if "body.theme-light" in block), "")
+        light_start = css.index("body.theme-light .stone-theme-dock")
+        light_end = css.index("@media (prefers-reduced-motion: reduce)", light_start)
+        light_rules = css[light_start:light_end]
+        repeated_palette = {
+            "--stone-light-surface": "#ffffff",
+            "--stone-light-surface-raised": "#f1f5f9",
+            "--stone-light-surface-muted": "#f8fafc",
+            "--stone-light-text": "#0f172a",
+            "--stone-light-text-strong": "#1e293b",
+            "--stone-light-text-muted": "#334155",
+            "--stone-light-accent": "#3b82f6",
+            "--stone-light-accent-strong": "#1d4ed8",
+            "--stone-light-border": "#cbd5e1",
+            "--stone-light-border-strong": "#94a3b8",
+            "--stone-light-text-subtle": "#64748b",
+            "--stone-light-active-surface": "#eff6ff",
+        }
+        for token, value in repeated_palette.items():
+            with self.subTest(token=token):
+                self.assertRegex(light_token_layer, re.escape(token) + r"\s*:\s*" + re.escape(value) + r"\s*;")
+                self.assertIn(f"var({token})", light_rules)
+                self.assertNotRegex(light_rules, r"(?<![\w-])" + re.escape(value) + r"(?![\w-])")
+
     def test_chart_studio_controls_share_one_mobile_breakpoint(self):
         css = (STATIC / "stone-asset-skin.css").read_text(encoding="utf-8")
         narrow_queries = re.findall(
