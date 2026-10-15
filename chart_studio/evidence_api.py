@@ -174,12 +174,10 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
                 ticks = reader(result['symbol'], start, stop, flags)
             if ticks is None:
                 return {'status': 'UNAVAILABLE', 'reason': 'TICK_HISTORY_UNAVAILABLE'}
-            if len(ticks) > 250_000:
+            if len(ticks) > 1_000_000:
                 return {'status': 'UNAVAILABLE', 'reason': 'TICK_COUNT_LIMIT'}
-            normalized = [{'time_msc': int(tick['time_msc']), 'bid': float(tick['bid']),
-                           'ask': float(tick['ask'])} for tick in ticks]
             return observe_tick_mfe_mae(result['positionIdentifier'], result['side'],
-                                        result['entryPrice'], start_us, stop_us, normalized)
+                                        result['entryPrice'], start_us, stop_us, ticks)
         except Exception:
             # Terminal/history errors never invalidate the independent OHLC record.
             return {'status': 'UNAVAILABLE', 'reason': 'TICK_HISTORY_UNAVAILABLE'}

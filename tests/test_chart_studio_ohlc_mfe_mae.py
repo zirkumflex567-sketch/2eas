@@ -226,3 +226,14 @@ def test_tick_observation_fails_closed_on_invalid_order_quotes_or_count():
     assert observe_tick_mfe_mae("9001", "BUY", "100", entry_us, exit_us,
                                 [{**valid, "ask": 0}])["reason"] == "TICK_QUOTE_INVALID"
     assert observe_tick_mfe_mae("9001", "BUY", "100", entry_us, exit_us, [])["reason"] == "NO_INTERIOR_TICKS"
+
+
+def test_tick_observation_accepts_a_large_bounded_terminal_result():
+    entry_us = evidence_models.utc_microseconds(_time(10, 0))
+    exit_us = evidence_models.utc_microseconds(_time(10, 1))
+    row = {"time_msc": entry_us // 1000 + 1, "bid": 101, "ask": 102}
+
+    result = observe_tick_mfe_mae("9001", "BUY", "100", entry_us, exit_us, [row] * 250_001)
+
+    assert result["status"] == "AVAILABLE"
+    assert result["ticksUsed"] == 250_001

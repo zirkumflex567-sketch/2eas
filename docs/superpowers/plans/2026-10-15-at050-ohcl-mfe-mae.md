@@ -25,7 +25,7 @@ Advance FR-033 / AT-050 without a backtest by reporting favorable/adverse price 
 
 ## Tick observation extension
 
-The authenticated inspector may additionally request `COPY_TICKS_INFO` from the already-configured, verified demo terminal for the exact lifecycle interval (maximum seven days, 250,000 rows). Use UTC datetimes. Compare long positions against returned Bid quotes and short positions against returned Ask quotes. Fill-millisecond edges are excluded because same-millisecond ordering is ambiguous. Label output `TICK_OBSERVED`, `MT5_RETURNED_TICKS_ONLY`, and `exact=false`: terminal history does not attest that every market tick was delivered. Keep the OHLC estimate independent and visible if tick history is unavailable. No history reconstruction is called exact.
+The authenticated inspector may additionally request `COPY_TICKS_INFO` from the already-configured, verified demo terminal for the exact lifecycle interval (maximum seven days, 1,000,000 rows). Use UTC datetimes. Compare long positions against returned Bid quotes and short positions against returned Ask quotes. Fill-millisecond edges are excluded because same-millisecond ordering is ambiguous. Label output `TICK_OBSERVED`, `MT5_RETURNED_TICKS_ONLY`, and `exact=false`: terminal history does not attest that every market tick was delivered. Keep the OHLC estimate independent and visible if tick history is unavailable. No history reconstruction is called exact.
 
 - [x] Add TDD coverage for long/short executable quote sides, fill-edge exclusion, malformed order/quotes, request scope, and funded-account denial.
 - [x] Implement bounded read-only MT5 tick retrieval and a separate observed-tick result while preserving the OHLC estimate.

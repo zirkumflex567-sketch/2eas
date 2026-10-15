@@ -52,13 +52,15 @@ def observe_tick_mfe_mae(position_identifier, side, entry_price, entry_us, exit_
             side not in ("BUY", "SELL") or type(entry_us) is not int or type(exit_us) is not int or
             entry_us <= 0 or exit_us <= entry_us or not isinstance(ticks, (list, tuple))):
         return _unavailable("INVALID_TICK_EVIDENCE")
-    if len(ticks) > 250_000:
+    if len(ticks) > 1_000_000:
         return _unavailable("TICK_COUNT_LIMIT")
     try:
         fill = _decimal(entry_price) if isinstance(entry_price, str) else _tick_price(entry_price)
         entry_ms, exit_ms = entry_us // 1000, exit_us // 1000
         previous_ms = None
-        observed = []
+        observed_count = 0
+        first_ms = last_ms = None
+        best_favorable = best_adverse = Decimal(0)
         for tick in ticks:
             time_ms = _tick_field(tick, "time_msc")
             if isinstance(time_ms, bool):
@@ -74,21 +76,26 @@ def observe_tick_mfe_mae(position_identifier, side, entry_price, entry_us, exit_
             bid, ask = _tick_price(_tick_field(tick, "bid")), _tick_price(_tick_field(tick, "ask"))
             if bid <= 0 or ask <= 0 or ask < bid:
                 return _unavailable("TICK_QUOTE_INVALID")
-            observed.append((time_ms, bid if side == "BUY" else ask))
-        if not observed:
+            price = bid if side == "BUY" else ask
+            favorable = price - fill if side == "BUY" else fill - price
+            adverse = fill - price if side == "BUY" else price - fill
+            best_favorable = max(best_favorable, favorable)
+            best_adverse = max(best_adverse, adverse)
+            observed_count += 1
+            if first_ms is None:
+                first_ms = time_ms
+            last_ms = time_ms
+        if not observed_count:
             return _unavailable("NO_INTERIOR_TICKS")
-        values = [price for _, price in observed]
-        favorable = [price - fill if side == "BUY" else fill - price for price in values]
-        adverse = [fill - price if side == "BUY" else price - fill for price in values]
         stamp = lambda value: datetime.fromtimestamp(value / 1000, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         return {
             "status": "AVAILABLE", "reason": None, "quality": "TICK_OBSERVED",
             "coverage": "MT5_RETURNED_TICKS_ONLY", "source": "MT5_COPY_TICKS_INFO",
             "exact": False, "positionIdentifier": position_identifier,
-            "quoteSide": "BID" if side == "BUY" else "ASK", "ticksUsed": len(observed),
-            "observedFromUtc": stamp(observed[0][0]), "observedToUtc": stamp(observed[-1][0]),
-            "mfePriceDistance": _plain(max(Decimal(0), *favorable)),
-            "maePriceDistance": _plain(max(Decimal(0), *adverse)), "intrabarOrder": "UNKNOWN",
+            "quoteSide": "BID" if side == "BUY" else "ASK", "ticksUsed": observed_count,
+            "observedFromUtc": stamp(first_ms), "observedToUtc": stamp(last_ms),
+            "mfePriceDistance": _plain(best_favorable),
+            "maePriceDistance": _plain(best_adverse), "intrabarOrder": "UNKNOWN",
         }
     except (KeyError, TypeError, ValueError, InvalidOperation, OverflowError):
         return _unavailable("INVALID_TICK_EVIDENCE")
