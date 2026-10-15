@@ -30,10 +30,10 @@ The authenticated inspector may additionally request `COPY_TICKS_INFO` from the 
 - [x] Add TDD coverage for long/short executable quote sides, fill-edge exclusion, malformed order/quotes, request scope, and funded-account denial.
 - [x] Implement bounded read-only MT5 tick retrieval and a separate observed-tick result while preserving the OHLC estimate.
 - [x] Add explicit UI labels that distinguish observed terminal ticks from complete/tick-exact data.
-- [ ] Verify the endpoint on the four authorized demos and deploy the exact Main revision; Blueberry remains excluded.
+- [x] Verify the endpoint and inspector on the four authorized demos and deploy the exact Main revision; Blueberry remains excluded.
 
-Current focused regression: 153 passed across MFE/MAE, lifecycle capture, evidence model and store tests. `node --check` and `node scripts/smoke_chart_studio_beta.cjs` passed. Live tick availability and resulting Main deployment are pending.
+Current focused regression: 155 passed across MFE/MAE, lifecycle capture, evidence model and store tests; the NumPy-array compatibility regression also passes. `node --check` and `node scripts/smoke_chart_studio_beta.cjs` passed locally. On 2026-10-15, all four authorized demos returned `AVAILABLE` for OHLC and observed ticks: `titan` 28 bars / 464,781 returned ticks, `xau5m_m5` 51 / 353,839, `titan_m5` 15 / 82,275, and `xau5m_500` 36 / 236,403. A separate headless Chromium click-through rendered both OHLC and tick results in the `titan` inspector. All requests were GET; no Blueberry request or backtest occurred. Current Main/runtime commit is `ec8303c`; GitHub CI for this revision is still running.
 
 ## Verification result
 
-Pure/API regression set: 148 passed. `node --check` passed for the beta UI and both smoke scripts; Chromium beta smoke passed. Live read-only GETs returned AVAILABLE on all four authorized demo accounts with 28, 51, 15 and 36 observed M15 bars respectively. No Blueberry request, MT5 mutation, or backtest. Main and the htown `/stt` upstream are on `fbadc661`; local and SSH runtime identities agree and report clean source with no restart required.
+Pure/API regression set at initial implementation: 148 passed. `node --check` passed for the beta UI and both smoke scripts; Chromium beta smoke passed. Live read-only GETs returned AVAILABLE on all four authorized demo accounts with 28, 51, 15 and 36 observed M15 bars respectively. No Blueberry request, MT5 mutation, or backtest. That initial Main and htown `/stt` deployment was `fbadc661`; the tick-observation extension and latest runtime identity are recorded above.
