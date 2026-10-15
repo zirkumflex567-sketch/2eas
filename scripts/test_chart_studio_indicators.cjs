@@ -52,6 +52,18 @@ const flatStochastic=math.stochastic(Array.from({length:8},(_,i)=>({time:1700200
 assert.ok(flatStochastic.stochK.every(point=>point.value===50));
 assert.ok(flatStochastic.stochD.every(point=>point.value===50));
 assert.equal(math.stochastic(stochasticBars,0,2,2).stochK.length,0);
+const cciBars=[1,2,3,4,5].map((value,index)=>({time:1700300000+index*60,open:value,high:value,low:value,close:value}));
+const cci=math.cci(cciBars,3);
+assert.deepEqual(Array.from(cci,point=>point.time),cciBars.slice(2).map(bar=>bar.time));
+near(cci[0].value,100,1e-9);
+near(cci[1].value,100,1e-9);
+const flatCci=math.cci(cciBars.map(bar=>({...bar,open:7,high:7,low:7,close:7})),3);
+assert.ok(flatCci.every(point=>point.value===0));
+assert.equal(math.cci(cciBars.slice(0,2),3).length,0);
+assert.equal(math.cci(cciBars,1).length,0);
+assert.equal(math.cci(cciBars,2.5).length,0);
+assert.equal(math.cci(cciBars,201).length,0);
+assert.equal(window.ChartStudioIndicators.calculate("cci",cciBars,{period:0}).cci.length,0);
 assert.ok(src.includes("state.bars.map(bar=>byTime.get(bar.time)||{time:bar.time})"));
 assert.ok(!src.includes("order_send(")&&!src.includes("/api/modify_position"));
 

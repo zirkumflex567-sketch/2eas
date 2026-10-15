@@ -21,7 +21,7 @@ DRAWING_TYPES = frozenset({"horizontal", "vertical", "text", "trend", "rect", "f
 UI_FLAGS = frozenset({"ema20", "ema50", "ema200", "sma20", "sma50",
                       "bb", "positions"})
 UI_NUMBERS = frozenset({"bbPeriod", "bbStdDev"})
-INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap", "stochastic"})
+INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap", "stochastic", "cci"})
 PERIOD_FIELDS = frozenset({"period", "fast", "slow", "signal", "smoothK", "smoothD"})
 SESSION_FIELDS = frozenset({"timeZone", "sessionStart"})
 TIMEFRAMES = frozenset({"M1", "M5", "M15", "M30", "H1", "H4", "D1"})
@@ -184,7 +184,7 @@ def validate_document(raw: Any) -> dict:
                 _number(value, param, integer=True)
                 if param in {"smoothK", "smoothD"}:
                     minimum, maximum = 1, 100
-                elif kind == "stochastic" and param == "period":
+                elif kind in {"stochastic", "cci"} and param == "period":
                     minimum, maximum = 2, 200
                 else:
                     minimum, maximum = 2, 300
@@ -276,9 +276,9 @@ def validate_document(raw: Any) -> dict:
             if not isinstance(inst, dict):
                 raise StoreError("Ungültige Oszillator-Instanz.")
             kind = inst.get("kind")
-            if type(kind) is not str or kind not in {"rsi", "macd", "atr", "adx"}:
+            if type(kind) is not str or kind not in {"rsi", "macd", "atr", "adx", "stochastic", "cci"}:
                 raise StoreError("Unbekannter Oszillator.")
-            params = {"fast", "slow", "signal"} if kind == "macd" else {"period"}
+            params = {"fast", "slow", "signal"} if kind == "macd" else {"period", "smoothK", "smoothD"} if kind == "stochastic" else {"period"}
             if set(inst) != common | params:
                 raise StoreError("Unbekannte Oszillator-Eigenschaften.")
             ident = inst["id"]
@@ -297,8 +297,9 @@ def validate_document(raw: Any) -> dict:
             if not isinstance(label, str) or len(label) > 40 or any(ord(c) < 32 for c in label):
                 raise StoreError("Ungültiger Oszillator-Name.")
             for param in params:
-                bound = 300 if param == "slow" else 200
-                if type(inst[param]) is not int or not 2 <= inst[param] <= bound:
+                bound = 300 if param == "slow" else 100 if param in {"smoothK", "smoothD"} else 200
+                minimum = 1 if param in {"smoothK", "smoothD"} else 2
+                if type(inst[param]) is not int or not minimum <= inst[param] <= bound:
                     raise StoreError("Ungültige Oszillator-Periode.")
             if kind == "macd" and inst["fast"] >= inst["slow"]:
                 raise StoreError("MACD benötigt fast kleiner slow.")

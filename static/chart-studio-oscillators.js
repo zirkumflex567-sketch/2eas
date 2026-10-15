@@ -5,7 +5,7 @@
 (()=>{
 "use strict";
 const MAX=8, PREFIX="2eas:studio:oscillators:v2:", LEGACY_PREFIX="2eas:studio:oscillators:v1:";
-const KINDS=Object.freeze(["rsi","macd","atr","adx","stochastic"]);
+const KINDS=Object.freeze(["rsi","macd","atr","adx","stochastic","cci"]);
 const COLORS=Object.freeze(["#e8bb72","#54cee9","#a995ff","#63dfb6","#f7a1ae","#f1dca5","#82bdfa","#dfa2ec"]);
 const clone=o=>JSON.parse(JSON.stringify(o));
 const validColor=c=>typeof c==="string"&&/^#[0-9a-fA-F]{6}$/.test(c);
@@ -41,7 +41,7 @@ function normalizeList(list){
  return result;
 }
 function newConfig(id,kind,color){
- const params=kind==="macd"?{fast:12,slow:26,signal:9}:kind==="stochastic"?{period:14,smoothK:3,smoothD:3}:{period:14};
+ const params=kind==="macd"?{fast:12,slow:26,signal:9}:kind==="stochastic"?{period:14,smoothK:3,smoothD:3}:{period:kind==="cci"?20:14};
  return normalize({id,kind,visible:true,color,lineWidth:2,label:"",...params});
 }
 function idNext(entries){
@@ -116,6 +116,7 @@ function createPane(cfg){
   line("macd",cfg.color);line("signal","#f3c56a");line("histogram","#65e1bd","hist");
  }
  if(cfg.kind==="stochastic"){line("stochK",cfg.color);line("stochD","#f3c56a")}
+ if(cfg.kind==="cci")line("cci",cfg.color);
  let observer=null;
  if(typeof ResizeObserver!=="undefined"){
   observer=new ResizeObserver(()=>{

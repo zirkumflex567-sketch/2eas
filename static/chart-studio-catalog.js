@@ -10,6 +10,7 @@ const entries=Object.freeze([
  {id:"macd",name:"MACD",group:"Momentum",desc:"MACD, Signal und Histogramm",type:"oscillator",kind:"macd"},
  {id:"atr",name:"Average True Range",group:"Volatilität",desc:"ATR-Fenster",type:"oscillator",kind:"atr"},
  {id:"adx",name:"Average Directional Index",group:"Trendstärke",desc:"ADX mit DI-Linien",type:"oscillator",kind:"adx"},
+ {id:"cci",name:"Commodity Channel Index",group:"Momentum",desc:"CCI mit 20-Perioden-Standard",type:"oscillator",kind:"cci"},
  {id:"volume",name:"Broker-Volumen",group:"Volumen",desc:"Reales oder Tickvolumen, kein garantierter Orderflow",type:"toggle",kind:"volume"},
  {id:"vwap",name:"VWAP (UTC)",group:"Volumen",desc:"UTC-VWAP, bei Tickvolumen nur Proxy",type:"toggle",kind:"vwap"}
 ]);

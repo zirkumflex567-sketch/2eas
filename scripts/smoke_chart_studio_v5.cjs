@@ -163,22 +163,27 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.addMovingAverage({id:"view-ema",type:"EMA",period:9,source:"hlc3",color:"#55ccaa",lineWidth:3,displayShift:2,title:"EMA nine"});
    engine.addOscillator({id:"view-rsi",kind:"rsi",settings:{period:14},color:"#bb66dd",title:"RSI saved"});
    engine.addOscillator({id:"view-macd",kind:"macd",settings:{fast:12,slow:26,signal:9},color:"#66bbdd",title:"MACD saved"});
-   engine.moveOscillator("view-macd",1);engine.addPaneLine({id:"view-signal",color:"#f7c774",lineWidth:3,title:"Saved signal"},bars.slice(14).map((bar,i)=>({time:bar.time,value:40+Math.sin(i/5)*10})));engine.movePaneLine("view-signal",1);engine.showVolume(true);engine.resizePane(1,190);engine.setDisplayTimeZone("Europe/Berlin");engine.setVisibleLogicalRange({from:12,to:42});
-   const expected={ema:engine.movingAverageOptions("view-ema"),rsi:engine.oscillatorOptions("view-rsi"),macd:engine.oscillatorOptions("view-macd"),layout:engine.oscillatorPaneLayout().map(pane=>({...pane,titles:[...pane.titles].sort()})),heights:engine.paneHeights(),volume:engine.inspect().volumeVisible,zone:engine.displayTimeZone(),range:engine.visibleLogicalRange(),paneLines:engine.inspect().nativePaneLines};
+   engine.addOscillator({id:"view-cci",kind:"cci",settings:{period:20},color:"#a995ff",title:"CCI saved"});
+   engine.addPaneLine({id:"view-signal",color:"#f7c774",lineWidth:3,title:"Saved signal"},bars.slice(14).map((bar,i)=>({time:bar.time,value:40+Math.sin(i/5)*10})));engine.showVolume(true);engine.resizePane(1,190);engine.setDisplayTimeZone("Europe/Berlin");engine.setVisibleLogicalRange({from:12,to:42});
+   const expected={ema:engine.movingAverageOptions("view-ema"),rsi:engine.oscillatorOptions("view-rsi"),macd:engine.oscillatorOptions("view-macd"),cci:engine.oscillatorOptions("view-cci"),layout:engine.oscillatorPaneLayout().map(pane=>({...pane,titles:[...pane.titles].sort()})),heights:engine.paneHeights(),volume:engine.inspect().volumeVisible,zone:engine.displayTimeZone(),range:engine.visibleLogicalRange(),paneLines:engine.inspect().nativePaneLines};
    const validSnapshot=JSON.parse(localStorage.getItem("2eas.chartstudio.v5.drawings:v4:view-persistence:XAUUSD:M15"));
    engine.destroy();engine=ChartStudioV5.createStudioV5(host,"view-persistence",scope);engine.setCandles(bars);
-   const restored={ema:engine.movingAverageOptions("view-ema"),rsi:engine.oscillatorOptions("view-rsi"),macd:engine.oscillatorOptions("view-macd"),layout:engine.oscillatorPaneLayout().map(pane=>({...pane,titles:[...pane.titles].sort()})),heights:engine.paneHeights(),volume:engine.inspect().volumeVisible,zone:engine.displayTimeZone(),range:engine.visibleLogicalRange(),status:engine.inspect().persistenceStatus,error:engine.inspect().persistenceError,paneLines:engine.inspect().nativePaneLines};
+   const restored={ema:engine.movingAverageOptions("view-ema"),rsi:engine.oscillatorOptions("view-rsi"),macd:engine.oscillatorOptions("view-macd"),cci:engine.oscillatorOptions("view-cci"),layout:engine.oscillatorPaneLayout().map(pane=>({...pane,titles:[...pane.titles].sort()})),heights:engine.paneHeights(),volume:engine.inspect().volumeVisible,zone:engine.displayTimeZone(),range:engine.visibleLogicalRange(),status:engine.inspect().persistenceStatus,error:engine.inspect().persistenceError,paneLines:engine.inspect().nativePaneLines};
    engine.destroy();host.remove();
    validSnapshot.account="invalidview";validSnapshot.displayTimeZone="Mars/Olympus_Mons";localStorage.setItem("2eas.chartstudio.v5.drawings:v4:invalidview:XAUUSD:M15",JSON.stringify(validSnapshot));
    const invalidHost=document.createElement("div");invalidHost.style.cssText="width:900px;height:520px;position:absolute;left:-1800px;top:0";document.body.append(invalidHost);
    const invalid=ChartStudioV5.createStudioV5(invalidHost,"invalidview",scope);invalid.setCandles(bars);const invalidView={status:invalid.inspect().persistenceStatus,error:invalid.inspect().persistenceError,drawings:invalid.inspect().nativePrimitives,averages:invalid.inspect().averageCount,oscillators:invalid.inspect().oscillatorCount,volume:invalid.inspect().volumeVisible};invalid.destroy();invalidHost.remove();
    const otherHost=document.createElement("div");otherHost.style.cssText="width:900px;height:520px;position:absolute;left:-1800px;top:0";document.body.append(otherHost);
    const other=ChartStudioV5.createStudioV5(otherHost,"view-persistence",{symbol:"XAUUSD",timeframe:"H1"});other.setCandles(bars);const otherScope={count:other.inspect().averageCount+other.inspect().oscillatorCount,volume:other.inspect().volumeVisible,zone:other.displayTimeZone()};other.destroy();otherHost.remove();
-   return {expected,restored,otherScope,invalidView};
+   const symbolHost=document.createElement("div");symbolHost.style.cssText="width:900px;height:520px;position:absolute;left:-1800px;top:0";document.body.append(symbolHost);
+   const otherSymbol=ChartStudioV5.createStudioV5(symbolHost,"view-persistence",{symbol:"XAUUSD.p",timeframe:"M15"});otherSymbol.setCandles(bars);const otherSymbolScope=otherSymbol.inspect().averageCount+otherSymbol.inspect().oscillatorCount;otherSymbol.destroy();
+   const otherAccount=ChartStudioV5.createStudioV5(symbolHost,"view-persistence-other",{symbol:"XAUUSD",timeframe:"M15"});otherAccount.setCandles(bars);const otherAccountScope=otherAccount.inspect().averageCount+otherAccount.inspect().oscillatorCount;otherAccount.destroy();symbolHost.remove();
+   return {expected,restored,otherScope,otherSymbolScope,otherAccountScope,invalidView};
   });
   assert.deepEqual(viewPersistenceProbe.restored.ema,viewPersistenceProbe.expected.ema);
   assert.deepEqual(viewPersistenceProbe.restored.rsi,viewPersistenceProbe.expected.rsi);
   assert.deepEqual(viewPersistenceProbe.restored.macd,viewPersistenceProbe.expected.macd);
+  assert.deepEqual(viewPersistenceProbe.restored.cci,viewPersistenceProbe.expected.cci,"CCI settings restore within account, symbol and timeframe scope");
   assert.deepEqual(viewPersistenceProbe.restored.layout,viewPersistenceProbe.expected.layout);
   assert.deepEqual(viewPersistenceProbe.restored.heights,viewPersistenceProbe.expected.heights);
   assert.equal(viewPersistenceProbe.restored.volume,true);
@@ -187,6 +192,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(viewPersistenceProbe.restored.paneLines,1,"custom native pane lines restore with the view layout");
   assert.equal(viewPersistenceProbe.restored.status,"READY");
   assert.deepEqual(viewPersistenceProbe.otherScope,{count:0,volume:false,zone:"UTC"});
+  assert.equal(viewPersistenceProbe.otherSymbolScope,0,"CCI does not leak into another symbol view");
+  assert.equal(viewPersistenceProbe.otherAccountScope,0,"CCI does not leak into another account view");
   assert.deepEqual(viewPersistenceProbe.invalidView,{status:"UNAVAILABLE",error:"INVALID_VIEW_STATE",drawings:0,averages:0,oscillators:0,volume:false},"invalid v3 state is rejected before any renderer mutation");
   const paneResizeSetup=await page.evaluate(async()=>{
    const host=document.createElement("div");host.style.cssText="width:900px;height:420px";document.body.append(host);
@@ -273,7 +280,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
     {id:"atr-a",kind:"atr",settings:{period:14},color:"#a68eff"},
     {id:"macd-a",kind:"macd",settings:{fast:12,slow:26,signal:9},color:"#55d7ee"},
     {id:"adx-a",kind:"adx",settings:{period:14},color:"#e9bc72"},
-    {id:"stochastic-a",kind:"stochastic",settings:{period:14,smoothK:3,smoothD:3},color:"#50c8ee"}
+    {id:"stochastic-a",kind:"stochastic",settings:{period:14,smoothK:3,smoothD:3},color:"#50c8ee"},
+    {id:"cci-a",kind:"cci",settings:{period:20},color:"#a995ff"}
    ];
    for(const spec of specs)engine.addOscillator(spec);
    let drawingCollisionRejected=false;try{engine.addPriceLevel({id:"rsi-a",price:bars.at(-1).close,color:"#ffffff"})}catch(_){drawingCollisionRejected=true}
@@ -293,12 +301,14 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    let badOrderRejected=false;try{engine.addOscillator({id:"bad-order",kind:"macd",settings:{fast:26,slow:12,signal:9}})}catch(_){badOrderRejected=true}
    let badPeriodRejected=false;try{engine.addOscillator({id:"bad-period",kind:"rsi",settings:{period:1}})}catch(_){badPeriodRejected=true}
    let badStochasticRejected=false;try{engine.addOscillator({id:"bad-stochastic",kind:"stochastic",settings:{period:14,smoothK:101,smoothD:3},color:"#ffffff"})}catch(_){badStochasticRejected=true}
+   let badCciRejected=false;try{engine.addOscillator({id:"bad-cci",kind:"cci",settings:{period:201},color:"#ffffff"})}catch(_){badCciRejected=true}
+   let extraCciSettingRejected=false;try{engine.addOscillator({id:"extra-cci",kind:"cci",settings:{period:20,smoothK:3},color:"#ffffff"})}catch(_){extraCciSettingRejected=true}
    const atomicCount=engine.inspect().oscillatorCount;
    engine.removeOscillator("rsi-b");const afterOneRemoval=engine.inspect().oscillatorCount;
    engine.changeAccount("other");const isolated=engine.inspect();engine.destroy();host.remove();
    const limitHost=document.createElement("div");limitHost.style.cssText="width:400px;height:300px;position:fixed;left:-2000px;top:0";document.body.append(limitHost);
    const limitEngine=ChartStudioV5.createStudioV5(limitHost,"oscillator-pane-limit");limitEngine.setCandles(bars);for(let i=0;i<8;i++)limitEngine.addOscillator({id:`pane-limit-${i}`,kind:"rsi",settings:{period:14},color:"#ffffff"});
-   let paneLimitRejected=false;try{limitEngine.addOscillator({id:"pane-limit-over",kind:"rsi",settings:{period:14},color:"#ffffff"})}catch(_){paneLimitRejected=true}
+   let paneLimitRejected=false;try{limitEngine.addOscillator({id:"pane-limit-over",kind:"cci",settings:{period:20},color:"#ffffff"})}catch(_){paneLimitRejected=true}
    const paneLimitCount=limitEngine.inspect().oscillatorCount;limitEngine.destroy();limitHost.remove();
    const updateHost=document.createElement("div");updateHost.style.cssText="width:400px;height:300px;position:fixed;left:-2000px;top:0";document.body.append(updateHost);
    const updateEngine=ChartStudioV5.createStudioV5(updateHost,"oscillator-update");updateEngine.setCandles(bars);for(const spec of specs)updateEngine.addOscillator(spec);
@@ -321,9 +331,9 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    updateEngine.destroy();updateHost.remove();
    const flatHost=document.createElement("div");flatHost.style.cssText="width:400px;height:300px;position:fixed;left:-2000px;top:0";document.body.append(flatHost);
    const flatEngine=ChartStudioV5.createStudioV5(flatHost,"oscillator-flat");const flatBars=Array.from({length:40},(_,i)=>({time:1711000000+i*300,open:100,high:100,low:100,close:100}));flatEngine.setCandles(flatBars);
-   for(const spec of [{id:"flat-rsi",kind:"rsi",settings:{period:14}},{id:"flat-atr",kind:"atr",settings:{period:14}},{id:"flat-adx",kind:"adx",settings:{period:14}},{id:"flat-stoch",kind:"stochastic",settings:{period:3,smoothK:2,smoothD:2}}])flatEngine.addOscillator({...spec,color:"#ffffff"});
+   for(const spec of [{id:"flat-rsi",kind:"rsi",settings:{period:14}},{id:"flat-atr",kind:"atr",settings:{period:14}},{id:"flat-adx",kind:"adx",settings:{period:14}},{id:"flat-stoch",kind:"stochastic",settings:{period:3,smoothK:2,smoothD:2}},{id:"flat-cci",kind:"cci",settings:{period:3}}])flatEngine.addOscillator({...spec,color:"#ffffff"});
    const flatRow=flatEngine.readDataWindow(flatBars.at(-1).time).indicators,flatWarmup=flatEngine.readDataWindow(flatBars[1].time).indicators;flatEngine.destroy();flatHost.remove();
-  return {references,panes,before,after,row,paneCount,movedMacdPane,badOrderRejected,badPeriodRejected,badStochasticRejected,atomicCount,afterOneRemoval,isolated,paneLimitRejected,paneLimitCount,updatedReadout,updatedReferences,repeatedFormingReadoutMatches,historicalReadoutSurvivesUpdate,appendedReadoutMatches,settingsRebuildMatches,replacementReadoutMatches,replacementHistoricalMatches,flatRow,flatWarmup,drawingCollisionRejected,averageCollisionRejected,paneLineCollisionRejected};
+  return {references,panes,before,after,row,paneCount,movedMacdPane,badOrderRejected,badPeriodRejected,badStochasticRejected,badCciRejected,extraCciSettingRejected,atomicCount,afterOneRemoval,isolated,paneLimitRejected,paneLimitCount,updatedReadout,updatedReferences,repeatedFormingReadoutMatches,historicalReadoutSurvivesUpdate,appendedReadoutMatches,settingsRebuildMatches,replacementReadoutMatches,replacementHistoricalMatches,flatRow,flatWarmup,drawingCollisionRejected,averageCollisionRejected,paneLineCollisionRejected};
   });
   const incrementalOscillatorProbe=await page.evaluate(()=>{
    const factory=ChartStudioV5.createIncrementalOscillator;
@@ -333,7 +343,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
     {kind:"atr",settings:{period:14}},
     {kind:"macd",settings:{fast:12,slow:26,signal:9}},
     {kind:"adx",settings:{period:14}},
-    {kind:"stochastic",settings:{period:14,smoothK:3,smoothD:3}}
+    {kind:"stochastic",settings:{period:14,smoothK:3,smoothD:3}},
+    {kind:"cci",settings:{period:20}}
    ];
    const original=Array.from({length:240},(_,i)=>{const close=2000+Math.sin(i/7)*8+i*.04;return {time:1715000000+i*300,open:close-.2,high:close+1+Math.cos(i/5)*.2,low:close-1-Math.sin(i/9)*.2,close}});
    const mismatches=[];
@@ -361,7 +372,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    return {available:true,mismatches,capacityRejected,boundedBefore,boundedAfter};
   });
   assert.equal(incrementalOscillatorProbe.available,true,"Native oscillator updates expose the incremental calculation stream");
-  assert.deepEqual(incrementalOscillatorProbe.mismatches,[],"Incremental RSI/ATR/MACD/ADX/Stochastic snapshots match the beta after repeated forming bars and a new bar");
+  assert.deepEqual(incrementalOscillatorProbe.mismatches,[],"Incremental RSI/ATR/MACD/ADX/Stochastic/CCI snapshots match the beta after repeated forming bars and a new bar");
   assert.equal(incrementalOscillatorProbe.capacityRejected,true,"Incremental oscillator history cannot grow past the chart history budget");
   assert.equal(incrementalOscillatorProbe.boundedAfter,incrementalOscillatorProbe.boundedBefore,"A rejected history append leaves the oscillator snapshot unchanged");
   const panZoom=await page.evaluate(async()=>{
@@ -473,20 +484,22 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(movingAverageProbe.reloaded.find(x=>x.id==="ema20-close").value,movingAverageProbe.replacementExpected,
    "Replacing the candle history recalculates managed averages from the new history");
   assert.deepEqual(movingAverageProbe.matrixMismatches,[],"All MA types, OHLC sources and display-shift directions match production beta calculations");
-  assert.equal(oscillatorProbe.panes.oscillatorCount,6,"Each configured oscillator is one logical indicator even when it owns multiple native series");
-  assert.equal(oscillatorProbe.panes.oscillatorPaneCount,6);
-  assert.equal(oscillatorProbe.paneCount,7,"MACD and Stochastic components share their native panes");
-  assert.equal(oscillatorProbe.movedMacdPane.paneCount,6,"Moving the MACD group into an existing native pane collapses its prior pane");
-  assert.equal(oscillatorProbe.movedMacdPane.logicalPaneCount,5,"Diagnostics count distinct oscillator panes after a group move");
+  assert.equal(oscillatorProbe.panes.oscillatorCount,7,"Each configured oscillator is one logical indicator even when it owns multiple native series");
+  assert.equal(oscillatorProbe.panes.oscillatorPaneCount,7);
+  assert.equal(oscillatorProbe.paneCount,8,"MACD and Stochastic components share their native panes");
+  assert.equal(oscillatorProbe.movedMacdPane.paneCount,7,"Moving the MACD group into an existing native pane collapses its prior pane");
+  assert.equal(oscillatorProbe.movedMacdPane.logicalPaneCount,6,"Diagnostics count distinct oscillator panes after a group move");
   for(const title of ["MACD","Signal","Histogram"])assert.ok(oscillatorProbe.movedMacdPane.layout[1].titles.includes(title),`${title} moves with the MACD group into one pane`);
   assert.equal(oscillatorProbe.badOrderRejected,true);
   assert.equal(oscillatorProbe.badPeriodRejected,true);
   assert.equal(oscillatorProbe.badStochasticRejected,true);
+  assert.equal(oscillatorProbe.badCciRejected,true);
+  assert.equal(oscillatorProbe.extraCciSettingRejected,true);
   assert.equal(oscillatorProbe.drawingCollisionRejected,true,"Native drawing IDs cannot collide with oscillator instances");
   assert.equal(oscillatorProbe.averageCollisionRejected,true,"Overlay IDs cannot collide with oscillator instances");
   assert.equal(oscillatorProbe.paneLineCollisionRejected,true,"Pane line IDs cannot collide with oscillator instances");
-  assert.equal(oscillatorProbe.atomicCount,6,"Rejected oscillator options do not create partial groups");
-  assert.equal(oscillatorProbe.afterOneRemoval,5,"Removing one oscillator removes its whole group only");
+  assert.equal(oscillatorProbe.atomicCount,7,"Rejected oscillator options do not create partial groups");
+  assert.equal(oscillatorProbe.afterOneRemoval,6,"Removing one oscillator removes its whole group only");
   assert.equal(oscillatorProbe.paneLimitRejected,true,"A ninth logical oscillator pane is rejected");
   assert.equal(oscillatorProbe.paneLimitCount,8,"Rejected ninth pane leaves all eight existing groups intact");
   assert.equal(oscillatorProbe.repeatedFormingReadoutMatches,true,"The adapter readout follows repeated same-candle oscillator replacements");
@@ -500,6 +513,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(oscillatorProbe.flatRow.find(row=>row.id==="flat-adx:adx").value,0,"Flat directional movement yields zero ADX");
   assert.equal(oscillatorProbe.flatRow.find(row=>row.id==="flat-stoch:stochK").value,50,"Flat Stochastic range uses a neutral value");
   assert.equal(oscillatorProbe.flatRow.find(row=>row.id==="flat-stoch:stochD").value,50,"Flat Stochastic smoothing remains neutral");
+  assert.equal(oscillatorProbe.flatRow.find(row=>row.id==="flat-cci:cci").value,0,"Flat CCI has a neutral zero deviation value");
+  assert.equal(oscillatorProbe.flatWarmup.find(row=>row.id==="flat-cci:cci").state,"WARMUP_OR_MISSING","CCI readout stays unavailable until its full period exists");
   assert.equal(oscillatorProbe.flatWarmup.find(row=>row.id==="flat-rsi:rsi").state,"WARMUP_OR_MISSING");
   assert.equal(oscillatorProbe.after[0].settings.period,21);
   assert.equal(oscillatorProbe.after[0].color,"#33ccaa");
@@ -1347,10 +1362,10 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const host=document.createElement("div");host.style.cssText="width:min(1280px,100vw);height:min(720px,100vh);position:fixed;left:0;top:0;z-index:9999;background:#121416";document.body.append(host);
    const rows=Array.from({length:5000},(_,i)=>{const close=4000+i*.01+Math.sin(i/20)*3+2;return {time:1700000000+i*900,open:close-1,high:close+4,low:close-4,close,tick_volume:100+i}});
    const engine=ChartStudioV5.createStudioV5(host,"capacity-source");let t=performance.now();engine.setCandles(rows);const barsMs=performance.now()-t;
-   t=performance.now();for(let i=0;i<15;i++)engine.addMovingAverage({id:`capacity-overlay-${i}`,type:"EMA",period:9+i,source:"close",color:"#61ddf2",lineWidth:1+(i%4)});
-   const capacityOscillators=[{kind:"rsi",settings:{period:14}},{kind:"atr",settings:{period:14}},{kind:"macd",settings:{fast:12,slow:26,signal:9}},{kind:"adx",settings:{period:14}},{kind:"stochastic",settings:{period:14,smoothK:3,smoothD:3}}];
+   t=performance.now();for(let i=0;i<14;i++)engine.addMovingAverage({id:`capacity-overlay-${i}`,type:"EMA",period:9+i,source:"close",color:"#61ddf2",lineWidth:1+(i%4)});
+   const capacityOscillators=[{kind:"rsi",settings:{period:14}},{kind:"atr",settings:{period:14}},{kind:"macd",settings:{fast:12,slow:26,signal:9}},{kind:"adx",settings:{period:14}},{kind:"stochastic",settings:{period:14,smoothK:3,smoothD:3}},{kind:"cci",settings:{period:20}}];
    for(let i=0;i<capacityOscillators.length;i++)engine.addOscillator({id:`capacity-oscillator-${i}`,...capacityOscillators[i],color:"#f7c774"});
-   const indicatorsMs=performance.now()-t,activeIndicatorCount=engine.inspect().averageCount+engine.inspect().nativePaneLines+engine.inspect().oscillatorCount;let combinedIndicatorError="";try{engine.addOscillator({id:"capacity-oscillator-over-limit",kind:"rsi",settings:{period:14},color:"#ffffff"})}catch(error){combinedIndicatorError=error.message}const countAfterRejectedIndicator=engine.inspect().averageCount+engine.inspect().nativePaneLines+engine.inspect().oscillatorCount;
+   const indicatorsMs=performance.now()-t,activeIndicatorCount=engine.inspect().averageCount+engine.inspect().nativePaneLines+engine.inspect().oscillatorCount;let combinedIndicatorError="";try{engine.addOscillator({id:"capacity-oscillator-over-limit",kind:"cci",settings:{period:20},color:"#ffffff"})}catch(error){combinedIndicatorError=error.message}const countAfterRejectedIndicator=engine.inspect().averageCount+engine.inspect().nativePaneLines+engine.inspect().oscillatorCount;
    t=performance.now();engine.updateLast({...rows.at(-1),close:rows.at(-1).close+1});const formingUpdateMs=performance.now()-t;
    t=performance.now();let drawingError="",overLimitError="",accepted=0;
    for(let i=0;i<999;i++){

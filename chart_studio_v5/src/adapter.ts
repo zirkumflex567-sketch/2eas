@@ -810,7 +810,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
      if(Object.keys(entry).sort().join(",")!=="options,paneIndex"||!entry.options||typeof entry.options!=="object"||Array.isArray(entry.options)||!Number.isInteger(entry.paneIndex))throw Error();
      const options=entry.options as Record<string,unknown>,keys=Object.keys(options).sort().join(","),allowed=new Set(["color,id,kind,settings","color,id,kind,lineWidth,settings","color,id,kind,settings,title","color,id,kind,lineWidth,settings,title","color,id,kind,settings,visible","color,id,kind,lineWidth,settings,visible","color,id,kind,settings,title,visible","color,id,kind,lineWidth,settings,title,visible"]);
      if(!allowed.has(keys)||typeof options.id!=="string"||!/^[-_a-zA-Z0-9]{1,32}$/.test(options.id)||typeof options.color!=="string"||!colorPattern.test(options.color)||
-        !( ["rsi","atr","macd","adx","stochastic"] as unknown[]).includes(options.kind)||(options.lineWidth!==undefined&&![1,2,3,4].includes(options.lineWidth as number))||
+        !(["rsi","atr","macd","adx","stochastic","cci"] as unknown[]).includes(options.kind)||(options.lineWidth!==undefined&&![1,2,3,4].includes(options.lineWidth as number))||
         (options.visible!==undefined&&typeof options.visible!=="boolean")||(options.title!==undefined&&(typeof options.title!=="string"||options.title.length>80||/[\u0000-\u001f\u007f]/.test(options.title)))||
         !Number.isInteger(entry.paneIndex)||Number(entry.paneIndex)<1||Number(entry.paneIndex)>=savedPaneHeights.length)throw Error();
      const oscillatorOptions=options as unknown as OscillatorOptions;calculateOscillator(bars,oscillatorOptions.kind,oscillatorOptions.settings);
@@ -1554,8 +1554,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const series=paneLines.get(id);if(!series)throw Error("Unknown native pane line");
   series.moveToPane(paneIndex);persistDrawings();
  }
- const oscillatorComponents=(kind:OscillatorKind):string[]=>kind==="rsi"?["rsi"]:kind==="atr"?["atr"]:kind==="macd"?["macd","signal","histogram"]:kind==="stochastic"?["stochK","stochD"]:["adx","plusDi","minusDi"];
- const oscillatorTitles=(kind:OscillatorKind):Record<string,string>=>kind==="macd"?{macd:"MACD",signal:"Signal",histogram:"Histogram"}:kind==="adx"?{adx:"ADX",plusDi:"+DI",minusDi:"−DI"}:kind==="stochastic"?{stochK:"%K",stochD:"%D"}:kind==="rsi"?{rsi:"RSI"}:{atr:"ATR"};
+ const oscillatorComponents=(kind:OscillatorKind):string[]=>kind==="rsi"?["rsi"]:kind==="atr"?["atr"]:kind==="macd"?["macd","signal","histogram"]:kind==="stochastic"?["stochK","stochD"]:kind==="cci"?["cci"]:["adx","plusDi","minusDi"];
+ const oscillatorTitles=(kind:OscillatorKind):Record<string,string>=>kind==="macd"?{macd:"MACD",signal:"Signal",histogram:"Histogram"}:kind==="adx"?{adx:"ADX",plusDi:"+DI",minusDi:"−DI"}:kind==="stochastic"?{stochK:"%K",stochD:"%D"}:kind==="cci"?{cci:"CCI"}:kind==="rsi"?{rsi:"RSI"}:{atr:"ATR"};
  function replaceOscillatorData(group:OscillatorGroup,incremental=false){
   const rows=incremental
    ?group.calculator.updateLast(bars[bars.length-1])
@@ -1584,7 +1584,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function refreshOscillators(incremental=false){for(const group of oscillators.values())replaceOscillatorData(group,incremental)}
  function addOscillator(options:OscillatorOptions){
-  guard();if(!options||!/^[-_a-zA-Z0-9]{1,32}$/.test(options.id)||!colorPattern.test(options.color)||!(["rsi","atr","macd","adx","stochastic"] as string[]).includes(options.kind)||
+  guard();if(!options||!/^[-_a-zA-Z0-9]{1,32}$/.test(options.id)||!colorPattern.test(options.color)||!(["rsi","atr","macd","adx","stochastic","cci"] as string[]).includes(options.kind)||
    (options.lineWidth!==undefined&&![1,2,3,4].includes(options.lineWidth)))throw Error("Invalid oscillator options");
   if(oscillators.has(options.id)||averages.has(options.id)||paneLines.has(options.id)||priceLevels.has(options.id)||timeMarkers.has(options.id)||textAnnotations.has(options.id)||trendLines.has(options.id)||rectangles.has(options.id)||rays.has(options.id)||fibonacci.has(options.id)||channels.has(options.id)||measurements.has(options.id))throw Error("Duplicate chart object identity");
   if(averages.size+paneLines.size+oscillators.size>=maxIndicatorInstances)throw Error("Indicator instance limit");

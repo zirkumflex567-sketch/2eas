@@ -391,6 +391,30 @@ class SqliteLayoutTests(unittest.TestCase):
         with self.assertRaises(StoreError):
             validate_document({**original,"oscillatorInstances":"not a list"})
 
+    def test_cci_and_stochastic_instance_workspace_roundtrip_and_bounds(self):
+        original = example()
+        cci = {"id":"cci1","kind":"cci","period":20,"visible":True,
+               "color":"#55d7ee","lineWidth":2,"label":"CCI"}
+        stochastic = {"id":"stoch1","kind":"stochastic","period":14,
+                      "smoothK":3,"smoothD":3,"visible":True,
+                      "color":"#e9bc72","lineWidth":2,"label":"Stochastic"}
+        document = {**original,"oscillatorInstances":[cci,stochastic],
+                    "indicators":{"cci":{"enabled":True,"period":20}}}
+        result = validate_document(document)
+        self.assertEqual(result["oscillatorInstances"],[cci,stochastic])
+        self.assertEqual(result["indicators"],document["indicators"])
+        saved = self.store.put("local-owner","titan","XAUUSD","CCI",document,0)
+        self.assertEqual(self.store.get("local-owner","titan","XAUUSD","CCI")["document"],document)
+        for instance in [
+            {**cci,"period":1},{**cci,"period":201},{**cci,"extra":1},
+            {**stochastic,"period":1},{**stochastic,"period":201},
+            {**stochastic,"smoothK":0},{**stochastic,"smoothK":101},
+            {**stochastic,"smoothD":0},{**stochastic,"smoothD":101},
+            {**stochastic,"extra":1},
+        ]:
+            with self.subTest(instance=instance), self.assertRaises(StoreError):
+                validate_document({**original,"oscillatorInstances":[instance]})
+
     def test_chart_type_compatibility_and_strict_validation(self):
         original = example()
         self.assertNotIn("chartType", validate_document(original))
