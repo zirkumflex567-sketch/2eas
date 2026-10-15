@@ -33,7 +33,7 @@ function renderSymbolFavorites(){
  refreshFavoriteToggle();
 }
 function validSymbolCatalog(data,account){
- return !!data&&data.account===account&&data.source==="MT5_VERIFIED"&&data.canExecute===false&&data.limit===200&&typeof data.truncated==="boolean"&&Array.isArray(data.symbols)&&data.symbols.length<=200&&data.symbols.every(row=>row?.account===account&&row?.source==="MT5_VERIFIED"&&row?.canExecute===false&&typeof row?.symbol==="string"&&symbolNamePattern.test(row.symbol));
+ return !!data&&data.account===account&&data.source==="MT5_VERIFIED"&&data.canExecute===false&&data.limit===200&&typeof data.truncated==="boolean"&&Number.isSafeInteger(data.invalidCount)&&data.invalidCount>=0&&data.invalidCount<=100000&&Array.isArray(data.symbols)&&data.symbols.length<=200&&data.symbols.every(row=>row?.account===account&&row?.source==="MT5_VERIFIED"&&row?.canExecute===false&&typeof row?.symbol==="string"&&symbolNamePattern.test(row.symbol));
 }
 function table(container,headers,rows){
  const t=container.querySelector("table"),head=t.tHead||t.createTHead(),body=t.tBodies[0]||t.createTBody();
@@ -157,7 +157,8 @@ async function loadSymbols(query=""){
   state.fields.symbol.value=selected;
   if(previous!==selected){state.symbol=selected;state.currentSymbolVerified=!!selected&&available.has(selected);invalidateSymbolScope("Symbol geändert · Entwurf verworfen.");if(selected){window.ChartStudioBeta?.symbol(selected);loadPositions();}else state.positionStatus.textContent="Kein verifiziertes Broker-Symbol verfügbar.";}
   else if(!selected)state.positionStatus.textContent="Kein verifiziertes Broker-Symbol verfügbar.";
-  state.symbolStatus.textContent=preferred&&!available.has(preferred)?preferred+" ist hier nicht verifiziert · ":"";state.symbolStatus.textContent+=data.truncated?"Mehr als 200 Treffer · Suche präzisieren.":data.symbols.length+" verifizierte Symbole · MT5_VERIFIED";renderSymbolFavorites();
+  const invalidNotice=data.invalidCount===1?"1 ungültiger Broker-Eintrag ausgelassen · ":data.invalidCount>1?data.invalidCount+" ungültige Broker-Einträge ausgelassen · ":"";
+  state.symbolStatus.textContent=invalidNotice+(preferred&&!available.has(preferred)?preferred+" ist hier nicht verifiziert · ":"");state.symbolStatus.textContent+=data.truncated?"Mehr als 200 Treffer · Suche präzisieren.":data.symbols.length+" verifizierte Symbole · MT5_VERIFIED";renderSymbolFavorites();
  }catch(error){
   if(token!==state.symbolToken)return;
   state.symbol="";state.currentSymbolVerified=false;state.verifiedSymbols=new Set();state.fields.symbol.replaceChildren(el("option",{value:""},"Symbolkatalog nicht verfügbar"));

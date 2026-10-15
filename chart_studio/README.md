@@ -193,7 +193,9 @@ whole-process lifetime peak working set, not incremental evidence allocations.
 `GET /api/chart/v1/symbols?account=titan&q=USD&limit=50` searches actual MT5
 symbol names (case insensitive, `q` at most 64 characters, `limit` 1–200).
 Results retain the broker `tradeMode`, including disabled instruments. Search
-does not select symbols in Market Watch. `GET /api/chart/v1/symbol-info` requires
+does not select symbols in Market Watch. Invalid broker rows are skipped
+individually and counted in `invalidCount`; valid search results remain usable.
+`GET /api/chart/v1/symbol-info` requires
 an explicit `account` and `symbol` and returns actual digits, point, tick size,
 stop/freeze levels, volume limits/step, currencies and trade mode. Empty broker
 currency metadata remains empty; it is never replaced with USD.

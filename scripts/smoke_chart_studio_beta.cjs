@@ -18,7 +18,7 @@ const fs=require("node:fs"),path=require("node:path");
   browser=await chromium.launch({headless:true,executablePath:process.env.CHART_STUDIO_CHROMIUM_PATH||undefined});
   const page=await browser.newPage({viewport:{width:1280,height:850},deviceScaleFactor:1.5});
   const consoleErrors=[],brokerMutationRequests=[];page.on("pageerror",e=>consoleErrors.push(e.message));
-  let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,invalidStopGeometry=false,trailingStop=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,deferTitanPositions=false,releaseTitanPositions=null,holdScope=null,heldScopeResolvers=[],completedHeldScopeResponses=0,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,multiPositionRows=false,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badOrderShape=false,badDealRow=false,symbolCatalogTruncated=false,hideFavoriteSymbol=false,evidenceRequests=[],lifecycleFixtureEnabled=false;
+  let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,invalidStopGeometry=false,trailingStop=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,deferTitanPositions=false,releaseTitanPositions=null,holdScope=null,heldScopeResolvers=[],completedHeldScopeResponses=0,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,multiPositionRows=false,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badOrderShape=false,badDealRow=false,symbolCatalogTruncated=false,symbolCatalogInvalidRows=0,hideFavoriteSymbol=false,evidenceRequests=[],lifecycleFixtureEnabled=false;
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
   page.on("request",req=>{if(!["GET","HEAD","OPTIONS"].includes(req.method())&&req.url().includes("/api/chart/v1/"))brokerMutationRequests.push({method:req.method(),url:req.url()})});
   await page.route("**/api/chart/v1/scenarios/preview*",async route=>{
@@ -105,7 +105,7 @@ const fs=require("node:fs"),path=require("node:path");
   await page.route("**/api/chart/v1/symbols?*",async route=>{
     const url=new URL(route.request().url()),account=url.searchParams.get("account");brokerReadRequests.push({path:url.pathname,url:url.pathname,params:Object.fromEntries(url.searchParams)});
     const symbols=["XAUUSD","XAUUSD.pi","XAUUSD.p","EURUSD","GBPUSD","US 500"].filter(symbol=>symbol.includes(url.searchParams.get("q").toUpperCase())&&!(hideFavoriteSymbol&&symbol==="EURUSD")).map(symbol=>({account,symbol,tradeMode:4,source:badSymbolRow&&symbol==="EURUSD"?"UNVERIFIED":"MT5_VERIFIED",canExecute:false}));
-    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account,source:"MT5_VERIFIED",canExecute:false,symbols,limit:Number(url.searchParams.get("limit")),truncated:symbolCatalogTruncated})});
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account,source:"MT5_VERIFIED",canExecute:false,symbols,limit:Number(url.searchParams.get("limit")),truncated:symbolCatalogTruncated,invalidCount:symbolCatalogInvalidRows})});
   });
   await page.route("**/api/chart/v1/trades?*",async route=>{
     const url=new URL(route.request().url());brokerReadRequests.push({path:url.pathname,url:url.pathname,params:Object.fromEntries(url.searchParams)});
@@ -558,6 +558,11 @@ const fs=require("node:fs"),path=require("node:path");
   await page.waitForFunction(()=>document.querySelector("#cs-broker-symbol-status")?.textContent.includes("Suche präzisieren"));
   assert.equal(brokerReadRequests.filter(r=>r.path.endsWith("/symbols")).at(-1).params.q,"EURUSD");symbolCatalogTruncated=false;
   await page.locator("#cs-broker-symbol-search-button").click();
+  await page.waitForFunction(()=>document.querySelector("#cs-broker-symbol-status")?.textContent.includes("verifizierte Symbole"));
+  symbolCatalogInvalidRows=1;await page.locator("#cs-broker-symbol-search").fill("");await page.locator("#cs-broker-symbol-search-button").click();
+  await page.waitForFunction(()=>document.querySelector("#cs-broker-symbol-status")?.textContent.includes("1 ungültiger Broker-Eintrag ausgelassen"));
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().symbol),"EURUSD","Reporting a rejected catalog row must not switch the current symbol");
+  symbolCatalogInvalidRows=0;await page.locator("#cs-broker-symbol-search-button").click();
   await page.waitForFunction(()=>document.querySelector("#cs-broker-symbol-status")?.textContent.includes("verifizierte Symbole"));
   await page.locator("#cs-broker-symbol-search").fill("XAU");await page.locator("#cs-broker-symbol-search-button").click();
   await page.waitForFunction(()=>document.querySelector("#cs-broker-symbol")?.selectedOptions[0]?.textContent.includes("Suche gefiltert"));
