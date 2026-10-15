@@ -216,6 +216,17 @@ def test_search_uses_existing_symbols_real_trade_mode_and_limit(client, fake):
     assert read(client, 'symbols', q='EUR').json()['symbols'][0]['symbol'] == 'EURUSD.a'
 
 
+def test_symbol_search_keeps_valid_symbols_when_broker_catalog_has_bad_rows(client, fake):
+    fake.symbols = (symbol('XAUUSD'), symbol('EURUSD.a'),
+                    NS(name='BROKEN$USD', trade_mode=99))
+    response = read(client, 'symbols', q='')
+    assert response.status_code == 200
+    body = response.json()
+    assert [row['symbol'] for row in body['symbols']] == ['XAUUSD', 'EURUSD.a']
+    assert body['invalidCount'] == 1
+    assert body['canExecute'] is False
+
+
 def test_real_symbol_contract(client):
     body = read(client, 'symbol-info').json()
     assert body['digits'] == 2

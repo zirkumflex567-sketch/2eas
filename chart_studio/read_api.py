@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import Query
 from fastapi.responses import JSONResponse
 from chart_studio.broker_reads import (
-    SYMBOL_PATTERN, broker_rows, symbol_summary, symbol_model, require_symbol,
+    SYMBOL_PATTERN, BrokerReadError, broker_rows, symbol_summary, symbol_model, require_symbol,
     verified_read, positions_read, trades_read, provenance,
     portfolio_read,
 )
@@ -28,10 +28,21 @@ def install_read_routes(app, mt5, *, now=None):
                 limit: Annotated[int, Query(ge=1, le=200)] = 50):
         def operation(spec):
             rows = broker_rows(mt5.symbols_get())
-            models = [symbol_summary(row, spec) for row in rows]
-            matches = [s for s in models if q.casefold() in s['symbol'].casefold()]
+            matches = []
+            invalid_count = 0
+            for row in rows:
+                name = getattr(row, 'name', None)
+                if not isinstance(name, str):
+                    invalid_count += 1
+                    continue
+                if q and q.casefold() not in name.casefold():
+                    continue
+                try:
+                    matches.append(symbol_summary(row, spec))
+                except BrokerReadError:
+                    invalid_count += 1
             return {**provenance(spec), 'symbols':matches[:limit], 'limit':limit,
-                    'truncated':len(matches) > limit}
+                    'truncated':len(matches) > limit, 'invalidCount':invalid_count}
         return response(verified_read(mt5, account, operation))
 
     @app.get('/api/chart/v1/symbol-info')
