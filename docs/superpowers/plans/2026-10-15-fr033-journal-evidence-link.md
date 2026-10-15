@@ -25,4 +25,4 @@ Let a user check whether a closed broker-journal row has a stored immutable life
 ## Status
 
 - [x] Commit/push `main` as `6686744`, deploy to htown `/stt`, and verify matching runtime revision/digest, four demo-only status reads, and the FR-033 ledger update.
-- [ ] Repeat the full dashboard suite after the final stale-response guard refinement.
+- [x] Repeat the full dashboard suite after the final stale-response guard refinement: 70 passed, 38 subtests passed (344.27 s).
