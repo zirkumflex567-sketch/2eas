@@ -132,10 +132,12 @@ Five `terminal64.exe` processes were present. Local read-only `/api/status` call
 
 The dashboard remains on a different checkout/revision from current main. The guarded launcher refuses to stop a listener owned by that other checkout, and the private runtime configuration needed to preserve operation has not been identified for an exact-main start. The `/stt` runtime therefore remains stale pending a safe checkout/configuration handoff.
 
-## Current read-only process and Expert-log refresh (2026-10-15 03:10 UTC)
+## Current read-only process, Expert-log and chart-profile refresh (2026-10-15 03:16 UTC)
 
 Five `terminal64.exe` processes are currently running: four account terminal installations and the separate Research portable terminal. This was confirmed from executable paths only; process command lines and account credentials were not read. The configured GoldM15 `.mt5-demo` terminal path is not among the running processes.
 
 The latest process-associated Expert logs inspected on the running terminals contain Titan activity for `XAUUSD.p/M15`, `XAUUSD.p/M5`, and `XAUUSD.pi/M15`. The newest corresponding log timestamps are 00:14 UTC for the Research terminal and 03:00 UTC for the two portable account terminals. A separate network log in the `XAUUSD.pi/M15` terminal records a reconnection whose final server name is `BlueberryMarketsSVG-Live`; no account number was retained. These log rows do not bind an EA instance to its current visible chart or preset.
 
 No `GoldM15_Reconstruction` or `XAUUSD 5 minute` entry appears in the current-day process-associated Expert-log matches. Two of the five active terminals yielded no recognized EA name in the inspected Expert logs. This is absence of a current initialization/activity record, not proof that the EA is detached. Exact chart attachment, loaded EX5 hash, preset hash and last attach/reload time are therefore still unresolved. No terminal/chart/preset/EA was changed or restarted, and no trading operation or Strategy Tester run was initiated by this inspection.
+
+A read-only scan of the four account installations' saved `profiles/charts/*.chr` files found only chart-profile timestamps from 2026-03-06; these old saved files cannot establish the charts or inputs currently loaded in the running terminals. The Research process had no chart files in the two checked profile roots. The scan did not open MT5 or read window state.
