@@ -2267,6 +2267,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     let isInitialLoad = true;
     let lastCandleTime = 0;
     let currentCandlesCount = 0;
+    let candleHistory = {scope:null,pages:[],latest:null,hasMore:false,loading:false};
     let currentVPTab = 'daily';
     let currentData = null;
     const BASE_PATH = window.location.pathname.startsWith('/stt') ? '/stt' : '';
@@ -2486,7 +2487,9 @@ HTML_CONTENT = """<!DOCTYPE html>
       if (generation !== accountGeneration || account !== activeAccount) throw staleRequest();
       if (!response.ok) {
         if (controlled && response.status === 403) controlSessionPromise = null;
-        throw new Error(body.detail || (response.status === 403 ? 'Dashboard-Steuerung nicht autorisiert.' : 'MT5-Anfrage fehlgeschlagen'));
+        const error = new Error(body.detail || (response.status === 403 ? 'Dashboard-Steuerung nicht autorisiert.' : 'MT5-Anfrage fehlgeschlagen'));
+        error.status = response.status;
+        throw error;
       }
       if (body.account && body.account.id !== account) throw new Error('Antwort gehört zu einem anderen Konto.');
       return {ok:response.ok,json: async () => body};
@@ -2845,6 +2848,9 @@ HTML_CONTENT = """<!DOCTYPE html>
       try { window.StoneChartFX?.attach({chart, host:container, candleSeries, emaSeries:[ema9Series,ema20Series,ema50Series,ema200Series]}); } catch (_) {}
       try { window.StoneCelebration?.applyChartSettings(); } catch (_) {}
       try { window.ChartStudioBeta?.mount({chart,host:container,candleSeries,emaSeries:[ema20Series,ema50Series,ema200Series],account:activeAccount,timeframe:activeTimeframe}); } catch (err) { console.warn("Chart Studio Beta konnte nicht gestartet werden:",err); }
+      chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+        if (range && range.from <= 2) void loadOlderCandles();
+      });
 
       // Robust ResizeObserver
       let chartInitiallySized = false;
@@ -3179,10 +3185,84 @@ HTML_CONTENT = """<!DOCTYPE html>
     }
 
     // --- SMOOTH CANDLES LOAD (NO JUMPING & PRESERVES ZOOM) ---
+    function candleHistoryScope(account, symbol, timeframe) {
+      return account + '/' + symbol + '/' + timeframe;
+    }
+
+    function mergeCandleHistory(payload) {
+      const merged = {...payload};
+      for (const field of ['candles','ema9','ema20','ema50','ema200','markers']) {
+        const keyed = new Map();
+        for (const page of candleHistory.pages) {
+          for (const row of (page[field] || [])) {
+            const key = field === 'markers' ? `${row.time}/${row.position}/${row.shape}/${row.text}` : row.time;
+            keyed.set(key, row);
+          }
+        }
+        for (const row of (payload[field] || [])) {
+          const key = field === 'markers' ? `${row.time}/${row.position}/${row.shape}/${row.text}` : row.time;
+          keyed.set(key, row);
+        }
+        merged[field] = [...keyed.values()].sort((a,b) => a.time-b.time);
+      }
+      return merged;
+    }
+
+    async function loadOlderCandles() {
+      const reqAccount = activeAccount;
+      const reqTf = activeTimeframe;
+      const reqSymbol = activeChartSymbol;
+      const generation = accountGeneration;
+      const scope = candleHistoryScope(reqAccount, reqSymbol, reqTf);
+      const historyState = candleHistory;
+      if (!chart || !candleSeries || historyState.scope !== scope || !historyState.hasMore || historyState.loading) return;
+      const visible = candleSeries.data();
+      if (!visible || !visible.length) return;
+      const before = visible[0].time;
+      historyState.loading = true;
+      try {
+        const url = '/api/candles?tf=' + encodeURIComponent(reqTf) + '&symbol=' + encodeURIComponent(reqSymbol) + '&count=150&before=' + encodeURIComponent(before);
+        const response = await accountFetch(url);
+        const page = await response.json();
+        if (generation !== accountGeneration || reqAccount !== activeAccount || reqTf !== activeTimeframe || reqSymbol !== activeChartSymbol) throw staleRequest();
+        if (!response.ok || page.accountId !== reqAccount || page.symbol !== reqSymbol || page.timeframe !== reqTf || page.source !== 'MT5_VERIFIED' || page.canExecute !== false) {
+          if (response.status === 404) historyState.hasMore = false;
+          else console.warn('[Cockpit] Ältere Kerzen konnten nicht geladen werden:', page.detail || response.status);
+          return;
+        }
+        if (!Array.isArray(page.candles) || !page.candles.length || page.candles.some(row => row.time >= before)) {
+          historyState.hasMore = false;
+          return;
+        }
+        const oldRange = chart.timeScale().getVisibleLogicalRange();
+        const previousCount = visible.length;
+        historyState.pages.unshift(page);
+        historyState.hasMore = page.page?.hasMore === true;
+        const renderData = mergeCandleHistory(historyState.latest || page);
+        const added = Math.max(0, renderData.candles.length - previousCount);
+        currentCandlesCount = renderData.candles.length;
+        candleSeries.setData(renderData.candles);
+        if (renderData.ema9) ema9Series.setData(renderData.ema9);
+        ema20Series.setData(renderData.ema20 || []);
+        ema50Series.setData(renderData.ema50 || []);
+        ema200Series.setData(renderData.ema200 || []);
+        currentChartMarkers = renderData.markers || [];
+        candleSeries.setMarkers(showEAStatusText ? currentChartMarkers : []);
+        try { window.ChartStudioBeta?.updateCandles(renderData.candles); } catch (_) {}
+        try { window.StoneChartFX?.update({candles:renderData.candles,emas:[renderData.ema9,renderData.ema20,renderData.ema50,renderData.ema200],markers:showEAStatusText?currentChartMarkers:[],newBar:false,context:activeAccount+'/'+activeChartSymbol+'/'+activeTimeframe+'/'+accountGeneration}); } catch (_) {}
+        if (oldRange && added) chart.timeScale().setVisibleLogicalRange({from:oldRange.from+added,to:oldRange.to+added});
+      } catch (error) {
+        if (error.status === 404) historyState.hasMore = false;
+        else if (error.name !== 'AbortError') console.warn('[Cockpit] Ältere Kerzen konnten nicht geladen werden:',error);
+      } finally { historyState.loading = false; }
+    }
+
     async function loadCandles() {
       const generation = accountGeneration;
       const reqTf = activeTimeframe;
       const reqSymbol = activeChartSymbol;
+      const historyScope = candleHistoryScope(activeAccount, reqSymbol, reqTf);
+      if (candleHistory.scope !== historyScope) candleHistory = {scope:historyScope,pages:[],latest:null,hasMore:false,loading:false};
       const requestKey = generation + '/' + reqSymbol + '/' + reqTf;
       if (candlesBusy === requestKey) return;
       candlesBusy = requestKey;
@@ -3196,11 +3276,28 @@ HTML_CONTENT = """<!DOCTYPE html>
         }
         if (data.symbol && data.symbol !== activeChartSymbol && accounts[activeAccount]?.symbol === data.symbol) {
           activeChartSymbol = data.symbol;
+          candleHistory.scope = candleHistoryScope(activeAccount, activeChartSymbol, reqTf);
+          updateChartScopeLabel();
+          const title = document.getElementById('chart-title-text');
+          if (title) title.textContent = `${activeChartSymbol} ${reqTf} Chart`;
+          try { window.ChartStudioBeta?.symbol(activeChartSymbol); } catch (_) {}
         }
         if (!data.candles || data.candles.length === 0) return;
+        const previousLatest = candleHistory.latest;
+        const nextLatestTime = data.candles[0].time;
+        if (candleHistory.pages.length && previousLatest?.candles?.length && Number.isFinite(nextLatestTime)) {
+          const expired = {candles:[],ema9:[],ema20:[],ema50:[],ema200:[],markers:[]};
+          for (const field of ['candles','ema9','ema20','ema50','ema200','markers']) {
+            expired[field] = (previousLatest[field] || []).filter(row => row.time < nextLatestTime);
+          }
+          if (expired.candles.length) candleHistory.pages.push(expired);
+        }
+        candleHistory.latest = data;
+        if (!candleHistory.pages.length) candleHistory.hasMore = data.page?.hasMore === true;
+        const renderData = mergeCandleHistory(data);
 
-        currentCandlesCount = data.candles.length;
-        const latest = data.candles[data.candles.length - 1];
+        currentCandlesCount = renderData.candles.length;
+        const latest = renderData.candles[renderData.candles.length - 1];
         const curPrice = latest ? latest.close : 0;
         const stoneNewBar = !isInitialLoad && lastCandleTime !== 0 && latest.time !== lastCandleTime;
         const chartContainer = document.getElementById('tv-chart');
@@ -3209,11 +3306,11 @@ HTML_CONTENT = """<!DOCTYPE html>
           if (chartContainer && chartContainer.clientWidth > 0 && chartContainer.clientHeight > 0) {
             chart.applyOptions({ width: chartContainer.clientWidth, height: chartContainer.clientHeight });
           }
-          candleSeries.setData(data.candles);
-          if (data.ema9) ema9Series.setData(data.ema9);
-          ema20Series.setData(data.ema20);
-          ema50Series.setData(data.ema50);
-          ema200Series.setData(data.ema200);
+          candleSeries.setData(renderData.candles);
+          if (renderData.ema9) ema9Series.setData(renderData.ema9);
+          ema20Series.setData(renderData.ema20);
+          ema50Series.setData(renderData.ema50);
+          ema200Series.setData(renderData.ema200);
           updateChartSRLines(data.sr_levels, curPrice);
           applyOptimalChartView(data.candles.length);
           isInitialLoad = false;
@@ -3228,14 +3325,14 @@ HTML_CONTENT = """<!DOCTYPE html>
           } else {
             // New bar: keep exact user zoom & position with 12-bar right offset
             const curRange = chart.timeScale().getVisibleLogicalRange();
-            const totalBars = data.candles.length;
+            const totalBars = renderData.candles.length;
             const wasAtEnd = curRange ? (curRange.to >= (totalBars - 3)) : true;
 
-            candleSeries.setData(data.candles);
-            if (data.ema9) ema9Series.setData(data.ema9);
-            ema20Series.setData(data.ema20);
-            ema50Series.setData(data.ema50);
-            ema200Series.setData(data.ema200);
+            candleSeries.setData(renderData.candles);
+            if (renderData.ema9) ema9Series.setData(renderData.ema9);
+            ema20Series.setData(renderData.ema20);
+            ema50Series.setData(renderData.ema50);
+            ema200Series.setData(renderData.ema200);
 
             if (curRange) {
               if (wasAtEnd) {
@@ -3254,13 +3351,13 @@ HTML_CONTENT = """<!DOCTYPE html>
         }
         try { window.StoneCockpit?.requestSync?.(); } catch (_) {}
 
-        try { window.ChartStudioBeta?.updateCandles(data.candles); } catch (_) {}
-        currentChartMarkers = data.markers || [];
+        try { window.ChartStudioBeta?.updateCandles(renderData.candles); } catch (_) {}
+        currentChartMarkers = renderData.markers || [];
         candleSeries.setMarkers(showEAStatusText ? currentChartMarkers : []);
         try {
           window.StoneChartFX?.update({
-            candles: data.candles,
-            emas: [data.ema9, data.ema20, data.ema50, data.ema200],
+            candles: renderData.candles,
+            emas: [renderData.ema9, renderData.ema20, renderData.ema50, renderData.ema200],
             markers: showEAStatusText ? currentChartMarkers : [],
             newBar: stoneNewBar,
             context: activeAccount + '/' + activeChartSymbol + '/' + activeTimeframe + '/' + accountGeneration

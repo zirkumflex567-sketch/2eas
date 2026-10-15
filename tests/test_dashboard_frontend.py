@@ -257,6 +257,10 @@ class DashboardFrontendTests(unittest.TestCase):
         self.account_overrides = {}
         self.candle_fail = False
         self.candle_rows = []
+        self.history_rows = []
+        self.candle_refresh_rows = None
+        self.history_fail_status = None
+        self.candle_resolved_symbol = None
         self.candle_mismatch_symbol = None
         self.marketplace_mode = False
         self.page.route('**/api/**', self.api)
@@ -294,8 +298,14 @@ class DashboardFrontendTests(unittest.TestCase):
             route.fulfill(status=503 if self.journal_fail else 200, json=dict(detail='fixture journal failure') if self.journal_fail else journal(account)); return
         if parsed.path == '/api/candles':
             query=parse_qs(parsed.query); symbol=query.get('symbol',['XAUUSD'])[0]; tf=query.get('tf',['M15'])[0]
-            payload=dict(account=ACCOUNTS[account],accountId=account,symbol=symbol,timeframe=tf,source='MT5_VERIFIED',canExecute=False,candles=copy.deepcopy(self.candle_rows),ema20=[],ema50=[],ema200=[],markers=[],sr_levels={})
+            before=query.get('before',[None])[0]
+            rows=self.history_rows if before is not None else (self.candle_refresh_rows if self.candle_refresh_rows is not None else self.candle_rows)
+            oldest=rows[0]['time'] if rows else None
+            has_more = before is None and bool(self.history_rows or self.history_fail_status)
+            payload=dict(account=ACCOUNTS[account],accountId=account,symbol=self.candle_resolved_symbol or symbol,timeframe=tf,source='MT5_VERIFIED',canExecute=False,candles=copy.deepcopy(rows),ema9=[],ema20=[],ema50=[],ema200=[],markers=[],sr_levels={},page=dict(requestedCount=150,oldestTime=oldest,nextBefore=oldest if has_more else None,hasMore=has_more))
             if symbol == self.candle_mismatch_symbol: payload['symbol']='GBPUSD'
+            if before is not None and self.history_fail_status:
+                route.fulfill(status=self.history_fail_status, json=dict(detail='fixture history exhausted')); return
             route.fulfill(status=503 if self.candle_fail else 200, json=dict(detail='fixture candle failure') if self.candle_fail else payload); return
         if parsed.path == '/api/chart/v1/symbols':
             query=parse_qs(parsed.query).get('q',[''])[0].casefold()
@@ -325,6 +335,88 @@ class DashboardFrontendTests(unittest.TestCase):
         portfolio_symbols=[parse_qs(urlparse(url).query).get('scenarioSymbol',[''])[0]
             for url in self.requests if '/api/chart/v1/portfolio?' in url]
         self.assertTrue(portfolio_symbols and set(portfolio_symbols)=={'XAUUSD.pi'},portfolio_symbols)
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.errors, [])
+    def test_chart_requests_older_bars_when_scrolled_to_history_edge(self):
+        self.candle_rows=[
+            dict(time=1791918000,open=4000.,high=4002.,low=3998.,close=4001.,tick_volume=10,real_volume=0),
+            dict(time=1791918900,open=4001.,high=4003.,low=3999.,close=4002.,tick_volume=11,real_volume=0),
+        ]
+        self.history_rows=[
+            dict(time=1791916200,open=3998.,high=4000.,low=3996.,close=3999.,tick_volume=8,real_volume=0),
+            dict(time=1791917100,open=3999.,high=4001.,low=3997.,close=4000.,tick_volume=9,real_volume=0),
+        ]
+        self.load()
+        self.page.evaluate("document.querySelector('#tv-chart').__chart.timeScale().setVisibleLogicalRange({from:0,to:1})")
+        self.page.wait_for_function("document.querySelector('#tv-chart').__candleSeries.data().length === 4", timeout=5000)
+        self.assertTrue(any('/api/candles?' in url and 'before=1791918000' in url for url in self.requests),self.requests)
+        self.assertEqual(self.page.evaluate("document.querySelector('#tv-chart').__candleSeries.data().map(row=>row.time)"),
+                         [1791916200,1791917100,1791918000,1791918900])
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.errors, [])
+    def test_loaded_history_keeps_bridge_candle_when_latest_window_advances(self):
+        self.candle_rows=[
+            dict(time=1791918000,open=4000.,high=4002.,low=3998.,close=4001.,tick_volume=10,real_volume=0),
+            dict(time=1791918900,open=4001.,high=4003.,low=3999.,close=4002.,tick_volume=11,real_volume=0),
+        ]
+        self.history_rows=[
+            dict(time=1791916200,open=3998.,high=4000.,low=3996.,close=3999.,tick_volume=8,real_volume=0),
+            dict(time=1791917100,open=3999.,high=4001.,low=3997.,close=4000.,tick_volume=9,real_volume=0),
+        ]
+        self.load()
+        self.page.wait_for_function("document.querySelector('#tv-chart').__candleSeries.data().length >= 2", timeout=5000)
+        self.page.evaluate("loadOlderCandles()")
+        self.page.wait_for_function("document.querySelector('#tv-chart').__candleSeries.data().length === 4", timeout=5000)
+        self.candle_refresh_rows=[
+            dict(time=1791918900,open=4001.,high=4003.,low=3999.,close=4002.,tick_volume=11,real_volume=0),
+            dict(time=1791919800,open=4002.,high=4004.,low=4000.,close=4003.,tick_volume=12,real_volume=0),
+        ]
+        self.page.evaluate("loadCandles()")
+        self.page.wait_for_function("document.querySelector('#tv-chart').__candleSeries.data().length === 5", timeout=5000)
+        self.assertEqual(self.page.evaluate("document.querySelector('#tv-chart').__candleSeries.data().map(row=>row.time)"),
+                         [1791916200,1791917100,1791918000,1791918900,1791919800])
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.errors, [])
+    def test_history_404_marks_history_exhausted_and_stops_repeat_requests(self):
+        self.candle_rows=[
+            dict(time=1791918000,open=4000.,high=4002.,low=3998.,close=4001.,tick_volume=10,real_volume=0),
+            dict(time=1791918900,open=4001.,high=4003.,low=3999.,close=4002.,tick_volume=11,real_volume=0),
+        ]
+        self.history_fail_status=404
+        self.load()
+        self.page.wait_for_function("document.querySelector('#tv-chart').__candleSeries.data().length >= 2", timeout=5000)
+        self.page.evaluate("loadOlderCandles()")
+        self.page.wait_for_timeout(250)
+        first_count=sum('before=1791918000' in url for url in self.requests)
+        self.assertEqual(first_count,1,self.requests)
+        self.page.evaluate("loadOlderCandles()")
+        self.page.wait_for_timeout(250)
+        self.assertEqual(sum('before=1791918000' in url for url in self.requests), first_count)
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.errors, [])
+    def test_symbol_fallback_updates_history_scope_before_paging(self):
+        self.account_overrides={'titan':dict(symbol='XAUUSD',timeframe='M15')}
+        self.candle_resolved_symbol='XAUUSD'
+        self.candle_rows=[
+            dict(time=1791918000,open=4000.,high=4002.,low=3998.,close=4001.,tick_volume=10,real_volume=0),
+            dict(time=1791918900,open=4001.,high=4003.,low=3999.,close=4002.,tick_volume=11,real_volume=0),
+        ]
+        self.history_rows=[
+            dict(time=1791916200,open=3998.,high=4000.,low=3996.,close=3999.,tick_volume=8,real_volume=0),
+            dict(time=1791917100,open=3999.,high=4001.,low=3997.,close=4000.,tick_volume=9,real_volume=0),
+        ]
+        self.load()
+        self.page.locator('#cs-beta-toggle').click()
+        self.page.locator('.cs-broker-read-panel > summary').click()
+        selector=self.page.locator('#cs-broker-symbol')
+        expect(selector).to_have_value('XAUUSD',timeout=10000)
+        selector.select_option('EURUSD')
+        expect(self.page.locator('#chart-title-text')).to_have_text('XAUUSD M15 Chart',timeout=10000)
+        self.page.evaluate("loadOlderCandles()")
+        self.page.wait_for_function("document.querySelector('#tv-chart').__candleSeries.data().length === 4", timeout=5000)
+        history_requests=[url for url in self.requests if 'before=1791918000' in url]
+        self.assertTrue(history_requests, self.requests)
+        self.assertTrue(all(parse_qs(urlparse(url).query).get('symbol')==['XAUUSD'] for url in history_requests), history_requests)
         self.assertEqual(self.mutations, [])
         self.assertEqual(self.errors, [])
     def test_marketplace_account_shows_indicators_without_strategy_readiness(self):
