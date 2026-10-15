@@ -346,3 +346,63 @@ def test_capture_status_is_authenticated_and_limited_to_configured_demos(monkeyp
     assert 'detail' not in allowed.json()['status']
     forbidden = client.get('/api/chart/v1/lifecycle/capture/status', params={'account': 'blueberry'})
     assert forbidden.status_code == 400
+
+
+def test_decision_capture_status_is_authenticated_demo_scoped_and_redacted(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from chart_studio.evidence_api import install_evidence_routes
+    from dashboard_security import install_control_security
+    monkeypatch.delenv('CHART_STUDIO_EVIDENCE_SPOOL_ROOT', raising=False)
+
+    class Store:
+        root = Path('private-test-root')
+        has_decision = False
+        def gaps(self, account=None):
+            return {'knownLossSinceStart':0,'lifetime':'PROCESS_ONLY','unrecordedHistory':True}
+        def read(self, context, *, kind, limit):
+            return {'records':[{}] if self.has_decision else []}
+
+    app = FastAPI()
+    install_evidence_routes(app, store=Store(), mt5=object())
+    app.state.evidence_spool_status = {}
+    unauthenticated = TestClient(app).get(
+        '/api/chart/v1/decisions/capture/status', params={'account':'xau5m_m5'})
+    assert unauthenticated.status_code == 403
+
+    secure_app = FastAPI()
+    install_control_security(secure_app)
+    store = Store()
+    install_evidence_routes(secure_app, store=store, mt5=object())
+    secure_app.state.evidence_spool_status = {}
+    client = TestClient(secure_app)
+    unconfigured = client.get('/api/chart/v1/decisions/capture/status', params={'account':'xau5m_m5'})
+    assert unconfigured.status_code == 200
+    assert unconfigured.json()['status']['code'] == 'NOT_STARTED'
+    secure_app.state.evidence_spool_service = object()
+    not_started = client.get('/api/chart/v1/decisions/capture/status', params={'account':'xau5m_m5'})
+    assert not_started.status_code == 200
+    assert not_started.json()['status']['code'] == 'NOT_STARTED'
+    secure_app.state.evidence_spool_status = {
+        'titan_puprime250': {'code':'IDLE','imported':0,'duplicates':2,
+                             'gapCount':1,'gapObserved':True,'storeLostCount':3,
+                             'fileName':'private.ready.ndjson','cursorPath':'private.json'}
+    }
+    store.has_decision = True
+
+    allowed = client.get('/api/chart/v1/decisions/capture/status', params={'account':'xau5m_m5'})
+    assert allowed.status_code == 200
+    assert allowed.json() == {
+        'schemaVersion':1,'account':'xau5m_m5','canExecute':False,
+        'status':{'code':'IDLE','imported':0,'duplicates':2,'gapCount':1,
+                  'gapObserved':True,'storeLostCount':3,'recordingState':'RECORDED'}
+    }
+    marketplace = client.get('/api/chart/v1/decisions/capture/status', params={'account':'titan'})
+    assert marketplace.status_code == 200
+    assert marketplace.json()['status']['code'] == 'NOT_CONFIGURED'
+    assert marketplace.json()['status']['recordingState'] == 'NOT_RECORDED'
+    funded = client.get('/api/chart/v1/decisions/capture/status', params={'account':'blueberry'})
+    assert funded.status_code == 403
+    assert funded.json()['detail']['code'] == 'DEMO_ACCOUNT_REQUIRED'
+    duplicate = client.get('/api/chart/v1/decisions/capture/status?account=xau5m_m5&account=titan_m5')
+    assert duplicate.status_code == 422

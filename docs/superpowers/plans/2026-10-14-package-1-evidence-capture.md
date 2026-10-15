@@ -20,6 +20,10 @@ FR-026/033/035, AUD-09/11/12, AT-036–038/049–050/055–056. Strategy Tester,
 6. Add inspector/journal/snapshot UI only after the event pipe is proved. Render exact vs OHLC-estimated MFE/MAE distinctly and never infer intrabar order from bars alone.
 7. Review, merge, CI, deploy a clean exact-main build, verify authenticated local and `/stt` runtime identity, then update every mapped FR/AUD/AT status with evidence.
 
+### Recorder-health readback follow-up (16 October)
+
+Expose the existing private spool consumer's bounded per-producer status through an authenticated, read-only endpoint keyed by configured demo account. Return only an allowlisted status projection (`code`, imported/duplicate counts, gap and store-loss flags); never disclose spool paths, cursor names, terminal identity hashes, or raw records. Marketplace accounts without an instrumented producer must report `NOT_CONFIGURED`, and funded/challenge accounts must be rejected before status lookup. Verify local status for the two Titan demo producers after deployment; zero Decision records remain `NOT_RECORDED` until a verified EA emits them.
+
 ## Files to evaluate
 
 - New `chart_studio/evidence_spool.py` for bounded local record validation and cursor/importer logic.

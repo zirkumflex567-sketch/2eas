@@ -186,7 +186,11 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
         response = await call_next(request)
         path = get_route_path(request.scope)
         if any(path == p or path.startswith(p + '/') for p in paths):
-            if response.status_code == 403:
+            identity = getattr(request.state, 'control_identity', None)
+            peer = getattr(request.state, 'raw_peer', None)
+            authenticated = (isinstance(identity, tuple) and len(identity) == 3 and
+                             isinstance(peer, str) and bool(peer))
+            if response.status_code == 403 and not authenticated:
                 return error(403, 'IDENTITY_REQUIRED')
             if response.status_code == 405:
                 return error(405, 'METHOD_NOT_ALLOWED')
@@ -273,6 +277,60 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
             return failure(410, 'CURSOR_INVALID_OR_EXPIRED') if cursor else failure(503, 'STORE_UNAVAILABLE')
         except StoreUnavailable:
             return failure(503, 'STORE_UNAVAILABLE')
+
+    @app.get(paths[0] + '/capture/status')
+    def decision_capture_status(request: Request):
+        identity = getattr(request.state, 'control_identity', None)
+        peer = getattr(request.state, 'raw_peer', None)
+        if (not isinstance(identity, tuple) or len(identity) != 3 or
+                not all(isinstance(x, str) and x for x in identity) or
+                identity[0] not in ('local', 'bearer', 'proxy') or
+                identity[2] not in ('read', 'layout', 'trade') or
+                not isinstance(peer, str) or not peer):
+            return error(403, 'IDENTITY_REQUIRED')
+        params = request.query_params
+        account = params.get('account')
+        if (set(params) != {'account'} or len(params.getlist('account')) != 1 or
+                not isinstance(account, str) or not re.fullmatch('[a-z0-9_-]{1,32}', account)):
+            return error(422, 'INVALID_REQUEST')
+        spec = models.gateway.ACCOUNTS.get(account)
+        if spec is None:
+            return error(400, 'UNKNOWN_ACCOUNT')
+        if spec.get('is_demo') is not True or spec.get('challenge_protection') is True:
+            return error(403, 'DEMO_ACCOUNT_REQUIRED', account)
+
+        producer = DEFAULT_EVIDENCE_PRODUCERS.get(account)
+        if producer is None:
+            status = {'code': 'NOT_CONFIGURED', 'imported': 0, 'duplicates': 0,
+                      'gapCount': 0, 'gapObserved': False, 'storeLostCount': 0,
+                      'recordingState': 'NOT_RECORDED'}
+        else:
+            raw_status = app.state.evidence_spool_status.get(producer)
+            if raw_status is None:
+                raw_status = {}
+            code = raw_status.get('code')
+            if not isinstance(code, str) or re.fullmatch('[A-Z][A-Z0-9_]{0,63}', code) is None:
+                if app.state.evidence_spool_status.get('service', {}).get('code') == 'CONFIG_INVALID':
+                    code = 'SPOOL_UNAVAILABLE'
+                elif app.state.evidence_spool_service is None and app.state.evidence_spool_task is None:
+                    code = 'NOT_STARTED'
+                elif app.state.evidence_spool_task is None:
+                    code = 'NOT_STARTED'
+                else:
+                    code = 'NOT_RECORDED'
+            status = {'code': code}
+            for key in ('imported', 'duplicates', 'gapCount', 'storeLostCount'):
+                value = raw_status.get(key, 0)
+                status[key] = value if type(value) is int and value >= 0 else 0
+            gap_observed = raw_status.get('gapObserved', False)
+            status['gapObserved'] = gap_observed if type(gap_observed) is bool else True
+            try:
+                recorded = store.read(models.AccountContext.from_config(account), kind='DECISION', limit=1)
+                status['recordingState'] = 'RECORDED' if recorded.get('records') else 'NOT_RECORDED'
+            except (StoreUnavailable, AttributeError, TypeError, ValueError):
+                status['recordingState'] = 'UNKNOWN'
+        return JSONResponse({'schemaVersion': 1, 'account': account, 'canExecute': False,
+                             'status': status}, headers={'Cache-Control': 'no-store'})
 
     @app.get(paths[0])
     def decisions(request: Request):
