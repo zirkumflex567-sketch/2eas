@@ -15,6 +15,12 @@ STATIC = ROOT / "static"
 class StoneThemeContractTests(unittest.TestCase):
     def test_stone_skin_uses_shared_theme_tokens_for_core_surfaces(self):
         css = (STATIC / "stone-asset-skin.css").read_text(encoding="utf-8")
+        self.assertIn(
+            "@layer stone-reset, stone-tokens, stone-base, stone-theme, stone-overrides;",
+            css,
+        )
+        token_layer = re.search(r"@layer stone-tokens\s*\{([^}]*)\}", css, re.DOTALL)
+        self.assertIsNotNone(token_layer, "Shared theme tokens belong to their declared cascade layer")
         for token in (
             "--stone-color-root",
             "--stone-color-surface",
@@ -26,7 +32,7 @@ class StoneThemeContractTests(unittest.TestCase):
             "--stone-color-border",
         ):
             with self.subTest(token=token):
-                self.assertRegex(css, re.escape(token) + r"\s*:")
+                self.assertRegex(token_layer.group(1), re.escape(token) + r"\s*:")
                 self.assertIn(f"var({token})", css)
 
     def test_assets_exist(self):

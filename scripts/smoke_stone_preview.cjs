@@ -20,6 +20,30 @@ const {pathToFileURL} = require('node:url');
     await page.goto(pathToFileURL(path.join(root,'static','stone-preview.html')).href,{waitUntil:'load'});
     await page.waitForTimeout(1000);
     assert.equal(await page.locator('body.theme-stone').count(),1,'Stone theme');
+    const themeTokens = await page.evaluate(() => {
+      const body = getComputedStyle(document.body);
+      const card = document.createElement('div');
+      card.className = 'glass-card';
+      document.body.append(card);
+      const cardBorder = getComputedStyle(card).borderTopColor;
+      card.remove();
+      const activeTab = document.createElement('div');
+      activeTab.className = 'account-tab';
+      activeTab.setAttribute('aria-pressed','true');
+      document.body.append(activeTab);
+      const accent = getComputedStyle(activeTab).color;
+      activeTab.remove();
+      return {
+        root: body.getPropertyValue('--stone-color-root').trim(),
+        text: body.color,
+        accent,
+        cardBorder,
+      };
+    });
+    assert.equal(themeTokens.root,'#070b14','Layered root token resolves');
+    assert.equal(themeTokens.text,'rgb(228, 238, 242)','Layered text token resolves');
+    assert.equal(themeTokens.accent,'rgb(99, 234, 255)','Layered accent token resolves');
+    assert.equal(themeTokens.cardBorder,'rgba(117, 159, 171, 0.52)','Layered border token resolves');
     assert.ok(await page.locator('#tv-chart canvas').count()>0,'Demo chart needs canvas');
     assert.ok(await page.locator('button:disabled').count()>0,'Simulated order buttons disabled');
 

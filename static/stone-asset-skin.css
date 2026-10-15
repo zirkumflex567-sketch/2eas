@@ -4,6 +4,9 @@
  * request handlers and risk/order calculations remain owned by app.py.
  * Asset paths are relative to /static/stone-asset-skin.css.
  */
+@layer stone-reset, stone-tokens, stone-base, stone-theme, stone-overrides;
+
+@layer stone-tokens {
 body.theme-stone {
   --stone-color-root: #070b14;
   --stone-color-surface: #0b1419;
@@ -13,6 +16,10 @@ body.theme-stone {
   --stone-color-accent: #63eaff;
   --stone-color-warning: #f5b66a;
   --stone-color-border: rgba(117, 159, 171, .52);
+}
+}
+
+body.theme-stone {
   background:
     radial-gradient(ellipse 88% 72% at 49% -19%, rgba(24, 133, 166, .27), transparent 77%),
     linear-gradient(90deg, rgba(1, 4, 7, .85) 0, rgba(5, 9, 13, .35) 13%, rgba(4, 9, 13, .20) 82%, rgba(1, 4, 7, .9)),
