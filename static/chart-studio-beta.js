@@ -1035,8 +1035,10 @@ function setVerifiedMarketQuote(accountId,data){
  if(!s||s.account!==accountId)return false;
  const bid=Number(data?.bid),ask=Number(data?.ask),age=Number(data?.ageSeconds);
  const digits=data?.digits;
- const valid=data?.account===accountId&&data?.symbol===chartSymbol()&&data?.source==="MT5_VERIFIED"&&data?.canExecute===false&&/^[A-Z]{3,12}$/.test(data?.currency||"")&&Number.isInteger(digits)&&digits>=0&&digits<=10&&Number.isFinite(bid)&&bid>0&&Number.isFinite(ask)&&ask>=bid&&Number.isFinite(age)&&age>=0&&typeof data?.quoteTimeUtc==="string"&&/(?:Z|\+00:00)$/.test(data.quoteTimeUtc)&&Number.isFinite(Date.parse(data.quoteTimeUtc))&&["FRESH","STALE","FUTURE"].includes(data?.freshness);
- s.marketQuote=valid?{bid,ask,digits,currency:data.currency,quoteTimeUtc:data.quoteTimeUtc,ageSeconds:age,freshness:data.freshness,source:data.source}:null;
+ const quoteTimeUtc=Number.isSafeInteger(data?.quoteTimeUtc)&&data.quoteTimeUtc>0&&data.quoteTimeUtc<=8640000000
+  ?new Date(data.quoteTimeUtc*1000).toISOString():data?.quoteTimeUtc;
+ const valid=data?.account===accountId&&data?.symbol===chartSymbol()&&data?.source==="MT5_VERIFIED"&&data?.canExecute===false&&/^[A-Z]{3,12}$/.test(data?.currency||"")&&Number.isInteger(digits)&&digits>=0&&digits<=10&&Number.isFinite(bid)&&bid>0&&Number.isFinite(ask)&&ask>=bid&&Number.isFinite(age)&&age>=0&&typeof quoteTimeUtc==="string"&&/(?:Z|\+00:00)$/.test(quoteTimeUtc)&&Number.isFinite(Date.parse(quoteTimeUtc))&&["FRESH","STALE","FUTURE"].includes(data?.freshness);
+ s.marketQuote=valid?{bid,ask,digits,currency:data.currency,quoteTimeUtc,ageSeconds:age,freshness:data.freshness,source:data.source}:null;
  renderDataWindow();return valid;
 }
 function renderDataWindow(){

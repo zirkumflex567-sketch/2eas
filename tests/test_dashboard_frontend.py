@@ -313,6 +313,10 @@ class DashboardFrontendTests(unittest.TestCase):
             available = ('XAUUSD','EURUSD',self.account_overrides.get(account,{}).get('symbol'))
             symbols=[dict(account=account,symbol=symbol,source='MT5_VERIFIED',canExecute=False) for symbol in available if symbol and query in symbol.casefold()]
             route.fulfill(json=dict(account=account,source='MT5_VERIFIED',canExecute=False,symbols=symbols,limit=200,truncated=False,invalidCount=0)); return
+        if parsed.path == '/api/chart/v1/quotes':
+            symbol=parse_qs(parsed.query).get('symbol',['XAUUSD'])[0]
+            route.fulfill(json=dict(account=account,symbol=symbol,source='MT5_VERIFIED',canExecute=False,
+                bid=4000.0,ask=4000.2,quoteTimeUtc=1791918000,ageSeconds=0.0,freshness='FRESH',digits=2,currency='USD')); return
         if parsed.path == '/api/chart/v1/positions':
             symbol=parse_qs(parsed.query).get('symbol',['XAUUSD'])[0]
             route.fulfill(json=dict(account=account,symbol=symbol,source='MT5_VERIFIED',canExecute=False,currency='USD',marginMode=2,positions=[],orders=[])); return
@@ -463,6 +467,15 @@ class DashboardFrontendTests(unittest.TestCase):
         expect(self.page.locator('#chart-title-text')).to_have_text('EURUSD M5 Chart',timeout=10000)
         expect(self.page.locator('#account-detail')).to_contain_text('EURUSD / M5')
         self.assertEqual(self.mutations,[])
+    def test_scenario_quote_accepts_mt5_unix_timestamp(self):
+        self.load()
+        self.page.locator('#cs-beta-toggle').click()
+        self.page.locator('.cs-scenario summary').click()
+        self.page.locator('#cs-scenario-form [data-cmd="quote"]').click()
+        expect(self.page.locator('#cs-scenario-result')).to_contain_text('Quote übernommen', timeout=5000)
+        expect(self.page.locator('#cs-scenario-form [name="entryPrice"]')).to_have_value('4000.2')
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.errors, [])
     def test_mismatched_symbol_candle_response_is_rejected_after_old_feed_clears(self):
         self.candle_rows=[
             dict(time=1791918000,open=4000.,high=4002.,low=3998.,close=4001.,tick_volume=10,real_volume=0),
