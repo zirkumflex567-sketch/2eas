@@ -55,6 +55,20 @@ install_read_routes(app, mt5)
 install_preview_routes(app, mt5)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / 'static')), name="static")
+
+
+@app.middleware("http")
+async def dashboard_cache_policy(request: Request, call_next):
+    response = await call_next(request)
+    content_type = response.headers.get('content-type', '').lower()
+    if content_type.startswith('text/html'):
+        response.headers['Cache-Control'] = 'no-store'
+    elif request.url.path.startswith('/static/'):
+        # Keep validators (ETag/Last-Modified), but require revalidation after deploys.
+        response.headers['Cache-Control'] = 'no-cache'
+    return response
+
+
 install_evidence_routes(app)
 
 SYMBOL = "XAUUSD"
