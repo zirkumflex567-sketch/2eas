@@ -2521,7 +2521,10 @@ HTML_CONTENT = """<!DOCTYPE html>
       if (generation !== accountGeneration || account !== activeAccount) throw staleRequest();
       if (!response.ok) {
         if (controlled && response.status === 403) controlSessionPromise = null;
-        const error = new Error(body.detail || (response.status === 403 ? 'Dashboard-Steuerung nicht autorisiert.' : 'MT5-Anfrage fehlgeschlagen'));
+        const detail = body.detail;
+        const detailMessage = typeof detail === 'string' ? detail :
+          (detail && typeof detail.message === 'string' ? detail.message : '');
+        const error = new Error(detailMessage || (response.status === 403 ? 'Dashboard-Steuerung nicht autorisiert.' : 'MT5-Anfrage fehlgeschlagen'));
         error.status = response.status;
         throw error;
       }

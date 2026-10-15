@@ -1127,6 +1127,17 @@ class DashboardFrontendTests(unittest.TestCase):
         expect(self.page.locator('#account-connection')).to_contain_text('STALE')
         self.assertEqual(self.page.evaluate('currentData.account.id'),'titan')
         expect(self.page.locator('#dd-reset-button')).to_be_disabled()
+    def test_structured_status_error_is_rendered_as_a_human_readable_reason(self):
+        self.load()
+        self.page.route('**/api/status*', lambda route: route.fulfill(status=503,json=dict(detail=dict(
+            source_fresh=False, risk_status='unknown', message='Broker-Quote veraltet/ungültig; Live-Risiko unbekannt.'
+        ))))
+        self.page.evaluate('updateStatus()')
+        expect(self.page.locator('#account-connection')).to_contain_text('STALE')
+        expect(self.page.locator('#account-connection')).to_contain_text('Broker-Quote veraltet')
+        self.assertNotIn('[object Object]', self.page.locator('#account-connection').inner_text())
+        expect(self.page.locator('#dd-reset-button')).to_be_disabled()
+        self.assertEqual(self.mutations,[])
     def test_journal_partial_failure_retains_both_sources_and_calculates_total(self):
         self.load(); expect(self.page.locator('#journal-count-badge')).to_contain_text('2 Trades')
         self.page.route('**/api/journal_summary?account=goldm15',lambda route:route.fulfill(status=503,json=dict(detail='partial source failure')))

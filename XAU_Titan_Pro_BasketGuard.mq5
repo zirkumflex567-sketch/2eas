@@ -582,7 +582,8 @@ void OnTick()
 
          if(daily_dd_pct >= InpMaxDailyDrawdownPercent && !m_daily_lockout)
          {
-            PrintFormat("BLUEBERRY RISK BREACH: Daily DD %.2f%% >= Limit %.2f%%. Closing all positions.",
+            PrintFormat("RISK GUARD BREACH [%s | %s | %s]: Daily DD %.2f%% >= Limit %.2f%%. Closing all positions.",
+                        AccountInfoString(ACCOUNT_SERVER), _Symbol, EnumToString(Period()),
                         daily_dd_pct, InpMaxDailyDrawdownPercent);
             CloseAllPositionsForMagic();
             if(InpDailyLockoutUntilMidnight)
@@ -618,7 +619,8 @@ void OnTick()
 
          if(total_dd_pct >= InpMaxTotalDrawdownPercent && !m_total_lockout)
          {
-            PrintFormat("BLUEBERRY RISK BREACH: Total DD %.2f%% >= Limit %.2f%%. Closing all positions and halting EA permanently.",
+            PrintFormat("RISK GUARD BREACH [%s | %s | %s]: Total DD %.2f%% >= Limit %.2f%%. Closing all positions and halting EA permanently.",
+                        AccountInfoString(ACCOUNT_SERVER), _Symbol, EnumToString(Period()),
                         total_dd_pct, InpMaxTotalDrawdownPercent);
             CloseAllPositionsForMagic();
             m_total_lockout = true;
@@ -631,7 +633,8 @@ void OnTick()
          double profit_pct = ((current_equity - m_initial_account_balance) / m_initial_account_balance) * 100.0;
          if(profit_pct >= InpPhaseProfitTargetPct && !m_target_reached)
          {
-            PrintFormat("BLUEBERRY GOAL REACHED! Profit reached %.2f%% >= Target %.2f%%. Halting EA.",
+            PrintFormat("PROFIT TARGET REACHED [%s | %s | %s]: Profit %.2f%% >= Target %.2f%%. Halting EA.",
+                        AccountInfoString(ACCOUNT_SERVER), _Symbol, EnumToString(Period()),
                         profit_pct, InpPhaseProfitTargetPct);
             CloseAllPositionsForMagic();
             m_target_reached = true;
@@ -1174,7 +1177,7 @@ void UpdateDashboard(const MqlDateTime &dt)
 
    string state_str = "Aktiv - Scannt jede M15 Kerze";
    if(m_target_reached)
-      state_str = "BLUEBERRY TARGET ERREICHT! (Bestanden)";
+      state_str = "PROFITZIEL ERREICHT! (Bestanden)";
    else if(m_total_lockout)
       state_str = "NOT-HALT (Gesamt-Drawdown Limit erreicht)";
    else if(m_daily_lockout)
