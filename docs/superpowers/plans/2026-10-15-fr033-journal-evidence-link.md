@@ -20,8 +20,9 @@ Let a user check whether a closed broker-journal row has a stored immutable life
 2. [x] Verify the expected failure before production edits.
 3. [x] Implement the smallest app-level UI/read function, using existing authenticated evidence read API.
 4. [x] Run focused journal tests, the full dashboard frontend suite, JS/Python syntax checks, and `git diff --check`.
-5. Deploy exact `main`; inspect only explicit, user-authorized demo aliases if live acceptance is needed. Do not use desktop automation.
+5. [x] Deploy exact `main`; verify the local and htown `/stt` runtime identity and inspect only explicit, user-authorized demo aliases. No desktop automation.
 
 ## Status
 
-- [ ] Commit/push `main`, deploy exact commit to htown `/stt`, and verify the runtime revision and requirement ledger.
+- [x] Commit/push `main` as `6686744`, deploy to htown `/stt`, and verify matching runtime revision/digest, four demo-only status reads, and the FR-033 ledger update.
+- [ ] Repeat the full dashboard suite after the final stale-response guard refinement.
