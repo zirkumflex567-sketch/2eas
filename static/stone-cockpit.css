@@ -326,7 +326,7 @@ body.theme-stone .stone-crest-line {
   body.theme-stone nav.glass-card { padding:10px !important; }
   body.theme-stone .glass-card { border-radius:14px !important; }
   body.theme-stone #tv-chart { min-height:400px !important;height:400px !important; }
-  body.theme-stone #tv-chart.parent { height:400px !important; }
+  body.theme-stone .chart-frame-container { height:400px !important; }
   #stone-rails { opacity:.55; }
 }
 @media(prefers-reduced-motion:reduce) {

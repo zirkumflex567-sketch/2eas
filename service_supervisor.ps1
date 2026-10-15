@@ -1,55 +1,31 @@
-# Auto-Supervisor for Titan Cockpit & STT Reverse Tunnel
-# Ensures 24/7 availability for mobile access at https://h-town.duckdns.org/stt/
+# Safe local dashboard/tunnel supervisor. MT5 terminals are never started here.
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
-$workingDir = "C:\Users\zirku\Downloads\testing"
-$pythonExe = if (Test-Path "C:\Python314\python.exe") { "C:\Python314\python.exe" } else { "python" }
-$keyPath = "$env:USERPROFILE\.ssh\id_ed25519"
-$remoteHost = "kevin@h-town.duckdns.org"
-
-# Set environment variables for proxy security
-$env:DASHBOARD_ALLOWED_HOSTS = "h-town.duckdns.org"
-$env:DASHBOARD_PROXY_SECRET = "ee433ac2a6c6e42299ed55d5a021cf24e08012c2d8addd72d204361355381953"
-$env:DASHBOARD_PROXY_USERS = '{"kevin":"trade"}'
-$env:DASHBOARD_PROXY_PREFIX = "/stt"
-
-function Test-CockpitServer {
-    try {
-        $conn = Get-NetTCPConnection -LocalPort 8050 -State Listen -ErrorAction SilentlyContinue
-        return ($null -ne $conn)
-    } catch {
-        return $false
-    }
+$repo = $env:DASHBOARD_REPO_PATH
+if ([string]::IsNullOrWhiteSpace($repo)) {
+    throw 'Set DASHBOARD_REPO_PATH to the clean main checkout before running the supervisor.'
 }
+$pythonExe = if (Test-Path 'C:\Python314\python.exe') { 'C:\Python314\python.exe' } else { 'python.exe' }
+$privateEnv = Join-Path $env:USERPROFILE '.dashboard-env.json'
+$ensurePath = Join-Path $repo 'scripts/ensure_dashboard_runtime.ps1'
+$tunnelPath = Join-Path $repo 'start_stt_tunnel.ps1'
+$hostExe = (Get-Process -Id $PID).Path
 
-function Start-CockpitServer {
-    if (-not (Test-CockpitServer)) {
-        Start-Process -FilePath $pythonExe -ArgumentList "app.py" -WorkingDirectory $workingDir -WindowStyle Hidden
-        Start-Sleep -Seconds 3
-    }
-}
-
-function Test-SshTunnel {
-    $procs = Get-Process ssh -ErrorAction SilentlyContinue
-    foreach ($p in $procs) {
-        $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId = $($p.Id)" -ErrorAction SilentlyContinue).CommandLine
-        if ($cmd -like "*8055:127.0.0.1:8050*") {
-            return $true
-        }
-    }
-    return $false
-}
-
-function Start-SshTunnel {
-    if (-not (Test-SshTunnel)) {
-        $sshArgs = "-N -R 8055:127.0.0.1:8050 -i `"$keyPath`" -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new $remoteHost"
-        Start-Process -FilePath "ssh.exe" -ArgumentList $sshArgs -WindowStyle Hidden
-        Start-Sleep -Seconds 3
-    }
-}
-
-# Main Watchdog Loop
 while ($true) {
-    Start-CockpitServer
-    Start-SshTunnel
-    Start-Sleep -Seconds 10
+    & $hostExe -NoProfile -ExecutionPolicy Bypass -File $ensurePath -Repo $repo -Python $pythonExe -Port 8050 -PrivateEnvJson $privateEnv
+    if ($LASTEXITCODE -ne 0) { throw 'Guarded main dashboard is not ready; supervisor stopped.' }
+
+    # start_stt_tunnel.ps1 owns reconnects. Track that long-lived supervisor,
+    # not its transient ssh.exe child, or a long outage creates duplicate loops.
+    $tunnel = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -in @('powershell.exe','pwsh.exe') -and $_.CommandLine -like "*$tunnelPath*" }
+    if (-not $tunnel) {
+        Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$tunnelPath) -WindowStyle Hidden
+        Start-Sleep -Seconds 3
+        $tunnel = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -in @('powershell.exe','pwsh.exe') -and $_.CommandLine -like "*$tunnelPath*" }
+        if (-not $tunnel) { throw 'SSH reverse tunnel did not start.' }
+    }
+    Start-Sleep -Seconds 30
 }

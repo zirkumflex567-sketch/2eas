@@ -1092,11 +1092,23 @@ def api_mt5_traces(request: Request, limit: int = 50):
 
 @app.get("/api/candles")
 @scoped(mt5)
-def api_candles(count: int = 150, account: str = 'titan', tf: Optional[str] = None, symbol: Optional[Symbol] = None):
+def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] = None, symbol: Optional[Symbol] = None):
     if not ensure_mt5_init():
         raise HTTPException(status_code=500, detail="MT5 Fehler")
     current_acc = selected()
-    sym_name = symbol or current_acc.get('symbol', SYMBOL)
+    acc_symbol = current_acc.get('symbol', SYMBOL)
+    sym_name = symbol or acc_symbol
+    row = mt5.symbol_info(sym_name)
+    if row is None and acc_symbol and acc_symbol != sym_name:
+        row = mt5.symbol_info(acc_symbol)
+        if row is not None:
+            sym_name = acc_symbol
+    if row is None:
+        for cand in [sym_name + '.pi', sym_name + '.p', sym_name.replace('.pi', '').replace('.p', '')]:
+            row = mt5.symbol_info(cand)
+            if row is not None:
+                sym_name = cand
+                break
     if tf is None:
         tf = current_acc.get('timeframe', 'M15')
     symbol_info = require_symbol(mt5, sym_name)
@@ -1161,7 +1173,7 @@ def api_candles(count: int = 150, account: str = 'titan', tf: Optional[str] = No
         ema50_pts.append({'time': t, 'value': round(row['ema50'], digits)})
         ema200_pts.append({'time': t, 'value': round(row['ema200'], digits)})
 
-        if sym_name == SYMBOL and tf_val == mt5.TIMEFRAME_M15:
+        if (sym_name == SYMBOL or sym_name == current_acc.get('symbol', SYMBOL)) and tf_val == mt5.TIMEFRAME_M15:
             prev = df.loc[idx - 1]
             c1, o1 = prev['close'], prev['open']
             e20_1, e50_1, e200_1 = prev['ema20'], prev['ema50'], prev['ema200']
@@ -1210,7 +1222,7 @@ def api_candles(count: int = 150, account: str = 'titan', tf: Optional[str] = No
         "account": public_account(selected()),
         "accountId": account,
         "analysis_mode": current_acc.get('analysis_mode', 'TITAN_REFERENCE'),
-        "symbol": symbol,
+        "symbol": sym_name,
         "timeframe": tf_upper,
         "source": "MT5_VERIFIED",
         "canExecute": False,
@@ -1609,7 +1621,8 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="static/chart-studio-chart-types.js"></script>
   <script src="static/chart-studio-object-manager.js"></script>
   <link rel="stylesheet" href="static/chart-studio-quick.css">
-  <script src="static/chart-studio-catalog.js"></script>\n  <script src="static/chart-studio-replay.js"></script>
+  <script src="static/chart-studio-catalog.js"></script>
+  <script src="static/chart-studio-replay.js"></script>
   <script src="static/chart-studio-fib.js"></script>
   <script src="static/chart-studio-export.js"></script>
   <script src="static/chart-studio-broker-panel.js"></script>
@@ -1965,7 +1978,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         </div>
 
         <!-- TV CHART CONTAINER (520px high) -->
-        <div class="w-full relative rounded-lg overflow-hidden border table-border" style="height: 520px;">
+        <div class="w-full relative rounded-lg overflow-hidden border table-border chart-frame-container" style="height: 520px;">
           <!-- Complete names of chart price levels; native axis shows only numbers. -->
           <div id="chart-level-legend" class="stone-chart-level-legend" role="group" aria-label="Aktuelle Daily- und Weekly-Level" hidden></div>
           <div id="tv-chart" class="w-full h-full"></div>
@@ -2217,7 +2230,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     const BASE_PATH = window.location.pathname.startsWith('/stt') ? '/stt' : '';
     let activeAccount = 'blueberry';
     let activeTimeframe = 'M15';
-    let activeChartSymbol = 'XAUUSD';
+    let activeChartSymbol = 'XAUUSD.pi';
     const AVAILABLE_TFS = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'];
     let accountGeneration = 0;
     let accounts = {};
@@ -2769,7 +2782,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           mouseWheel: true,
           pressedMouseMove: true,
           horzTouchDrag: true,
-          vertTouchDrag: true,
+          vertTouchDrag: false,
         },
       });
 
@@ -2850,17 +2863,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           autoScale: true,
           scaleMargins: { top: 0.10, bottom: currentBottomMargin }
         });
-        const r = chart.timeScale().getVisibleLogicalRange();
-        if (r && currentCandlesCount && currentCandlesCount > 10) {
-          const span = Math.max(15, r.to - r.from);
-          const rightOffset = 12;
-          chart.timeScale().setVisibleLogicalRange({
-            from: Math.max(0, currentCandlesCount + rightOffset - span),
-            to: currentCandlesCount + rightOffset
-          });
-        } else {
-          chart.timeScale().scrollToRealTime();
-        }
+        applyOptimalChartView(currentCandlesCount);
         try { chart.timeScale().scrollToRealTime(); } catch (_) {}
         try { window.StoneCockpit?.requestSync?.(); } catch (_) {}
       }
@@ -3145,15 +3148,25 @@ HTML_CONTENT = """<!DOCTYPE html>
         const res = await accountFetch('/api/candles?tf=' + encodeURIComponent(reqTf) + '&symbol=' + encodeURIComponent(reqSymbol));
         const data = await res.json();
         if (generation !== accountGeneration || reqTf !== activeTimeframe || reqSymbol !== activeChartSymbol) throw staleRequest();
-        if (!res.ok || data.accountId !== activeAccount || data.symbol !== reqSymbol || data.timeframe !== reqTf || data.source !== 'MT5_VERIFIED' || data.canExecute !== false) throw new Error('Chartdaten haben keinen passenden Account-/Symbol-/Timeframe-Read-Scope.');
+        const expectedSymbol = accounts[activeAccount]?.symbol || reqSymbol;
+        if (!res.ok || data.accountId !== activeAccount || (data.symbol !== reqSymbol && data.symbol !== expectedSymbol) || data.timeframe !== reqTf || data.source !== 'MT5_VERIFIED' || data.canExecute !== false) {
+          throw new Error('Chartdaten haben keinen passenden Account-/Symbol-/Timeframe-Read-Scope.');
+        }
+        if (data.symbol && data.symbol !== activeChartSymbol && accounts[activeAccount]?.symbol === data.symbol) {
+          activeChartSymbol = data.symbol;
+        }
         if (!data.candles || data.candles.length === 0) return;
 
         currentCandlesCount = data.candles.length;
         const latest = data.candles[data.candles.length - 1];
         const curPrice = latest ? latest.close : 0;
         const stoneNewBar = !isInitialLoad && lastCandleTime !== 0 && latest.time !== lastCandleTime;
+        const chartContainer = document.getElementById('tv-chart');
 
         if (isInitialLoad) {
+          if (chartContainer && chartContainer.clientWidth > 0 && chartContainer.clientHeight > 0) {
+            chart.applyOptions({ width: chartContainer.clientWidth, height: chartContainer.clientHeight });
+          }
           candleSeries.setData(data.candles);
           if (data.ema9) ema9Series.setData(data.ema9);
           ema20Series.setData(data.ema20);
@@ -3219,6 +3232,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           });
         } catch (_) { /* Read-only EMA display is optional. */ }
       } catch (err) {
+        console.error('[Cockpit] Kerzen-Ladefehler:', err);
         reportAccountError(err, generation);
       } finally { if (candlesBusy === requestKey) candlesBusy = null; }
     }

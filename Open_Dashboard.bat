@@ -1,52 +1,19 @@
 @echo off
-title Open Trading Dashboard
-color 0A
+setlocal
+title 2EAs Dashboard (guarded)
 
-echo ==============================================================================
-echo                       TRADING DASHBOARD OEFFNEN
-echo ==============================================================================
-echo.
-echo [1/3] Pruefe lokalen Dashboard-Server (Port 8050)...
-set DASHBOARD_ALLOWED_HOSTS=h-town.duckdns.org
-set DASHBOARD_PROXY_SECRET=ee433ac2a6c6e42299ed55d5a021cf24e08012c2d8addd72d204361355381953
-set DASHBOARD_PROXY_USERS={"kevin":"trade"}
-set DASHBOARD_PROXY_PREFIX=/stt
-netstat -ano | findstr "127.0.0.1:8050" | findstr "0.0.0.0:0" >nul
-if errorlevel 1 (
-    echo       Server laeuft noch nicht. Starte app.py...
-    set PYTHON_CMD=python
-    if exist "C:\Python314\python.exe" set PYTHON_CMD=C:\Python314\python.exe
-    cd /d "C:\Users\zirku\Downloads\testing"
-    start "Titan Cockpit Server" /min "%PYTHON_CMD%" app.py
-    ping 127.0.0.1 -n 3 >nul
-    echo       [OK] Server gestartet.
-) else (
-    echo       [OK] Server laeuft bereits auf Port 8050.
+if not defined DASHBOARD_REPO_PATH set "DASHBOARD_REPO_PATH=%USERPROFILE%\.codex\worktrees\open-tasks-delivery\testing"
+if not exist "%DASHBOARD_REPO_PATH%\scripts\ensure_dashboard_runtime.ps1" (
+    echo The configured checkout does not contain the guarded runtime launcher.
+    exit /b 2
 )
 
-echo.
-echo [2/3] Pruefe SSH Reverse-Tunnel zu h-town.duckdns.org...
-tasklist /FI "IMAGENAME eq ssh.exe" 2>nul | find /I "ssh.exe" >nul
-if errorlevel 1 (
-    echo       Tunnel laeuft noch nicht. Starte Reverse-Tunnel...
-    cd /d "C:\Users\zirku\Downloads\testing"
-    start "STT Reverse Tunnel" /min powershell.exe -ExecutionPolicy Bypass -NoProfile -File "c:\Users\zirku\Downloads\testing\start_stt_tunnel.ps1"
-    ping 127.0.0.1 -n 2 >nul
-    echo       [OK] Reverse-Tunnel aktiviert.
-) else (
-    echo       [OK] SSH Reverse-Tunnel ist aktiv.
-)
+set "PYTHON_EXE=C:\Python314\python.exe"
+if not exist "%PYTHON_EXE%" set "PYTHON_EXE=python.exe"
+set "PRIVATE_ENV=%USERPROFILE%\.dashboard-env.json"
 
-echo.
-echo [3/3] Oeffne Trading-Dashboard im Browser...
-start https://h-town.duckdns.org/stt/
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%DASHBOARD_REPO_PATH%\scripts\ensure_dashboard_runtime.ps1" -Repo "%DASHBOARD_REPO_PATH%" -Python "%PYTHON_EXE%" -Port 8050 -PrivateEnvJson "%PRIVATE_ENV%"
+if errorlevel 1 exit /b 1
 
-echo.
-echo ==============================================================================
-echo   Remote URL:  https://h-town.duckdns.org/stt/
-echo   Login:       kevin
-echo   Passwort:    TitanGold2026!
-echo   Lokal:       http://127.0.0.1:8050
-echo ==============================================================================
-echo.
-ping 127.0.0.1 -n 4 >nul
+start "" "https://h-town.duckdns.org/stt/"
+exit /b 0
