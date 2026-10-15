@@ -440,6 +440,28 @@ class DashboardFrontendTests(unittest.TestCase):
         self.assertIn('account=titan', requested)
         self.assertIn('account=goldm15', requested)
         self.assertEqual(self.mutations, [])
+    def test_chart_drawings_survive_themes_and_expanded_layout(self):
+        self.load()
+        imported = self.page.evaluate("""() => {
+          const document = ChartStudioBeta.exportDocument();
+          document.drawings = [{kind:'horizontal',anchors:[{time:1700000000,price:4001.25}],id:'theme-preserve',label:'',visible:true,locked:false}];
+          return {accepted:ChartStudioBeta.importDocument(document),drawing:ChartStudioBeta.getState().drawings[0]};
+        }""")
+        self.assertTrue(imported['accepted'])
+        button = self.page.locator('#stone-chart-expand-btn')
+        for theme in ['dark', 'light', 'stone']:
+            self.page.locator('.stone-theme-dock [data-mode="'+theme+'"]').click()
+            self.assertTrue(self.page.locator('body').evaluate("el=>el.classList.contains('theme-'+"+json.dumps(theme)+")"))
+            self.assertEqual(self.page.evaluate("ChartStudioBeta.getState().drawings[0]"), imported['drawing'])
+        button.click()
+        expect(button).to_have_attribute('aria-pressed', 'true')
+        self.assertTrue(self.page.locator('body').evaluate("el=>el.classList.contains('stone-chart-is-expanded')"))
+        self.assertEqual(self.page.evaluate("ChartStudioBeta.getState().drawings[0]"), imported['drawing'])
+        self.page.keyboard.press('Escape')
+        expect(button).to_have_attribute('aria-pressed', 'false')
+        self.assertEqual(self.page.evaluate("ChartStudioBeta.getState().drawings[0]"), imported['drawing'])
+        self.assertEqual(self.errors, [])
+        self.assertEqual(self.mutations, [])
     def test_position_ticket_draft_focus_survives_structure_and_account_switch(self):
         self.load(); field = self.page.locator('#sl-input-101'); field.fill('-37.00')
         self.page.evaluate("window.originalInput = document.getElementById('sl-input-101')")
