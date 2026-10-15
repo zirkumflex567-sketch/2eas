@@ -38,6 +38,28 @@ class Capacity(Exception):
     pass
 
 
+def _same_mt5_deal_redelivery(existing, candidate):
+    """Treat a later observation of the same broker deal as the same fact.
+
+    The first capturedAtUtc remains immutable provenance. A later polling pass
+    may observe the same deal with a newer capture time, but it must not alter
+    the stored record or hide any changed broker fact.
+    """
+    if (not isinstance(existing, dict) or not isinstance(candidate, dict) or
+            existing.get('type') != 'LIFECYCLE' or candidate.get('type') != 'LIFECYCLE'):
+        return False
+    old_payload, new_payload = existing.get('payload'), candidate.get('payload')
+    if (not isinstance(old_payload, dict) or not isinstance(new_payload, dict) or
+            old_payload.get('source') != 'MT5_DEAL' or new_payload.get('source') != 'MT5_DEAL' or
+            'capturedAtUtc' not in old_payload or 'capturedAtUtc' not in new_payload):
+        return False
+    old = dict(existing, payload={key: value for key, value in old_payload.items()
+                                  if key not in ('capturedAtUtc', 'revision')})
+    new = dict(candidate, payload={key: value for key, value in new_payload.items()
+                                   if key not in ('capturedAtUtc', 'revision')})
+    return old == new
+
+
 def _windows_private(path):
     """Inspect effective DACL ACE trustees with native Win32 APIs; fail closed."""
     from ctypes import wintypes as w
@@ -437,8 +459,9 @@ class EvidenceStore:
                 scope = (account, context.terminal_identity_hash, record['type'], record['id'])
                 existing = db.execute('SELECT * FROM records WHERE account=? AND terminal=? AND kind=? AND id=? AND revision=?', (*scope, record['dataRevision'])).fetchone()
                 if existing:
-                    self._checked_record(db, existing)
-                    if existing['canonical_json'] != raw:
+                    existing_record = self._checked_record(db, existing)
+                    if (existing['canonical_json'] != raw and
+                            not _same_mt5_deal_redelivery(existing_record, record)):
                         raise Conflict()
                     code = 'IDEMPOTENT'
                 else:

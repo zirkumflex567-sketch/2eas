@@ -123,8 +123,14 @@ def capture_deals(store, context, rows, captured_at_utc):
             result['storeLostCount'] += 1
             result['code'] = 'STORE_UNAVAILABLE'
             continue
-        if not isinstance(outcome, dict) or outcome.get('ok') is not True:
-            result['storeLostCount'] = max(result['storeLostCount'], outcome.get('lostCount', 1) if isinstance(outcome, dict) else 1)
+        if not isinstance(outcome, dict):
+            result['storeLostCount'] = max(result['storeLostCount'], 1)
+            result['code'] = 'STORE_UNAVAILABLE'
+        elif outcome.get('ok') is not True and outcome.get('code') == 'CONFLICT':
+            result['rejected'] += 1
+            result['code'] = 'CAPTURE_INCOMPLETE'
+        elif outcome.get('ok') is not True:
+            result['storeLostCount'] = max(result['storeLostCount'], outcome.get('lostCount', 1))
             result['code'] = 'STORE_UNAVAILABLE'
         elif outcome.get('code') == 'IDEMPOTENT':
             result['duplicates'] += 1

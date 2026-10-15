@@ -50,6 +50,27 @@ def test_idempotence_conflict_correction_and_hash(private_root):
     with sqlite3.connect(s.path) as db:db.execute("UPDATE records SET sha256='bad'")
     with pytest.raises(api().StoreUnavailable):s.read(context(),kind='DECISION')
 
+def test_repeated_mt5_deal_with_new_capture_time_keeps_first_immutable_record(private_root):
+    capture=importlib.import_module('chart_studio.broker_lifecycle_capture')
+    row={'account':'titan','login':'53087839','server':'ICMarketsEU-Demo','source':'MT5_VERIFIED',
+         'canExecute':False,'symbol':'XAUUSD','ticket':'8712345','orderTicket':'8712344',
+         'positionIdentifier':'8712300','type':'BUY','status':'EXECUTED','entry':'IN',
+         'fillTime':{'rawBrokerEpochMs':1792098900000,'utcEpochMs':1792088100000,
+                     'brokerUtcOffsetSeconds':10800,'offsetSource':'ACCOUNT_CONFIG'},
+         'price':'4153.92','volume':'0.1','commission':'-0.25','fee':'0','swap':'0','profit':'-1.35'}
+    s=store(private_root)
+    first=capture.capture_deals(s,context(),[row],'2026-10-15T18:16:00Z')
+    redelivery=capture.capture_deals(s,context(),[row],'2026-10-15T18:17:00Z')
+    assert first['code']=='OK' and first['appended']==1 and first['rejected']==0
+    assert redelivery['code']=='OK' and redelivery['duplicates']==1 and redelivery['rejected']==0
+    assert s.gaps('titan')['knownLossSinceStart']==0
+    changed=capture.capture_deals(s,context(),[{**row,'price':'4154.00'}],'2026-10-15T18:18:00Z')
+    assert changed['code']=='CAPTURE_INCOMPLETE' and changed['rejected']==1 and changed['storeLostCount']==0, changed
+    saved=s.read(context(),kind='LIFECYCLE',record_id='mt5_deal_8712345')['records']
+    assert len(saved)==1
+    assert saved[0]['payload']['capturedAtUtc']=='2026-10-15T18:16:00.000000Z'
+    assert saved[0]['payload']['price']=='4153.92'
+
 def test_trusted_append_skips_redundant_full_validation(private_root,monkeypatch):
     s=store(private_root);calls=0;health_checks=0;verify=s._verify_contents;quick_check=s._quick_check
     def counted(db):
