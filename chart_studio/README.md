@@ -73,6 +73,30 @@ Routes: `GET /api/chart/v1/capabilities`,
 `GET /api/chart/v1/quotes`,
 `POST /api/chart/v1/scenarios/preview`.
 
+## Signed indicator extension sandbox (internal engine)
+
+`chart_studio.indicator_extensions` accepts canonical JSON packages signed with
+Ed25519. The host injects a trusted public-key map; package-provided keys are
+never trusted. Export signs a canonical manifest only with a caller-provided
+private-key object, which the module neither creates nor stores. The package
+contains declarative source/constant/parameter leaves and arithmetic, SMA, or
+EMA nodes. Imported Python or JavaScript is never executed; the calculator has
+no filesystem, network, account, MT5, or broker-write access.
+
+The current engine limits packages to 64 KiB, expressions to 128 nodes/depth
+16, parameters to 16, bars to 10,000, and periods to 1,000. Before allocating
+series it checks a conservative 64 MiB owned-memory estimate and a 3,000,000
+operation-unit budget. Runtime metering repeats the work bound and aborts at a
+250 ms monotonic deadline. SMA/EMA warmup is `None`; division by zero is also
+`None`. A local 10,000-bar SMA(20) fixture completed in 56–86 ms over five
+runs; separate `tracemalloc` profiling recorded an 835 KB peak. These are
+local fixture measurements, not target-hardware acceptance.
+
+This is only the internal validation/calculation engine. Browser catalog and
+chart integration, production trust-key provisioning/rotation, user-facing
+import/export, sandbox security review, and target-hardware profiling remain
+open under FR-024.
+
 ## Immutable evidence Phase 0
 
 `GET /api/chart/v1/decisions`, `/decisions/{id}`, `/lifecycle`,
