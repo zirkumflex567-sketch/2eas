@@ -13,6 +13,22 @@ STATIC = ROOT / "static"
 
 
 class StoneThemeContractTests(unittest.TestCase):
+    def test_stone_skin_uses_shared_theme_tokens_for_core_surfaces(self):
+        css = (STATIC / "stone-asset-skin.css").read_text(encoding="utf-8")
+        for token in (
+            "--stone-color-root",
+            "--stone-color-surface",
+            "--stone-color-card",
+            "--stone-color-text",
+            "--stone-color-muted-text",
+            "--stone-color-accent",
+            "--stone-color-warning",
+            "--stone-color-border",
+        ):
+            with self.subTest(token=token):
+                self.assertRegex(css, re.escape(token) + r"\s*:")
+                self.assertIn(f"var({token})", css)
+
     def test_assets_exist(self):
         for name in ("stone-cockpit.css", "stone-cockpit.js", "stone-texture.svg", "stone-preview.html"):
             with self.subTest(asset=name):

@@ -5,15 +5,20 @@
  * Asset paths are relative to /static/stone-asset-skin.css.
  */
 body.theme-stone {
-  --stone-surface: #0b1419;
-  --stone-cyan: #63eaff;
-  --stone-amber: #f5b66a;
-  --stone-line: rgba(106, 200, 222, .43);
+  --stone-color-root: #070b14;
+  --stone-color-surface: #0b1419;
+  --stone-color-card: rgba(7, 15, 21, .93);
+  --stone-color-text: #e4eef2;
+  --stone-color-muted-text: #c4d2d8;
+  --stone-color-accent: #63eaff;
+  --stone-color-warning: #f5b66a;
+  --stone-color-border: rgba(117, 159, 171, .52);
   background:
     radial-gradient(ellipse 88% 72% at 49% -19%, rgba(24, 133, 166, .27), transparent 77%),
     linear-gradient(90deg, rgba(1, 4, 7, .85) 0, rgba(5, 9, 13, .35) 13%, rgba(4, 9, 13, .20) 82%, rgba(1, 4, 7, .9)),
     url("stone-assets/ready/01_basalt_dark_tile.webp") center top / 540px auto repeat !important;
-  color: #e4eef2 !important;
+  background-color: var(--stone-color-root) !important;
+  color: var(--stone-color-text) !important;
 }
 body.theme-stone::before {
   opacity: .27 !important;
@@ -24,10 +29,10 @@ body.theme-stone::after {
   background: radial-gradient(ellipse at 50% 42%, transparent 56%, rgba(0, 0, 0, .52) 100%) !important;
 }
 body.theme-stone .glass-card {
-  border-color: rgba(117, 159, 171, .52) !important;
+  border-color: var(--stone-color-border) !important;
   border-radius: 10px !important;
   background:
-    linear-gradient(175deg, rgba(38, 56, 63, .85), rgba(7, 15, 21, .93) 31%, rgba(7, 13, 19, .94) 78%, rgba(29, 39, 42, .93)),
+    linear-gradient(175deg, rgba(38, 56, 63, .85), var(--stone-color-card) 31%, rgba(7, 13, 19, .94) 78%, rgba(29, 39, 42, .93)),
     url("stone-assets/ready/02_slate_fractured_tile.webp") center / 500px repeat !important;
   box-shadow: inset 0 1px rgba(194, 229, 232, .23),
               inset 0 -5px 8px rgba(0,0,0,.55),
@@ -97,7 +102,7 @@ body.theme-stone .account-tab {
 }
 body.theme-stone .account-tab[aria-pressed="true"] {
   border-image-source: url("stone-assets/ready/38_tab_selected_cyan.webp") !important;
-  color: #e6fbff; filter: drop-shadow(0 0 6px rgba(66,216,249,.35));
+  color: var(--stone-color-accent); filter: drop-shadow(0 0 6px rgba(66,216,249,.35));
 }
 body.theme-stone nav.stone-asset-nav .account-tab:not([aria-pressed="true"]) strong {
   color: #dbe7eb !important;
@@ -106,14 +111,14 @@ body.theme-stone nav.stone-asset-nav .account-tab:not([aria-pressed="true"]) str
   padding: 2px 4px;
 }
 body.theme-stone nav.stone-asset-nav .account-tab small:not([class]) {
-  color: #c4d2d8 !important;
+  color: var(--stone-color-muted-text) !important;
   opacity: 1 !important;
   background: #0b151b !important;
   border-radius: 3px;
   padding: 2px 4px;
 }
 body.theme-stone nav.stone-asset-nav .account-tab .text-amber-200\/70 {
-  color: #fff1b8 !important;
+  color: var(--stone-color-warning) !important;
   opacity: 1 !important;
   background: #15130e !important;
   border-radius: 3px;
@@ -159,6 +164,7 @@ body.theme-stone .stone-asset-panel--chart {
 body.theme-stone .stone-asset-panel--chart > .flex:first-child { margin-bottom: 14px; }
 body.theme-stone .stone-asset-panel--chart #tv-chart {
   background: url("stone-assets/ready/41_chart_recessed_surface.webp") center / cover !important;
+  background-color: var(--stone-color-surface) !important;
 }
 body.theme-stone .stone-chart-stage > div:first-child {
   border: 1px solid rgba(80, 145, 166, .42) !important;
