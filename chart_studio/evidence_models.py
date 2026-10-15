@@ -7,7 +7,7 @@ Unknown fields are rejected; arbitrary string-content secret detection is not
 promised. Returned normalized dictionaries are detached from caller input.
 """
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
 import json
@@ -108,6 +108,20 @@ def utc_microseconds(value):
     dt = datetime.fromisoformat(utc_timestamp(value).replace('Z', '+00:00'))
     delta = dt - datetime(1970, 1, 1, tzinfo=timezone.utc)
     return (delta.days * 86400 + delta.seconds) * 1000000 + delta.microseconds
+
+
+def market_bar_close_microseconds(open_utc, timeframe):
+    """Return the UTC close of an MT5 bar, using calendar months for MN1."""
+    opened = datetime.fromisoformat(utc_timestamp(open_utc).replace('Z', '+00:00'))
+    seconds = {'M1':60,'M5':300,'M15':900,'M30':1800,'H1':3600,'H4':14400,'D1':86400,'W1':604800}
+    if timeframe == 'MN1':
+        year, month = opened.year + (opened.month == 12), 1 if opened.month == 12 else opened.month + 1
+        closed = opened.replace(year=year,month=month,day=1)
+    elif timeframe in seconds:
+        closed = opened + timedelta(seconds=seconds[timeframe])
+    else:
+        _fail()
+    return utc_microseconds(closed.isoformat())
 
 
 def _bounds(value):
@@ -279,7 +293,7 @@ def _lifecycle(value, context, with_revision=True):
         dealSide=choice('BUY','SELL'),commission=lambda v: decimal_string(v,signed=True),
         fee=lambda v: decimal_string(v,signed=True),swap=lambda v: decimal_string(v,signed=True),
         profit=lambda v: decimal_string(v,signed=True),
-        capturedAtUtc=utc_timestamp,price=decimal_string,volume=decimal_string,
+        capturedAtUtc=utc_timestamp,price=decimal_string,volume=decimal_string,symbol=broker_symbol,
         slBefore=nullable(decimal_string),slAfter=nullable(decimal_string),tpBefore=nullable(decimal_string),tpAfter=nullable(decimal_string)))
     if ('dealEntry' in result) != ('dealSide' in result):
         _fail()
@@ -320,9 +334,31 @@ def _chart(value):
 
 def trade_snapshot(value, *, context):
     indicator = lambda v: _object(v,dict(id=identifier,algorithmVersion=identifier,parameterHash=hash_string,sourceRevision=hash_string))
+    def market_data(value):
+        def bar(value):
+            result = _object(value,dict(timeUtc=utc_timestamp,open=decimal_string,high=decimal_string,low=decimal_string,close=decimal_string,
+                tickVolume=lambda v: v if type(v) is int and 0 <= v <= 2**53 else _fail(),
+                spread=lambda v: v if type(v) is int and 0 <= v <= 2**31-1 else _fail(),
+                realVolume=lambda v: v if type(v) is int and 0 <= v <= 2**53 else _fail()))
+            if not (Decimal(result['low']) <= Decimal(result['open']) <= Decimal(result['high']) and
+                    Decimal(result['low']) <= Decimal(result['close']) <= Decimal(result['high'])):
+                _fail()
+            return result
+        result = _object(value,dict(source=choice('MT5_COMPLETED_BARS'),bars=_list(bar,150),sha256=hash_string))
+        if not result['bars'] or hashlib.sha256(canonical_bytes(result['bars'])).hexdigest() != result['sha256']:
+            _fail()
+        times = [utc_microseconds(item['timeUtc']) for item in result['bars']]
+        if any(right <= left for left,right in zip(times,times[1:])):
+            _fail()
+        return result
     def decision_ref(v):
         result = record_ref(v)
         if result['type'] != 'DECISION':
+            _fail()
+        return result
+    def lifecycle_ref(v):
+        result = record_ref(v)
+        if result['type'] != 'LIFECYCLE':
             _fail()
         return result
     def only_null(v):
@@ -332,7 +368,8 @@ def trade_snapshot(value, *, context):
     result = _object(value,dict(snapshotId=identifier,accountId=lambda v: _account(v,context),positionIdentifier=ticket,dealTicket=ticket,
         captureType=choice('ENTRY','EXIT','BACKFILL'),asOfUtc=utc_timestamp,chartView=_chart,marketDataRef=nullable(lambda v: evidence_ref(v,context=context)),
         indicatorInstanceRevisions=_list(indicator,256,'id'),decisionEventIds=_list(decision_ref,256),renderStatus=choice('DATA_ONLY','RENDERED','UNAVAILABLE'),
-        renderAssetRef=only_null,createdAtUtc=utc_timestamp))
+        renderAssetRef=only_null,createdAtUtc=utc_timestamp),optional=dict(marketData=market_data,
+            lifecycleEventIds=_list(lifecycle_ref,2,'id')))
     if len(result['indicatorInstanceRevisions']) + len(result['decisionEventIds']) + (result['marketDataRef'] is not None) > 256:
         _fail()
     _ordered(result['asOfUtc'],result['createdAtUtc'])
@@ -342,6 +379,16 @@ def trade_snapshot(value, *, context):
             _fail()
         _ordered(ref['eventTimeUtc'],result['asOfUtc'])
         if ref['sourceType'] == 'RECONSTRUCTED' and result['captureType'] != 'BACKFILL':
+            _fail()
+    if 'marketData' in result:
+        if (not ref or ref['sourceType'] != 'MARKET_BAR' or ref['sourceRevision'] != result['marketData']['sha256'] or
+                result['marketData']['bars'][0]['timeUtc'] != result['chartView']['fromUtc'] or
+                result['marketData']['bars'][-1]['timeUtc'] != result['chartView']['toUtc'] or
+                any(market_bar_close_microseconds(item['timeUtc'],result['chartView']['timeframe']) > utc_microseconds(result['asOfUtc'])
+                    for item in result['marketData']['bars'])):
+            _fail()
+    for ref in result.get('lifecycleEventIds', []):
+        if ref['id'] != 'mt5_deal_' + result['dealTicket']:
             _fail()
     return result
 

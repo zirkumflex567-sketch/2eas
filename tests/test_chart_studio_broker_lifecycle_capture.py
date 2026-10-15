@@ -72,6 +72,55 @@ def test_deal_mapping_normalizes_mt5_binary_float_artifacts_in_money_fields():
     assert payload['profit'] == '5.94'
 
 
+def test_trade_snapshot_freezes_only_completed_broker_candles_with_stable_identity():
+    service = api()
+    asof = deal()['fillTime']['utcEpochMs'] // 1000
+    def bar(stamp, close):
+        return dict(time=stamp,open=4150.0,high=4155.0,low=4149.0,close=close,
+                    tick_volume=12,spread=18,real_volume=0)
+    rows=[bar(asof-1800,4151.25),bar(asof-900,4152.5),bar(asof,4153.0)]
+    first=service.trade_snapshot_envelope(context(),deal(),rows,captured_at_utc='2026-10-15T18:16:00Z',timeframe='M15',digits=2)
+    again=service.trade_snapshot_envelope(context(),deal(),rows,captured_at_utc='2026-10-15T18:16:10Z',timeframe='M15',digits=2)
+    payload=first['payload']
+    assert payload['captureType']=='ENTRY' and payload['snapshotId']==again['payload']['snapshotId']
+    assert len(payload['marketData']['bars'])==2
+    assert payload['marketData']['bars'][-1]['timeUtc']=='2026-10-15T18:00:00.000000Z'
+    exit_row=deal(ticket='8712346',entry='OUT',type='SELL')
+    exit_payload=service.trade_snapshot_envelope(context(),exit_row,rows,captured_at_utc='2026-10-15T18:16:00Z',timeframe='M15',digits=2)['payload']
+    assert exit_payload['captureType']=='EXIT' and exit_payload['snapshotId']!=payload['snapshotId']
+    assert service.trade_snapshot_envelope(context(),deal(entry='INOUT'),rows,captured_at_utc='2026-10-15T18:16:00Z',timeframe='M15',digits=2) is None
+
+
+def test_demo_poll_persists_entry_snapshot_without_browser_and_retries_idempotently(monkeypatch):
+    from contextlib import contextmanager
+    service=api(); spec=importlib.import_module('account_gateway').ACCOUNTS['titan']; asof=deal()['fillTime']['utcEpochMs']//1000
+    class Store:
+        root=Path('private')
+        def __init__(self): self.records={}
+        def append(self,ctx,envelope):
+            key=(envelope['type'],envelope['id'])
+            duplicate=key in self.records
+            self.records[key]=envelope
+            return {'ok':True,'code':'IDEMPOTENT' if duplicate else 'APPENDED','lostCount':0}
+    class MT5:
+        TIMEFRAME_M15=15
+        def symbol_info(self,symbol): return type('Info',(),{'name':symbol,'digits':2})()
+        def copy_rates_range(self,symbol,timeframe,start,stop):
+            return [dict(time=asof-1800,open=4150.,high=4155.,low=4149.,close=4151.,tick_volume=10,spread=18,real_volume=0),
+                    dict(time=asof-900,open=4151.,high=4156.,low=4150.,close=4152.,tick_volume=11,spread=18,real_volume=0)]
+        def order_send(self,*_args,**_kwargs): raise AssertionError('trade mutation called')
+    @contextmanager
+    def verified(_mt5,account): yield spec
+    monkeypatch.setattr(service.gateway,'traced_session',verified)
+    monkeypatch.setattr(service.broker_reads,'trades_read',lambda *_args,**_kwargs:{'trades':[deal()],'nextCursor':None})
+    store=Store(); poller=service.DemoBrokerLifecycleCapture(store,MT5(),['titan'],clock=lambda:1792088160.)
+    first=poller.poll_once()['titan']; second=poller.poll_once()['titan']
+    snapshots=[env for (kind,_),env in store.records.items() if kind=='SNAPSHOT']
+    assert first['snapshotsAppended']==1 and second['snapshotDuplicates']==1
+    assert len(snapshots)==1 and snapshots[0]['payload']['marketData']['bars']
+    assert snapshots[0]['payload']['lifecycleEventIds']==[dict(type='LIFECYCLE',id='mt5_deal_8712345',dataRevision=1)]
+
+
 @pytest.mark.parametrize('entry,event', [('OUT', 'EXIT'), ('OUT_BY', 'EXIT'), ('INOUT', 'POSITION_OBSERVED')])
 def test_deal_mapping_does_not_infer_reversal_as_simple_entry_or_exit(entry, event):
     payload = api().deal_envelope(context(), deal(entry=entry, type='SELL'), '2026-10-15T18:16:00Z')['payload']
@@ -175,6 +224,7 @@ def test_poll_reads_verified_demo_history_and_appends_without_trade_mutations(mo
     assert calls[1][0:3] == ('history', 'titan', 'XAUUSD')
     assert calls[1][5] == service.PAGE_SIZE
     assert status['coverage'] == 'ROLLING_WINDOW' and status['appended'] == 1
+    assert status['snapshotCoverage']=='UNKNOWN' and status['snapshotUnavailable']==1
     assert len(store.records) == 1
     assert store.records[0][1]['payload']['dealTicket'] == '8712345'
 
@@ -273,7 +323,9 @@ def test_capture_status_is_authenticated_and_limited_to_configured_demos(monkeyp
     app.state.evidence_deal_capture_status = {
         'titan': {'code': 'OK', 'coverage': 'ROLLING_WINDOW', 'appended': 2,
                   'duplicates': 3, 'rejected': 0, 'storeLostCount': 0,
-                  'gapObserved': False, 'windowStartUtc': '2026-10-14T00:00:00.000000Z'},
+                  'gapObserved': False, 'windowStartUtc': '2026-10-14T00:00:00.000000Z',
+                  'snapshotCoverage':'ROLLING_WINDOW','snapshotsAppended':1,'snapshotDuplicates':0,
+                  'snapshotUnavailable':0,'snapshotStoreLostCount':0},
         'xau5m_m5': {'code': 'BROKER_READ_UNAVAILABLE', 'coverage': 'UNKNOWN',
                      'detail': 'must not leak'},
     }
@@ -287,6 +339,7 @@ def test_capture_status_is_authenticated_and_limited_to_configured_demos(monkeyp
     allowed = client.get('/api/chart/v1/lifecycle/capture/status', params={'account': 'titan'})
     assert allowed.status_code == 200
     assert allowed.json()['status']['appended'] == 2
+    assert allowed.json()['status']['snapshotsAppended'] == 1
     assert 'detail' not in allowed.json()['status']
     forbidden = client.get('/api/chart/v1/lifecycle/capture/status', params={'account': 'blueberry'})
     assert forbidden.status_code == 400

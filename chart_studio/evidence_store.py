@@ -53,10 +53,13 @@ def _same_mt5_deal_redelivery(existing, candidate):
             old_payload.get('source') != 'MT5_DEAL' or new_payload.get('source') != 'MT5_DEAL' or
             'capturedAtUtc' not in old_payload or 'capturedAtUtc' not in new_payload):
         return False
+    old_symbol, new_symbol = old_payload.get('symbol'), new_payload.get('symbol')
+    if old_symbol is not None and new_symbol is not None and old_symbol != new_symbol:
+        return False
     old = dict(existing, payload={key: value for key, value in old_payload.items()
-                                  if key not in ('capturedAtUtc', 'revision')})
+                                  if key not in ('capturedAtUtc', 'revision', 'symbol')})
     new = dict(candidate, payload={key: value for key, value in new_payload.items()
-                                   if key not in ('capturedAtUtc', 'revision')})
+                                   if key not in ('capturedAtUtc', 'revision', 'symbol')})
     return old == new
 
 
@@ -353,13 +356,22 @@ class EvidenceStore:
             references.append(supersedes)
         if record['type'] == 'SNAPSHOT':
             references.extend(record['payload']['decisionEventIds'])
+            references.extend(record['payload'].get('lifecycleEventIds', []))
         for ref in references:
             target = db.execute('SELECT * FROM records WHERE account=? AND terminal=? AND kind=? AND id=? AND revision=?',
                                 (row['account'],row['terminal'],ref['type'],ref['id'],ref['dataRevision'])).fetchone()
             if not target or target['seq'] >= row['seq']:
                 raise StoreUnavailable()
-            self._decoded(target)
-            if ref is not supersedes and (target['symbol'] != row['symbol'] or target['event_us'] > row['event_us']):
+            target_record = self._decoded(target)
+            legacy_deal_without_symbol = (ref['type'] == 'LIFECYCLE' and target['symbol'] is None and
+                                          target_record['payload'].get('source') == 'MT5_DEAL')
+            if ref is not supersedes and ((target['symbol'] != row['symbol'] and not legacy_deal_without_symbol) or
+                                          target['event_us'] > row['event_us']):
+                raise StoreUnavailable()
+            if (ref is not supersedes and ref['type'] == 'LIFECYCLE' and
+                    (target['position_id'] != row['position_id'] or
+                     target_record['payload'].get('dealTicket') != record['payload'].get('dealTicket') or
+                     target_record['payload'].get('eventType') != record['payload'].get('captureType'))):
                 raise StoreUnavailable()
             expected.add(target['seq'])
         actual = {r[0] for r in db.execute('SELECT target_seq FROM refs WHERE source_seq=?',(row['seq'],))}
@@ -480,12 +492,20 @@ class EvidenceStore:
                     p = record['payload']
                     symbol = p.get('symbol', p.get('chartView', {}).get('symbol'))
                     if record['type'] == 'SNAPSHOT':
-                        for reference in p['decisionEventIds']:
+                        for reference in [*p['decisionEventIds'], *p.get('lifecycleEventIds', [])]:
                             row = db.execute('SELECT * FROM records WHERE account=? AND terminal=? AND kind=? AND id=? AND revision=?', (account, context.terminal_identity_hash, reference['type'], reference['id'], reference['dataRevision'])).fetchone()
                             if not row:
                                 raise Conflict()
-                            self._checked_record(db, row)
-                            if row['symbol'] != symbol or row['event_us'] > models.utc_microseconds(p['asOfUtc']):
+                            target = self._checked_record(db, row)
+                            legacy_deal_without_symbol = (reference['type'] == 'LIFECYCLE' and row['symbol'] is None and
+                                                          target['payload'].get('source') == 'MT5_DEAL')
+                            if ((row['symbol'] != symbol and not legacy_deal_without_symbol) or
+                                    row['event_us'] > models.utc_microseconds(p['asOfUtc'])):
+                                raise Conflict()
+                            if (reference['type'] == 'LIFECYCLE' and
+                                    (row['position_id'] != p['positionIdentifier'] or
+                                     target['payload'].get('dealTicket') != p['dealTicket'] or
+                                     target['payload'].get('eventType') != p['captureType'])):
                                 raise Conflict()
                             refs.append(row['seq'])
                     if self._file_state() != file_state:

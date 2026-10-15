@@ -70,7 +70,9 @@ const fs=require("node:fs"),path=require("node:path");
   });
   await page.route("**/api/chart/v1/snapshots**",async route=>{
     const url=new URL(route.request().url());evidenceRequests.push({path:url.pathname,params:Object.fromEntries(url.searchParams)});
-    const record={schemaVersion:1,type:"SNAPSHOT",id:"snap_1",accountId:url.searchParams.get("account"),dataRevision:1,provenance:"RECORDED",payload:{snapshotId:"snap_1",symbol:"XAUUSD",captureType:"ENTRY",asOfUtc:"2026-10-14T12:30:00Z",renderStatus:"DATA_ONLY"}};
+    const bars=[{timeUtc:"2026-10-14T12:00:00.000000Z",open:"4100",high:"4110",low:"4095",close:"4108",tickVolume:10,spread:18,realVolume:0},
+      {timeUtc:"2026-10-14T12:15:00.000000Z",open:"4108",high:"4112",low:"4102",close:"4104",tickVolume:12,spread:18,realVolume:0}];
+    const record={schemaVersion:1,type:"SNAPSHOT",id:"snap_1",accountId:url.searchParams.get("account"),dataRevision:1,provenance:"RECORDED",payload:{snapshotId:"snap_1",accountId:url.searchParams.get("account"),positionIdentifier:"92990",dealTicket:"93001",captureType:"ENTRY",asOfUtc:"2026-10-14T12:30:00Z",chartView:{symbol:"XAUUSD",timeframe:"M15",fromUtc:bars[0].timeUtc,toUtc:bars[1].timeUtc,seriesType:"CANDLE",priceScale:"NORMAL"},marketDataRef:{sourceType:"MARKET_BAR"},marketData:{source:"MT5_COMPLETED_BARS",bars,sha256:"a".repeat(64)},decisionEventIds:[],lifecycleEventIds:[{type:"LIFECYCLE",id:"mt5_deal_93001",dataRevision:1}],renderStatus:"DATA_ONLY"}};
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({schemaVersion:1,accountId:url.searchParams.get("account"),availability:"RECORDED",storeState:"INITIALIZED",coverage:"RECORDED",gaps:0,canExecute:false,records:[record],hasMore:false,nextCursor:null})});
   });
   await page.route("**/api/chart/v1/symbol-info?*",async route=>{
@@ -185,6 +187,9 @@ const fs=require("node:fs"),path=require("node:path");
   await page.locator("#cs-evidence-kind").selectOption("SNAPSHOT");await page.locator("#cs-evidence-load").click();
   await page.waitForFunction(()=>document.querySelector("#cs-evidence-list")?.textContent.includes("snap_1"));
   assert.ok((await page.locator("#cs-evidence-list").textContent()).includes("DATA_ONLY"));
+  assert.equal(await page.locator("#cs-evidence-list canvas.cs-evidence-chart").count(),1,"Recorded market bars render as a historical candle chart");
+  assert.match(await page.locator("#cs-evidence-list .cs-evidence-chart-caption").textContent(),/historische Indikatoren\/Zeichnungen nicht aufgezeichnet/);
+  assert.ok(await page.locator("#cs-evidence-list canvas").evaluate(canvas=>{const d=canvas.getContext("2d").getImageData(0,0,canvas.width,canvas.height).data;return [...d].some((v,i)=>i%4!==3&&v!==0)}),"Historical snapshot canvas contains rendered pixels");
   assert.deepEqual(await page.evaluate(()=>JSON.stringify({drawings:ChartStudioBeta.getState().drawings,options:ChartStudioBeta.getState().options})),chartBeforeEvidence,"Evidence browsing does not mutate chart state");
   assert.equal(requests.length,0,"Evidence browsing sends no POST or trade mutation");
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));assert.equal(await page.locator("#cs-evidence-list li").count(),0,"Account switch clears prior-account evidence");

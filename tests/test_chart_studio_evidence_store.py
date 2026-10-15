@@ -102,6 +102,25 @@ def test_references_rollback_and_loss_lifetime(private_root):
     assert s.read(context(),kind='DECISION')['gaps']['knownLossSinceStart']==1
     assert store(private_root).read(context(),kind='DECISION')['gaps']['knownLossSinceStart']==0
 
+def test_snapshot_journal_link_requires_prior_matching_lifecycle_event(private_root):
+    from test_chart_studio_evidence_models import api as models_api, context as account_context, snapshot as snapshot_payload
+    ctx=account_context(); models=models_api(); s=store(private_root)
+    life=dict(id='mt5_deal_2',accountId='titan',positionIdentifier='1',eventType='ENTRY',source='MT5_DEAL',
+        asOfUtc='2026-01-02T03:04:05Z',actor='BROKER',dataQuality='OBSERVED',dealTicket='2',dealEntry='IN',
+        dealSide='BUY',capturedAtUtc='2026-01-02T03:05:05Z',price='1.23',volume='0.1')
+    life=models.seal_lifecycle(life,context=ctx)
+    life_env=dict(schemaVersion=1,type='LIFECYCLE',id=life['id'],accountId='titan',brokerServer=ctx.broker_server,
+        terminalIdentityHash=ctx.terminal_identity_hash,dataRevision=1,provenance='RECORDED',supersedes=None,payload=life)
+    assert s.append(ctx,life_env)['code']=='APPENDED'
+    upgraded=dict(life,symbol='XAUUSD');upgraded.pop('revision');upgraded=models.seal_lifecycle(upgraded,context=ctx)
+    upgraded_env=dict(life_env,payload=upgraded)
+    assert s.append(ctx,upgraded_env)['code']=='IDEMPOTENT' # old immutable deal did not record the now-optional symbol field
+    snap=snapshot_payload(); snap['decisionEventIds']=[]
+    snap['lifecycleEventIds']=[dict(type='LIFECYCLE',id='mt5_deal_2',dataRevision=1)]
+    assert s.append(ctx,envelope(snap,'SNAPSHOT'))['code']=='APPENDED'
+    stored=s.read(ctx,kind='SNAPSHOT')['records'][0]
+    assert stored['payload']['lifecycleEventIds']==snap['lifecycleEventIds']
+
 @pytest.mark.parametrize('bad_value', [sqlite3.Binary(b'bad'), 'bad'])
 def test_append_snapshot_corrupt_reference_time_is_unavailable(private_root, bad_value):
     s = store(private_root)

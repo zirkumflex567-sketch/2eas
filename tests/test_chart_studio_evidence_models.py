@@ -45,6 +45,11 @@ def snapshot():
                 decisionEventIds=[dict(type='DECISION',id='event_1',dataRevision=1)],renderStatus='DATA_ONLY',
                 renderAssetRef=None,createdAtUtc=T)
 
+def frozen_market_data():
+    rows=[dict(timeUtc='2026-01-02T02:45:00.000000Z',open='1',high='2',low='1',close='2',tickVolume=3,spread=1,realVolume=0)]
+    digest=hashlib.sha256(api().canonical_bytes(rows)).hexdigest()
+    return dict(source='MT5_COMPLETED_BARS',bars=rows,sha256=digest)
+
 def lifecycle():
     return dict(id='life_1',accountId='titan',positionIdentifier='1',eventType='ENTRY',source='MT5_DEAL',
                 asOfUtc=T,price='001.2300',volume='0.01',actor='UNKNOWN',dataQuality='OBSERVED')
@@ -78,6 +83,34 @@ def test_typed_guard_chart_view_limits():
     e['payload']['guardSnapshot']['sourceRevision']=H;reject(e)
     e=envelope();e['payload']['featureVector']*=129;reject(e)
     e=envelope(snapshot(),'SNAPSHOT');e['payload']['chartView']['notes']='anything';reject(e)
+
+def test_snapshot_freezes_bounded_market_bars_and_checks_digest():
+    e=envelope(snapshot(),'SNAPSHOT'); p=e['payload']; p['decisionEventIds']=[]
+    p['marketData']=frozen_market_data()
+    p['chartView']['fromUtc']=p['chartView']['toUtc']=p['marketData']['bars'][0]['timeUtc']
+    p['marketDataRef']=dict(id='market_1',sourceType='MARKET_BAR',accountId='titan',brokerServer=context().broker_server,
+        symbol='XAUUSD',eventTimeUtc=p['marketData']['bars'][0]['timeUtc'],recordedAtUtc=T,sourceRevision=p['marketData']['sha256'],confidenceKind='OBSERVED')
+    validate(e)
+    e['payload']['marketData']['bars'][0]['close']='1.5'; reject(e)
+    e=envelope(snapshot(),'SNAPSHOT');e['payload']['decisionEventIds']=[];e['payload']['marketData']=frozen_market_data()
+    e['payload']['marketData']['bars']*=151
+    e['payload']['marketData']['sha256']=hashlib.sha256(api().canonical_bytes(e['payload']['marketData']['bars'])).hexdigest()
+    reject(e)
+
+def test_snapshot_market_bars_must_be_closed_at_asof_including_calendar_months():
+    m=api()
+    assert m.market_bar_close_microseconds('2026-02-01T00:00:00Z','MN1') == m.utc_microseconds('2026-03-01T00:00:00Z')
+    assert m.market_bar_close_microseconds('2026-03-01T00:00:00Z','MN1') == m.utc_microseconds('2026-04-01T00:00:00Z')
+    assert m.market_bar_close_microseconds('2026-01-01T00:00:00Z','MN1') == m.utc_microseconds('2026-02-01T00:00:00Z')
+    e=envelope(snapshot(),'SNAPSHOT');p=e['payload'];p['decisionEventIds']=[];p['marketData']=frozen_market_data()
+    p['chartView']['fromUtc']=p['chartView']['toUtc']=p['marketData']['bars'][0]['timeUtc']
+    p['marketData']['bars'][0]['timeUtc']='2026-01-02T03:00:00.000000Z'
+    p['chartView']['fromUtc']=p['chartView']['toUtc']=p['marketData']['bars'][0]['timeUtc']
+    p['marketData']['sha256']=hashlib.sha256(m.canonical_bytes(p['marketData']['bars'])).hexdigest()
+    p['marketDataRef']=dict(id='market_1',sourceType='MARKET_BAR',accountId='titan',brokerServer=context().broker_server,
+        symbol='XAUUSD',eventTimeUtc=p['chartView']['toUtc'],recordedAtUtc=T,sourceRevision=p['marketData']['sha256'],confidenceKind='OBSERVED')
+    p['chartView']['timeframe']='M15'
+    with pytest.raises(ValueError):validate(e)
     e=envelope(snapshot(),'SNAPSHOT');e['payload']['chartView']['toUtc']='2026-03-01T00:00:00Z';reject(e)
 
 def test_canonical_hash_and_exact_roundtrip():

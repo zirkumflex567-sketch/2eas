@@ -265,6 +265,25 @@ function deleteProfile(){
  const all=profiles();delete all[name];saveProfiles(all);refreshProfiles();updateMessage("Layout gelöscht.");
 }
 function updateMessage(x){if(s?.status)s.status.textContent=x}
+function drawEvidenceSnapshot(canvas,bars){
+ if(!canvas||!Array.isArray(bars)||!bars.length)return;
+ const width=720,height=240,ratio=Math.max(1,Math.min(2,window.devicePixelRatio||1));
+ canvas.width=width*ratio;canvas.height=height*ratio;canvas.style.width="100%";canvas.style.height="auto";
+ const ctx=canvas.getContext("2d");if(!ctx)return;ctx.scale(ratio,ratio);ctx.fillStyle="#07141c";ctx.fillRect(0,0,width,height);
+ const values=bars.flatMap(b=>[Number(b.high),Number(b.low)]);if(!values.every(Number.isFinite))return;
+ let min=Math.min(...values),max=Math.max(...values);if(max===min){min-=1;max+=1}const pad=(max-min)*.08;min-=pad;max+=pad;
+ const left=52,right=12,top=12,bottom=28,plotW=width-left-right,plotH=height-top-bottom;
+ ctx.font="11px ui-monospace,Consolas,monospace";ctx.textAlign="right";ctx.textBaseline="middle";
+ for(let i=0;i<=4;i++){const y=top+plotH*i/4,price=max-(max-min)*i/4;ctx.strokeStyle="rgba(148,184,198,.18)";ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(width-right,y);ctx.stroke();ctx.fillStyle="#a9c5ce";ctx.fillText(price.toFixed(2),left-7,y)}
+ const step=plotW/bars.length,candleW=Math.max(1,Math.min(8,step*.62));
+ bars.forEach((bar,i)=>{const o=Number(bar.open),h=Number(bar.high),l=Number(bar.low),c=Number(bar.close);if(![o,h,l,c].every(Number.isFinite))return;
+  const x=left+step*(i+.5),y=p=>top+(max-p)/(max-min)*plotH,color=c>=o?"#38d8bd":"#f07886";
+  ctx.strokeStyle=color;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,y(h));ctx.lineTo(x,y(l));ctx.stroke();
+  ctx.fillStyle=color;const bodyTop=y(Math.max(o,c)),bodyHeight=Math.max(1,Math.abs(y(o)-y(c)));ctx.fillRect(x-candleW/2,bodyTop,candleW,bodyHeight);
+ });
+ ctx.fillStyle="#a9c5ce";ctx.textAlign="left";ctx.fillText(bars[0].timeUtc.replace("T"," ").replace(".000000Z"," UTC"),left,height-12);
+ ctx.textAlign="right";ctx.fillText(bars[bars.length-1].timeUtc.replace("T"," ").replace(".000000Z"," UTC"),width-right,height-12);
+}
 function renderEvidence(){
  if(!s?.panel)return;const state=s.evidence,list=s.panel.querySelector("#cs-evidence-list"),status=s.panel.querySelector("#cs-evidence-status"),more=s.panel.querySelector("#cs-evidence-more");
  if(!list||!status||!more)return;list.replaceChildren();
@@ -277,10 +296,16 @@ function renderEvidence(){
   const p=record.payload||{},type=record.type||"UNKNOWN";let label;
   if(type==="DECISION")label=["DECISION",p.stage,p.outcome,p.symbol,p.timeframe,p.decisionTimeUtc,p.strategyId].filter(Boolean).join(" · ");
   else if(type==="LIFECYCLE")label=["LIFECYCLE",p.eventType,p.dealEntry&&("Deal "+p.dealEntry),p.dealSide,p.positionIdentifier&&("Position "+p.positionIdentifier),p.asOfUtc,p.price&&("@ "+p.price),p.volume&&("Vol "+p.volume),p.source,p.dataQuality].filter(Boolean).join(" · ");
-  else if(type==="SNAPSHOT")label=["SNAPSHOT",p.captureType,p.positionIdentifier,p.asOfUtc,p.renderStatus].filter(Boolean).join(" · ");
+  else if(type==="SNAPSHOT")label=["SNAPSHOT",p.captureType,p.positionIdentifier,p.asOfUtc,p.renderStatus,p.marketData?.bars?.length&&(""+p.marketData.bars.length+" MT5-Kerzen")].filter(Boolean).join(" · ");
   else label=type+" · "+record.id;
   const li=document.createElement("li"),details=document.createElement("details"),summary=document.createElement("summary"),pre=document.createElement("pre");
-  summary.textContent=label;pre.textContent=JSON.stringify(record,null,2);details.append(summary,pre);li.append(details);list.append(li);
+  summary.textContent=label;pre.textContent=JSON.stringify(record,null,2);
+  if(type==="SNAPSHOT"&&Array.isArray(p.marketData?.bars)&&p.marketData.bars.length){
+   const caption=document.createElement("p");caption.className="cs-evidence-chart-caption";caption.textContent=p.marketData.source+" · "+p.chartView.timeframe+" · gespeicherte OHLC bis "+p.asOfUtc+" · historische Indikatoren/Zeichnungen nicht aufgezeichnet.";
+   const canvas=document.createElement("canvas");canvas.className="cs-evidence-chart";canvas.setAttribute("role","img");canvas.setAttribute("aria-label","Historischer Candlestick-Snapshot "+p.chartView.symbol+" "+p.chartView.timeframe+" bis "+p.asOfUtc);
+   drawEvidenceSnapshot(canvas,p.marketData.bars);details.append(summary,caption,canvas,pre);
+  }else details.append(summary,pre);
+  li.append(details);list.append(li);
  }
  more.hidden=!state.cursor;more.disabled=state.loading;
 }

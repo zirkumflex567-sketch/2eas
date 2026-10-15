@@ -2,10 +2,13 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import hashlib
 import ntpath
+import numbers
 import time
 
 import account_gateway as gateway
+import broker_telemetry
 from chart_studio import broker_reads, history_cursor
 from chart_studio import evidence_models as models
 
@@ -15,6 +18,88 @@ OVERLAP_SECONDS = 5 * 60
 PAGE_SIZE = 500
 MAX_PAGES_PER_ACCOUNT = 100
 MONEY_QUANTUM = Decimal('0.000000000001')
+SNAPSHOT_MAX_BARS = 150
+TIMEFRAME_SECONDS = {'M1':60, 'M5':300, 'M15':900, 'M30':1800, 'H1':3600, 'H4':14400,
+                     'D1':86400, 'W1':604800}
+
+
+def _bar_value(row, name):
+    try:
+        return row[name]
+    except (KeyError, TypeError, IndexError):
+        return getattr(row, name)
+
+
+def _price_string(value, digits):
+    try:
+        amount = Decimal(str(value))
+        if not amount.is_finite():
+            raise ValueError('invalid bar price')
+        quantum = Decimal(1).scaleb(-digits)
+        return models.decimal_string(format(amount.quantize(quantum, rounding=ROUND_HALF_UP), 'f'))
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError('invalid bar price') from exc
+
+
+def _bar_integer(value):
+    if isinstance(value, bool) or not isinstance(value, numbers.Integral):
+        raise ValueError('invalid bar integer')
+    return int(value)
+
+
+def trade_snapshot_envelope(context, row, raw_bars, *, captured_at_utc, timeframe, digits):
+    """Freeze completed MT5 bars for a verified entry/exit deal."""
+    if not isinstance(context, models.AccountContext) or type(row) is not dict:
+        raise ValueError('invalid snapshot source')
+    if row.get('entry') not in ('IN', 'OUT', 'OUT_BY'):
+        return None
+    spec = gateway.ACCOUNTS.get(context.account_id)
+    if (not spec or spec.get('is_demo') is not True or row.get('account') != context.account_id or
+            row.get('login') != str(spec['login']) or row.get('server') != context.broker_server or
+            row.get('symbol') != spec.get('symbol') or row.get('source') != 'MT5_VERIFIED' or row.get('canExecute') is not False):
+        raise ValueError('unverified snapshot source')
+    tf_seconds = TIMEFRAME_SECONDS.get(timeframe)
+    if not tf_seconds or type(digits) is not int or not 0 <= digits <= 10:
+        raise ValueError('invalid snapshot timeframe')
+    asof = _deal_time(row['fillTime']['utcEpochMs'])
+    captured = models.utc_timestamp(captured_at_utc)
+    asof_epoch = row['fillTime']['utcEpochMs'] // 1000
+    normalized = []
+    for source in raw_bars:
+        stamp = _bar_integer(_bar_value(source, 'time'))
+        # MT5 bars are keyed by opening time; only a candle closed by fill time is evidence.
+        stamp_utc = models.utc_timestamp(datetime.fromtimestamp(stamp, timezone.utc).isoformat())
+        if models.market_bar_close_microseconds(stamp_utc,timeframe) > models.utc_microseconds(asof):
+            continue
+        normalized.append(dict(timeUtc=stamp_utc,
+            open=_price_string(_bar_value(source,'open'),digits), high=_price_string(_bar_value(source,'high'),digits),
+            low=_price_string(_bar_value(source,'low'),digits), close=_price_string(_bar_value(source,'close'),digits),
+            tickVolume=_bar_integer(_bar_value(source,'tick_volume')), spread=_bar_integer(_bar_value(source,'spread')),
+            realVolume=_bar_integer(_bar_value(source,'real_volume'))))
+    normalized.sort(key=lambda bar: models.utc_microseconds(bar['timeUtc']))
+    normalized = normalized[-SNAPSHOT_MAX_BARS:]
+    if not normalized:
+        raise ValueError('completed market bars unavailable')
+    digest = hashlib.sha256(models.canonical_bytes(normalized)).hexdigest()
+    capture_type = 'ENTRY' if row['entry'] == 'IN' else 'EXIT'
+    identity = hashlib.sha256(models.canonical_bytes([context.account_id, context.terminal_identity_hash,
+        row['positionIdentifier'], row['ticket'], capture_type])).hexdigest()[:40]
+    market_ref_id = 'bars_' + digest[:48]
+    body = dict(snapshotId='snap_'+identity, accountId=context.account_id,
+        positionIdentifier=models.ticket(row['positionIdentifier']), dealTicket=models.ticket(row['ticket']),
+        captureType=capture_type, asOfUtc=asof,
+        chartView=dict(symbol=row['symbol'],timeframe=timeframe,fromUtc=normalized[0]['timeUtc'],toUtc=normalized[-1]['timeUtc'],
+                       seriesType='CANDLE',priceScale='NORMAL'),
+        marketDataRef=dict(id=market_ref_id,sourceType='MARKET_BAR',accountId=context.account_id,
+            brokerServer=context.broker_server,symbol=row['symbol'],eventTimeUtc=normalized[-1]['timeUtc'],
+            recordedAtUtc=captured,sourceRevision=digest,confidenceKind='OBSERVED'),
+        indicatorInstanceRevisions=[],decisionEventIds=[],lifecycleEventIds=[dict(type='LIFECYCLE',
+            id='mt5_deal_'+models.ticket(row['ticket']),dataRevision=1)],renderStatus='DATA_ONLY',renderAssetRef=None,
+        createdAtUtc=captured,marketData=dict(source='MT5_COMPLETED_BARS',bars=normalized,sha256=digest))
+    envelope = dict(schemaVersion=1,type='SNAPSHOT',id=body['snapshotId'],accountId=context.account_id,
+        brokerServer=context.broker_server,terminalIdentityHash=context.terminal_identity_hash,
+        dataRevision=1,provenance='RECORDED',supersedes=None,payload=body)
+    return models.validate_envelope(envelope, context=context)
 
 
 def parse_demo_allowlist(raw, *, accounts=None):
@@ -102,6 +187,7 @@ def deal_envelope(context, row, captured_at_utc):
         'positionIdentifier': position,
         'eventType': event_type,
         'source': 'MT5_DEAL',
+        'symbol': row['symbol'],
         'asOfUtc': as_of,
         'actor': 'BROKER',
         'dataQuality': 'OBSERVED',
@@ -198,7 +284,9 @@ class DemoBrokerLifecycleCapture:
         captured_at = history_cursor.utc_text(observed_us)
         aggregate = {'code': 'OK', 'coverage': 'ROLLING_WINDOW', 'windowStartUtc': history_cursor.utc_text(start),
                      'appended': 0, 'duplicates': 0, 'rejected': 0, 'storeLostCount': 0,
-                     'gapObserved': self._gap_observed[account]}
+                     'gapObserved': self._gap_observed[account], 'snapshotCoverage':'ROLLING_WINDOW',
+                     'snapshotsAppended':0, 'snapshotDuplicates':0, 'snapshotUnavailable':0,
+                     'snapshotStoreLostCount':0}
         cursor = None
         spec = gateway.ACCOUNTS[account]
         if spec.get('is_demo') is not True:
@@ -221,6 +309,26 @@ class DemoBrokerLifecycleCapture:
                 aggregate['gapObserved'] = True
                 self._gap_observed[account] = True
                 return aggregate
+            for deal_row in page['trades']:
+                if deal_row.get('entry') not in ('IN','OUT','OUT_BY'):
+                    continue
+                try:
+                    snapshot = self._snapshot_for_deal(account, deal_row, captured_at, spec)
+                    outcome = self.store.append(models.AccountContext.from_config(account), snapshot)
+                    if outcome.get('ok') is not True:
+                        aggregate['snapshotStoreLostCount'] += max(1, outcome.get('lostCount', 0))
+                        aggregate['snapshotCoverage'] = 'UNKNOWN'
+                    elif outcome.get('code') == 'APPENDED':
+                        aggregate['snapshotsAppended'] += 1
+                    elif outcome.get('code') == 'IDEMPOTENT':
+                        aggregate['snapshotDuplicates'] += 1
+                    else:
+                        aggregate['snapshotUnavailable'] += 1
+                        aggregate['snapshotCoverage'] = 'UNKNOWN'
+                except Exception:
+                    # A missing/invalid bar series never invalidates the separately captured deal.
+                    aggregate['snapshotUnavailable'] += 1
+                    aggregate['snapshotCoverage'] = 'UNKNOWN'
             cursor = page.get('nextCursor')
             if cursor is None:
                 self._last_scan_us[account] = stop
@@ -230,6 +338,32 @@ class DemoBrokerLifecycleCapture:
         aggregate['gapObserved'] = True
         self._gap_observed[account] = True
         return aggregate
+
+    def _snapshot_for_deal(self, account, row, captured_at, spec):
+        timeframe = spec.get('timeframe', 'M15')
+        seconds = TIMEFRAME_SECONDS.get(timeframe)
+        reader = getattr(self.mt5, 'copy_rates_range', None)
+        if not seconds or not callable(reader):
+            raise ValueError('broker bar history unavailable')
+        epoch_ms = row['fillTime']['utcEpochMs']
+        stop = datetime.fromtimestamp(epoch_ms / 1000, timezone.utc)
+        start = stop - timedelta(seconds=seconds * SNAPSHOT_MAX_BARS)
+        with gateway.traced_session(self.mt5, account) as verified_spec:
+            if (verified_spec is not spec and
+                    (verified_spec.get('login'),verified_spec.get('server'),verified_spec.get('terminal')) !=
+                    (spec['login'],spec['server'],spec['terminal'])):
+                raise ValueError('terminal identity changed during snapshot read')
+            info = broker_reads.require_symbol(self.mt5, spec['symbol'])
+            digits = getattr(info, 'digits', None)
+            timeframe_value = getattr(self.mt5, 'TIMEFRAME_'+timeframe, None)
+            if type(digits) is not int or timeframe_value is None:
+                raise ValueError('broker bar metadata unavailable')
+            with broker_telemetry.span('mt5_rates', count=SNAPSHOT_MAX_BARS):
+                raw = reader(spec['symbol'], timeframe_value, start, stop)
+        if raw is None:
+            raise ValueError('broker bar history unavailable')
+        return trade_snapshot_envelope(models.AccountContext.from_config(account),row,list(raw),
+            captured_at_utc=captured_at,timeframe=timeframe,digits=digits)
 
 
 async def run_demo_broker_lifecycle_capture(app, service, *, interval=POLL_SECONDS, poll=asyncio.to_thread):

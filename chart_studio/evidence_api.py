@@ -278,7 +278,8 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
             return error(400, 'UNKNOWN_ACCOUNT')
         status = app.state.evidence_deal_capture_status.get(account, {})
         allowed = ('code', 'coverage', 'appended', 'duplicates', 'rejected',
-                   'storeLostCount', 'gapObserved', 'windowStartUtc')
+                   'storeLostCount', 'gapObserved', 'windowStartUtc','snapshotCoverage',
+                   'snapshotsAppended','snapshotDuplicates','snapshotUnavailable','snapshotStoreLostCount')
         safe_status = {key: status[key] for key in allowed if key in status}
         if not safe_status:
             safe_status = {'code': 'NOT_STARTED', 'coverage': 'UNKNOWN'}
