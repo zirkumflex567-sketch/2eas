@@ -47,6 +47,11 @@ if _dashboard_env.is_file():
     except Exception:
         pass
 
+os.environ.setdefault('DASHBOARD_ALLOWED_HOSTS', 'h-town.duckdns.org')
+os.environ.setdefault('DASHBOARD_PROXY_SECRET', '7a64fc2c0c11f9b06650d9bd97ad932d45536c6f9a550ce7ed55d5e7a166af33')
+os.environ.setdefault('DASHBOARD_PROXY_USERS', '{"kevin":"trade"}')
+os.environ.setdefault('DASHBOARD_PROXY_PREFIX', '/stt')
+
 app = FastAPI(title="XAU Titan Pro - Institutional Live Cockpit")
 install_control_security(app)
 BASE_DIR = Path(__file__).resolve().parent
@@ -1062,11 +1067,23 @@ def api_mt5_traces(request: Request, limit: int = 50):
 
 @app.get("/api/candles")
 @scoped(mt5)
-def api_candles(count: int = 150, account: str = 'titan', tf: Optional[str] = None, symbol: Optional[Symbol] = None):
+def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] = None, symbol: Optional[Symbol] = None):
     if not ensure_mt5_init():
         raise HTTPException(status_code=500, detail="MT5 Fehler")
     current_acc = selected()
-    sym_name = symbol or current_acc.get('symbol', SYMBOL)
+    acc_symbol = current_acc.get('symbol', SYMBOL)
+    sym_name = symbol or acc_symbol
+    row = mt5.symbol_info(sym_name)
+    if row is None and acc_symbol and acc_symbol != sym_name:
+        row = mt5.symbol_info(acc_symbol)
+        if row is not None:
+            sym_name = acc_symbol
+    if row is None:
+        for cand in [sym_name + '.pi', sym_name + '.p', sym_name.replace('.pi', '').replace('.p', '')]:
+            row = mt5.symbol_info(cand)
+            if row is not None:
+                sym_name = cand
+                break
     if tf is None:
         tf = current_acc.get('timeframe', 'M15')
     symbol_info = require_symbol(mt5, sym_name)
@@ -1084,6 +1101,7 @@ def api_candles(count: int = 150, account: str = 'titan', tf: Optional[str] = No
         raise HTTPException(status_code=500, detail="Konnte Kerzen nicht laden")
 
     df = pd.DataFrame(rates)
+    df['dt'] = pd.to_datetime(df['time'], unit='s')
     # Keep history bars exactly as returned by the verified MT5 symbol read.
     # Quotes have their own endpoint; folding a later tick into OHLC rewrites
     # the broker candle and can mix prices from another symbol in test adapters.
@@ -1177,7 +1195,7 @@ def api_candles(count: int = 150, account: str = 'titan', tf: Optional[str] = No
     return {
         "account": public_account(selected()),
         "accountId": account,
-        "symbol": symbol,
+        "symbol": sym_name,
         "timeframe": tf_upper,
         "source": "MT5_VERIFIED",
         "canExecute": False,
@@ -2199,7 +2217,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     const BASE_PATH = window.location.pathname.startsWith('/stt') ? '/stt' : '';
     let activeAccount = 'blueberry';
     let activeTimeframe = 'M15';
-    let activeChartSymbol = 'XAUUSD';
+    let activeChartSymbol = 'XAUUSD.pi';
     const AVAILABLE_TFS = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'];
     let accountGeneration = 0;
     let accounts = {};
@@ -2745,7 +2763,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           mouseWheel: true,
           pressedMouseMove: true,
           horzTouchDrag: true,
-          vertTouchDrag: true,
+          vertTouchDrag: false,
         },
       });
 
@@ -3121,15 +3139,25 @@ HTML_CONTENT = """<!DOCTYPE html>
         const res = await accountFetch('/api/candles?tf=' + encodeURIComponent(reqTf) + '&symbol=' + encodeURIComponent(reqSymbol));
         const data = await res.json();
         if (generation !== accountGeneration || reqTf !== activeTimeframe || reqSymbol !== activeChartSymbol) throw staleRequest();
-        if (!res.ok || data.accountId !== activeAccount || data.symbol !== reqSymbol || data.timeframe !== reqTf || data.source !== 'MT5_VERIFIED' || data.canExecute !== false) throw new Error('Chartdaten haben keinen passenden Account-/Symbol-/Timeframe-Read-Scope.');
+        const expectedSymbol = accounts[activeAccount]?.symbol || reqSymbol;
+        if (!res.ok || data.accountId !== activeAccount || (data.symbol !== reqSymbol && data.symbol !== expectedSymbol) || data.timeframe !== reqTf || data.source !== 'MT5_VERIFIED' || data.canExecute !== false) {
+          throw new Error('Chartdaten haben keinen passenden Account-/Symbol-/Timeframe-Read-Scope.');
+        }
+        if (data.symbol && data.symbol !== activeChartSymbol && accounts[activeAccount]?.symbol === data.symbol) {
+          activeChartSymbol = data.symbol;
+        }
         if (!data.candles || data.candles.length === 0) return;
 
         currentCandlesCount = data.candles.length;
         const latest = data.candles[data.candles.length - 1];
         const curPrice = latest ? latest.close : 0;
         const stoneNewBar = !isInitialLoad && lastCandleTime !== 0 && latest.time !== lastCandleTime;
+        const chartContainer = document.getElementById('tv-chart');
 
         if (isInitialLoad) {
+          if (chartContainer && chartContainer.clientWidth > 0 && chartContainer.clientHeight > 0) {
+            chart.applyOptions({ width: chartContainer.clientWidth, height: chartContainer.clientHeight });
+          }
           candleSeries.setData(data.candles);
           if (data.ema9) ema9Series.setData(data.ema9);
           ema20Series.setData(data.ema20);

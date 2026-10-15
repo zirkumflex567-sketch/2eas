@@ -93,7 +93,25 @@ body.theme-stone #strategy-version, body.theme-stone #journal-strat-badge {
   box-shadow: inset 0 1px rgba(155,254,255,.15), 0 0 10px rgba(42,199,236,.17);
   border-radius: 6px;
 }
+body.theme-stone #journal-strat-badge {
+  background: #081116 !important;
+  border-color: rgba(136,191,204,.55) !important;
+  color: #e4f4f6 !important;
+  box-shadow: none !important;
+}
+body.theme-stone #session-label {
+  color: #e4f4f6 !important;
+  background: #081116 !important;
+  border-radius: 4px;
+  padding: 2px 4px;
+}
 body.theme-stone .text-sub { color: var(--stone-muted) !important; }
+body.theme-stone #account-content .glass-card span.font-black.text-xs {
+  color: #e4f4f6 !important;
+  background: #081116 !important;
+  border-radius: 4px;
+  padding: 2px 4px;
+}
 body.theme-stone .ticker-bg {
   color: #c9d7dc !important;
   background: linear-gradient(180deg,rgba(4,12,17,.88),rgba(28,37,43,.91)) !important;
@@ -115,6 +133,7 @@ body.theme-stone .account-tab[aria-pressed=true] {
   box-shadow: inset 0 1px rgba(183,250,255,.3), 0 0 13px rgba(25,187,229,.28);
 }
 body.theme-stone .account-tab:hover { box-shadow: 0 0 12px rgba(34,203,246,.19), inset 0 1px rgba(255,255,255,.16); }
+body.theme-stone .account-tab strong:not([class]) { color: #dbe7eb !important; }
 body.theme-stone button:not(.account-tab) {
   transition: filter .22s ease, transform .15s ease, box-shadow .24s ease;
 }
@@ -143,6 +162,13 @@ body.theme-stone #diagnose-card {
 }
 body.theme-stone #diagnose-card .text-blue-500,
 body.theme-stone #diagnose-card .font-black { color: #5ccff5 !important; }
+body.theme-stone #short-missing-text {
+  position: relative;
+  z-index: 1;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgba(5, 13, 20, .96);
+}
 body.theme-stone #sell-bar {
   background: linear-gradient(90deg,#641018 0%,#ff3d35 70%,#ffb35b 100%) !important;
   box-shadow: 0 0 6px #ff542f, 0 0 16px rgba(239,47,36,.6);
@@ -180,8 +206,42 @@ body.theme-stone table td { padding: 8px 7px !important; }
 body.theme-stone #positions-list > * { border-color:rgba(113,143,155,.36) !important; }
 body.theme-stone #journal-list > * {
   border-color: rgba(109,138,147,.27) !important;
-  background: rgba(7,16,20,.22);
+  background: #0b151b !important;
   box-shadow: inset 0 0 16px rgba(0,0,0,.22);
+}
+body.theme-stone #journal-list .stone-journal-detail {
+  background: #0b151b !important;
+  border-color: rgba(109,138,147,.4) !important;
+}
+body.theme-stone #journal-list .stone-journal-detail .text-sub { color: #cbd8dd !important; }
+body.theme-stone #journal-list .journal-entry-pnl.text-emerald-400 {
+  color: #9aefcc !important;
+  background: #0b171b !important;
+  border-color: rgba(93,224,176,.5) !important;
+  box-shadow: none !important;
+}
+body.theme-stone #journal-list .journal-entry-pnl.text-rose-400 {
+  color: #ffbabc !important;
+  background: #1b1013 !important;
+  border-color: rgba(255,142,149,.5) !important;
+  box-shadow: none !important;
+}
+body.theme-stone #journal-list .rounded-full.bg-emerald-500\/20 {
+  color: #d5f9ed !important;
+  background: #0b171b !important;
+  border-color: rgba(93,224,176,.5) !important;
+}
+body.theme-stone #journal-closed-pnl,
+body.theme-stone #journal-live-pnl {
+  background: #0b171b !important;
+  color: #9aefcc !important;
+  border-color: rgba(93,224,176,.5) !important;
+}
+body.theme-stone #journal-closed-pnl.text-rose-400,
+body.theme-stone #journal-live-pnl.text-rose-400 {
+  background: #1b1013 !important;
+  color: #ffbabc !important;
+  border-color: rgba(255,142,149,.5) !important;
 }
 body.theme-stone #dd-badge, body.theme-stone #pos-count-badge {
   border: 1px solid rgba(46,208,234,.3) !important;
@@ -266,7 +326,7 @@ body.theme-stone .stone-crest-line {
   body.theme-stone nav.glass-card { padding:10px !important; }
   body.theme-stone .glass-card { border-radius:14px !important; }
   body.theme-stone #tv-chart { min-height:400px !important;height:400px !important; }
-  body.theme-stone #tv-chart.parent { height:400px !important; }
+  body.theme-stone .chart-frame-container { height:400px !important; }
   #stone-rails { opacity:.55; }
 }
 @media(prefers-reduced-motion:reduce) {

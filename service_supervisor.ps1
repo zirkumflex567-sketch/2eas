@@ -8,7 +8,7 @@ $remoteHost = "kevin@h-town.duckdns.org"
 
 # Set environment variables for proxy security
 $env:DASHBOARD_ALLOWED_HOSTS = "h-town.duckdns.org"
-$env:DASHBOARD_PROXY_SECRET = "ee433ac2a6c6e42299ed55d5a021cf24e08012c2d8addd72d204361355381953"
+$env:DASHBOARD_PROXY_SECRET = "7a64fc2c0c11f9b06650d9bd97ad932d45536c6f9a550ce7ed55d5e7a166af33"
 $env:DASHBOARD_PROXY_USERS = '{"kevin":"trade"}'
 $env:DASHBOARD_PROXY_PREFIX = "/stt"
 
