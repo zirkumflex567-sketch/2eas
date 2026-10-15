@@ -26,7 +26,7 @@ ACCOUNTS = {
                   portable=False, version='Marketplace-EA XAUUSD 5 minute', analysis_mode='INDICATORS_ONLY', capacity=3, broker_utc_offset_seconds=10800,
                   symbol='XAUUSD', timeframe='M15', initial_balance=10000.0, leverage='1:10',
                   account_type='DEMO', is_demo=True, badge='DEMO 10k',
-                  challenge_protection=True),
+                  challenge_protection=False),
     'xau5m_m5': dict(id='xau5m_m5', name='XAUUSD 5 Minute (M5 $250)', login=700194619,
                      server='PUPrime-Demo', company='PU Prime Ltd',
                      terminal=r'C:\Users\zirku\Downloads\mt5_strategy_research\rev\hermes_ea_work\portable\terminal64.exe',
@@ -54,7 +54,7 @@ ACCOUNTS = {
                     portable=True, version='v1.21 GUARDED', capacity=3, broker_utc_offset_seconds=10800,
                     symbol='XAUUSD', timeframe='M15', initial_balance=10000.0, leverage='1:10',
                     account_type='DEMO', is_demo=True, badge='DEMO 10k',
-                    challenge_protection=True, hidden=True),
+                    challenge_protection=False, hidden=True),
 }
 ACCOUNTS['titan_500_2'] = ACCOUNTS['xau5m_500']  # Compatibility alias
 ACCOUNTS['xau5m_m15'] = ACCOUNTS['xau5m_m5']  # Compatibility alias
