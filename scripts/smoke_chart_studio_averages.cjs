@@ -78,8 +78,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await page.evaluate(()=>ChartStudioOscillators.applySettings([]));
   await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("");
   assert.deepEqual(await catalog.locator(".cs-catalog-entry").evaluateAll(rows=>rows.map(row=>row.dataset.indicator)),
-   ["ema","sma","wma","rma","smma","rsi","macd","atr","adx","volume","vwap"],
-   "The searchable catalog lists each P0 indicator family");
+   ["ema","sma","wma","rma","smma","rsi","macd","atr","adx","cci","stochastic","momentum","roc","volume","vwap"],
+   "The searchable catalog lists each registered indicator family");
   async function areaCleanup(){
     await page.locator('[data-instance="ma1"] [data-action="remove"]').click();
   }

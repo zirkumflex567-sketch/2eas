@@ -8,7 +8,9 @@ const macd={id:"osc2",kind:"macd",fast:12,slow:26,signal:9,color:"#54cee9",lineW
 const atr={id:"osc3",kind:"atr",period:21,color:"#a995ff",lineWidth:2,visible:false,label:"Range"};
 const adx={id:"osc4",kind:"adx",period:14,color:"#63dfb6",lineWidth:1,visible:true,label:"ADX Trend"};
 const cci={id:"osc5",kind:"cci",period:20,color:"#a995ff",lineWidth:2,visible:true,label:"CCI"};
-assert.equal(api.normalizeList([rsi,macd,atr,adx,cci]).length,5);
+const momentum={id:"osc6",kind:"momentum",period:10,color:"#55d7ee",lineWidth:2,visible:true,label:"Momentum"};
+const roc={id:"osc7",kind:"roc",period:10,color:"#f3c56a",lineWidth:2,visible:true,label:"ROC"};
+assert.equal(api.normalizeList([rsi,macd,atr,adx,cci,momentum,roc]).length,7);
 assert.equal(api.normalizeList([]).length,0);
 assert.equal(api.normalizeList([rsi,rsi]),null);
 assert.equal(api.normalizeList(Array.from({length:9},(_,i)=>({...rsi,id:"osc"+i}))),null);
@@ -19,10 +21,12 @@ for(const entry of [
  {...rsi,id:"../../bad"},{...rsi,kind:"volume"},
  {...macd,fast:40,slow:26},{...macd,signal:0},{...macd,slow:301},
  {...cci,period:1},{...cci,period:201},{...cci,smoothK:3},
+ {...momentum,period:1},{...roc,period:201},{...momentum,extra:1},
  {...macd,period:14}
 ])assert.equal(api.normalize(entry),null,JSON.stringify(entry));
 assert.equal(api.normalize({...macd,color:"#ABCDEF"}).color,"#abcdef");
 assert.equal(source.includes("order_send("),false);
 assert.equal(source.includes("/api/modify_position"),false);
 assert.ok(api.KINDS.includes("cci"));
-console.log("PASS Chart Studio RSI/MACD/ATR/ADX/CCI instance whitelist, caps, MACD order and no broker writes");
+assert.ok(api.KINDS.includes("momentum")&&api.KINDS.includes("roc"));
+console.log("PASS Chart Studio RSI/MACD/ATR/ADX/CCI/Momentum/ROC instance whitelist, caps and no broker writes");

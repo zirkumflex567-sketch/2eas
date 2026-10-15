@@ -415,6 +415,24 @@ class SqliteLayoutTests(unittest.TestCase):
             with self.subTest(instance=instance), self.assertRaises(StoreError):
                 validate_document({**original,"oscillatorInstances":[instance]})
 
+    def test_momentum_and_roc_instance_workspace_roundtrip_and_bounds(self):
+        original = example()
+        momentum = {"id":"mom1","kind":"momentum","period":10,"visible":True,
+                    "color":"#55d7ee","lineWidth":2,"label":"Momentum"}
+        roc = {"id":"roc1","kind":"roc","period":12,"visible":True,
+               "color":"#f3c56a","lineWidth":3,"label":"ROC"}
+        document = {**original,"oscillatorInstances":[momentum,roc]}
+        self.assertEqual(validate_document(document)["oscillatorInstances"],[momentum,roc])
+        saved = self.store.put("local-owner","titan","XAUUSD","MomentumROC",document,0)
+        self.assertEqual(self.store.get("local-owner","titan","XAUUSD","MomentumROC")["document"],document)
+        for instance in [
+            {**momentum,"period":1},{**momentum,"period":201},
+            {**momentum,"period":10.0},{**momentum,"extra":1},
+            {**roc,"period":0},{**roc,"period":201},{**roc,"extra":1},
+        ]:
+            with self.subTest(instance=instance), self.assertRaises(StoreError):
+                validate_document({**original,"oscillatorInstances":[instance]})
+
     def test_chart_type_compatibility_and_strict_validation(self):
         original = example()
         self.assertNotIn("chartType", validate_document(original))

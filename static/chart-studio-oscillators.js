@@ -5,7 +5,7 @@
 (()=>{
 "use strict";
 const MAX=8, PREFIX="2eas:studio:oscillators:v2:", LEGACY_PREFIX="2eas:studio:oscillators:v1:";
-const KINDS=Object.freeze(["rsi","macd","atr","adx","stochastic","cci"]);
+const KINDS=Object.freeze(["rsi","macd","atr","adx","stochastic","cci","momentum","roc"]);
 const COLORS=Object.freeze(["#e8bb72","#54cee9","#a995ff","#63dfb6","#f7a1ae","#f1dca5","#82bdfa","#dfa2ec"]);
 const clone=o=>JSON.parse(JSON.stringify(o));
 const validColor=c=>typeof c==="string"&&/^#[0-9a-fA-F]{6}$/.test(c);
@@ -41,7 +41,7 @@ function normalizeList(list){
  return result;
 }
 function newConfig(id,kind,color){
- const params=kind==="macd"?{fast:12,slow:26,signal:9}:kind==="stochastic"?{period:14,smoothK:3,smoothD:3}:{period:kind==="cci"?20:14};
+ const params=kind==="macd"?{fast:12,slow:26,signal:9}:kind==="stochastic"?{period:14,smoothK:3,smoothD:3}:{period:kind==="cci"?20:kind==="momentum"||kind==="roc"?10:14};
  return normalize({id,kind,visible:true,color,lineWidth:2,label:"",...params});
 }
 function idNext(entries){
@@ -117,6 +117,8 @@ function createPane(cfg){
  }
  if(cfg.kind==="stochastic"){line("stochK",cfg.color);line("stochD","#f3c56a")}
  if(cfg.kind==="cci")line("cci",cfg.color);
+ if(cfg.kind==="momentum")line("momentum",cfg.color);
+ if(cfg.kind==="roc")line("roc",cfg.color);
  let observer=null;
  if(typeof ResizeObserver!=="undefined"){
   observer=new ResizeObserver(()=>{
@@ -259,7 +261,7 @@ function mount({chart,host,panel,account="titan"}){
  const title=document.createElement("strong");title.textContent="INDIKATOR-LABOR · MEHRFACH-PANES";
  const count=document.createElement("span");header.append(title,count);
  const info=document.createElement("p");info.textContent=
-  "RSI, MACD, ATR, ADX und Stochastic mehrfach mit eigenen Parametern, Pane, Farbe und Linienstärke.";
+  "RSI, MACD, ATR, ADX, Stochastic, CCI, Momentum und ROC mehrfach mit eigenen Parametern, Pane, Farbe und Linienstärke.";
  const tools=document.createElement("div");tools.className="cs-osc-presets";
  for(const kind of KINDS){
   const button=document.createElement("button");button.type="button";button.dataset.add=kind;

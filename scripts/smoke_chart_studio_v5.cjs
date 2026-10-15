@@ -335,6 +335,29 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const flatRow=flatEngine.readDataWindow(flatBars.at(-1).time).indicators,flatWarmup=flatEngine.readDataWindow(flatBars[1].time).indicators;flatEngine.destroy();flatHost.remove();
   return {references,panes,before,after,row,paneCount,movedMacdPane,badOrderRejected,badPeriodRejected,badStochasticRejected,badCciRejected,extraCciSettingRejected,atomicCount,afterOneRemoval,isolated,paneLimitRejected,paneLimitCount,updatedReadout,updatedReferences,repeatedFormingReadoutMatches,historicalReadoutSurvivesUpdate,appendedReadoutMatches,settingsRebuildMatches,replacementReadoutMatches,replacementHistoricalMatches,flatRow,flatWarmup,drawingCollisionRejected,averageCollisionRejected,paneLineCollisionRejected};
   });
+  const momentumRocProbe=await page.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:420px;height:280px;position:fixed;left:-2000px;top:0";document.body.append(host);
+   const bars=Array.from({length:40},(_,i)=>{const close=100+Math.sin(i/4)*3+i*.2;return {time:1712000000+i*300,open:close-.2,high:close+.8,low:close-.7,close}});
+   let engine=ChartStudioV5.createStudioV5(host,"momentum-roc-scope",{symbol:"XAUUSD",timeframe:"M15"});engine.setCandles(bars);
+   engine.addOscillator({id:"momentum-one",kind:"momentum",settings:{period:10},color:"#55d7ee"});
+   engine.addOscillator({id:"roc-one",kind:"roc",settings:{period:10},color:"#f3c56a"});
+   const count=engine.inspect().oscillatorCount,last=engine.readDataWindow(bars.at(-1).time).indicators;
+   const options={momentum:engine.oscillatorOptions("momentum-one"),roc:engine.oscillatorOptions("roc-one")};
+   engine.updateOscillator("momentum-one",{settings:{period:5}});
+   const updated=engine.oscillatorOptions("momentum-one");let invalidPeriodRejected=false,extraSettingsRejected=false;
+   try{engine.updateOscillator("roc-one",{settings:{period:201}})}catch(_){invalidPeriodRejected=true}
+   try{engine.addOscillator({id:"bad-mode",kind:"momentum",settings:{period:10,mode:"roc"},color:"#ffffff"})}catch(_){extraSettingsRejected=true}
+   engine.destroy();
+   engine=ChartStudioV5.createStudioV5(host,"momentum-roc-scope",{symbol:"XAUUSD",timeframe:"M15"});engine.setCandles(bars);
+   const restored={count:engine.inspect().oscillatorCount,momentum:engine.oscillatorOptions("momentum-one"),roc:engine.oscillatorOptions("roc-one")};
+   engine.changeAccount("other");const isolated=engine.inspect().oscillatorCount;engine.destroy();host.remove();
+   const zeroBars=[0,1,2,3].map((close,i)=>({time:1713000000+i*60,open:close,high:close+1,low:close-1,close}));
+   const stream=ChartStudioV5.createIncrementalOscillator(zeroBars,"roc",{period:2});
+   return {count,last,options,updated,invalidPeriodRejected,extraSettingsRejected,restored,isolated,
+    momentumReference:bars.at(-1).close-bars.at(-11).close,
+    rocReference:(bars.at(-1).close/bars.at(-11).close-1)*100,
+    zeroDenominatorRoc:stream.snapshot().roc};
+  });
   const incrementalOscillatorProbe=await page.evaluate(()=>{
    const factory=ChartStudioV5.createIncrementalOscillator;
    if(typeof factory!=="function")return {available:false,mismatches:[]};
@@ -344,7 +367,9 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
     {kind:"macd",settings:{fast:12,slow:26,signal:9}},
     {kind:"adx",settings:{period:14}},
     {kind:"stochastic",settings:{period:14,smoothK:3,smoothD:3}},
-    {kind:"cci",settings:{period:20}}
+    {kind:"cci",settings:{period:20}},
+    {kind:"momentum",settings:{period:10}},
+    {kind:"roc",settings:{period:10}}
    ];
    const original=Array.from({length:240},(_,i)=>{const close=2000+Math.sin(i/7)*8+i*.04;return {time:1715000000+i*300,open:close-.2,high:close+1+Math.cos(i/5)*.2,low:close-1-Math.sin(i/9)*.2,close}});
    const mismatches=[];
@@ -485,6 +510,23 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    "Replacing the candle history recalculates managed averages from the new history");
   assert.deepEqual(movingAverageProbe.matrixMismatches,[],"All MA types, OHLC sources and display-shift directions match production beta calculations");
   assert.equal(oscillatorProbe.panes.oscillatorCount,7,"Each configured oscillator is one logical indicator even when it owns multiple native series");
+  assert.equal(momentumRocProbe.count,2,"Momentum and ROC each create one native pane instance");
+  assert.equal(momentumRocProbe.options.momentum.settings.period,10);
+  assert.equal(momentumRocProbe.options.roc.settings.period,10);
+  assert.equal(momentumRocProbe.updated.settings.period,5,"Momentum period edits rebuild the active series");
+  assert.equal(momentumRocProbe.invalidPeriodRejected,true);
+  assert.equal(momentumRocProbe.extraSettingsRejected,true,"Native settings reject unknown ROC modes");
+  assert.equal(momentumRocProbe.restored.count,2,"Both oscillator instances survive a scoped native chart reload");
+  assert.equal(momentumRocProbe.restored.momentum.settings.period,5);
+  assert.equal(momentumRocProbe.restored.roc.settings.period,10);
+  assert.equal(momentumRocProbe.isolated,0,"Account changes clear Momentum and ROC instances");
+  const momentumAtLast=momentumRocProbe.last.find(item=>item.id==="momentum-one:momentum");
+  const rocAtLast=momentumRocProbe.last.find(item=>item.id==="roc-one:roc");
+  assert.equal(momentumAtLast.state,"AVAILABLE");assert.equal(rocAtLast.state,"AVAILABLE");
+  assert.ok(Math.abs(momentumAtLast.value-momentumRocProbe.momentumReference)<1e-8);
+  assert.ok(Math.abs(rocAtLast.value-momentumRocProbe.rocReference)<1e-8);
+  assert.equal(momentumRocProbe.zeroDenominatorRoc.length,1,"ROC skips the undefined zero-denominator sample");
+  assert.equal(momentumRocProbe.zeroDenominatorRoc[0].value,200);
   assert.equal(oscillatorProbe.panes.oscillatorPaneCount,7);
   assert.equal(oscillatorProbe.paneCount,8,"MACD and Stochastic components share their native panes");
   assert.equal(oscillatorProbe.movedMacdPane.paneCount,7,"Moving the MACD group into an existing native pane collapses its prior pane");

@@ -12,6 +12,8 @@ const REGISTRY=Object.freeze({
  adx:{name:"ADX +DI / −DI (Wilder)",type:"oscillator",period:14,min:2,max:200},
  stochastic:{name:"Stochastic %K/%D",type:"oscillator",period:14,smoothK:3,smoothD:3,min:2,max:200},
  cci:{name:"Commodity Channel Index",type:"oscillator",period:20,min:2,max:200},
+ momentum:{name:"Momentum",type:"oscillator",period:10,min:2,max:200},
+ roc:{name:"Rate of Change (%)",type:"oscillator",period:10,min:2,max:200},
  vwap:{name:"Session-VWAP (Volumenproxy)",type:"overlay",timeZone:"UTC",sessionStart:"00:00"}
 });
 const storagePrefix="2eas:studio:indicators:v1:";
@@ -79,6 +81,22 @@ function cci(input,period=20){
   for(let j=i-period+1;j<=i;j++){const b=bars[j],value=(b.high+b.low+b.close)/3;typical.push(value);sum+=value}
   const mean=sum/period;let deviation=0;for(const value of typical)deviation+=Math.abs(value-mean);
   const current=typical[typical.length-1];out.push({time:bars[i].time,value:deviation===0?0:(current-mean)/(0.015*deviation/period)});
+ }
+ return out;
+}
+function momentum(input,period=10){
+ const bars=validateBars(input),out=[];
+ if(!Number.isInteger(period)||period<2||period>200)return out;
+ for(let i=period;i<bars.length;i++)out.push({time:bars[i].time,value:bars[i].close-bars[i-period].close});
+ return out;
+}
+function roc(input,period=10){
+ const bars=validateBars(input),out=[];
+ if(!Number.isInteger(period)||period<2||period>200)return out;
+ for(let i=period;i<bars.length;i++){
+  const reference=bars[i-period].close;
+  if(reference===0)continue;
+  out.push({time:bars[i].time,value:(bars[i].close/reference-1)*100});
  }
  return out;
 }
@@ -192,13 +210,16 @@ function calc(kind,candles,settings={}){
  if(kind==="adx")return adx(candles,settings.period||14);
  if(kind==="stochastic")return stochastic(candles,settings.period||14,settings.smoothK||3,settings.smoothD||3);
  if(kind==="cci")return {cci:cci(candles,settings.period??20)};
+ if(kind==="momentum")return {momentum:momentum(candles,settings.period??10)};
+ if(kind==="roc")return {roc:roc(candles,settings.period??10)};
  if(kind==="vwap")return {vwap:vwap(candles,settings)};
  throw Error("Unknown indicator: "+kind);
 }
 function defaults(){
  return {rsi:{enabled:false,period:14},macd:{enabled:false,fast:12,slow:26,signal:9},
   atr:{enabled:false,period:14},volume:{enabled:false,upColor:"#41cce9",downColor:"#f7758b"},adx:{enabled:false,period:14},
-  stochastic:{enabled:false,period:14,smoothK:3,smoothD:3},cci:{enabled:false,period:20},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
+  stochastic:{enabled:false,period:14,smoothK:3,smoothD:3},cci:{enabled:false,period:20},
+  momentum:{enabled:false,period:10},roc:{enabled:false,period:10},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
 }
 function restore(account){
  try{const raw=JSON.parse(localStorage.getItem(storagePrefix+account)||"null");
@@ -256,7 +277,7 @@ function syncPanel(){
 }
 function data(kind){return calc(kind,state.bars,state.settings[kind])}
 function addReadout(kind,calculated){
- const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],cci:["CCI"],vwap:["VWAP"]}[kind];
+ const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],vwap:["VWAP"]}[kind];
  const keys=Object.keys(calculated);
  for(let i=0;i<keys.length;i++)for(const point of calculated[keys[i]]||[]){
   const rows=state.readouts.get(point.time)||[];
@@ -307,6 +328,8 @@ function createPane(kind){
  if(kind==="adx"){series("adx","#e9bc72");series("plusDi","#55deaa");series("minusDi","#f17e97")}
  if(kind==="stochastic"){series("stochK","#55d7ee");series("stochD","#f3c56a")}
  if(kind==="cci")series("cci","#a995ff");
+ if(kind==="momentum")series("momentum","#55d7ee");
+ if(kind==="roc")series("roc","#f3c56a");
  const pane={shell,chart,plot,lines,observer:null};
  if(typeof ResizeObserver!=="undefined"){pane.observer=new ResizeObserver(()=>{
   chart.applyOptions({width:Math.max(180,plot.clientWidth),height:Math.max(80,plot.clientHeight)});
@@ -348,7 +371,7 @@ function readout(time){
  if(!state)return "";
  const rows=state.readouts.get(Number(time))||[];
  const values=[];
- const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],cci:["CCI"],vwap:["VWAP"]};
+ const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],vwap:["VWAP"]};
  for(const id of Object.keys(REGISTRY))if(state.settings[id].enabled){
   for(const label of components[id]){
    const row=rows.find(item=>item.kind===id&&item.label===label);
@@ -436,5 +459,5 @@ function mount({chart,host,panel,account="titan"}){
  syncPanel();renderPanes();
 }
 window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,updateConfig,settings,readout,
- registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,cci,macd,atr,adx,vwap,volumes})});
+ registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,cci,momentum,roc,macd,atr,adx,vwap,volumes})});
 })();

@@ -64,6 +64,18 @@ assert.equal(math.cci(cciBars,1).length,0);
 assert.equal(math.cci(cciBars,2.5).length,0);
 assert.equal(math.cci(cciBars,201).length,0);
 assert.equal(window.ChartStudioIndicators.calculate("cci",cciBars,{period:0}).cci.length,0);
+const momentumBars=[0,1,2,3,6].map((close,index)=>({time:1700400000+index*60,open:close,high:close+1,low:close-1,close}));
+const momentum=math.momentum(momentumBars,2),roc=math.roc(momentumBars,2);
+assert.deepEqual(Array.from(momentum,point=>point.time),momentumBars.slice(2).map(bar=>bar.time));
+assert.deepEqual(Array.from(momentum,point=>point.value),[2,2,4]);
+assert.deepEqual(Array.from(roc,point=>point.time),momentumBars.slice(3).map(bar=>bar.time));
+near(roc[0].value,200);near(roc[1].value,200);
+assert.equal(math.momentum(momentumBars.slice(0,2),2).length,0);
+assert.equal(math.roc(momentumBars.slice(0,2),2).length,0);
+assert.equal(math.momentum(momentumBars,1).length,0);
+assert.equal(math.roc(momentumBars,201).length,0);
+assert.equal(window.ChartStudioIndicators.calculate("momentum",momentumBars,{period:2}).momentum.length,3);
+assert.equal(window.ChartStudioIndicators.calculate("roc",momentumBars,{period:2}).roc.length,2);
 assert.ok(src.includes("state.bars.map(bar=>byTime.get(bar.time)||{time:bar.time})"));
 assert.ok(!src.includes("order_send(")&&!src.includes("/api/modify_position"));
 

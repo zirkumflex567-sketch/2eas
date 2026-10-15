@@ -11,6 +11,9 @@ const entries=Object.freeze([
  {id:"atr",name:"Average True Range",group:"Volatilität",desc:"ATR-Fenster",type:"oscillator",kind:"atr"},
  {id:"adx",name:"Average Directional Index",group:"Trendstärke",desc:"ADX mit DI-Linien",type:"oscillator",kind:"adx"},
  {id:"cci",name:"Commodity Channel Index",group:"Momentum",desc:"CCI mit 20-Perioden-Standard",type:"oscillator",kind:"cci"},
+ {id:"stochastic",name:"Stochastic",group:"Momentum",desc:"%K/%D-Oszillator mit konfigurierbarer Glättung",type:"oscillator",kind:"stochastic"},
+ {id:"momentum",name:"Momentum",group:"Momentum",desc:"Close-Differenz zum Schlusskurs vor der gewählten Periode",type:"oscillator",kind:"momentum"},
+ {id:"roc",name:"Rate of Change (ROC)",group:"Momentum",desc:"Prozentuale Close-Änderung über die gewählte Periode",type:"oscillator",kind:"roc"},
  {id:"volume",name:"Broker-Volumen",group:"Volumen",desc:"Reales oder Tickvolumen, kein garantierter Orderflow",type:"toggle",kind:"volume"},
  {id:"vwap",name:"VWAP (UTC)",group:"Volumen",desc:"UTC-VWAP, bei Tickvolumen nur Proxy",type:"toggle",kind:"vwap"}
 ]);
