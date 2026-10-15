@@ -336,6 +336,8 @@ class DashboardFrontendTests(unittest.TestCase):
         candle_urls=[url for url in self.requests if '/api/candles?' in url]
         self.assertTrue(any(parse_qs(urlparse(url).query).get('symbol')==['XAUUSD.pi'] for url in candle_urls),candle_urls)
         self.assertEqual(self.page.evaluate('activeChartSymbol'), 'XAUUSD.pi')
+        self.assertEqual(self.page.evaluate('ChartStudioBeta.getState().symbol'), 'XAUUSD.pi')
+        expect(self.page.locator('#cs-scenario-symbol')).to_have_text('XAUUSD.pi')
         self.assertEqual(self.page.evaluate("document.querySelector('#tv-chart').__candleSeries.data().length"), 2)
         portfolio_symbols=[parse_qs(urlparse(url).query).get('scenarioSymbol',[''])[0]
             for url in self.requests if '/api/chart/v1/portfolio?' in url]
