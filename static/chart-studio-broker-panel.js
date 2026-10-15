@@ -45,10 +45,11 @@ function renderPositions(rows){
  head.replaceChildren();const hr=head.insertRow();for(const label of ["Ticket","Seite","Lots","Einstieg","SL","TP","P/L (MT5)","Swap (MT5)","Währung","Entwurf"]){const th=document.createElement("th");th.scope="col";th.textContent=label;hr.append(th)}
  body.replaceChildren();state.positionRows=new Map();
  for(const position of rows){const tr=body.insertRow();for(const value of [position.ticket,position.type,position.volume,position.price_open,stopLevel(position.sl),stopLevel(position.tp),position.profit,position.swap,position.currency])tr.append(cell(value));
-  const td=tr.insertCell(),button=state.symbol==="XAUUSD"?el("button",{type:"button","data-cmd":"position-draft"},"SL/TP-Entwurf"):null;
+  const symbolVerified=state.currentSymbolVerified&&position.symbol===state.symbol;
+  const td=tr.insertCell(),button=symbolVerified?el("button",{type:"button","data-cmd":"position-draft"},"SL/TP-Entwurf"):null;
   const valid=typeof position.ticket==="string"&&/^\d{1,20}$/.test(position.ticket)&&typeof position.revision==="string"&&/^[0-9a-f]{64}$/.test(position.revision)&&["BUY","SELL"].includes(position.type)&&Number.isFinite(Number(position.price_open))&&Number(position.price_open)>0;
   if(button){button.disabled=!valid;button.setAttribute("aria-label","SL/TP-Entwurf für Position "+String(position.ticket));td.append(button)}else td.textContent="Nur lesbar · anderes Chartsymbol";
-  if(valid&&state.symbol==="XAUUSD")state.positionRows.set(position.ticket,position);
+  if(valid&&symbolVerified)state.positionRows.set(position.ticket,position);
  }
 }
 function closeDraft(message="Entwurf beendet."){
@@ -68,13 +69,14 @@ function syncDraftOverlay(){
  state.draft={...state.draft,...values};state.draftPreview=null;state.draftStatus.textContent="Entwurf · noch keine Broker-Vorschau · keine Änderung";
 }
 async function beginDraft(position){
- if(state.symbol!=="XAUUSD")return;
+ const symbol=state.symbol;
+ if(!state.currentSymbolVerified||!validScopeRow(position,state.account,symbol))return;
  closeDraft("Symbol-Metadaten werden gelesen …");const token=++state.draftToken,account=state.account;
  try{
-  const params=new URLSearchParams({account,symbol:"XAUUSD"}),response=await fetch(apiScope()+"/api/chart/v1/symbol-info?"+params.toString(),{cache:"no-store"}),data=await response.json();
-  if(token!==state.draftToken||account!==state.account)return;
-  if(!response.ok||data.account!==account||data.symbol!=="XAUUSD"||data.source!=="MT5_VERIFIED"||data.canExecute!==false||!Number.isFinite(Number(data.tickSize))||Number(data.tickSize)<=0)throw new Error("Tickweite fehlt oder Quelle nicht verifiziert.");
-  state.draft={account,symbol:"XAUUSD",ticket:position.ticket,revision:position.revision,side:position.type,entryPrice:Number(position.price_open),slPrice:position.sl==null||Number(position.sl)===0?null:String(position.sl),tpPrice:position.tp==null||Number(position.tp)===0?null:String(position.tp),tickSize:Number(data.tickSize),digits:Number(data.digits)};
+  const params=new URLSearchParams({account,symbol}),response=await fetch(apiScope()+"/api/chart/v1/symbol-info?"+params.toString(),{cache:"no-store"}),data=await response.json();
+  if(token!==state.draftToken||account!==state.account||symbol!==state.symbol||!state.currentSymbolVerified)return;
+  if(!response.ok||data.account!==account||data.symbol!==symbol||data.source!=="MT5_VERIFIED"||data.canExecute!==false||!Number.isFinite(Number(data.tickSize))||Number(data.tickSize)<=0||!Number.isInteger(Number(data.digits))||Number(data.digits)<0||Number(data.digits)>10)throw new Error("Tickweite fehlt oder Quelle nicht verifiziert.");
+  state.draft={account,symbol,ticket:position.ticket,revision:position.revision,side:position.type,entryPrice:Number(position.price_open),slPrice:position.sl==null||Number(position.sl)===0?null:String(position.sl),tpPrice:position.tp==null||Number(position.tp)===0?null:String(position.tp),tickSize:Number(data.tickSize),digits:Number(data.digits)};
   state.draftForm.hidden=false;state.draftForm.dataset.ticket=position.ticket;
   state.draftForm.elements.namedItem("slPrice").value=state.draft.slPrice??"";state.draftForm.elements.namedItem("tpPrice").value=state.draft.tpPrice??"";
   state.draftStatus.textContent="Position #"+position.ticket+" · Revision gebunden · Guard UNKNOWN · nur Vorschau";
@@ -83,19 +85,20 @@ async function beginDraft(position){
 }
 async function previewDraft(event){
  event.preventDefault();if(!state.draft)return;
- const token=++state.draftToken,requestId=crypto.randomUUID(),scope={account:state.account,ticket:state.draft.ticket,revision:state.draft.revision},values=draftPayload();
+ const token=++state.draftToken,requestId=crypto.randomUUID(),scope={account:state.account,symbol:state.draft.symbol,ticket:state.draft.ticket,revision:state.draft.revision},values=draftPayload();
+ if(scope.symbol!==state.symbol||!state.currentSymbolVerified){closeDraft("Symbol nicht mehr verifiziert · Entwurf verworfen.");return}
  if(values.slPrice===null&&values.tpPrice===null){state.draftStatus.textContent="Mindestens SL oder TP eingeben.";return}
  for(const key of ["slPrice","tpPrice"])if(values[key]!==null&&(!Number.isFinite(Number(values[key]))||Number(values[key])<=0)){state.draftStatus.textContent="SL/TP muss ein positiver Preis sein.";return}
  state.draftStatus.textContent="Broker-Vorschau wird read-only berechnet …";
  try{
-  const response=await fetch(apiScope()+"/api/chart/v1/position/preview-stop",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({account:scope.account,symbol:"XAUUSD",positionTicket:scope.ticket,expectedRevision:scope.revision,candidate:values,clientRequestId:requestId})}),data=await response.json();
-  if(token!==state.draftToken||scope.account!==state.account||!state.draft||scope.ticket!==state.draft.ticket||scope.revision!==state.draft.revision)return;
+  const response=await fetch(apiScope()+"/api/chart/v1/position/preview-stop",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({account:scope.account,symbol:scope.symbol,positionTicket:scope.ticket,expectedRevision:scope.revision,candidate:values,clientRequestId:requestId})}),data=await response.json();
+  if(token!==state.draftToken||scope.account!==state.account||scope.symbol!==state.symbol||!state.currentSymbolVerified||!state.draft||scope.symbol!==state.draft.symbol||scope.ticket!==state.draft.ticket||scope.revision!==state.draft.revision)return;
   if(response.status===409&&data.detail?.code==="POSITION_CHANGED"){
    closeDraft("Position geändert (409) · aktuelle Brokerwerte werden neu geladen.");
    loadPositions();return;
   }
   if(response.status===409)throw new Error("Broker-Scope geändert (409) · Vorschau verworfen.");
-  if(!response.ok||data.clientRequestId!==requestId||data.account!==scope.account||data.symbol!=="XAUUSD"||data.positionTicket!==scope.ticket||data.positionRevision!==scope.revision||data.canExecute!==false||data.canCommit!==false||data.guard?.state!=="UNKNOWN"||data.guard?.source!=="NONE"||!['VALID','INVALID'].includes(data.geometry?.state)||!data.brokerPreview)throw new Error("Vorschau nicht verifiziert; keine Änderung möglich.");
+  if(!response.ok||data.clientRequestId!==requestId||data.account!==scope.account||data.symbol!==scope.symbol||data.positionTicket!==scope.ticket||data.positionRevision!==scope.revision||data.canExecute!==false||data.canCommit!==false||data.guard?.state!=="UNKNOWN"||data.guard?.source!=="NONE"||!['VALID','INVALID'].includes(data.geometry?.state)||!data.brokerPreview)throw new Error("Vorschau nicht verifiziert; keine Änderung möglich.");
   state.draftPreview=data;state.draftStatus.textContent=(data.geometry.state==="VALID"?"Vorschau":"Vorschau ungültig · "+(data.geometry.reasons||[]).join(", "))+" · SL "+(data.pnlAtSl?.amount??"—")+" / TP "+(data.pnlAtTp?.amount??"—")+" "+(data.pnlAtSl?.currency||data.pnlAtTp?.currency||"")+" · GUARD UNKNOWN · KEINE ÄNDERUNG";
  }catch(error){if(token===state.draftToken){state.draftPreview=null;state.draftStatus.textContent="Keine gültige Vorschau: "+error.message}}
 }
@@ -194,7 +197,7 @@ async function loadPositions(){
   if(state.draft){const current=(data.positions||[]).find(x=>x.ticket===state.draft.ticket);if(!current||current.revision!==state.draft.revision)closeDraft("Positionsrevision geändert · Entwurf und Vorschau verworfen.")}
   renderPositions(data.positions||[]);
   table(state.orders,["Ticket","Typ","Lots","Preis","Stop-Limit","SL","TP"],(data.orders||[]).map(x=>[x.ticket,x.type,x.volume_current,x.price_open,x.price_stoplimit,stopLevel(x.sl),stopLevel(x.tp)]));
-  state.positionStatus.textContent="Quelle MT5_VERIFIED · "+(data.positions.length||0)+" Position(en), "+(data.orders.length||0)+" Pending Order(s) · Nur lesen"+(symbol==="XAUUSD"?"":" · SL/TP-Entwürfe für andere Symbole nicht verfügbar");
+  state.positionStatus.textContent="Quelle MT5_VERIFIED · "+(data.positions.length||0)+" Position(en), "+(data.orders.length||0)+" Pending Order(s) · Nur lesen";
  }catch(error){if(token===state.positionToken){clearVerifiedPositions();state.positionStatus.textContent=error.message}}
 }
 function utcRange(){

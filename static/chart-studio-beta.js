@@ -1083,7 +1083,7 @@ function updateVerifiedPositions(accountId,envelope){
 function updatePositionDraft(accountId,draft){
  if(!s||s.account!==accountId)return false;
  if(draft===null){s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");requestDraw();return true}
- if(draft.symbol!=="XAUUSD"||!/^\d{1,20}$/.test(draft.ticket)||!/^([0-9a-f]{64})$/.test(draft.revision)||!["BUY","SELL"].includes(draft.side)||!Number.isFinite(draft.entryPrice)||draft.entryPrice<=0||!Number.isFinite(draft.tickSize)||draft.tickSize<=0||!Number.isInteger(draft.digits)||draft.digits<0||draft.digits>10)return false;
+ if(draft.symbol!==chartSymbol()||s.positionContext?.account!==accountId||s.positionContext?.symbol!==draft.symbol||s.positionContext?.timeframe!==s.tf||s.positionContext?.source!=="MT5_VERIFIED"||!/^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$/.test(draft.symbol)||!/^\d{1,20}$/.test(draft.ticket)||!/^([0-9a-f]{64})$/.test(draft.revision)||!["BUY","SELL"].includes(draft.side)||!Number.isFinite(draft.entryPrice)||draft.entryPrice<=0||!Number.isFinite(draft.tickSize)||draft.tickSize<=0||!Number.isInteger(draft.digits)||draft.digits<0||draft.digits>10)return false;
  s.positionDraft={...draft};s.positionDraftDrag=null;requestDraw();return true;
 }
 function setPositionDraftTool(accountId){if(!s||s.account!==accountId||!s.positionDraft)return false;setTool("position-draft");return true}

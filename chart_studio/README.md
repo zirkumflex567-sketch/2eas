@@ -395,8 +395,10 @@ gross is positive; profitable trailing stops remain valid geometry.
 Guard and market-session sources remain UNKNOWN/NONE. Geometry validity is never
 permission: every preview has `canExecute=false` and `canCommit=false`. Persisted EA
 files without a live heartbeat do not authorize anything. The beta can select a
-verified open position, adjust a transient revision-bound SL/TP draft with chart
-pointer handles or price fields, and request this read-only preview. Account, ticket,
+verified open position on the exact currently verified broker symbol, adjust a
+transient revision-bound SL/TP draft with chart pointer handles or price fields, and
+request this read-only preview. Suffixes such as `XAUUSD.pi` and `XAUUSD.p` are
+preserved through symbol metadata and broker calculation. Account, symbol, ticket,
 revision, and request ID are checked before showing a result; a revision conflict or
 chart/account scope change discards the draft. Touch/hardware acceptance remains open,
 and there is still no commit route.

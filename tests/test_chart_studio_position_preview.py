@@ -52,6 +52,29 @@ def test_route_is_read_only_ticket_bound_gross_eur(api):
     assert data['geometry']['state']=='VALID'
     assert data['brokerPreview']=={'slPrice':'3999.00','tpPrice':'4002.00'}
 
+def test_route_preserves_exact_suffixed_gold_symbol_and_never_writes(api):
+    client,fake,payload=api
+    from test_chart_studio_broker_reads import position, symbol
+    from chart_studio.broker_reads import position_model
+    fake.positions=(position(symbol='XAUUSD.p'),)
+    fake.orders=()
+    fake.symbols=(*fake.symbols,symbol('XAUUSD.p'))
+    def calc_profit(action,name,volume,opening,closing):
+        fake.calls.append(('calc_profit',name,action))
+        return (closing-opening)*volume*(1 if action==0 else -1)
+    fake.order_calc_profit=calc_profit
+    payload['symbol']='XAUUSD.p'
+    payload['expectedRevision']=position_model(
+        fake.positions[0],gateway.ACCOUNTS['titan'],'XAUUSD.p','EUR')['revision']
+    response=client.post('/api/chart/v1/position/preview-stop',json=payload)
+    assert response.status_code==200,response.text
+    data=response.json()
+    assert data['symbol']=='XAUUSD.p'
+    assert any(call[0]=='calc_profit' and call[1]=='XAUUSD.p' for call in fake.calls)
+    assert data['canExecute'] is data['canCommit'] is False
+    assert data['guard']=={'state':'UNKNOWN','source':'NONE'}
+    assert fake.writes==0
+
 def test_conflict_and_strict_candidate(api):
     client,fake,payload=api
     payload['expectedRevision']='0'*64

@@ -73,7 +73,7 @@ const fs=require("node:fs"),path=require("node:path");
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({schemaVersion:1,accountId:url.searchParams.get("account"),availability:"RECORDED",storeState:"INITIALIZED",coverage:"RECORDED",gaps:0,canExecute:false,records:[record],hasMore:false,nextCursor:null})});
   });
   await page.route("**/api/chart/v1/symbol-info?*",async route=>{
-    const url=new URL(route.request().url());await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),symbol:"XAUUSD",source:"MT5_VERIFIED",canExecute:false,tickSize:"0.01",digits:2})});
+    const url=new URL(route.request().url()),symbol=url.searchParams.get("symbol");brokerReadRequests.push({path:url.pathname,params:Object.fromEntries(url.searchParams)});await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),symbol,source:"MT5_VERIFIED",canExecute:false,tickSize:"0.01",digits:2})});
   });
   await page.route("**/api/chart/v1/positions?*",async route=>{
     const url=new URL(route.request().url());brokerReadRequests.push({path:url.pathname,url:url.pathname,params:Object.fromEntries(url.searchParams)});
@@ -102,7 +102,7 @@ const fs=require("node:fs"),path=require("node:path");
   });
   await page.route("**/api/chart/v1/symbols?*",async route=>{
     const url=new URL(route.request().url()),account=url.searchParams.get("account");brokerReadRequests.push({path:url.pathname,url:url.pathname,params:Object.fromEntries(url.searchParams)});
-    const symbols=["XAUUSD","EURUSD","GBPUSD","US 500"].filter(symbol=>symbol.includes(url.searchParams.get("q").toUpperCase())&&!(hideFavoriteSymbol&&symbol==="EURUSD")).map(symbol=>({account,symbol,tradeMode:4,source:badSymbolRow&&symbol==="EURUSD"?"UNVERIFIED":"MT5_VERIFIED",canExecute:false}));
+    const symbols=["XAUUSD","XAUUSD.pi","XAUUSD.p","EURUSD","GBPUSD","US 500"].filter(symbol=>symbol.includes(url.searchParams.get("q").toUpperCase())&&!(hideFavoriteSymbol&&symbol==="EURUSD")).map(symbol=>({account,symbol,tradeMode:4,source:badSymbolRow&&symbol==="EURUSD"?"UNVERIFIED":"MT5_VERIFIED",canExecute:false}));
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account,source:"MT5_VERIFIED",canExecute:false,symbols,limit:Number(url.searchParams.get("limit")),truncated:symbolCatalogTruncated})});
   });
   await page.route("**/api/chart/v1/trades?*",async route=>{
@@ -479,18 +479,36 @@ const fs=require("node:fs"),path=require("node:path");
   assert.ok(reflow.afterStatus.includes("1 Deal-Marker, 0 nicht darstellbar"),"status must follow candle availability");
   assert.equal(markerState[1].plotted,false,"a fill between candle timestamps must never snap to a neighbor");
   assert.equal(markerState[2].plotted,false,"a fill outside the loaded candle range must remain in the table only");
+  for(const goldSymbol of ["XAUUSD.pi","XAUUSD.p"]){
+    await page.locator("#cs-broker-symbol").selectOption(goldSymbol);
+    await page.waitForFunction(()=>document.querySelector("#cs-broker-positions tbody tr")?.cells[0]?.textContent==="9007199254740993");
+    const draftButton=page.locator("#cs-broker-positions tbody tr button[data-cmd='position-draft']");
+    assert.equal(await draftButton.count(),1,"verified gold broker symbol must allow its scoped read-only stop draft: "+goldSymbol);
+    await draftButton.click();await page.locator("#cs-position-stop-draft").waitFor({state:"visible"});
+    assert.equal((await brokerReadRequests.filter(r=>r.path.endsWith("/symbol-info")).at(-1)).params.symbol,goldSymbol,
+      "symbol metadata must use the exact broker symbol");
+    await page.locator("#cs-position-stop-draft [name='slPrice']").fill("4098.25");
+    await page.locator("#cs-position-stop-draft button[type='submit']").click();
+    await page.waitForFunction(()=>document.querySelector("#cs-position-stop-draft-status")?.textContent.includes("GUARD UNKNOWN · KEINE ÄNDERUNG"));
+    assert.equal(stopPreviewPayloads.at(-1).symbol,goldSymbol,"the read-only broker preview must retain the exact broker symbol");
+    assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().positionDraft.symbol),goldSymbol,
+      "the chart draft overlay must remain bound to the selected broker symbol");
+    await page.locator("#cs-position-stop-draft [data-cmd='close']").click();
+  }
+  await page.locator("#cs-broker-symbol").selectOption("XAUUSD");
+  await page.waitForFunction(()=>document.querySelector("#cs-broker-positions tbody tr")?.cells[0]?.textContent==="9007199254740993");
   await page.locator("#cs-broker-positions tbody tr button[data-cmd='position-draft']").click();
   await page.locator("#cs-position-stop-draft").waitFor({state:"visible"});
   await page.locator("#cs-broker-symbol").selectOption("EURUSD");
   await page.waitForFunction(()=>document.querySelector("#cs-broker-positions tbody tr")?.cells[0]?.textContent==="123");
   assert.equal(await page.locator("#cs-broker-history-next").isDisabled(),true,"symbol change invalidates a history cursor");
   assert.equal(await page.locator("#cs-position-stop-draft").isHidden(),true,"changing symbol invalidates an active draft");
-  assert.equal(await page.locator("#cs-broker-positions tbody tr button[data-cmd='position-draft']").count(),0,"non-chart symbols cannot start an XAUUSD chart draft");
+  assert.equal(await page.locator("#cs-broker-positions tbody tr button[data-cmd='position-draft']").count(),1,"every exact verified chart symbol exposes only its own read-only preview draft");
   assert.deepEqual(await page.evaluate(()=>ChartStudioBeta.getState().positionContext),
     {account:"titan",symbol:"EURUSD",timeframe:"M15",source:"MT5_VERIFIED",currency:"USD",marginMode:2,modeLabel:"HEDGING"},
     "verified position rows must be scoped to the selected chart symbol and timeframe");
   assert.ok((await page.locator("#cs-broker-positions-status").textContent()).includes("Quelle MT5_VERIFIED"));
-  assert.ok((await page.locator("#cs-broker-positions-status").textContent()).includes("Entwürfe für andere Symbole nicht verfügbar"));
+  assert.ok(!(await page.locator("#cs-broker-positions-status").textContent()).includes("Entwürfe für andere Symbole nicht verfügbar"));
   badPositionRow=true;await page.locator("#cs-broker-positions-refresh").click();
   await page.waitForFunction(()=>document.querySelector("#cs-broker-positions-status")?.textContent.includes("Einzelzeile"));
   assert.equal(await page.locator("#cs-broker-positions tbody tr").count(),0,"unverified position rows fail closed");badPositionRow=false;
