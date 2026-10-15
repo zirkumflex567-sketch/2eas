@@ -2340,10 +2340,11 @@ HTML_CONTENT = """<!DOCTYPE html>
     function markStatusStale(error) {
       statusConfirmed = false;
       gateAccountActions(false);
-      document.getElementById('account-content').dataset.connected = currentData ? 'stale' : 'false';
+      const staleSource = error?.sourceFresh === false;
+      document.getElementById('account-content').dataset.connected = currentData || staleSource ? 'stale' : 'false';
       const age = lastStatusSuccess ? Math.floor((Date.now()-lastStatusSuccess)/1000)+' s alt' : 'noch nicht bestätigt';
       const status = document.getElementById('account-connection');
-      status.textContent = (currentData ? 'STALE' : 'OFFLINE')+' · '+age+(error ? ' · '+error.message : '');
+      status.textContent = (currentData || staleSource ? 'STALE' : 'OFFLINE')+' · '+age+(error ? ' · '+error.message : '');
       status.className = 'text-amber-500 font-bold';
     }
     let candlesBusy = null;
@@ -2526,6 +2527,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           (detail && typeof detail.message === 'string' ? detail.message : '');
         const error = new Error(detailMessage || (response.status === 403 ? 'Dashboard-Steuerung nicht autorisiert.' : 'MT5-Anfrage fehlgeschlagen'));
         error.status = response.status;
+        error.sourceFresh = detail && typeof detail === 'object' ? detail.source_fresh : null;
         throw error;
       }
       if (body.account && body.account.id !== account) throw new Error('Antwort gehört zu einem anderen Konto.');

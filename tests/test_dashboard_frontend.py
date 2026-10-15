@@ -1138,6 +1138,16 @@ class DashboardFrontendTests(unittest.TestCase):
         self.assertNotIn('[object Object]', self.page.locator('#account-connection').inner_text())
         expect(self.page.locator('#dd-reset-button')).to_be_disabled()
         self.assertEqual(self.mutations,[])
+    def test_first_stale_source_response_is_not_misreported_as_offline(self):
+        self.page.route('**/api/status*', lambda route: route.fulfill(status=503,json=dict(detail=dict(
+            source_fresh=False, risk_status='unknown', message='Broker quote stale; risk unknown.'
+        ))))
+        self.page.goto(self.url)
+        expect(self.page.locator('#account-connection')).to_contain_text('STALE')
+        expect(self.page.locator('#account-connection')).to_contain_text('Broker quote stale')
+        self.assertEqual(self.page.locator('#account-content').get_attribute('data-connected'),'stale')
+        expect(self.page.locator('#dd-reset-button')).to_be_disabled()
+        self.assertEqual(self.mutations,[])
     def test_journal_partial_failure_retains_both_sources_and_calculates_total(self):
         self.load(); expect(self.page.locator('#journal-count-badge')).to_contain_text('2 Trades')
         self.page.route('**/api/journal_summary?account=goldm15',lambda route:route.fulfill(status=503,json=dict(detail='partial source failure')))
