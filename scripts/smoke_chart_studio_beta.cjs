@@ -239,6 +239,38 @@ const fs=require("node:fs"),path=require("node:path");
   });
   assert.ok(reflowedFxGeometry.expectedWidth<resizedFxGeometry.expectedWidth,"The fixture must force a public price-scale width change");
   for(const key of ["left","top","width","height"])assert.ok(Math.abs(reflowedFxGeometry[key]-reflowedFxGeometry["expected"+key[0].toUpperCase()+key.slice(1)])<=1,"Chart FX canvas follows a price-scale reflow: "+key);
+  const labelGrowthReflow=await page.evaluate(async()=>{
+    chart.applyOptions({rightPriceScale:{minimumWidth:0}});
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const compactWidth=chart.timeScale().width();
+    const compactRightWidth=chart.priceScale("right").width();
+    const wideCandles=window.__chartSmokeCandles.map(bar=>{
+      const factor=1234567890/bar.close;
+      return {time:bar.time,open:bar.open*factor,high:bar.high*factor,low:bar.low*factor,close:bar.close*factor,
+        tick_volume:bar.tick_volume,real_volume:bar.real_volume};
+    });
+    candleSeries.setData(wideCandles);
+    const wideEmas=emas.map((series,index)=>wideCandles.map(bar=>({time:bar.time,value:bar.close-(index+1)*0.01})));
+    emas.forEach((series,index)=>series.setData(wideEmas[index]));
+    StoneChartFX.update({candles:wideCandles,emas:wideEmas,context:"titan/XAUUSD/M15"});
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const canvas=document.querySelector("#tv-chart .stone-chart-fx"),rect=host.getBoundingClientRect();
+    return {compactWidth,compactRightWidth,plotWidth:chart.timeScale().width(),rightScaleWidth:chart.priceScale("right").width(),
+      left:Number.parseFloat(canvas.style.left),width:Number.parseFloat(canvas.style.width),height:Number.parseFloat(canvas.style.height),
+      expectedLeft:chart.priceScale("left").width(),expectedWidth:chart.timeScale().width(),expectedHeight:rect.height-chart.timeScale().height()};
+  });
+  console.log("Automatic price-axis label reflow probe:",JSON.stringify(labelGrowthReflow));
+  assert.ok(labelGrowthReflow.plotWidth<labelGrowthReflow.compactWidth,"Larger real price labels must reclaim public plot width");
+  assert.ok(labelGrowthReflow.rightScaleWidth>labelGrowthReflow.compactRightWidth,"Wider data labels must grow the public price scale");
+  for(const key of ["left","width","height"])assert.ok(Math.abs(labelGrowthReflow[key]-labelGrowthReflow["expected"+key[0].toUpperCase()+key.slice(1)])<=1,"Chart FX canvas follows automatic price-label growth: "+key);
+  await page.evaluate(()=>{
+    const candles=window.__chartSmokeCandles;
+    candleSeries.setData(candles);
+    const restoredEmas=emas.map((series,index)=>candles.map(bar=>({time:bar.time,value:bar.close-2+index})));
+    emas.forEach((series,index)=>series.setData(restoredEmas[index]));
+    StoneChartFX.update({candles,emas:restoredEmas,context:"titan/XAUUSD/M15"});
+    chart.timeScale().fitContent();
+  });
   await page.evaluate(()=>{const host=document.querySelector("#tv-chart");host.style.height="520px";chart.applyOptions({width:host.clientWidth,height:host.clientHeight});chart.timeScale().setVisibleLogicalRange({from:5,to:50})});
   await page.waitForTimeout(40);
   await page.evaluate(()=>chart.timeScale().fitContent());
