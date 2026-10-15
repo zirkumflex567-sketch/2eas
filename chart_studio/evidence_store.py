@@ -426,7 +426,8 @@ class EvidenceStore:
                 digest = hashlib.sha256(raw).hexdigest()
                 if not self.root:
                     raise StoreUnavailable()
-                deadline = time.monotonic() + 0.45
+                # Leave room for Windows ACL/path checks around SQLite's own waits.
+                deadline = time.monotonic() + 0.30
                 known_good = self._append_verified
                 for attempt in range(3):
                     try:

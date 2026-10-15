@@ -20,7 +20,8 @@ class CombinedJournalContractTests(unittest.TestCase):
         self.assertIn('<option value="blueberry">', self.app)
         self.assertIn('<option value="titan">', self.app)
         self.assertIn('<option value="goldm15">', self.app)
-        self.assertIn("let journalFilter = ['all'", self.app)
+        self.assertIn("let journalFilter = deepLinkedAccount ||", self.app)
+        self.assertIn("savedJournalFilter : 'all'", self.app)
 
     def test_journal_queries_explicit_account_not_active_order_context(self):
         self.assertIn("const wanted = mode === 'all' ? Object.keys(accounts) : [mode];", self.app)
