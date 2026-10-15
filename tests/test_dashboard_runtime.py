@@ -601,7 +601,7 @@ def test_private_environment_allows_external_evidence_store_and_spool(checkout, 
         with pytest.raises(ValueError, match='Invalid private environment'):
             module.validate_environment_file(checkout, private)
         private.write_text(json.dumps({
-            'CHART_STUDIO_EVIDENCE_ROOT': os.path.relpath(evidence_root),
+            'CHART_STUDIO_EVIDENCE_ROOT': os.path.relpath(evidence_root, start=checkout),
             'CHART_STUDIO_EVIDENCE_DB': str(evidence_root / 'events.sqlite'),
         }))
         with pytest.raises(ValueError, match='Invalid private environment'):
