@@ -2434,7 +2434,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         throw new Error(body.detail || (response.status === 403 ? 'Dashboard-Steuerung nicht autorisiert.' : 'MT5-Anfrage fehlgeschlagen'));
       }
       if (body.account && body.account.id !== account) throw new Error('Antwort gehört zu einem anderen Konto.');
-      return {json: async () => body};
+      return {ok:response.ok,json: async () => body};
     }
 
     function clearAccountView() {

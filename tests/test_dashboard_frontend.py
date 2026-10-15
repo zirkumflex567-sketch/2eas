@@ -321,6 +321,7 @@ class DashboardFrontendTests(unittest.TestCase):
         candle_urls=[url for url in self.requests if '/api/candles?' in url]
         self.assertTrue(any(parse_qs(urlparse(url).query).get('symbol')==['XAUUSD.pi'] for url in candle_urls),candle_urls)
         self.assertEqual(self.page.evaluate('activeChartSymbol'), 'XAUUSD.pi')
+        self.assertEqual(self.page.evaluate("document.querySelector('#tv-chart').__candleSeries.data().length"), 2)
         self.assertEqual(self.mutations, [])
         self.assertEqual(self.errors, [])
     def test_marketplace_account_shows_indicators_without_strategy_readiness(self):
