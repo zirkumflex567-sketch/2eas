@@ -322,6 +322,9 @@ class DashboardFrontendTests(unittest.TestCase):
         self.assertTrue(any(parse_qs(urlparse(url).query).get('symbol')==['XAUUSD.pi'] for url in candle_urls),candle_urls)
         self.assertEqual(self.page.evaluate('activeChartSymbol'), 'XAUUSD.pi')
         self.assertEqual(self.page.evaluate("document.querySelector('#tv-chart').__candleSeries.data().length"), 2)
+        portfolio_symbols=[parse_qs(urlparse(url).query).get('scenarioSymbol',[''])[0]
+            for url in self.requests if '/api/chart/v1/portfolio?' in url]
+        self.assertTrue(portfolio_symbols and set(portfolio_symbols)=={'XAUUSD.pi'},portfolio_symbols)
         self.assertEqual(self.mutations, [])
         self.assertEqual(self.errors, [])
     def test_marketplace_account_shows_indicators_without_strategy_readiness(self):
