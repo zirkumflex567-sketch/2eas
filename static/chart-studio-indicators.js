@@ -10,6 +10,7 @@ const REGISTRY=Object.freeze({
  atr:{name:"ATR (Wilder)",type:"oscillator",period:14,min:2,max:200},
  volume:{name:"Volumen (Tick/Real)",type:"histogram",upColor:"#41cce9",downColor:"#f7758b"},
  adx:{name:"ADX +DI / −DI (Wilder)",type:"oscillator",period:14,min:2,max:200},
+ stochastic:{name:"Stochastic %K/%D",type:"oscillator",period:14,smoothK:3,smoothD:3,min:2,max:200},
  vwap:{name:"Session-VWAP (Volumenproxy)",type:"overlay",timeZone:"UTC",sessionStart:"00:00"}
 });
 const storagePrefix="2eas:studio:indicators:v1:";
@@ -46,6 +47,28 @@ function rsi(input,period=14){
   out.push({time:bars[i].time,value:value(up,down)});
  }
  return out;
+}
+function stochastic(input,period=14,smoothK=3,smoothD=3){
+ const bars=validateBars(input),stochK=[],stochD=[];
+ period=Math.trunc(period);smoothK=Math.trunc(smoothK);smoothD=Math.trunc(smoothD);
+ if(period<2||period>200||smoothK<1||smoothK>100||smoothD<1||smoothD>100)return {stochK,stochD};
+ const raw=[];
+ for(let i=period-1;i<bars.length;i++){
+  let highest=-Infinity,lowest=Infinity;
+  for(let j=i-period+1;j<=i;j++){highest=Math.max(highest,bars[j].high);lowest=Math.min(lowest,bars[j].low)}
+  raw.push({time:bars[i].time,value:highest===lowest?50:100*(bars[i].close-lowest)/(highest-lowest)});
+ }
+ let sum=0;
+ for(let i=0;i<raw.length;i++){
+  sum+=raw[i].value;if(i>=smoothK)sum-=raw[i-smoothK].value;
+  if(i>=smoothK-1)stochK.push({time:raw[i].time,value:sum/smoothK});
+ }
+ sum=0;
+ for(let i=0;i<stochK.length;i++){
+  sum+=stochK[i].value;if(i>=smoothD)sum-=stochK[i-smoothD].value;
+  if(i>=smoothD-1)stochD.push({time:stochK[i].time,value:sum/smoothD});
+ }
+ return {stochK,stochD};
 }
 function trueRange(bars,i){const b=bars[i],previous=bars[i-1]?.close;
  return Math.max(b.high-b.low,
@@ -155,12 +178,14 @@ function calc(kind,candles,settings={}){
  if(kind==="macd")return macd(candles,settings.fast||12,settings.slow||26,settings.signal||9);
  if(kind==="volume")return {volume:volumes(candles,settings)};
  if(kind==="adx")return adx(candles,settings.period||14);
+ if(kind==="stochastic")return stochastic(candles,settings.period||14,settings.smoothK||3,settings.smoothD||3);
  if(kind==="vwap")return {vwap:vwap(candles,settings)};
  throw Error("Unknown indicator: "+kind);
 }
 function defaults(){
  return {rsi:{enabled:false,period:14},macd:{enabled:false,fast:12,slow:26,signal:9},
-  atr:{enabled:false,period:14},volume:{enabled:false,upColor:"#41cce9",downColor:"#f7758b"},adx:{enabled:false,period:14},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
+  atr:{enabled:false,period:14},volume:{enabled:false,upColor:"#41cce9",downColor:"#f7758b"},adx:{enabled:false,period:14},
+  stochastic:{enabled:false,period:14,smoothK:3,smoothD:3},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
 }
 function restore(account){
  try{const raw=JSON.parse(localStorage.getItem(storagePrefix+account)||"null");
@@ -168,8 +193,9 @@ function restore(account){
   if(raw&&typeof raw==="object")for(const id of Object.keys(REGISTRY)){
    if(raw[id]&&typeof raw[id]==="object"){
     result[id].enabled=raw[id].enabled===true;
-    for(const prop of ["period","fast","slow","signal"]){
-     if(Object.hasOwn(result[id],prop)&&Number.isInteger(raw[id][prop])&&raw[id][prop]>=2&&raw[id][prop]<=300)
+    for(const prop of ["period","fast","slow","signal","smoothK","smoothD"]){
+     const minimum=prop==="smoothK"||prop==="smoothD"?1:2,maximum=prop==="slow"?300:prop==="smoothK"||prop==="smoothD"?100:200;
+     if(Object.hasOwn(result[id],prop)&&Number.isInteger(raw[id][prop])&&raw[id][prop]>=minimum&&raw[id][prop]<=maximum)
       result[id][prop]=raw[id][prop];
     }
     if(id==="volume")for(const prop of ["upColor","downColor"])
@@ -200,10 +226,10 @@ function box(kind){
   const input=document.createElement("input");input.type="text";input.value=settings[prop];input.dataset.parameter=prop;input.dataset.kind=kind;
   input.setAttribute("aria-label",cfg.name+": "+labelText);label.append(input);row.append(label);
  }
- for(const prop of ["period","fast","slow","signal"]){
+ for(const prop of ["period","fast","slow","signal","smoothK","smoothD"]){
   if(!Object.hasOwn(cfg,prop))continue;
-  const label=document.createElement("span");label.textContent=prop;
-  const input=document.createElement("input");input.type="number";input.min=2;input.max=prop==="slow"?300:200;
+  const label=document.createElement("span");label.textContent=prop==="smoothK"?"%K Glättung":prop==="smoothD"?"%D Glättung":prop;
+  const input=document.createElement("input");input.type="number";input.min=prop==="smoothK"||prop==="smoothD"?1:2;input.max=prop==="slow"?300:prop==="smoothK"||prop==="smoothD"?100:200;
   input.step=1;input.value=String(settings[prop]);input.dataset.parameter=prop;input.dataset.kind=kind;
   input.setAttribute("aria-label",cfg.name+": "+prop);
   row.append(label,input);
@@ -217,7 +243,7 @@ function syncPanel(){
 }
 function data(kind){return calc(kind,state.bars,state.settings[kind])}
 function addReadout(kind,calculated){
- const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],vwap:["VWAP"]}[kind];
+ const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],vwap:["VWAP"]}[kind];
  const keys=Object.keys(calculated);
  for(let i=0;i<keys.length;i++)for(const point of calculated[keys[i]]||[]){
   const rows=state.readouts.get(point.time)||[];
@@ -266,6 +292,7 @@ function createPane(kind){
   if(kind==="macd"){series("macd","#55d7ee");series("signal","#f3c56a");series("histogram","#53dabd","hist")}
  if(kind==="volume")series("volume","#5de1d8","hist");
  if(kind==="adx"){series("adx","#e9bc72");series("plusDi","#55deaa");series("minusDi","#f17e97")}
+ if(kind==="stochastic"){series("stochK","#55d7ee");series("stochD","#f3c56a")}
  const pane={shell,chart,plot,lines,observer:null};
  if(typeof ResizeObserver!=="undefined"){pane.observer=new ResizeObserver(()=>{
   chart.applyOptions({width:Math.max(180,plot.clientWidth),height:Math.max(80,plot.clientHeight)});
@@ -307,7 +334,7 @@ function readout(time){
  if(!state)return "";
  const rows=state.readouts.get(Number(time))||[];
  const values=[];
- const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],vwap:["VWAP"]};
+ const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],vwap:["VWAP"]};
  for(const id of Object.keys(REGISTRY))if(state.settings[id].enabled){
   for(const label of components[id]){
    const row=rows.find(item=>item.kind===id&&item.label===label);
@@ -345,8 +372,8 @@ function updateConfig(kind,prop,val){
   state.settings.vwap[prop]=String(val);
  }
  else if(Object.hasOwn(REGISTRY[kind],prop)){
-  const n=Number(val),maximum=prop==="slow"?300:200;
-  if(!Number.isInteger(n)||n<2||n>maximum){state.notice.textContent="Ungültige Periode (2–"+maximum+")";return false}
+  const n=Number(val),minimum=prop==="smoothK"||prop==="smoothD"?1:2,maximum=prop==="slow"?300:prop==="smoothK"||prop==="smoothD"?100:200;
+  if(!Number.isInteger(n)||n<minimum||n>maximum){state.notice.textContent="Ungültiger Parameter ("+minimum+"–"+maximum+")";return false}
   state.settings[kind][prop]=n;
  }
  if(kind==="macd"&&state.settings.macd.fast>=state.settings.macd.slow){
@@ -365,9 +392,10 @@ function applySettings(raw){
   if(id==="volume")for(const key of ["upColor","downColor"])
    if(typeof input[key]==="string"&&/^#[0-9a-fA-F]{6}$/.test(input[key]))fresh.volume[key]=input[key].toLowerCase();
   if(id==="vwap"){const config=sessionConfig(input);if(config){fresh.vwap.timeZone=config.timeZone;fresh.vwap.sessionStart=config.sessionStart}}
-  for(const key of ["period","fast","slow","signal"]){
+  for(const key of ["period","fast","slow","signal","smoothK","smoothD"]){
    const value=Number(input[key]);
-   if(Object.hasOwn(fresh[id],key)&&Number.isInteger(value)&&value>=2&&value<=(key==="slow"?300:200))
+   const minimum=key==="smoothK"||key==="smoothD"?1:2,maximum=key==="slow"?300:key==="smoothK"||key==="smoothD"?100:200;
+   if(Object.hasOwn(fresh[id],key)&&Number.isInteger(value)&&value>=minimum&&value<=maximum)
     fresh[id][key]=value;
   }
  }
@@ -394,5 +422,5 @@ function mount({chart,host,panel,account="titan"}){
  syncPanel();renderPanes();
 }
 window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,updateConfig,settings,readout,
- registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,macd,atr,adx,vwap,volumes})});
+ registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,macd,atr,adx,vwap,volumes})});
 })();

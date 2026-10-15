@@ -21,8 +21,8 @@ DRAWING_TYPES = frozenset({"horizontal", "vertical", "text", "trend", "rect", "f
 UI_FLAGS = frozenset({"ema20", "ema50", "ema200", "sma20", "sma50",
                       "bb", "positions"})
 UI_NUMBERS = frozenset({"bbPeriod", "bbStdDev"})
-INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap"})
-PERIOD_FIELDS = frozenset({"period", "fast", "slow", "signal"})
+INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap", "stochastic"})
+PERIOD_FIELDS = frozenset({"period", "fast", "slow", "signal", "smoothK", "smoothD"})
 SESSION_FIELDS = frozenset({"timeZone", "sessionStart"})
 TIMEFRAMES = frozenset({"M1", "M5", "M15", "M30", "H1", "H4", "D1"})
 MAX_DOCUMENT_BYTES = 524288
@@ -182,7 +182,13 @@ def validate_document(raw: Any) -> dict:
                         raise StoreError("Ungültige VWAP-IANA-Zeitzone.") from None
             else:
                 _number(value, param, integer=True)
-                if not 2 <= value <= 300:
+                if param in {"smoothK", "smoothD"}:
+                    minimum, maximum = 1, 100
+                elif kind == "stochastic" and param == "period":
+                    minimum, maximum = 2, 200
+                else:
+                    minimum, maximum = 2, 300
+                if not minimum <= value <= maximum:
                     raise StoreError("Indikator-Periode außerhalb der Grenzen.")
             cleaned[param] = value
         clean_indicators[kind] = cleaned

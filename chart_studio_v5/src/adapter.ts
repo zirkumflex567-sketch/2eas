@@ -719,6 +719,10 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  function guard(){if(destroyed)throw Error("Chart was destroyed")}
  function persistenceKey(account=activeAccount){
   if(!drawingScope)return null;
+  return `2eas.chartstudio.v5.drawings:v4:${encodeURIComponent(account)}:${encodeURIComponent(drawingScope.symbol)}:${encodeURIComponent(drawingScope.timeframe)}`;
+ }
+ function legacyPersistenceKey(account=activeAccount){
+  if(!drawingScope)return null;
   return `2eas.chartstudio.v5.drawings:${encodeURIComponent(account)}:${encodeURIComponent(drawingScope.symbol)}:${encodeURIComponent(drawingScope.timeframe)}`;
  }
  function localStorageApi():Storage|null{
@@ -767,9 +771,9 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   if(drawingsHydrated)return;
   drawingsHydrated=true;const storage=localStorageApi(),key=persistenceKey();
   if(!storage||!key){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_UNAVAILABLE";return}
-  let raw:string|null;
-  try{raw=storage.getItem(key)}catch(_){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_READ_FAILED";return}
-  lastPersistedSnapshot=raw;
+  let raw:string|null,legacy=false;
+  try{raw=storage.getItem(key);if(raw===null){raw=storage.getItem(legacyPersistenceKey()!);legacy=raw!==null}}catch(_){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_READ_FAILED";return}
+  lastPersistedSnapshot=legacy?null:raw;
   if(raw===null){persistenceStatus="READY";persistenceError=null;if(drawingCount())persistDrawings();return}
   if(utf8ByteLength(raw)>persistenceLimit){persistenceStatus="UNAVAILABLE";persistenceError="SNAPSHOT_TOO_LARGE";return}
   let parsed:unknown;
@@ -805,7 +809,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
      if(Object.keys(entry).sort().join(",")!=="options,paneIndex"||!entry.options||typeof entry.options!=="object"||Array.isArray(entry.options)||!Number.isInteger(entry.paneIndex))throw Error();
      const options=entry.options as Record<string,unknown>,keys=Object.keys(options).sort().join(","),allowed=new Set(["color,id,kind,settings","color,id,kind,lineWidth,settings","color,id,kind,settings,title","color,id,kind,lineWidth,settings,title","color,id,kind,settings,visible","color,id,kind,lineWidth,settings,visible","color,id,kind,settings,title,visible","color,id,kind,lineWidth,settings,title,visible"]);
      if(!allowed.has(keys)||typeof options.id!=="string"||!/^[-_a-zA-Z0-9]{1,32}$/.test(options.id)||typeof options.color!=="string"||!colorPattern.test(options.color)||
-        !( ["rsi","atr","macd","adx"] as unknown[]).includes(options.kind)||(options.lineWidth!==undefined&&![1,2,3,4].includes(options.lineWidth as number))||
+        !( ["rsi","atr","macd","adx","stochastic"] as unknown[]).includes(options.kind)||(options.lineWidth!==undefined&&![1,2,3,4].includes(options.lineWidth as number))||
         (options.visible!==undefined&&typeof options.visible!=="boolean")||(options.title!==undefined&&(typeof options.title!=="string"||options.title.length>80||/[\u0000-\u001f\u007f]/.test(options.title)))||
         !Number.isInteger(entry.paneIndex)||Number(entry.paneIndex)<1||Number(entry.paneIndex)>=savedPaneHeights.length)throw Error();
      const oscillatorOptions=options as unknown as OscillatorOptions;calculateOscillator(bars,oscillatorOptions.kind,oscillatorOptions.settings);
@@ -946,7 +950,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    if(volume){chart.removeSeries(volume);volume=null}
    undoStack.length=0;redoStack.length=0;persistenceStatus="UNAVAILABLE";persistenceError="RESTORE_FAILED";
   }finally{hydratingDrawings=false}
-  if(!isV3)persistDrawings();
+  if(!isV3||legacy)persistDrawings();
  }
  function selectDrawing(id:string|null){
   selectDrawings(id===null?[]:[id]);
@@ -1549,20 +1553,20 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const series=paneLines.get(id);if(!series)throw Error("Unknown native pane line");
   series.moveToPane(paneIndex);persistDrawings();
  }
- const oscillatorComponents=(kind:OscillatorKind):string[]=>kind==="rsi"?["rsi"]:kind==="atr"?["atr"]:kind==="macd"?["macd","signal","histogram"]:["adx","plusDi","minusDi"];
- const oscillatorTitles=(kind:OscillatorKind):Record<string,string>=>kind==="macd"?{macd:"MACD",signal:"Signal",histogram:"Histogram"}:kind==="adx"?{adx:"ADX",plusDi:"+DI",minusDi:"−DI"}:kind==="rsi"?{rsi:"RSI"}:{atr:"ATR"};
+ const oscillatorComponents=(kind:OscillatorKind):string[]=>kind==="rsi"?["rsi"]:kind==="atr"?["atr"]:kind==="macd"?["macd","signal","histogram"]:kind==="stochastic"?["stochK","stochD"]:["adx","plusDi","minusDi"];
+ const oscillatorTitles=(kind:OscillatorKind):Record<string,string>=>kind==="macd"?{macd:"MACD",signal:"Signal",histogram:"Histogram"}:kind==="adx"?{adx:"ADX",plusDi:"+DI",minusDi:"−DI"}:kind==="stochastic"?{stochK:"%K",stochD:"%D"}:kind==="rsi"?{rsi:"RSI"}:{atr:"ATR"};
  function oscillatorRows(options:OscillatorOptions){return calculateOscillator(bars,options.kind,options.settings)}
  function replaceOscillatorData(group:OscillatorGroup,incremental=false){
   const rows=oscillatorRows(group.options),components=oscillatorComponents(group.options.kind),titles=oscillatorTitles(group.options.kind);
   const nextValues=new Map<string,Map<number,number>>();
   for(const key of components){const points=rows[key]??[];let series=group.series.get(key);
-   if(!series){if(key==="histogram")series=newHistogram(group.paneIndex);else series=createPaneLine({id:group.options.id+":"+key,color:key==="signal"?"#f3c56a":key==="plusDi"?"#55deaa":key==="minusDi"?"#f17e97":group.options.color,lineWidth:group.options.lineWidth,title:titles[key]},group.paneIndex);series.priceScale().applyOptions({autoScale:true,borderVisible:true,scaleMargins:{top:.08,bottom:.08}});group.series.set(key,series);}
+   if(!series){if(key==="histogram")series=newHistogram(group.paneIndex);else series=createPaneLine({id:group.options.id+":"+key,color:key==="signal"||key==="stochD"?"#f3c56a":key==="plusDi"?"#55deaa":key==="minusDi"?"#f17e97":group.options.color,lineWidth:group.options.lineWidth,title:titles[key]},group.paneIndex);series.priceScale().applyOptions({autoScale:true,borderVisible:true,scaleMargins:{top:.08,bottom:.08}});group.series.set(key,series);}
    if(key==="histogram"){
     const histogram=series as ReturnType<typeof newHistogram>;histogram.applyOptions({visible:group.options.visible??true,title:titles[key],priceLineVisible:false,lastValueVisible:true});
     const rowsWithColor=points.map(p=>({time:p.time,value:p.value,color:(p as AveragePoint&{color?:string}).color??(p.value>=0?"rgba(66,213,178,.75)":"rgba(249,107,126,.75)")}));
     if(incremental){const last=rowsWithColor[rowsWithColor.length-1];if(last)histogram.update(last)}else histogram.setData(rowsWithColor);
    }else{
-    const line=series as ReturnType<typeof newLine>,color=key==="signal"?"#f3c56a":key==="plusDi"?"#55deaa":key==="minusDi"?"#f17e97":group.options.color;
+    const line=series as ReturnType<typeof newLine>,color=key==="signal"||key==="stochD"?"#f3c56a":key==="plusDi"?"#55deaa":key==="minusDi"?"#f17e97":group.options.color;
     line.applyOptions({color,lineWidth:group.options.lineWidth??2,visible:group.options.visible??true,title:titles[key],priceLineVisible:false,lastValueVisible:true});
     if(incremental){const last=points[points.length-1];if(last)line.update(last)}else line.setData(points);
    }
@@ -1575,7 +1579,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function refreshOscillators(incremental=false){for(const group of oscillators.values())replaceOscillatorData(group,incremental)}
  function addOscillator(options:OscillatorOptions){
-  guard();if(!options||!/^[-_a-zA-Z0-9]{1,32}$/.test(options.id)||!colorPattern.test(options.color)||!(["rsi","atr","macd","adx"] as string[]).includes(options.kind)||
+  guard();if(!options||!/^[-_a-zA-Z0-9]{1,32}$/.test(options.id)||!colorPattern.test(options.color)||!(["rsi","atr","macd","adx","stochastic"] as string[]).includes(options.kind)||
    (options.lineWidth!==undefined&&![1,2,3,4].includes(options.lineWidth)))throw Error("Invalid oscillator options");
   if(oscillators.has(options.id)||averages.has(options.id)||paneLines.has(options.id)||priceLevels.has(options.id)||timeMarkers.has(options.id)||textAnnotations.has(options.id)||trendLines.has(options.id)||rectangles.has(options.id)||rays.has(options.id)||fibonacci.has(options.id)||channels.has(options.id)||measurements.has(options.id))throw Error("Duplicate chart object identity");
   if(averages.size+paneLines.size+oscillators.size>=maxIndicatorInstances)throw Error("Indicator instance limit");

@@ -34,6 +34,24 @@ assert.equal(real[0].value,450);assert.equal(real[0].kind,"real");
 assert.equal(math.rsi(ascending.slice(0,12),14).length,0);
 assert.equal(math.atr(ascending.slice(0,5),14).length,0);
 assert.equal(math.macd(ascending,30,20,9).macd.length,0);
+const stochasticBars=[
+ {time:1700100000,open:5,high:10,low:0,close:5},
+ {time:1700100060,open:8,high:11,low:1,close:9},
+ {time:1700100120,open:6,high:12,low:2,close:6},
+ {time:1700100180,open:11,high:13,low:3,close:12},
+ {time:1700100240,open:8,high:14,low:4,close:8}
+];
+const stochastic=math.stochastic(stochasticBars,3,2,2);
+assert.equal(stochastic.stochK.length,2);
+assert.equal(stochastic.stochD.length,1);
+near(stochastic.stochK[0].value,((6-0)/(12-0)*100+(12-1)/(13-1)*100)/2);
+near(stochastic.stochD[0].value,(stochastic.stochK[0].value+stochastic.stochK[1].value)/2);
+assert.equal(stochastic.stochK[0].time,stochasticBars[3].time);
+assert.equal(math.stochastic(stochasticBars.slice(0,3),3,2,2).stochD.length,0);
+const flatStochastic=math.stochastic(Array.from({length:8},(_,i)=>({time:1700200000+i*60,open:5,high:5,low:5,close:5})),3,2,2);
+assert.ok(flatStochastic.stochK.every(point=>point.value===50));
+assert.ok(flatStochastic.stochD.every(point=>point.value===50));
+assert.equal(math.stochastic(stochasticBars,0,2,2).stochK.length,0);
 assert.ok(src.includes("state.bars.map(bar=>byTime.get(bar.time)||{time:bar.time})"));
 assert.ok(!src.includes("order_send(")&&!src.includes("/api/modify_position"));
 
@@ -91,4 +109,4 @@ assert.equal(math.vwap(sessionBars,{timeZone:"No/Such_Zone",sessionStart:"09:30"
 assert.equal(math.vwap(sessionBars,{timeZone:"UTC",sessionStart:"24:00"}).length,0);
 assert.ok(src.includes("Tick-/Realvolumenproxy"));
 
-console.log("PASS Chart Studio RSI/ATR/MACD/ADX/VWAP and broker volume math, warm-up, time alignment, read-only checks");
+console.log("PASS Chart Studio RSI/Stochastic/ATR/MACD/ADX/VWAP and broker volume math, warm-up, time alignment, read-only checks");

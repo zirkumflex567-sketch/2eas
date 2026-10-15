@@ -1,7 +1,7 @@
 import type {Candle,AveragePoint} from "./adapter";
 
-export type OscillatorKind="rsi"|"atr"|"macd"|"adx";
-export type OscillatorSettings={period:number}|{fast:number;slow:number;signal:number};
+export type OscillatorKind="rsi"|"atr"|"macd"|"adx"|"stochastic";
+export type OscillatorSettings={period:number}|{fast:number;slow:number;signal:number}|{period:number;smoothK:number;smoothD:number};
 export type OscillatorValues=Record<string,AveragePoint[]>;
 const bounded=(value:number,min:number,max:number)=>Number.isInteger(value)&&value>=min&&value<=max;
 function checkBars(input:readonly Candle[]):Candle[]{
@@ -26,6 +26,21 @@ function rsi(bars:readonly Candle[],period:number):AveragePoint[]{
  out.push(point(bars,period,value()));
  for(let i=period+1;i<bars.length;i++){const d=bars[i].close-bars[i-1].close;up=(up*(period-1)+Math.max(d,0))/period;down=(down*(period-1)+Math.max(-d,0))/period;out.push(point(bars,i,value()))}
  return out;
+}
+function stochastic(bars:readonly Candle[],period:number,smoothK:number,smoothD:number):OscillatorValues{
+ const stochK:AveragePoint[]=[],stochD:AveragePoint[]=[];
+ if(bars.length<period||smoothK<1||smoothD<1)return {stochK,stochD};
+ const raw:AveragePoint[]=[];
+ for(let i=period-1;i<bars.length;i++){
+  let high=-Infinity,low=Infinity;
+  for(let j=i-period+1;j<=i;j++){high=Math.max(high,bars[j].high);low=Math.min(low,bars[j].low)}
+  raw.push(point(bars,i,high===low?50:100*(bars[i].close-low)/(high-low)));
+ }
+ let sum=0;
+ for(let i=0;i<raw.length;i++){sum+=raw[i].value;if(i>=smoothK)sum-=raw[i-smoothK].value;if(i>=smoothK-1)stochK.push({time:raw[i].time,value:sum/smoothK})}
+ sum=0;
+ for(let i=0;i<stochK.length;i++){sum+=stochK[i].value;if(i>=smoothD)sum-=stochK[i-smoothD].value;if(i>=smoothD-1)stochD.push({time:stochK[i].time,value:sum/smoothD})}
+ return {stochK,stochD};
 }
 function tr(bars:readonly Candle[],i:number){const b=bars[i],prev=bars[i-1]?.close;return Math.max(b.high-b.low,prev===undefined?0:Math.abs(b.high-prev),prev===undefined?0:Math.abs(b.low-prev))}
 function atr(bars:readonly Candle[],period:number):AveragePoint[]{
@@ -54,6 +69,12 @@ export function calculateOscillator(input:readonly Candle[],kind:OscillatorKind,
  if(kind==="macd"){
   if(!("fast" in settings)||!bounded(settings.fast,2,300)||!bounded(settings.slow,3,300)||settings.fast>=settings.slow||!bounded(settings.signal,2,200))throw Error("Invalid MACD settings");
   return macd(bars,settings.fast,settings.slow,settings.signal);
+ }
+ if(kind==="stochastic"){
+  if(!("period" in settings)||!("smoothK" in settings)||!("smoothD" in settings)||
+   !bounded(settings.period,2,200)||!bounded(settings.smoothK,1,100)||!bounded(settings.smoothD,1,100))
+   throw Error("Invalid Stochastic settings");
+  return stochastic(bars,settings.period,settings.smoothK,settings.smoothD);
  }
  if(!("period" in settings)||!bounded(settings.period,2,200))throw Error("Invalid oscillator period");
  if(kind==="rsi")return {rsi:rsi(bars,settings.period)};

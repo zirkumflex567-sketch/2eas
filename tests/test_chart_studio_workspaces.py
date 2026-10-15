@@ -319,6 +319,18 @@ class SqliteLayoutTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(StoreError):
                 validate_document({**old, "indicators": {"vwap": invalid}})
 
+    def test_stochastic_parameters_roundtrip_and_enforce_smoothing_bounds(self):
+        old = example()
+        config = {"enabled": True, "period": 14, "smoothK": 2, "smoothD": 3}
+        doc = validate_document({**old, "indicators": {"stochastic": config}})
+        self.assertEqual(doc["indicators"]["stochastic"], config)
+        self.store.put("local-owner", "titan", "XAUUSD", "Stochastic", doc, 0)
+        loaded = self.store.get("local-owner", "titan", "XAUUSD", "Stochastic")["document"]
+        self.assertEqual(loaded["indicators"]["stochastic"], config)
+        for field, value in (("period", 201), ("smoothK", 0), ("smoothK", 101), ("smoothD", -1)):
+            with self.subTest(field=field, value=value), self.assertRaises(StoreError):
+                validate_document({**old, "indicators": {"stochastic": {**config, field: value}}})
+
     def test_chart_appearance_document_is_optional_strict_and_scoped(self):
         before = example()
         self.assertNotIn("chartAppearance", validate_document(before))
