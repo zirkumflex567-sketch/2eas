@@ -433,6 +433,26 @@ class SqliteLayoutTests(unittest.TestCase):
             with self.subTest(instance=instance), self.assertRaises(StoreError):
                 validate_document({**original,"oscillatorInstances":[instance]})
 
+    def test_stochrsi_instance_workspace_roundtrip_and_bounds(self):
+        original = example()
+        stochrsi = {"id":"srsi1","kind":"stochrsi","period":14,
+                    "stochPeriod":14,"smoothK":3,"smoothD":3,
+                    "visible":True,"color":"#55d7ee","lineWidth":2,
+                    "label":"StochRSI"}
+        document = {**original,"oscillatorInstances":[stochrsi]}
+        self.assertEqual(validate_document(document)["oscillatorInstances"],[stochrsi])
+        saved = self.store.put("local-owner","titan","XAUUSD","StochRSI",document,0)
+        self.assertEqual(self.store.get("local-owner","titan","XAUUSD","StochRSI")["document"],document)
+        for invalid in [
+            {**stochrsi,"period":1},{**stochrsi,"period":201},
+            {**stochrsi,"stochPeriod":1},{**stochrsi,"stochPeriod":201},
+            {**stochrsi,"smoothK":0},{**stochrsi,"smoothK":101},
+            {**stochrsi,"smoothD":0},{**stochrsi,"smoothD":101},
+            {**stochrsi,"extra":1},
+        ]:
+            with self.subTest(instance=invalid), self.assertRaises(StoreError):
+                validate_document({**original,"oscillatorInstances":[invalid]})
+
     def test_chart_type_compatibility_and_strict_validation(self):
         original = example()
         self.assertNotIn("chartType", validate_document(original))

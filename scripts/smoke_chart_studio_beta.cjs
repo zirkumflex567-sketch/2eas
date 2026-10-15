@@ -731,22 +731,27 @@ const fs=require("node:fs"),path=require("node:path");
   assert.equal(await page.evaluate(()=>ChartStudioOscillators.settings()[0].smoothD),2,"Stochastic smoothing persists in the local account profile");
   assert.ok(await page.evaluate(()=>ChartStudioCatalog.search("momentum").some(({id})=>id==="momentum")));
   assert.ok(await page.evaluate(()=>ChartStudioCatalog.search("rate of change").some(({id})=>id==="roc")));
+  assert.ok(await page.evaluate(()=>ChartStudioCatalog.search("stochrsi").some(({id})=>id==="stochrsi")));
   assert.equal(await page.evaluate(()=>ChartStudioOscillators.add("momentum")),true);
   assert.equal(await page.evaluate(()=>ChartStudioOscillators.add("roc")),true);
+  assert.equal(await page.evaluate(()=>ChartStudioOscillators.add("stochrsi")),true);
   await page.waitForSelector('.cs-osc-pane[data-kind="momentum"]',{state:"visible"});
   await page.waitForSelector('.cs-osc-pane[data-kind="roc"]',{state:"visible"});
-  assert.match(await page.locator(".cs-osc-editor").textContent(),/CCI, Momentum und ROC/);
+  await page.waitForSelector('.cs-osc-pane[data-kind="stochrsi"]',{state:"visible"});
+  assert.match(await page.locator(".cs-osc-editor").textContent(),/STOCHRSI hinzugefügt/);
   const momentumPeriod=page.locator('.cs-osc-instance[data-instance="osc2"] input[data-field="period"]');
   const rocPeriod=page.locator('.cs-osc-instance[data-instance="osc3"] input[data-field="period"]');
   await momentumPeriod.fill("7");await momentumPeriod.press("Tab");
   await rocPeriod.fill("9");await rocPeriod.press("Tab");
+  const stochRsiConfig=await page.evaluate(()=>ChartStudioOscillators.settings().find(item=>item.kind==="stochrsi"));
+  assert.deepEqual({period:stochRsiConfig.period,stochPeriod:stochRsiConfig.stochPeriod,smoothK:stochRsiConfig.smoothK,smoothD:stochRsiConfig.smoothD},{period:14,stochPeriod:14,smoothK:3,smoothD:3});
   assert.deepEqual(await page.evaluate(()=>ChartStudioOscillators.settings().slice(1).map(({kind,period})=>({kind,period}))),
-   [{kind:"momentum",period:7},{kind:"roc",period:9}]);
+   [{kind:"momentum",period:7},{kind:"roc",period:9},{kind:"stochrsi",period:14}]);
   await page.evaluate(()=>ChartStudioOscillators.switchAccount("goldm15"));
   assert.equal(await page.evaluate(()=>ChartStudioOscillators.settings().length),0,"Momentum and ROC instances stay scoped to their account");
   await page.evaluate(()=>ChartStudioOscillators.switchAccount("titan"));
   assert.deepEqual(await page.evaluate(()=>ChartStudioOscillators.settings().slice(1).map(({kind,period})=>({kind,period}))),
-   [{kind:"momentum",period:7},{kind:"roc",period:9}],"Momentum and ROC settings survive account scope restoration");
+   [{kind:"momentum",period:7},{kind:"roc",period:9},{kind:"stochrsi",period:14}],"Momentum, ROC, and StochRSI settings survive account scope restoration");
   const oscillatorRollback=await page.evaluate(()=>{
    const account="rollback-migration",oldKey="2eas:studio:oscillators:v1:"+account+":XAUUSD",newKey="2eas:studio:oscillators:v2:"+account+":XAUUSD";
    const legacy=[{id:"legacy-rsi",kind:"rsi",visible:true,color:"#e8bb72",lineWidth:2,label:"legacy",period:14}];

@@ -11,6 +11,7 @@ const REGISTRY=Object.freeze({
  volume:{name:"Volumen (Tick/Real)",type:"histogram",upColor:"#41cce9",downColor:"#f7758b"},
  adx:{name:"ADX +DI / −DI (Wilder)",type:"oscillator",period:14,min:2,max:200},
  stochastic:{name:"Stochastic %K/%D",type:"oscillator",period:14,smoothK:3,smoothD:3,min:2,max:200},
+ stochrsi:{name:"StochRSI %K/%D",type:"oscillator",period:14,stochPeriod:14,smoothK:3,smoothD:3,min:2,max:200},
  cci:{name:"Commodity Channel Index",type:"oscillator",period:20,min:2,max:200},
  momentum:{name:"Momentum",type:"oscillator",period:10,min:2,max:200},
  roc:{name:"Rate of Change (%)",type:"oscillator",period:10,min:2,max:200},
@@ -72,6 +73,28 @@ function stochastic(input,period=14,smoothK=3,smoothD=3){
   if(i>=smoothD-1)stochD.push({time:stochK[i].time,value:sum/smoothD});
  }
  return {stochK,stochD};
+}
+function stochRsi(input,period=14,stochPeriod=14,smoothK=3,smoothD=3){
+ const bars=validateBars(input),stochRsiK=[],stochRsiD=[];
+ if(!Number.isInteger(period)||period<2||period>200||!Number.isInteger(stochPeriod)||stochPeriod<2||stochPeriod>200||
+    !Number.isInteger(smoothK)||smoothK<1||smoothK>100||!Number.isInteger(smoothD)||smoothD<1||smoothD>100)return {stochRsiK,stochRsiD};
+ const relative=rsi(bars,period),raw=[];
+ for(let i=stochPeriod-1;i<relative.length;i++){
+  let highest=-Infinity,lowest=Infinity;
+  for(let j=i-stochPeriod+1;j<=i;j++){highest=Math.max(highest,relative[j].value);lowest=Math.min(lowest,relative[j].value)}
+  raw.push({time:relative[i].time,value:highest===lowest?50:100*(relative[i].value-lowest)/(highest-lowest)});
+ }
+ let sum=0;
+ for(let i=0;i<raw.length;i++){
+  sum+=raw[i].value;if(i>=smoothK)sum-=raw[i-smoothK].value;
+  if(i>=smoothK-1)stochRsiK.push({time:raw[i].time,value:sum/smoothK});
+ }
+ sum=0;
+ for(let i=0;i<stochRsiK.length;i++){
+  sum+=stochRsiK[i].value;if(i>=smoothD)sum-=stochRsiK[i-smoothD].value;
+  if(i>=smoothD-1)stochRsiD.push({time:stochRsiK[i].time,value:sum/smoothD});
+ }
+ return {stochRsiK,stochRsiD};
 }
 function cci(input,period=20){
  const bars=validateBars(input),out=[];
@@ -209,6 +232,7 @@ function calc(kind,candles,settings={}){
  if(kind==="volume")return {volume:volumes(candles,settings)};
  if(kind==="adx")return adx(candles,settings.period||14);
  if(kind==="stochastic")return stochastic(candles,settings.period||14,settings.smoothK||3,settings.smoothD||3);
+ if(kind==="stochrsi")return stochRsi(candles,settings.period??14,settings.stochPeriod??14,settings.smoothK??3,settings.smoothD??3);
  if(kind==="cci")return {cci:cci(candles,settings.period??20)};
  if(kind==="momentum")return {momentum:momentum(candles,settings.period??10)};
  if(kind==="roc")return {roc:roc(candles,settings.period??10)};
@@ -218,7 +242,7 @@ function calc(kind,candles,settings={}){
 function defaults(){
  return {rsi:{enabled:false,period:14},macd:{enabled:false,fast:12,slow:26,signal:9},
   atr:{enabled:false,period:14},volume:{enabled:false,upColor:"#41cce9",downColor:"#f7758b"},adx:{enabled:false,period:14},
-  stochastic:{enabled:false,period:14,smoothK:3,smoothD:3},cci:{enabled:false,period:20},
+  stochastic:{enabled:false,period:14,smoothK:3,smoothD:3},stochrsi:{enabled:false,period:14,stochPeriod:14,smoothK:3,smoothD:3},cci:{enabled:false,period:20},
   momentum:{enabled:false,period:10},roc:{enabled:false,period:10},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
 }
 function restore(account){
@@ -227,7 +251,7 @@ function restore(account){
   if(raw&&typeof raw==="object")for(const id of Object.keys(REGISTRY)){
    if(raw[id]&&typeof raw[id]==="object"){
     result[id].enabled=raw[id].enabled===true;
-    for(const prop of ["period","fast","slow","signal","smoothK","smoothD"]){
+    for(const prop of ["period","stochPeriod","fast","slow","signal","smoothK","smoothD"]){
      const minimum=prop==="smoothK"||prop==="smoothD"?1:2,maximum=prop==="slow"?300:prop==="smoothK"||prop==="smoothD"?100:200;
      if(Object.hasOwn(result[id],prop)&&Number.isInteger(raw[id][prop])&&raw[id][prop]>=minimum&&raw[id][prop]<=maximum)
       result[id][prop]=raw[id][prop];
@@ -277,7 +301,7 @@ function syncPanel(){
 }
 function data(kind){return calc(kind,state.bars,state.settings[kind])}
 function addReadout(kind,calculated){
- const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],vwap:["VWAP"]}[kind];
+ const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],vwap:["VWAP"]}[kind];
  const keys=Object.keys(calculated);
  for(let i=0;i<keys.length;i++)for(const point of calculated[keys[i]]||[]){
   const rows=state.readouts.get(point.time)||[];
@@ -327,6 +351,7 @@ function createPane(kind){
  if(kind==="volume")series("volume","#5de1d8","hist");
  if(kind==="adx"){series("adx","#e9bc72");series("plusDi","#55deaa");series("minusDi","#f17e97")}
  if(kind==="stochastic"){series("stochK","#55d7ee");series("stochD","#f3c56a")}
+ if(kind==="stochrsi"){series("stochRsiK","#55d7ee");series("stochRsiD","#f3c56a")}
  if(kind==="cci")series("cci","#a995ff");
  if(kind==="momentum")series("momentum","#55d7ee");
  if(kind==="roc")series("roc","#f3c56a");
@@ -371,7 +396,7 @@ function readout(time){
  if(!state)return "";
  const rows=state.readouts.get(Number(time))||[];
  const values=[];
- const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],vwap:["VWAP"]};
+ const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],vwap:["VWAP"]};
  for(const id of Object.keys(REGISTRY))if(state.settings[id].enabled){
   for(const label of components[id]){
    const row=rows.find(item=>item.kind===id&&item.label===label);
@@ -459,5 +484,5 @@ function mount({chart,host,panel,account="titan"}){
  syncPanel();renderPanes();
 }
 window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,updateConfig,settings,readout,
- registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,cci,momentum,roc,macd,atr,adx,vwap,volumes})});
+ registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,stochRsi,cci,momentum,roc,macd,atr,adx,vwap,volumes})});
 })();

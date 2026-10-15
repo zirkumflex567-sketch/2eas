@@ -5,7 +5,7 @@
 (()=>{
 "use strict";
 const MAX=8, PREFIX="2eas:studio:oscillators:v2:", LEGACY_PREFIX="2eas:studio:oscillators:v1:";
-const KINDS=Object.freeze(["rsi","macd","atr","adx","stochastic","cci","momentum","roc"]);
+const KINDS=Object.freeze(["rsi","macd","atr","adx","stochastic","stochrsi","cci","momentum","roc"]);
 const COLORS=Object.freeze(["#e8bb72","#54cee9","#a995ff","#63dfb6","#f7a1ae","#f1dca5","#82bdfa","#dfa2ec"]);
 const clone=o=>JSON.parse(JSON.stringify(o));
 const validColor=c=>typeof c==="string"&&/^#[0-9a-fA-F]{6}$/.test(c);
@@ -13,7 +13,7 @@ function normalize(raw){
  if(!raw||typeof raw!=="object"||Array.isArray(raw))return null;
  const mandatory=["id","kind","visible","color","lineWidth","label"];
  if(typeof raw.kind!=="string"||!KINDS.includes(raw.kind))return null;
- const params=raw.kind==="macd"?["fast","slow","signal"]:raw.kind==="stochastic"?["period","smoothK","smoothD"]:["period"];
+ const params=raw.kind==="macd"?["fast","slow","signal"]:raw.kind==="stochastic"?["period","smoothK","smoothD"]:raw.kind==="stochrsi"?["period","stochPeriod","smoothK","smoothD"]:["period"];
  const keys=[...mandatory,...params];
  if(Object.keys(raw).length!==keys.length||keys.some(k=>!Object.hasOwn(raw,k)))return null;
  if(typeof raw.id!=="string"||!/^[A-Za-z0-9_-]{1,32}$/.test(raw.id))return null;
@@ -41,7 +41,7 @@ function normalizeList(list){
  return result;
 }
 function newConfig(id,kind,color){
- const params=kind==="macd"?{fast:12,slow:26,signal:9}:kind==="stochastic"?{period:14,smoothK:3,smoothD:3}:{period:kind==="cci"?20:kind==="momentum"||kind==="roc"?10:14};
+ const params=kind==="macd"?{fast:12,slow:26,signal:9}:kind==="stochastic"?{period:14,smoothK:3,smoothD:3}:kind==="stochrsi"?{period:14,stochPeriod:14,smoothK:3,smoothD:3}:{period:kind==="cci"?20:kind==="momentum"||kind==="roc"?10:14};
  return normalize({id,kind,visible:true,color,lineWidth:2,label:"",...params});
 }
 function idNext(entries){
@@ -116,6 +116,7 @@ function createPane(cfg){
   line("macd",cfg.color);line("signal","#f3c56a");line("histogram","#65e1bd","hist");
  }
  if(cfg.kind==="stochastic"){line("stochK",cfg.color);line("stochD","#f3c56a")}
+ if(cfg.kind==="stochrsi"){line("stochRsiK",cfg.color);line("stochRsiD","#f3c56a")}
  if(cfg.kind==="cci")line("cci",cfg.color);
  if(cfg.kind==="momentum")line("momentum",cfg.color);
  if(cfg.kind==="roc")line("roc",cfg.color);
@@ -141,7 +142,7 @@ function redraw(){
   if(existing&&existing.shell.dataset.kind!==cfg.kind)destroyPane(cfg.id);
   const p=state.panes.get(cfg.id)||createPane(cfg);
   p.label.textContent=(cfg.label.trim()||cfg.kind.toUpperCase())+
-   (cfg.kind==="macd"?" · "+cfg.fast+"/"+cfg.slow+"/"+cfg.signal:cfg.kind==="stochastic"?" · "+cfg.period+"/"+cfg.smoothK+"/"+cfg.smoothD:" · "+cfg.period);
+   (cfg.kind==="macd"?" · "+cfg.fast+"/"+cfg.slow+"/"+cfg.signal:cfg.kind==="stochastic"?" · "+cfg.period+"/"+cfg.smoothK+"/"+cfg.smoothD:cfg.kind==="stochrsi"?" · RSI "+cfg.period+" / Stoch "+cfg.stochPeriod+" / "+cfg.smoothK+"/"+cfg.smoothD:" · "+cfg.period);
   p.shell.dataset.kind=cfg.kind;
   for(const [kind,series] of Object.entries(p.lines)){
    if(kind===cfg.kind||kind==="macd"||kind==="stochK")series.applyOptions({color:cfg.color,lineWidth:cfg.lineWidth});
@@ -192,7 +193,8 @@ function syncPanel(){
   for(const [field,text] of [
    ["visible","Aktiv"],["kind","Indikator"],
    ...(cfg.kind==="macd"?[["fast","Schnell"],["slow","Langsam"],["signal","Signal"]]:
-    cfg.kind==="stochastic"?[["period","Periode"],["smoothK","%K Glättung"],["smoothD","%D Glättung"]]:[["period","Periode"]]),
+    cfg.kind==="stochastic"?[["period","Periode"],["smoothK","%K Glättung"],["smoothD","%D Glättung"]]:
+    cfg.kind==="stochrsi"?[["period","RSI-Periode"],["stochPeriod","Stoch-Periode"],["smoothK","%K Glättung"],["smoothD","%D Glättung"]]:[["period","Periode"]]),
    ["color","Farbe"],["lineWidth","Breite"],["label","Name"]
   ])row.append(control(field,text,cfg[field],cfg));
   for(const [action,name] of [["duplicate","Kopieren"],["remove","Entfernen"]]){

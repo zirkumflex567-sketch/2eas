@@ -367,6 +367,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
     {kind:"macd",settings:{fast:12,slow:26,signal:9}},
     {kind:"adx",settings:{period:14}},
     {kind:"stochastic",settings:{period:14,smoothK:3,smoothD:3}},
+    {kind:"stochrsi",settings:{period:14,stochPeriod:14,smoothK:3,smoothD:3}},
     {kind:"cci",settings:{period:20}},
     {kind:"momentum",settings:{period:10}},
     {kind:"roc",settings:{period:10}}

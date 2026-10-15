@@ -76,6 +76,21 @@ assert.equal(math.momentum(momentumBars,1).length,0);
 assert.equal(math.roc(momentumBars,201).length,0);
 assert.equal(window.ChartStudioIndicators.calculate("momentum",momentumBars,{period:2}).momentum.length,3);
 assert.equal(window.ChartStudioIndicators.calculate("roc",momentumBars,{period:2}).roc.length,2);
+const stochRsiBars=[1,2,3,2,4,3,6,5,7,6,9,8].map((close,index)=>({
+ time:1700500000+index*60,open:close,high:close+1,low:close-1,close
+}));
+const stochRsi=math.stochRsi(stochRsiBars,2,3,2,2);
+assert.deepEqual(Array.from(stochRsi.stochRsiK,point=>point.time),stochRsiBars.slice(5).map(bar=>bar.time));
+assert.deepEqual(Array.from(stochRsi.stochRsiD,point=>point.time),stochRsiBars.slice(6).map(bar=>bar.time));
+assert.ok(stochRsi.stochRsiK.every(point=>point.value>=0&&point.value<=100));
+assert.ok(stochRsi.stochRsiD.every(point=>point.value>=0&&point.value<=100));
+assert.equal(math.stochRsi(stochRsiBars.slice(0,6),2,3,2,2).stochRsiD.length,0);
+const flatStochRsi=math.stochRsi(stochRsiBars.map(bar=>({...bar,open:10,high:10,low:10,close:10})),2,3,2,2);
+assert.ok(flatStochRsi.stochRsiK.every(point=>point.value===50));
+assert.ok(flatStochRsi.stochRsiD.every(point=>point.value===50));
+assert.equal(math.stochRsi(stochRsiBars,1,3,2,2).stochRsiK.length,0);
+assert.equal(math.stochRsi(stochRsiBars,2,1,2,2).stochRsiK.length,0);
+assert.equal(window.ChartStudioIndicators.calculate("stochrsi",stochRsiBars,{period:2,stochPeriod:3,smoothK:2,smoothD:2}).stochRsiK.length,7);
 assert.ok(src.includes("state.bars.map(bar=>byTime.get(bar.time)||{time:bar.time})"));
 assert.ok(!src.includes("order_send(")&&!src.includes("/api/modify_position"));
 
