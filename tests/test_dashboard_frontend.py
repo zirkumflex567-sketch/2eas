@@ -324,6 +324,23 @@ class DashboardFrontendTests(unittest.TestCase):
     def load(self):
         self.page.goto(self.url)
         expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=10000)
+    def test_account_deep_link_precedes_saved_account_and_scopes_startup_reads(self):
+        self.page.add_init_script("""() => {
+          localStorage.setItem('gold_dashboard_account','goldm15');
+          localStorage.setItem('two_eas_journal_filter','all');
+        }""")
+        self.page.goto(self.url+'?account=titan')
+        expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=10000)
+        self.page.wait_for_function("journalLoadedMode !== null && journalBusyMode === null", timeout=5000)
+        self.assertEqual(self.page.evaluate('activeAccount'), 'titan')
+        self.assertEqual(self.page.evaluate('journalFilter'), 'titan')
+        scoped_paths=('/api/status','/api/candles','/api/chart/v1/portfolio','/api/journal_summary')
+        scoped_requests=[url for url in self.requests if urlparse(url).path in scoped_paths]
+        aliases={parse_qs(urlparse(url).query).get('account',[''])[0] for url in scoped_requests}
+        self.assertTrue(scoped_requests, self.requests)
+        self.assertEqual(aliases, {'titan'}, scoped_requests)
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.errors, [])
     def test_bootstrap_uses_configured_broker_symbol_for_chart_feed(self):
         self.account_overrides = {'titan': dict(symbol='XAUUSD.pi', timeframe='M15')}
         self.candle_rows = [

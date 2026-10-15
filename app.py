@@ -2292,14 +2292,19 @@ HTML_CONTENT = """<!DOCTYPE html>
     let currentVPTab = 'daily';
     let currentData = null;
     const BASE_PATH = window.location.pathname.startsWith('/stt') ? '/stt' : '';
-    let activeAccount = 'blueberry';
+    const urlAccountValues = new URLSearchParams(window.location.search).getAll('account');
+    const urlAccountCandidate = urlAccountValues.length === 1 ? urlAccountValues[0] : null;
+    const initialAccountTabs = new Set(Array.from(document.querySelectorAll('#account-switcher [data-account]'), tab => tab.dataset.account));
+    const deepLinkedAccount = typeof urlAccountCandidate === 'string' && /^[a-z0-9_-]{1,32}$/.test(urlAccountCandidate)
+      && initialAccountTabs.has(urlAccountCandidate) ? urlAccountCandidate : null;
+    let activeAccount = deepLinkedAccount || 'blueberry';
     let activeTimeframe = 'M15';
     let activeChartSymbol = 'XAUUSD.pi';
     const AVAILABLE_TFS = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'];
     let accountGeneration = 0;
     let accounts = {};
     const savedJournalFilter = localStorage.getItem('two_eas_journal_filter');
-    let journalFilter = ['all','blueberry','titan','titan_25k','goldm15','titan_m5','xau5m_500','titan_500_2','xau5m_m5','xau5m_m15'].includes(savedJournalFilter) ? savedJournalFilter : 'all';
+    let journalFilter = deepLinkedAccount || (['all','blueberry','titan','titan_25k','goldm15','titan_m5','xau5m_500','titan_500_2','xau5m_m5','xau5m_m15'].includes(savedJournalFilter) ? savedJournalFilter : 'all');
     let journalEntriesByAccount = { blueberry: [], titan: [], titan_25k: [], goldm15: [], titan_m5: [], xau5m_500: [], titan_500_2: [], xau5m_m5: [] };
     let journalErrors = [];
     let journalLoadedMode = null;
@@ -4477,11 +4482,13 @@ HTML_CONTENT = """<!DOCTYPE html>
             }
           }
         }
+        const saved = localStorage.getItem('gold_dashboard_account');
+        const selected = accounts[deepLinkedAccount] ? deepLinkedAccount : (accounts[saved] ? saved : data.default);
+        if (journalFilter !== 'all' && !accounts[journalFilter]) journalFilter = selected;
         const journalSelect = document.getElementById('journal-strategy-filter');
         if (journalSelect) journalSelect.value = journalFilter;
+        await switchAccount(selected);
         void refreshJournal();
-        const saved = localStorage.getItem('gold_dashboard_account');
-        await switchAccount(accounts[saved] ? saved : data.default);
         bootstrapAttempt = 0;
       } catch(error) {
         reportAccountError(error, accountGeneration);
