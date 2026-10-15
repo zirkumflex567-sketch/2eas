@@ -3914,7 +3914,7 @@ HTML_CONTENT = """<!DOCTYPE html>
              </span>`;
 
         const pnlBadge = `
-          <div class="flex items-center gap-1 px-3 py-1 rounded-lg border font-mono font-black text-xs ${
+          <div class="journal-entry-pnl flex items-center gap-1 px-3 py-1 rounded-lg border font-mono font-black text-xs ${
             isProfit
               ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40 shadow-sm shadow-emerald-500/10'
               : 'bg-rose-500/15 text-rose-400 border-rose-500/40 shadow-sm shadow-rose-500/10'
@@ -3973,7 +3973,7 @@ HTML_CONTENT = """<!DOCTYPE html>
               </summary>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs mt-1.5">
               <!-- WHY TRIGGERED -->
-              <div class="rounded-md p-2.5 bg-black/20 border border-white/5 flex flex-col justify-between">
+              <div class="stone-journal-detail rounded-md p-2.5 bg-black/20 border border-white/5 flex flex-col justify-between">
                 <div>
                   <div class="flex items-center gap-1.5 font-bold text-amber-400 text-[11px] mb-1">
                     <span>🎯</span>
@@ -3984,7 +3984,7 @@ HTML_CONTENT = """<!DOCTYPE html>
               </div>
 
               <!-- PROFIT GOAL -->
-              <div class="rounded-md p-2.5 bg-black/20 border border-white/5 flex flex-col justify-between">
+              <div class="stone-journal-detail rounded-md p-2.5 bg-black/20 border border-white/5 flex flex-col justify-between">
                 <div>
                   <div class="flex items-center gap-1.5 font-bold text-emerald-400 text-[11px] mb-1">
                     <span>🏁</span>

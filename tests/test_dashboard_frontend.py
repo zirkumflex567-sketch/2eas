@@ -423,8 +423,8 @@ class DashboardFrontendTests(unittest.TestCase):
         expect(self.page.locator('[data-position-ticket="101"]')).to_contain_text('Entwurf')
     def test_position_fields_have_ticket_unit_labels_and_explicit_actions(self):
         self.load()
-        expect(self.page.get_by_label('SL Ziel-P/L in USD · XAU Titan Pro · Ticket 101')).to_have_value('-30.00')
-        expect(self.page.get_by_label('TP Ziel-P/L in USD · XAU Titan Pro · Ticket 101')).to_have_value('0.00')
+        expect(self.page.get_by_label('SL Ziel-P/L in USD · Marketplace XAUUSD 5 minute · Ticket 101')).to_have_value('-30.00')
+        expect(self.page.get_by_label('TP Ziel-P/L in USD · Marketplace XAUUSD 5 minute · Ticket 101')).to_have_value('0.00')
         expect(self.page.locator('[data-position-ticket="101"]')).to_contain_text('Kein fixer TP')
         expect(self.page.get_by_role('button', name='SL und TP an MT5 senden · Ticket 101')).to_have_count(1)
         expect(self.page.get_by_role('button', name='SL sofort +5 USD')).to_have_count(1)

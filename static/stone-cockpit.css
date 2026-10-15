@@ -115,6 +115,7 @@ body.theme-stone .account-tab[aria-pressed=true] {
   box-shadow: inset 0 1px rgba(183,250,255,.3), 0 0 13px rgba(25,187,229,.28);
 }
 body.theme-stone .account-tab:hover { box-shadow: 0 0 12px rgba(34,203,246,.19), inset 0 1px rgba(255,255,255,.16); }
+body.theme-stone .account-tab strong:not([class]) { color: #dbe7eb !important; }
 body.theme-stone button:not(.account-tab) {
   transition: filter .22s ease, transform .15s ease, box-shadow .24s ease;
 }
@@ -187,8 +188,37 @@ body.theme-stone table td { padding: 8px 7px !important; }
 body.theme-stone #positions-list > * { border-color:rgba(113,143,155,.36) !important; }
 body.theme-stone #journal-list > * {
   border-color: rgba(109,138,147,.27) !important;
-  background: rgba(7,16,20,.22);
+  background: #0b151b !important;
   box-shadow: inset 0 0 16px rgba(0,0,0,.22);
+}
+body.theme-stone #journal-list .stone-journal-detail {
+  background: #0b151b !important;
+  border-color: rgba(109,138,147,.4) !important;
+}
+body.theme-stone #journal-list .stone-journal-detail .text-sub { color: #cbd8dd !important; }
+body.theme-stone #journal-list .journal-entry-pnl.text-emerald-400 {
+  color: #9aefcc !important;
+  background: #0b171b !important;
+  border-color: rgba(93,224,176,.5) !important;
+  box-shadow: none !important;
+}
+body.theme-stone #journal-list .journal-entry-pnl.text-rose-400 {
+  color: #ffbabc !important;
+  background: #1b1013 !important;
+  border-color: rgba(255,142,149,.5) !important;
+  box-shadow: none !important;
+}
+body.theme-stone #journal-closed-pnl,
+body.theme-stone #journal-live-pnl {
+  background: #0b171b !important;
+  color: #9aefcc !important;
+  border-color: rgba(93,224,176,.5) !important;
+}
+body.theme-stone #journal-closed-pnl.text-rose-400,
+body.theme-stone #journal-live-pnl.text-rose-400 {
+  background: #1b1013 !important;
+  color: #ffbabc !important;
+  border-color: rgba(255,142,149,.5) !important;
 }
 body.theme-stone #dd-badge, body.theme-stone #pos-count-badge {
   border: 1px solid rgba(46,208,234,.3) !important;

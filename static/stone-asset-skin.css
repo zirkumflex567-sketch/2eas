@@ -100,7 +100,29 @@ body.theme-stone .account-tab[aria-pressed="true"] {
   color: #e6fbff; filter: drop-shadow(0 0 6px rgba(66,216,249,.35));
 }
 body.theme-stone nav.stone-asset-nav .account-tab:not([aria-pressed="true"]) strong {
-  color: #fff !important;
+  color: #dbe7eb !important;
+  background: #0b151b !important;
+  border-radius: 3px;
+  padding: 2px 4px;
+}
+body.theme-stone nav.stone-asset-nav .account-tab small:not([class]) {
+  color: #c4d2d8 !important;
+  opacity: 1 !important;
+  background: #0b151b !important;
+  border-radius: 3px;
+  padding: 2px 4px;
+}
+body.theme-stone nav.stone-asset-nav .account-tab .text-amber-200\/70 {
+  color: #fff1b8 !important;
+  opacity: 1 !important;
+  background: #15130e !important;
+  border-radius: 3px;
+  padding: 2px 4px;
+}
+body.theme-stone #journal-list .bg-cyan-500\/20 {
+  color: #d9fbff !important;
+  background: #0c2028 !important;
+  border-color: rgba(95,220,239,.58) !important;
 }
 body.theme-stone .account-tab:hover { filter: brightness(1.16); }
 body.theme-stone .ticker-bg {
