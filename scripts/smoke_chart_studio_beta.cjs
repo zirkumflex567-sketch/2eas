@@ -71,7 +71,7 @@ const fs=require("node:fs"),path=require("node:path");
   await page.route("**/api/chart/v1/lifecycle/positions/*/mfe-mae*",async route=>{
     const req=route.request(),url=new URL(req.url());
     mfeRequests.push({method:req.method(),account:url.searchParams.get("account"),position:url.pathname.split("/").at(-2)});
-    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({schemaVersion:1,account:"titan",canExecute:false,result:{status:"AVAILABLE",reason:null,quality:"OHLC_ESTIMATE",coverage:"OBSERVED_BARS_ONLY",source:"MT5_COMPLETED_BARS",positionIdentifier:"92990",entryDealTicket:"93001",exitDealTicket:"93002",entryTimeUtc:"2026-10-14T12:30:00Z",exitTimeUtc:"2026-10-14T12:45:00Z",timeframe:"M15",barsUsed:1,observedFromUtc:"2026-10-14T12:30:00Z",observedToUtc:"2026-10-14T12:30:00Z",mfePriceDistance:"2.5",maePriceDistance:"1.25",intrabarOrder:"UNKNOWN"}})});
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({schemaVersion:1,account:"titan",canExecute:false,result:{status:"AVAILABLE",reason:null,quality:"OHLC_ESTIMATE",coverage:"OBSERVED_BARS_ONLY",source:"MT5_COMPLETED_BARS",positionIdentifier:"92990",symbol:"XAUUSD",side:"BUY",entryPrice:"4101.25",entryDealTicket:"93001",exitDealTicket:"93002",entryTimeUtc:"2026-10-14T12:30:00Z",exitTimeUtc:"2026-10-14T12:45:00Z",timeframe:"M15",barsUsed:1,observedFromUtc:"2026-10-14T12:30:00Z",observedToUtc:"2026-10-14T12:30:00Z",mfePriceDistance:"2.5",maePriceDistance:"1.25",intrabarOrder:"UNKNOWN",tickObservation:{status:"AVAILABLE",quality:"TICK_OBSERVED",coverage:"MT5_RETURNED_TICKS_ONLY",source:"MT5_COPY_TICKS_INFO",exact:false,quoteSide:"BID",ticksUsed:42,observedFromUtc:"2026-10-14T12:30:00.001Z",observedToUtc:"2026-10-14T12:44:59.999Z",mfePriceDistance:"2.7",maePriceDistance:"1.4",intrabarOrder:"UNKNOWN"}}})});
   });
   await page.route("**/api/chart/v1/snapshots**",async route=>{
     const url=new URL(route.request().url());evidenceRequests.push({path:url.pathname,params:Object.fromEntries(url.searchParams)});
@@ -198,7 +198,7 @@ const fs=require("node:fs"),path=require("node:path");
   await page.locator("#cs-evidence-list button.cs-evidence-mfe-mae").click();
   await page.locator("#cs-evidence-list .cs-evidence-mfe-mae-result").waitFor({state:"visible"});
   const excursionText=await page.locator("#cs-evidence-list .cs-evidence-mfe-mae-result").textContent();
-  assert.match(excursionText,/OHLC-Schätzung/);assert.match(excursionText,/MFE 2\.5/);assert.match(excursionText,/MAE 1\.25/);assert.match(excursionText,/Intrabar-Reihenfolge unbekannt/);
+  assert.match(excursionText,/OHLC-Schätzung/);assert.match(excursionText,/MFE 2\.5/);assert.match(excursionText,/MAE 1\.25/);assert.match(excursionText,/Intrabar-Reihenfolge unbekannt/);assert.match(excursionText,/Tickbeobachtung/);assert.match(excursionText,/2\.7/);assert.match(excursionText,/Vollständigkeit nicht verifiziert/);
   assert.deepEqual(mfeRequests,[{method:"GET",account:"titan",position:"92990"}],"MFE/MAE uses one account-scoped read request");
   assert.match(await page.locator("#cs-evidence-list .cs-evidence-chart-caption").textContent(),/historische Indikatoren\/Zeichnungen nicht aufgezeichnet/);
   assert.ok(await page.locator("#cs-evidence-list canvas").evaluate(canvas=>{const d=canvas.getContext("2d").getImageData(0,0,canvas.width,canvas.height).data;return [...d].some((v,i)=>i%4!==3&&v!==0)}),"Historical snapshot canvas contains rendered pixels");

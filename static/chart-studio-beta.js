@@ -336,7 +336,13 @@ function renderEvidence(){
       if(result.quality!=="OHLC_ESTIMATE"||result.coverage!=="OBSERVED_BARS_ONLY"||result.intrabarOrder!=="UNKNOWN"||
          ![result.mfePriceDistance,result.maePriceDistance].every(value=>typeof value==="string"&&/^(?:0|[0-9]+(?:\.[0-9]+)?)$/.test(value))||
          !Number.isInteger(result.barsUsed)||result.barsUsed<1||result.barsUsed>150)throw Error("INVALID_ESTIMATE");
-      excursionStatus.textContent="OHLC-Schätzung · MFE "+result.mfePriceDistance+" · MAE "+result.maePriceDistance+" Preisabstand · "+result.timeframe+" / "+result.barsUsed+" vollständige Kerzen · nur erfasste Kerzen · Intrabar-Reihenfolge unbekannt.";
+      const ticks=result.tickObservation;let tickText="MT5-Tickbeobachtung nicht verfügbar";
+      if(ticks?.status==="AVAILABLE"){
+       if(ticks.quality!=="TICK_OBSERVED"||ticks.coverage!=="MT5_RETURNED_TICKS_ONLY"||ticks.source!=="MT5_COPY_TICKS_INFO"||ticks.exact!==false||ticks.intrabarOrder!=="UNKNOWN"||!(["BID","ASK"].includes(ticks.quoteSide))||!Number.isInteger(ticks.ticksUsed)||ticks.ticksUsed<1||ticks.ticksUsed>250000||![ticks.mfePriceDistance,ticks.maePriceDistance].every(value=>typeof value==="string"&&/^(?:0|[0-9]+(?:\.[0-9]+)?)$/.test(value)))throw Error("INVALID_TICK_OBSERVATION");
+       tickText="MT5-Tickbeobachtung "+ticks.ticksUsed+" "+ticks.quoteSide+"-Ticks · MFE "+ticks.mfePriceDistance+" · MAE "+ticks.maePriceDistance+" · Vollständigkeit nicht verifiziert, daher nicht tick-exakt.";
+      }else if(ticks?.status==="UNAVAILABLE"&&typeof ticks.reason==="string"&&/^[A-Z0-9_]{1,64}$/.test(ticks.reason))tickText="MT5-Tickbeobachtung nicht verfügbar · "+ticks.reason;
+      else throw Error("INVALID_TICK_OBSERVATION");
+      excursionStatus.textContent="OHLC-Schätzung · MFE "+result.mfePriceDistance+" · MAE "+result.maePriceDistance+" Preisabstand · "+result.timeframe+" / "+result.barsUsed+" vollständige Kerzen · nur erfasste Kerzen · Intrabar-Reihenfolge unbekannt. "+tickText;
      }else if(result.status==="UNAVAILABLE"&&typeof result.reason==="string"){
       excursionStatus.textContent="MFE/MAE nicht verfügbar · "+result.reason;
      }else throw Error("INVALID_ESTIMATE_STATUS");

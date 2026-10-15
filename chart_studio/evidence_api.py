@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette._utils import get_route_path
 from chart_studio import evidence_models as models
 from chart_studio.evidence_store import EvidenceStore, StoreUnavailable, StoreReplaced
-from chart_studio.evidence_mfe_mae import estimate_ohlc_mfe_mae
+from chart_studio.evidence_mfe_mae import estimate_ohlc_mfe_mae, observe_tick_mfe_mae
 from chart_studio.evidence_spool_service import SpoolFileConsumer, run_spool_service
 from chart_studio.broker_lifecycle_capture import (DemoBrokerLifecycleCapture,
     parse_demo_allowlist, run_demo_broker_lifecycle_capture)
@@ -153,6 +153,36 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
         return JSONResponse({'schemaVersion':1, 'detail':{'code':code, 'canExecute':False, 'coverage':'UNKNOWN',
                             'gaps':store.gaps(account)}},
                             status_code=status, headers={'Cache-Control':'no-store'})
+
+    def tick_observation(account, result):
+        if result.get('status') != 'AVAILABLE':
+            return {'status': 'UNAVAILABLE', 'reason': 'OHLC_POSITION_UNAVAILABLE'}
+        reader = getattr(mt5, 'copy_ticks_range', None)
+        flags = getattr(mt5, 'COPY_TICKS_INFO', None)
+        if not callable(reader) or type(flags) is not int:
+            return {'status': 'UNAVAILABLE', 'reason': 'TICK_SOURCE_UNAVAILABLE'}
+        try:
+            start_us = models.utc_microseconds(result['entryTimeUtc'])
+            stop_us = models.utc_microseconds(result['exitTimeUtc'])
+            if stop_us - start_us > 7 * 24 * 60 * 60 * 1_000_000:
+                return {'status': 'UNAVAILABLE', 'reason': 'TICK_WINDOW_LIMIT'}
+            start = datetime.fromtimestamp(start_us / 1_000_000, timezone.utc)
+            stop = datetime.fromtimestamp(stop_us / 1_000_000, timezone.utc)
+            with models.gateway.traced_session(mt5, account) as verified_spec:
+                if result.get('symbol') != verified_spec.get('symbol'):
+                    return {'status': 'UNAVAILABLE', 'reason': 'SYMBOL_SCOPE_MISMATCH'}
+                ticks = reader(result['symbol'], start, stop, flags)
+            if ticks is None:
+                return {'status': 'UNAVAILABLE', 'reason': 'TICK_HISTORY_UNAVAILABLE'}
+            if len(ticks) > 250_000:
+                return {'status': 'UNAVAILABLE', 'reason': 'TICK_COUNT_LIMIT'}
+            normalized = [{'time_msc': int(tick['time_msc']), 'bid': float(tick['bid']),
+                           'ask': float(tick['ask'])} for tick in ticks]
+            return observe_tick_mfe_mae(result['positionIdentifier'], result['side'],
+                                        result['entryPrice'], start_us, stop_us, normalized)
+        except Exception:
+            # Terminal/history errors never invalidate the independent OHLC record.
+            return {'status': 'UNAVAILABLE', 'reason': 'TICK_HISTORY_UNAVAILABLE'}
 
     @app.middleware('http')
     async def evidence_headers(request, call_next):
@@ -318,6 +348,7 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
                 result = {'status': 'UNAVAILABLE', 'reason': 'POSITION_HISTORY_LIMIT'}
             else:
                 result = estimate_ohlc_mfe_mae(position_id, lifecycle.get('records'), snapshots.get('records'))
+                result['tickObservation'] = tick_observation(account, result)
             return JSONResponse({'schemaVersion': 1, 'account': account, 'canExecute': False,
                                  'result': result}, headers={'Cache-Control': 'no-store'})
         except (StoreUnavailable, StoreReplaced):

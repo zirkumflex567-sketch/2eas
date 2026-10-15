@@ -1,7 +1,7 @@
 from hashlib import sha256
 
 from chart_studio import evidence_models
-from chart_studio.evidence_mfe_mae import estimate_ohlc_mfe_mae
+from chart_studio.evidence_mfe_mae import estimate_ohlc_mfe_mae, observe_tick_mfe_mae
 
 
 def _time(hour, minute, second=0):
@@ -86,6 +86,9 @@ def test_long_position_reports_explicit_ohlc_price_excursions():
         "coverage": "OBSERVED_BARS_ONLY",
         "source": "MT5_COMPLETED_BARS",
         "positionIdentifier": "9001",
+        "symbol": "XAUUSD.pi",
+        "side": "BUY",
+        "entryPrice": "101",
         "entryDealTicket": "5001",
         "exitDealTicket": "5002",
         "entryTimeUtc": _time(10, 0),
@@ -176,3 +179,50 @@ def test_account_and_position_mismatches_fail_closed():
 
     assert result["status"] == "UNAVAILABLE"
     assert result["reason"] == "POSITION_SCOPE_MISMATCH"
+
+
+def test_tick_observation_uses_executable_bid_for_long_and_excludes_fill_edges():
+    entry_us = evidence_models.utc_microseconds(_time(10, 0))
+    exit_us = evidence_models.utc_microseconds(_time(10, 0, 2))
+    ticks = [
+        {"time_msc": entry_us // 1000, "bid": 100, "ask": 101},
+        {"time_msc": entry_us // 1000 + 1, "bid": 104, "ask": 105},
+        {"time_msc": entry_us // 1000 + 2, "bid": 97, "ask": 98},
+        {"time_msc": exit_us // 1000, "bid": 200, "ask": 201},
+    ]
+
+    result = observe_tick_mfe_mae("9001", "BUY", "100", entry_us, exit_us, ticks)
+
+    assert result["status"] == "AVAILABLE"
+    assert result["quality"] == "TICK_OBSERVED"
+    assert result["coverage"] == "MT5_RETURNED_TICKS_ONLY"
+    assert result["exact"] is False
+    assert (result["mfePriceDistance"], result["maePriceDistance"]) == ("4", "3")
+    assert result["ticksUsed"] == 2
+
+
+def test_tick_observation_uses_executable_ask_for_short():
+    entry_us = evidence_models.utc_microseconds(_time(10, 0))
+    exit_us = evidence_models.utc_microseconds(_time(10, 0, 2))
+    ticks = [
+        {"time_msc": entry_us // 1000 + 1, "bid": 98, "ask": 99},
+        {"time_msc": entry_us // 1000 + 2, "bid": 102, "ask": 103},
+    ]
+
+    result = observe_tick_mfe_mae("9001", "SELL", "100", entry_us, exit_us, ticks)
+
+    assert (result["mfePriceDistance"], result["maePriceDistance"]) == ("1", "3")
+    assert result["quoteSide"] == "ASK"
+
+
+def test_tick_observation_fails_closed_on_invalid_order_quotes_or_count():
+    entry_us = evidence_models.utc_microseconds(_time(10, 0))
+    exit_us = evidence_models.utc_microseconds(_time(10, 0, 2))
+    t0 = entry_us // 1000 + 1
+    valid = {"time_msc": t0, "bid": 100, "ask": 101}
+
+    assert observe_tick_mfe_mae("9001", "BUY", "100", entry_us, exit_us,
+                                [valid, {**valid, "time_msc": t0 - 1}])["reason"] == "TICK_ORDER_INVALID"
+    assert observe_tick_mfe_mae("9001", "BUY", "100", entry_us, exit_us,
+                                [{**valid, "ask": 0}])["reason"] == "TICK_QUOTE_INVALID"
+    assert observe_tick_mfe_mae("9001", "BUY", "100", entry_us, exit_us, [])["reason"] == "NO_INTERIOR_TICKS"
