@@ -50,7 +50,8 @@ def observe_tick_mfe_mae(position_identifier, side, entry_price, entry_us, exit_
     """Measure price extrema in returned terminal ticks without claiming completeness."""
     if (not isinstance(position_identifier, str) or not position_identifier.isdigit() or
             side not in ("BUY", "SELL") or type(entry_us) is not int or type(exit_us) is not int or
-            entry_us <= 0 or exit_us <= entry_us or not isinstance(ticks, (list, tuple))):
+            entry_us <= 0 or exit_us <= entry_us or isinstance(ticks, (str, bytes, dict)) or
+            not callable(getattr(ticks, "__iter__", None)) or not callable(getattr(ticks, "__len__", None))):
         return _unavailable("INVALID_TICK_EVIDENCE")
     if len(ticks) > 1_000_000:
         return _unavailable("TICK_COUNT_LIMIT")

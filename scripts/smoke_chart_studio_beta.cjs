@@ -197,6 +197,7 @@ const fs=require("node:fs"),path=require("node:path");
   assert.equal(await page.locator("#cs-evidence-list button.cs-evidence-mfe-mae").count(),1,"A saved position snapshot exposes its read-only MFE/MAE estimate");
   await page.locator("#cs-evidence-list button.cs-evidence-mfe-mae").click();
   await page.locator("#cs-evidence-list .cs-evidence-mfe-mae-result").waitFor({state:"visible"});
+  await page.waitForFunction(()=>document.querySelector("#cs-evidence-list .cs-evidence-mfe-mae-result")?.textContent.includes("OHLC-Schätzung"));
   const excursionText=await page.locator("#cs-evidence-list .cs-evidence-mfe-mae-result").textContent();
   assert.match(excursionText,/OHLC-Schätzung/);assert.match(excursionText,/MFE 2\.5/);assert.match(excursionText,/MAE 1\.25/);assert.match(excursionText,/Intrabar-Reihenfolge unbekannt/);assert.match(excursionText,/Tickbeobachtung/);assert.match(excursionText,/2\.7/);assert.match(excursionText,/Vollständigkeit nicht verifiziert/);
   assert.deepEqual(mfeRequests,[{method:"GET",account:"titan",position:"92990"}],"MFE/MAE uses one account-scoped read request");

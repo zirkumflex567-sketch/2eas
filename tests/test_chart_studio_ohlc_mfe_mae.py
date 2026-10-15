@@ -237,3 +237,21 @@ def test_tick_observation_accepts_a_large_bounded_terminal_result():
 
     assert result["status"] == "AVAILABLE"
     assert result["ticksUsed"] == 250_001
+
+
+def test_tick_observation_accepts_numpy_style_iterable_rows():
+    entry_us = evidence_models.utc_microseconds(_time(10, 0))
+    exit_us = evidence_models.utc_microseconds(_time(10, 0, 2))
+    row = {"time_msc": entry_us // 1000 + 1, "bid": 101, "ask": 102}
+
+    class TickArray:
+        def __len__(self):
+            return 1
+
+        def __iter__(self):
+            return iter((row,))
+
+    result = observe_tick_mfe_mae("9001", "BUY", "100", entry_us, exit_us, TickArray())
+
+    assert result["status"] == "AVAILABLE"
+    assert result["mfePriceDistance"] == "1"
