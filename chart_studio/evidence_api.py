@@ -258,6 +258,33 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
     def lifecycle(request: Request):
         return serve(request,'LIFECYCLE')
 
+    @app.get(paths[1] + '/capture/status')
+    def lifecycle_capture_status(request: Request):
+        identity = getattr(request.state, 'control_identity', None)
+        peer = getattr(request.state, 'raw_peer', None)
+        if (not isinstance(identity, tuple) or len(identity) != 3 or
+                not all(isinstance(x, str) and x for x in identity) or
+                identity[0] not in ('local', 'bearer', 'proxy') or
+                identity[2] not in ('read', 'layout', 'trade') or
+                not isinstance(peer, str) or not peer):
+            return error(403, 'IDENTITY_REQUIRED')
+        params = request.query_params
+        account = params.get('account')
+        service = app.state.evidence_deal_capture_service
+        if (set(params) != {'account'} or len(params.getlist('account')) != 1 or
+                not isinstance(account, str) or not re.fullmatch('[a-z0-9_-]{1,32}', account)):
+            return error(422, 'INVALID_REQUEST')
+        if service is None or account not in service.accounts:
+            return error(400, 'UNKNOWN_ACCOUNT')
+        status = app.state.evidence_deal_capture_status.get(account, {})
+        allowed = ('code', 'coverage', 'appended', 'duplicates', 'rejected',
+                   'storeLostCount', 'gapObserved', 'windowStartUtc')
+        safe_status = {key: status[key] for key in allowed if key in status}
+        if not safe_status:
+            safe_status = {'code': 'NOT_STARTED', 'coverage': 'UNKNOWN'}
+        return JSONResponse({'schemaVersion': 1, 'account': account, 'status': safe_status},
+                            headers={'Cache-Control': 'no-store'})
+
     @app.get(paths[2])
     def snapshots(request: Request):
         return serve(request,'SNAPSHOT')

@@ -247,3 +247,39 @@ def test_application_rejects_funded_account_for_deal_capture(monkeypatch):
     install_evidence_routes(app, store=Store(), mt5=object())
     assert app.state.evidence_deal_capture_service is None
     assert app.state.evidence_deal_capture_status == {'service': {'code': 'CONFIG_INVALID'}}
+
+
+def test_capture_status_is_authenticated_and_limited_to_configured_demos(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from chart_studio.evidence_api import install_evidence_routes
+    from dashboard_security import install_control_security
+
+    class Store:
+        root = Path('private-test-root')
+        def gaps(self, _account=None):
+            return []
+
+    monkeypatch.setenv('CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS', 'titan,xau5m_m5')
+    app = FastAPI()
+    install_evidence_routes(app, store=Store(), mt5=object())
+    app.state.evidence_deal_capture_status = {
+        'titan': {'code': 'OK', 'coverage': 'ROLLING_WINDOW', 'appended': 2,
+                  'duplicates': 3, 'rejected': 0, 'storeLostCount': 0,
+                  'gapObserved': False, 'windowStartUtc': '2026-10-14T00:00:00.000000Z'},
+        'xau5m_m5': {'code': 'BROKER_READ_UNAVAILABLE', 'coverage': 'UNKNOWN',
+                     'detail': 'must not leak'},
+    }
+    unauthenticated = TestClient(app).get('/api/chart/v1/lifecycle/capture/status', params={'account': 'titan'})
+    assert unauthenticated.status_code == 403
+    secure_app = FastAPI()
+    install_control_security(secure_app)
+    install_evidence_routes(secure_app, store=Store(), mt5=object())
+    secure_app.state.evidence_deal_capture_status = app.state.evidence_deal_capture_status
+    client = TestClient(secure_app)
+    allowed = client.get('/api/chart/v1/lifecycle/capture/status', params={'account': 'titan'})
+    assert allowed.status_code == 200
+    assert allowed.json()['status']['appended'] == 2
+    assert 'detail' not in allowed.json()['status']
+    forbidden = client.get('/api/chart/v1/lifecycle/capture/status', params={'account': 'blueberry'})
+    assert forbidden.status_code == 400
