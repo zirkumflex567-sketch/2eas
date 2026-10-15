@@ -24,4 +24,3 @@ The full history calculation on every forming/new bar remains an open FR-002/AT-
 5. [x] Added adapter-level Chromium readout contracts for repeated forming updates, historical values, a newly appended bar, parameter rebuilds and full-history replacement; the first run exposed and corrected a test-reference mismatch before passing.
 6. [x] Enforced the existing 150,000-bar chart budget on incremental appends. A full-capacity RSI stream rejects the next new candle without changing its snapshot; same-time replacement remains allowed. The adapter checks the limit before changing candle series, maps or indicators.
 7. [x] TypeScript check, bundle build, full Chromium smoke and `git diff --check` pass after the boundary change.
-
