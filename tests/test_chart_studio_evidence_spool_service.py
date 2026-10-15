@@ -316,10 +316,13 @@ def test_spool_shutdown_waits_for_inflight_thread_poll():
 
 
 def test_spool_service_starts_and_stops_with_fastapi(private_root, spool_root, monkeypatch):
+    from chart_studio import evidence_api
+
     store = evidence_store(private_root)
     active = spool_root / 'titan_demo.active.ndjson'
     write_private(active, line(record(seq=1)).encode())
     monkeypatch.setenv('CHART_STUDIO_EVIDENCE_SPOOL_ROOT', str(spool_root))
+    monkeypatch.setattr(evidence_api, 'DEFAULT_EVIDENCE_PRODUCERS', {'titan': 'titan_demo'})
     app = FastAPI()
     install_evidence_routes(app, store=store)
 
@@ -344,6 +347,36 @@ def test_spool_service_is_disabled_without_explicit_root(private_root, monkeypat
 
     assert app.state.evidence_spool_service is None
     assert app.state.evidence_spool_task is None
+
+
+def test_default_producers_bind_only_titan_accounts_and_goldm15(private_root, spool_root, monkeypatch):
+    from chart_studio import evidence_api
+
+    captured = {}
+
+    class Consumer:
+        def __init__(self, store, root, *, producers, excluded_roots):
+            captured.update(producers)
+            self.producers = {producer: (account, None) for account, producer in producers.items()}
+
+    monkeypatch.setattr(evidence_api, 'SpoolFileConsumer', Consumer)
+    monkeypatch.setenv('CHART_STUDIO_EVIDENCE_SPOOL_ROOT', str(spool_root))
+    app = FastAPI()
+    install_evidence_routes(app, store=evidence_store(private_root))
+
+    assert captured == {
+        'blueberry': 'titan_blueberry',
+        'xau5m_m5': 'titan_puprime250',
+        'titan_m5': 'titan_puprime500',
+        'goldm15': 'goldm15_demo',
+    }
+    assert not {'titan', 'xau5m_500'}.intersection(captured)
+    assert app.state.evidence_spool_service is not None
+
+
+def test_evidence_routes_reject_dynamic_producer_mapping():
+    with pytest.raises(TypeError):
+        install_evidence_routes(FastAPI(), producers={'titan': 'titan_demo'})
 
 
 def test_spool_service_invalid_configuration_stays_disabled(private_root, monkeypatch):

@@ -18,6 +18,15 @@ from chart_studio import evidence_models as models
 from chart_studio.evidence_store import EvidenceStore, StoreUnavailable, StoreReplaced
 from chart_studio.evidence_spool_service import SpoolFileConsumer, run_spool_service
 
+DEFAULT_EVIDENCE_PRODUCERS = {
+    # Account aliases come from the user's five-preset inventory. The two
+    # Marketplace setups have no EA source and must never be labeled Titan.
+    'blueberry': 'titan_blueberry',
+    'xau5m_m5': 'titan_puprime250',
+    'titan_m5': 'titan_puprime500',
+    'goldm15': 'goldm15_demo',
+}
+
 
 class CursorInvalid(Exception):
     pass
@@ -86,7 +95,7 @@ def install_evidence_routes(app, *, store=None, clock=time.time):
             if not store.root:
                 raise ValueError('evidence store is not configured')
             app.state.evidence_spool_service = SpoolFileConsumer(
-                store, spool_root, producers={'titan':'titan_demo','goldm15':'goldm15_demo'}, excluded_roots=excluded)
+                store, spool_root, producers=DEFAULT_EVIDENCE_PRODUCERS, excluded_roots=excluded)
         except (OSError, ValueError, StoreUnavailable):
             # Keep the dashboard available but expose only a generic internal state.
             app.state.evidence_spool_status = {'service': {'code':'CONFIG_INVALID'}}
@@ -102,8 +111,8 @@ def install_evidence_routes(app, *, store=None, clock=time.time):
                 except asyncio.CancelledError: pass
                 app.state.evidence_spool_task = None
 
-            app.add_event_handler('startup', start_spool_service)
-            app.add_event_handler('shutdown', stop_spool_service)
+            app.router.add_event_handler('startup', start_spool_service)
+            app.router.add_event_handler('shutdown', stop_spool_service)
     codec = CursorCodec(clock)
     app.state.evidence_cursors = codec
     paths = ('/api/chart/v1/decisions','/api/chart/v1/lifecycle','/api/chart/v1/snapshots')
