@@ -426,6 +426,20 @@ class DashboardFrontendTests(unittest.TestCase):
         expect(self.page.locator('#journal-sync-status')).to_contain_text('unvollständig')
         self.journal_fail = False; self.page.evaluate('refreshJournal()')
         expect(self.page.locator('#journal-total-pnl')).not_to_contain_text('unvollständig')
+    def test_all_accounts_journal_filter_survives_reload(self):
+        self.load()
+        self.page.locator('#journal-strategy-filter').select_option('all')
+        self.page.wait_for_function("journalLoadedMode === 'all' && journalBusyMode === null")
+        first_sources = self.page.evaluate("Object.keys(journalEntriesByAccount).sort()")
+        self.assertEqual(first_sources, ['goldm15', 'titan'])
+        self.page.reload(); expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=10000)
+        self.page.wait_for_function("journalLoadedMode === 'all' && journalBusyMode === null")
+        self.assertEqual(self.page.locator('#journal-strategy-filter').input_value(), 'all')
+        self.assertEqual(self.page.evaluate("Object.keys(journalEntriesByAccount).sort()"), ['goldm15', 'titan'])
+        requested = {urlparse(url).query for url in self.requests if urlparse(url).path == '/api/journal_summary'}
+        self.assertIn('account=titan', requested)
+        self.assertIn('account=goldm15', requested)
+        self.assertEqual(self.mutations, [])
     def test_position_ticket_draft_focus_survives_structure_and_account_switch(self):
         self.load(); field = self.page.locator('#sl-input-101'); field.fill('-37.00')
         self.page.evaluate("window.originalInput = document.getElementById('sl-input-101')")
