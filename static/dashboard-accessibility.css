@@ -10,6 +10,8 @@ body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-pane
 body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal) :is([class*="text-amber-"]) { color:var(--ui-warn) !important; }
 body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal) :is([class*="text-blue-"],[class*="text-sky-"],[class*="text-cyan-"],[class*="text-purple-"]) { color:var(--ui-info) !important; }
 body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal) :is([class*="bg-black/"],[class*="bg-emerald-"],[class*="bg-rose-"],[class*="bg-amber-"],[class*="bg-slate-"],[class*="bg-cyan-"]) { background-color:var(--ui-inset) !important; }
+body.theme-stone .dashboard-panel #positions-list .stone-position-action-label { color:#e4f4f6 !important; background:#081116 !important; border-radius:4px; padding:2px 4px; }
+body header :is(#time-server,#time-german) { display:inline-block; width:8ch; text-align:center; }
 body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal) :is(button.text-white,[data-position-type],#strategy-version) { background-color:#1e40af !important; color:#ffffff !important; }
 body .dashboard-panel [class*="opacity-"], body nav[aria-label="Konto und Strategie"] small { opacity:1 !important; }
 body .dashboard-panel button:disabled { opacity:1 !important; color:var(--ui-sub) !important; background-color:var(--ui-inset) !important; }

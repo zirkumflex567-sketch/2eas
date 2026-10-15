@@ -533,6 +533,10 @@ class DashboardFrontendTests(unittest.TestCase):
         }''')
         # Let a status request started immediately before the static snapshot settle.
         self.page.wait_for_timeout(1600)
+        # Freeze the live clock after that request settles so a second boundary
+        # cannot change the target box between the paired contrast screenshots.
+        self.page.evaluate("""() => { document.getElementById('time-server').textContent='12:34:56';
+          document.getElementById('time-german').textContent='12:34:56'; }""")
         self.page.add_script_tag(path=str(ROOT/'tests/vendor/axe.min.js'))
         reports = {}
         pixel_audit = {}

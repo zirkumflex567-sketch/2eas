@@ -722,6 +722,18 @@ def test_live_market_data_positions_include_ema9_and_target(isolated, monkeypatc
     assert pos['target_usd'] == 28.0
 
 
+def test_unauthenticated_git_pull_routes_are_removed(isolated, monkeypatch):
+    import subprocess
+
+    calls = []
+    monkeypatch.setattr(subprocess, 'run', lambda *args, **kwargs: calls.append((args, kwargs)))
+    client = TestClient(app.app)
+
+    assert client.get('/api/git/sync').status_code == 404
+    assert client.post('/api/git/webhook').status_code == 404
+    assert calls == []
+
+
 
 
 

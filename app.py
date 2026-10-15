@@ -1588,21 +1588,6 @@ def api_reset_drawdown(req: ResetDrawdownRequest, account: str):
             "baseline": baseline
         }
 
-@app.get("/api/git/sync")
-@app.post("/api/git/webhook")
-async def api_git_sync():
-    """Triggered by GitHub Webhook or browser to pull origin/main."""
-    import subprocess
-    try:
-        r = subprocess.run(["git", "pull", "origin", "main"], cwd=BASE_DIR, capture_output=True, text=True, timeout=20)
-        return {
-            "success": r.returncode == 0,
-            "stdout": r.stdout,
-            "stderr": r.stderr
-        }
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
 # --- COMPLETE ZERO-SCROLL HTML WITH THEME TOGGLE, VOLUME PROFILES & FIXED CHART ---
 HTML_CONTENT = """<!DOCTYPE html>
 <html lang="de" class="dark">
@@ -3631,7 +3616,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
           <!-- Teilschließen / Schließen -->
           <div class="flex items-center gap-1.5 flex-wrap font-mono text-xs">
-            <span class="text-sub font-bold">Teilschließen:</span>
+            <span class="text-sub font-bold stone-position-action-label">Teilschließen:</span>
             <button onclick="closePosPct(${p.ticket}, ${p.volume}, 25)" class="px-2 py-1 ticker-bg hover:opacity-80 text-stone-200 border rounded text-[10px] font-bold cursor-pointer" title="25% der Position schließen">25%</button>
             <button onclick="closePosPct(${p.ticket}, ${p.volume}, 50)" class="px-2 py-1 ticker-bg hover:opacity-80 text-stone-200 border rounded text-[10px] font-bold cursor-pointer" title="50% der Position schließen">50%</button>
             <button onclick="closePosPct(${p.ticket}, ${p.volume}, 75)" class="px-2 py-1 ticker-bg hover:opacity-80 text-stone-200 border rounded text-[10px] font-bold cursor-pointer" title="75% der Position schließen">75%</button>
