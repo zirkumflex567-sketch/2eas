@@ -13,6 +13,9 @@
 #include <Trade\Trade.mqh>
 #include <Trade\SymbolInfo.mqh>
 #include <Trade\PositionInfo.mqh>
+string CSParameterSetCanonical();
+string CSParameterSetHash="";
+#include "ChartStudioEvidenceSpool.mqh"
 
 //--- Input Parameters
 input group "=== 01 / Risikomanagement & Positionsgröße ==="
@@ -94,6 +97,76 @@ input bool     InpUseSRDistanceFilter     = true;        // S/R-Widerstandsfilte
 input int      InpMinSRRoomPoints         = 300;         // Min. Freiraum zum Swing-Widerstand (300 Pkt = 3.00 USD)
 input int      InpATRPeriod               = 14;          // ATR Periode für Volatilitätsmessung
 
+string CSParameterSetCanonical()
+  {
+   string result="";
+   result+="InpFixedLot="+DoubleToString(InpFixedLot,16)+"\n";
+   result+="InpRiskPercent="+DoubleToString(InpRiskPercent,16)+"\n";
+   result+="InpMaxOpenPositions="+IntegerToString(InpMaxOpenPositions)+"\n";
+   result+="InpMinBarsBetweenEntries="+IntegerToString(InpMinBarsBetweenEntries)+"\n";
+   result+="InpMagicNumber="+IntegerToString((long)InpMagicNumber)+"\n";
+   result+="InpTradeComment="+CSJsonQuote(InpTradeComment)+"\n";
+   result+="InpUseSwingSL="+(InpUseSwingSL ? "1" : "0")+"\n";
+   result+="InpSwingBarsLookback="+IntegerToString(InpSwingBarsLookback)+"\n";
+   result+="InpMinSLPoints="+IntegerToString(InpMinSLPoints)+"\n";
+   result+="InpMaxSLPoints="+IntegerToString(InpMaxSLPoints)+"\n";
+   result+="InpSLBufferPoints="+IntegerToString(InpSLBufferPoints)+"\n";
+   result+="InpUseDynamicExit="+(InpUseDynamicExit ? "1" : "0")+"\n";
+   result+="InpMinProfitUSDForExit="+DoubleToString(InpMinProfitUSDForExit,16)+"\n";
+   result+="InpCloseInProfitAtSessionEnd="+(InpCloseInProfitAtSessionEnd ? "1" : "0")+"\n";
+   result+="InpSessionEndMinProfitUSD="+DoubleToString(InpSessionEndMinProfitUSD,16)+"\n";
+   result+="InpUseTakeProfit="+(InpUseTakeProfit ? "1" : "0")+"\n";
+   result+="InpTPRatio="+DoubleToString(InpTPRatio,16)+"\n";
+   result+="InpUseBreakEven="+(InpUseBreakEven ? "1" : "0")+"\n";
+   result+="InpBETriggerUSD="+DoubleToString(InpBETriggerUSD,16)+"\n";
+   result+="InpBELockUSD="+DoubleToString(InpBELockUSD,16)+"\n";
+   result+="InpUseBasketRiskGate="+(InpUseBasketRiskGate ? "1" : "0")+"\n";
+   result+="InpBasketMaxRiskUSD="+DoubleToString(InpBasketMaxRiskUSD,16)+"\n";
+   result+="InpBasketRiskReserveUSD="+DoubleToString(InpBasketRiskReserveUSD,16)+"\n";
+   result+="InpUseBasketLossExit="+(InpUseBasketLossExit ? "1" : "0")+"\n";
+   result+="InpBasketMaxLossUSD="+DoubleToString(InpBasketMaxLossUSD,16)+"\n";
+   result+="InpUseTrendInvalidationExit="+(InpUseTrendInvalidationExit ? "1" : "0")+"\n";
+   result+="InpTrendBreakConfirmBars="+IntegerToString(InpTrendBreakConfirmBars)+"\n";
+   result+="InpTrendBreakATRBuffer="+DoubleToString(InpTrendBreakATRBuffer,16)+"\n";
+   result+="InpUsePyramidProfitLock="+(InpUsePyramidProfitLock ? "1" : "0")+"\n";
+   result+="InpPyramidLockTriggerUSD="+DoubleToString(InpPyramidLockTriggerUSD,16)+"\n";
+   result+="InpPyramidLockProfitUSD="+DoubleToString(InpPyramidLockProfitUSD,16)+"\n";
+   result+="InpUseBasketProfitTrail="+(InpUseBasketProfitTrail ? "1" : "0")+"\n";
+   result+="InpBasketTrailStartUSD="+DoubleToString(InpBasketTrailStartUSD,16)+"\n";
+   result+="InpBasketTrailGivebackUSD="+DoubleToString(InpBasketTrailGivebackUSD,16)+"\n";
+   result+="InpGuardCooldownBars="+IntegerToString(InpGuardCooldownBars)+"\n";
+   result+="InpFilterEliteHours="+(InpFilterEliteHours ? "1" : "0")+"\n";
+   result+="InpEnableAsianSession="+(InpEnableAsianSession ? "1" : "0")+"\n";
+   result+="InpAvoidNewsSpikeHours="+(InpAvoidNewsSpikeHours ? "1" : "0")+"\n";
+   result+="InpTradeStartHour="+IntegerToString(InpTradeStartHour)+"\n";
+   result+="InpTradeStartMinute="+IntegerToString(InpTradeStartMinute)+"\n";
+   result+="InpTradeEndHour="+IntegerToString(InpTradeEndHour)+"\n";
+   result+="InpTradeEndMinute="+IntegerToString(InpTradeEndMinute)+"\n";
+   result+="InpCloseWeekendFriday="+(InpCloseWeekendFriday ? "1" : "0")+"\n";
+   result+="InpFridayCloseHour="+IntegerToString(InpFridayCloseHour)+"\n";
+   result+="InpFridayCloseMinute="+IntegerToString(InpFridayCloseMinute)+"\n";
+   result+="InpBlockFridayLateEntries="+(InpBlockFridayLateEntries ? "1" : "0")+"\n";
+   result+="InpFridayStopEntryHour="+IntegerToString(InpFridayStopEntryHour)+"\n";
+   result+="InpEnablePropProtection="+(InpEnablePropProtection ? "1" : "0")+"\n";
+   result+="InpMaxDailyDrawdownPercent="+DoubleToString(InpMaxDailyDrawdownPercent,16)+"\n";
+   result+="InpMaxTotalDrawdownPercent="+DoubleToString(InpMaxTotalDrawdownPercent,16)+"\n";
+   result+="InpTotalDDBasedOnInitial="+(InpTotalDDBasedOnInitial ? "1" : "0")+"\n";
+   result+="InpDailyLockoutUntilMidnight="+(InpDailyLockoutUntilMidnight ? "1" : "0")+"\n";
+   result+="InpPhaseProfitTargetPct="+DoubleToString(InpPhaseProfitTargetPct,16)+"\n";
+   result+="InpTrendEMAPeriod="+IntegerToString(InpTrendEMAPeriod)+"\n";
+   result+="InpFastEMAPeriod="+IntegerToString(InpFastEMAPeriod)+"\n";
+   result+="InpSlowEMAPeriod="+IntegerToString(InpSlowEMAPeriod)+"\n";
+   result+="InpRSIPeriod="+IntegerToString(InpRSIPeriod)+"\n";
+   result+="InpRSIMinMomentum="+DoubleToString(InpRSIMinMomentum,16)+"\n";
+   result+="InpUseOverextensionFilter="+(InpUseOverextensionFilter ? "1" : "0")+"\n";
+   result+="InpMaxATRExtension="+DoubleToString(InpMaxATRExtension,16)+"\n";
+   result+="InpUseConsecutiveRunFilter="+(InpUseConsecutiveRunFilter ? "1" : "0")+"\n";
+   result+="InpMaxConsecutiveBars="+IntegerToString(InpMaxConsecutiveBars)+"\n";
+   result+="InpUseSRDistanceFilter="+(InpUseSRDistanceFilter ? "1" : "0")+"\n";
+   result+="InpMinSRRoomPoints="+IntegerToString(InpMinSRRoomPoints)+"\n";
+   result+="InpATRPeriod="+IntegerToString(InpATRPeriod)+"\n";
+   return result;
+  }
 //--- Global Variables
 CTrade         m_trade;
 CSymbolInfo    m_symbol;
@@ -484,6 +557,18 @@ int OnInit()
       m_basket_peak_profit = GlobalVariableGet(BasketStateKey("peak"));
    }
 
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+   CSParameterSetHash=CSHashText(CSParameterSetCanonical());
+   if(CSParameterSetHash=="")
+      Print("ChartStudio evidence recorder disabled: parameter hash unavailable.");
+   else if(CSInitializeEvidenceProducer() && !EventSetTimer(1))
+     {
+      Print("ChartStudio evidence recorder disabled: timer unavailable.");
+      CSRecorderReady=false;
+      CSRecorderDisabled=true;
+     }
+#endif
+
    PrintFormat("XAU_Titan_Pro initialized. Daily Start: $%.2f | Last Entry: %s | Current Bar: %s | Anti-Trap: %s",
                m_day_start_balance,
                (m_last_entry_time > 0) ? TimeToString(m_last_entry_time, TIME_DATE|TIME_MINUTES|TIME_SECONDS) : "None",
@@ -497,6 +582,9 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+   EventKillTimer();
+#endif
    if(m_trend_ema_handle != INVALID_HANDLE) IndicatorRelease(m_trend_ema_handle);
    if(m_fast_ema_handle  != INVALID_HANDLE) IndicatorRelease(m_fast_ema_handle);
    if(m_slow_ema_handle  != INVALID_HANDLE) IndicatorRelease(m_slow_ema_handle);
@@ -504,6 +592,19 @@ void OnDeinit(const int reason)
    if(m_atr_handle       != INVALID_HANDLE) IndicatorRelease(m_atr_handle);
    Comment("");
 }
+
+void OnTimer()
+  {
+   CSFlushEvidenceQueue();
+  }
+
+// Deal/lifecycle recording remains owned by the broker-side evidence adapter;
+// this EA hook intentionally performs no duplicate history or file I/O.
+void OnTradeTransaction(const MqlTradeTransaction &trans,
+                        const MqlTradeRequest &request,
+                        const MqlTradeResult &result)
+  {
+  }
 
 //+------------------------------------------------------------------+
 //| Check if within Elite Trading Window                             |
@@ -778,6 +879,31 @@ void CheckSignalAndTrade()
    bool buy_signal  = base_buy && buy_not_overextended && buy_run_ok && buy_sr_ok;
    bool sell_signal = base_sell && sell_not_overextended && sell_run_ok && sell_sr_ok;
 
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+   string timeframe="M15";
+   string features=CSFeature("close_1",CSNumber(close1,m_symbol.Digits()),"price",timeframe)+","+
+      CSFeature("open_1",CSNumber(open1,m_symbol.Digits()),"price",timeframe)+","+
+      CSFeature("trend_ema_1",CSNumber(trend_ema[1],m_symbol.Digits()),"price",timeframe)+","+
+      CSFeature("fast_ema_1",CSNumber(fast_ema[1],m_symbol.Digits()),"price",timeframe)+","+
+      CSFeature("slow_ema_1",CSNumber(slow_ema[1],m_symbol.Digits()),"price",timeframe)+","+
+      CSFeature("rsi_1",CSNumber(rsi_val[1],4),"rsi_points",timeframe)+","+
+      CSFeature("atr_1",CSNumber(atr_val[1],m_symbol.Digits()),"price",timeframe)+","+
+      CSFeature("swing_high",CSNumber(swing_high,m_symbol.Digits()),"price",timeframe)+","+
+      CSFeature("swing_low",CSNumber(swing_low,m_symbol.Digits()),"price",timeframe);
+   string predicates=CSPredicate("base_buy",CSBoolNumber(base_buy),"EQ","1",base_buy ? "PASS" : "BLOCK","BASE_BUY")+","+
+      CSPredicate("base_sell",CSBoolNumber(base_sell),"EQ","1",base_sell ? "PASS" : "BLOCK","BASE_SELL")+","+
+      CSPredicate("buy_not_overextended",CSBoolNumber(buy_not_overextended),"EQ","1",buy_not_overextended ? "PASS" : "BLOCK","BUY_EXTENSION")+","+
+      CSPredicate("sell_not_overextended",CSBoolNumber(sell_not_overextended),"EQ","1",sell_not_overextended ? "PASS" : "BLOCK","SELL_EXTENSION")+","+
+      CSPredicate("buy_run_ok",CSBoolNumber(buy_run_ok),"EQ","1",buy_run_ok ? "PASS" : "BLOCK","BUY_RUN")+","+
+      CSPredicate("sell_run_ok",CSBoolNumber(sell_run_ok),"EQ","1",sell_run_ok ? "PASS" : "BLOCK","SELL_RUN")+","+
+      CSPredicate("buy_sr_ok",CSBoolNumber(buy_sr_ok),"EQ","1",buy_sr_ok ? "PASS" : "BLOCK","BUY_SR")+","+
+      CSPredicate("sell_sr_ok",CSBoolNumber(sell_sr_ok),"EQ","1",sell_sr_ok ? "PASS" : "BLOCK","SELL_SR")+","+
+      CSPredicate("buy_signal",CSBoolNumber(buy_signal),"EQ","1",buy_signal ? "PASS" : "BLOCK","BUY_SIGNAL")+","+
+      CSPredicate("sell_signal",CSBoolNumber(sell_signal),"EQ","1",sell_signal ? "PASS" : "BLOCK","SELL_SIGNAL");
+   CSEnqueueDecision("SIGNAL",(buy_signal || sell_signal) ? "PASS" : "BLOCK",
+                     rates[0].time,features,predicates);
+#endif
+
    if(m_wait_for_signal_reset)
    {
       if(!buy_signal && !sell_signal)
@@ -786,12 +912,22 @@ void CheckSignalAndTrade()
          if(PersistGuardState())
             GlobalVariableSet(BasketStateKey("wait"), 0.0);
       }
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+      CSEnqueueDecision("ENTRY_FILTER","BLOCK",rates[0].time,features,
+                        CSPredicate("signal_reset_wait", "1","EQ","0","BLOCK","WAIT_FOR_RESET"));
+#endif
       return;
    }
    if(m_last_guard_exit_time > 0 && InpGuardCooldownBars > 0 &&
       iTime(_Symbol, m_calc_timeframe, 0) <= m_last_guard_exit_time +
       InpGuardCooldownBars * PeriodSeconds(m_calc_timeframe))
+   {
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+      CSEnqueueDecision("ENTRY_FILTER","BLOCK",rates[0].time,features,
+                        CSPredicate("guard_cooldown", "1","EQ","0","BLOCK","COOLDOWN"));
+#endif
       return;
+   }
 
    if(buy_signal)
    {
@@ -816,7 +952,13 @@ void CheckSignalAndTrade()
          {
             m_symbol.RefreshRates();
             entry_price = m_symbol.Ask();
-            if(!CanOpenWithinBasketRisk(ORDER_TYPE_BUY, lot_size, entry_price, sl_price))
+            bool risk_allowed = CanOpenWithinBasketRisk(ORDER_TYPE_BUY, lot_size, entry_price, sl_price);
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+            CSEnqueueDecision("RISK_GUARD",risk_allowed ? "PASS" : "BLOCK",rates[0].time,features,
+               CSPredicate("basket_risk",risk_allowed ? "1" : "0","EQ","1",
+                           risk_allowed ? "PASS" : "BLOCK","BASKET_RISK"));
+#endif
+            if(!risk_allowed)
                break;
             if(tp_price > 0.0)
                tp_price = NormalizeDouble(entry_price + (InpTPRatio * sl_dist), m_symbol.Digits());
@@ -855,7 +997,13 @@ void CheckSignalAndTrade()
          {
             m_symbol.RefreshRates();
             entry_price = m_symbol.Bid();
-            if(!CanOpenWithinBasketRisk(ORDER_TYPE_SELL, lot_size, entry_price, sl_price))
+            bool risk_allowed = CanOpenWithinBasketRisk(ORDER_TYPE_SELL, lot_size, entry_price, sl_price);
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+            CSEnqueueDecision("RISK_GUARD",risk_allowed ? "PASS" : "BLOCK",rates[0].time,features,
+               CSPredicate("basket_risk",risk_allowed ? "1" : "0","EQ","1",
+                           risk_allowed ? "PASS" : "BLOCK","BASKET_RISK"));
+#endif
+            if(!risk_allowed)
                break;
             if(tp_price > 0.0)
                tp_price = NormalizeDouble(entry_price - (InpTPRatio * sl_dist), m_symbol.Digits());

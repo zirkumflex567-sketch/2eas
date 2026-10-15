@@ -281,6 +281,7 @@ def test_store_failure_does_not_advance_history_watermark(monkeypatch):
 def test_application_lifecycle_capture_requires_explicit_demo_allowlist(monkeypatch):
     from fastapi import FastAPI
     from chart_studio.evidence_api import install_evidence_routes
+    monkeypatch.delenv('CHART_STUDIO_EVIDENCE_SPOOL_ROOT', raising=False)
 
     class Store:
         root = Path('private-test-root')
@@ -295,6 +296,7 @@ def test_application_lifecycle_capture_requires_explicit_demo_allowlist(monkeypa
 def test_application_rejects_funded_account_for_deal_capture(monkeypatch):
     from fastapi import FastAPI
     from chart_studio.evidence_api import install_evidence_routes
+    monkeypatch.delenv('CHART_STUDIO_EVIDENCE_SPOOL_ROOT', raising=False)
 
     class Store:
         root = Path('private-test-root')
@@ -311,6 +313,7 @@ def test_capture_status_is_authenticated_and_limited_to_configured_demos(monkeyp
     from fastapi.testclient import TestClient
     from chart_studio.evidence_api import install_evidence_routes
     from dashboard_security import install_control_security
+    monkeypatch.delenv('CHART_STUDIO_EVIDENCE_SPOOL_ROOT', raising=False)
 
     class Store:
         root = Path('private-test-root')

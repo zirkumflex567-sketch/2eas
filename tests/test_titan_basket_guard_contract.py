@@ -32,8 +32,8 @@ def test_entry_risk_gate_uses_broker_profit_calculation_and_fails_closed():
     assert "bool CanOpenWithinBasketRisk(" in ea
     assert "OrderCalcProfit(" in ea
     assert "BasketRiskAtStops(" in ea
-    assert "if(!CanOpenWithinBasketRisk(" in ea
-    assert ea.count("if(!CanOpenWithinBasketRisk(") >= 2  # buy and sell
+    assert ea.count("bool risk_allowed = CanOpenWithinBasketRisk(") == 2
+    assert ea.count("if(!risk_allowed)") == 2
     assert "if(existing_sl <= 0.0)" in ea
     assert "if(candidate_sl <= 0.0)" in ea
 
