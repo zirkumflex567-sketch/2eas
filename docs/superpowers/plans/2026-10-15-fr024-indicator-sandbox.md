@@ -44,7 +44,7 @@ Limits are explicit and independently tested: package <=64 KiB encoded bytes; <=
 - [x] Update FR-024 only to `Teilweise`, preserving browser integration, key provisioning/rotation, export UI, and independent security/performance review as open.
 - [x] Run the full non-backtest suite; Strategy Tester/backtest modules remained excluded (1,036 passed, 305 subtests passed, 4 existing FastAPI deprecation warnings).
 - [x] Obtain independent implementation reviews and fix the oversized-string pre-encoding allocation/override findings.
-- [ ] Commit and open a PR against `main`; merge only after required checks, and verify the resulting `main` commit.
+- [x] PR [#44](https://github.com/zirkumflex567-sketch/2eas/pull/44) merged to `main` as `698b70d`; resulting-main revision and local regression suite verified. GitHub Actions failed before its first step (no job logs), so CI remains an infrastructure limitation rather than a passing check.
 
 ## Stop conditions
 
