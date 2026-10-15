@@ -303,7 +303,19 @@ function renderEvidence(){
   if(type==="SNAPSHOT"&&Array.isArray(p.marketData?.bars)&&p.marketData.bars.length){
    const caption=document.createElement("p");caption.className="cs-evidence-chart-caption";caption.textContent=p.marketData.source+" · "+p.chartView.timeframe+" · gespeicherte OHLC bis "+p.asOfUtc+" · historische Indikatoren/Zeichnungen nicht aufgezeichnet.";
    const canvas=document.createElement("canvas");canvas.className="cs-evidence-chart";canvas.setAttribute("role","img");canvas.setAttribute("aria-label","Historischer Candlestick-Snapshot "+p.chartView.symbol+" "+p.chartView.timeframe+" bis "+p.asOfUtc);
-   drawEvidenceSnapshot(canvas,p.marketData.bars);details.append(summary,caption,canvas,pre);
+   drawEvidenceSnapshot(canvas,p.marketData.bars);
+   const exportButton=document.createElement("button");exportButton.type="button";exportButton.className="cs-evidence-snapshot-export";exportButton.textContent="PNG aus Snapshot speichern";
+   exportButton.setAttribute("aria-label","Gespeicherten Chart-Snapshot als PNG speichern");
+   exportButton.addEventListener("click",()=>{
+    canvas.toBlob(blob=>{
+     if(!blob){exportButton.disabled=false;exportButton.textContent="PNG konnte nicht erstellt werden";return}
+     const safe=value=>String(value||"snapshot").replace(/[^A-Za-z0-9_-]/g,"_").slice(0,80);
+     const link=document.createElement("a"),objectUrl=URL.createObjectURL(blob);
+     link.href=objectUrl;link.download="chart-snapshot-"+safe(record.accountId)+"-"+safe(record.id)+".png";
+     link.click();setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);
+    },"image/png");
+   });
+   details.append(summary,caption,canvas,exportButton,pre);
   }else details.append(summary,pre);
   li.append(details);list.append(li);
  }

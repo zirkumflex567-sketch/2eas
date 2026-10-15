@@ -66,6 +66,9 @@
 .cs-evidence-panel #cs-evidence-list pre{max-height:260px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:10px ui-monospace,Consolas,monospace}
 .cs-evidence-chart-caption{margin:8px 0 4px;color:#b8d3dd;font-size:11px;line-height:1.45}
 .cs-evidence-chart{display:block;max-width:100%;height:auto;border:1px solid rgba(116,178,198,.24);border-radius:4px;background:#07141c}
+.cs-evidence-snapshot-export{margin:6px 0;padding:6px 10px;border:1px solid rgba(56,216,189,.55);border-radius:5px;background:rgba(14,76,73,.42);color:#d9fff8;font-size:11px;font-weight:700;cursor:pointer}
+.cs-evidence-snapshot-export:hover{background:rgba(14,105,97,.62)}
+.cs-evidence-snapshot-export:focus-visible{outline:2px solid #38d8bd;outline-offset:2px}
 .cs-mtf-panel{margin:8px 0;padding:8px;border:1px solid rgba(116,178,198,.35);border-radius:7px;background:rgba(8,25,35,.72);color:#d5edf3;font-size:12px}
 .cs-mtf-panel>summary{cursor:pointer;font-weight:700}
 .cs-mtf-controls{display:flex;flex-wrap:wrap;align-items:end;gap:8px;margin:8px 0}
