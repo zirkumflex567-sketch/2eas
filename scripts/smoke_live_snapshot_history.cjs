@@ -3,6 +3,7 @@
 // Read-only live acceptance for recorded trade snapshots. Never defaults to
 // the protected Blueberry challenge account and never submits API mutations.
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const { chromium } = require("playwright");
 
 const BASE_URL = (process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056").replace(/\/$/, "");
@@ -84,6 +85,14 @@ const forbiddenAccounts = new Set(["blueberry"]);
       await rows.first().locator("canvas.cs-evidence-chart").waitFor({ state: "visible" });
       const caption = await rows.first().locator(".cs-evidence-chart-caption").textContent();
       assert.match(caption, /M15 · gespeicherte OHLC/);
+      if (index === 0) {
+        const pngDownloadPromise = page.waitForEvent("download");
+        await rows.first().locator("button.cs-evidence-snapshot-export").click();
+        const pngDownload = await pngDownloadPromise;
+        assert.equal(pngDownload.suggestedFilename(), `chart-snapshot-${account}-${records[0].id}.png`);
+        const pngBytes = fs.readFileSync(await pngDownload.path());
+        assert.deepEqual([...pngBytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+      }
 
       // A current-chart timeframe change must not reinterpret the historical
       // broker snapshot or inject today's indicators into the saved chart.
