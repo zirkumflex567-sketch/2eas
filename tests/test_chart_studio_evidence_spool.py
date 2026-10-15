@@ -65,6 +65,11 @@ def test_spool_import_validates_trusted_scope_before_store_append():
     assert normalized['payload']['eventId'] == 'event_1'
 
 
+def test_spool_importer_refuses_funded_blueberry_context():
+    with pytest.raises(ValueError):
+        SpoolImporter(Store(), account_id='blueberry', producer_id='titan_blueberry')
+
+
 @pytest.mark.parametrize('mutation', [
     lambda row: row.update(accountId='goldm15'),
     lambda row: row.update(terminalIdentityHash='f' * 64),

@@ -28,7 +28,7 @@ Each package below follows these steps. The package plan supplies exact files, t
 - [ ] Write meaningful failing contract/integration tests, then implement the smallest complete vertical slice. Preserve unknown/unrecorded states and account isolation.
 - [ ] Run focused tests, relevant regression suites, and independent code review. Fix findings before PR.
 - [ ] Merge only after required PR checks pass. Check both workflows on the resulting `main` commit.
-- [ ] Deploy a clean, exact-main checkout through the guarded runtime launcher; verify local and authenticated `/stt` identity, both configured demo feeds, and rollback readiness when runtime behavior changes.
+- [ ] Deploy a clean, exact-main checkout through the guarded runtime launcher; verify local and authenticated `/stt` identity, all four authorized non-Blueberry demo feeds, and rollback readiness when runtime behavior changes.
 - [ ] Update `OPEN_TASKS.md` per ID with implemented behavior, actual evidence and still-open acceptance. An ID closes only when its whole contract and relevant AT cases pass.
 
 ## Packages in dependency order
@@ -51,7 +51,7 @@ Each package below follows these steps. The package plan supplies exact files, t
 - [ ] Add revision-bound mouse/touch SL/TP draft overlays and validate EA guard state. Keep all drafts and What-if plans free of MT5 writes.
 - [ ] Complete Long/Short lots, margin, fees/FX assumptions, guard/DD distance, A/B save/export and broker-calculated profit/margin, including non-USD accounts and unavailable data.
 - [ ] Complete the extended position planner with portfolio exposure and correlation scenarios. Use only verified position, price and currency inputs; mark unavailable correlation/history data explicitly.
-- [ ] Exercise both demo terminals and rapid account/symbol/TF changes with no cross-account leakage.
+- [ ] Exercise all four authorized non-Blueberry demo feeds and rapid account/symbol/TF changes with no cross-account leakage.
 
 ### 3. Native v5 chart, layouts and drawing parity (P0)
 
@@ -108,5 +108,5 @@ Each package below follows these steps. The package plan supplies exact files, t
 
 - [ ] `OPEN_TASKS.md` has an evidence-backed result for FR-001–035, AUD-01–16 and AT-001–056. Deferred backtesting checks are explicitly marked deferred, not passed.
 - [ ] All relevant PR and resulting-main CI checks pass; independent review findings are resolved.
-- [ ] The released dashboard reports the exact clean `origin/main` revision and digest locally and through authenticated `/stt`; both MT5 demos and the reverse tunnel respond. Root checkout user changes remain untouched.
+- [ ] The released dashboard reports the exact clean `origin/main` revision and digest locally and through authenticated `/stt`; all four authorized non-Blueberry MT5 demo feeds and the reverse tunnel respond. Root checkout user changes remain untouched.
 - [ ] No open non-backtesting requirement is represented as completed without its required demo, browser, security, hardware or deployment evidence.

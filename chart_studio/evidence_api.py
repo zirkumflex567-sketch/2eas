@@ -22,9 +22,8 @@ from chart_studio.broker_lifecycle_capture import (DemoBrokerLifecycleCapture,
     parse_demo_allowlist, run_demo_broker_lifecycle_capture)
 
 DEFAULT_EVIDENCE_PRODUCERS = {
-    # Account aliases come from the user's five-preset inventory. The two
-    # Marketplace setups have no EA source and must never be labeled Titan.
-    'blueberry': 'titan_blueberry',
+    # Only non-Blueberry source candidates are eligible. The two Marketplace
+    # setups have no EA source and must never be labeled Titan.
     'xau5m_m5': 'titan_puprime250',
     'titan_m5': 'titan_puprime500',
     'goldm15': 'goldm15_demo',

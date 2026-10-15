@@ -11,6 +11,7 @@ import os
 from collections import OrderedDict
 from pathlib import Path
 
+import account_gateway as gateway
 from chart_studio import evidence_models as models
 from chart_studio.evidence_store import EvidenceStore, StoreUnavailable, _physical, _private
 
@@ -41,6 +42,8 @@ class SpoolImporter:
     def __init__(self, store, *, account_id, producer_id):
         if not isinstance(store, EvidenceStore) and not callable(getattr(store, 'append', None)):
             raise ValueError('invalid store')
+        if not isinstance(account_id, str) or account_id not in gateway.ACCOUNTS or gateway.ACCOUNTS[account_id].get('is_demo') is not True:
+            raise ValueError('demo account required')
         self.context = models.AccountContext.from_config(account_id)
         if not isinstance(producer_id, str) or not producer_id.isascii() or not producer_id.replace('_', 'a').replace('-', 'a').isalnum() or not 1 <= len(producer_id) <= 64:
             raise ValueError('invalid producer')
