@@ -171,3 +171,17 @@ The five `terminal64.exe` executable paths still match all five configured alias
 | `xau5m_500` (other PU Prime $500 demo) | Terminal log reports `XAUUSD 5 minute` loaded on `XAUUSD.p/M5` at 02:55 local. | Confirms the user-provided Marketplace EA label, but observed M5 conflicts with the configured M15 feed and the earlier user statement that charts use M15. No corresponding `.mq5` source is available. |
 
 These rows are stronger than process presence alone, but logs still do not prove that an EA remains attached in the visible chart, identify its in-memory EX5 bytes, or attest which preset values were loaded at the last attach. The M5/M15 discrepancies should be reconciled from each terminal's visible chart before any instrumentation or demo acceptance. Blueberry's missing reset reference is currently fail-closed; it must not be “fixed” by guessing a balance or reset time. No terminal/chart/EA/preset was changed, no order was sent, and no Strategy Tester was run.
+
+## Read-only active-window chart titles (2026-10-15 08:07 UTC)
+
+I read each running process's Windows `MainWindowTitle` property through process metadata only; no desktop automation, window interaction, or MT5 API call was used. All five account processes were responding. The active chart title in each main window reported:
+
+| Configured alias (process image path) | Active chart title | Comparison with configured feed |
+|---|---|---|
+| `blueberry` (`.mt5-puprime-700194619`) | Blueberry live, `XAUUSD.pi/M15` | Matches `XAUUSD.pi/M15`. |
+| `titan` (installed PU Prime terminal path) | ICMarkets demo, `XAUUSD/M1` | Timeframe differs from configured `M15`. |
+| `xau5m_m5` (Research portable path) | PU Prime demo, `XAUUSD.p/M15` | Timeframe differs from configured `M5`. |
+| `titan_m5` (`.mt5-puprime`) | PU Prime demo, `XAUUSD.p/M15` | Timeframe differs from configured `M5`. |
+| `xau5m_500` (`.mt5-puprime-700194822`) | PU Prime demo, `XAUUSD.p/M5` | Timeframe differs from configured `M15`. |
+
+These are the active chart titles only, not a complete enumeration of every chart tab/window in a terminal. A title proves the selected chart's symbol/timeframe and terminal connection at observation time; it does not prove which EA is attached, the EA's version or in-memory EX5 hash, the applied preset/hash, or the last attach/reload. The four timeframe discrepancies require a current chart-bound attachment check before entry hooks or a preset mapping can be asserted. No MT5 window was opened, terminal or chart state was changed, and no order was sent.
