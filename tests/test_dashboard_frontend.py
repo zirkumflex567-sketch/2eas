@@ -165,7 +165,7 @@ def probe_incomplete_text_target(page, selector, threshold=4.5):
         page.evaluate('''() => {
           document.activeElement?.blur(); window.getSelection()?.removeAllRanges();
           const style=document.createElement('style'); style.dataset.codexContrastProbeStyle='1';
-          style.textContent='[data-codex-contrast-probe="1"],[data-codex-contrast-probe="1"] *{-webkit-text-fill-color:transparent!important}';
+          style.textContent='[data-codex-contrast-probe="1"],[data-codex-contrast-probe="1"] *{color:transparent!important;-webkit-text-fill-color:transparent!important}';
           document.head.append(style);
         }''')
         locator.evaluate("el=>el.setAttribute('data-codex-contrast-probe','1')")
@@ -173,10 +173,10 @@ def probe_incomplete_text_target(page, selector, threshold=4.5):
             hidden = locator.screenshot(animations='disabled', caret='hide', scale='css')
             hidden_box = locator.bounding_box()
             page.evaluate('''() => document.querySelector('style[data-codex-contrast-probe-style]').textContent=
-              '[data-codex-contrast-probe="1"],[data-codex-contrast-probe="1"] *{-webkit-text-fill-color:rgb(255,0,255)!important}' ''')
+              '[data-codex-contrast-probe="1"],[data-codex-contrast-probe="1"] *{color:rgb(255,0,255)!important;-webkit-text-fill-color:rgb(255,0,255)!important}' ''')
             sentinel_magenta = locator.screenshot(animations='disabled', caret='hide', scale='css')
             page.evaluate('''() => document.querySelector('style[data-codex-contrast-probe-style]').textContent=
-              '[data-codex-contrast-probe="1"],[data-codex-contrast-probe="1"] *{-webkit-text-fill-color:rgb(0,255,0)!important}' ''')
+              '[data-codex-contrast-probe="1"],[data-codex-contrast-probe="1"] *{color:rgb(0,255,0)!important;-webkit-text-fill-color:rgb(0,255,0)!important}' ''')
             sentinel_green = locator.screenshot(animations='disabled', caret='hide', scale='css')
         finally:
             locator.evaluate('''(el,hadValue) => {

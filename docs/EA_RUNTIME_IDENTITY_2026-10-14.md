@@ -132,9 +132,25 @@ Five `terminal64.exe` processes were present. Local read-only `/api/status` call
 
 The dashboard remains on a different checkout/revision from current main. The guarded launcher refuses to stop a listener owned by that other checkout, and the private runtime configuration needed to preserve operation has not been identified for an exact-main start. The `/stt` runtime therefore remains stale pending a safe checkout/configuration handoff.
 
+## Read-only terminal and runtime refresh (2026-10-15 04:17 UTC)
+
+The user clarified that the charts are intended to be XAUUSD/M15, Blueberry alone has critical challenge protection, and all other accounts are demo/test. I matched the five running `terminal64.exe` paths to `account_gateway.py`; the path named `mt5_strategy_research/.../portable` is the configured PU Prime $250 `xau5m_m5` account, not a sixth research account. The fifth process is therefore the fifth configured account terminal.
+
+| Configured alias | Matched running terminal | Configured symbol/timeframe | Latest process-associated Expert-log evidence |
+|---|---|---|---|
+| `blueberry` | `.mt5-puprime-700194619` | `XAUUSD.pi/M15` | `XAU_Titan_Pro` M15 activity; no DD-breach line in the inspected 15 October log. |
+| `titan` | installed `PU Prime MT5 Terminal` path | `XAUUSD/M15` | Configured as ICMarkets demo/Marketplace by the account map and user's EA confirmation; current Marketplace attachment is not visible in logs. |
+| `xau5m_m5` | `mt5_strategy_research/.../portable` | `XAUUSD.p/M5` | `XAU_Titan_Pro` initialized on `XAUUSD.p/M15`; log contains the DD-breach/halt messages below. The log timeframe differs from the configured feed timeframe. |
+| `titan_m5` | `.mt5-puprime` | `XAUUSD.p/M5` | `XAU_Titan_Pro` M5 activity in the 15 October log. |
+| `xau5m_500` | `.mt5-puprime-700194822` | `XAUUSD.p/M15` | Prior-day Titan M5 initialization only; no current Marketplace initialization line. User confirmed this alias is the other PU Prime $500 Marketplace setup. |
+
+The DD messages at 02:12–02:14 in the `xau5m_m5` process-associated log report daily DD of 3.57% against 3.50%, followed by total DD of 9.21% against 9.00% and a permanent EA halt. Although the log text says `BLUEBERRY RISK BREACH`, the process-to-alias mapping and approximately $250 daily-start value identify this as the PU Prime $250 demo terminal, not Blueberry. This is a log-level account attribution; no current position readback was taken from that terminal. The Blueberry process is separate and its configured M15 log shows Titan activity without that breach message. The user's clarification about which account is critical is preserved; no conclusion about the Blueberry challenge state is drawn from the other account's log.
+
+The local dashboard listener on port 8050 and htown's direct loopback upstream on port 8055 both respond. Both report startup revision `6ed335bee3bbde45def943b245046d046e76a40a`, disk revision `765268c85d7f9d2f23b88d6674a7701ea9a099a8`, `applicationCodeDirty=false`, and `restart_required=true`; this is the old Research-checkout code, not current `main` (`e91a535`). Port 8055 is not a local listener. All five configured account aliases returned `source_fresh=true` with quote ages inside the configured tolerance. The status endpoint does not attest current chart attachment, loaded preset, or in-memory EX5. No MT5 UI, chart, preset, EA, order, or terminal process was changed. A clean-main restart remains blocked by the launcher's checkout-identity guard until a safe runtime handoff is arranged.
+
 ## Current read-only process, Expert-log and chart-profile refresh (2026-10-15 03:16 UTC)
 
-Five `terminal64.exe` processes are currently running: four account terminal installations and the separate Research portable terminal. This was confirmed from executable paths only; process command lines and account credentials were not read. The configured GoldM15 `.mt5-demo` terminal path is not among the running processes.
+At that time, five `terminal64.exe` processes were interpreted as four account terminal installations and a separate Research portable terminal. The later path-to-alias match above corrects that interpretation: the portable path is the configured `xau5m_m5` PU Prime $250 demo account. Process command lines and account credentials were not read. The configured GoldM15 `.mt5-demo` terminal path is not among the running processes.
 
 The latest process-associated Expert logs inspected on the running terminals contain Titan activity for `XAUUSD.p/M15`, `XAUUSD.p/M5`, and `XAUUSD.pi/M15`. The newest corresponding log timestamps are 00:14 UTC for the Research terminal and 03:00 UTC for the two portable account terminals. A separate network log in the `XAUUSD.pi/M15` terminal records a reconnection whose final server name is `BlueberryMarketsSVG-Live`; no account number was retained. These log rows do not bind an EA instance to its current visible chart or preset.
 
