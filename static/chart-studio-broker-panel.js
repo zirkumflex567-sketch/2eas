@@ -44,10 +44,10 @@ function renderPositions(rows){
  const t=state.positions.querySelector("table"),head=t.tHead||t.createTHead(),body=t.tBodies[0]||t.createTBody();
  head.replaceChildren();const hr=head.insertRow();for(const label of ["Ticket","Seite","Lots","Einstieg","SL","TP","P/L (MT5)","Swap (MT5)","Währung","Entwurf"]){const th=document.createElement("th");th.scope="col";th.textContent=label;hr.append(th)}
  body.replaceChildren();state.positionRows=new Map();
- for(const position of rows){const tr=body.insertRow();for(const value of [position.ticket,position.type,position.volume,position.price_open,stopLevel(position.sl),stopLevel(position.tp),position.profit,position.swap,position.currency])tr.append(cell(value));
+ for(const position of rows){const tr=body.insertRow();for(const value of [position.ticket,position.type,position.volume,position.priceOpen,stopLevel(position.sl),stopLevel(position.tp),position.profit,position.swap,position.currency])tr.append(cell(value));
   const symbolVerified=state.currentSymbolVerified&&position.symbol===state.symbol;
   const td=tr.insertCell(),button=symbolVerified?el("button",{type:"button","data-cmd":"position-draft"},"SL/TP-Entwurf"):null;
-  const valid=typeof position.ticket==="string"&&/^\d{1,20}$/.test(position.ticket)&&typeof position.revision==="string"&&/^[0-9a-f]{64}$/.test(position.revision)&&["BUY","SELL"].includes(position.type)&&Number.isFinite(Number(position.price_open))&&Number(position.price_open)>0;
+  const valid=typeof position.ticket==="string"&&/^[1-9]\d{0,19}$/.test(position.ticket)&&typeof position.revision==="string"&&/^[0-9a-f]{64}$/.test(position.revision)&&["BUY","SELL"].includes(position.type)&&Number.isFinite(Number(position.priceOpen))&&Number(position.priceOpen)>0&&Number.isFinite(Number(position.volume))&&Number(position.volume)>0;
   if(button){button.disabled=!valid;button.setAttribute("aria-label","SL/TP-Entwurf für Position "+String(position.ticket));td.append(button)}else td.textContent="Nur lesbar · anderes Chartsymbol";
   if(valid&&symbolVerified)state.positionRows.set(position.ticket,position);
  }
@@ -76,7 +76,7 @@ async function beginDraft(position){
   const params=new URLSearchParams({account,symbol}),response=await fetch(apiScope()+"/api/chart/v1/symbol-info?"+params.toString(),{cache:"no-store"}),data=await response.json();
   if(token!==state.draftToken||account!==state.account||symbol!==state.symbol||!state.currentSymbolVerified)return;
   if(!response.ok||data.account!==account||data.symbol!==symbol||data.source!=="MT5_VERIFIED"||data.canExecute!==false||!Number.isFinite(Number(data.tickSize))||Number(data.tickSize)<=0||!Number.isInteger(Number(data.digits))||Number(data.digits)<0||Number(data.digits)>10)throw new Error("Tickweite fehlt oder Quelle nicht verifiziert.");
-  state.draft={account,symbol,ticket:position.ticket,revision:position.revision,side:position.type,entryPrice:Number(position.price_open),slPrice:position.sl==null||Number(position.sl)===0?null:String(position.sl),tpPrice:position.tp==null||Number(position.tp)===0?null:String(position.tp),tickSize:Number(data.tickSize),digits:Number(data.digits)};
+  state.draft={account,symbol,ticket:position.ticket,revision:position.revision,side:position.type,entryPrice:Number(position.priceOpen),slPrice:position.sl==null||Number(position.sl)===0?null:String(position.sl),tpPrice:position.tp==null||Number(position.tp)===0?null:String(position.tp),tickSize:Number(data.tickSize),digits:Number(data.digits)};
   state.draftForm.hidden=false;state.draftForm.dataset.ticket=position.ticket;
   state.draftForm.elements.namedItem("slPrice").value=state.draft.slPrice??"";state.draftForm.elements.namedItem("tpPrice").value=state.draft.tpPrice??"";
   state.draftStatus.textContent="Position #"+position.ticket+" · Revision gebunden · Guard UNKNOWN · nur Vorschau";
@@ -124,6 +124,16 @@ function queryFilters(){
 function filterParams(params){const f=queryFilters();if(f.ticket)params.set("ticket",f.ticket);if(f.magic)params.set("magic",f.magic);if(f.manual!==null)params.set("manual",String(f.manual));}
 function apiScope(){return window.location.pathname.startsWith("/stt")?"/stt":"";}
 function validScopeRow(row,account,symbol){return row?.account===account&&row?.symbol===symbol&&row?.source==="MT5_VERIFIED"&&row?.canExecute===false}
+function decimalText(value,{positive=false,signed=false}={}){return typeof value==="string"&&/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)&&Number.isFinite(Number(value))&&(!positive||Number(value)>0)&&(signed||Number(value)>=0)}
+function optionalPrice(value){return value===null||decimalText(value)}
+function validPositionRow(row,account,symbol,currency){
+ return validScopeRow(row,account,symbol)&&typeof row.ticket==="string"&&/^[1-9]\d{0,19}$/.test(row.ticket)&&/^[0-9a-f]{64}$/.test(row.revision||"")&&["BUY","SELL"].includes(row.type)&&row.side===row.type&&decimalText(row.priceOpen,{positive:true})&&decimalText(row.priceCurrent,{positive:true})&&decimalText(row.volume,{positive:true})&&decimalText(row.profit,{signed:true})&&decimalText(row.swap,{signed:true})&&row.currency===currency&&optionalPrice(row.sl)&&optionalPrice(row.tp)
+}
+function validOrderRow(row,account,symbol){
+ const side={BUY_LIMIT:"BUY",SELL_LIMIT:"SELL",BUY_STOP:"BUY",SELL_STOP:"SELL",BUY_STOP_LIMIT:"BUY",SELL_STOP_LIMIT:"SELL"};
+ const timestamp=value=>!!value&&Number.isSafeInteger(value.rawBrokerEpochMs)&&value.rawBrokerEpochMs>0&&Number.isSafeInteger(value.utcEpochMs)&&value.utcEpochMs>0&&Number.isInteger(value.brokerUtcOffsetSeconds)&&value.offsetSource==="ACCOUNT_CONFIG";
+ return validScopeRow(row,account,symbol)&&typeof row.ticket==="string"&&/^[1-9]\d{0,19}$/.test(row.ticket)&&/^[0-9a-f]{64}$/.test(row.revision||"")&&side[row.type]===row.side&&typeof row.positionId==="string"&&/^(?:0|[1-9]\d{0,19})$/.test(row.positionId)&&decimalText(row.priceOpen,{positive:true})&&decimalText(row.priceCurrent,{positive:true})&&decimalText(row.volumeCurrent)&&decimalText(row.volumeInitial,{positive:true})&&decimalText(row.priceStoplimit)&&optionalPrice(row.sl)&&optionalPrice(row.tp)&&timestamp(row.createdTime)&&(row.expirationTime===null||timestamp(row.expirationTime))&&Number.isInteger(row.typeTime)&&row.typeTime>=0&&row.typeTime<=3&&Number.isInteger(row.typeFilling)&&row.typeFilling>=0&&row.typeFilling<=3&&Number.isInteger(row.state)&&row.state>=0&&row.state<=9
+}
 function invalidateSymbolScope(message){
  closeDraft(message||"Symbol geändert · Entwurf verworfen.");
  state.positionToken++;state.historyToken++;state.cursor=null;state.historyBaseStatus=null;
@@ -192,11 +202,11 @@ async function loadPositions(){
   if(!response.ok)throw new Error(response.status===503?"Brokerdaten sind nicht verfügbar.":"Brokerdaten konnten nicht geladen werden (HTTP "+response.status+").");
   const data=await response.json();
   if(token!==state.positionToken||account!==state.account||symbol!==state.symbol||timeframe!==state.timeframe)return;
-  if(data.account!==account||data.symbol!==symbol||data.source!=="MT5_VERIFIED"||data.canExecute!==false||!Array.isArray(data.positions)||!Array.isArray(data.orders)||![...data.positions,...data.orders].every(row=>validScopeRow(row,account,symbol)))throw new Error("Brokerantwort oder Einzelzeile hat keinen gültigen Read-only-Scope.");
+  if(data.account!==account||data.symbol!==symbol||data.source!=="MT5_VERIFIED"||data.canExecute!==false||![0,1,2].includes(data.marginMode)||typeof data.currency!=="string"||!data.currency||!Array.isArray(data.positions)||!Array.isArray(data.orders)||!data.positions.every(row=>validPositionRow(row,account,symbol,data.currency))||!data.orders.every(row=>validOrderRow(row,account,symbol)))throw new Error("Brokerantwort oder Einzelzeile ist nicht vollständig MT5-verifiziert.");
   if(!window.ChartStudioBeta?.updateVerifiedPositions(account,{...data,timeframe}))throw new Error("Brokerpositionen haben keinen gültigen Overlay-Scope.");
   if(state.draft){const current=(data.positions||[]).find(x=>x.ticket===state.draft.ticket);if(!current||current.revision!==state.draft.revision)closeDraft("Positionsrevision geändert · Entwurf und Vorschau verworfen.")}
   renderPositions(data.positions||[]);
-  table(state.orders,["Ticket","Typ","Lots","Preis","Stop-Limit","SL","TP"],(data.orders||[]).map(x=>[x.ticket,x.type,x.volume_current,x.price_open,x.price_stoplimit,stopLevel(x.sl),stopLevel(x.tp)]));
+  table(state.orders,["Ticket","Typ","Lots","Preis","Stop-Limit","SL","TP"],(data.orders||[]).map(x=>[x.ticket,x.type,x.volumeCurrent,x.priceOpen,x.priceStoplimit,stopLevel(x.sl),stopLevel(x.tp)]));
   state.positionStatus.textContent="Quelle MT5_VERIFIED · "+(data.positions.length||0)+" Position(en), "+(data.orders.length||0)+" Pending Order(s) · Nur lesen";
  }catch(error){if(token===state.positionToken){clearVerifiedPositions();state.positionStatus.textContent=error.message}}
 }

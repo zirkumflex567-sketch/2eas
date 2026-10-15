@@ -743,7 +743,7 @@ function drawPositions(ctx,d){
  ctx.save();ctx.font="10px monospace";ctx.fillStyle="#e9f4fb";ctx.fillText(mode+" · "+context.currency+" · MT5_VERIFIED",5,12);ctx.restore();
  const fmt=n=>Number(n).toFixed(2);
  for(const p of s.verifiedPositions){
-  const entry=Number(p.price_open),sl=Number(p.sl),tp=Number(p.tp);
+  const entry=Number(p.priceOpen),sl=Number(p.sl),tp=Number(p.tp);
   if(!Number.isFinite(entry)||entry<=0)continue;
   const yEntry=s.coordinates.priceToY(entry);if(!Number.isFinite(yEntry))continue;
   for(const [price,type] of [[sl,"SL"],[tp,"TP"]]){
@@ -1070,9 +1070,10 @@ function updateVerifiedPositions(accountId,envelope){
  const rows=[];
  for(const p of envelope.positions){
   const ticket=String(p?.ticket),revision=p?.revision,side=p?.side||p?.type;
-  const values=[p?.price_open,p?.volume,p?.profit,p?.swap].map(Number);
+  const values=[p?.priceOpen,p?.priceCurrent,p?.volume,p?.profit,p?.swap].map(Number);
   const optionalPrice=value=>value===null||value===undefined||Number(value)===0||Number.isFinite(Number(value))&&Number(value)>0;
-  if(p?.account!==accountId||p?.symbol!==chartSymbol()||p?.source!=="MT5_VERIFIED"||p?.canExecute!==false||!/^[1-9][0-9]{0,19}$/.test(ticket)||!/^([0-9a-f]{64})$/.test(revision)||!["BUY","SELL"].includes(side)||!values.every(Number.isFinite)||values[0]<=0||values[1]<=0||p?.currency!==envelope.currency||!optionalPrice(p?.sl)||!optionalPrice(p?.tp)){
+  const decimalText=(value,{positive=false,signed=false}={})=>typeof value==="string"&&/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)&&Number.isFinite(Number(value))&&(!positive||Number(value)>0)&&(signed||Number(value)>=0);
+  if(p?.account!==accountId||p?.symbol!==chartSymbol()||p?.source!=="MT5_VERIFIED"||p?.canExecute!==false||!/^[1-9][0-9]{0,19}$/.test(ticket)||!/^[0-9a-f]{64}$/.test(revision)||!["BUY","SELL"].includes(side)||!values.every(Number.isFinite)||values[0]<=0||values[1]<=0||p?.currency!==envelope.currency||!decimalText(p?.priceOpen,{positive:true})||!decimalText(p?.priceCurrent,{positive:true})||!decimalText(p?.volume,{positive:true})||!decimalText(p?.profit,{signed:true})||!decimalText(p?.swap,{signed:true})||!optionalPrice(p?.sl)||!optionalPrice(p?.tp)){
    s.verifiedPositions=[];s.positionContext=null;requestDraw();return false;
   }
   rows.push({...p,ticket,side,source:"MT5_VERIFIED"});

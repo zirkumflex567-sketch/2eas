@@ -18,7 +18,7 @@ const fs=require("node:fs"),path=require("node:path");
   browser=await chromium.launch({headless:true,executablePath:process.env.CHART_STUDIO_CHROMIUM_PATH||undefined});
   const page=await browser.newPage({viewport:{width:1280,height:850},deviceScaleFactor:1.5});
   const consoleErrors=[],brokerMutationRequests=[];page.on("pageerror",e=>consoleErrors.push(e.message));
-  let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,invalidStopGeometry=false,trailingStop=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,deferTitanPositions=false,releaseTitanPositions=null,holdScope=null,heldScopeResolvers=[],completedHeldScopeResponses=0,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,multiPositionRows=false,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badDealRow=false,symbolCatalogTruncated=false,hideFavoriteSymbol=false,evidenceRequests=[];
+  let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,invalidStopGeometry=false,trailingStop=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,deferTitanPositions=false,releaseTitanPositions=null,holdScope=null,heldScopeResolvers=[],completedHeldScopeResponses=0,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,multiPositionRows=false,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badOrderShape=false,badDealRow=false,symbolCatalogTruncated=false,hideFavoriteSymbol=false,evidenceRequests=[];
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
   page.on("request",req=>{if(!["GET","HEAD","OPTIONS"].includes(req.method())&&req.url().includes("/api/chart/v1/"))brokerMutationRequests.push({method:req.method(),url:req.url()})});
   await page.route("**/api/chart/v1/scenarios/preview*",async route=>{
@@ -84,9 +84,10 @@ const fs=require("node:fs"),path=require("node:path");
     const selectedSymbol=url.searchParams.get("symbol"),positionTicket=url.searchParams.get("account")==="goldm15"?"22":selectedSymbol==="EURUSD"?"123":"9007199254740993";
     const currency=url.searchParams.get("account")==="goldm15"?"EUR":"USD";
     const account=url.searchParams.get("account");
-    const position={account,source:badPositionRow?"UNVERIFIED":"MT5_VERIFIED",canExecute:false,ticket:positionTicket,type:"BUY",side:"BUY",symbol:selectedSymbol,volume:"0.1",price_open:"4100",sl:account==="titan"&&trailingStop?"4095":"4090",tp:null,profit:"10",swap:"-1",ownership:"MANUAL",currency,revision:account==="titan"&&trailingStop?"d".repeat(64):"a".repeat(64)};
-    const positions=multiPositionRows?[position,{...position,ticket:"9007199254740991",price_open:"4101",sl:"4088",tp:"4115",revision:"b".repeat(64)},{...position,ticket:"9007199254740992",type:"SELL",side:"SELL",price_open:"4102",sl:"4112",tp:"4090",revision:"c".repeat(64)}]:[position];
-    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account,login:account==="goldm15"?"53090070":"53087839",server:"ICMarketsEU-Demo",source:"MT5_VERIFIED",canExecute:false,symbol:selectedSymbol,currency,marginMode:currency==="EUR"?0:2,quote:{freshness:"FRESH"},positions,orders:[{account,source:badOrderRow?"UNVERIFIED":"MT5_VERIFIED",canExecute:false,symbol:selectedSymbol,ticket:"9007199254740995",type:"BUY_LIMIT",volume_current:"0.2",price_open:"3995",sl:null,tp:"4010",ownership:"UNKNOWN"}]})});
+    const position={account,source:badPositionRow?"UNVERIFIED":"MT5_VERIFIED",canExecute:false,ticket:positionTicket,type:"BUY",side:"BUY",symbol:selectedSymbol,volume:"0.1",priceOpen:"4100",priceCurrent:"4101",sl:account==="titan"&&trailingStop?"4095":"4090",tp:null,profit:"10",swap:"-1",ownership:"MANUAL",currency,revision:account==="titan"&&trailingStop?"d".repeat(64):"a".repeat(64)};
+    const positions=multiPositionRows?[position,{...position,ticket:"9007199254740991",priceOpen:"4101",sl:"4088",tp:"4115",revision:"b".repeat(64)},{...position,ticket:"9007199254740992",type:"SELL",side:"SELL",priceOpen:"4102",sl:"4112",tp:"4090",revision:"c".repeat(64)}]:[position];
+    const order={account,source:badOrderRow?"UNVERIFIED":"MT5_VERIFIED",canExecute:false,symbol:selectedSymbol,ticket:"9007199254740995",magic:"9",ownership:"UNKNOWN",comment:"fixture",type:"BUY_LIMIT",side:"BUY",positionId:"0",volumeCurrent:"0.2",volumeInitial:"0.2",priceOpen:"3995",priceCurrent:"4100",priceStoplimit:"0",sl:null,tp:"4010",createdTime:{rawBrokerEpochMs:1700000000000,utcEpochMs:1700000000000,brokerUtcOffsetSeconds:0,offsetSource:"ACCOUNT_CONFIG"},rawBrokerSetupTime:1700000000,expirationTime:null,rawBrokerExpirationTime:0,typeTime:0,typeFilling:0,state:0,revision:badOrderShape?"invalid":"e".repeat(64)};
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account,login:account==="goldm15"?"53090070":"53087839",server:"ICMarketsEU-Demo",source:"MT5_VERIFIED",canExecute:false,symbol:selectedSymbol,currency,marginMode:currency==="EUR"?0:2,quote:{freshness:"FRESH"},positions,orders:[order]})});
     if(heldScopeResponse)completedHeldScopeResponses++;
   });
   await page.route("**/api/chart/v1/portfolio?*",async route=>{
@@ -344,10 +345,10 @@ const fs=require("node:fs"),path=require("node:path");
   assert.equal(verifiedPositionState[0].currency,"USD");
   multiPositionRows=true;await page.locator("#cs-broker-positions-refresh").click();
   await page.waitForFunction(()=>ChartStudioBeta.getState().verifiedPositions.length===3);
-  assert.deepEqual(await page.evaluate(()=>ChartStudioBeta.getState().verifiedPositions.map(({ticket,side,price_open,sl,tp})=>({ticket,side,price_open,sl,tp}))),[
-    {ticket:"9007199254740993",side:"BUY",price_open:"4100",sl:"4090",tp:null},
-    {ticket:"9007199254740991",side:"BUY",price_open:"4101",sl:"4088",tp:"4115"},
-    {ticket:"9007199254740992",side:"SELL",price_open:"4102",sl:"4112",tp:"4090"}
+  assert.deepEqual(await page.evaluate(()=>ChartStudioBeta.getState().verifiedPositions.map(({ticket,side,priceOpen,sl,tp})=>({ticket,side,priceOpen,sl,tp}))),[
+    {ticket:"9007199254740993",side:"BUY",priceOpen:"4100",sl:"4090",tp:null},
+    {ticket:"9007199254740991",side:"BUY",priceOpen:"4101",sl:"4088",tp:"4115"},
+    {ticket:"9007199254740992",side:"SELL",priceOpen:"4102",sl:"4112",tp:"4090"}
   ],"Same-direction and opposing broker tickets must retain separate side/price levels");
   assert.equal(await page.locator("#cs-broker-positions tbody tr").count(),3,"Every broker position ticket remains a distinct row");
   multiPositionRows=false;await page.locator("#cs-broker-positions-refresh").click();
@@ -435,6 +436,10 @@ const fs=require("node:fs"),path=require("node:path");
   assert.ok(releaseTitanPositions,"refresh request should remain in flight until the draft is cleared");deferTitanPositions=false;releaseTitanPositions();
   await page.waitForFunction(()=>document.querySelector("#cs-broker-positions-status")?.textContent.includes("Quelle MT5_VERIFIED"));
   assert.equal(await page.locator("#cs-broker-orders tbody tr").count(),1);
+  assert.equal(await page.locator("#cs-broker-positions tbody tr").first().locator("td").nth(3).textContent(),"4100","The broker table consumes the canonical priceOpen field");
+  assert.equal(await page.locator("#cs-broker-orders tbody tr").first().locator("td").nth(3).textContent(),"3995","The pending-order table consumes canonical priceOpen");
+  assert.equal(await page.locator("#cs-position-stop-draft").isEnabled(),true,"Canonical verified position rows enable their read-only stop preview");
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().verifiedPositions[0]?.priceOpen),"4100","The chart retains the canonical broker position for its overlay");
   assert.ok((await page.locator("#cs-broker-positions-status").textContent()).includes("MT5_VERIFIED"));
   assert.ok(brokerReadRequests.some(r=>r.path.endsWith("/positions")&&r.params.account==="titan"&&r.params.symbol==="XAUUSD"));
   await page.evaluate(()=>history.replaceState({},"","/stt/static/chart-studio-fixture.html"));
@@ -515,6 +520,10 @@ const fs=require("node:fs"),path=require("node:path");
   badOrderRow=true;await page.locator("#cs-broker-positions-refresh").click();
   await page.waitForFunction(()=>document.querySelector("#cs-broker-positions-status")?.textContent.includes("Einzelzeile"));
   assert.equal(await page.locator("#cs-broker-orders tbody tr").count(),0,"unverified pending-order rows fail closed");badOrderRow=false;
+  badOrderShape=true;await page.locator("#cs-broker-positions-refresh").click();
+  await page.waitForFunction(()=>document.querySelector("#cs-broker-positions-status")?.textContent.includes("Einzelzeile"));
+  assert.equal(await page.locator("#cs-broker-positions tbody tr").count(),0,"malformed canonical order rows invalidate the complete broker snapshot");
+  assert.equal(await page.locator("#cs-broker-orders tbody tr").count(),0,"malformed pending-order fields are never rendered");badOrderShape=false;
   await page.locator("#cs-broker-positions-refresh").click();
   await page.waitForFunction(()=>document.querySelector("#cs-broker-positions tbody tr")?.cells[0]?.textContent==="123");
   await page.locator("#cs-broker-history-load").click();
