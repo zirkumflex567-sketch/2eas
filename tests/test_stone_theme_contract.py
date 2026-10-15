@@ -63,6 +63,24 @@ class StoneThemeContractTests(unittest.TestCase):
             with self.subTest(selector=selector):
                 self.assertTrue(any(selector in query for query in mobile_queries))
 
+    def test_stone_skin_has_one_reduced_motion_rule_set(self):
+        css = (STATIC / "stone-asset-skin.css").read_text(encoding="utf-8")
+        blocks = re.findall(
+            r"@media\s*\(\s*prefers-reduced-motion\s*:\s*reduce\s*\)\s*\{([\s\S]*?)\n\}",
+            css,
+        )
+        self.assertEqual(len(blocks), 1, "Reduced-motion rules stay in one auditable media query")
+        for selector in (
+            ".stone-cockpit-crest",
+            ".stone-ambience",
+            ".stone-vapor",
+            ".stone-event-toast",
+            ".cs-beta-toggle",
+            ".chart-legend span",
+        ):
+            with self.subTest(selector=selector):
+                self.assertIn(selector, blocks[0])
+
     def test_assets_exist(self):
         for name in ("stone-cockpit.css", "stone-cockpit.js", "stone-texture.svg", "stone-preview.html"):
             with self.subTest(asset=name):

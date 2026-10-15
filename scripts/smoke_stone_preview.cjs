@@ -59,6 +59,27 @@ const {pathToFileURL} = require('node:url');
     await page.setViewportSize({width:701,height:900});
     assert.equal(await probeMinHeight(),'33px','Chart Studio control returns to desktop sizing at 701px');
     await page.setViewportSize({width:1440,height:900});
+    await page.emulateMedia({reducedMotion:'reduce'});
+    const reducedMotion = await page.evaluate(() => {
+      const crest = document.createElement('div');
+      crest.className = 'stone-cockpit-crest';
+      const ambience = document.createElement('div');
+      ambience.className = 'stone-ambience';
+      const toggle = document.createElement('button');
+      toggle.className = 'cs-beta-toggle';
+      document.body.append(crest,ambience,toggle);
+      const result = {
+        crestAnimation: getComputedStyle(crest).animationName,
+        ambienceDisplay: getComputedStyle(ambience).display,
+        toggleTransition: getComputedStyle(toggle).transitionProperty,
+      };
+      crest.remove();ambience.remove();toggle.remove();
+      return result;
+    });
+    assert.equal(reducedMotion.crestAnimation,'none','Reduced motion disables ambient crest animation');
+    assert.equal(reducedMotion.ambienceDisplay,'none','Reduced motion hides ambience');
+    assert.equal(reducedMotion.toggleTransition,'none','Reduced motion disables control transition');
+    await page.emulateMedia({reducedMotion:'no-preference'});
     assert.ok(await page.locator('#tv-chart canvas').count()>0,'Demo chart needs canvas');
     assert.ok(await page.locator('button:disabled').count()>0,'Simulated order buttons disabled');
 

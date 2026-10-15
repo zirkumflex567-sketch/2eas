@@ -379,11 +379,6 @@ body.theme-stone *:focus-visible {
   body.theme-stone .stone-cockpit-crest { width: 31px; height: 31px; }
   body.theme-stone .stone-theme-dock { flex-wrap: wrap; }
 }
-@media (prefers-reduced-motion: reduce) {
-  body.theme-stone .stone-cockpit-crest { animation: none !important; }
-}
-
-
 /* ---- V2: chromatic order-free volume, breathing EMAs and chart glints ---- */
 /* Amber/cyan alternating volume rows describe no market direction or side. */
 body.theme-stone #vp-histogram-container .vp-bar,
@@ -508,16 +503,6 @@ body.theme-stone .stone-asset-panel--volume {
   0%, 45%, 100% { text-shadow: none; }
   20% { text-shadow: 0 0 8px rgba(200,142,255,.85),0 0 15px rgba(200,142,255,.42); }
 }
-@media (prefers-reduced-motion: reduce) {
-  body.theme-stone #vp-histogram-container .vp-bar::after,
-  body.theme-stone #stone-mini-volume .stone-mini-fill::after,
-  body.theme-stone .stone-asset-panel--chart .text-sky-400,
-  body.theme-stone .stone-asset-panel--chart .text-amber-400,
-  body.theme-stone .stone-asset-panel--chart .text-purple-400,
-  body.theme-stone .chart-legend span { animation: none !important; }
-}
-
-
 /* STONE V3 — bright energy, sparks, vapor and readable matrix ----------------
    This section is scoped to the optional stone skin; charts/orders stay live. */
 /* The live target matrix is data, NEVER a stretched full-color image. */
@@ -719,13 +704,6 @@ body.theme-stone #tv-chart .stone-chart-fx { mix-blend-mode: screen; }
 @keyframes stone-power-flicker {
   0%, 29%,58%,100% { filter: brightness(.8);opacity:.42; }
   12%,54%,77% { filter: brightness(1.85);opacity: .95; }
-}
-@media (prefers-reduced-motion: reduce) {
-  body.theme-stone .stone-ambience {display:none !important;}
-  body.theme-stone .stone-spark,
-  body.theme-stone .stone-vapor,
-  body.theme-stone .stone-ambience::before,
-  body.theme-stone .stone-ambience::after {animation: none !important;}
 }
 /* Prevent decorative chrome over narrow screens from obscuring data/controls. */
 @media (max-width: 720px) {
@@ -1349,10 +1327,6 @@ body.theme-stone .stone-asset-panel--chart::after {
   to {opacity:1;transform:translate(-50%,0) scale(1)}
 }
 @media(max-width:800px){.stone-event-toast {font-size:13px;top:120px;padding:9px 12px}.stone-fx-controls {gap:9px}}
-@media(prefers-reduced-motion:reduce){
- .stone-event-toast,.stone-event-spark,.stone-chaos-shake {animation:none !important;display:none !important;}
-}
-
 /* Universal Strict No-FX Mode: stops ALL animations, transitions and glow pulses throughout the cockpit */
 body.stone-fx-off *,
 body.stone-fx-off *::before,
@@ -1468,8 +1442,6 @@ body.theme-stone #stone-fx-panel button:focus-visible {
  position:absolute!important;z-index:16!important;pointer-events:none;
  background:transparent!important;touch-action:none;user-select:none;
 }
-@media(prefers-reduced-motion:reduce){.cs-beta-toggle,.cs-beta-buttons button{transition:none!important}}
-
 /* Scenario plan remains visibly separate from genuine MT5 position overlays. */
 .cs-scenario{margin-top:10px;border:1px solid #456b78;border-radius:7px;padding:10px;
  background:rgba(3,16,27,.72);font:11px/1.6 ui-monospace,monospace}
@@ -1868,4 +1840,27 @@ body.theme-light .stone-chart-expanded {
 }
 body.theme-light .stone-chart-expanded #tv-chart {
   background: #ffffff !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.theme-stone .stone-cockpit-crest,
+  body.theme-stone #vp-histogram-container .vp-bar::after,
+  body.theme-stone #stone-mini-volume .stone-mini-fill::after,
+  body.theme-stone .stone-asset-panel--chart .text-sky-400,
+  body.theme-stone .stone-asset-panel--chart .text-amber-400,
+  body.theme-stone .stone-asset-panel--chart .text-purple-400,
+  body.theme-stone .chart-legend span,
+  body.theme-stone .stone-spark,
+  body.theme-stone .stone-vapor,
+  body.theme-stone .stone-ambience::before,
+  body.theme-stone .stone-ambience::after,
+  .stone-event-toast,
+  .stone-event-spark,
+  .stone-chaos-shake { animation: none !important; }
+  body.theme-stone .stone-ambience,
+  .stone-event-toast,
+  .stone-event-spark,
+  .stone-chaos-shake { display: none !important; }
+  .cs-beta-toggle,
+  .cs-beta-buttons button { transition: none !important; }
 }
