@@ -48,6 +48,7 @@ def load_snapshot(path, *, account, symbol, now, expected_server_utc_offset=None
                 len(events) > 5000 or type(coverage.get('complete')) is not bool):
             return _unavailable('INVALID_COVERAGE_OR_EVENTS', time_basis='BROKER_SERVER')
         safe_events = []
+        time_modes = {'DATETIME', 'DATE', 'NO_TIME', 'TENTATIVE', 'UNKNOWN'}
         for event in events:
             if (not isinstance(event, dict) or not isinstance(event.get('id'), str) or
                     not event['id'].isdigit() or not isinstance(event.get('revision'), int) or
@@ -55,6 +56,7 @@ def load_snapshot(path, *, account, symbol, now, expected_server_utc_offset=None
                     not isinstance(event.get('name'), str) or len(event['name']) > 256 or
                     event.get('currency') != 'USD' or
                     event.get('status') != 'SCHEDULED' or
+                    event.get('timeMode') not in time_modes or
                     not isinstance(event.get('timeServer'), str)):
                 return _unavailable('INVALID_EVENT', time_basis='BROKER_SERVER')
             try:
@@ -63,7 +65,7 @@ def load_snapshot(path, *, account, symbol, now, expected_server_utc_offset=None
                 return _unavailable('INVALID_EVENT_TIME', time_basis='BROKER_SERVER')
             safe_events.append({key: event[key] for key in
                                 ('id', 'revision', 'name', 'currency', 'importance',
-                                 'timeServer', 'status')})
+                                 'timeServer', 'timeMode', 'status')})
         return {'status': status, 'reason': None if status == 'AVAILABLE' else 'STALE_SNAPSHOT',
                 'timeBasis': 'BROKER_SERVER', 'brokerUtcOffsetSeconds': offset,
                 'capturedAtUtc': data['capturedAtUtc'], 'ageSeconds': max(age, 0),

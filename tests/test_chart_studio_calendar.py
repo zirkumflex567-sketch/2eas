@@ -24,7 +24,7 @@ def snapshot_payload():
                      'toServerTime': '2026-10-23T13:00:00', 'complete': True},
         'events': [{'id': '42', 'revision': 2, 'name': 'CPI', 'currency': 'USD',
                     'importance': 'HIGH', 'timeServer': '2026-10-16T14:30:00',
-                    'status': 'SCHEDULED'}],
+                    'timeMode': 'DATETIME', 'status': 'SCHEDULED'}],
     }
 
 
@@ -39,6 +39,7 @@ def test_calendar_snapshot_preserves_server_time_and_never_promotes_missing_even
     assert result['timeBasis'] == 'BROKER_SERVER'
     assert result['events'][0]['timeServer'] == '2026-10-16T14:30:00'
     assert result['events'][0]['revision'] == 2
+    assert result['events'][0]['timeMode'] == 'DATETIME'
     assert result['cancellationSemantics'] == 'NOT_EXPOSED_BY_MT5_CALENDAR'
     assert result['missingEventsMean'] == 'UNKNOWN'
 
@@ -69,6 +70,20 @@ def test_calendar_snapshot_does_not_claim_utc_for_unknown_server_offset(tmp_path
     assert result['status'] == 'UNAVAILABLE'
     assert result['timeBasis'] == 'UNKNOWN'
     assert result['events'] == []
+
+
+def test_calendar_date_only_and_tentative_events_keep_time_precision(tmp_path):
+    path = tmp_path / 'calendar.json'
+    payload = snapshot_payload()
+    payload['events'][0]['timeMode'] = 'DATE'
+    payload['events'][0]['timeServer'] = '2026-10-16T00:00:00'
+    path.write_text(json.dumps(payload), encoding='utf-8')
+
+    result = load_snapshot(path, account='titan', symbol='XAUUSD', now=1792144820,
+                           expected_server_utc_offset=10800)
+
+    assert result['events'][0]['timeMode'] == 'DATE'
+    assert result['events'][0]['timeServer'] == '2026-10-16T00:00:00'
 
 
 def test_calendar_api_reads_identity_bound_demo_snapshot_and_denies_blueberry(tmp_path, monkeypatch):

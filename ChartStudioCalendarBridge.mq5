@@ -30,7 +30,9 @@ string ServerStamp(const datetime value)
 
 string UtcStamp(const datetime value)
   {
-   return TimeToString(value,TIME_DATE|TIME_MINUTES|TIME_SECONDS)+"Z";
+   string stamp=TimeToString(value,TIME_DATE|TIME_MINUTES|TIME_SECONDS);
+   StringReplace(stamp,".","-");
+   return stamp+"Z";
   }
 
 string ImportanceName(const ENUM_CALENDAR_EVENT_IMPORTANCE value)
@@ -39,6 +41,15 @@ string ImportanceName(const ENUM_CALENDAR_EVENT_IMPORTANCE value)
    if(value==CALENDAR_IMPORTANCE_MODERATE) return "MODERATE";
    if(value==CALENDAR_IMPORTANCE_LOW) return "LOW";
    return "NONE";
+  }
+
+string TimeModeName(const ENUM_CALENDAR_EVENT_TIMEMODE value)
+  {
+   if(value==CALENDAR_TIMEMODE_DATETIME) return "DATETIME";
+   if(value==CALENDAR_TIMEMODE_DATE) return "DATE";
+   if(value==CALENDAR_TIMEMODE_NOTIME) return "NO_TIME";
+   if(value==CALENDAR_TIMEMODE_TENTATIVE) return "TENTATIVE";
+   return "UNKNOWN";
   }
 
 bool ResolveIdentity()
@@ -101,6 +112,7 @@ bool WriteSnapshot()
             "\",\"revision\":"+IntegerToString(values[i].revision)+
             ",\"name\":\""+JsonEscape(event.name)+"\",\"currency\":\"USD\",\"importance\":\""+
             ImportanceName(event.importance)+"\",\"timeServer\":\""+ServerStamp(values[i].time)+
+            "\",\"timeMode\":\""+TimeModeName(event.time_mode)+
             "\",\"status\":\"SCHEDULED\"}";
       emitted++;
      }

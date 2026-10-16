@@ -29,7 +29,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   });
   await page.route("**/api/chart/v1/calendar?*",async route=>{
     const url=new URL(route.request().url());calendarRequests.push({method:route.request().method(),params:Object.fromEntries(url.searchParams)});
-    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),source:"MT5_VERIFIED",canExecute:false,status:"AVAILABLE",timeBasis:"BROKER_SERVER",coverage:{status:"COMPLETE"},events:[{id:"42",revision:2,name:"CPI",currency:"USD",importance:"HIGH",timeServer:"2026-10-16T14:30:00",status:"SCHEDULED"}],cancellationSemantics:"NOT_EXPOSED_BY_MT5_CALENDAR",missingEventsMean:"UNKNOWN"})});
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),source:"MT5_VERIFIED",canExecute:false,status:"AVAILABLE",timeBasis:"BROKER_SERVER",coverage:{status:"COMPLETE"},events:[{id:"42",revision:2,name:"CPI",currency:"USD",importance:"HIGH",timeServer:"2026-10-16T14:30:00",timeMode:"DATETIME",status:"SCHEDULED"},{id:"43",revision:1,name:"Employment",currency:"USD",importance:"MODERATE",timeServer:"2026-10-17T00:00:00",timeMode:"DATE",status:"SCHEDULED"}],cancellationSemantics:"NOT_EXPOSED_BY_MT5_CALENDAR",missingEventsMean:"UNKNOWN"})});
   });
   await page.route("**/api/candles?*",async route=>{
     const url=new URL(route.request().url());confirmTfReads.push({method:route.request().method(),account:url.searchParams.get("account"),symbol:url.searchParams.get("symbol"),tf:url.searchParams.get("tf"),count:url.searchParams.get("count")});
@@ -182,6 +182,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await page.waitForFunction(()=>document.querySelector('[data-testid="economic-calendar"]')?.textContent.includes("CPI"));
   assert.deepEqual(calendarRequests[0],{method:"GET",params:{account:"titan",symbol:"XAUUSD"}});
   assert.match(await page.locator('[data-testid="economic-calendar"]').textContent(),/Broker-Serverzeit/);
+  assert.match(await page.locator('[data-testid="economic-calendar"]').textContent(),/2026-10-17 · Ganztag · USD · MODERATE · Employment/);
   await page.locator("#cs-beta-toggle").click();
   await page.locator(".cs-market-structure > summary").click();
   await page.locator('[aria-label="Sweep ConfirmTF"]').selectOption("3600");
