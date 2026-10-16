@@ -43,14 +43,18 @@ const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
       if (index === 0) {
         candleResponse = page.waitForResponse(response => {
           const url = new URL(response.url());
-          return url.pathname === "/api/candles" && url.searchParams.get("account") === account;
+          return url.pathname === "/api/candles"
+            && url.searchParams.get("account") === account
+            && url.searchParams.get("count") === "1001";
         });
         await page.goto(`${base}/?account=${account}`, { waitUntil: "domcontentloaded" });
       } else {
         await page.evaluate(id => { window.__chartExpectedAccount = id; }, account);
         candleResponse = page.waitForResponse(response => {
           const url = new URL(response.url());
-          return url.pathname === "/api/candles" && url.searchParams.get("account") === account;
+          return url.pathname === "/api/candles"
+            && url.searchParams.get("account") === account
+            && url.searchParams.get("count") === "1001";
         });
         await page.locator(`#account-switcher [data-account="${account}"]`).click();
         await page.locator(`#account-switcher [data-account="${account}"][aria-pressed="true"]`).waitFor();
@@ -62,7 +66,7 @@ const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
       assert.equal(api.accountId, account);
       assert.equal(api.source, "MT5_VERIFIED");
       assert.equal(api.canExecute, false);
-      assert.equal(api.candles.length, 150);
+      assert.equal(api.candles.length, 1001, `${account} chart history contains the requested 1001 candles`);
       await page.waitForFunction(id => window.__mainCandleSeriesCaptures.some(item => item.account === id && item.data.length > 0), account).catch(async error => {
         const debug = await page.evaluate(() => ({
           lightweightCharts: typeof window.LightweightCharts,
