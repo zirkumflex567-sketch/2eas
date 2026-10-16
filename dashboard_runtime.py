@@ -29,7 +29,8 @@ _ENV_KEYS = {'DASHBOARD_ALLOWED_HOSTS', 'DASHBOARD_PROXY_SECRET', 'DASHBOARD_PRO
              'DASHBOARD_PROXY_PREFIX', 'DASHBOARD_CONTROL_TOKEN', 'DASHBOARD_QUOTE_MAX_AGE_SECONDS',
              'CHART_STUDIO_STORAGE_TOKEN', 'CHART_STUDIO_STORAGE_ENABLED', 'CHART_STUDIO_DB',
              'CHART_STUDIO_EVIDENCE_ROOT', 'CHART_STUDIO_EVIDENCE_DB',
-             'CHART_STUDIO_EVIDENCE_SPOOL_ROOT', 'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS'}
+             'CHART_STUDIO_EVIDENCE_SPOOL_ROOT', 'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS',
+             'CHART_STUDIO_DEVICE_SYNC_ENABLED'}
 
 
 def _path_is_within(path, root):
@@ -111,6 +112,9 @@ def validate_environment_file(root, private_path):
         enabled = values.get('CHART_STUDIO_STORAGE_ENABLED', '0')
         if enabled not in ('0', '1') or (enabled == '1' and len(values.get('CHART_STUDIO_STORAGE_TOKEN', '')) < 32):
             raise ValueError('invalid chart storage gate')
+        device_sync_enabled = values.get('CHART_STUDIO_DEVICE_SYNC_ENABLED', '0')
+        if device_sync_enabled not in ('0', '1'):
+            raise ValueError('invalid device sync gate')
     except (OSError, ValueError, TypeError):
         raise ValueError('Invalid private environment') from None
 

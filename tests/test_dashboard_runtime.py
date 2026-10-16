@@ -114,6 +114,19 @@ def test_private_environment_accepts_only_well_formed_demo_capture_allowlist(che
         private.unlink(missing_ok=True)
 
 
+def test_private_environment_sync_flag_accepts_only_binary_values(checkout, tmp_path):
+    private = tmp_path.parent / (tmp_path.name + '-device-sync.json')
+    try:
+        for value in ('0', '1'):
+            private.write_text(json.dumps({'CHART_STUDIO_DEVICE_SYNC_ENABLED': value}))
+            runtime_module().validate_environment_file(checkout, private)
+        private.write_text(json.dumps({'CHART_STUDIO_DEVICE_SYNC_ENABLED': 'true'}))
+        with pytest.raises(ValueError, match='Invalid private environment'):
+            runtime_module().validate_environment_file(checkout, private)
+    finally:
+        private.unlink(missing_ok=True)
+
+
 def test_checkout_identity_distinguishes_identical_worktrees(checkout, tmp_path):
     module = runtime_module()
     other = tmp_path / 'other'
@@ -233,6 +246,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/fixture/demo-allowlist-proof':
             self.wfile.write(json.dumps({'demoAllowlistMatches': os.environ.get('CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS') == 'titan,xau5m_m5'}).encode())
             return
+        if self.path == '/fixture/device-sync-proof':
+            self.wfile.write(json.dumps({'deviceSyncEnabled': os.environ.get('CHART_STUDIO_DEVICE_SYNC_ENABLED') == '1'}).encode())
+            return
         if self.path == '/fixture/env-proof':
             matches = hashlib.sha256(os.environ.get('DASHBOARD_CONTROL_TOKEN', '').encode()).hexdigest() == 'b0a9b0c0a1a43b72218766d72d6e64d8ad0b7a677db3ab8e3a1e0c03539a761a'
             self.wfile.write(json.dumps({'privateEnvironmentMatches': matches}).encode())
@@ -298,7 +314,8 @@ def test_powershell_cross_shell_runtime_timestamp_and_private_environment(checko
     env_file = tmp_path.parent / (tmp_path.name + '-cross-shell-private.json')
     secret = 'fixture-secret-never-emit'
     env_file.write_text(json.dumps({'DASHBOARD_CONTROL_TOKEN': secret,
-                                    'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS': 'titan,xau5m_m5'}))
+                                    'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS': 'titan,xau5m_m5',
+                                    'CHART_STUDIO_DEVICE_SYNC_ENABLED': '1'}))
     results = []
     try:
         started = run_control(checkout, port, 'Start', env_file)
@@ -307,6 +324,7 @@ def test_powershell_cross_shell_runtime_timestamp_and_private_environment(checko
         original = mock_endpoint(port)
         assert mock_endpoint(port, '/fixture/env-proof') == {'privateEnvironmentMatches': True}
         assert mock_endpoint(port, '/fixture/demo-allowlist-proof') == {'demoAllowlistMatches': True}
+        assert mock_endpoint(port, '/fixture/device-sync-proof') == {'deviceSyncEnabled': True}
         status = run_control(checkout, port, 'Status', shell=PWSH)
         results.append(status)
         assert status.returncode == 0, status.stdout + status.stderr
@@ -322,6 +340,7 @@ def test_powershell_cross_shell_runtime_timestamp_and_private_environment(checko
         assert replacement['restart_required'] is False
         assert mock_endpoint(port, '/fixture/env-proof') == {'privateEnvironmentMatches': True}
         assert mock_endpoint(port, '/fixture/demo-allowlist-proof') == {'demoAllowlistMatches': True}
+        assert mock_endpoint(port, '/fixture/device-sync-proof') == {'deviceSyncEnabled': True}
         for shell in ('powershell.exe', PWSH):
             status = run_control(checkout, port, 'Status', shell=shell)
             results.append(status)
