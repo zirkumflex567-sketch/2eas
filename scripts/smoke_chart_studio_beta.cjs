@@ -23,13 +23,15 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
   const confirmTfReads=[],regimeRequests=[];
   const calendarRequests=[];
+  let calendarRevisionPhase=0;
   await page.route("**/api/chart/v1/regimes?*",async route=>{
     const url=new URL(route.request().url()),params=Object.fromEntries(url.searchParams);regimeRequests.push({method:route.request().method(),params});
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:params.account,symbol:params.symbol,source:"MT5_VERIFIED",canExecute:false,frame:{symbol:params.symbol,timeframe:params.timeframe},asOfUtc:params.at,revision:"market-regime-v1",features:{atr14:1.5,adx14:28},thresholds:{trend:{entryAdx:25}},regimeTags:{trend:"UP",volatility:"HIGH",eventRisk:"UNKNOWN",newsRisk:"UNKNOWN"},confidence:{score:1,meaning:"Datenqualität und Regelabdeckung, keine Wahrscheinlichkeit."},qualityFlags:["CALENDAR_UNAVAILABLE"]})});
   });
   await page.route("**/api/chart/v1/calendar?*",async route=>{
     const url=new URL(route.request().url());calendarRequests.push({method:route.request().method(),params:Object.fromEntries(url.searchParams)});
-    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),source:"MT5_VERIFIED",canExecute:false,status:"AVAILABLE",timeBasis:"BROKER_SERVER",coverage:{status:"COMPLETE"},events:[{id:"42",revision:2,name:"CPI",currency:"USD",importance:"HIGH",timeServer:"2026-10-16T14:30:00",timeMode:"DATETIME",status:"SCHEDULED"},{id:"43",revision:1,name:"Employment",currency:"USD",importance:"MODERATE",timeServer:"2026-10-17T00:00:00",timeMode:"DATE",status:"SCHEDULED"}],cancellationSemantics:"NOT_EXPOSED_BY_MT5_CALENDAR",missingEventsMean:"UNKNOWN"})});
+    const events=calendarRevisionPhase===0?[{id:"42",revision:2,name:"CPI",currency:"USD",importance:"HIGH",timeServer:"2026-10-16T14:30:00",timeMode:"DATETIME",status:"SCHEDULED"},{id:"43",revision:1,name:"Employment",currency:"USD",importance:"MODERATE",timeServer:"2026-10-17T00:00:00",timeMode:"DATE",status:"SCHEDULED"}]:[{id:"42",revision:3,name:"CPI",currency:"USD",importance:"HIGH",timeServer:"2026-10-16T15:00:00",timeMode:"DATETIME",status:"SCHEDULED"},{id:"44",revision:1,name:"PMI",currency:"USD",importance:"MODERATE",timeServer:"2026-10-18T09:00:00",timeMode:"DATETIME",status:"SCHEDULED"}];
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),source:"MT5_VERIFIED",canExecute:false,status:"AVAILABLE",timeBasis:"BROKER_SERVER",capturedAtUtc:"2026-10-16T10:00:00Z",coverage:{status:"COMPLETE"},events,cancellationSemantics:"NOT_EXPOSED_BY_MT5_CALENDAR",missingEventsMean:"UNKNOWN"})});
   });
   await page.route("**/api/candles?*",async route=>{
     const url=new URL(route.request().url());confirmTfReads.push({method:route.request().method(),account:url.searchParams.get("account"),symbol:url.searchParams.get("symbol"),tf:url.searchParams.get("tf"),count:url.searchParams.get("count")});
@@ -185,6 +187,14 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.match(await page.locator('[data-testid="economic-calendar"]').textContent(),/2026-10-17 · Ganztag · USD · MODERATE · Employment/);
   await page.locator("#cs-beta-toggle").click();
   await page.locator(".cs-market-structure > summary").click();
+  calendarRevisionPhase=1;
+  await page.locator('[data-testid="economic-calendar"] button').click();
+  await page.waitForFunction(()=>document.querySelector('[data-testid="economic-calendar"]')?.textContent.includes("Revision 2 → 3"));
+  assert.match(await page.locator('[data-testid="economic-calendar"]').textContent(),/Nicht mehr im MT5-Feed \(Status UNKNOWN\): Employment/);
+  const thirdCalendar=page.waitForResponse(response=>response.url().includes('/api/chart/v1/calendar?'));
+  await page.locator('[data-testid="economic-calendar"] button').click();
+  await thirdCalendar;
+  assert.match(await page.locator('[data-testid="economic-calendar"]').textContent(),/Nicht mehr im MT5-Feed \(Status UNKNOWN\): Employment/);
   await page.locator('[aria-label="Sweep ConfirmTF"]').selectOption("3600");
   await page.waitForFunction(()=>document.querySelector('[data-testid="market-structure"] [role="status"]')?.textContent.includes("ConfirmTF UNKNOWN")===false);
   assert.deepEqual(confirmTfReads.at(-1),{method:"GET",account:"titan",symbol:"XAUUSD",tf:"H1",count:"1000"},"A higher ConfirmTF uses an explicit account/symbol-scoped read-only MT5 candle fetch");

@@ -5,6 +5,26 @@ vm.runInNewContext(fs.readFileSync("static/chart-studio-market-structure.js","ut
 const api=window.ChartStudioMarketStructure.core;
 const stamp=value=>Date.parse(value)/1000;
 
+const calendarBaseline=[
+ {id:"1",revision:3,timeServer:"2026-10-16T14:30:00",timeMode:"DATETIME",name:"CPI",currency:"USD",status:"SCHEDULED"},
+ {id:"2",revision:1,timeServer:"2026-10-17T00:00:00",timeMode:"DATE",name:"Employment",currency:"USD",status:"SCHEDULED"}
+];
+const calendarCurrent=[
+ {id:"1",revision:4,timeServer:"2026-10-16T14:30:00",timeMode:"DATETIME",name:"CPI",currency:"USD",status:"SCHEDULED"},
+ {id:"3",revision:1,timeServer:"2026-10-18T09:00:00",timeMode:"DATETIME",name:"PMI",currency:"USD",status:"SCHEDULED"}
+];
+const calendarDiff=api.diffCalendarEvents(calendarBaseline,calendarCurrent);
+assert.deepEqual(Array.from(calendarDiff.current.map(item=>[item.id,item.change,item.previousRevision])),[
+ ["1","REVISION_CHANGED",3],["3","NEWLY_LISTED",null]
+],"A higher MT5 revision is exposed as a revision change, not silently replaced");
+assert.deepEqual(Array.from(calendarDiff.noLongerListed.map(item=>[item.id,item.status])),[
+ ["2","UNKNOWN_NOT_IN_CURRENT_FEED"]
+],"An event missing from a complete feed is explicitly unknown, never called cancelled");
+const calendarHistory=api.updateCalendarHistory({schema:"mt5-calendar-history-v1",events:calendarBaseline,noLongerListed:[]},calendarCurrent,"2026-10-16T10:00:00Z");
+assert.equal(calendarHistory.noLongerListed[0].firstMissingAtUtc,"2026-10-16T10:00:00Z");
+const laterHistory=api.updateCalendarHistory(calendarHistory,[calendarCurrent[1]],"2026-10-16T10:01:00Z");
+assert.equal(laterHistory.noLongerListed[0].status,"UNKNOWN_NOT_IN_CURRENT_FEED","A missing event remains explicitly unknown across refreshes");
+
 const windows=api.sessionWindows(stamp("2026-03-06T00:00:00Z"),stamp("2026-03-10T00:00:00Z"),[
  {id:"new-york",label:"New York",timeZone:"America/New_York",start:"08:00",end:"10:00"}
 ]);
