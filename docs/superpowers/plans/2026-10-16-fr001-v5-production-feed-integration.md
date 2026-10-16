@@ -34,9 +34,9 @@
 
 ### Task 3: Verification and delivery boundary
 
-- [x] Run focused v5 tests and the integrated Chromium preview smoke; no Blueberry calls or MT5 writes.
+- [x] Run focused v5 tests, integrated Chromium preview smoke and the full non-backtest Python suite (1,317 passed, 413 subtests, 1 skipped); no Blueberry calls or MT5 writes.
 - [x] Review the diff and keep production switchover, v4/v5 parity, full overlay/editor parity, touch/DPI and physical hardware acceptance open until separately proven.
-- [ ] Commit to `main`, pass both CI workflows, guarded-restart local runtime and `/stt`, and verify matching commit/digest plus static bridge delivery.
+- [x] Commit `38fec83` to `main`, pass both CI workflows, guarded-restart local runtime and `/stt`, and verify matching commit/digest plus HTTP 200 for the local v5 bundle.
 
 ## Gates
 
