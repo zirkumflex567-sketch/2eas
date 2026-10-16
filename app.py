@@ -1805,6 +1805,8 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="static/chart-studio-broker-panel.js"></script>
   <script src="static/chart-studio-mtf.js"></script>
   <script src="static/chart-studio-mtf-panel.js"></script>
+  <link rel="stylesheet" href="static/chart-studio-multi-chart.css">
+  <script src="static/chart-studio-multi-chart.js"></script>
   <script src="static/chart-studio-beta.js"></script>
   <script>window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;</script>
   <script src="static/chart-studio-v5-feed.js"></script>
@@ -2122,6 +2124,8 @@ HTML_CONTENT = """<!DOCTYPE html>
             <button type="button" id="chart-v5-preview-btn" aria-controls="chart-v5-preview-panel"
               aria-expanded="false" hidden class="px-2 py-1 rounded border border-cyan-400/40 bg-cyan-900/20 text-cyan-200 text-[10px] font-bold"
               title="Separater read-only v5-Kerzenpreview mit Auto-Fibonacci; v4 bleibt aktiv">V5 Vorschau</button>
+            <button type="button" id="chart-multi-toggle" aria-controls="chart-multi-panel" aria-expanded="false"
+              class="px-2 py-1 rounded border border-cyan-400/40 bg-cyan-900/20 text-cyan-200 text-[10px] font-bold">2/4 Charts</button>
             <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-sans" title="Zeiteinheit dient nur der Ansicht - der EA rechnet weiter strikt auf M15">Ansicht</span>
 
             <!-- Timeframe Selector Pills -->
@@ -2195,6 +2199,9 @@ HTML_CONTENT = """<!DOCTYPE html>
           <div class="mb-2 flex flex-wrap items-center gap-2 text-xs"><button type="button" id="chart-v5-auto-fib-btn" aria-pressed="false" disabled class="px-2 py-1 rounded border border-amber-400/40 bg-amber-900/20 text-amber-200 font-bold">Auto-Fibonacci einblenden</button><output id="chart-v5-auto-fib-status" aria-live="polite" class="text-slate-300"></output></div>
           <div id="chart-v5-preview-host" class="w-full rounded border border-slate-700" style="height: 460px; min-width: 260px;"></div>
           <p class="mt-2 text-[10px] text-slate-400">Read-only-Vorschau mit verifizierten MT5-Kerzen; Auto-Fibonacci wird erst nach bestätigtem Swing gezeigt. Hauptchart und Werkzeuge bleiben auf v4. Powered by <a class="text-cyan-300 underline" href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">TradingView Lightweight Charts™</a>. <a class="text-cyan-300 underline" href="static/chart-studio-v5-NOTICE.txt">NOTICE</a> · <a class="text-cyan-300 underline" href="static/chart-studio-v5-LICENSE.txt">Apache-2.0</a> · <a class="text-cyan-300 underline" href="static/chart-studio-v5-THIRD-PARTY-LICENSES.txt">Drittanbieter-Lizenzen</a>.</p>
+        </section>
+        <section id="chart-multi-panel" hidden class="mt-3" aria-label="Verknüpfte Multi-Chart-Ansicht">
+          <div id="chart-multi-workspace"></div>
         </section>
       </div>
 
@@ -2450,6 +2457,18 @@ HTML_CONTENT = """<!DOCTYPE html>
     let activeAccount = deepLinkedAccount || 'blueberry';
     let activeTimeframe = 'M15';
     let activeChartSymbol = 'XAUUSD.pi';
+    let multiChartWorkspace = null;
+    function mountMultiChartWorkspace() {
+      const host = document.getElementById('chart-multi-workspace');
+      if (!host || !window.ChartStudioMultiChart) return;
+      multiChartWorkspace?.destroy();
+      multiChartWorkspace = null;
+      if (activeAccount === 'blueberry') {
+        host.textContent = 'Multi-Chart-Demo ist für Blueberry gesperrt.';
+        return;
+      }
+      multiChartWorkspace = window.ChartStudioMultiChart.mount({container:host,account:activeAccount,symbol:activeChartSymbol,timeframe:activeTimeframe});
+    }
     const AVAILABLE_TFS = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'];
     let accountGeneration = 0;
     let accounts = {};
@@ -2622,6 +2641,15 @@ HTML_CONTENT = """<!DOCTYPE html>
       loadCandles();
     }
 
+    document.getElementById('chart-multi-toggle')?.addEventListener('click', event => {
+      const panel = document.getElementById('chart-multi-panel');
+      if (!panel) return;
+      panel.hidden = !panel.hidden;
+      event.currentTarget.setAttribute('aria-expanded', String(!panel.hidden));
+      if (!panel.hidden) mountMultiChartWorkspace();
+      else { multiChartWorkspace?.destroy(); multiChartWorkspace = null; }
+    });
+
     function switchChartSymbol(symbol) {
       if (typeof symbol !== 'string' || !/^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$/.test(symbol) || symbol === activeChartSymbol) return;
       activeChartSymbol = symbol;
@@ -2748,6 +2776,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       const meta = accounts[account];
       activeChartSymbol = meta.symbol || 'XAUUSD';
       activeTimeframe = meta.timeframe || 'M15';
+      if (!document.getElementById('chart-multi-panel')?.hidden) mountMultiChartWorkspace();
       try {
         window.ChartStudioBeta?.account(account, activeChartSymbol);
         window.ChartStudioBeta?.timeframe(activeTimeframe);
