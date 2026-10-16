@@ -212,4 +212,30 @@ assert.equal(window.ChartStudioIndicators.calculate("sar",sarBars,{step:.02,maxS
 assert.ok(Object.hasOwn(window.ChartStudioIndicators.registry,"sar"));
 assert.deepEqual(JSON.parse(JSON.stringify(window.ChartStudioIndicators.settings().sar)),{enabled:false,step:.02,maxStep:.2});
 
-console.log("PASS Chart Studio RSI/Stochastic/ATR/MACD/ADX/VWAP/SAR and broker volume math, warm-up, time alignment, read-only checks");
+// OBV uses the broker volume field available on each bar; MFI labels the same
+// input class as a volume proxy and leaves zero-volume windows unavailable.
+const flowBars=[
+ {time:1700700000,open:10,high:10,low:10,close:10,tick_volume:100,real_volume:0},
+ {time:1700700060,open:12,high:12,low:12,close:12,tick_volume:200,real_volume:9},
+ {time:1700700120,open:11,high:11,low:11,close:11,tick_volume:300,real_volume:0},
+ {time:1700700180,open:14,high:14,low:14,close:14,tick_volume:400,real_volume:0}
+];
+const obv=math.obv(flowBars);
+assert.deepEqual(Array.from(obv,point=>point.value),[0,9,-291,109]);
+assert.equal(obv[0].time,flowBars[0].time);
+const mfi=math.mfi(flowBars,2);
+assert.equal(mfi.length,2);
+near(mfi[0].value,100*108/(108+3300));
+near(mfi[1].value,100*5600/(5600+3300));
+const flatMfi=math.mfi(flowBars.map(bar=>({...bar,open:7,high:8,low:6,close:7})),2);
+assert.ok(flatMfi.every(point=>point.value===50));
+assert.equal(math.mfi(flowBars.slice(0,2),2).length,0);
+assert.equal(math.mfi(flowBars,1).length,0);
+assert.equal(math.mfi(flowBars,201).length,0);
+assert.equal(math.mfi(flowBars.map(bar=>({...bar,tick_volume:0,real_volume:0})),2).length,0);
+assert.equal(window.ChartStudioIndicators.calculate("obv",flowBars).obv.length,4);
+assert.equal(window.ChartStudioIndicators.calculate("mfi",flowBars,{period:2}).mfi.length,2);
+assert.ok(Object.hasOwn(window.ChartStudioIndicators.registry,"obv"));
+assert.deepEqual(JSON.parse(JSON.stringify(window.ChartStudioIndicators.settings().mfi)),{enabled:false,period:14});
+
+console.log("PASS Chart Studio RSI/Stochastic/ATR/MACD/ADX/VWAP/SAR/OBV/MFI and broker volume math, warm-up, time alignment, read-only checks");

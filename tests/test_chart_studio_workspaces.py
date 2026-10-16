@@ -349,6 +349,22 @@ class SqliteLayoutTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(StoreError):
                 validate_document({**original, "indicators": {"sar": invalid}})
 
+    def test_obv_and_mfi_workspace_settings_are_scoped_and_strict(self):
+        original = example()
+        indicators = {"obv": {"enabled": True}, "mfi": {"enabled": True, "period": 14}}
+        document = {**original, "indicators": indicators}
+        self.assertEqual(validate_document(document)["indicators"], indicators)
+        self.store.put("local-owner", "titan", "XAUUSD", "Volume flows", document, 0)
+        self.assertEqual(self.store.get("local-owner", "titan", "XAUUSD", "Volume flows")["document"]["indicators"], indicators)
+        for invalid in [
+            {"enabled": True, "period": 1}, {"enabled": True, "period": 201},
+            {"enabled": True, "period": 14, "multiplier": 2},
+        ]:
+            with self.subTest(invalid=invalid), self.assertRaises(StoreError):
+                validate_document({**original, "indicators": {"mfi": invalid}})
+        with self.assertRaises(StoreError):
+            validate_document({**original, "indicators": {"obv": {"enabled": True, "period": 14}}})
+
     def test_bollinger_settings_are_backward_compatible_strict_and_scoped(self):
         old = example()
         self.assertEqual(validate_document(old)["options"], old["options"])

@@ -19,6 +19,8 @@ const entries=Object.freeze([
  {id:"momentum",name:"Momentum",group:"Momentum",desc:"Close-Differenz zum Schlusskurs vor der gewählten Periode",type:"oscillator",kind:"momentum"},
  {id:"roc",name:"Rate of Change (ROC)",group:"Momentum",desc:"Prozentuale Close-Änderung über die gewählte Periode",type:"oscillator",kind:"roc"},
  {id:"sar",name:"Parabolic SAR",group:"Trend",desc:"Trendfolge-Overlay mit konfigurierbarem Beschleunigungsfaktor (AF 0,02 / 0,20)",type:"toggle",kind:"sar"},
+ {id:"obv",name:"On-Balance Volume (OBV)",group:"Volumen",desc:"Kumuliertes Broker-Realvolumen, sonst Tickvolumen-Proxy, nach Schlusskursrichtung",type:"oscillator",kind:"obv"},
+ {id:"mfi",name:"Money Flow Index (MFI)",group:"Volumen",desc:"Typical-Price-Money-Flow aus Broker-Realvolumen oder ausdrücklich Tickvolumen-Proxy",type:"oscillator",kind:"mfi"},
  {id:"volume",name:"Broker-Volumen",group:"Volumen",desc:"Reales oder Tickvolumen, kein garantierter Orderflow",type:"toggle",kind:"volume"},
  {id:"vwap",name:"VWAP (UTC)",group:"Volumen",desc:"UTC-VWAP, bei Tickvolumen nur Proxy",type:"toggle",kind:"vwap"},
  {id:"footprint",name:"Footprint (echte Ausführungen)",group:"Orderflow",desc:"M1/M5/M15 · MT5-Ausführungsseite mit positivem Last und volume_real; sonst UNAVAILABLE",type:"footprint",kind:"footprint"}

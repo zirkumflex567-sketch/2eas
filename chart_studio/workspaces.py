@@ -21,7 +21,7 @@ DRAWING_TYPES = frozenset({"horizontal", "vertical", "text", "trend", "rect", "f
 UI_FLAGS = frozenset({"ema20", "ema50", "ema200", "sma20", "sma50",
                       "bb", "positions"})
 UI_NUMBERS = frozenset({"bbPeriod", "bbStdDev"})
-INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap", "stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner", "sar"})
+INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap", "stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner", "sar", "obv", "mfi"})
 PERIOD_FIELDS = frozenset({"period", "atrPeriod", "fast", "slow", "signal", "smoothK", "smoothD"})
 SESSION_FIELDS = frozenset({"timeZone", "sessionStart"})
 TIMEFRAMES = frozenset({"M1", "M5", "M15", "M30", "H1", "H4", "D1"})
@@ -162,6 +162,10 @@ def validate_document(raw: Any) -> dict:
             accepted_fields = accepted_fields | {"multiplier"}
         if kind == "sar":
             accepted_fields = accepted_fields | {"step", "maxStep"}
+        if kind == "obv":
+            accepted_fields = {"enabled"}
+        if kind == "mfi":
+            accepted_fields = {"enabled", "period"}
         if not isinstance(values, dict) or any(k not in accepted_fields for k in values):
             raise StoreError("Ungültige Indikator-Parameter.")
         cleaned = {}
@@ -199,7 +203,7 @@ def validate_document(raw: Any) -> dict:
                 _number(value, param, integer=True)
                 if param in {"smoothK", "smoothD"}:
                     minimum, maximum = 1, 100
-                elif kind in {"stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner"} and param in {"period", "atrPeriod", "stochPeriod"}:
+                elif kind in {"stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner", "mfi"} and param in {"period", "atrPeriod", "stochPeriod"}:
                     minimum, maximum = 2, 200
                 else:
                     minimum, maximum = 2, 300
