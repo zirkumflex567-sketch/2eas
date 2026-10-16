@@ -16,10 +16,10 @@
 - Modify: `chart_studio/read_api.py`
 - Test: `tests/test_chart_studio_broker_reads.py`
 
-- [ ] Write failing tests for real buy/sell aggregation, COPY_TICKS_ALL only, ambiguous/quote-only/invalid volume rejection, empty history, and Blueberry denial before gateway initialization.
-- [ ] Run focused tests and confirm expected failures.
-- [ ] Implement a bounded latest-closed-bar route using verified symbol metadata, the shared gateway lock, strict output provenance, and fail-closed unavailable reasons.
-- [ ] Re-run focused tests and relevant read API tests.
+- [x] Write failing tests for real buy/sell aggregation, COPY_TICKS_ALL only, ambiguous/quote-only/invalid volume rejection, empty history, and Blueberry denial before gateway initialization.
+- [x] Run focused tests and confirm expected failures.
+- [x] Implement a bounded latest-closed-bar route using verified symbol metadata, the shared gateway lock, strict output provenance, and fail-closed unavailable reasons.
+- [x] Re-run focused tests and relevant read API tests; 158 passed, including the future-bar fail-closed regression.
 
 ### Task 2: User-visible capability
 
@@ -29,9 +29,9 @@
 - Modify: `static/chart-studio-quick.css`
 - Test: `scripts/smoke_chart_studio_averages.cjs`
 
-- [ ] Extend the catalog contract with a separate Footprint diagnostic action and keep Broker-Volumen explicitly marked as a proxy.
-- [ ] Add an on-demand scoped GET, stale-scope suppression, and an honest UNAVAILABLE message or exact verified price-level table.
-- [ ] Verify the UI issues only GETs and keeps data scoped to the active non-Blueberry account, symbol, and timeframe.
+- [x] Extend the catalog contract with a separate Footprint diagnostic action and keep Broker-Volumen explicitly marked as a proxy.
+- [x] Add an on-demand scoped GET, stale-scope suppression, and an honest UNAVAILABLE message or exact verified price-level table.
+- [x] Verify the UI issues only GETs and keeps data scoped to the active non-Blueberry account, symbol, and timeframe.
 
 ### Task 3: Evidence and delivery
 
@@ -39,7 +39,7 @@
 - Modify: `docs/OPEN_TASKS.md`
 - Modify: `docs/MT5_DATA_AVAILABILITY_2026-10-09.md`
 
-- [ ] Run focused tests and the full applicable non-backtest checks.
-- [ ] Read-only check the four explicitly authorized demo feeds through the new route; do not query Blueberry.
-- [ ] Record the exact accounts, sample windows, valid execution counts, and remaining limits. Keep raw ticks and price-level execution details out of tracked documentation; only aggregate capability/time/count metadata may be recorded. Keep FR-023 partial if no authentic executions are available.
-- [ ] Commit to main, push, verify GitHub checks, and refresh /stt through the guarded workflow. Do not start Strategy Tester/backtests.
+- [x] Run focused tests and applicable UI/read API checks (158 Python tests; ChartStudio browser smokes).
+- [x] Read-only check the four explicitly authorized demo feeds through the new route; Blueberry was not queried.
+- [x] Record the result and limits without raw ticks or price-level details. The future broker candle timestamp prevented checking current executions, so FR-023 remains partial.
+- [x] Commit to main, push, verify runtime identity locally and on htown `/stt`; GitHub checks were not yet confirmed. No Strategy Tester/backtests started.
