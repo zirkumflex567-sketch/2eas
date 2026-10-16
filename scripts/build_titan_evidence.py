@@ -97,9 +97,43 @@ def _expected_parameter_hash(source_text: str, values: dict[str, str]) -> str:
     return hashlib.sha256("".join(canonical).encode("utf-8")).hexdigest()
 
 
+def _neutralize_account_risk_logs(source_text: str) -> str:
+    replacements = (
+        (
+            'PrintFormat("BLUEBERRY RISK BREACH: Daily DD %.2f%% >= Limit %.2f%%. Closing all positions.",\n'
+            '                        daily_dd_pct, InpMaxDailyDrawdownPercent);',
+            'PrintFormat("RISK GUARD BREACH [%s | %s | %s]: Daily DD %.2f%% >= Limit %.2f%%. Closing all positions.",\n'
+            '                        AccountInfoString(ACCOUNT_SERVER), _Symbol, EnumToString(Period()),\n'
+            '                        daily_dd_pct, InpMaxDailyDrawdownPercent);',
+        ),
+        (
+            'PrintFormat("BLUEBERRY RISK BREACH: Total DD %.2f%% >= Limit %.2f%%. Closing all positions and halting EA permanently.",\n'
+            '                        total_dd_pct, InpMaxTotalDrawdownPercent);',
+            'PrintFormat("RISK GUARD BREACH [%s | %s | %s]: Total DD %.2f%% >= Limit %.2f%%. Closing all positions and halting EA permanently.",\n'
+            '                        AccountInfoString(ACCOUNT_SERVER), _Symbol, EnumToString(Period()),\n'
+            '                        total_dd_pct, InpMaxTotalDrawdownPercent);',
+        ),
+        (
+            'PrintFormat("BLUEBERRY GOAL REACHED! Profit reached %.2f%% >= Target %.2f%%. Halting EA.",\n'
+            '                        profit_pct, InpPhaseProfitTargetPct);',
+            'PrintFormat("PROFIT TARGET REACHED [%s | %s | %s]: Profit reached %.2f%% >= Target %.2f%%. Halting EA.",\n'
+            '                        AccountInfoString(ACCOUNT_SERVER), _Symbol, EnumToString(Period()),\n'
+            '                        profit_pct, InpPhaseProfitTargetPct);',
+        ),
+        ('state_str = "BLUEBERRY TARGET ERREICHT! (Bestanden)";',
+         'state_str = "PROFIT TARGET ERREICHT! (Bestanden)";'),
+    )
+    for old, new in replacements:
+        if source_text.count(old) != 1:
+            raise ValueError("expected unique account-neutral risk-log source anchor")
+        source_text = source_text.replace(old, new, 1)
+    return source_text
+
+
 def _instrument_source(source_text: str, account_alias: str, producer: str,
                        terminal_hash: str, source_hash: str, expected_parameter_hash: str, login: int,
                        server: str, terminal_path: str) -> str:
+    source_text = _neutralize_account_risk_logs(source_text)
     trade_include = '#include <Trade\\PositionInfo.mqh>'
     definitions = [
         "#define CS_EVIDENCE_CAPTURE",
