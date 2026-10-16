@@ -245,6 +245,15 @@ def test_footprint_fails_closed_on_ambiguous_or_malformed_execution_ticks(client
     assert response.json()['reason'] == 'INVALID_EXECUTION_TICK'
 
 
+def test_footprint_rejects_a_future_bar_before_reading_ticks(client, fake):
+    fake.rates['XAUUSD'] = (NS(time=NOW+60, open=4000., high=4002., low=3998., close=4001.),)
+    response = read(client, endpoint='footprint', timeframe='M15')
+    assert response.status_code == 200
+    assert response.json()['status'] == 'UNAVAILABLE'
+    assert response.json()['reason'] == 'CANDLE_TIME_FUTURE'
+    assert not any(call[0] == 'ticks' for call in fake.calls)
+
+
 def test_footprint_denies_blueberry_before_gateway_or_mt5_access(client, fake):
     response = client.get('/api/chart/v1/footprint', params={
         'account':'blueberry', 'symbol':'XAUUSD', 'timeframe':'M15'})

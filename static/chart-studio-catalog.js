@@ -74,7 +74,7 @@ function mount({panel,getContext}={}){
    if(!current||current.account!==scope.account||current.symbol!==scope.symbol||current.timeframe!==scope.timeframe)return;
    if(!response.ok||data?.account!==scope.account||data?.symbol!==scope.symbol||data?.timeframe!==scope.timeframe||data?.source!=="MT5_VERIFIED"||data?.canExecute!==false||!Array.isArray(data?.levels))throw Error("READ_SCOPE_INVALID");
    if(data.status==="UNAVAILABLE"){
-    const reason=data.reason==="NO_VERIFIED_EXECUTIONS"?"keine verifizierten Ausführungen mit eindeutiger BUY/SELL-Seite und positivem Last/volume_real in der abgeschlossenen Kerze":String(data.reason||"Quelle nicht verfügbar");
+    const reason=data.reason==="NO_VERIFIED_EXECUTIONS"?"keine verifizierten Ausführungen mit eindeutiger BUY/SELL-Seite und positivem Last/volume_real in der abgeschlossenen Kerze":data.reason==="CANDLE_TIME_FUTURE"?"MT5 meldet für den letzten geschlossenen Balken einen UTC-Zeitstempel in der Zukunft":String(data.reason||"Quelle nicht verfügbar");
     footprintStatus.textContent="UNAVAILABLE · "+reason+". Es werden keine Quote-/Tickzahl-Proxys verwendet.";return;
    }
    if(data.status!=="AVAILABLE"||data.levels.length===0||data.levels.length>10000||

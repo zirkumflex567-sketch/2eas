@@ -112,6 +112,8 @@ def install_read_routes(app, mt5, *, now=None):
                 bar_open = start.isoformat(timespec='seconds').replace('+00:00','Z')
             except (TypeError, ValueError, OverflowError, OSError, IndexError):
                 return unavailable(spec, 'CANDLE_HISTORY_INVALID')
+            if stop.timestamp() > clock() + 1:
+                return unavailable(spec, 'CANDLE_TIME_FUTURE', bar_open=bar_open)
             ticks = mt5.copy_ticks_range(symbol, start, stop, all_ticks_flag)
             if ticks is None:
                 return unavailable(spec, 'TICK_HISTORY_UNAVAILABLE', bar_open=bar_open)

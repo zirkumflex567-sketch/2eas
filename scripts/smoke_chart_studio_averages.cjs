@@ -110,7 +110,11 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await page.getByText(/UNAVAILABLE.*nicht verifiziert/i).waitFor();
   assert.equal(await page.locator(".cs-footprint-levels tbody tr").count(),0,
    "Malformed broker-decimal strings are never rendered as footprint levels");
+  footprintBody={source:"MT5_VERIFIED",canExecute:false,status:"UNAVAILABLE",reason:"CANDLE_TIME_FUTURE",levels:[]};
+  await footprint.getByRole("button",{name:"Footprint-Daten prüfen"}).click();
+  await page.getByText(/UNAVAILABLE.*UTC-Zeitstempel in der Zukunft/i).waitFor();
   assert.deepEqual(footprintReads,[
+   {method:"GET",account:"titan",symbol:"XAUUSD",timeframe:"M15"},
    {method:"GET",account:"titan",symbol:"XAUUSD",timeframe:"M15"},
    {method:"GET",account:"titan",symbol:"XAUUSD",timeframe:"M15"},
    {method:"GET",account:"titan",symbol:"XAUUSD",timeframe:"M15"}
