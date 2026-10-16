@@ -182,5 +182,8 @@
 .cs-market-structure input[type=checkbox]{min-height:auto;accent-color:#c79bff}
 .cs-market-structure :focus-visible{outline:2px solid #cfadff;outline-offset:2px}
 .cs-regime-status{margin:8px 0;padding:8px 10px;border-left:3px solid #52cce5;border-radius:5px;background:rgba(10,31,42,.7)}
+.cs-calendar-events{margin:8px 0;padding:8px 10px;border-left:3px solid #d1a94b;border-radius:5px;background:rgba(10,31,42,.7)}
+.cs-calendar-events strong{color:#ffe09a;font-size:13px}
+.cs-calendar-events button{min-height:30px;margin:0 6px 4px 0;padding:4px 10px;border:1px solid #bb9848;border-radius:5px;background:#382f1b;color:#fff4d1;cursor:pointer}
 .cs-regime-status strong{color:#8eeaff;font-size:13px}
 .cs-regime-status button{min-height:30px;margin:0 6px 4px 0;padding:4px 10px;border:1px solid #52aabe;border-radius:5px;background:#103242;color:#e8fbff;cursor:pointer}

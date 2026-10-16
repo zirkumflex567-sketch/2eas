@@ -22,9 +22,14 @@ const fs=require("node:fs"),path=require("node:path");
 let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,invalidStopGeometry=false,trailingStop=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,deferTitanPositions=false,releaseTitanPositions=null,holdScope=null,heldScopeResolvers=[],completedHeldScopeResponses=0,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,multiPositionRows=false,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badOrderShape=false,badDealRow=false,symbolCatalogTruncated=false,symbolCatalogInvalidRows=0,hideFavoriteSymbol=false,evidenceRequests=[],executionQualityRequests=[],mfeRequests=[],lifecycleFixtureEnabled=false;
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
   const confirmTfReads=[],regimeRequests=[];
+  const calendarRequests=[];
   await page.route("**/api/chart/v1/regimes?*",async route=>{
     const url=new URL(route.request().url()),params=Object.fromEntries(url.searchParams);regimeRequests.push({method:route.request().method(),params});
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:params.account,symbol:params.symbol,source:"MT5_VERIFIED",canExecute:false,frame:{symbol:params.symbol,timeframe:params.timeframe},asOfUtc:params.at,revision:"market-regime-v1",features:{atr14:1.5,adx14:28},thresholds:{trend:{entryAdx:25}},regimeTags:{trend:"UP",volatility:"HIGH",eventRisk:"UNKNOWN",newsRisk:"UNKNOWN"},confidence:{score:1,meaning:"Datenqualität und Regelabdeckung, keine Wahrscheinlichkeit."},qualityFlags:["CALENDAR_UNAVAILABLE"]})});
+  });
+  await page.route("**/api/chart/v1/calendar?*",async route=>{
+    const url=new URL(route.request().url());calendarRequests.push({method:route.request().method(),params:Object.fromEntries(url.searchParams)});
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),source:"MT5_VERIFIED",canExecute:false,status:"AVAILABLE",timeBasis:"BROKER_SERVER",coverage:{status:"COMPLETE"},events:[{id:"42",revision:2,name:"CPI",currency:"USD",importance:"HIGH",timeServer:"2026-10-16T14:30:00",status:"SCHEDULED"}],cancellationSemantics:"NOT_EXPOSED_BY_MT5_CALENDAR",missingEventsMean:"UNKNOWN"})});
   });
   await page.route("**/api/candles?*",async route=>{
     const url=new URL(route.request().url());confirmTfReads.push({method:route.request().method(),account:url.searchParams.get("account"),symbol:url.searchParams.get("symbol"),tf:url.searchParams.get("tf"),count:url.searchParams.get("count")});
@@ -174,6 +179,9 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await page.waitForFunction(()=>document.querySelector('[data-testid="market-regime"]')?.textContent.includes("Event-Risk UNKNOWN"));
   assert.equal(regimeRequests[0].method,"GET");assert.equal(regimeRequests[0].params.account,"titan");assert.equal(regimeRequests[0].params.symbol,"XAUUSD");assert.equal(regimeRequests[0].params.timeframe,"M15");assert.ok(regimeRequests[0].params.at,"The regime query uses the verified quote timestamp, not browser-local time");
   assert.match(await page.locator('[data-testid="market-regime"]').textContent(),/UP \/ HIGH/);assert.match(await page.locator('[data-testid="market-regime"]').textContent(),/Confidence Datenabdeckung 1/);
+  await page.waitForFunction(()=>document.querySelector('[data-testid="economic-calendar"]')?.textContent.includes("CPI"));
+  assert.deepEqual(calendarRequests[0],{method:"GET",params:{account:"titan",symbol:"XAUUSD"}});
+  assert.match(await page.locator('[data-testid="economic-calendar"]').textContent(),/Broker-Serverzeit/);
   await page.locator("#cs-beta-toggle").click();
   await page.locator(".cs-market-structure > summary").click();
   await page.locator('[aria-label="Sweep ConfirmTF"]').selectOption("3600");

@@ -21,7 +21,7 @@ Ticket = Annotated[str | None, Query(pattern=r'^[1-9][0-9]{0,19}$')]
 Magic = Annotated[str | None, Query(pattern=r'^(0|[1-9][0-9]{0,19})$')]
 
 
-def install_read_routes(app, mt5, *, now=None):
+def install_read_routes(app, mt5, *, now=None, calendar_path_resolver=None):
     clock = now or time.time
 
     def response(data):
@@ -264,4 +264,27 @@ def install_read_routes(app, mt5, *, now=None):
                                        as_of_utc=as_of)
             return {**provenance(spec), **snapshot, 'canExecute':False,
                     'lookbackLimit':MAX_BARS, 'barDurationSeconds':FRAME_SECONDS[timeframe]}
+        return response(verified_read(mt5, account, operation))
+
+    @app.get('/api/chart/v1/calendar')
+    def economic_calendar(account: Account, symbol: Symbol):
+        # The funded account is deliberately outside this experimental feed.
+        if account == 'blueberry':
+            raise HTTPException(403, 'Kalender-Lesedaten für diesen Account nicht verfügbar.')
+        from pathlib import Path
+        from chart_studio.economic_calendar import load_snapshot
+
+        def operation(spec):
+            terminal = mt5.terminal_info()
+            data_path = getattr(terminal, 'data_path', None) if terminal else None
+            if calendar_path_resolver:
+                path = calendar_path_resolver(spec, data_path)
+            elif isinstance(data_path, str) and data_path:
+                path = Path(data_path) / 'MQL5' / 'Files' / 'chart_studio_calendar.json'
+            else:
+                path = None
+            result = load_snapshot(path, account=spec['id'], symbol=symbol, now=clock(),
+                                   expected_server_utc_offset=spec.get('broker_utc_offset_seconds'))
+            return {**provenance(spec), **result, 'canExecute': False}
+
         return response(verified_read(mt5, account, operation))
