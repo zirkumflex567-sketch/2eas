@@ -142,5 +142,3 @@ def test_preview_rejects_duplicate_outer_json_keys_and_oversized_body():
         headers={"Content-Type": "application/json"},
     )
     assert too_large.status_code == 413
-
-\n

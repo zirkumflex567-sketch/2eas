@@ -124,5 +124,3 @@ def install_indicator_extension_routes(
             "series": [{"time": timestamp, "value": point}
                        for timestamp, point in zip(result.times, result.values)],
         }, headers={"Cache-Control": "no-store"})
-
-\n
