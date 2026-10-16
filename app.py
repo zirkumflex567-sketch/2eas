@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import time
 import threading
@@ -1105,13 +1106,22 @@ def api_status(account: str = 'blueberry', include_journal: bool = True, light: 
 
 
 @app.get('/api/diagnostics/mt5-traces')
-def api_mt5_traces(request: Request, limit: int = 50):
+def api_mt5_traces(request: Request, account: str, limit: int = 50):
     identity = getattr(request.state, 'control_identity', None)
     if not isinstance(identity, tuple) or len(identity) != 3 or identity[2] not in ('read', 'layout', 'trade'):
         raise HTTPException(status_code=403, detail='Autorisierte Read-Identität erforderlich.')
+    params = request.query_params
+    if (set(params) - {'account', 'limit'} or
+            any(len(params.getlist(key)) != 1 for key in params) or
+            not re.fullmatch(r'[a-z0-9_-]{1,32}', account)):
+        raise HTTPException(status_code=422, detail='Trace-Abfrage muss konto- und limitgebunden sein.')
+    spec = ACCOUNTS.get(account)
+    if spec is None or spec.get('is_demo') is not True or spec.get('challenge_protection') is True:
+        raise HTTPException(status_code=403, detail='Traces sind nur für freigegebene Demo-Konten verfügbar.')
     if isinstance(limit, bool) or not 1 <= limit <= 50:
         raise HTTPException(status_code=422, detail='Limit muss zwischen 1 und 50 liegen.')
-    return JSONResponse({'traces': broker_telemetry.recent_traces(limit)},
+    traces = broker_telemetry.recent_traces(limit, account=account)
+    return JSONResponse({'traces': traces},
                         headers={'Cache-Control': 'no-store'})
 
 @app.get("/api/candles")

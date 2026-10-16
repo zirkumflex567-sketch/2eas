@@ -37,11 +37,16 @@ class TraceRecorder:
         with self._lock:
             self._traces.append(deepcopy(trace))
 
-    def snapshot(self, limit=50):
+    def snapshot(self, limit=50, account=None):
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 128:
             raise ValueError('snapshot limit must be an integer from 1 to 128')
+        if account is not None and (not isinstance(account, str) or account not in ACCOUNT_ALIASES):
+            raise ValueError('snapshot account must be a configured alias')
         with self._lock:
-            return deepcopy(list(self._traces)[-limit:])
+            traces = list(self._traces)
+            if account is not None:
+                traces = [trace for trace in traces if trace.get('account') == account]
+            return deepcopy(traces[-limit:])
 
 
 DEFAULT_RECORDER = TraceRecorder()
@@ -115,5 +120,5 @@ def measured_lock(lock):
         lock.release()
 
 
-def recent_traces(limit=50):
-    return DEFAULT_RECORDER.snapshot(limit)
+def recent_traces(limit=50, account=None):
+    return DEFAULT_RECORDER.snapshot(limit, account=account)

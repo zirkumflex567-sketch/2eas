@@ -222,9 +222,9 @@ def test_mt5_trace_diagnostics_require_authorized_read_identity(monkeypatch):
     import app
 
     client = TestClient(app.app, client=('203.0.113.20', 1234))
-    assert client.get('/api/diagnostics/mt5-traces').status_code == 403
+    assert client.get('/api/diagnostics/mt5-traces', params={'account':'titan'}).status_code == 403
     monkeypatch.setenv('DASHBOARD_CONTROL_TOKEN', 'test-only-control-token')
-    response = client.get('/api/diagnostics/mt5-traces', headers={'Authorization': 'Bearer test-only-control-token'})
+    response = client.get('/api/diagnostics/mt5-traces?account=titan', headers={'Authorization': 'Bearer test-only-control-token'})
     assert response.status_code == 200
     assert set(response.json()) == {'traces'}
 
@@ -241,18 +241,42 @@ def test_mt5_trace_diagnostics_allow_proxy_read_role_and_reject_unknown_role(mon
     with telemetry.request_trace('titan', recorder=recorder):
         with telemetry.span('mt5_rates', count=12):
             pass
+    with telemetry.request_trace('titan_m5', recorder=recorder):
+        with telemetry.span('mt5_history', count=1):
+            pass
     monkeypatch.setattr(telemetry, 'recent_traces', recorder.snapshot)
     client = TestClient(app.app, client=('127.0.0.1', 1234))
-    response = client.get('/api/diagnostics/mt5-traces', headers=headers)
+    response = client.get('/api/diagnostics/mt5-traces?account=titan&limit=1', headers=headers)
     assert response.status_code == 200
     assert response.headers['cache-control'] == 'no-store'
     assert set(response.json()) == {'traces'}
     [trace] = response.json()['traces']
+    assert trace['account'] == 'titan'
     assert set(trace) == {'requestId', 'account', 'startedAtUtc', 'spans', 'droppedSpanCount', 'outcome'}
     encoded = json.dumps(trace).lower()
     assert all(secret_value not in encoded for secret_value in ('login', 'password', 'server', 'terminal', 'path', 'xauusd'))
-    denied = client.get('/api/diagnostics/mt5-traces', headers={**headers, 'x-dashboard-user': 'unknown'})
+    denied = client.get('/api/diagnostics/mt5-traces?account=titan', headers={**headers, 'x-dashboard-user': 'unknown'})
     assert denied.status_code == 403
+    invalid = client.get('/api/diagnostics/mt5-traces?account=titan&account=titan_m5', headers=headers)
+    assert invalid.status_code == 422
+    missing = client.get('/api/diagnostics/mt5-traces', headers=headers)
+    assert missing.status_code == 422
+
+
+def test_mt5_trace_diagnostics_reject_protected_account_before_reading_traces(monkeypatch):
+    from fastapi.testclient import TestClient
+    import app
+
+    calls = []
+    monkeypatch.setattr(telemetry, 'recent_traces', lambda limit: calls.append(limit) or [])
+    monkeypatch.setenv('DASHBOARD_CONTROL_TOKEN', 'test-only-control-token')
+    client = TestClient(app.app, client=('127.0.0.1', 1234))
+
+    response = client.get('/api/diagnostics/mt5-traces?account=blueberry',
+                          headers={'Authorization':'Bearer test-only-control-token'})
+
+    assert response.status_code == 403
+    assert calls == []
 
 
 def test_chart_studio_verified_read_records_its_lock_and_operation_spans():
