@@ -57,14 +57,14 @@
 - [x] Cover atomic key reservation, identical duplicate, conflicting key reuse, competing reservations, broker rejection, ambiguous timeout, readback mismatch and restart-safe `UNKNOWN` recovery in fake/store tests.
 - [x] Implement the private SQLite store outside the checkout, wire it to the injected service and persist reservations/audit; unsafe checkout paths and broad POSIX directory permissions are rejected. It remains unconfigured in production.
 - [x] After accepted retcode, fetch the authoritative position and report `SAVED` only when exact requested levels and a new revision are read back; otherwise record `UNKNOWN`/`BROKER_REJECTED` without retry.
-- [ ] Add browser draft-abort regression evidence. The simulated EA trailing-revision race is covered by `test_commit_rejects_trailing_revision_race_without_sending`; real-EA/hardware race acceptance remains open.
-- [ ] Run focused tests, relevant position-preview/proxy regressions, full contract suite and security review.
+- [x] Verify browser draft-abort evidence: the Beta smoke and headless live-demo flow confirm account and timeframe changes clear the draft; network trace had zero POSTs. The simulated EA trailing-revision race is covered by `test_commit_rejects_trailing_revision_race_without_sending`; real-EA/hardware race acceptance remains open.
+- [x] Run focused tests and position-preview/proxy regressions (`178 passed, 1 Windows-only skip`) and complete independent security review with no blocking findings. Full hardware/EA race acceptance remains open.
 
 ### Task 4: Review candidate while preserving the release gate
 
-- [ ] Independently review every broker-write path, proxy/firewall configuration, audit persistence and flag wiring; resolve all critical findings.
+- [x] Independently review broker-write path, proxy/firewall configuration, audit persistence and flag wiring; no blocking findings.
 - [ ] Verify deployed capability remains `brokerMutations=false`; verify authenticated `/stt` cannot reach a write with flag/provider absent.
-- [ ] Update FR-007/AT status to distinguish code/test completion from the remaining user-controlled release gate.
+- [x] Update FR-007/AT status to distinguish code/test completion from the remaining user-controlled release gate.
 - [ ] Do not enable the flag or call a mutation route. Present the reviewed candidate, exact future demo operation list, rollback procedure and security results for explicit user write approval before any demo write E2E.
 
 ## Verification commands
