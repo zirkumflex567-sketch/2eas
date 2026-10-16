@@ -44,6 +44,6 @@
 
 **Files:** Update `docs/OPEN_TASKS.md` and this plan.
 
-- [ ] Record AT-047 classifier/API/UI as delivered with reproducible local tests; keep FR-032 partially open, and AT-048 plus its §24.7 P1 gate and all OOS/backtest work explicitly deferred per user instruction.
-- [ ] Run relevant Python/Node/Chromium checks and the existing full-suite workflow when practical.
+- [x] Record AT-047 classifier/API/UI as delivered with 17 focused Python tests, the market-structure Node contract, the full Beta Chromium smoke, and current four-demo read-only acceptance; keep FR-032 partially open, and AT-048 plus its §24.7 P1 gate and all OOS/backtest work explicitly deferred per user instruction.
+- [ ] Run the repository main CI workflows to completion; focused Python tests (17 passed), the market-structure Node contract, and the full Beta Chromium smoke have passed locally. Current GitHub workflows remain in progress.
 - [ ] Review the diff, commit on `main`, push, guarded-restart local runtime, update htown `/stt`, and verify matching runtime revision/digest and static asset delivery.
