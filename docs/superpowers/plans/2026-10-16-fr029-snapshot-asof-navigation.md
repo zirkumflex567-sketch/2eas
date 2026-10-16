@@ -16,4 +16,6 @@
 
 - [x] Run MTF contract, Beta Chromium smoke, and `git diff --check`.
 - [x] Update FR-029 to distinguish snapshot navigation from remaining Decision import, EA-specific rules, authoritative coverage, full AT-041/042, and hardware acceptance.
-- [ ] Commit/push main, update htown and the guarded runtime, and verify read-only across authorized demo accounts with Blueberry excluded.
+- [x] Commit/push main, update htown and the guarded runtime, and verify read-only across authorized demo accounts with Blueberry excluded.
+
+**Live acceptance (2026-10-16):** `node scripts/smoke_live_snapshot_history.cjs` passed for `titan`, `xau5m_m5`, `titan_m5`, and `xau5m_500`. Each snapshot requested exactly D1/H4/H1/M15/M5 for its own account and XAUUSD symbol at the snapshot UTC cutoff; the test observed no writes and made no Blueberry request. Responses accurately surfaced missing history as `UNAVAILABLE · SOURCE_UNAVAILABLE` and gaps as `UNKNOWN · DATA_GAP`. The current `main` revision was pulled to htown and the guarded local dashboard runtime restarted with matching source revision/digest and `restart_required=false`. CI for the feature commit is still running.

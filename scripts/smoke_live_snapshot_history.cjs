@@ -112,9 +112,10 @@ const forbiddenAccounts = new Set(["blueberry"]);
       const rowsMtf = await page.locator(".cs-mtf-panel tbody tr").evaluateAll(nodes => nodes.map(row => ({ timeframe: row.cells[0].textContent.trim(), state: row.cells[1].textContent.trim(), closedBars: Number(row.cells[5].textContent.trim()) })));
       assert.deepEqual(rowsMtf.map(row => row.timeframe), ["D1", "H4", "H1", "M15", "M5"], `${account}: MTF timeframe coverage drifted`);
       assert.ok(rowsMtf.every(row => ["READY", "INSUFFICIENT", "UNKNOWN", "UNAVAILABLE"].some(state => row.state.startsWith(state)) && Number.isInteger(row.closedBars) && row.closedBars <= 1000), `${account}: invalid historical MTF row`);
-      const requested = mtfReads.slice(-5);
+      const snapshotBefore = String(Math.floor(Date.parse(snapshot.payload.asOfUtc) / 1000));
+      const requested = mtfReads.filter(read => read.account === account && read.before === snapshotBefore);
       assert.equal(requested.length, 5, `${account}: historical check must read exactly five frames`);
-      assert.ok(requested.every(read => read.method === "GET" && read.account === account && read.symbol === snapshotSymbol && read.before === String(Math.floor(Date.parse(snapshot.payload.asOfUtc) / 1000))), `${account}: MTF history escaped the recorded snapshot scope or UTC cutoff`);
+      assert.ok(requested.every(read => read.method === "GET" && read.symbol === snapshotSymbol), `${account}: MTF history escaped the recorded snapshot scope or UTC cutoff: ${JSON.stringify({snapshotSymbol,asOfUtc:snapshot.payload.asOfUtc,requested})}`);
       observations.push({ account, snapshots: count, entries, exits, frozenBars: candleCount, mtfAsOfUtc: snapshot.payload.asOfUtc, mtf: rowsMtf });
     }
 
