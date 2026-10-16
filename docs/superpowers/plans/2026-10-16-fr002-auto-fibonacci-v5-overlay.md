@@ -18,4 +18,7 @@ Render the already implemented `confirmed-swing-auto-fib-v1` calculator as a rea
 - [x] Implement isolated native line-series overlay and exact-scope as-of validation.
 - [x] Document the transient preview API and its remaining production/profile/hardware gates.
 - [x] Run the complete v5 Chromium smoke, TypeScript check/build and inspect the implementation diff.
-- [ ] Run relevant Beta/Node regressions, then commit/push/deploy under the main workflow.
+- [x] Run relevant Beta/Node regressions (`node scripts/smoke_chart_studio_beta.cjs`, `node scripts/test_chart_studio_indicators.cjs`) and review the diff.
+- [x] Commit and push on `main` (`c6436af`).
+- [x] Both GitHub workflows passed for `c6436af`; guarded local Main runtime restarted with matching startup/disk revision and digest (`517e774b54de079fb05d24d0b214076733a6b1a304fcb3a2384f091aef636a21`). htown `/home/kevin/2eas` is clean on `main`/`c6436af`; its `/stt` tunnel reports the same runtime identity. Local and htown upstream v5 bundles match SHA-256 `7620320a6167a3dc9762d8a47f4438279bfec063abcb1c6b2be49933d063fc7d`; nginx is active and `nginx -t` passes.
+- [x] Read-only demo acceptance passed on the four authorized non-Blueberry aliases: 150 M15 XAU candles each, 58 GETs, no mutations or failures. All quotes were stale, so live risk remains unknown. The public `/stt` path retains its Basic Auth (anonymous status is 401).
