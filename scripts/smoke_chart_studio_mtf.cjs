@@ -12,17 +12,20 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process"),ass
    const request=route.request(),url=new URL(request.url()),tf=url.searchParams.get("tf");assert.equal(request.method(),"GET");
    if(deferM5&&tf==="M5"){await new Promise(resolve=>{releaseM5=resolve;m5Starts.shift()?.()});}
    if(failedTf===tf)return route.fulfill({status:503,contentType:"application/json",body:JSON.stringify({detail:"fixture unavailable"})});
-   const step={D1:86400,H4:14400,H1:3600,M15:900,M5:300}[tf],asOf=Date.parse("2025-01-08T12:00:00Z")/1000;
-   const candles=Array.from({length:280},(_,i)=>{const time=asOf-(281-i)*step,close=1800+i*1.3;return {time,open:close-1,high:close+3,low:close-2,close,tick_volume:100}});
+   const step={D1:86400,H4:14400,H1:3600,M15:900,M5:300}[tf],asOf=Date.parse("2025-01-06T01:00:00Z")/1000;
+   const fridayClose=Date.parse("2025-01-03T21:00:00Z")/1000;
+   const candles=tf==="H1"?Array.from({length:279},(_,i)=>{const time=fridayClose-(278-i)*3600,close=1800+i*.3;return {time,open:close-.2,high:close+.4,low:close-.3,close,tick_volume:100}}):Array.from({length:280},(_,i)=>{const time=asOf-(281-i)*step,close=1800+i*1.3;return {time,open:close-1,high:close+3,low:close-2,close,tick_volume:100}});
+   if(tf==="H1"){const time=fridayClose+51*3600,close=1800+279*.3;candles.push({time,open:close-.2,high:close+.4,low:close-.3,close,tick_volume:100});}
    candles.push({time:asOf,open:1000000,high:1000010,low:999990,close:1000005,tick_volume:999});
    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({accountId:forgedTf===tf?"wrong-account":url.searchParams.get("account"),symbol:url.searchParams.get("symbol"),timeframe:tf,source:"MT5_VERIFIED",canExecute:false,candles})});
   });
   await page.goto("http://127.0.0.1:8873/static/chart-studio-fixture.html");await page.waitForFunction(()=>window.__chartSmokeReady===true);
-  await page.locator("#cs-beta-toggle").click();const panel=page.locator("details.cs-mtf-panel");await panel.locator("summary").click();await panel.locator("[data-mtf-asof]").fill("2025-01-08T12:00");
+  await page.locator("#cs-beta-toggle").click();const panel=page.locator("details.cs-mtf-panel");await panel.locator("summary").click();await panel.locator("[data-mtf-asof]").fill("2025-01-06T01:00");
   await panel.locator("[data-mtf-refresh]").click();await page.waitForFunction(()=>document.querySelectorAll(".cs-mtf-panel tbody tr").length===5&&document.querySelector(".cs-mtf-panel [data-mtf-status]").textContent.includes("5/5"));
   assert.equal(await panel.locator("tbody tr").count(),5);assert.equal(await panel.locator("tbody tr td").nth(0).textContent().then(t=>t.includes("READY")),true);
   assert.equal(await panel.locator("tbody tr").nth(1).locator("th").textContent(),"H4");
   assert.equal(await panel.locator("tbody tr").nth(1).locator("td").last().textContent(),"280","open/as-of H4 bar must be excluded from source rows");
+  assert.match(await panel.locator("tbody tr").nth(2).locator("td").first().textContent(),/SESSION_HEURISTIC.*Broker-Sitzung ungeprüft.*Wochenendlücke heuristisch toleriert/,"heuristically accepted weekend closure must remain visible as unverified session coverage");
   for(const req of requests.filter(x=>new URL(x.url).pathname.endsWith("/api/candles"))){const u=new URL(req.url);assert.equal(req.method,"GET");assert.equal(u.searchParams.get("account"),"titan");assert.equal(u.searchParams.get("symbol"),"XAUUSD");assert.equal(u.searchParams.get("count"),"1000");}
   assert.equal(requests.some(x=>x.method!=="GET"),false,"MTF read must emit no write requests");
   forgedTf="H4";failedTf="M15";await panel.locator("[data-mtf-refresh]").click();

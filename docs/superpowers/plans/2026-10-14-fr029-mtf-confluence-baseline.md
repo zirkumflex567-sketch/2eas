@@ -56,3 +56,10 @@
 - [x] Run the MTF unit suite, MTF Chromium smoke, Beta Chromium smoke, focused dashboard test, Node syntax checks and `git diff --check`.
 - [x] Record the baseline as partial in `OPEN_TASKS`; retain strategy-specific rules, EMA/volatility/confirmed-structure/setup semantics, historical trade navigation, event-context snapshotting and full AT-041/042, demo and hardware acceptance as open.
 - [x] Review the final diff before committing this slice; both review findings (bounded weekend gap and symbol-change race coverage) were fixed and rechecked.
+
+### Follow-up: session-heuristic transparency (17 October 2026)
+
+- [x] Add a RED contract for a plausible Friday-to-Monday gap in an otherwise warm, fresh H1 series; verify the engine incorrectly reported `dataQuality=OK` before the fix.
+- [x] Keep the bounded weekend-gap tolerance and all suspicious-gap `UNKNOWN` behavior; flag accepted heuristic closures as `SESSION_HEURISTIC`.
+- [x] Render the heuristic in the MTF row as unverified broker-session coverage; verify the label and read-only request behavior in Chromium.
+- [x] Run the MTF Node and Chromium contracts and preserve the authoritative broker-session schedule as an open dependency.

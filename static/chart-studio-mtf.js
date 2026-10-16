@@ -34,12 +34,15 @@ function frame(candles,tf,asOfUtc){
  if(!closed.length&&future){result.status="UNKNOWN";result.reason="HISTORICAL_DATA_UNAVAILABLE";result.dataQuality="UNAVAILABLE";return result;}
  if(closed.length){
   result.lastClosedBarTime=closed[closed.length-1].time;result.sourceTime=result.lastClosedBarTime;
+  let sessionHeuristic=false;
   for(let i=1;i<closed.length;i++){
    const delta=closed[i].time-closed[i-1].time;
-   if(delta>step*1.5&&!isWeekendGap(closed[i-1].time,closed[i].time,tf)){
+   if(delta>step*1.5){
+    if(isWeekendGap(closed[i-1].time,closed[i].time,tf)){sessionHeuristic=true;continue;}
     result.status="UNKNOWN";result.reason="DATA_GAP";result.dataQuality="GAP";return result;
    }
   }
+  if(sessionHeuristic)result.dataQuality="SESSION_HEURISTIC";
   // A live feed that has no recent closed source bar cannot be described as current.
   const maxAge=step*(tf==="D1"?4:3);
   if(asOfUtc-result.lastClosedBarTime>maxAge){result.status="UNKNOWN";result.reason="STALE_OR_MISSING_HISTORY";result.dataQuality="STALE";return result;}

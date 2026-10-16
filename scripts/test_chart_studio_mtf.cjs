@@ -36,6 +36,14 @@ const holidayGap=M.frame([...oldWeek,{time:mondayAfterWeek,open:2,high:3,low:1,c
 assert.equal(holidayGap.status,"UNKNOWN");assert.equal(holidayGap.reason,"DATA_GAP","multiweek Friday-to-Monday gaps must not be treated as weekends");
 const normalWeekend=M.frame([{time:friday+9*3600,open:1,high:3,low:.5,close:2},{time:friday+57*3600,open:2,high:3,low:1,close:2}],"H1",friday+58*3600);
 assert.equal(normalWeekend.status,"INSUFFICIENT","plausible FX weekend closure should not look like a weekday data gap");
+const fridayClose=Date.UTC(2025,0,3,21)/1000;
+const weekendReadyBars=Array.from({length:279},(_,i)=>{const close=1800+i*.3;return {time:fridayClose-(278-i)*3600,open:close-.2,high:close+.4,low:close-.3,close};});
+const mondayOpen=fridayClose+51*3600, mondayClose=1800+279*.3;
+weekendReadyBars.push({time:mondayOpen,open:mondayClose-.2,high:mondayClose+.4,low:mondayClose-.3,close:mondayClose});
+const weekendReady=M.frame(weekendReadyBars,"H1",mondayOpen+3600);
+assert.equal(weekendReady.status,"READY");
+assert.equal(weekendReady.dataQuality,"SESSION_HEURISTIC","accepted weekend gaps must not be reported as fully verified coverage");
+assert.equal(weekendReady.reason,"CLOSED_BAR_EMA_ALIGNMENT");
 const base=M.frame(input.H4,"H4",asOf),future={time:asOf,open:1000000,high:1000010,low:999990,close:1000005};
 const protectedFrame=M.frame([...input.H4,future],"H4",asOf);
 assert.equal(protectedFrame.sourceTime,base.sourceTime);assert.equal(protectedFrame.ema200,base.ema200);

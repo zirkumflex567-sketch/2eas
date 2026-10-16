@@ -44,7 +44,8 @@ function mount({panel,account,symbol,timeframe}){
   if(requestGeneration!==generation||local.signal.aborted&&!timedOut)return false;
   const result=window.ChartStudioMTF.calculate(input,asOfUtc);rows.replaceChildren();
   for(const tf of FRAMES){const f=result.frames[tf],tr=document.createElement("tr"),time=f.sourceTime?new Date(f.sourceTime*1000).toISOString():"—";
-   tr.innerHTML=`<th>${tf}</th><td>${esc(f.status)} · ${esc(f.reason)}</td><td>${esc(f.bias)}</td><td>${f.status==="READY"?[f.ema20,f.ema50,f.ema200].map(x=>Number(x).toPrecision(7)).join(" / "):"—"}</td><td>${esc(time)}</td><td>${f.closedBars}</td>`;rows.append(tr);
+   const qualityWarning=f.dataQuality==="SESSION_HEURISTIC"?" · SESSION_HEURISTIC: Broker-Sitzung ungeprüft (Wochenendlücke heuristisch toleriert)":"";
+   tr.innerHTML=`<th>${tf}</th><td>${esc(f.status)} · ${esc(f.reason)}${esc(qualityWarning)}</td><td>${esc(f.bias)}</td><td>${f.status==="READY"?[f.ema20,f.ema50,f.ema200].map(x=>Number(x).toPrecision(7)).join(" / "):"—"}</td><td>${esc(time)}</td><td>${f.closedBars}</td>`;rows.append(tr);
   }
   status.textContent=sourceErrors.length?`Unvollständige Quellenantwort (${sourceErrors.join("; ")}); betroffene Zeile bleibt UNKNOWN.`:`Abfrage abgeschlossen · as-of ${asOfOverride??new Date(asOfMs).toISOString()} · ${result.ready}/5 Zeitrahmen mit ausreichender Historie.`;return true;
  }
