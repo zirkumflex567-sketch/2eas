@@ -53,8 +53,14 @@ async function preview(account, symbol, position, candidate) {
       signal: AbortSignal.timeout(15000),
     });
     body = await response.json();
-    if (response.status === 503 && body?.detail?.code === "QUOTE_NOT_FRESH" && attempt < 2) {
-      await new Promise(resolve => setTimeout(resolve, 750));
+    const transientQuote = response.status === 503 && body?.detail?.code === "QUOTE_NOT_FRESH";
+    const transientLimit = response.status === 429 && body?.detail?.code === "RATE_LIMITED";
+    if ((transientQuote && attempt < 2) || (transientLimit && attempt < 4)) {
+      const retryAfter = Number(response.headers.get("retry-after"));
+      const delayMs = transientLimit && Number.isFinite(retryAfter)
+        ? Math.min(2000, Math.max(500, retryAfter * 1000))
+        : 750;
+      await new Promise(resolve => setTimeout(resolve, delayMs));
       continue;
     }
     break;
