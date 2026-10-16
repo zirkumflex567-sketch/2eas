@@ -757,6 +757,72 @@ def test_guard_classifies_take_profit_risk_direction(side, old_tp, new_tp, expec
     assert observed[0]['action'] == ('RISK_INCREASING_PROTECTION' if expected else 'RISK_REDUCING_PROTECTION')
 
 
+@pytest.mark.parametrize(('side', 'old_sl', 'new_sl', 'expected'), [
+    ('BUY', '3990.00', '3988.00', True),
+    ('BUY', '3990.00', '3992.00', False),
+    ('SELL', '4010.00', '4012.00', True),
+    ('SELL', '4010.00', '4008.00', False),
+    ('BUY', None, '3990.00', False),
+    ('SELL', '4010.00', None, True),
+])
+def test_guard_classifies_stop_loss_risk_direction(side, old_sl, new_sl, expected):
+    from chart_studio.position_commit import PositionCommitService
+    observed = []
+    guard = type('Guard', (), {'evaluate': lambda self, **kw: observed.append(kw) or {
+        'state': 'ALLOW', 'source': 'TEST', 'hardLock': False,
+    }})()
+    service = PositionCommitService(None, None, None, guard)
+    position = {'side': side, 'sl': old_sl, 'tp': '4020.00'}
+    service._guard(object(), position, {'slPrice': new_sl})
+    assert observed[0]['riskIncreasing'] is expected
+    assert observed[0]['action'] == ('RISK_INCREASING_PROTECTION' if expected else 'RISK_REDUCING_PROTECTION')
+
+
+@pytest.mark.parametrize('decision', [
+    None,
+    {},
+    {'state': 'ALLOW', 'source': 'NONE', 'hardLock': False},
+    {'state': 'ALLOW', 'source': '', 'hardLock': False},
+    {'state': 'ALLOW', 'source': 'TEST', 'hardLock': None},
+    {'state': 'UNKNOWN', 'source': 'TEST', 'hardLock': False},
+])
+def test_guard_unknown_or_incomplete_result_fails_closed(decision):
+    from chart_studio.position_commit import PositionCommitService
+    from fastapi import HTTPException
+    guard = type('Guard', (), {'evaluate': lambda self, **kw: decision})()
+    service = PositionCommitService(None, None, None, guard)
+    with pytest.raises(HTTPException) as blocked:
+        service._guard(object(), {'side': 'BUY', 'sl': '3990', 'tp': '4020'}, {'slPrice': '3992'})
+    assert blocked.value.status_code == 403
+    assert blocked.value.detail['code'] == 'GUARD_BLOCKED'
+
+
+@pytest.mark.parametrize(('mutation', 'expected_status', 'expected_code'), [
+    ('stale_quote', 503, 'QUOTE_NOT_FRESH'),
+    ('symbol_rules', 409, 'SYMBOL_CHANGED'),
+])
+def test_commit_rechecks_quote_and_symbol_rules_after_order_check(api, tmp_path, mutation, expected_status, expected_code):
+    from types import SimpleNamespace
+    client, fake, request = api
+    preview = client.post('/api/chart/v1/position/preview-stop', json={
+        **request, 'candidate': {'slPrice': '3999.00'},
+    }).json()
+    _, sent = _prepare_commit_service(client, fake, tmp_path)
+    def order_check(_):
+        if mutation == 'stale_quote':
+            fake.tick.time_msc = int((NOW + 10800 - 10) * 1000)
+            fake.tick.time = fake.tick.time_msc // 1000
+        else:
+            fake.symbols[0].trade_tick_size *= 2
+        return SimpleNamespace(retcode=0)
+    fake.order_check = order_check
+    response, _ = _post_enabled_commit(client, preview)
+    assert response.status_code == expected_status
+    assert response.json()['detail']['code'] == expected_code
+    assert sent == []
+    assert fake.writes == 0
+
+
 def test_commit_rejects_noop_preview_without_order_send(api, tmp_path):
     client, fake, request = api
     preview = client.post('/api/chart/v1/position/preview-stop', json={
