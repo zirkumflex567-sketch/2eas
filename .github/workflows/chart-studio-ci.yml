@@ -61,7 +61,6 @@ jobs:
           node --check static/chart-studio-alerts.js
           node scripts/test_chart_studio_alerts.cjs
           node --check scripts/test_chart_studio_alert_storage.cjs
-          node scripts/test_chart_studio_alert_storage.cjs
           node --check static/chart-studio-market-structure.js
           node scripts/test_chart_studio_market_structure.cjs
           node --check static/chart-studio-oscillators.js
@@ -105,6 +104,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $PSNativeCommandUseErrorActionPreference = $true
+          node scripts/test_chart_studio_alert_storage.cjs
           node scripts/smoke_chart_studio_replay.cjs
           node scripts/smoke_chart_studio_responsive.cjs
           node scripts/smoke_chart_studio_fib.cjs
