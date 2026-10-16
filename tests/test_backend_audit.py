@@ -240,6 +240,21 @@ def test_chart_candles_supports_exclusive_historical_cursor_with_warmup(isolated
     isolated.send.assert_not_called()
 
 
+def test_chart_candles_accepts_full_1000_period_indicator_warmup(isolated, monkeypatch):
+    calls=[]
+    def copy_from_pos(symbol, timeframe, start, count):
+        calls.append((symbol, timeframe, start, count))
+        return isolated.rates.copy()
+    monkeypatch.setattr(app.mt5, 'copy_rates_from_pos', copy_from_pos, raising=False)
+    response=isolated.client.get('/api/candles?account=titan&tf=M15&symbol=XAUUSD&count=1001')
+    assert response.status_code==200,response.text
+    body=response.json()
+    assert calls==[('XAUUSD',app.mt5.TIMEFRAME_M15,0,1251)]
+    assert body['page']['requestedCount']==1001
+    assert len(body['candles'])==len(isolated.rates)
+    isolated.send.assert_not_called()
+
+
 def test_chart_candles_rejects_nonpositive_history_cursor(isolated, monkeypatch):
     reads=[]
     monkeypatch.setattr(app.mt5, 'copy_rates_from', lambda *args: reads.append(args), raising=False)

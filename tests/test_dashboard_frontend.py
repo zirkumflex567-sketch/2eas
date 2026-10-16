@@ -303,11 +303,12 @@ class DashboardFrontendTests(unittest.TestCase):
             route.fulfill(status=503 if self.journal_fail else 200, json=dict(detail='fixture journal failure') if self.journal_fail else journal(account)); return
         if parsed.path == '/api/candles':
             query=parse_qs(parsed.query); symbol=query.get('symbol',['XAUUSD'])[0]; tf=query.get('tf',['M15'])[0]
+            requested_count=int(query.get('count',['150'])[0])
             before=query.get('before',[None])[0]
             rows=self.history_rows if before is not None else (self.candle_refresh_rows if self.candle_refresh_rows is not None else self.candle_rows)
             oldest=rows[0]['time'] if rows else None
             has_more = before is None and bool(self.history_rows or self.history_fail_status)
-            payload=dict(account=ACCOUNTS[account],accountId=account,symbol=self.candle_resolved_symbol or symbol,timeframe=tf,source='MT5_VERIFIED',canExecute=False,candles=copy.deepcopy(rows),ema9=[],ema20=[],ema50=[],ema200=[],markers=[],sr_levels={},page=dict(requestedCount=150,oldestTime=oldest,nextBefore=oldest if has_more else None,hasMore=has_more))
+            payload=dict(account=ACCOUNTS[account],accountId=account,symbol=self.candle_resolved_symbol or symbol,timeframe=tf,source='MT5_VERIFIED',canExecute=False,candles=copy.deepcopy(rows),ema9=[],ema20=[],ema50=[],ema200=[],markers=[],sr_levels={},page=dict(requestedCount=requested_count,oldestTime=oldest,nextBefore=oldest if has_more else None,hasMore=has_more))
             if symbol == self.candle_mismatch_symbol: payload['symbol']='GBPUSD'
             if before is not None and self.history_fail_status:
                 route.fulfill(status=self.history_fail_status, json=dict(detail='fixture history exhausted')); return
@@ -367,6 +368,36 @@ class DashboardFrontendTests(unittest.TestCase):
         self.assertTrue(portfolio_symbols and set(portfolio_symbols)=={'XAUUSD.pi'},portfolio_symbols)
         self.assertEqual(self.mutations, [])
         self.assertEqual(self.errors, [])
+    def test_initial_chart_load_fetches_full_indicator_warmup_once(self):
+        base=1791918000
+        self.candle_rows=[]
+        for i in range(1001):
+            close=4000+i*.02
+            self.candle_rows.append(dict(time=base+i*900,open=close-.1,high=close+.5,
+                low=close-.5,close=close,tick_volume=10,real_volume=0))
+        self.load()
+        self.page.wait_for_function("document.querySelector('#tv-chart').__candleSeries.data().length === 1001",timeout=10000)
+        candle_urls=[url for url in self.requests if '/api/candles?' in url]
+        counts=[parse_qs(urlparse(url).query).get('count') for url in candle_urls]
+        self.assertTrue(counts and counts[0]==['1001'],candle_urls)
+        self.assertEqual(self.page.evaluate("ChartStudioAverages.calculate(document.querySelector('#tv-chart').__candleSeries.data(),'RMA',1000).length"),2)
+        self.assertEqual(self.page.evaluate("document.querySelector('#tv-chart').__chart.timeScale().getVisibleLogicalRange().from"),946)
+        next_close=self.candle_rows[-1]['close']+.02
+        self.candle_refresh_rows=self.candle_rows[-149:]+[dict(time=base+1001*900,open=self.candle_rows[-1]['close'],
+            high=next_close+.5,low=next_close-.5,close=next_close,tick_volume=11,real_volume=0)]
+        self.page.evaluate("async()=>await loadCandles()")
+        self.page.wait_for_function("document.querySelector('#tv-chart').__candleSeries.data().length === 1002",timeout=10000)
+        self.assertEqual(self.page.evaluate("ChartStudioAverages.calculate(document.querySelector('#tv-chart').__candleSeries.data(),'RMA',1000).length"),3)
+        self.assertEqual(self.page.evaluate("candleHistory.pages.length"),1)
+        self.page.evaluate("async()=>await loadCandles()")
+        self.assertEqual(self.page.evaluate("candleHistory.pages.length"),1,"unchanged polling must not duplicate archived warm-up history")
+        self.assertEqual(self.page.evaluate("document.querySelector('#tv-chart').__candleSeries.data().length"),1002)
+        refreshed_urls=[url for url in self.requests if '/api/candles?' in url]
+        refreshed_counts=[parse_qs(urlparse(url).query).get('count') for url in refreshed_urls]
+        self.assertEqual(refreshed_counts[0],['1001'],refreshed_urls)
+        self.assertTrue(all(count==['150'] for count in refreshed_counts[1:]),refreshed_urls)
+        self.assertEqual(self.mutations,[])
+        self.assertEqual(self.errors,[])
     def test_chart_requests_older_bars_when_scrolled_to_history_edge(self):
         self.candle_rows=[
             dict(time=1791918000,open=4000.,high=4002.,low=3998.,close=4001.,tick_volume=10,real_volume=0),

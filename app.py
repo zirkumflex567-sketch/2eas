@@ -1156,7 +1156,7 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
     if tf_upper not in TIMEFRAME_MAP:
         raise HTTPException(status_code=422, detail="Ungültiger Chart-Timeframe.")
     tf_val = TIMEFRAME_MAP[tf_upper]
-    count = min(1000, max(10, count))
+    count = min(1001, max(10, count))
     rates_offset = broker_clock.rates_offset_seconds(current_acc)
     fetch_count = max(5000, count+250) if (account == 'goldm15' and sym_name == SYMBOL and tf_val == mt5.TIMEFRAME_M15) else (count+250)
     if before is None:
@@ -3456,10 +3456,11 @@ HTML_CONTENT = """<!DOCTYPE html>
       v5Preview?.setScope({account:reqAccount,symbol:reqSymbol,timeframe:reqTf});
       const requestKey = generation + '/' + reqSymbol + '/' + reqTf;
       if (candlesBusy === requestKey) return;
+      const requestedCount = candleHistory.latest ? 150 : 1001;
       candlesBusy = requestKey;
       let v5Request = v5Preview?.beginRead();
       try {
-        const res = await accountFetch('/api/candles?tf=' + encodeURIComponent(reqTf) + '&symbol=' + encodeURIComponent(reqSymbol));
+        const res = await accountFetch('/api/candles?tf=' + encodeURIComponent(reqTf) + '&symbol=' + encodeURIComponent(reqSymbol) + '&count=' + requestedCount);
         const data = await res.json();
         if (generation !== accountGeneration || reqTf !== activeTimeframe || reqSymbol !== activeChartSymbol) throw staleRequest();
         const expectedSymbol = accounts[activeAccount]?.symbol || reqSymbol;
@@ -3490,7 +3491,8 @@ HTML_CONTENT = """<!DOCTYPE html>
         setChartLoadStatus('');
         const previousLatest = candleHistory.latest;
         const nextLatestTime = data.candles[0].time;
-        if (candleHistory.pages.length && previousLatest?.candles?.length && Number.isFinite(nextLatestTime)) {
+        if (previousLatest?.candles?.length && Number.isFinite(nextLatestTime) &&
+            nextLatestTime > previousLatest.candles[0].time) {
           const expired = {candles:[],ema9:[],ema20:[],ema50:[],ema200:[],markers:[]};
           for (const field of ['candles','ema9','ema20','ema50','ema200','markers']) {
             expired[field] = (previousLatest[field] || []).filter(row => row.time < nextLatestTime);
