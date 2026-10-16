@@ -92,10 +92,11 @@ def install_position_commit_routes(
     """Install only a deny-by-default placeholder until reviewed write service exists."""
     # Keep references explicit in app state for startup diagnostics without
     # inferring capability from environment variables or a lone Boolean flag.
-    app.state.position_commit_configured = bool(
+    app.state.position_commit_dependencies_supplied = bool(
         enabled and guard_provider is not None and audit_store is not None
         and commit_service is not None
     )
+    app.state.position_commit_write_capable = False
     router = APIRouter()
 
     @router.post('/api/chart/v1/position/commit-stop')

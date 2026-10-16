@@ -230,6 +230,3 @@ class PositionCommitStore:
             self._audit(db, result['status'], principal_hash, key, row['payload_hash'], result['status'])
             db.commit()
         return dict(result)
-
-
-
