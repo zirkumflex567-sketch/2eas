@@ -45,6 +45,6 @@
 
 ### 3. Verification and ledger
 
-- [x] Run Node contracts, `node --check`, focused multi-chart Chromium smoke, full Beta smoke, Python dashboard frontend tests, and `git diff --check`.
+- [x] Run Node contracts, `node --check`, focused multi-chart Chromium smoke including a 480px ResizeObserver/canvas fit check, full Beta smoke, Python dashboard frontend tests, and `git diff --check`.
 - [x] Confirm the added smoke makes only exact symbol/catalog and candle GET requests for `titan`, sends no broker mutations, and the Blueberry workspace is blocked before fetch.
-- [x] Update FR-018 evidence; retain named-layout management, saved symbol favorites/watchlist, native v5 parity, cross-device/hardware acceptance, and demo acceptance across all authorized terminals as open.
+- [x] Update FR-018 evidence; retain named-layout management, saved symbol favorites/watchlist, native v5 parity, touch/DPI and cross-device/hardware acceptance, and live demo acceptance across all authorized terminals as open.
