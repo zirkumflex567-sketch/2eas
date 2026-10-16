@@ -14,29 +14,9 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process");
   }
   browser=await chromium.launch({headless:true});
   const page=await browser.newPage({viewport:{width:1450,height:960}});
-  const errors=[],requests=[],layouts=new Map();
+  const errors=[],requests=[];
   page.on("pageerror",e=>errors.push(e.message));
   page.on("request",r=>{if(r.method()!=="GET")requests.push(r.url())});
-  const token="fixture-object-layout-token-01234567890123456";
-  await page.route("**/api/chart/v1/workspace**",async route=>{
-   const req=route.request(),url=new URL(req.url());
-   const done=(status,body)=>route.fulfill({status,contentType:"application/json",body:JSON.stringify(body)});
-   if(req.headers().authorization!=="Bearer "+token)return done(401,{detail:"Unauthorized"});
-   const body=req.method()==="GET"?Object.fromEntries(url.searchParams.entries()):req.postDataJSON();
-   const account=body.account,symbol=body.symbol||"XAUUSD",name=body.name;
-   const key=account+":"+symbol+":"+name,row=layouts.get(key);
-   if(url.pathname.endsWith("/workspaces"))
-    return done(200,{account,symbol,items:[...layouts.entries()].filter(([k])=>k.startsWith(account+":"+symbol+":"))
-     .map(([k,v])=>({name:k.split(":")[2],revision:v.revision,updatedUtc:1}))});
-   if(req.method()==="GET")
-    return row?done(200,{account,symbol,name,...row}):done(404,{detail:"Missing"});
-   if(req.method()==="PUT"){
-    if((row?.revision||0)!==body.expectedRevision)return done(409,{detail:"Stale revision"});
-    const updated={revision:(row?.revision||0)+1,document:body.document};
-    layouts.set(key,updated);return done(200,{account,symbol,name,...updated});
-   }
-   return done(405,{detail:"Unsupported"});
-  });
   await page.goto("http://127.0.0.1:8869/static/chart-studio-fixture.html",{waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartSmokeReady===true);
   await page.locator("#cs-beta-toggle").click();
@@ -147,27 +127,16 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process");
   assert.equal(await manager.locator(".cs-object-row").count(),0);
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
   assert.equal((await page.evaluate(()=>ChartStudioBeta.getState().drawings))[1].label,"London Sweep");
-  // Server save, modify, restore using opt-in token without persistence in URL/storage.
+  // Encrypted server sync is fail-closed until the deployment explicitly enables it.
   const serverBox=page.locator(".cs-server-sync");
-  await serverBox.locator('input[type="password"]').fill(token);
-  await serverBox.getByRole("button",{name:"Verbinden"}).click();
-  await page.waitForFunction(()=>document.querySelector(".cs-server-sync p").textContent.includes("für titan"));
-  await serverBox.getByRole("textbox",{name:"Neuer Layoutname"}).fill("ObjectsServer");
-  await serverBox.getByRole("button",{name:"Server speichern"}).click();
-  await page.waitForFunction(()=>document.querySelector(".cs-server-sync p").textContent.includes("gespeichert"));
-  const saved=layouts.get("titan:XAUUSD:ObjectsServer").document.drawings;
-  assert.equal(saved.length,2);
-  assert.equal(saved[1].label,"London Sweep");
-  assert.equal(saved[1].visible,true);
-  await manager.locator('.cs-object-row[data-index="1"] button[data-action="visibility"]').click();
-  await serverBox.getByRole("button",{name:"Server laden"}).click();
-  await page.waitForFunction(()=>document.querySelector(".cs-server-sync p").textContent.includes("geladen"));
-  assert.equal((await page.evaluate(()=>ChartStudioBeta.getState().drawings))[1].visible,true);
-  assert.equal(await page.evaluate(token=>Object.values(localStorage).some(v=>v.includes(token)),token),false);
+  assert.equal(await serverBox.locator('input[type="password"]').count(),0,"legacy bearer login is absent");
+  assert.equal(await serverBox.locator('[aria-label="Recovery-Paket"]').count(),1);
+  assert.equal(await serverBox.getByRole("button",{name:"Aktuelles Layout verschlüsselt speichern"}).isDisabled(),true,
+    "encrypted server sync remains unavailable unless the server explicitly enables it");
   assert.deepEqual(errors,[]);
-  assert.ok(requests.every(url=>url.includes("/api/chart/v1/workspace")));
+  assert.deepEqual(requests,[],"no plaintext workspace writes are sent while encrypted sync is disabled");
   const dir=path.join("output","visual-smoke");fs.mkdirSync(dir,{recursive:true});
   await page.screenshot({path:path.join(dir,"chart-studio-object-manager.png"),fullPage:true});
-  console.log("PASS Chromium Beta AT-025 combined capacity: 5,000 bars, 20 indicators, 1,000 drawings; object manager CRUD and account/server layouts");
+  console.log("PASS Chromium Beta AT-025 combined capacity: 5,000 bars, 20 indicators, 1,000 drawings; object manager CRUD and fail-closed sync");
  }finally{if(browser)await browser.close();server.kill()}
 })().catch(e=>{console.error(e);process.exitCode=1});

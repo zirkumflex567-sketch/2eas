@@ -13,27 +13,9 @@ const fs=require("node:fs"),path=require("node:path"),assert=require("node:asser
   }
   browser=await chromium.launch({headless:true});
   const page=await browser.newPage({viewport:{width:1390,height:950}});
-  const errors=[],requests=[],store=new Map(),secret="chart-types-test-token-123456789abcdefghijklmnopqrstuvwxyz";
+  const errors=[],requests=[];
   page.on("pageerror",e=>errors.push(e.message));
   page.on("request",r=>{if(r.method()!=="GET")requests.push(r.url())});
-  await page.route("**/api/chart/v1/workspace**",async route=>{
-   const r=route.request(),url=new URL(r.url());
-   const send=(status,payload)=>route.fulfill({status,contentType:"application/json",body:JSON.stringify(payload)});
-   if(r.headers().authorization!=="Bearer "+secret)return send(401,{detail:"Unauthorized"});
-   const payload=r.method()==="GET"?Object.fromEntries(url.searchParams.entries()):r.postDataJSON();
-   const {account,name}=payload,symbol=payload.symbol||"XAUUSD";
-   const key=account+":"+symbol+":"+name,row=store.get(key);
-   if(url.pathname.endsWith("/workspaces"))return send(200,{account,symbol,
-     items:[...store.entries()].filter(([k])=>k.startsWith(account+":"+symbol+":"))
-      .map(([k,v])=>({name:k.split(":")[2],revision:v.revision,updatedUtc:1}))});
-   if(r.method()==="GET")return row?send(200,{account,symbol,name,...row}):send(404,{detail:"Not found"});
-   if(r.method()==="PUT"){
-    if((row?.revision||0)!==payload.expectedRevision)return send(409,{detail:"Revision conflict"});
-    const next={revision:(row?.revision||0)+1,document:payload.document};
-    store.set(key,next);return send(200,{account,symbol,name,...next});
-   }
-   return send(405,{detail:"Unsupported"});
-  });
   await page.goto("http://127.0.0.1:8868/static/chart-studio-fixture.html",{waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartSmokeReady===true);
   await page.locator("#cs-beta-toggle").click();
@@ -75,22 +57,14 @@ const fs=require("node:fs"),path=require("node:path"),assert=require("node:asser
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
   assert.equal(await page.evaluate(()=>ChartStudioChartTypes.current()),"area");
   const sb=page.locator(".cs-server-sync");
-  await sb.locator('input[type="password"]').fill(secret);
-  await sb.getByRole("button",{name:"Verbinden"}).click();
-  await page.waitForFunction(()=>document.querySelector(".cs-server-sync p").textContent.includes("für titan"));
-  await sb.getByRole("textbox",{name:"Neuer Layoutname"}).fill("TypesServer");
-  await sb.getByRole("button",{name:"Server speichern"}).click();
-  await page.waitForFunction(()=>document.querySelector(".cs-server-sync p").textContent.includes("gespeichert"));
-  assert.equal(store.get("titan:XAUUSD:TypesServer").document.chartType,"area");
-  await controls.locator('[data-chart-type="candles"]').click();
-  await sb.getByRole("button",{name:"Server laden"}).click();
-  await page.waitForFunction(()=>document.querySelector(".cs-server-sync p").textContent.includes("geladen"));
-  assert.equal(await page.evaluate(()=>ChartStudioChartTypes.current()),"area");
-  assert.equal(await page.evaluate(token=>Object.values(localStorage).some(v=>v.includes(token)),secret),false);
+  assert.equal(await sb.locator('input[type="password"]').count(),0,"legacy bearer login is absent");
+  assert.equal(await sb.locator('[aria-label="Recovery-Paket"]').count(),1);
+  assert.equal(await sb.getByRole("button",{name:"Aktuelles Layout verschlüsselt speichern"}).isDisabled(),true,
+    "encrypted server sync remains unavailable unless the server explicitly enables it");
   assert.deepEqual(errors,[]);
-  assert.ok(requests.every(url=>url.includes("/api/chart/v1/workspace")),JSON.stringify(requests));
+  assert.deepEqual(requests,[],"no plaintext workspace writes are sent while encrypted sync is disabled");
   const dir=path.join("output","visual-smoke");fs.mkdirSync(dir,{recursive:true});
   await page.screenshot({path:path.join(dir,"chart-studio-chart-types.png"),fullPage:true});
-  console.log("PASS Chromium candle/bar/line/area types, price anchors, appearance, account isolation and local/server profiles");
+  console.log("PASS Chromium candle/bar/line/area types, price anchors, appearance, account isolation, local profiles and fail-closed sync");
  }finally{if(browser)await browser.close();server.kill()}
 })().catch(err=>{console.error(err);process.exitCode=1});

@@ -13,27 +13,9 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process");
   }
   browser=await chromium.launch({headless:true});
   const page=await browser.newPage({viewport:{width:1440,height:960}});
-  const errors=[],requests=[],store=new Map();
+  const errors=[],requests=[];
   page.on("pageerror",e=>errors.push(e.message));
   page.on("request",r=>{if(r.method()!=="GET")requests.push(r.url())});
-  const secret="oscillator-fixture-secret-long-enough-123456789";
-  await page.route("**/api/chart/v1/workspace**",async route=>{
-   const r=route.request(),u=new URL(r.url());
-   const send=(status,obj)=>route.fulfill({status,contentType:"application/json",body:JSON.stringify(obj)});
-   if(r.headers().authorization!=="Bearer "+secret)return send(401,{detail:"Bad token"});
-   const v=r.method()==="GET"?Object.fromEntries(u.searchParams.entries()):r.postDataJSON();
-   const {account,name}=v,symbol=v.symbol||"XAUUSD",key=account+":"+symbol+":"+name,old=store.get(key);
-   if(u.pathname.endsWith("/workspaces"))return send(200,{account,symbol,
-    items:[...store.entries()].filter(([k])=>k.startsWith(account+":"+symbol+":"))
-     .map(([k,record])=>({name:k.split(":")[2],revision:record.revision,updatedUtc:1}))});
-   if(r.method()==="GET")return old?send(200,{account,symbol,name,...old}):send(404,{detail:"Not found"});
-   if(r.method()==="PUT"){
-    if((old?.revision||0)!==v.expectedRevision)return send(409,{detail:{message:"Revision conflict"}});
-    const next={revision:(old?.revision||0)+1,document:v.document};
-    store.set(key,next);return send(200,{account,symbol,name,...next});
-   }
-   return send(405,{detail:"Unsupported"});
-  });
   await page.goto("http://127.0.0.1:8867/static/chart-studio-fixture.html",{waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartSmokeReady===true);
   await page.locator("#cs-beta-toggle").click();
@@ -97,27 +79,17 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process");
   assert.equal(await page.evaluate(()=>ChartStudioOscillators.settings().length),1,"The other demo account retains only its own oscillator");
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
   assert.equal((await page.evaluate(()=>ChartStudioOscillators.settings())).at(-1).period,20,"CCI parameters restore only for their original account");
-  // Server layout roundtrip after a real parameters update.
+  // Encrypted server sync is fail-closed until the deployment explicitly enables it.
   const sb=page.locator(".cs-server-sync");
-  await sb.locator('input[type="password"]').fill(secret);
-  await sb.getByRole("button",{name:"Verbinden"}).click();
-  await page.waitForFunction(()=>document.querySelector(".cs-server-sync p").textContent.includes("für titan"));
-  await sb.getByRole("textbox",{name:"Neuer Layoutname"}).fill("OscServer");
-  await sb.getByRole("button",{name:"Server speichern"}).click();
-  await page.waitForFunction(()=>document.querySelector(".cs-server-sync p").textContent.includes("gespeichert"));
-  assert.equal(store.get("titan:XAUUSD:OscServer").document.oscillatorInstances.length,5);
-  assert.equal(store.get("titan:XAUUSD:OscServer").document.oscillatorInstances[2].fast,8);
-  await editor.locator('[data-instance="osc3"] [data-field="fast"]').fill("16");
-  await editor.locator('[data-instance="osc3"] [data-field="fast"]').press("Tab");
-  await sb.getByRole("button",{name:"Server laden"}).click();
-  await page.waitForFunction(()=>document.querySelector(".cs-server-sync p").textContent.includes("geladen"));
-  assert.equal((await page.evaluate(()=>ChartStudioOscillators.settings()))[2].fast,8);
+  assert.equal(await sb.locator('input[type="password"]').count(),0,"legacy bearer login is absent");
+  assert.equal(await sb.locator('[aria-label="Recovery-Paket"]').count(),1);
+  assert.equal(await sb.getByRole("button",{name:"Aktuelles Layout verschlüsselt speichern"}).isDisabled(),true,
+    "encrypted server sync remains unavailable unless the server explicitly enables it");
   assert.equal(await page.locator(".cs-osc-pane").count(),5);
-  assert.equal(await page.evaluate(token=>Object.values(localStorage).some(v=>v.includes(token)),secret),false);
   assert.deepEqual(errors,[]);
-  assert.ok(requests.every(x=>x.includes("/api/chart/v1/workspace")),JSON.stringify(requests));
+  assert.deepEqual(requests,[],"no plaintext workspace writes are sent while encrypted sync is disabled");
   const directory=path.join("output","visual-smoke");fs.mkdirSync(directory,{recursive:true});
   await page.screenshot({path:path.join(directory,"chart-studio-oscillators.png"),fullPage:true});
-  console.log("PASS Chromium oscillator multi-panes, independent RSI/MACD/ATR/ADX, type changes, local/server profiles and no writes");
+  console.log("PASS Chromium oscillator multi-panes, independent RSI/MACD/ATR/ADX, type changes, local profiles and fail-closed sync");
  }finally{if(browser)await browser.close();server.kill()}
 })().catch(err=>{console.error(err);process.exitCode=1});

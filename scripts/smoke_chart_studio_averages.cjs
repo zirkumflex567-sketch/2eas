@@ -14,35 +14,15 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   }
   browser=await chromium.launch({headless:true,executablePath:process.env.CHART_STUDIO_CHROMIUM_PATH||undefined});
   const page=await browser.newPage({viewport:{width:1400,height:960}});
-  const errors=[],requests=[],footprintReads=[],store=new Map();
+  const errors=[],requests=[],footprintReads=[];
   page.on("pageerror",e=>errors.push(e.message));
   page.on("request",req=>{if(req.method()!=="GET")requests.push({method:req.method(),url:req.url()})});
-  const secret="fixture-server-multi-average-token-123456789";
   let footprintBody={source:"MT5_VERIFIED",canExecute:false,status:"UNAVAILABLE",reason:"NO_VERIFIED_EXECUTIONS",levels:[]};
   await page.route("**/api/chart/v1/footprint**",async route=>{
    const req=route.request(),url=new URL(req.url());
    footprintReads.push({method:req.method(),account:url.searchParams.get("account"),symbol:url.searchParams.get("symbol"),timeframe:url.searchParams.get("timeframe")});
    return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({
     ...footprintBody,account:url.searchParams.get("account"),symbol:url.searchParams.get("symbol"),timeframe:url.searchParams.get("timeframe")})});
-  });
-  await page.route("**/api/chart/v1/workspace**",async route=>{
-   const req=route.request(),url=new URL(req.url());
-   const send=(status,body)=>route.fulfill({status,contentType:"application/json",body:JSON.stringify(body)});
-   if(req.headers().authorization!=="Bearer "+secret)return send(401,{detail:"Wrong token"});
-   const q=req.method()==="GET"?Object.fromEntries(url.searchParams.entries()):req.postDataJSON();
-   const account=q.account,symbol=q.symbol||"XAUUSD",name=q.name;
-   const key=account+":"+symbol+":"+name,value=store.get(key);
-   if(url.pathname.endsWith("/workspaces"))
-    return send(200,{account,symbol,items:[...store.entries()].filter(([k])=>k.startsWith(account+":"+symbol+":"))
-     .map(([k,v])=>({name:k.split(":")[2],revision:v.revision,updatedUtc:123}))});
-   if(req.method()==="GET")return value?send(200,{account,symbol,name,revision:value.revision,document:value.document}):send(404,{detail:"missing"});
-   if(req.method()==="PUT"){
-    if((value?.revision||0)!==q.expectedRevision)return send(409,{detail:{message:"stale revision"}});
-    const revision=(value?.revision||0)+1;
-    store.set(key,{revision,document:q.document});
-    return send(200,{account,symbol,name,revision,document:q.document});
-   }
-   return send(405,{detail:"no"});
   });
   await page.goto("http://127.0.0.1:8865/static/chart-studio-fixture.html",{waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartSmokeReady===true);
@@ -231,29 +211,12 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
   assert.deepEqual(await page.evaluate(()=>ChartStudioIndicators.settings().volume),
     {enabled:true,upColor:"#112233",downColor:"#445566"});
-  // New opt-in SQLite document extension round trip via existing UI.
+  // Server sync is feature-gated and stays unavailable in this smoke environment.
   const sb=page.locator(".cs-server-sync");
-  await sb.locator('input[type="password"]').fill(secret);
-  await sb.getByRole("button",{name:"Verbinden"}).click();
-  await page.waitForFunction(()=>document.querySelector(".cs-server-sync p").textContent.includes("für titan"));
-  await sb.getByRole("textbox",{name:"Neuer Layoutname"}).fill("MultiEMA");
-  await sb.getByRole("button",{name:"Server speichern"}).click();
-  await page.waitForFunction(()=>document.querySelector(".cs-server-sync p").textContent.includes("gespeichert"));
-  const saved=store.get("titan:XAUUSD:MultiEMA").document;
-  assert.equal(saved.movingAverages.length,2);
-  assert.equal(saved.movingAverages[0].period,34);
-  assert.equal(saved.movingAverages[0].displayShift,2);
-  assert.deepEqual(saved.indicators.volume,{enabled:true,upColor:"#112233",downColor:"#445566"});
-  await page.evaluate(()=>ChartStudioIndicators.updateConfig("volume","upColor","#aabbcc"));
-  await area.locator('[data-instance="ma1"] [data-field="period"]').fill("77");
-  await area.locator('[data-instance="ma1"] [data-field="period"]').press("Tab");
-  await sb.getByRole("button",{name:"Server laden"}).click();
-  await page.waitForFunction(()=>document.querySelector(".cs-server-sync p").textContent.includes("geladen"));
-  assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].period,34);
-  assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].displayShift,2);
-  assert.deepEqual(await page.evaluate(()=>ChartStudioIndicators.settings().volume),
-    {enabled:true,upColor:"#112233",downColor:"#445566"});
-  assert.equal(await page.evaluate(secret=>Object.values(localStorage).some(v=>v.includes(secret)),secret),false);
+  assert.equal(await sb.locator('input[type="password"]').count(),0,"legacy bearer login is absent");
+  assert.equal(await sb.locator('[aria-label="Recovery-Paket"]').count(),1);
+  assert.equal(await sb.getByRole("button",{name:"Aktuelles Layout verschlüsselt speichern"}).isDisabled(),true,
+    "encrypted server sync remains unavailable unless the server explicitly enables it");
   const limit=await page.evaluate(()=>{
    const configs=Array.from({length:16},(_,index)=>({id:"limit"+index,type:"EMA",period:100+index,
     source:"close",color:"#68dfff",lineWidth:1,visible:true,label:"",displayShift:0}));
@@ -264,9 +227,9 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   });
   assert.deepEqual(limit,{applied:false,count:16,unchanged:true},"Preset must fail atomically at instance limit");
   assert.deepEqual(errors,[]);
-  assert.ok(requests.every(x=>x.url.includes("/api/chart/v1/workspace")));
+  assert.deepEqual(requests,[],"no plaintext workspace writes are sent while encrypted sync is disabled");
   const dir=path.join("output","visual-smoke");fs.mkdirSync(dir,{recursive:true});
   await page.screenshot({path:path.join(dir,"chart-studio-multi-ma.png"),fullPage:true});
-  console.log("PASS Chromium multi-MA editing, live overlays, duplicate/remove, local+server profiles, account isolation");
+  console.log("PASS Chromium multi-MA editing, live overlays, duplicate/remove, local profiles, account isolation and fail-closed sync");
  }finally{if(browser)await browser.close();server.kill()}
 })().catch(err=>{console.error(err);process.exitCode=1});
