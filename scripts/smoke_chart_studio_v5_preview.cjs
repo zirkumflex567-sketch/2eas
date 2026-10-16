@@ -13,6 +13,7 @@ const html=enabled=>`<!doctype html><html><head><meta charset="utf-8"><meta name
 <div id="tv-chart"><canvas id="v4-sentinel" width="500" height="300"></canvas></div>
 <button type="button" id="chart-v5-preview-btn" aria-controls="chart-v5-preview-panel" aria-expanded="false" hidden>V5 Vorschau</button>
 <section id="chart-v5-preview-panel" hidden><strong id="chart-v5-preview-title">Native v5</strong><div id="chart-v5-preview-status" role="status"></div>
+<button type="button" id="chart-v5-auto-fib-btn" aria-pressed="false" disabled>Auto-Fibonacci einblenden</button><output id="chart-v5-auto-fib-status" aria-live="polite"></output>
 <div id="chart-v5-preview-host"></div><p>Read only. Powered by <a href="https://www.tradingview.com/">TradingView Lightweight Charts™</a></p></section></body></html>`;
 
 const server=http.createServer((req,res)=>{
@@ -46,32 +47,50 @@ const server=http.createServer((req,res)=>{
   await page.goto(base+"/stt/?enabled=1");
   await page.locator("#chart-v5-preview-btn").waitFor({state:"visible"});
   const candles=Array.from({length:150},(_,i)=>({time:1792108800+i*900,open:4100+i*.1,high:4102+i*.1,low:4098+i*.1,close:4101+i*.1,tick_volume:20+i,real_volume:0}));
-  const first=await page.evaluate(candles=>{
+  const swings=[[10,8],[9,7],[12,4],[14,8],[15,9],[20,12],[18,10],[17,11],[16,10]];
+  swings.forEach(([high,low],index)=>{const i=141+index,base=4150; candles[i]={...candles[i],open:base+(high+low)/2,high:base+high,low:base+low,close:base+(high+low)/2}});
+  const asOfUtc=candles.at(-1).time+900;
+  const first=await page.evaluate(({candles,asOfUtc})=>{
    const scope={account:"titan",symbol:"XAUUSD",timeframe:"M15"};
    window.ChartStudioV5Preview.setScope(scope);
    const token=window.ChartStudioV5Preview.beginRead();
-   return window.ChartStudioV5Preview.update({accountId:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,source:"MT5_VERIFIED",canExecute:false,candles},token);
-  },candles);
+   return window.ChartStudioV5Preview.update({accountId:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,source:"MT5_VERIFIED",canExecute:false,snapshotAsOfUtc:asOfUtc,candles},token);
+  },{candles,asOfUtc});
   assert.deepEqual(first,{applied:true,candleCount:150});
   const v4Before=await page.locator("#tv-chart").evaluate(el=>({visible:!!el.getClientRects().length,canvas:el.querySelector("canvas#v4-sentinel")?.width}));
   await page.locator("#chart-v5-preview-btn").click();
   await page.waitForFunction(()=>document.querySelector("#chart-v5-preview-status")?.textContent.includes("150 verifizierte Kerzen"));
   await page.waitForFunction(()=>[...document.querySelectorAll("#chart-v5-preview-host canvas")].some(canvas=>canvas.width>300&&canvas.height>200));
+  assert.equal(await page.locator("#chart-v5-auto-fib-btn").isEnabled(),true,"verified candle snapshot enables Auto-Fibonacci");
+  await page.locator("#chart-v5-auto-fib-btn").click();
+  const autoFib=await page.evaluate(()=>window.ChartStudioV5Preview.readAutoFibonacci());
+  assert.ok(autoFib,await page.locator("#chart-v5-auto-fib-status").textContent());
+  assert.equal(autoFib.result.available,true,"Auto-Fibonacci uses the verified M15 snapshot");
+  assert.equal(autoFib.result.source,"MT5_VERIFIED");
+  assert.equal(autoFib.asOf.timeUtc,asOfUtc);
+  assert.equal(autoFib.series.length,7);
+  assert.ok(autoFib.series.every(line=>line.points.length>0));
+  assert.equal(await page.locator("#chart-v5-auto-fib-btn").getAttribute("aria-pressed"),"true");
+  await page.locator("#chart-v5-auto-fib-btn").click();
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.readAutoFibonacci()),null,"turning off Auto-Fibonacci removes its native lines");
   const v4After=await page.locator("#tv-chart").evaluate(el=>({visible:!!el.getClientRects().length,canvas:el.querySelector("canvas#v4-sentinel")?.width}));
   assert.deepEqual(v4After,v4Before,"v5 owns a separate host and leaves v4 mounted");
   assert.match(await page.locator("#chart-v5-preview-title").textContent(),/XAUUSD M15/);
 
-  const scopeSwitch=await page.evaluate(candles=>{
+  const scopeSwitch=await page.evaluate(({candles,asOfUtc})=>{
    const stale=window.ChartStudioV5Preview.beginRead();
    window.ChartStudioV5Preview.setScope({account:"xau5m_m5",symbol:"XAUUSD.p",timeframe:"M15"});
    const staleResult=window.ChartStudioV5Preview.update({accountId:"titan",symbol:"XAUUSD",timeframe:"M15",source:"MT5_VERIFIED",canExecute:false,candles},stale);
    const current=window.ChartStudioV5Preview.beginRead();
-   const updated=window.ChartStudioV5Preview.update({accountId:"xau5m_m5",symbol:"XAUUSD.p",timeframe:"M15",source:"MT5_VERIFIED",canExecute:false,candles},current);
+   const updated=window.ChartStudioV5Preview.update({accountId:"xau5m_m5",symbol:"XAUUSD.p",timeframe:"M15",source:"MT5_VERIFIED",canExecute:false,snapshotAsOfUtc:asOfUtc,candles},current);
    return {staleResult,updated,state:window.ChartStudioV5Preview.inspect()};
-  },candles);
+  },{candles,asOfUtc});
   assert.deepEqual(scopeSwitch.staleResult,{applied:false,reason:"STALE_SCOPE"});
   assert.deepEqual(scopeSwitch.updated,{applied:true,candleCount:150});
   assert.equal(scopeSwitch.state.scope.account,"xau5m_m5");
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.readAutoFibonacci()),null,"a scope switch clears Auto-Fibonacci along with the prior account's candles");
+  const missingAsOf=await page.evaluate(candles=>{const scope={account:"xau5m_m5",symbol:"XAUUSD.p",timeframe:"M15"},token=window.ChartStudioV5Preview.beginRead();return window.ChartStudioV5Preview.update({accountId:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,source:"MT5_VERIFIED",canExecute:false,candles},token)},candles);
+  assert.deepEqual(missingAsOf,{applied:false,reason:"INVALID_AS_OF"},"missing snapshot time fails closed");
   await page.waitForFunction(()=>document.querySelector("#chart-v5-preview-title")?.textContent.includes("XAUUSD.p M15 · xau5m_m5"));
   await page.locator("#chart-v5-preview-btn").click();
   assert.equal(await page.locator("#chart-v5-preview-panel").evaluate(el=>el.hidden),true);

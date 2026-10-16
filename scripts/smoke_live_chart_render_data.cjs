@@ -66,6 +66,7 @@ const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
       assert.equal(api.accountId, account);
       assert.equal(api.source, "MT5_VERIFIED");
       assert.equal(api.canExecute, false);
+      assert.ok(Number.isSafeInteger(api.snapshotAsOfUtc) && api.snapshotAsOfUtc > 0, `${account} candle response includes a verified snapshot as-of`);
       assert.equal(api.candles.length, 1001, `${account} chart history contains the requested 1001 candles`);
       await page.waitForFunction(id => window.__mainCandleSeriesCaptures.some(item => item.account === id && item.data.length > 0), account).catch(async error => {
         const debug = await page.evaluate(() => ({
@@ -88,7 +89,24 @@ const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
       const apiLast = [...api.candles].sort((a, b) => Number(a.time) - Number(b.time)).at(-1);
       assert.equal(rendered.at(-1).time, apiLast.time, `${account} renderer receives the newest verified candle`);
       assert.equal(rendered.at(-1).close, apiLast.close, `${account} rendered close equals the broker feed`);
-      results.push({ account, symbol: api.symbol, timeframe: api.timeframe, renderedBars: rendered.length, latestClose: rendered.at(-1).close });
+      let preview = false;
+      if (index === 0) {
+        await page.locator("#chart-v5-preview-btn").waitFor({state:"visible"});
+        await page.locator("#chart-v5-preview-btn").click();
+        await page.waitForFunction(() => document.querySelector("#chart-v5-preview-status")?.textContent.includes("1001 verifizierte Kerzen"));
+        await page.waitForFunction(() => [...document.querySelectorAll("#chart-v5-preview-host canvas")].some(canvas => canvas.width > 300 && canvas.height > 200));
+        await page.locator("#chart-v5-auto-fib-btn").click();
+        const fib = await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci());
+        assert.equal(fib.result.source, "MT5_VERIFIED");
+        assert.equal(fib.asOf.timeUtc, api.snapshotAsOfUtc);
+        assert.equal(fib.result.timeframe, api.timeframe);
+        assert.equal(fib.series.length, 7);
+        assert.ok(fib.series.every(line => line.visible === true));
+        await page.locator("#chart-v5-auto-fib-btn").click();
+        assert.equal(await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci()), null);
+        preview = true;
+      }
+      results.push({ account, symbol: api.symbol, timeframe: api.timeframe, renderedBars: rendered.length, latestClose: rendered.at(-1).close, nativeV5AutoFibonacciPreview: preview });
     }
 
     assert.deepEqual(errors, []);

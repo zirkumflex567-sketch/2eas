@@ -1288,6 +1288,7 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
         "timeframe": tf_upper,
         "source": "MT5_VERIFIED",
         "canExecute": False,
+        "snapshotAsOfUtc": int(time.time()),
         "candles": candles,
         "page": {
             "requestedCount": count,
@@ -2120,7 +2121,7 @@ HTML_CONTENT = """<!DOCTYPE html>
               title="Chart bildschirmfüllend vergrößern · Esc zum Schließen">⛶ CHART GROSS</button>
             <button type="button" id="chart-v5-preview-btn" aria-controls="chart-v5-preview-panel"
               aria-expanded="false" hidden class="px-2 py-1 rounded border border-cyan-400/40 bg-cyan-900/20 text-cyan-200 text-[10px] font-bold"
-              title="Separater read-only v5-Kerzenpreview; v4 bleibt aktiv">V5 Vorschau</button>
+              title="Separater read-only v5-Kerzenpreview mit Auto-Fibonacci; v4 bleibt aktiv">V5 Vorschau</button>
             <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-sans" title="Zeiteinheit dient nur der Ansicht - der EA rechnet weiter strikt auf M15">Ansicht</span>
 
             <!-- Timeframe Selector Pills -->
@@ -2191,8 +2192,9 @@ HTML_CONTENT = """<!DOCTYPE html>
             <strong id="chart-v5-preview-title">Native v5 · nur verifizierte MT5-Kerzen</strong>
             <span id="chart-v5-preview-status" role="status" aria-live="polite">Vorschau noch nicht geöffnet.</span>
           </div>
+          <div class="mb-2 flex flex-wrap items-center gap-2 text-xs"><button type="button" id="chart-v5-auto-fib-btn" aria-pressed="false" disabled class="px-2 py-1 rounded border border-amber-400/40 bg-amber-900/20 text-amber-200 font-bold">Auto-Fibonacci einblenden</button><output id="chart-v5-auto-fib-status" aria-live="polite" class="text-slate-300"></output></div>
           <div id="chart-v5-preview-host" class="w-full rounded border border-slate-700" style="height: 460px; min-width: 260px;"></div>
-          <p class="mt-2 text-[10px] text-slate-400">Read-only-Vorschau. Hauptchart und alle Werkzeuge bleiben auf v4. Powered by <a class="text-cyan-300 underline" href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">TradingView Lightweight Charts™</a>. <a class="text-cyan-300 underline" href="static/chart-studio-v5-NOTICE.txt">NOTICE</a> · <a class="text-cyan-300 underline" href="static/chart-studio-v5-LICENSE.txt">Apache-2.0</a> · <a class="text-cyan-300 underline" href="static/chart-studio-v5-THIRD-PARTY-LICENSES.txt">Drittanbieter-Lizenzen</a>.</p>
+          <p class="mt-2 text-[10px] text-slate-400">Read-only-Vorschau mit verifizierten MT5-Kerzen; Auto-Fibonacci wird erst nach bestätigtem Swing gezeigt. Hauptchart und Werkzeuge bleiben auf v4. Powered by <a class="text-cyan-300 underline" href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">TradingView Lightweight Charts™</a>. <a class="text-cyan-300 underline" href="static/chart-studio-v5-NOTICE.txt">NOTICE</a> · <a class="text-cyan-300 underline" href="static/chart-studio-v5-LICENSE.txt">Apache-2.0</a> · <a class="text-cyan-300 underline" href="static/chart-studio-v5-THIRD-PARTY-LICENSES.txt">Drittanbieter-Lizenzen</a>.</p>
         </section>
       </div>
 

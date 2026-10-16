@@ -147,6 +147,7 @@ def test_whatif_uses_exact_non_xau_broker_symbol_without_writes(isolated, monkey
 
 def test_chart_candles_read_exact_requested_verified_symbol(isolated, monkeypatch):
     calls=[]
+    monkeypatch.setattr(app.time, 'time', lambda: 1_800_000_000)
     monkeypatch.setattr(app.mt5,'symbol_info',lambda symbol:NS(
         name=symbol,digits=5,trade_tick_size=.00001))
     monkeypatch.setattr(app.mt5,'copy_rates_from_pos',lambda *args:(calls.append(args) or isolated.rates.copy()))
@@ -154,6 +155,8 @@ def test_chart_candles_read_exact_requested_verified_symbol(isolated, monkeypatc
     assert response.status_code==200,response.text
     body=response.json()
     assert body['symbol']=='EURUSD'
+    assert body['snapshotAsOfUtc']==1_800_000_000
+    assert body['source']=='MT5_VERIFIED' and body['canExecute'] is False
     assert calls and calls[0][0]=='EURUSD'
     assert body['candles'][-1]['close']==round(float(isolated.rates[-1]['close']),5)
     for series in ('candles','ema20','ema50','ema200'):
