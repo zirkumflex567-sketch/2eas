@@ -2,7 +2,8 @@
 .cs-multi-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:12px;font:600 12px/1.4 ui-monospace,Consolas,monospace}
 .cs-multi-toolbar>strong{color:#6ce5ff;letter-spacing:.06em;margin-right:auto}
 .cs-multi-toolbar label,.cs-multi-pane header label{display:inline-flex;align-items:center;gap:6px}
-.cs-multi-toolbar select,.cs-multi-pane input,.cs-multi-pane select,.cs-multi-toolbar button,.cs-multi-pane button{border:1px solid rgba(100,181,204,.55);border-radius:7px;background:#0b202b;color:#e6f7fc;padding:6px 9px;font:inherit}
+.cs-multi-toolbar select,.cs-multi-toolbar input,.cs-multi-pane input,.cs-multi-pane select,.cs-multi-toolbar button,.cs-multi-pane button{border:1px solid rgba(100,181,204,.55);border-radius:7px;background:#0b202b;color:#e6f7fc;padding:6px 9px;font:inherit}
+.cs-multi-toolbar input:not([type=checkbox]){width:150px;min-width:110px}
 .cs-multi-toolbar button,.cs-multi-pane button{cursor:pointer}
 .cs-multi-toolbar button:hover,.cs-multi-pane button:hover{border-color:#52ddff;color:#77e7ff}
 .cs-multi-toolbar input[type=checkbox]{accent-color:#19c9ec}
@@ -11,5 +12,5 @@
 .cs-multi-pane{min-width:0;border:1px solid rgba(91,148,165,.38);border-radius:9px;background:rgba(3,14,23,.76);overflow:hidden}
 .cs-multi-pane header{display:flex;align-items:center;flex-wrap:wrap;gap:7px;padding:8px;border-bottom:1px solid rgba(91,148,165,.26);font:11px ui-monospace,Consolas,monospace}
 .cs-multi-pane input{width:120px}.cs-multi-pane select{padding:6px}.cs-multi-pane [data-pane-state]{color:#9bb5c1;flex:1 1 190px}.cs-multi-plot{height:280px;min-width:260px}
-@media(max-width:760px){.cs-multi-grid{grid-template-columns:1fr}.cs-multi-toolbar>strong{flex-basis:100%}.cs-multi-pane header label{flex:1}.cs-multi-pane input{width:100%;min-width:80px}}
+@media(max-width:760px){.cs-multi-grid{grid-template-columns:1fr}.cs-multi-toolbar>strong{flex-basis:100%}.cs-multi-toolbar label{flex:1 1 100%}.cs-multi-toolbar select,.cs-multi-toolbar input:not([type=checkbox]){width:100%;min-width:0}.cs-multi-pane header label{flex:1}.cs-multi-pane input{width:100%;min-width:80px}}
 @media(prefers-reduced-motion:reduce){.cs-multi-workspace *{scroll-behavior:auto!important;transition:none!important}}
