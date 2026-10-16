@@ -1,7 +1,9 @@
 """Dependency-injected Chart Studio read routes, sharing the account gateway."""
 import time
+import numbers
+from datetime import datetime, timezone
 from typing import Annotated
-from fastapi import Query
+from fastapi import HTTPException, Query
 from fastapi.responses import JSONResponse
 from chart_studio.broker_reads import (
     SYMBOL_PATTERN, BrokerReadError, broker_rows, symbol_summary, symbol_model, require_symbol,
@@ -72,3 +74,73 @@ def install_read_routes(app, mt5, *, now=None):
         return response(verified_read(mt5, account, lambda spec: trades_read(
             mt5, spec, symbol, start, stop, limit=limit, ticket=ticket, magic=magic,
             manual=manual, cursor=cursor, now=clock())))
+
+    @app.get('/api/chart/v1/regimes')
+    def regimes(account: Account, symbol: Symbol,
+                timeframe: Annotated[str, Query(pattern=r'^(M1|M5|M15|M30|H1|H4|D1)$')],
+                at: Annotated[str | None, Query(max_length=64)] = None):
+        # The funded account never participates in regime inspection, even if a
+        # caller bypasses the UI and reaches this endpoint directly.
+        if account == 'blueberry':
+            raise HTTPException(403, 'Regime-Lesedaten für diesen Account nicht verfügbar.')
+        from chart_studio.regimes import FRAME_SECONDS, MAX_BARS, classify_regime
+        from chart_studio.broker_reads import quote_model
+
+        def operation(spec):
+            require_symbol(mt5, symbol)
+            if at is None:
+                quote = quote_model(mt5.symbol_info_tick(symbol), spec, now=clock())
+                if quote['freshness'] != 'FRESH':
+                    raise HTTPException(503, 'Regime-Lesedaten nicht frisch verfügbar.')
+                as_of = datetime.fromtimestamp(quote['quoteTimeUtc'], timezone.utc).isoformat()
+            else:
+                try:
+                    parsed = datetime.fromisoformat(at.replace('Z', '+00:00'))
+                    if parsed.tzinfo is None or parsed.utcoffset().total_seconds() != 0:
+                        raise ValueError('UTC required')
+                    cutoff = parsed.timestamp()
+                    if cutoff > clock() + 1:
+                        raise ValueError('future cutoff')
+                    as_of = parsed.astimezone(timezone.utc).isoformat()
+                except (TypeError, ValueError, OverflowError) as exc:
+                    raise HTTPException(422, 'Ungültiger UTC-Zeitpunkt.') from exc
+            timeframe_value = getattr(mt5, 'TIMEFRAME_'+timeframe, {
+                'M1':1, 'M5':5, 'M15':15, 'M30':30, 'H1':16385,
+                'H4':16388, 'D1':16408}[timeframe])
+            reader = getattr(mt5, 'copy_rates_from_pos', None)
+            if not callable(reader):
+                raise HTTPException(503, 'Regime-Historie nicht verfügbar.')
+            raw = reader(symbol, timeframe_value, 1, MAX_BARS)
+            if raw is None:
+                rows = []
+            else:
+                try:
+                    rows = list(raw)
+                except (TypeError, ValueError) as exc:
+                    raise HTTPException(503, 'Regime-Historie ungültig oder nicht verfügbar.') from exc
+            if len(rows) > MAX_BARS:
+                raise HTTPException(503, 'Regime-Historie ungültig oder nicht verfügbar.')
+            converted = []
+            for row in rows:
+                try:
+                    raw_time = row['time'] if not hasattr(row, 'time') else row.time
+                    if isinstance(raw_time, bool) or not isinstance(raw_time, numbers.Integral):
+                        raise ValueError('invalid broker timestamp')
+                    # MT5 Python copy_rates_* returns candle opens in UTC. Unlike
+                    # symbol_info_tick/history timestamps, these bars must not
+                    # receive the account's broker-server offset.
+                    converted.append({'time':int(raw_time),
+                                      'open':row['open'] if not hasattr(row, 'open') else row.open,
+                                      'high':row['high'] if not hasattr(row, 'high') else row.high,
+                                      'low':row['low'] if not hasattr(row, 'low') else row.low,
+                                      'close':row['close'] if not hasattr(row, 'close') else row.close})
+                except Exception as exc:
+                    raise HTTPException(503, 'Regime-Historie ungültig oder nicht verfügbar.') from exc
+            # MT5 returns newest-first for start_pos=1. The classifier requires
+            # strict chronological input and owns closed-bar/as-of filtering.
+            converted.sort(key=lambda item: item['time'])
+            snapshot = classify_regime(converted, symbol=symbol, timeframe=timeframe,
+                                       as_of_utc=as_of)
+            return {**provenance(spec), **snapshot, 'canExecute':False,
+                    'lookbackLimit':MAX_BARS, 'barDurationSeconds':FRAME_SECONDS[timeframe]}
+        return response(verified_read(mt5, account, operation))
