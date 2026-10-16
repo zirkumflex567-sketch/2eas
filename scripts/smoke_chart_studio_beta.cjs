@@ -20,9 +20,9 @@ const {createHash}=require("node:crypto");
   const page=await browser.newPage({viewport:{width:1280,height:850},deviceScaleFactor:1.5});
   const consoleErrors=[],brokerMutationRequests=[];page.on("pageerror",e=>consoleErrors.push(e.message));
   let alertPollingEnabled=false,alertQuotePrice=4100.125,alertQuoteRequests=[],quoteReadRequests=[];
-let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,invalidStopGeometry=false,trailingStop=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,deferTitanPositions=false,releaseTitanPositions=null,holdScope=null,heldScopeResolvers=[],completedHeldScopeResponses=0,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,multiPositionRows=false,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badOrderShape=false,badDealRow=false,symbolCatalogTruncated=false,symbolCatalogInvalidRows=0,hideFavoriteSymbol=false,evidenceRequests=[],executionQualityRequests=[],mfeRequests=[],lifecycleFixtureEnabled=false;
+let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,invalidStopGeometry=false,trailingStop=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,deferTitanPositions=false,releaseTitanPositions=null,holdScope=null,heldScopeResolvers=[],completedHeldScopeResponses=0,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,multiPositionRows=false,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badOrderShape=false,badDealRow=false,symbolCatalogTruncated=false,symbolCatalogInvalidRows=0,hideFavoriteSymbol=false,evidenceRequests=[],executionQualityRequests=[],mfeRequests=[],historicalMtfRequests=[],lifecycleFixtureEnabled=false;
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
-  const confirmTfReads=[],regimeRequests=[];
+  const confirmTfReads=[],regimeRequests=[];let historicalMtfEnabled=false;
   const calendarRequests=[];
   let calendarRevisionPhase=0;
   await page.route("**/api/chart/v1/regimes?*",async route=>{
@@ -35,7 +35,9 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),source:"MT5_VERIFIED",canExecute:false,status:"AVAILABLE",timeBasis:"BROKER_SERVER",capturedAtUtc:"2026-10-16T10:00:00Z",coverage:{status:"COMPLETE"},events,cancellationSemantics:"NOT_EXPOSED_BY_MT5_CALENDAR",missingEventsMean:"UNKNOWN"})});
   });
   await page.route("**/api/candles?*",async route=>{
-    const url=new URL(route.request().url());confirmTfReads.push({method:route.request().method(),account:url.searchParams.get("account"),symbol:url.searchParams.get("symbol"),tf:url.searchParams.get("tf"),count:url.searchParams.get("count")});
+    const url=new URL(route.request().url()),params=Object.fromEntries(url.searchParams);
+    if(historicalMtfEnabled){const tfSeconds={D1:86400,H4:14400,H1:3600,M15:900,M5:300}[params.tf];historicalMtfRequests.push({method:route.request().method(),params});assert.ok(tfSeconds,"historical MTF uses a supported frame");const asOf=Math.floor(Date.parse("2026-10-14T12:30:00Z")/1000),anchor=Math.floor(asOf/tfSeconds)*tfSeconds;const candles=Array.from({length:301},(_,index)=>{const time=anchor-(300-index)*tfSeconds,close=4100+index*0.01;return {time,open:close,high:close+0.5,low:close-0.5,close}});await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({accountId:params.account,symbol:params.symbol,timeframe:params.tf,source:"MT5_VERIFIED",canExecute:false,candles})});return}
+    confirmTfReads.push({method:route.request().method(),account:url.searchParams.get("account"),symbol:url.searchParams.get("symbol"),tf:url.searchParams.get("tf"),count:url.searchParams.get("count")});
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({accountId:"titan",symbol:url.searchParams.get("symbol"),timeframe:url.searchParams.get("tf"),source:"MT5_VERIFIED",canExecute:false,candles:[]})});
   });
   page.on("request",req=>{if(!["GET","HEAD","OPTIONS"].includes(req.method())&&req.url().includes("/api/chart/v1/"))brokerMutationRequests.push({method:req.method(),url:req.url()})});
@@ -278,6 +280,19 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.deepEqual(replayState.visibleEventIds,["mt5_deal_93001"],"The broker entry appears only after the replay cursor reaches its recorded UTC time");
   assert.deepEqual(await page.evaluate(()=>JSON.stringify({drawings:ChartStudioBeta.getState().drawings,options:ChartStudioBeta.getState().options})),chartBeforeEvidence,"Evidence browsing does not mutate chart state");
   assert.equal(requests.length,0,"Evidence browsing sends no POST or trade mutation");
+  assert.equal(await page.locator("#cs-evidence-list button.cs-evidence-snapshot-mtf").count(),1,"Recorded snapshots expose historical MTF navigation");
+  historicalMtfEnabled=true;await page.locator("#cs-evidence-list button.cs-evidence-snapshot-mtf").click();
+  await page.waitForFunction(()=>document.querySelector(".cs-mtf-panel [data-mtf-status]")?.textContent.includes("5/5 Zeitrahmen"));
+  const historicalMtf=await page.evaluate(()=>({status:document.querySelector(".cs-mtf-panel [data-mtf-status]").textContent,
+    rows:[...document.querySelectorAll(".cs-mtf-panel tbody tr")].map(row=>[...row.cells].map(cell=>cell.textContent.trim()))}));
+  assert.match(historicalMtf.status,/2026-10-14T12:30:00Z/);assert.equal(historicalMtf.rows.length,5);
+  assert.deepEqual(historicalMtfRequests.map(request=>request.params.tf).sort(),["D1","H1","H4","M15","M5"].sort());
+  assert.ok(historicalMtfRequests.every(request=>request.method==="GET"&&request.params.account==="titan"&&request.params.symbol==="XAUUSD"),"Historical context stays on the snapshot account/symbol with GET-only candles");
+  assert.ok(historicalMtfRequests.every(request=>request.params.before===String(Math.floor(Date.parse("2026-10-14T12:30:00Z")/1000))),"Each broker history request is bounded before the exact snapshot UTC timestamp");
+  assert.ok(historicalMtf.rows.every(row=>row[1].includes("READY")&&row[5]==="300"),"Only 300 closed candles are counted; the current/future bar is excluded at fill time");
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.refreshMtfAt({account:"titan",symbol:"EURUSD",timeframe:"M15",asOfUtc:"2026-10-14T12:30:00Z"})),false,"A snapshot for another symbol cannot fall back to the current chart scope");
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.refreshMtfAt({account:"blueberry",symbol:"XAUUSD",timeframe:"M15",asOfUtc:"2026-10-14T12:30:00Z"})),false,"Historical MTF navigation remains hard-disabled for the protected Blueberry account");
+  assert.equal(historicalMtfRequests.length,5,"A rejected symbol scope sends no extra broker request");
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));assert.equal(await page.locator("#cs-evidence-list li").count(),0,"Account switch clears prior-account evidence");
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
   const derivedCandleContract=await page.evaluate(()=>{

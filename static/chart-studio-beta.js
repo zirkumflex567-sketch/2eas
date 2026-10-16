@@ -352,11 +352,15 @@ function renderEvidence(){
      if(s?.account===accountId&&s.evidence.generation===generation)excursionButton.disabled=false;
     }
    });
-   const replayButton=document.createElement("button");replayButton.type="button";replayButton.className="cs-evidence-snapshot-replay";replayButton.textContent="Belegten Snapshot abspielen";
+   const replayButton=document.createElement("button");replayButton.type="button";replayButton.className="cs-evidence-snapshot-export cs-evidence-snapshot-replay";replayButton.textContent="Belegten Snapshot abspielen";
    replayButton.setAttribute("aria-label","Eingefrorenen Broker-Snapshot und referenzierte Ereignisse read-only abspielen");
    const replayStatus=document.createElement("p");replayStatus.className="cs-evidence-snapshot-replay-status";replayStatus.setAttribute("role","status");replayStatus.setAttribute("aria-live","polite");replayStatus.hidden=true;
    replayButton.addEventListener("click",()=>{replayStatus.hidden=false;startEvidenceSnapshotReplay(record,replayButton,replayStatus)});
-   details.append(summary,caption,canvas,exportButton,excursionButton,excursionStatus,replayButton,replayStatus,pre);
+   const mtfButton=document.createElement("button");mtfButton.type="button";mtfButton.className="cs-evidence-snapshot-export cs-evidence-snapshot-mtf";mtfButton.textContent="MTF zum Fill prüfen";
+   mtfButton.setAttribute("aria-label","Read-only D1-, H4-, H1-, M15- und M5-Kontext zum UTC-Zeitpunkt dieses gespeicherten Fills laden");
+   const mtfStatus=document.createElement("p");mtfStatus.className="cs-evidence-snapshot-mtf-status";mtfStatus.setAttribute("role","status");mtfStatus.setAttribute("aria-live","polite");mtfStatus.hidden=true;
+   mtfButton.addEventListener("click",()=>{mtfStatus.hidden=false;startEvidenceSnapshotMtf(record,mtfButton,mtfStatus)});
+   details.append(summary,caption,canvas,exportButton,excursionButton,excursionStatus,replayButton,replayStatus,mtfButton,mtfStatus,pre);
   }else details.append(summary,pre);
   li.append(details);list.append(li);
  }
@@ -387,6 +391,25 @@ async function startEvidenceSnapshotReplay(record,button,status){
   status.textContent="RECORDED · "+result.bars+" eingefrorene Bars · "+result.events+" belegte Ereignisse · Hash "+result.sourceRevision.slice(0,16)+"… · kein Backtest/Orderversand";
  }catch(error){if(s?.account===account&&s.evidence.generation===generation)status.textContent="Replay nicht verfügbar · "+String(error?.message||"INVALID_EVIDENCE")}
  finally{button.disabled=false}
+}
+async function startEvidenceSnapshotMtf(record,button,status){
+ const account=record?.accountId||record?.payload?.accountId,p=record?.payload,generation=s?.evidence?.generation;
+ if(account==="blueberry"){status.textContent="Historische MTF-Prüfungen sind für das geschützte Blueberry-Konto gesperrt.";return}
+ if(!account||s?.account!==account||record?.type!=="SNAPSHOT"||record.provenance!=="RECORDED")return;
+ button.disabled=true;status.textContent="Fünf MT5-Zeitrahmen werden zum Fill-Zeitpunkt read-only geprüft …";
+ try{
+  if(typeof p?.asOfUtc!=="string"||typeof p?.chartView?.symbol!=="string"||!window.ChartStudioBeta?.refreshMtfAt)throw Error("Historische MTF-Prüfung nicht verfügbar");
+  if(p.chartView.symbol!==chartSymbol())throw Error("Chart-Symbol wechseln zu "+p.chartView.symbol+"; Konto und Snapshot bleiben unverändert");
+  const ok=await window.ChartStudioBeta.refreshMtfAt({account,symbol:p.chartView.symbol,timeframe:p.chartView.timeframe,asOfUtc:p.asOfUtc});
+  if(s?.account!==account||s.evidence.generation!==generation)return;
+  if(!ok)throw Error("Snapshot-Scope stimmt nicht mit dem aktuellen Chart überein");
+  status.textContent="MTF-Kontext geladen · RECORDED Snapshot · UTC-as-of "+p.asOfUtc+" · nur geschlossene MT5-Kerzen · UNKNOWN bleibt sichtbar";
+ }catch(error){if(s?.account===account&&s.evidence.generation===generation)status.textContent="Historische MTF-Prüfung nicht verfügbar · "+String(error?.message||"READ_ERROR")}
+ finally{if(s?.account===account&&s.evidence.generation===generation)button.disabled=false}
+}
+function refreshMtfAtSnapshot({account,symbol,timeframe,asOfUtc}={}){
+ if(account==="blueberry"||!s?.mtfConfluence||account!==s.account||symbol!==chartSymbol()||!new Set(["M1","M5","M15","M30","H1","H4","D1","W1","MN1"]).has(timeframe))return false;
+ return s.mtfConfluence.refreshAt(asOfUtc);
 }
 async function loadExecutionQuality(){
  const status=s?.panel?.querySelector("#cs-execution-quality-status"),button=s?.panel?.querySelector("#cs-execution-quality-load");
@@ -1557,6 +1580,6 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();
 }
-window.ChartStudioBeta=Object.freeze({mount,account,symbol,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,coordinates:Object.freeze({create:createChartCoordinates}),preferences:Object.freeze({normalizeFavorites,normalizeShortcuts,resolveShortcut}),getLiveMAs,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,symbol:s.symbol,timeframe:s.tf,favorites:json(s.favorites),shortcuts:json(effectiveShortcuts(s.shortcuts)),coordinateApiVersion:s.coordinates.apiVersion,drawings:json(s.draw),options:json(s.opts),marketStructure:s.marketStructure?.getSummary?.()||null,brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),portfolio:s.portfolio?json(s.portfolio):null,positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
+window.ChartStudioBeta=Object.freeze({mount,account,symbol,timeframe,refreshMtfAt:refreshMtfAtSnapshot,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,coordinates:Object.freeze({create:createChartCoordinates}),preferences:Object.freeze({normalizeFavorites,normalizeShortcuts,resolveShortcut}),getLiveMAs,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,symbol:s.symbol,timeframe:s.tf,favorites:json(s.favorites),shortcuts:json(effectiveShortcuts(s.shortcuts)),coordinateApiVersion:s.coordinates.apiVersion,drawings:json(s.draw),options:json(s.opts),marketStructure:s.marketStructure?.getSummary?.()||null,brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),portfolio:s.portfolio?json(s.portfolio):null,positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
  scenario:s.scenario?json(s.scenario):null,tool:s.tool,magnet:s.magnet,selected:s.selected}:null});
 })();

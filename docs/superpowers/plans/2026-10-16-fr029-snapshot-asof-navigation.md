@@ -1,0 +1,19 @@
+# FR-029 Snapshot-to-MTF as-of navigation plan
+
+> **For agentic workers:** use this plan task-by-task; keep the Strategy Tester and backtests deferred.
+
+**Goal:** Let a user open a recorded trade snapshot and calculate the existing read-only five-frame MTF context at that snapshot's UTC fill time.
+
+**Architecture:** Add a small action to recorded snapshot cards that validates current account/symbol scope and calls the mounted MTF panel with the snapshot `asOfUtc`. The panel issues the existing five bounded `/api/candles` GETs, calculates only bars closed at that exact timestamp, and labels the historical cut-off. No new endpoint, inference, or broker mutation is introduced.
+
+### Task 1: Prove behavior (RED)
+- [x] Add Chromium coverage for snapshot navigation, exact UTC as-of, all five frame reads, same-account/symbol checks, future-bar exclusion, and GET-only behavior.
+
+### Task 2: Implement the historical MTF action
+- [x] Add a recorded-snapshot action and reject stale account/symbol scope.
+- [x] Add exact-as-of refresh to the mounted MTF panel, retaining its normal strict source and cancellation checks.
+- [x] Expose the narrow action through ChartStudioBeta; do not expose mutable panel internals.
+
+- [x] Run MTF contract, Beta Chromium smoke, and `git diff --check`.
+- [x] Update FR-029 to distinguish snapshot navigation from remaining Decision import, EA-specific rules, authoritative coverage, full AT-041/042, and hardware acceptance.
+- [ ] Commit/push main, update htown and the guarded runtime, and verify read-only across authorized demo accounts with Blueberry excluded.

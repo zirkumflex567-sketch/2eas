@@ -22,14 +22,17 @@ function mount({panel,account,symbol,timeframe}){
  function setContext(next){if(!next||next.account===scope.account&&next.symbol===scope.symbol&&next.timeframe===scope.timeframe)return;
   scope={...next};clear();}
  const date=new Date();date.setSeconds(0,0);asof.value=date.toISOString().slice(0,16);
- async function refresh(){
+ async function refresh(asOfOverride){
   controller?.abort();controller=new AbortController();const local=controller,requestGeneration=++generation,capturedScope={...scope};rows.replaceChildren();
-  const asOfMs=Date.parse(asof.value+"Z");if(!Number.isFinite(asOfMs)){status.textContent="UNKNOWN · ungültiger UTC-Stichtag";return;}
-  const asOfUtc=Math.floor(asOfMs/1000);status.textContent="MT5-Kerzen werden read-only geladen …";
+  const asOfMs=asOfOverride===undefined?Date.parse(asof.value+"Z"):typeof asOfOverride==="string"&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/.test(asOfOverride)?Date.parse(asOfOverride):NaN;
+  if(!Number.isFinite(asOfMs)){status.textContent="UNKNOWN · ungültiger UTC-Stichtag";return false;}
+  if(asOfOverride!==undefined)asof.value=new Date(asOfMs).toISOString().slice(0,16);
+  const asOfUtc=asOfMs/1000,beforeCursor=Math.floor(asOfUtc);status.textContent="MT5-Kerzen werden read-only geladen …";
   const input={};const sourceErrors=[];let timedOut=false;const timeout=setTimeout(()=>{timedOut=true;local.abort()},12000);
   await Promise.all(FRAMES.map(async tf=>{
    try{
-    const url=new URL(endpoint()+"/api/candles",location.origin);url.search=new URLSearchParams({account:capturedScope.account,symbol:capturedScope.symbol,tf,count:"1000"}).toString();
+    const params=new URLSearchParams({account:capturedScope.account,symbol:capturedScope.symbol,tf,count:"1000"});if(asOfOverride!==undefined)params.set("before",String(beforeCursor));
+    const url=new URL(endpoint()+"/api/candles",location.origin);url.search=params.toString();
     const response=await fetch(url.pathname+url.search,{method:"GET",cache:"no-store",credentials:"same-origin",signal:local.signal});
     if(!response.ok)throw new Error("HTTP "+response.status);
     const data=await response.json();
@@ -38,16 +41,17 @@ function mount({panel,account,symbol,timeframe}){
    }catch(error){if(error.name!=="AbortError"||timedOut){sourceErrors.push(`${tf}: ${timedOut?"timeout":error.message}`);input[tf]=undefined}}
   }));
   clearTimeout(timeout);
-  if(requestGeneration!==generation||local.signal.aborted&&!timedOut)return;
+  if(requestGeneration!==generation||local.signal.aborted&&!timedOut)return false;
   const result=window.ChartStudioMTF.calculate(input,asOfUtc);rows.replaceChildren();
   for(const tf of FRAMES){const f=result.frames[tf],tr=document.createElement("tr"),time=f.sourceTime?new Date(f.sourceTime*1000).toISOString():"—";
    tr.innerHTML=`<th>${tf}</th><td>${esc(f.status)} · ${esc(f.reason)}</td><td>${esc(f.bias)}</td><td>${f.status==="READY"?[f.ema20,f.ema50,f.ema200].map(x=>Number(x).toPrecision(7)).join(" / "):"—"}</td><td>${esc(time)}</td><td>${f.closedBars}</td>`;rows.append(tr);
   }
-  status.textContent=sourceErrors.length?`Unvollständige Quellenantwort (${sourceErrors.join("; ")}); betroffene Zeile bleibt UNKNOWN.`:`Abfrage abgeschlossen · as-of ${new Date(asOfUtc*1000).toISOString()} · ${result.ready}/5 Zeitrahmen mit ausreichender Historie.`;
+  status.textContent=sourceErrors.length?`Unvollständige Quellenantwort (${sourceErrors.join("; ")}); betroffene Zeile bleibt UNKNOWN.`:`Abfrage abgeschlossen · as-of ${asOfOverride??new Date(asOfMs).toISOString()} · ${result.ready}/5 Zeitrahmen mit ausreichender Historie.`;return true;
  }
- section.querySelector("[data-mtf-refresh]").addEventListener("click",refresh);
+ section.querySelector("[data-mtf-refresh]").addEventListener("click",()=>void refresh());
  clear("Noch nicht geladen. Stichtag wird als UTC interpretiert; nur geschlossene MT5-Kerzen zählen.");
- return Object.freeze({setContext,clear});
+ function refreshAt(asOfUtc){section.open=true;return refresh(asOfUtc)}
+ return Object.freeze({setContext,clear,refreshAt});
 }
 window.ChartStudioMTFPanel=Object.freeze({mount});
 })();

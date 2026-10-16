@@ -19,12 +19,14 @@ const forbiddenAccounts = new Set(["blueberry"]);
     });
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     const apiRequests = [];
+    const mtfReads = [];
     const mutations = [];
     page.on("request", request => {
       const url = new URL(request.url());
       if (!url.pathname.includes("/api/")) return;
       const account = url.searchParams.get("account");
       apiRequests.push({ method: request.method(), account, path: url.pathname });
+      if (url.pathname === "/api/candles") mtfReads.push({ method: request.method(), account, symbol: url.searchParams.get("symbol"), timeframe: url.searchParams.get("tf"), before: url.searchParams.get("before") });
       if (request.method() !== "GET") mutations.push({ method: request.method(), path: url.pathname });
       if (account && forbiddenAccounts.has(account)) {
         mutations.push({ method: "FORBIDDEN_ACCOUNT_READ", path: url.pathname });
@@ -102,7 +104,18 @@ const forbiddenAccounts = new Set(["blueberry"]);
         assert.equal(await rows.first().locator(".cs-evidence-chart-caption").textContent(), caption);
         assert.equal(await rows.first().locator("canvas.cs-evidence-chart").count(), 1);
       }
-      observations.push({ account, snapshots: count, entries, exits, frozenBars: candleCount });
+      const snapshot = records[0], snapshotSymbol = snapshot.payload.chartView.symbol;
+      assert.equal(await rows.first().locator("button.cs-evidence-snapshot-mtf").count(), 1, `${account}: missing historical MTF action`);
+      await rows.first().locator("button.cs-evidence-snapshot-mtf").click();
+      await assertEventually(async () => assert.match(await rows.first().locator(".cs-evidence-snapshot-mtf-status").textContent(), /MTF-Kontext geladen/), 30000);
+      await assertEventually(async () => assert.match(await page.locator(".cs-mtf-panel [data-mtf-status]").textContent(), /Abfrage abgeschlossen|Unvollständige Quellenantwort/), 30000);
+      const rowsMtf = await page.locator(".cs-mtf-panel tbody tr").evaluateAll(nodes => nodes.map(row => ({ timeframe: row.cells[0].textContent.trim(), state: row.cells[1].textContent.trim(), closedBars: Number(row.cells[5].textContent.trim()) })));
+      assert.deepEqual(rowsMtf.map(row => row.timeframe), ["D1", "H4", "H1", "M15", "M5"], `${account}: MTF timeframe coverage drifted`);
+      assert.ok(rowsMtf.every(row => ["READY", "INSUFFICIENT", "UNKNOWN", "UNAVAILABLE"].some(state => row.state.startsWith(state)) && Number.isInteger(row.closedBars) && row.closedBars <= 1000), `${account}: invalid historical MTF row`);
+      const requested = mtfReads.slice(-5);
+      assert.equal(requested.length, 5, `${account}: historical check must read exactly five frames`);
+      assert.ok(requested.every(read => read.method === "GET" && read.account === account && read.symbol === snapshotSymbol && read.before === String(Math.floor(Date.parse(snapshot.payload.asOfUtc) / 1000))), `${account}: MTF history escaped the recorded snapshot scope or UTC cutoff`);
+      observations.push({ account, snapshots: count, entries, exits, frozenBars: candleCount, mtfAsOfUtc: snapshot.payload.asOfUtc, mtf: rowsMtf });
     }
 
     assert.ok(apiRequests.some(request => request.path.endsWith("/snapshots") && request.method === "GET"),
