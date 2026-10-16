@@ -25,6 +25,9 @@ export type IchimokuValues = {tenkan:IchimokuPoint[];kijun:IchimokuPoint[];senko
 export type PivotPoint = AveragePoint&{sourceTime:UTCTimestamp;validFrom:UTCTimestamp;validTo:UTCTimestamp|null};
 export type PivotValues = {available:boolean;algorithmVersion:"classic-floor-v1";source:"MT5_VERIFIED";basis:"D1"|"W1";reason?:string;lines:Record<"p"|"r1"|"r2"|"r3"|"s1"|"s2"|"s3",PivotPoint[]>};
 export type PivotOptions = AverageOptions&{account:string;symbol:string;basis:"D1"|"W1";source:"MT5_VERIFIED";sourceWindow:{from:number;to:number}};
+export type AutoFibonacciPivot = {type:"HIGH"|"LOW";time:UTCTimestamp;price:number;confirmedAt:UTCTimestamp};
+export type AutoFibonacciLevel = {ratio:number;value:number|null;points:AveragePoint[]};
+export type AutoFibonacciValues = {available:boolean;algorithmVersion:"confirmed-swing-auto-fib-v1";source:"MT5_VERIFIED";timeframe:string;swingStrength:2;reason:string|null;direction:"UP"|"DOWN"|null;start:AutoFibonacciPivot|null;end:AutoFibonacciPivot|null;confirmedAt:UTCTimestamp|null;lines:Record<"0"|"0.236"|"0.382"|"0.5"|"0.618"|"0.786"|"1",AutoFibonacciLevel>};
 export type OscillatorOptions = {id:string;kind:OscillatorKind;settings:OscillatorSettings;color:string;lineWidth?:1|2|3|4;visible?:boolean;title?:string};
 export type PriceLevelOptions = {id:string;price:number;color:string;visible?:boolean;locked?:boolean};
 export type TimeMarkerOptions = {id:string;time:UTCTimestamp;color:string;visible?:boolean;locked?:boolean};
@@ -100,6 +103,27 @@ export function calculatePivotPoints(sourceInput:readonly Candle[],targetInput:r
   for(const key of Object.keys(lines) as Array<keyof typeof lines>)lines[key].push({time:time as UTCTimestamp,value:values[key],sourceTime:current.time,validFrom:confirmedAt,validTo});
  }
  return {...empty,available:Object.values(lines).some(points=>points.length>0),reason:undefined,lines};
+}
+export function calculateAutoFibonacci(input:readonly Candle[],timeframe="M15",asOfUtc=Math.floor(Date.now()/1000)):AutoFibonacciValues{
+ const ratios=[0,.236,.382,.5,.618,.786,1] as const,keys=["0","0.236","0.382","0.5","0.618","0.786","1"] as const;
+ const cadences:Record<string,number>={M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400,W1:604800},seconds=cadences[timeframe];
+ const lines:AutoFibonacciValues["lines"]={"0":{ratio:0,value:null,points:[]},"0.236":{ratio:.236,value:null,points:[]},"0.382":{ratio:.382,value:null,points:[]},"0.5":{ratio:.5,value:null,points:[]},"0.618":{ratio:.618,value:null,points:[]},"0.786":{ratio:.786,value:null,points:[]},"1":{ratio:1,value:null,points:[]}};
+ const empty:AutoFibonacciValues={available:false,algorithmVersion:"confirmed-swing-auto-fib-v1",source:"MT5_VERIFIED",timeframe,swingStrength:2,reason:"WARMUP_OR_MISSING",direction:null,start:null,end:null,confirmedAt:null,lines};
+ if(!seconds||!Number.isSafeInteger(asOfUtc)||asOfUtc<=0||!Array.isArray(input)||input.length>MAX_OSCILLATOR_BARS)return {...empty,reason:"INVALID_INPUT_OR_TIMEFRAME"};
+ let previous=0;for(const bar of input){if(!validBar(bar)||bar.time<=previous)return {...empty,reason:"INVALID_OHLC_ORDER_OR_TIMESTAMP"};previous=bar.time}
+ const closed=input.filter(bar=>bar.time+seconds<=asOfUtc),pivots:AutoFibonacciPivot[]=[];
+ for(let i=2;i<closed.length-2;i++){
+  const bar=closed[i],left=closed.slice(i-2,i),right=closed.slice(i+1,i+3);
+  const high=left.every(item=>bar.high>item.high)&&right.every(item=>bar.high>item.high),low=left.every(item=>bar.low<item.low)&&right.every(item=>bar.low<item.low);
+  if(high===low)continue;
+  const pivot:AutoFibonacciPivot={type:high?"HIGH":"LOW",time:bar.time as UTCTimestamp,price:high?bar.high:bar.low,confirmedAt:(closed[i+2].time+seconds) as UTCTimestamp};
+  const prior=pivots[pivots.length-1];if(prior?.type===pivot.type){if(pivot.type==="HIGH"?pivot.price>prior.price:pivot.price<prior.price)pivots[pivots.length-1]=pivot}else pivots.push(pivot);
+ }
+ if(pivots.length<2)return empty;
+ const start=pivots[pivots.length-2],end=pivots[pivots.length-1],direction=start.type==="LOW"&&end.type==="HIGH"?"UP":start.type==="HIGH"&&end.type==="LOW"?"DOWN":null,range=Math.abs(end.price-start.price);
+ if(!direction||!Number.isFinite(range)||range<=0)return {...empty,reason:"NO_CONFIRMED_IMPULSE"};
+ for(let i=0;i<ratios.length;i++){const ratio=ratios[i],value=direction==="UP"?end.price-range*ratio:end.price+range*ratio;if(!Number.isFinite(value))return {...empty,reason:"INVALID_LEVEL_PRICE"};lines[keys[i]]={ratio,value,points:input.filter(bar=>bar.time>=end.confirmedAt&&bar.time<=asOfUtc).map(bar=>({time:bar.time,value}))}}
+ return {...empty,available:true,reason:null,direction,start,end,confirmedAt:end.confirmedAt,lines};
 }
 function utcDateForTime(time:Time):Date{
  if(typeof time==="number")return new Date(time*1000);

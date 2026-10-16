@@ -467,7 +467,7 @@ function autoFibonacci(input,timeframe="M15",asOfUtc=Math.floor(Date.now()/1000)
  for(const ratio of ratios){
   const value=direction==="UP"?end.price-range*ratio:end.price+range*ratio;
   if(!Number.isFinite(value))return {...empty,reason:"INVALID_LEVEL_PRICE"};
-  lines[String(ratio)]={ratio,value,points:bars.filter(bar=>bar.time>=end.confirmedAt).map(bar=>({time:bar.time,value}))};
+  lines[String(ratio)]={ratio,value,points:bars.filter(bar=>bar.time>=end.confirmedAt&&bar.time<=asOfUtc).map(bar=>({time:bar.time,value}))};
  }
  return {...empty,available:true,reason:null,direction,start,end,confirmedAt:end.confirmedAt,lines};
 }

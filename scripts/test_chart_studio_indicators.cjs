@@ -391,6 +391,8 @@ assert.equal(autoFib.start.type,"LOW");assert.equal(autoFib.start.time,swingBars
 assert.equal(autoFib.end.type,"HIGH");assert.equal(autoFib.end.time,swingBars[5].time);near(autoFib.end.price,20);
 assert.equal(autoFib.confirmedAt,swingBars[7].time+900);
 assert.equal(autoFib.lines["0"].points[0].time,swingBars[8].time,"no level is drawn until after the right-side confirmation bar closes");
+const futureFib=math.autoFibonacci([...swingBars,{time:swingAsOf+1800,open:20,high:21,low:19,close:20}],"M15",swingAsOf);
+assert.equal(futureFib.lines["0"].points.at(-1).time,swingBars[8].time,"future chart bars are excluded by the as-of boundary");
 for(const [ratio,price] of [[0,20],[.236,16.224],[.382,13.888],[.5,12],[.618,10.112],[.786,7.424],[1,4]])near(autoFib.lines[String(ratio)].value,price,1e-8);
 const notYetConfirmed=math.autoFibonacci(swingBars,"M15",swingBars[7].time+899);
 assert.equal(notYetConfirmed.available,false,"forming right-side bars cannot confirm a swing");
