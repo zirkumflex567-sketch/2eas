@@ -963,8 +963,43 @@ void CheckSignalAndTrade()
             if(tp_price > 0.0)
                tp_price = NormalizeDouble(entry_price + (InpTPRatio * sl_dist), m_symbol.Digits());
 
-            if(m_trade.Buy(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment) &&
-               (m_trade.ResultRetcode() == TRADE_RETCODE_DONE || m_trade.ResultRetcode() == TRADE_RETCODE_DONE_PARTIAL))
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+            MqlTick cs_tick={};
+            bool cs_quote_ok=SymbolInfoTick(_Symbol,cs_tick) && cs_tick.time_msc>0 &&
+                             cs_tick.bid>0.0 && cs_tick.ask>=cs_tick.bid;
+            double cs_bid=cs_tick.bid,cs_ask=cs_tick.ask;
+            string cs_quote_time=CSUtcFromMillis(cs_tick.time_msc);
+            datetime cs_request_utc=TimeGMT();
+            string cs_request_time=CSUtc(cs_request_utc);
+            double cs_tick_size=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+            double cs_tick_value=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
+            string cs_currency=SymbolInfoString(_Symbol,SYMBOL_CURRENCY_PROFIT);
+#endif
+            bool order_sent=m_trade.Buy(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment);
+            uint order_retcode=m_trade.ResultRetcode();
+            bool entry_accepted=order_sent &&
+               (order_retcode == TRADE_RETCODE_DONE || order_retcode == TRADE_RETCODE_DONE_PARTIAL);
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+            datetime cs_ack_utc=TimeGMT();
+            ulong cs_order_ticket=entry_accepted ? m_trade.ResultOrder() : 0;
+            string cs_attempt_id="attempt_"+IntegerToString((long)GetTickCount64())+"_"+
+                                  IntegerToString((long)(CSEventCounter+1));
+            if(cs_quote_ok && cs_tick_size>0.0)
+              {
+               string cs_attempt=CSOrderAttemptJson(cs_attempt_id,"BUY",entry_price,lot_size,
+                  cs_bid,cs_ask,cs_tick_size,cs_tick_value,cs_currency,cs_quote_time,
+                  cs_request_time,CSUtc(cs_ack_utc),order_retcode,cs_order_ticket);
+               CSEnqueueDecision("ORDER_ATTEMPT",entry_accepted ? "PASS" : "BLOCK",rates[0].time,
+                  features,CSPredicate("broker_order",entry_accepted ? "1" : "0","EQ","1",
+                     entry_accepted ? "PASS" : "BLOCK","BROKER_RESULT"),cs_attempt,
+                  cs_attempt_id,cs_order_ticket,cs_request_time);
+              }
+            else
+               CSEnqueueDecision("ORDER_ATTEMPT",entry_accepted ? "PASS" : "BLOCK",rates[0].time,
+                  features,CSPredicate("broker_order",entry_accepted ? "1" : "0","EQ","1",
+                     entry_accepted ? "PASS" : "BLOCK","BROKER_RESULT"));
+#endif
+            if(entry_accepted)
             {
                m_last_entry_time = iTime(_Symbol, m_calc_timeframe, 0);
                PrintFormat("BUY SUCCESS: Lot=%.2f, Price=%.2f, SL=%.2f, TP=%.2f (Attempt %d)", lot_size, entry_price, sl_price, tp_price, attempt);
@@ -1008,8 +1043,43 @@ void CheckSignalAndTrade()
             if(tp_price > 0.0)
                tp_price = NormalizeDouble(entry_price - (InpTPRatio * sl_dist), m_symbol.Digits());
 
-            if(m_trade.Sell(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment) &&
-               (m_trade.ResultRetcode() == TRADE_RETCODE_DONE || m_trade.ResultRetcode() == TRADE_RETCODE_DONE_PARTIAL))
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+            MqlTick cs_tick={};
+            bool cs_quote_ok=SymbolInfoTick(_Symbol,cs_tick) && cs_tick.time_msc>0 &&
+                             cs_tick.bid>0.0 && cs_tick.ask>=cs_tick.bid;
+            double cs_bid=cs_tick.bid,cs_ask=cs_tick.ask;
+            string cs_quote_time=CSUtcFromMillis(cs_tick.time_msc);
+            datetime cs_request_utc=TimeGMT();
+            string cs_request_time=CSUtc(cs_request_utc);
+            double cs_tick_size=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+            double cs_tick_value=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
+            string cs_currency=SymbolInfoString(_Symbol,SYMBOL_CURRENCY_PROFIT);
+#endif
+            bool order_sent=m_trade.Sell(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment);
+            uint order_retcode=m_trade.ResultRetcode();
+            bool entry_accepted=order_sent &&
+               (order_retcode == TRADE_RETCODE_DONE || order_retcode == TRADE_RETCODE_DONE_PARTIAL);
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+            datetime cs_ack_utc=TimeGMT();
+            ulong cs_order_ticket=entry_accepted ? m_trade.ResultOrder() : 0;
+            string cs_attempt_id="attempt_"+IntegerToString((long)GetTickCount64())+"_"+
+                                  IntegerToString((long)(CSEventCounter+1));
+            if(cs_quote_ok && cs_tick_size>0.0)
+              {
+               string cs_attempt=CSOrderAttemptJson(cs_attempt_id,"SELL",entry_price,lot_size,
+                  cs_bid,cs_ask,cs_tick_size,cs_tick_value,cs_currency,cs_quote_time,
+                  cs_request_time,CSUtc(cs_ack_utc),order_retcode,cs_order_ticket);
+               CSEnqueueDecision("ORDER_ATTEMPT",entry_accepted ? "PASS" : "BLOCK",rates[0].time,
+                  features,CSPredicate("broker_order",entry_accepted ? "1" : "0","EQ","1",
+                     entry_accepted ? "PASS" : "BLOCK","BROKER_RESULT"),cs_attempt,
+                  cs_attempt_id,cs_order_ticket,cs_request_time);
+              }
+            else
+               CSEnqueueDecision("ORDER_ATTEMPT",entry_accepted ? "PASS" : "BLOCK",rates[0].time,
+                  features,CSPredicate("broker_order",entry_accepted ? "1" : "0","EQ","1",
+                     entry_accepted ? "PASS" : "BLOCK","BROKER_RESULT"));
+#endif
+            if(entry_accepted)
             {
                m_last_entry_time = iTime(_Symbol, m_calc_timeframe, 0);
                PrintFormat("SELL SUCCESS: Lot=%.2f, Price=%.2f, SL=%.2f, TP=%.2f (Attempt %d)", lot_size, entry_price, sl_price, tp_price, attempt);

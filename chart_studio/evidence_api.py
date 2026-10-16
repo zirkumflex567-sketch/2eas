@@ -17,6 +17,7 @@ from starlette._utils import get_route_path
 from chart_studio import evidence_models as models
 from chart_studio.evidence_store import EvidenceStore, StoreUnavailable, StoreReplaced
 from chart_studio.evidence_mfe_mae import estimate_ohlc_mfe_mae, observe_tick_mfe_mae
+from chart_studio.execution_quality import analyze_execution_quality
 from chart_studio.evidence_spool_service import SpoolFileConsumer, run_spool_service
 from chart_studio.broker_lifecycle_capture import (DemoBrokerLifecycleCapture,
     parse_demo_allowlist, run_demo_broker_lifecycle_capture)
@@ -97,7 +98,7 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
     spool_root = os.environ.get('CHART_STUDIO_EVIDENCE_SPOOL_ROOT')
     if spool_root:
         try:
-            if not store.root:
+            if not getattr(store, 'root', None) or not getattr(store, 'path', None):
                 raise ValueError('evidence store is not configured')
             app.state.evidence_spool_service = SpoolFileConsumer(
                 store, spool_root, producers=DEFAULT_EVIDENCE_PRODUCERS, excluded_roots=excluded)
@@ -297,7 +298,8 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
         if spec is None:
             return error(400, 'UNKNOWN_ACCOUNT')
         if spec.get('is_demo') is not True or spec.get('challenge_protection') is True:
-            return error(403, 'DEMO_ACCOUNT_REQUIRED', account)
+            # Do not touch any account-scoped store/MT5 state for protected accounts.
+            return error(403, 'DEMO_ACCOUNT_REQUIRED')
 
         producer = DEFAULT_EVIDENCE_PRODUCERS.get(account)
         if producer is None:
@@ -335,6 +337,73 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
     @app.get(paths[0])
     def decisions(request: Request):
         return serve(request,'DECISION')
+
+    @app.get(paths[0] + '/execution-quality')
+    def execution_quality(request: Request):
+        identity = getattr(request.state, 'control_identity', None)
+        peer = getattr(request.state, 'raw_peer', None)
+        if (not isinstance(identity, tuple) or len(identity) != 3 or
+                not all(isinstance(x, str) and x for x in identity) or
+                identity[0] not in ('local', 'bearer', 'proxy') or
+                identity[2] not in ('read', 'layout', 'trade') or
+                not isinstance(peer, str) or not peer):
+            return error(403, 'IDENTITY_REQUIRED')
+        params = request.query_params
+        account = params.get('account')
+        if (not isinstance(account, str) or not re.fullmatch('[a-z0-9_-]{1,32}', account) or
+                any(len(params.getlist(key)) != 1 for key in params)):
+            return error(422, 'INVALID_REQUEST')
+        spec = models.gateway.ACCOUNTS.get(account)
+        if spec is None:
+            return error(400, 'UNKNOWN_ACCOUNT')
+        if spec.get('is_demo') is not True or spec.get('challenge_protection') is True:
+            return error(403, 'DEMO_ACCOUNT_REQUIRED')
+        try:
+            allowed = {'account', 'fromUtc', 'toUtc', 'symbol', 'minimumSamples'}
+            if set(params) - allowed or not {'fromUtc', 'toUtc', 'symbol'} <= set(params):
+                raise ValueError()
+            start, end = models.utc_microseconds(params['fromUtc']), models.utc_microseconds(params['toUtc'])
+            if not 0 <= end - start <= 31 * 86400 * 1000000:
+                raise ValueError()
+            symbol = models.broker_symbol(params['symbol'])
+            minimum_text = params.get('minimumSamples', '20')
+            if not re.fullmatch('[1-9][0-9]{0,2}', minimum_text) or int(minimum_text) > 1000:
+                raise ValueError()
+            if configuration_error:
+                raise StoreUnavailable()
+            context = models.AccountContext.from_config(account)
+
+            def read_all(kind):
+                records, pinned, generation, last = [], None, None, None
+                for _ in range(50):
+                    page = store.read(context, kind=kind, start=start, end=end,
+                                      filters={'symbol': symbol} if kind == 'DECISION' else {},
+                                      limit=200, pinned=pinned, last=last)
+                    if generation is not None and page.get('generation') != generation:
+                        raise StoreReplaced()
+                    generation = page.get('generation')
+                    pinned = page.get('pinnedMaxSeq')
+                    records.extend(page.get('records') or [])
+                    if len(records) > 10_000:
+                        raise ValueError()
+                    if not page.get('hasMore'):
+                        return records
+                    last = page.get('last')
+                raise ValueError()
+
+            decisions_rows = read_all('DECISION')
+            lifecycle_rows = read_all('LIFECYCLE')
+            result = analyze_execution_quality(decisions_rows, lifecycle_rows, account_id=account,
+                                               symbol=symbol, minimum_samples=int(minimum_text))
+            result['range'] = {'fromUtc': params['fromUtc'], 'toUtc': params['toUtc']}
+            result['evidenceCounts'] = {'decisions': len(decisions_rows), 'lifecycle': len(lifecycle_rows)}
+            return JSONResponse(result, headers={'Cache-Control': 'no-store'})
+        except StoreReplaced:
+            return error(503, 'STORE_UNAVAILABLE', account)
+        except (ValueError, TypeError):
+            return error(422, 'INVALID_REQUEST', account)
+        except StoreUnavailable:
+            return error(503, 'STORE_UNAVAILABLE', account)
 
     @app.get(paths[0]+'/{record_id}')
     def decision(record_id: str, request: Request):
@@ -391,7 +460,7 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
         if spec is None:
             return error(400, 'UNKNOWN_ACCOUNT')
         if spec.get('is_demo') is not True or spec.get('challenge_protection') is True:
-            return error(403, 'DEMO_ACCOUNT_REQUIRED', account)
+            return error(403, 'DEMO_ACCOUNT_REQUIRED')
         try:
             position_id = models.ticket(position_id)
             if configuration_error:

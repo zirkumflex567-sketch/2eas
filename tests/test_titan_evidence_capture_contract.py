@@ -78,6 +78,23 @@ def test_capture_records_strategy_features_and_closed_bar_predicates():
     assert "subsystemId" in SPOOL.read_text(encoding="utf-8-sig")
 
 
+def test_order_attempt_capture_is_post_request_opt_in_and_contains_event_time_quote():
+    ea = EA.read_text(encoding="utf-8-sig")
+    spool = SPOOL.read_text(encoding="utf-8-sig")
+    decision = _function(ea, "CheckSignalAndTrade")
+
+    assert decision.count('CSEnqueueDecision("ORDER_ATTEMPT"') == 4
+    assert decision.count("bool order_sent=m_trade.") == 2
+    assert decision.count("CSOrderAttemptJson(cs_attempt_id") == 2
+    assert "request_time_utc" in spool
+    assert "quoteSnapshot" in spool and "tickValuePerLot" in spool
+    assert "MT5_VERIFIED" in spool and "canExecute" in spool
+    assert "CSUtcFromMillis(cs_tick.time_msc)" in decision
+    assert "return CSUtc(seconds);" in spool
+    assert re.search(r"#ifdef CS_EVIDENCE_CAPTURE_ENABLED\s+MqlTick cs_tick=\{\};.*?bool order_sent=m_trade\.Buy", decision, re.S)
+    assert "SymbolInfoTick(_Symbol,cs_tick)" in decision
+
+
 def test_parameter_hash_covers_every_ea_input_once():
     ea = EA.read_text(encoding="utf-8-sig")
     canonical = _function(ea, "CSParameterSetCanonical")

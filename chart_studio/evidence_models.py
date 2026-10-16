@@ -264,6 +264,37 @@ def _guard(value):
     return result
 
 
+def _execution_quote(value, *, symbol, request_time):
+    result = _object(value, dict(symbol=broker_symbol, bid=decimal_string, ask=decimal_string,
+        tickSize=decimal_string, quoteTimeUtc=utc_timestamp, source=choice('MT5_VERIFIED'),
+        canExecute=lambda v: False if v is False else _fail()),
+        dict(tickValuePerLot=nullable(decimal_string), currency=nullable(lambda v: _pattern(v, r'[A-Z]{3,12}'))))
+    if (result['symbol'] != symbol or Decimal(result['bid']) <= 0 or Decimal(result['ask']) <= 0 or
+            Decimal(result['ask']) < Decimal(result['bid']) or Decimal(result['tickSize']) <= 0):
+        _fail()
+    if ('tickValuePerLot' in result) != ('currency' in result):
+        _fail()
+    if result.get('tickValuePerLot') is not None and result.get('currency') is None:
+        _fail()
+    _ordered(result['quoteTimeUtc'], request_time)
+    return result
+
+
+def _execution_attempt(value, *, symbol):
+    result = _object(value, dict(orderAttemptId=identifier, side=choice('BUY','SELL'), intendedPrice=decimal_string,
+        requestedVolume=decimal_string, requestTimeUtc=utc_timestamp, quoteSnapshot=lambda v: v),
+        dict(brokerTicket=ticket, brokerRetcode=integer, ackTimeUtc=utc_timestamp,
+             sessionId=identifier, regimeId=identifier))
+    _decimal_positive = ('intendedPrice', 'requestedVolume')
+    if any(Decimal(result[key]) <= 0 for key in _decimal_positive):
+        _fail()
+    quote = _execution_quote(result['quoteSnapshot'], symbol=symbol, request_time=result['requestTimeUtc'])
+    result['quoteSnapshot'] = quote
+    if 'ackTimeUtc' in result:
+        _ordered(result['requestTimeUtc'], result['ackTimeUtc'])
+    return result
+
+
 def decision_event(value, *, context):
     feature = lambda v: _object(v, dict(id=identifier, value=nullable(number), unit=identifier, timeframe=choice(*TIMEFRAMES)))
     predicate = lambda v: _object(v, dict(ruleId=identifier, observedValue=nullable(number), comparator=choice(*'GT GE LT LE EQ NE PRESENT'.split()), threshold=nullable(number), outcome=choice(*OUTCOMES), reasonCode=identifier))
@@ -272,7 +303,8 @@ def decision_event(value, *, context):
         decisionTimeUtc=utc_timestamp, evaluatedBarCloseUtc=utc_timestamp, timeframe=choice(*TIMEFRAMES), barIsClosed=strict_bool,
         featureVector=_list(feature,128,'id'), predicates=_list(predicate,128,'ruleId'), stage=choice(*'CANDIDATE SIGNAL ENTRY_FILTER RISK_GUARD ORDER_ATTEMPT BROKER_RESULT'.split()),
         outcome=choice(*OUTCOMES), dataProvenance=choice('recorded','reconstructed'), dataRevision=integer, capturedAtUtc=utc_timestamp, correlationId=identifier),
-        dict(subsystemId=identifier,sourceQuoteTimeUtc=utc_timestamp,guardSnapshot=_guard,orderAttemptId=identifier,brokerTicket=ticket))
+        dict(subsystemId=identifier,strategyId=identifier,sourceQuoteTimeUtc=utc_timestamp,guardSnapshot=_guard,orderAttemptId=identifier,brokerTicket=ticket,
+             orderAttempt=lambda v: _execution_attempt(v, symbol=value.get('symbol'))))
     if result['terminalIdentityHash'] != context.terminal_identity_hash:
         _fail()
     if result['barIsClosed']:
@@ -280,6 +312,18 @@ def decision_event(value, *, context):
     _ordered(result['decisionTimeUtc'], result['capturedAtUtc'])
     if 'sourceQuoteTimeUtc' in result:
         _ordered(result['sourceQuoteTimeUtc'], result['capturedAtUtc'])
+    if 'orderAttempt' in result:
+        if result['stage'] != 'ORDER_ATTEMPT' or result.get('orderAttemptId') != result['orderAttempt']['orderAttemptId']:
+            _fail()
+        if ('brokerTicket' in result['orderAttempt'] and
+                result.get('brokerTicket') not in (None, result['orderAttempt']['brokerTicket'])):
+            _fail()
+        if 'brokerTicket' in result and 'brokerTicket' in result['orderAttempt'] and result['brokerTicket'] != result['orderAttempt']['brokerTicket']:
+            _fail()
+        _ordered(result['decisionTimeUtc'], result['orderAttempt']['requestTimeUtc'])
+        _ordered(result['orderAttempt']['requestTimeUtc'], result['capturedAtUtc'])
+        if 'ackTimeUtc' in result['orderAttempt']:
+            _ordered(result['orderAttempt']['ackTimeUtc'], result['capturedAtUtc'])
     return result
 
 

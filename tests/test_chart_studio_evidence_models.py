@@ -25,6 +25,13 @@ def decision():
                                  outcome='PASS',reasonCode='OK')],stage='SIGNAL',outcome='PASS',
                 dataProvenance='recorded',dataRevision=1,capturedAtUtc=T,correlationId='corr_1')
 
+def execution_decision():
+    value=decision();value.update(stage='ORDER_ATTEMPT',outcome='PASS',orderAttemptId='attempt_1',brokerTicket='91',
+        orderAttempt=dict(orderAttemptId='attempt_1',brokerTicket='91',side='BUY',intendedPrice='100',requestedVolume='0.2',
+          requestTimeUtc='2026-01-02T03:04:05Z',quoteSnapshot=dict(symbol='XAUUSD',bid='99.9',ask='100.1',tickSize='0.1',
+            tickValuePerLot='1',currency='USD',quoteTimeUtc='2026-01-02T03:04:04Z',source='MT5_VERIFIED',canExecute=False)))
+    return value
+
 def envelope(payload=None, kind='DECISION'):
     p = decision() if payload is None else payload
     identity = {'DECISION':'eventId','LIFECYCLE':'id','SNAPSHOT':'snapshotId'}[kind]
@@ -76,6 +83,21 @@ def test_decimal_and_utc_boundaries():
 @pytest.mark.parametrize('field,value', [('barIsClosed',1),('dataRevision',True),('timeframe','H2'),('featureVector',[dict(id='x',value=float('nan'),unit='x',timeframe='M5')])])
 def test_decision_strict_values(field,value):
     e=envelope();e['payload'][field]=value;reject(e)
+
+def test_execution_attempt_reference_is_strict_and_quote_precedes_request():
+    payload=execution_decision();validated=validate(envelope(payload))['payload']
+    assert validated['orderAttempt']['quoteSnapshot']['source']=='MT5_VERIFIED'
+    for field,value in [('stage','SIGNAL'),('orderAttemptId','different'),('brokerTicket','92')]:
+        bad=execution_decision();bad[field]=value;reject(envelope(bad))
+    for field,value in [('side','LONG'),('intendedPrice','NaN'),('requestedVolume','0'),('requestTimeUtc','2026-01-02T03:04:03Z')]:
+        bad=execution_decision();bad['orderAttempt'][field]=value;reject(envelope(bad))
+    for field,value in [('source','RECONSTRUCTED'),('canExecute',True),('ask','99'),('quoteTimeUtc','2026-01-02T03:04:06Z'),('symbol','EURUSD')]:
+        bad=execution_decision();bad['orderAttempt']['quoteSnapshot'][field]=value;reject(envelope(bad))
+
+def test_same_second_quote_is_serialized_at_request_precision():
+    e=execution_decision()
+    e['orderAttempt']['quoteSnapshot']['quoteTimeUtc']='2026-01-02T03:04:05Z'
+    validate(envelope(e))
 
 def test_typed_guard_chart_view_limits():
     e=envelope();e['payload']['guardSnapshot']=dict(state='UNKNOWN',sourceRevision=None,checks=[])

@@ -359,6 +359,40 @@ function renderEvidence(){
  more.hidden=!state.cursor;more.disabled=state.loading;
 }
 function clearEvidence(){if(!s?.evidence)return;s.evidence.generation++;s.evidence={rows:[],cursor:null,query:null,meta:null,loading:false,error:"",truncated:false,generation:s.evidence.generation};renderEvidence()}
+async function loadExecutionQuality(){
+ const status=s?.panel?.querySelector("#cs-execution-quality-status"),button=s?.panel?.querySelector("#cs-execution-quality-load");
+ if(!status||!button)return;const account=s.account;
+ if(account==="blueberry"){status.textContent="Für Blueberry sind Ausführungsanalysen gesperrt.";return}
+ const days=Number(s.panel.querySelector("#cs-evidence-days")?.value)||30,to=new Date(),from=new Date(to.getTime()-days*86400000);
+ const symbol=chartSymbol();button.disabled=true;status.textContent="Gespeicherte Orderversuche und MT5-Deals werden read-only abgeglichen …";
+ try{
+  const params=new URLSearchParams({account,symbol,fromUtc:from.toISOString(),toUtc:to.toISOString()});
+  const url=(window.location.pathname.startsWith("/stt")?"/stt":"")+"/api/chart/v1/decisions/execution-quality?"+params.toString();
+  const response=window.DashboardRuntime?.request
+   ? await window.DashboardRuntime.request(url,{method:"GET",cache:"no-store"},15000,false)
+   : await fetch(url,{method:"GET",cache:"no-store",credentials:"same-origin"});
+  const data=await response.json();
+  if(s?.account!==account)return;
+  if(!response.ok||data?.schemaVersion!==1||data.account!==account||data.symbol!==symbol||data.canExecute!==false||!Array.isArray(data.orders)||!data.summary)throw Error(data?.detail?.code||"INVALID_READ_RESPONSE");
+  const sample=data.summary.sampleCount,counts=data.evidenceCounts;
+  const lines=data.orders.map(row=>{
+   if(typeof row.status!=="string"||typeof row.orderAttemptId!=="string")throw Error("INVALID_ORDER_ROW");
+   return row.orderAttemptId+" · "+row.status+(row.weightedFillPrice?" · VWAP "+row.weightedFillPrice:"")+
+    (row.spreadPrice?" · Spread "+row.spreadPrice:"")+
+    (row.signedSlippagePrice?" · Slippage "+row.signedSlippagePrice+" ("+row.signedSlippageTicks+" Ticks)":"")+
+    (row.estimatedAdverseCost?" · geschätzt "+row.estimatedAdverseCost.amount+" "+row.estimatedAdverseCost.currency:"");
+  });
+  const groups=Array.isArray(data.summary.groups)?data.summary.groups.map(group=>{
+   if(![group.strategyId,group.sessionId,group.regimeId].every(value=>typeof value==="string"))throw Error("INVALID_GROUP");
+   return group.strategyId+"/"+group.sessionId+"/"+group.regimeId+" · "+group.sampleCount+" Samples"+
+    (group.spreadPricePercentiles?" · Spread p50 "+group.spreadPricePercentiles.p50:"")+
+    (group.estimatedAdverseCost?" · Slippage-Kosten "+group.estimatedAdverseCost.sum+" "+(group.estimatedAdverseCost.currency||"Währung unbekannt"):"");
+  }).join(" | "):"";
+  status.textContent="Read-only · "+counts.decisions+" Decisions / "+counts.lifecycle+" Lifecycle-Ereignisse · "+sample+" vollständige Fills · "+(data.summary.percentiles?"Slippage p50 "+data.summary.percentiles.p50+" / p95 "+data.summary.percentiles.p95:"Aggregat unter Mindeststichprobe oder nicht verfügbar")+(groups?" · "+groups:"")+
+   (lines.length?" · "+lines.join(" | "):" · Keine belegten Orderversuche im Zeitraum");
+ }catch(error){if(s?.account===account)status.textContent="Ausführungsqualität nicht verfügbar · "+String(error?.message||"READ_ERROR")}
+ finally{button.disabled=false}
+}
 async function loadEvidence(morePage=false){
  if(!s?.evidence||s.evidence.loading)return;const selector=s.panel.querySelector("#cs-evidence-kind"),kind=selector?.value;
  const paths={DECISION:"decisions",LIFECYCLE:"lifecycle",SNAPSHOT:"snapshots"};if(!paths[kind])return;
@@ -1209,7 +1243,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  panel.innerHTML=
   '<div class="cs-beta-head"><strong>CHART STUDIO · EXPERIMENTELL</strong><span>Keine Handelsausführung</span></div>'+
   '<section id="cs-data-window" aria-label="Datenfenster"><div><strong>Datenfenster</strong> · <span id="cs-data-window-state">Crosshair</span> <button type="button" id="cs-data-window-pin">Crosshair anheften</button></div><dl><div><dt>Kerzenzeit (UTC)</dt><dd id="cs-data-window-time">—</dd></div><div><dt>Open</dt><dd id="cs-data-window-open">—</dd></div><div><dt>High</dt><dd id="cs-data-window-high">—</dd></div><div><dt>Low</dt><dd id="cs-data-window-low">—</dd></div><div><dt>Close</dt><dd id="cs-data-window-close">—</dd></div><div><dt>Indikatoren</dt><dd id="cs-data-window-indicators">—</dd></div><div><dt>Quelle</dt><dd id="cs-data-window-source">Chart-Feed · wartet auf Kerze</dd></div><div><dt>Bid</dt><dd id="cs-data-window-bid">—</dd></div><div><dt>Ask</dt><dd id="cs-data-window-ask">—</dd></div><div><dt>Spread (Preis)</dt><dd id="cs-data-window-spread">—</dd></div><div><dt>Quotezeit</dt><dd id="cs-data-window-quote-time">—</dd></div><div><dt>Quote-Status</dt><dd id="cs-data-window-quote-status">Noch keine verifizierte Quote</dd></div></dl></section>'+
-  '<details id="cs-evidence-panel" class="cs-evidence-panel"><summary>Aufzeichnungsnachweise · nur gespeicherte Read-Daten</summary><div class="cs-evidence-controls"><label for="cs-evidence-kind">Typ</label><select id="cs-evidence-kind"><option value="DECISION">Decisions</option><option value="LIFECYCLE">Broker-Lifecycle</option><option value="SNAPSHOT">Chart-Snapshots</option></select><label for="cs-evidence-days">Tage</label><select id="cs-evidence-days"><option value="1">1</option><option value="7">7</option><option value="30" selected>30</option></select><button type="button" id="cs-evidence-load">Zeitraum laden</button><button type="button" id="cs-evidence-more" hidden>Weitere Einträge</button></div><p id="cs-evidence-status" role="status" aria-live="polite">Keine Aufzeichnung abgefragt · Historie wird nicht rekonstruiert.</p><ol id="cs-evidence-list" aria-label="Aufgezeichnete Ereignisse"></ol><p>Read-only: gespeicherte Brokerhistorie wird nur von explizit freigegebenen Demo-Konten gelesen; keine Handelsänderungen. Fehlende Zeiträume bleiben NOT_RECORDED.</p></details>'+
+  '<details id="cs-evidence-panel" class="cs-evidence-panel"><summary>Aufzeichnungsnachweise · nur gespeicherte Read-Daten</summary><div class="cs-evidence-controls"><label for="cs-evidence-kind">Typ</label><select id="cs-evidence-kind"><option value="DECISION">Decisions</option><option value="LIFECYCLE">Broker-Lifecycle</option><option value="SNAPSHOT">Chart-Snapshots</option></select><label for="cs-evidence-days">Tage</label><select id="cs-evidence-days"><option value="1">1</option><option value="7">7</option><option value="30" selected>30</option></select><button type="button" id="cs-evidence-load">Zeitraum laden</button><button type="button" id="cs-evidence-more" hidden>Weitere Einträge</button></div><p id="cs-evidence-status" role="status" aria-live="polite">Keine Aufzeichnung abgefragt · Historie wird nicht rekonstruiert.</p><div class="cs-execution-quality"><button type="button" id="cs-execution-quality-load">Fill-/Slippage-Analyse laden</button><p id="cs-execution-quality-status" role="status" aria-live="polite">Noch keine Ausführungsanalyse abgefragt.</p></div><ol id="cs-evidence-list" aria-label="Aufgezeichnete Ereignisse"></ol><p>Read-only: gespeicherte Brokerhistorie wird nur von explizit freigegebenen Demo-Konten gelesen; keine Handelsänderungen. Fehlende Zeiträume bleiben NOT_RECORDED.</p></details>'+
   '<div class="cs-beta-buttons">'+toolLabels.map(([id,label])=>'<button type="button" data-tool="'+id+'">'+label+'</button>').join("")+
   ["undo","redo","delete-selected","export","save-png","clear"].map(id=>'<button type="button" data-cmd="'+id+'">'+({undo:"↶ Undo",redo:"↷ Redo","delete-selected":"Ausgewählte löschen",export:"JSON kopieren","save-png":"Bild (PNG) speichern",clear:"Alle Zeichnungen löschen"}[id])+'</button>').join("")+'</div>'+
   '<details id="cs-tool-preferences" class="cs-tool-preferences"><summary>Favoriten und individuelle Tastenkürzel</summary><strong>Favorisierte Werkzeuge</strong><div id="cs-favorite-tools" class="cs-beta-buttons" aria-label="Favorisierte Werkzeuge"></div><div class="cs-tool-preference-grid">'+toolLabels.map(([id,label])=>'<label><input type="checkbox" data-favorite-tool="'+id+'"> '+label+' als Favorit</label><label>'+label+' · Kürzel <input type="text" inputmode="text" autocomplete="off" maxlength="1" data-shortcut-tool="'+id+'" aria-label="Tastenkürzel für '+label+'" placeholder="—"></label>').join("")+'</div><p>Einzelne Buchstaben ohne Strg, Alt oder Umschalt. Doppelte Kürzel werden abgewiesen. Kürzel wirken nur bei geöffnetem Chart Studio.</p></details>'+
@@ -1255,6 +1289,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],brokerMarkers:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null,fibLevels:[...ratios],evidence:{rows:[],cursor:null,query:null,meta:null,loading:false,error:"",generation:0}};
  panel.querySelector("#cs-data-window-pin").addEventListener("click",()=>setDataWindowPin(!s.dataWindow.pinned));
  panel.querySelector("#cs-evidence-load").addEventListener("click",()=>loadEvidence(false));
+ panel.querySelector("#cs-execution-quality-load").addEventListener("click",loadExecutionQuality);
  panel.querySelector("#cs-evidence-more").addEventListener("click",()=>loadEvidence(true));
  panel.querySelector("#cs-evidence-kind").addEventListener("change",clearEvidence);
  panel.querySelector("#cs-evidence-days").addEventListener("change",clearEvidence);

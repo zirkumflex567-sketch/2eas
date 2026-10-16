@@ -77,6 +77,15 @@ string CSUtc(datetime value)
                        parts.year,parts.mon,parts.day,parts.hour,parts.min,parts.sec);
   }
 
+string CSUtcFromMillis(const long value)
+  {
+   if(value<=0)
+      return "";
+   datetime seconds=(datetime)(value/1000);
+   // Request timestamps use whole seconds; keep both timestamps comparable.
+   return CSUtc(seconds);
+  }
+
 string CSNumber(double value,int digits=10)
   {
    if(!MathIsValidNumber(value))
@@ -121,7 +130,9 @@ void CSEnqueueEnvelope(const string envelope)
   }
 
 void CSEnqueueDecision(const string stage,const string outcome,const datetime bar_open_server,
-                      const string feature_vector,const string predicates)
+                      const string feature_vector,const string predicates,
+                      const string order_attempt_json="",const string order_attempt_id="",
+                      const ulong broker_ticket=0,const string request_time_utc="")
   {
 #ifdef CS_EVIDENCE_CAPTURE_ENABLED
    if(!CSRecorderReady || CSRecorderDisabled)
@@ -142,11 +153,14 @@ void CSEnqueueDecision(const string stage,const string outcome,const datetime ba
       ",\"symbol\":"+CSJsonQuote(_Symbol)+
       ",\"strategyId\":\"xau_titan_pro_basket_guard\",\"strategyVersion\":\"7_20\",\"subsystemId\":"+
       CSJsonQuote(CS_EVIDENCE_SOURCE_HASH)+",\"parameterSetHash\":"+CSJsonQuote(CSParameterSetHash)+
-      ",\"decisionTimeUtc\":"+CSJsonQuote(CSUtc(now_utc))+
+      ",\"decisionTimeUtc\":"+CSJsonQuote(request_time_utc!="" ? request_time_utc : CSUtc(now_utc))+
       ",\"evaluatedBarCloseUtc\":"+CSJsonQuote(CSUtc(close_utc))+
       ",\"timeframe\":\"M15\",\"barIsClosed\":true,\"featureVector\":["+
       feature_vector+"],\"predicates\":["+predicates+
       "],\"stage\":"+CSJsonQuote(stage)+",\"outcome\":"+CSJsonQuote(outcome)+
+      (order_attempt_id!="" ? ",\"orderAttemptId\":"+CSJsonQuote(order_attempt_id) : "")+
+      (broker_ticket>0 ? ",\"brokerTicket\":"+CSJsonQuote(IntegerToString((long)broker_ticket)) : "")+
+      (order_attempt_json!="" ? ",\"orderAttempt\":"+order_attempt_json : "")+
       ",\"dataProvenance\":\"recorded\",\"dataRevision\":1,\"capturedAtUtc\":"+
       CSJsonQuote(CSUtc(now_utc))+",\"correlationId\":"+CSJsonQuote(correlation)+"}";
    string envelope="{\"schemaVersion\":1,\"type\":\"DECISION\",\"id\":"+
@@ -156,6 +170,36 @@ void CSEnqueueDecision(const string stage,const string outcome,const datetime ba
       ",\"dataRevision\":1,\"provenance\":\"RECORDED\",\"supersedes\":null,\"payload\":"+payload+"}";
    CSEnqueueEnvelope(envelope);
 #endif
+  }
+
+string CSOrderAttemptJson(const string attempt_id,const string side,const double intended_price,
+                          const double requested_volume,const double bid,const double ask,
+                          const double tick_size,const double tick_value,const string currency,
+                          const string quote_time_utc,const string request_time_utc,
+                          const string ack_time_utc,const uint broker_retcode,const ulong broker_ticket)
+  {
+   string value="{\"orderAttemptId\":"+CSJsonQuote(attempt_id)+
+      ",\"side\":"+CSJsonQuote(side)+
+      ",\"intendedPrice\":"+CSJsonQuote(CSNumber(intended_price,_Digits))+
+      ",\"requestedVolume\":"+CSJsonQuote(CSNumber(requested_volume,8))+
+      ",\"requestTimeUtc\":"+CSJsonQuote(request_time_utc)+
+      ",\"ackTimeUtc\":"+CSJsonQuote(ack_time_utc)+
+      ",\"brokerRetcode\":"+IntegerToString((int)broker_retcode)+
+      ",\"quoteSnapshot\":{\"symbol\":"+CSJsonQuote(_Symbol)+
+      ",\"bid\":"+CSJsonQuote(CSNumber(bid,_Digits))+
+      ",\"ask\":"+CSJsonQuote(CSNumber(ask,_Digits))+
+      ",\"tickSize\":"+CSJsonQuote(CSNumber(tick_size,10))+
+      ",\"quoteTimeUtc\":"+CSJsonQuote(quote_time_utc)+
+      ",\"source\":\"MT5_VERIFIED\",\"canExecute\":false";
+   if(tick_value>0.0 && currency!="")
+      value+=",\"tickValuePerLot\":"+CSJsonQuote(CSNumber(tick_value,8))+
+             ",\"currency\":"+CSJsonQuote(currency);
+   else
+      value+=",\"tickValuePerLot\":null,\"currency\":null";
+   value+="}";
+   if(broker_ticket>0)
+      value+=",\"brokerTicket\":"+CSJsonQuote(IntegerToString((long)broker_ticket));
+   return value+"}";
   }
 
 bool CSValidateRuntimeIdentity()
