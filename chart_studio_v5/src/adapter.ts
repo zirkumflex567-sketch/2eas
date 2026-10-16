@@ -829,7 +829,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const moveKeys:Record<string,[number,number]>={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};
   const move=moveKeys[event.key],step=event.shiftKey?10:1;
   if(move&&nudgeSelectedDrawing(move[0]*step,move[1]*step)){event.preventDefault();event.stopImmediatePropagation();return}
-  if((event.key==="Delete"||event.key==="Backspace")&&selectedDrawingId){event.preventDefault();event.stopImmediatePropagation();deleteSelectedDrawing();return}
+  if((event.key==="Delete"||event.key==="Backspace")&&selectedDrawingIds.size){event.preventDefault();event.stopImmediatePropagation();deleteSelectedDrawings();return}
   if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="d"&&selectedDrawingId){event.preventDefault();event.stopImmediatePropagation();duplicateSelectedDrawing()}
   if(!event.ctrlKey&&!event.metaKey&&selectedDrawingIds.size&&event.key.toLowerCase()==="h"){
    event.preventDefault();event.stopImmediatePropagation();const items=[...selectedDrawingIds].map(id=>snapshotDrawing(id));
@@ -1211,17 +1211,27 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const change=redoStack[redoStack.length-1];if(!change||!restoreDrawing(change.id,change.after))return false;
   redoStack.pop();undoStack.push(change);persistDrawings();return true;
  }
- function deleteSelectedDrawing(){
-  guard();if(!selectedDrawingId)return false;
-  if(priceLevels.has(selectedDrawingId))return removePriceLevel(selectedDrawingId);
-  if(timeMarkers.has(selectedDrawingId))return removeTimeMarker(selectedDrawingId);
-  if(textAnnotations.has(selectedDrawingId))return removeTextAnnotation(selectedDrawingId);
-  if(trendLines.has(selectedDrawingId))return removeTrendLine(selectedDrawingId);
-  if(rectangles.has(selectedDrawingId))return removeRectangle(selectedDrawingId);
-  if(rays.has(selectedDrawingId))return removeRay(selectedDrawingId);
-  if(channels.has(selectedDrawingId))return removeChannel(selectedDrawingId);
-  if(measurements.has(selectedDrawingId))return removeMeasurement(selectedDrawingId);
-  return removeFibonacci(selectedDrawingId);
+ function deleteDrawingById(id:string):boolean{
+  if(priceLevels.has(id))return removePriceLevel(id);
+  if(timeMarkers.has(id))return removeTimeMarker(id);
+  if(textAnnotations.has(id))return removeTextAnnotation(id);
+  if(trendLines.has(id))return removeTrendLine(id);
+  if(rectangles.has(id))return removeRectangle(id);
+  if(rays.has(id))return removeRay(id);
+  if(channels.has(id))return removeChannel(id);
+  if(measurements.has(id))return removeMeasurement(id);
+  if(fibonacci.has(id))return removeFibonacci(id);
+  return false;
+ }
+ function deleteSelectedDrawings():string[]{
+  guard();const ids=[...selectedDrawingIds];
+  if(ids.some(id=>!snapshotDrawing(id)))throw Error("Drawing selection changed");
+  const deleted:string[]=[];
+  for(const id of ids)if(deleteDrawingById(id))deleted.push(id);
+  return deleted;
+ }
+ function deleteSelectedDrawing():boolean{
+  guard();return selectedDrawingId?deleteDrawingById(selectedDrawingId):false;
  }
  function duplicateSelectedDrawing(){
   guard();if(!selectedDrawingId)return null;
@@ -2125,7 +2135,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
     averageCount:averages.size,nativePaneLines:paneLines.size,oscillatorCount:oscillators.size,supertrendCount:supertrendOverlays.size,parabolicSarCount:parabolicSarOverlays.size,bollingerCount:bollingerOverlays.size,bollingerSeries:[...bollingerOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),linearRegressionCount:linearRegressionOverlays.size,linearRegressionLineCount:[...linearRegressionOverlays.values()].reduce((count,group)=>count+group.series.length,0),linearRegressionSeries:[...linearRegressionOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),oscillatorPaneCount:new Set(Array.from(oscillators.values(),group=>{const series=group.series.values().next().value;return series?chart.panes().findIndex(pane=>pane.getSeries().includes(series)):-1}).filter(index=>index>=0)).size,nativePrimitives:drawingCount(),selectedDrawingId,selectedDrawingIds:[...selectedDrawingIds],hoveredDrawingId,
   paneCount:chart.panes().length,volumeVisible:!!volume,persistenceStatus,persistenceError}}
  function destroy(){if(destroyed)return;finishDrag(true);clearPositionOverlays();destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();managedMovingAverages.clear();donchianOverlays.clear();bollingerOverlays.clear();keltnerOverlays.clear();linearRegressionOverlays.clear();supertrendOverlays.clear();parabolicSarOverlays.clear();paneLines.clear();oscillators.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();measurements.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
-  return Object.freeze({setCandles,addAverage,addMovingAverage,addDonchian,removeDonchian,addBollinger,updateBollinger,removeBollinger,bollingerOptions,addKeltner,removeKeltner,addLinearRegression,updateLinearRegression,removeLinearRegression,linearRegressionOptions,addSupertrend,updateSupertrend,removeSupertrend,supertrendOptions,addParabolicSar,updateParabolicSar,removeParabolicSar,parabolicSarOptions,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,addPriceLevel,updatePriceLevel,removePriceLevel,
+  return Object.freeze({setCandles,addAverage,addMovingAverage,addDonchian,removeDonchian,addBollinger,updateBollinger,removeBollinger,bollingerOptions,addKeltner,removeKeltner,addLinearRegression,updateLinearRegression,removeLinearRegression,linearRegressionOptions,addSupertrend,updateSupertrend,removeSupertrend,supertrendOptions,addParabolicSar,updateParabolicSar,removeParabolicSar,parabolicSarOptions,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,deleteSelectedDrawings,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,drawingPosition,drawingAnchorPosition,readDrawing,exportDrawings,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,
   addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,addOscillator,updateOscillator,removeOscillator,moveOscillator,oscillatorOptions,oscillatorPaneLayout,resizePane,paneHeights,showVolume,visibleLogicalRange,setVisibleLogicalRange,setDisplayTimeZone,displayTimeZone:()=>displayTimeZone,formatTimeLabel:formatDisplayTime,formatCrosshairTime,readDataWindow,
   updateLast,changeAccount,averageOptions,setPositionOverlays,readPositionOverlays,inspect,destroy});

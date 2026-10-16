@@ -91,6 +91,28 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    let unknownSelectionRejected=false;try{engine.selectDrawings(["risk-stop","missing-drawing"])}catch(_){unknownSelectionRejected=true}
    const selectionAfterRejected=engine.inspect().selectedDrawingIds;
    engine.selectDrawings(["risk-stop","entry-time"]);
+   const groupDeleteAvailable=typeof engine.deleteSelectedDrawings==="function";
+   const groupDeleteIds=groupDeleteAvailable?engine.deleteSelectedDrawings():[];
+   const groupDeleteRemoved=[engine.readDrawing("risk-stop"),engine.readDrawing("entry-time")];
+   const groupDeleteSelection=engine.inspect().selectedDrawingIds;
+   const groupDeleteUndo=groupDeleteAvailable?[engine.undo(),engine.undo()]:[];
+   const groupDeleteRestored=[engine.readDrawing("risk-stop"),engine.readDrawing("entry-time")];
+   const groupDeleteRedo=groupDeleteAvailable?[engine.redo(),engine.redo()]:[];
+   const groupDeleteRedone=[engine.readDrawing("risk-stop"),engine.readDrawing("entry-time")];
+   if(groupDeleteAvailable){
+    engine.addPriceLevel({id:"risk-stop",price:4100,color:"#ff6677"});
+    engine.addTimeMarker({id:"entry-time",time:bars[40].time,color:"#c18bff"});
+   }
+   engine.selectDrawings(["risk-stop","entry-time"]);
+   document.getElementById("chart").dispatchEvent(new KeyboardEvent("keydown",{key:"Delete",bubbles:true}));
+   const keyboardGroupDelete=[engine.readDrawing("risk-stop"),engine.readDrawing("entry-time")];
+   const keyboardGroupDeleteSelection=engine.inspect().selectedDrawingIds;
+   const keyboardGroupDeleteUndo=keyboardGroupDelete.every(item=>item===null)?[engine.undo(),engine.undo()]:[engine.undo()];
+   engine.selectDrawings(["risk-stop","entry-time"]);
+   document.getElementById("chart").dispatchEvent(new KeyboardEvent("keydown",{key:"Backspace",bubbles:true}));
+   const keyboardGroupBackspace=[engine.readDrawing("risk-stop"),engine.readDrawing("entry-time")];
+   const keyboardGroupBackspaceUndo=keyboardGroupBackspace.every(item=>item===null)?[engine.undo(),engine.undo()]:[engine.undo()];
+   engine.selectDrawings([]);
    let duplicateDrawingRejected=false;try{engine.addTimeMarker({id:"risk-stop",time:bars[40].time,color:"#ffffff"})}catch(_){duplicateDrawingRejected=true}
    let drawingIndicatorCollisionRejected=false;try{engine.addAverage({id:"risk-stop",color:"#ffffff"},[])}catch(_){drawingIndicatorCollisionRejected=true}
    const withPrimitive=engine.inspect();
@@ -130,6 +152,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    return {first,updated,staleRejected,invalidRejected,isolated,removed,disposed,badPaneRejected,
     withPrimitive,updatedPrimitive,removedPrimitive,removedTimeMarker,withoutPrimitive,invalidPrimitiveRejected,unknownTimeRejected,duplicateDrawingRejected,
     multiSelect,selectedTogether,groupHidden,hiddenReadings,groupLocked,lockedReadings,keyboardHidden,keyboardLocked,toggledSelection,selectedAfterToggle,unknownSelectionRejected,selectionAfterRejected,
+    groupDeleteAvailable,groupDeleteIds,groupDeleteRemoved,groupDeleteSelection,groupDeleteUndo,groupDeleteRestored,groupDeleteRedo,groupDeleteRedone,
+    keyboardGroupDelete,keyboardGroupDeleteSelection,keyboardGroupDeleteUndo,keyboardGroupBackspace,keyboardGroupBackspaceUndo,
     staleHistoryMarker,drawingIndicatorCollisionRejected,
     warmupReadout,alignedReadout,noVolumeReadout,missingBarReadout,formingReadout,
     replacementReadout,badVolumeRejected,invalidReadoutTimeRejected,
@@ -790,6 +814,19 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(result.selectedAfterToggle,["risk-stop"]);
   assert.equal(result.unknownSelectionRejected,true);
   assert.deepEqual(result.selectionAfterRejected,["risk-stop"]);
+  assert.equal(result.groupDeleteAvailable,true,"The native renderer exposes multi-selection deletion");
+  assert.deepEqual(result.groupDeleteIds,["risk-stop","entry-time"]);
+  assert.deepEqual(result.groupDeleteRemoved,[null,null]);
+  assert.deepEqual(result.groupDeleteSelection,[]);
+  assert.deepEqual(result.groupDeleteUndo,[true,true]);
+  assert.ok(result.groupDeleteRestored.every(Boolean));
+  assert.deepEqual(result.groupDeleteRedo,[true,true]);
+  assert.deepEqual(result.groupDeleteRedone,[null,null]);
+  assert.deepEqual(result.keyboardGroupDelete,[null,null],"Delete removes every selected native drawing");
+  assert.deepEqual(result.keyboardGroupDeleteSelection,[]);
+  assert.deepEqual(result.keyboardGroupDeleteUndo,[true,true]);
+  assert.deepEqual(result.keyboardGroupBackspace,[null,null],"Backspace removes every selected native drawing");
+  assert.deepEqual(result.keyboardGroupBackspaceUndo,[true,true]);
   assert.deepEqual(result.isolated.selectedDrawingIds,[]);
   assert.equal(result.updatedPrimitive.nativePrimitives,2);
   assert.equal(result.removedPrimitive,true);
