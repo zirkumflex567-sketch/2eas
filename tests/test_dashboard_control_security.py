@@ -32,6 +32,19 @@ class ControlSecurityTests(unittest.TestCase):
         response = client.post('/api/close_position', json={'ticket': 999})
         self.assertEqual(response.status_code, 403)
         self.assertEqual(client.get('/api/control_session').status_code, 200)
+        self.assertFalse(app.app.state.position_commit_write_capable)
+        from unittest.mock import patch
+        payload = {
+            'schemaVersion': 1, 'account': 'titan', 'symbol': 'XAUUSD',
+            'positionTicket': '123456', 'expectedRevision': 'a' * 64,
+            'previewId': 'valid-preview-token-at-least-32-characters',
+            'userConfirmed': True, 'idempotencyKey': 'b98d71dc-bd22-4a68-8d45-935a5e4b1cf1',
+        }
+        with patch.dict('os.environ', {'DASHBOARD_CONTROL_TOKEN': 'real-app-test-token'}):
+            response = client.post('/api/chart/v1/position/commit-stop', json=payload,
+                                   headers={'Authorization': 'Bearer real-app-test-token'})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()['detail']['code'], 'COMMIT_DISABLED')
 
     def test_authenticated_browser_mutation_is_allowed(self):
         response = self.client.get('/api/control_session')

@@ -63,9 +63,9 @@
 ### Task 4: Review candidate while preserving the release gate
 
 - [x] Independently review broker-write path, proxy/firewall configuration, audit persistence and flag wiring; no blocking findings.
-- [ ] Verify deployed capability remains `brokerMutations=false`; verify authenticated `/stt` cannot reach a write with flag/provider absent.
+- [x] Verify deployed capability remains disabled: the real-app regression confirms `position_commit_write_capable=False` and an authenticated commit request returns `COMMIT_DISABLED` before any gateway access; guarded local/htown runtime reports clean matching `main` revisions.
 - [x] Update FR-007/AT status to distinguish code/test completion from the remaining user-controlled release gate.
-- [ ] Do not enable the flag or call a mutation route. Present the reviewed candidate, exact future demo operation list, rollback procedure and security results for explicit user write approval before any demo write E2E.
+- [x] Keep the live flag disabled and do not call the live mutation route. The user authorized all four non-Blueberry demo accounts for testing; Blueberry remains excluded. A demo-write E2E is still blocked on the remaining guard/store/UI integration.
 
 ## Verification commands
 
