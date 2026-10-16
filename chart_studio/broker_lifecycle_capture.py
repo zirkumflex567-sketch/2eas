@@ -48,6 +48,22 @@ def _bar_integer(value):
     return int(value)
 
 
+def trade_snapshot_id(context, row):
+    """Return the immutable entry/exit snapshot key for one verified demo deal."""
+    if not isinstance(context, models.AccountContext) or type(row) is not dict:
+        raise ValueError('invalid snapshot source')
+    spec = gateway.ACCOUNTS.get(context.account_id)
+    if (not spec or spec.get('is_demo') is not True or row.get('account') != context.account_id or
+            row.get('login') != str(spec['login']) or row.get('server') != context.broker_server or
+            row.get('symbol') != spec.get('symbol') or row.get('source') != 'MT5_VERIFIED' or
+            row.get('canExecute') is not False or row.get('entry') not in ('IN', 'OUT', 'OUT_BY')):
+        raise ValueError('unverified snapshot source')
+    capture_type = 'ENTRY' if row['entry'] == 'IN' else 'EXIT'
+    identity = hashlib.sha256(models.canonical_bytes([context.account_id, context.terminal_identity_hash,
+        models.ticket(row['positionIdentifier']), models.ticket(row['ticket']), capture_type])).hexdigest()[:40]
+    return 'snap_' + identity
+
+
 def trade_snapshot_envelope(context, row, raw_bars, *, captured_at_utc, timeframe, digits):
     """Freeze completed MT5 bars for a verified entry/exit deal."""
     if not isinstance(context, models.AccountContext) or type(row) is not dict:
@@ -84,10 +100,9 @@ def trade_snapshot_envelope(context, row, raw_bars, *, captured_at_utc, timefram
         raise ValueError('completed market bars unavailable')
     digest = hashlib.sha256(models.canonical_bytes(normalized)).hexdigest()
     capture_type = 'ENTRY' if row['entry'] == 'IN' else 'EXIT'
-    identity = hashlib.sha256(models.canonical_bytes([context.account_id, context.terminal_identity_hash,
-        row['positionIdentifier'], row['ticket'], capture_type])).hexdigest()[:40]
+    snapshot_id = trade_snapshot_id(context, row)
     market_ref_id = 'bars_' + digest[:48]
-    body = dict(snapshotId='snap_'+identity, accountId=context.account_id,
+    body = dict(snapshotId=snapshot_id, accountId=context.account_id,
         positionIdentifier=models.ticket(row['positionIdentifier']), dealTicket=models.ticket(row['ticket']),
         captureType=capture_type, asOfUtc=asof,
         chartView=dict(symbol=row['symbol'],timeframe=timeframe,fromUtc=normalized[0]['timeUtc'],toUtc=normalized[-1]['timeUtc'],
@@ -315,8 +330,20 @@ class DemoBrokerLifecycleCapture:
                 if deal_row.get('entry') not in ('IN','OUT','OUT_BY'):
                     continue
                 try:
+                    context = models.AccountContext.from_config(account)
+                    snapshot_id = trade_snapshot_id(context, deal_row)
+                    existing = self.store.read(context, kind='SNAPSHOT', record_id=snapshot_id)
+                    existing_rows = existing.get('records') if isinstance(existing, dict) else None
+                    if existing_rows:
+                        record = existing_rows[0]
+                        if (len(existing_rows) != 1 or not isinstance(record, dict) or
+                                record.get('type') != 'SNAPSHOT' or record.get('id') != snapshot_id or
+                                record.get('accountId') != account or record.get('dataRevision') != 1):
+                            raise ValueError('invalid existing snapshot record')
+                        aggregate['snapshotDuplicates'] += 1
+                        continue
                     snapshot = self._snapshot_for_deal(account, deal_row, captured_at, spec)
-                    outcome = self.store.append(models.AccountContext.from_config(account), snapshot)
+                    outcome = self.store.append(context, snapshot)
                     if outcome.get('ok') is not True:
                         aggregate['snapshotStoreLostCount'] += max(1, outcome.get('lostCount', 0))
                         aggregate['snapshotCoverage'] = 'UNKNOWN'

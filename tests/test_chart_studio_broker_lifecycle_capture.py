@@ -115,13 +115,22 @@ def test_demo_poll_persists_entry_snapshot_without_browser_and_retries_idempoten
         def __init__(self): self.records={}
         def append(self,ctx,envelope):
             key=(envelope['type'],envelope['id'])
-            duplicate=key in self.records
+            existing=self.records.get(key)
+            if existing is not None and key[0]=='SNAPSHOT' and existing!=envelope:
+                return {'ok':False,'code':'CONFLICT','lostCount':1}
+            duplicate=existing is not None
             self.records[key]=envelope
             return {'ok':True,'code':'IDEMPOTENT' if duplicate else 'APPENDED','lostCount':0}
+        def read(self,ctx,*,kind,record_id):
+            row=self.records.get((kind,record_id))
+            return {'records':[row] if row else [],'availability':'RECORDED' if row else 'NOT_RECORDED',
+                    'storeState':'INITIALIZED'}
     class MT5:
         TIMEFRAME_M15=15
+        def __init__(self): self.bar_reads=0
         def symbol_info(self,symbol): return type('Info',(),{'name':symbol,'digits':2})()
         def copy_rates_range(self,symbol,timeframe,start,stop):
+            self.bar_reads+=1
             return [dict(time=asof-1800,open=4150.,high=4155.,low=4149.,close=4151.,tick_volume=10,spread=18,real_volume=0),
                     dict(time=asof-900,open=4151.,high=4156.,low=4150.,close=4152.,tick_volume=11,spread=18,real_volume=0)]
         def order_send(self,*_args,**_kwargs): raise AssertionError('trade mutation called')
@@ -129,10 +138,12 @@ def test_demo_poll_persists_entry_snapshot_without_browser_and_retries_idempoten
     def verified(_mt5,account): yield spec
     monkeypatch.setattr(service.gateway,'traced_session',verified)
     monkeypatch.setattr(service.broker_reads,'trades_read',lambda *_args,**_kwargs:{'trades':[deal()],'nextCursor':None})
-    store=Store(); poller=service.DemoBrokerLifecycleCapture(store,MT5(),['titan'],clock=lambda:1792088160.)
+    store=Store(); mt5=MT5(); times=iter((1792088160.,1792088170.))
+    poller=service.DemoBrokerLifecycleCapture(store,mt5,['titan'],clock=lambda:next(times))
     first=poller.poll_once()['titan']; second=poller.poll_once()['titan']
     snapshots=[env for (kind,_),env in store.records.items() if kind=='SNAPSHOT']
-    assert first['snapshotsAppended']==1 and second['snapshotDuplicates']==1
+    assert first['snapshotsAppended']==1 and second['snapshotDuplicates']==1, (first,second)
+    assert second['snapshotStoreLostCount']==0 and mt5.bar_reads==1
     assert len(snapshots)==1 and snapshots[0]['payload']['marketData']['bars']
     assert snapshots[0]['payload']['lifecycleEventIds']==[dict(type='LIFECYCLE',id='mt5_deal_8712345',dataRevision=1)]
 
