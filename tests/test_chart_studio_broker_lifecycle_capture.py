@@ -421,7 +421,8 @@ def test_decision_capture_status_is_authenticated_demo_scoped_and_redacted(monke
     assert allowed.status_code == 200
     assert allowed.json() == {
         'schemaVersion':1,'account':'xau5m_m5','canExecute':False,
-        'status':{'code':'IDLE','imported':0,'duplicates':2,'gapCount':1,
+        'status':{'code':'IDLE','imported':0,'duplicates':2,'importedTotal':0,
+                  'duplicatesTotal':0,'gapCount':1,
                   'gapObserved':True,'storeLostCount':3,'recordingState':'RECORDED'}
     }
     marketplace = client.get('/api/chart/v1/decisions/capture/status', params={'account':'titan'})

@@ -338,17 +338,47 @@ class SpoolFileConsumer:
 
 
 async def run_spool_service(app, consumer, *, interval=1.0, poll=asyncio.to_thread):
-    """Run bounded file polling off the event loop until app shutdown."""
-    app.state.evidence_spool_status={}
+    """Poll off-loop and retain process-lifetime import counters between polls."""
+    app.state.evidence_spool_status = {}
+    totals = {name: {'importedTotal': 0, 'duplicatesTotal': 0} for name in consumer.producers}
+
+    def publish(result):
+        if not isinstance(result, dict):
+            raise ValueError('invalid spool status')
+        pending = {}
+        for name in consumer.producers:
+            entry = result.get(name)
+            if not isinstance(entry, dict):
+                raise ValueError('invalid producer status')
+            counts = (entry.get('imported', 0), entry.get('duplicates', 0))
+            if any(type(count) is not int or count < 0 for count in counts):
+                raise ValueError('invalid spool count')
+            pending[name] = (entry, counts)
+
+        status = {}
+        for name, (entry, counts) in pending.items():
+            totals[name]['importedTotal'] += counts[0]
+            totals[name]['duplicatesTotal'] += counts[1]
+            status[name] = {
+                **entry,
+                'importedTotal': totals[name]['importedTotal'],
+                'duplicatesTotal': totals[name]['duplicatesTotal'],
+            }
+        app.state.evidence_spool_status = status
+
     try:
         while True:
             in_flight=asyncio.create_task(poll(consumer.poll_once))
-            try:app.state.evidence_spool_status=await asyncio.shield(in_flight)
+            try:publish(await asyncio.shield(in_flight))
             except asyncio.CancelledError:
-                try:app.state.evidence_spool_status=await asyncio.shield(in_flight)
+                try:publish(await asyncio.shield(in_flight))
                 except Exception:pass
                 raise
-            except Exception:app.state.evidence_spool_status={name:{'code':'SPOOL_UNAVAILABLE','gapCount':0,'gapObserved':False} for name in consumer.producers}
+            except Exception:
+                app.state.evidence_spool_status = {
+                    name: {'code': 'SPOOL_UNAVAILABLE', 'gapCount': 0, 'gapObserved': False, **totals[name]}
+                    for name in consumer.producers
+                }
             await asyncio.sleep(interval)
     except asyncio.CancelledError:
         raise

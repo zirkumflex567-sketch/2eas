@@ -331,13 +331,50 @@ def test_spool_service_starts_and_stops_with_fastapi(private_root, spool_root, m
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline and (
             not store.read(context(), kind='DECISION')['records']
-            or app.state.evidence_spool_status.get('titan_demo', {}).get('imported') != 1
+            or app.state.evidence_spool_status.get('titan_demo', {}).get('importedTotal') != 1
         ):
             time.sleep(.02)
         assert len(store.read(context(), kind='DECISION')['records']) == 1
-        assert app.state.evidence_spool_status['titan_demo']['imported'] == 1
+        assert app.state.evidence_spool_status['titan_demo']['importedTotal'] == 1
 
     assert app.state.evidence_spool_task is None
+
+
+def test_spool_service_keeps_import_count_visible_after_idle_poll():
+    second_poll = threading.Event()
+
+    class Consumer:
+        producers = {'titan_demo': ('titan', None)}
+
+        def __init__(self):
+            self.polls = 0
+
+        def poll_once(self):
+            self.polls += 1
+            if self.polls == 1:
+                return {'titan_demo': {'code': 'IMPORTED', 'imported': 1, 'duplicates': 2,
+                                      'gapCount': 0, 'gapObserved': False, 'storeLostCount': 0}}
+            second_poll.set()
+            return {'titan_demo': {'code': 'IDLE', 'imported': 0, 'duplicates': 0,
+                                   'gapCount': 0, 'gapObserved': False, 'storeLostCount': 0}}
+
+    async def scenario():
+        app = FastAPI()
+        task = asyncio.create_task(run_spool_service(app, Consumer(), interval=.01))
+        assert await asyncio.to_thread(second_poll.wait, 2)
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and app.state.evidence_spool_status.get('titan_demo', {}).get('code') != 'IDLE':
+            await asyncio.sleep(.001)
+        status = app.state.evidence_spool_status['titan_demo']
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        return status
+
+    status = asyncio.run(scenario())
+    assert status['imported'] == 0
+    assert status['importedTotal'] == 1
+    assert status['duplicatesTotal'] == 2
 
 
 def test_spool_service_is_disabled_without_explicit_root(private_root, monkeypatch):
