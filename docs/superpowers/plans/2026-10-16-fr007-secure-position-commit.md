@@ -44,13 +44,13 @@
 
 ### Task 2: Bind a confirmed commit to a current preview and broker state
 
-- [ ] Complete the denial matrix; tests cover scope-bound token, expired/consumed/replayed preview, EA revision race, hard lock, geometry, no-send and demo-only account restriction. Focused regressions also cover stale quotes and fresh quotes entering stop/freeze boundaries after `order_check`, changed symbol rules, malformed/unknown guards, role/peer/confirmation failures, and wrong account/symbol pairs including protected-account rejection. Remaining scope: malformed principal tuple shapes and exhaustive tick-boundary cases.
+- [x] Complete the denial matrix; tests cover scope-bound token, expired/consumed/replayed preview, EA revision race, hard lock, geometry, no-send and demo-only account restriction. Focused regressions also cover stale quotes and fresh quotes entering stop/freeze boundaries after `order_check`, changed symbol rules, malformed/unknown guards, role/peer/confirmation failures, malformed principal tuple shapes, wrong account/symbol pairs including protected-account rejection, and directional BUY/SELL SL/TP stop/freeze boundaries. Exact stop-distance boundaries are accepted, distances inside the stop level are rejected, freeze-boundary prices are rejected, and one tick beyond freeze is accepted. Identity fields and peer values must be non-empty before any reservation or gateway access.
 - [x] Test SL-only preserves TP, TP-only preserves SL, explicit clear, and reject ambiguous/no-op requests.
 - [x] Test hard lock and conservative BUY/SELL SL/TP action classification with a fake guard, including stop/target tightening, loosening, adding and clearing protection. Authoritative daily DD/max-risk and symbol-position-cap policies remain open; risk-reducing SL/TP changes must not inherit entry-news blocks, while uncertainty blocks risk increases.
 - [x] Add atomic scope-bound one-time consumption to the preview registry; expiry, scope mismatch, replay and concurrent consumption tests pass.
 - [x] Implement injected commit orchestration with fresh account/ticket/quote/metadata reads, final revision verification and a fail-closed guard-provider contract under the account gateway lock. Production wiring still has no provider and stays disabled.
 - [x] Add supported MT5 `order_check` preflight and retcode handling; a successful check is followed by fresh revision/guard validation and is never treated as the broker change.
-- [x] Run focused tests (`121 passed` across position preview/commit; `197 passed` with proxy/control security). All new denial paths assert zero broker writes; preflight state-change cases assert zero sends. Remaining denial-matrix gaps are listed in Task 2 above.
+- [x] Run focused tests (`121 passed` across position preview/commit before boundary expansion; `220 passed, 4 warnings` with proxy/control security after malformed-principal and full directional-boundary expansion). All denial paths assert zero broker writes and no idempotency reservation; preflight state-change cases assert zero sends.
 
 ### Task 3: Add durable idempotency, broker readback and audit
 

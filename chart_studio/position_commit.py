@@ -96,8 +96,9 @@ class PositionCommitService:
 
     def commit(self, payload, identity, peer):
         if (not isinstance(identity, tuple) or len(identity) != 3 or
-                any(not isinstance(part, str) for part in identity) or identity[2] != 'trade' or
-                not isinstance(peer, str) or not peer or payload.userConfirmed is not True):
+                any(not isinstance(part, str) or not part.strip() for part in identity) or
+                identity[2] != 'trade' or not isinstance(peer, str) or not peer.strip() or
+                payload.userConfirmed is not True):
             raise self._error(403, 'IDENTITY_REQUIRED')
         if (payload.account not in DEMO_COMMIT_ACCOUNTS or
                 payload.account not in gateway.ACCOUNTS or

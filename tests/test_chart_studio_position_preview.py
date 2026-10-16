@@ -558,6 +558,13 @@ def _prepare_commit_service(client, fake, tmp_path, guard=None, *, order_check_r
     (('local', 'testclient', 'read'), 'testclient', True),
     (('local', 'testclient', 'trade'), '', True),
     (('local', 'testclient', 'trade'), 'testclient', False),
+    ((), 'testclient', True),
+    (('local', 'testclient'), 'testclient', True),
+    (('local', 'testclient', 'trade', 'extra'), 'testclient', True),
+    (('', 'testclient', 'trade'), 'testclient', True),
+    (('local', '', 'trade'), 'testclient', True),
+    (('local', 'testclient', 'trade'), '   ', True),
+    (('local', None, 'trade'), 'testclient', True),
 ])
 def test_commit_requires_trade_identity_peer_and_explicit_confirmation(api, tmp_path, identity, peer, confirmed):
     from types import SimpleNamespace
@@ -580,6 +587,42 @@ def test_commit_requires_trade_identity_peer_and_explicit_confirmation(api, tmp_
     assert rejected.value.detail['code'] == 'IDENTITY_REQUIRED'
     assert fake.calls == []
     assert fake.writes == 0
+    with store._connection() as connection:
+        assert connection.execute('SELECT COUNT(*) FROM reservations').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize(('side', 'leg', 'candidate', 'stop_level', 'freeze_level', 'valid'), [
+    ('BUY', 'sl', '3999.90', 10, 0, True),
+    ('BUY', 'sl', '3999.91', 10, 0, False),
+    ('BUY', 'tp', '4000.10', 10, 0, True),
+    ('BUY', 'tp', '4000.09', 10, 0, False),
+    ('SELL', 'sl', '4000.15', 10, 0, True),
+    ('SELL', 'sl', '4000.14', 10, 0, False),
+    ('SELL', 'tp', '3999.95', 10, 0, True),
+    ('SELL', 'tp', '3999.96', 10, 0, False),
+    ('BUY', 'sl', '3999.95', 0, 5, False),
+    ('BUY', 'sl', '3999.94', 0, 5, True),
+    ('BUY', 'tp', '4000.05', 0, 5, False),
+    ('BUY', 'tp', '4000.06', 0, 5, True),
+    ('SELL', 'sl', '4000.10', 0, 5, False),
+    ('SELL', 'sl', '4000.11', 0, 5, True),
+    ('SELL', 'tp', '4000.00', 0, 5, False),
+    ('SELL', 'tp', '3999.99', 0, 5, True),
+])
+def test_broker_stop_freeze_and_tick_boundaries_are_directional(
+        side, leg, candidate, stop_level, freeze_level, valid):
+    from chart_studio.position_preview import geometry
+    from test_chart_studio_broker_reads import symbol
+
+    position = {'side': side, 'sl': None, 'tp': None, 'priceOpen': '4000.00',
+                'priceCurrent': '4000.00', 'volume': '1'}
+    quote = {'bid': '4000.00', 'ask': '4000.05'}
+    metadata = symbol(order_mode=48, trade_stops_level=stop_level, trade_freeze_level=freeze_level)
+    final, reasons, _ = geometry(position, {leg + 'Price': candidate}, metadata, quote)
+    assert (not reasons) is valid
+    if not valid:
+        assert any(reason.endswith(('_OFF_GRID', '_STOPS_LEVEL', '_FREEZE_LEVEL')) for reason in reasons)
+    assert final[leg] == candidate
 
 
 @pytest.mark.parametrize(('account', 'symbol'), [
