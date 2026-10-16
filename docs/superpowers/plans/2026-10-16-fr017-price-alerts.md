@@ -15,6 +15,12 @@ Deliver explicit user-created price crossing alerts in Chart Studio Beta. Alerts
 ## Verification
 
 - scripts/test_chart_studio_alerts.cjs: RED/GREEN engine tests cover both crossing directions, stale-gap, provenance, duplicate quotes, one-shot trigger, re-arm, capacity, and validation.
+- scripts/test_chart_studio_alert_storage.cjs: Chromium regression verifies blocked storage access and quota failures leave alerts usable in-memory while a persistent notice discloses that reload persistence is unavailable.
 - scripts/smoke_chart_studio_beta.cjs: Chromium fixture verifies explicit permission gesture, scoped GET polling, hidden-tab pause/resume, notification, deduplication, account isolation, and no mutation.
 - The focused test is wired into Chart Studio CI. Run JavaScript/Python syntax, indicator and Workspace suites, and full Beta Chromium smoke before deployment.
 - Deploy only after green local validation; verify exact main on local runtime and htown /stt. Do not invoke MT5 writes, open/attach EAs, or run strategy backtests.
+
+## Follow-up implementation (16 October 2026)
+
+- Prevented a `SecurityError` from the `window.localStorage` getter from aborting alert mounting. A blocked read/write now leaves rules usable in the current tab and displays a separate persistent warning that survives normal status updates.
+- Focused engine, storage, workspace/extension tests and full Beta Chromium smoke pass locally. Live/hardware acceptance remains open.

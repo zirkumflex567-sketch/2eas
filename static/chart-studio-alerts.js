@@ -46,8 +46,10 @@ function createEngine({account,symbol,timeframe,initial=[],now=()=>Date.now()}={
  }
  return Object.freeze({scope:Object.freeze({...scope}),add,remove,rearm,list,observe,get stale(){return stale},hasActive(){return [...rules.values()].some(rule=>!rule.triggered)},canPoll(){return rules.size>0&&[...rules.values()].some(rule=>!rule.triggered)}});
 }
-function mount({panel,getContext,fetchImpl=window.fetch?.bind(window),storage=window.localStorage,notification=window.Notification}={}){
+function mount({panel,getContext,fetchImpl=window.fetch?.bind(window),storage,notification=window.Notification}={}){
  if(!panel||typeof getContext!=="function")return null;
+ let alertStorage=storage;
+ if(alertStorage===undefined)try{alertStorage=window.localStorage}catch(_){alertStorage=null}
  const details=document.createElement("details");details.className="cs-alerts";details.dataset.testid="price-alerts";
  const summary=document.createElement("summary");summary.textContent="Preisalarme · verifizierte MT5-Quotes · keine Handelsaktion";
  const body=document.createElement("div");body.className="cs-alerts-body";
@@ -60,11 +62,12 @@ function mount({panel,getContext,fetchImpl=window.fetch?.bind(window),storage=wi
  const permissionButton=document.createElement("button");permissionButton.type="button";permissionButton.textContent="Browserbenachrichtigungen aktivieren";permissionButton.dataset.cmd="notification-permission";
  form.append(directionLabel,priceLabel,addButton);body.append(form,permissionButton);
  const status=document.createElement("p");status.setAttribute("role","status");status.setAttribute("aria-live","polite");status.textContent="Keine Alarme aktiv.";
- const list=document.createElement("ul");list.setAttribute("aria-label","Gespeicherte Preisalarme");body.append(status,list);details.append(summary,body);panel.prepend(details);
+ const storageNotice=document.createElement("p");storageNotice.className="cs-alert-storage-notice";storageNotice.setAttribute("role","status");storageNotice.setAttribute("aria-live","polite");
+ const list=document.createElement("ul");list.setAttribute("aria-label","Gespeicherte Preisalarme");body.append(status,storageNotice,list);details.append(summary,body);panel.prepend(details);
  let context=null,engine=null,timer=null,busy=false,generation=0,destroyed=false,pollController=null;
  function key(scope){return PREFIX+encodeURIComponent(scope.account)+":"+encodeURIComponent(scope.symbol)+":"+encodeURIComponent(scope.timeframe)}
- function read(scope){try{const raw=JSON.parse(storage.getItem(key(scope))||"[]");return Array.isArray(raw)?raw.map(cleanRule).filter(Boolean).slice(0,MAX_RULES):[]}catch(_){return []}}
- function save(){if(!engine)return;try{storage.setItem(key(context),JSON.stringify(engine.list()))}catch(_){status.textContent="Alarme nur temporär verfügbar: lokaler Speicher nicht beschreibbar."}}
+ function read(scope){if(!alertStorage){storageNotice.textContent="Alarme nur in diesem Tab verfügbar: lokaler Speicher nicht verfügbar.";return []}try{const raw=JSON.parse(alertStorage.getItem(key(scope))||"[]");return Array.isArray(raw)?raw.map(cleanRule).filter(Boolean).slice(0,MAX_RULES):[]}catch(_){storageNotice.textContent="Alarme nur in diesem Tab verfügbar: gespeicherte Regeln konnten nicht gelesen werden.";return []}}
+ function save(){if(!engine)return;if(!alertStorage){storageNotice.textContent="Alarme nur in diesem Tab verfügbar: lokaler Speicher nicht beschreibbar.";return}try{alertStorage.setItem(key(context),JSON.stringify(engine.list()));storageNotice.textContent=""}catch(_){storageNotice.textContent="Alarme nur in diesem Tab verfügbar: lokaler Speicher nicht beschreibbar."}}
  function render(){
   if(!engine)return;list.replaceChildren();const rows=engine.list();
   for(const rule of rows){const li=document.createElement("li"),text=document.createElement("span");text.textContent=(rule.direction==="ABOVE"?"Kreuzt aufwärts ":"Kreuzt abwärts ")+rule.price+(rule.triggered?" · Ausgelöst "+rule.triggeredAt:" · Aktiv");li.append(text);

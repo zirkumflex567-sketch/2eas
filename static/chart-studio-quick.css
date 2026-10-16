@@ -168,6 +168,8 @@
 .cs-alerts button{cursor:pointer}
 .cs-alerts button:disabled{opacity:.55;cursor:not-allowed}
 .cs-alerts [role=status]{font-size:12px;min-height:1.3em;color:#c8e6ee;overflow-wrap:anywhere}
+.cs-alert-storage-notice:empty{display:none}
+.cs-alert-storage-notice:not(:empty){font-size:12px;color:#ffd18a;overflow-wrap:anywhere}
 .cs-alerts ul{display:grid;gap:6px;padding-left:20px}
 .cs-alerts li{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
 .cs-alerts li span{flex:1 1 220px}
