@@ -20,7 +20,8 @@ Duplicate every selected native v5 drawing from the keyboard or adapter API. Pre
 - [x] Run `npm --prefix chart_studio_v5 run check`.
 - [x] Run `npm --prefix chart_studio_v5 run build`.
 - [x] Run `node scripts/smoke_chart_studio_v5.cjs` including AT-025 capacity evidence.
-- [ ] Commit, push, deploy the clean exact-main revision, and verify CI/runtime identity.
+- [x] Commit and push the change on `main` as `7d942db`.
+- [ ] Wait for both GitHub workflows on this exact commit; deploy the clean exact-main revision and verify local/htown runtime identity.
 
 ## Limits
 
