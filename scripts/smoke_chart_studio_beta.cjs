@@ -62,7 +62,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
       estimatedCosts:{source:"USER_ASSUMPTION",currency:"USD",feesPerLot:feePerLot,feesTotal:fees,slippageTicks:req.slippageTicks||0,slippageAtStop:slipPerLot*volume,slippageAtTarget:slipPerLot*volume},
       netEstimate:{kind:"userAssumptionsEstimate",pnlAtSl:{amount:netStop,currency:"USD"},pnlAtTp:{amount:netTarget,currency:"USD"},riskRewardRatio:netStop<0&&netTarget>0?Number((netTarget/-netStop).toFixed(3)):null},
       dailyDrawdownProjection:{state:"AVAILABLE",source:"DASHBOARD_DD_ESTIMATE",currency:"USD",quoteTimeUtc:"2026-10-14T10:00:00Z",currentLoss:40,dailyLimit:350,scenarioStopRisk:Number(-netStop.toFixed(2)),projectedLoss:Number((40-netStop).toFixed(2)),remainingToLimit:Number((310+netStop).toFixed(2)),wouldExceedLimit:false,eaGuard:{state:"UNKNOWN",source:"NONE"}},
-      positionSizing:req.volumeLots==null?{mode:req.riskBudget==null?"EQUITY_PERCENT":"RISK_BUDGET",volumeLots:volume,riskBudget:budget,grossStopRisk:Number((-risk+slipPerLot*volume).toFixed(2)),estimatedFees:fees,estimatedTotalStopRisk:Number((-netStop).toFixed(2)),currency:"USD"}:{mode:"FIXED_LOTS",volumeLots:volume,currency:"USD"}};
+      positionSizing:req.volumeLots==null?{mode:req.riskBudget==null?"EQUITY_PERCENT":"RISK_BUDGET",volumeLots:volume,riskBudget:budget,riskPercent:req.riskPercent??null,equityBasis:req.riskPercent==null?null:10000,grossStopRisk:Number((-risk+slipPerLot*volume).toFixed(2)),estimatedFees:fees,estimatedTotalStopRisk:Number((-netStop).toFixed(2)),currency:"USD"}:{mode:"FIXED_LOTS",volumeLots:volume,currency:"USD"}};
     scenarioResponses.push(preview);
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(preview)});
   });
@@ -1153,6 +1153,16 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.equal(scenarioPayloads.at(-1).riskBudget,50);
   assert.equal(scenarioPayloads.at(-1).feesPerLot,3);
   assert.equal(scenarioPayloads.at(-1).slippageTicks,2);
+  await page.locator('[name="lotMode"]').selectOption("PERCENT");
+  await page.locator('[name="riskPercent"]').fill("0.5");
+  await page.locator('#cs-scenario-form button[type="submit"]').click();
+  await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("Equitybasis"));
+  assert.match(await page.locator("#cs-scenario-result").textContent(),/0\.5% von Equitybasis 10000 USD/);
+  assert.equal(scenarioPayloads.at(-1).riskPercent,0.5);
+  await page.locator('[name="lotMode"]').selectOption("BUDGET");
+  await page.locator('[name="riskBudget"]').fill("50");
+  await page.locator('#cs-scenario-form button[type="submit"]').click();
+  await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("Budget 50 USD"));
   await page.locator("#cs-scenario-save-a").click();
   assert.match(await page.locator("#cs-scenario-ab-status").textContent(),/A gespeichert/);
   const savedAContext=await page.evaluate(()=>JSON.parse(localStorage.getItem("2eas:studio:beta:titan:whatif-snapshots:XAUUSD")).A);

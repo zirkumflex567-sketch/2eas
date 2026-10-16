@@ -1533,7 +1533,9 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
     : " · USD-Konversion UNAVAILABLE ("+(result.usdConversion?.reason||"Quelle fehlt")+")";
    output.textContent="PLAN · GROSS Stop "+loss+" "+cur+" / Ziel +"+reward+" "+cur+
     " · R:R "+result.riskRewardRatio+" · Lots "+result.positionSizing.volumeLots+
-    (result.positionSizing.mode==="FIXED_LOTS"?"":" · Budget "+result.positionSizing.riskBudget+" "+cur+" · GROSS-Risiko nach Slippage "+result.positionSizing.grossStopRisk+" "+cur+" · Gesamtrisiko-Annahme "+result.positionSizing.estimatedTotalStopRisk+" "+cur)+
+    (result.positionSizing.mode==="FIXED_LOTS"?"":" · Budget "+result.positionSizing.riskBudget+" "+cur+
+      (result.positionSizing.mode==="EQUITY_PERCENT"?" · "+(result.positionSizing.riskPercent??"UNKNOWN")+"% von Equitybasis "+(result.positionSizing.equityBasis??"UNKNOWN")+" "+cur:"")+
+      " · GROSS-Risiko nach Slippage "+result.positionSizing.grossStopRisk+" "+cur+" · Gesamtrisiko-Annahme "+result.positionSizing.estimatedTotalStopRisk+" "+cur)+
     " · NETTO-Annahme SL "+result.netEstimate.pnlAtSl.amount+" / TP "+result.netEstimate.pnlAtTp.amount+" "+cur+" · Gebühren "+result.estimatedCosts.feesPerLot+" "+cur+"/Lot Roundtrip · adverse Slippage "+result.estimatedCosts.slippageTicks+" Ticks (User-Annahme)"+
     (result.dailyDrawdownProjection?.state==="AVAILABLE"?" · Tages-DD-Schätzung "+result.dailyDrawdownProjection.projectedLoss+"/"+result.dailyDrawdownProjection.dailyLimit+" "+result.dailyDrawdownProjection.currency+" · Rest "+result.dailyDrawdownProjection.remainingToLimit+" · Quote "+result.dailyDrawdownProjection.quoteTimeUtc+" · EA-Guard UNKNOWN":" · Tages-DD UNAVAILABLE ("+(result.dailyDrawdownProjection?.reason||"Daten fehlen")+") · EA-Guard UNKNOWN")+
     " · Margin "+result.margin.amount+" "+cur+

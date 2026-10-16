@@ -48,13 +48,19 @@ function verifySizing(account, response, expectedMode, currency, budget, percent
   const min = Number(symbolInfo.volumeMin);
   const max = Number(symbolInfo.volumeMax);
   const step = Number(symbolInfo.volumeStep);
+  const effectiveBudget = percent === null
+    ? Number(budget)
+    : Number(sizing.equityBasis) * Number(sizing.riskPercent) / 100;
   assert.ok(Number.isFinite(lots) && lots >= min - 1e-10 && lots <= max + 1e-10, `${account}: lots outside broker limits`);
   assert.ok(Math.abs(lots / step - Math.round(lots / step)) < 1e-7, `${account}: volume is off broker step`);
-  assert.ok(Number(sizing.estimatedTotalStopRisk) <= budget + 0.02, `${account}: calculated risk exceeded budget`);
+  assert.ok(Number(sizing.estimatedTotalStopRisk) <= effectiveBudget + 0.02, `${account}: calculated risk exceeded budget`);
   assert.ok(Number(sizing.unusedRiskBudget) >= -0.02, `${account}: negative unused risk budget`);
   if (percent !== null) {
     assert.equal(Number(sizing.riskPercent), percent);
-    assert.equal(Number(sizing.riskBudget).toFixed(2), Number(budget).toFixed(2));
+    assert.ok(Number.isFinite(Number(sizing.equityBasis)) && Number(sizing.equityBasis) > 0,
+      `${account}: the equity snapshot used by this preview must be reported`);
+    assert.ok(Math.abs(Number(sizing.riskBudget) - Number(sizing.equityBasis) * Number(sizing.riskPercent) / 100) < 1e-7,
+      `${account}: risk budget must derive from the equity basis returned with this preview`);
   } else {
     assert.equal(Number(sizing.riskBudget).toFixed(2), Number(budget).toFixed(2));
     assert.equal(sizing.riskPercent, null);

@@ -126,11 +126,13 @@ def size_for_risk_budget(mt5, account_info, symbol_info, *, symbol, side, entry,
     currency = str(getattr(account_info, "currency", "") or "").upper()
     if not currency:
         raise PreviewError("ACCOUNT_CURRENCY_UNKNOWN", "MT5-Kontowährung nicht verfügbar.")
+    equity_basis = None
     if risk_percent is not None:
         percent = finite_positive(risk_percent, "riskPercent")
         if percent > 100:
             raise PreviewError("INVALID_INPUT", "Equity-Risiko muss höchstens 100 Prozent betragen.")
         equity = finite_positive(getattr(account_info, "equity", None), "equity")
+        equity_basis = equity
         budget = equity * percent / 100
     else:
         percent = None
@@ -175,6 +177,7 @@ def size_for_risk_budget(mt5, account_info, symbol_info, *, symbol, side, entry,
         "volumeLots": volume,
         "riskBudget": round(budget, 8),
         "riskPercent": percent,
+        "equityBasis": round(equity_basis, 8) if equity_basis is not None else None,
         "grossStopRisk": round(gross_risk, 8),
         "estimatedFees": round(estimated_fees, 8),
         "estimatedTotalStopRisk": round(actual_risk, 8),

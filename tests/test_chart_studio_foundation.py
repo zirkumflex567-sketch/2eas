@@ -168,6 +168,8 @@ class ChartStudioFoundationTests(unittest.TestCase):
         self.assertEqual(sized["volumeLots"],.05)
         self.assertEqual(sized["riskBudget"],50)
         self.assertEqual(sized["riskPercent"],.5)
+        self.assertEqual(sized["equityBasis"],10000)
+        self.assertEqual(sized["riskBudget"],sized["equityBasis"]*sized["riskPercent"]/100)
         self.assertEqual(sized["currency"],"EUR")
 
     def test_risk_sizing_rejects_budget_below_minimum_and_missing_broker_values(self):
