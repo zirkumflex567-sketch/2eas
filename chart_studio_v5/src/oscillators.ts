@@ -188,7 +188,7 @@ function oscillatorStep(state:StreamState,bar:Candle,index:number,previous:Candl
   const s=settings as {period:number;stochPeriod:number;smoothK:number;smoothD:number};let {count,gainSum,lossSum,gain,loss}=state;
   let rsiWindow=state.rsiWindow,rawWindow=state.rawWindow,kWindow=state.kWindow,rawSum=state.rawSum,kSum=state.kSum;
   if(state.close!==null){const delta=bar.close-state.close;if(count<s.period){gainSum+=Math.max(delta,0);lossSum+=Math.max(-delta,0);count++;if(count===s.period){gain=gainSum/s.period;loss=lossSum/s.period}}else{gain=(gain!*(s.period-1)+Math.max(delta,0))/s.period;loss=(loss!*(s.period-1)+Math.max(-delta,0))/s.period}
-   if(count>=s.period){const value=gain===0&&loss===0?50:loss===0?100:gain===0?0:100-100/(1+gain/loss);rsiWindow=[...rsiWindow,value];if(rsiWindow.length>s.stochPeriod)rsiWindow.shift();
+   if(count>=s.period){const g=gain!,l=loss!,value=g===0&&l===0?50:l===0?100:g===0?0:100-100/(1+g/l);rsiWindow=[...rsiWindow,value];if(rsiWindow.length>s.stochPeriod)rsiWindow.shift();
     if(rsiWindow.length===s.stochPeriod){const low=Math.min(...rsiWindow),high=Math.max(...rsiWindow),raw=high===low?50:100*(value-low)/(high-low);rawWindow=[...rawWindow,raw];rawSum+=raw;if(rawWindow.length>s.smoothK)rawSum-=rawWindow.shift()!;
      if(rawWindow.length===s.smoothK){const kval=rawSum/s.smoothK;add("stochRsiK",kval);kWindow=[...kWindow,kval];kSum+=kval;if(kWindow.length>s.smoothD)kSum-=kWindow.shift()!;if(kWindow.length===s.smoothD)add("stochRsiD",kSum/s.smoothD)}}}}
   return {state:{kind:"stochrsi",close:bar.close,count,gainSum,lossSum,gain,loss,rsiWindow,rawWindow,kWindow,rawSum,kSum},points};
