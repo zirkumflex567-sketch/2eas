@@ -1138,28 +1138,35 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
         raise HTTPException(status_code=422, detail="Ungültiger Chart-Timeframe.")
     tf_val = TIMEFRAME_MAP[tf_upper]
     count = min(1000, max(10, count))
+    rates_offset = broker_clock.rates_offset_seconds(current_acc)
     fetch_count = max(5000, count+250) if (account == 'goldm15' and sym_name == SYMBOL and tf_val == mt5.TIMEFRAME_M15) else (count+250)
     if before is None:
         rates = _mt5_read('copy_rates_from_pos', sym_name, tf_val, 0, fetch_count)
     else:
         # MT5 date cursors are inclusive; trim the cursor bar so adjacent pages
-        # cannot duplicate a candle. Fetch an additional row for that boundary.
+        # cannot duplicate a candle. Convert normalized UTC to this account's
+        # verified source basis before querying and filtering.
         fetch_count = count + 251
-        historical_from = datetime.fromtimestamp(before, timezone.utc)
+        source_before = before + rates_offset
+        historical_from = datetime.fromtimestamp(source_before, timezone.utc)
         rates = _mt5_read('copy_rates_from', sym_name, tf_val, historical_from, fetch_count)
         if rates is not None and len(rates):
-            rates = rates[rates['time'] < before]
+            rates = rates[rates['time'] < source_before]
     if rates is None or len(rates) == 0 or (before is None and len(rates) < 2):
         if before is not None:
             raise HTTPException(status_code=404, detail="Keine älteren MT5-Kerzen vor diesem Cursor verfügbar.")
         raise HTTPException(status_code=500, detail="Konnte Kerzen nicht laden")
 
+    if rates_offset:
+        rates = rates.copy()
+        rates['time'] = rates['time'] - rates_offset
+
     df = pd.DataFrame(rates)
     df['dt'] = pd.to_datetime(df['time'], unit='s')
 
-    # Keep history bars exactly as returned by the verified MT5 symbol read.
-    # Quotes have their own endpoint; folding a later tick into OHLC rewrites
-    # the broker candle and can mix prices from another symbol in test adapters.
+    # Normalize only the timestamp basis here. Quotes have their own endpoint;
+    # folding a later tick into OHLC rewrites the broker candle and can mix
+    # prices from another symbol in test adapters.
     df['ema9'] = df['close'].ewm(span=9, adjust=False).mean()
     df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()
     df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()

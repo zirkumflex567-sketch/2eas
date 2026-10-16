@@ -91,6 +91,22 @@ def test_trade_snapshot_freezes_only_completed_broker_candles_with_stable_identi
     assert service.trade_snapshot_envelope(context(),deal(entry='INOUT'),rows,captured_at_utc='2026-10-15T18:16:00Z',timeframe='M15',digits=2) is None
 
 
+def test_trade_snapshot_normalizes_explicit_broker_server_bar_times(monkeypatch):
+    service=api(); spec=importlib.import_module('account_gateway').ACCOUNTS['titan']
+    monkeypatch.setitem(spec,'rates_time_basis','BROKER_SERVER')
+    monkeypatch.setitem(spec,'broker_utc_offset_seconds',10800)
+    asof=deal()['fillTime']['utcEpochMs']//1000
+    rows=[dict(time=stamp+10800,open=4150.,high=4155.,low=4149.,close=4151.,
+               tick_volume=10,spread=18,real_volume=0)
+          for stamp in (asof-1800,asof-900,asof)]
+
+    snapshot=service.trade_snapshot_envelope(context(),deal(),rows,
+        captured_at_utc='2026-10-15T18:16:00Z',timeframe='M15',digits=2)
+
+    assert [bar['timeUtc'] for bar in snapshot['payload']['marketData']['bars']]==[
+        '2026-10-15T17:45:00.000000Z','2026-10-15T18:00:00.000000Z']
+
+
 def test_demo_poll_persists_entry_snapshot_without_browser_and_retries_idempotently(monkeypatch):
     from contextlib import contextmanager
     service=api(); spec=importlib.import_module('account_gateway').ACCOUNTS['titan']; asof=deal()['fillTime']['utcEpochMs']//1000

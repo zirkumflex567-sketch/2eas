@@ -165,6 +165,58 @@ def test_chart_candles_read_exact_requested_verified_symbol(isolated, monkeypatc
     isolated.send.assert_not_called()
 
 
+def test_chart_candles_normalize_explicit_broker_wall_time(isolated, monkeypatch):
+    raw = isolated.rates.copy()
+    raw['time'] += 10800
+    monkeypatch.setitem(gateway.ACCOUNTS['titan'], 'rates_time_basis', 'BROKER_SERVER')
+    monkeypatch.setitem(gateway.ACCOUNTS['titan'], 'broker_utc_offset_seconds', 10800)
+    contexts = []
+    original_offset = app.broker_clock.rates_offset_seconds
+    def record_offset(spec):
+        result = original_offset(spec)
+        contexts.append(('offset', spec.get('id'), spec.get('rates_time_basis'), spec.get('broker_utc_offset_seconds'), result))
+        return result
+    monkeypatch.setattr(app.broker_clock, 'rates_offset_seconds', record_offset)
+    def copy_rates(*args):
+        contexts.append(('read', gateway.selected()['id'], gateway.selected().get('rates_time_basis')))
+        return raw.copy()
+    monkeypatch.setattr(app.mt5, 'copy_rates_from_pos', copy_rates)
+
+    response = isolated.client.get('/api/candles?account=titan&tf=M15&symbol=XAUUSD')
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert contexts == [('offset','titan','BROKER_SERVER',10800,10800),('read','titan','BROKER_SERVER')]
+    assert body['candles'][-1]['time'] == int(raw[-1]['time']) - 10800
+    assert body['ema20'][-1]['time'] == body['candles'][-1]['time']
+    isolated.send.assert_not_called()
+
+
+def test_chart_history_cursor_roundtrips_normalized_utc(isolated, monkeypatch):
+    raw = isolated.rates.copy()
+    raw['time'] += 10800
+    cursor = int(isolated.rates['time'][290])
+    calls = []
+
+    def copy_from(symbol, timeframe, date_from, count):
+        calls.append((symbol, timeframe, date_from, count))
+        return raw[raw['time'] <= int(date_from.timestamp())][-count:].copy()
+
+    monkeypatch.setitem(gateway.ACCOUNTS['titan'], 'rates_time_basis', 'BROKER_SERVER')
+    monkeypatch.setitem(gateway.ACCOUNTS['titan'], 'broker_utc_offset_seconds', 10800)
+    monkeypatch.setattr(app.mt5, 'copy_rates_from', copy_from, raising=False)
+
+    response = isolated.client.get(f'/api/candles?account=titan&tf=M15&symbol=XAUUSD&count=10&before={cursor}')
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert calls[0][2].timestamp() == cursor + 10800
+    assert body['candles'][-1]['time'] == cursor - 900
+    assert all(row['time'] < cursor for row in body['candles'])
+    assert body['page']['nextBefore'] == body['candles'][0]['time']
+    isolated.send.assert_not_called()
+
+
 def test_chart_candles_supports_exclusive_historical_cursor_with_warmup(isolated, monkeypatch):
     calls=[]
     cursor=int(isolated.rates['time'][290])

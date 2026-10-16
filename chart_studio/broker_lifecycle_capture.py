@@ -8,6 +8,7 @@ import numbers
 import time
 
 import account_gateway as gateway
+import broker_clock
 import broker_telemetry
 from chart_studio import broker_reads, history_cursor
 from chart_studio import evidence_models as models
@@ -68,7 +69,8 @@ def trade_snapshot_envelope(context, row, raw_bars, *, captured_at_utc, timefram
     for source in raw_bars:
         stamp = _bar_integer(_bar_value(source, 'time'))
         # MT5 bars are keyed by opening time; only a candle closed by fill time is evidence.
-        stamp_utc = models.utc_timestamp(datetime.fromtimestamp(stamp, timezone.utc).isoformat())
+        stamp_utc = models.utc_timestamp(datetime.fromtimestamp(
+            broker_clock.rates_to_utc_epoch(stamp, spec), timezone.utc).isoformat())
         if models.market_bar_close_microseconds(stamp_utc,timeframe) > models.utc_microseconds(asof):
             continue
         normalized.append(dict(timeUtc=stamp_utc,

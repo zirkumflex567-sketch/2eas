@@ -111,7 +111,7 @@ def install_read_routes(app, mt5, *, now=None):
                 # configured broker wall clock (quote rawBrokerEpoch), not UTC.
                 # Convert through the same explicit per-account policy as ticks.
                 offset_seconds = broker_clock.offset_seconds(spec)
-                open_epoch = broker_clock.to_utc_epoch(int(raw_open), spec)
+                open_epoch = broker_clock.rates_to_utc_epoch(int(raw_open), spec)
                 start = datetime.fromtimestamp(open_epoch, timezone.utc)
                 stop = start + timedelta(seconds=durations[timeframe])
                 bar_open = start.isoformat(timespec='seconds').replace('+00:00','Z')
@@ -248,10 +248,9 @@ def install_read_routes(app, mt5, *, now=None):
                     raw_time = row['time'] if not hasattr(row, 'time') else row.time
                     if isinstance(raw_time, bool) or not isinstance(raw_time, numbers.Integral):
                         raise ValueError('invalid broker timestamp')
-                    # MT5 Python copy_rates_* returns candle opens in UTC. Unlike
-                    # symbol_info_tick/history timestamps, these bars must not
-                    # receive the account's broker-server offset.
-                    converted.append({'time':int(raw_time),
+                    # Normalize the observed per-account source basis. Some
+                    # verified terminals expose rates in broker-server time.
+                    converted.append({'time':broker_clock.rates_to_utc_epoch(int(raw_time), spec),
                                       'open':row['open'] if not hasattr(row, 'open') else row.open,
                                       'high':row['high'] if not hasattr(row, 'high') else row.high,
                                       'low':row['low'] if not hasattr(row, 'low') else row.low,

@@ -119,6 +119,20 @@ def test_mt5_numpy_bar_timestamps_are_builtin_utc_not_server_shifted(env):
     assert response.json()['asOfUtc'] == datetime.fromtimestamp(NOW, timezone.utc).isoformat()
 
 
+def test_regime_api_normalizes_explicit_broker_server_bar_times(env, monkeypatch):
+    client, adapter = env
+    adapter.rates = [NS(time=row.time+OFFSET, open=row.open, high=row.high,
+                        low=row.low, close=row.close) for row in adapter.rates]
+    monkeypatch.setitem(gateway.ACCOUNTS['titan'], 'rates_time_basis', 'BROKER_SERVER')
+    monkeypatch.setitem(gateway.ACCOUNTS['titan'], 'broker_utc_offset_seconds', OFFSET)
+
+    response = get(client)
+
+    assert response.status_code == 200, response.text
+    assert response.json()['barCount'] == 220
+    assert response.json()['regimeTags']['trend'] != 'UNKNOWN'
+
+
 def test_blueberry_is_denied_before_any_broker_access(env):
     client, adapter = env
 

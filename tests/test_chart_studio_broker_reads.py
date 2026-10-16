@@ -146,6 +146,7 @@ def fake(monkeypatch):
     monkeypatch.setattr(gateway, 'terminal_running', lambda _: True)
     for account in gateway.ACCOUNTS.values():
         monkeypatch.setitem(account, 'broker_utc_offset_seconds', 10800)
+        monkeypatch.setitem(account, 'rates_time_basis', 'BROKER_SERVER')
     adapter = MT5Fake()
     yield adapter
     assert adapter.writes == 0
