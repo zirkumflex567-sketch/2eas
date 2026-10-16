@@ -6,7 +6,7 @@
 #property copyright "Copyright 2026, Quantitative Systems"
 #property link      "https://www.mql5.com"
 #property version   "1.00"
-#property description "Monitors ANY running EA (including Market EAs) & protects Blueberry Funded Rules"
+#property description "Protects only the configured Blueberry funded account"
 
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
@@ -28,8 +28,19 @@ bool           m_daily_locked = false;
 bool           m_total_locked = false;
 bool           m_target_reached = false;
 
+bool IsBlueberryChallengeAccount()
+{
+   return AccountInfoInteger(ACCOUNT_LOGIN) == 5120620 &&
+          AccountInfoString(ACCOUNT_SERVER) == "BlueberryMarketsSVG-Live";
+}
+
 int OnInit()
 {
+   if(!IsBlueberryChallengeAccount())
+   {
+      Print("Blueberry-only guard: refusing non-Blueberry account.");
+      return INIT_FAILED;
+   }
    m_initial_balance   = AccountInfoDouble(ACCOUNT_BALANCE);
    m_day_start_balance = m_initial_balance;
    m_current_day       = 0;

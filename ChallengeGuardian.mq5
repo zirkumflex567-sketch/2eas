@@ -468,8 +468,19 @@ void CheckAccountProtection()
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
+bool IsBlueberryChallengeAccount()
+{
+   return AccountInfoInteger(ACCOUNT_LOGIN) == 5120620 &&
+          AccountInfoString(ACCOUNT_SERVER) == "BlueberryMarketsSVG-Live";
+}
+
 int OnInit()
 {
+   if(!IsBlueberryChallengeAccount())
+   {
+      Print("Blueberry-only guard: refusing non-Blueberry account.");
+      return INIT_FAILED;
+   }
    m_hud_visible       = InpShowHUDByDefault;
    m_daily_banned      = false;
    m_total_banned      = false;
