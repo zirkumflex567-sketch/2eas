@@ -830,7 +830,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const move=moveKeys[event.key],step=event.shiftKey?10:1;
   if(move&&nudgeSelectedDrawing(move[0]*step,move[1]*step)){event.preventDefault();event.stopImmediatePropagation();return}
   if((event.key==="Delete"||event.key==="Backspace")&&selectedDrawingIds.size){event.preventDefault();event.stopImmediatePropagation();deleteSelectedDrawings();return}
-  if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="d"&&selectedDrawingId){event.preventDefault();event.stopImmediatePropagation();duplicateSelectedDrawing()}
+  if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="d"&&selectedDrawingIds.size){event.preventDefault();event.stopImmediatePropagation();duplicateSelectedDrawings()}
   if(!event.ctrlKey&&!event.metaKey&&selectedDrawingIds.size&&event.key.toLowerCase()==="h"){
    event.preventDefault();event.stopImmediatePropagation();const items=[...selectedDrawingIds].map(id=>snapshotDrawing(id));
    setSelectedDrawingsVisible(items.some(item=>item?.options.visible!==false)?false:true);return;
@@ -1247,6 +1247,17 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   else if(source.kind==="CHANNEL")addChannel({...source.options,id});
   else addFibonacci({...source.options,id});
   selectDrawing(id);return id;
+ }
+ function duplicateSelectedDrawings():string[]{
+  guard();const sourceIds=[...selectedDrawingIds];
+  if(sourceIds.some(id=>!snapshotDrawing(id)))throw Error("Drawing selection changed");
+  const duplicates:string[]=[];
+  for(const sourceId of sourceIds){
+   selectDrawing(sourceId);const duplicateId=duplicateSelectedDrawing();
+   if(!duplicateId)throw Error("Drawing could not be duplicated");
+   duplicates.push(duplicateId);
+  }
+  selectDrawings(duplicates);return duplicates;
  }
  function setCandles(data:readonly Candle[]){
   guard();const next=normalizeCandles(data);finishDrag(true);undoStack.length=0;redoStack.length=0;bars=next;barsByTime=new Map(bars.map(c=>[c.time,c]));
@@ -2136,7 +2147,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   paneCount:chart.panes().length,volumeVisible:!!volume,persistenceStatus,persistenceError}}
  function destroy(){if(destroyed)return;finishDrag(true);clearPositionOverlays();destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();managedMovingAverages.clear();donchianOverlays.clear();bollingerOverlays.clear();keltnerOverlays.clear();linearRegressionOverlays.clear();supertrendOverlays.clear();parabolicSarOverlays.clear();paneLines.clear();oscillators.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();measurements.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
   return Object.freeze({setCandles,addAverage,addMovingAverage,addDonchian,removeDonchian,addBollinger,updateBollinger,removeBollinger,bollingerOptions,addKeltner,removeKeltner,addLinearRegression,updateLinearRegression,removeLinearRegression,linearRegressionOptions,addSupertrend,updateSupertrend,removeSupertrend,supertrendOptions,addParabolicSar,updateParabolicSar,removeParabolicSar,parabolicSarOptions,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,deleteSelectedDrawings,addPriceLevel,updatePriceLevel,removePriceLevel,
-  addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,drawingPosition,drawingAnchorPosition,readDrawing,exportDrawings,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,
+  addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,drawingPosition,drawingAnchorPosition,readDrawing,exportDrawings,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,duplicateSelectedDrawings,
   addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,addOscillator,updateOscillator,removeOscillator,moveOscillator,oscillatorOptions,oscillatorPaneLayout,resizePane,paneHeights,showVolume,visibleLogicalRange,setVisibleLogicalRange,setDisplayTimeZone,displayTimeZone:()=>displayTimeZone,formatTimeLabel:formatDisplayTime,formatCrosshairTime,readDataWindow,
   updateLast,changeAccount,averageOptions,setPositionOverlays,readPositionOverlays,inspect,destroy});
 }

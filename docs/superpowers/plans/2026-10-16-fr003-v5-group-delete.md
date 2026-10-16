@@ -15,8 +15,8 @@
 - [x] Add a failing Chromium assertion for deleting a two-object selection from the keyboard and via the public API; confirm both drawings disappear, selection clears, undo restores them individually, and redo deletes them again.
 - [x] Run the focused v5 smoke and observe failure because `deleteSelectedDrawings` is unavailable and Delete only targets the primary ID.
 - [x] Implement validated multi-delete using existing per-kind removers; update Delete/Backspace to remove the complete current selection.
-- [x] Run TypeScript check/build and complete v5 Chromium smoke; final `git diff --check` is pending after docs edits.
+- [x] Run TypeScript check/build and complete v5 Chromium smoke; `git diff --check` passed after docs edits.
 - [x] Update FR-003/AT-006 evidence without claiming production v5 migration or hardware acceptance.
-- [ ] Commit and push on `main`, guarded-restart local runtime, fast-forward htown, and verify runtime identity and CI.
+- [x] Commit and push on `main`; htown was fast-forwarded and local runtime identity verified for commit `45d2261`. CI for that commit is tracked separately and still running as of 16 October 2026.
 
 **Limits:** Does not change v4 production controls, broker behavior, drawing formats, Strategy Tester, or the protected account.
