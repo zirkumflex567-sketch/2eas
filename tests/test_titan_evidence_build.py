@@ -4,12 +4,26 @@ import sys
 
 import pytest
 
-import pytest
-
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import build_titan_evidence as BUILD
+
+
+@pytest.fixture(autouse=True)
+def configured_demo_terminal_fixtures(tmp_path, monkeypatch):
+    """Keep build-contract tests independent of locally installed MT5 terminals."""
+    import account_gateway
+
+    for alias in BUILD.ALLOWED_ACCOUNTS:
+        terminal_root = tmp_path / alias
+        terminal_root.mkdir()
+        terminal = terminal_root / "terminal64.exe"
+        terminal.touch()
+        (terminal_root / "MetaEditor64.exe").touch()
+        trade_include = terminal_root / "MQL5" / "Include" / "Trade" / "Trade.mqh"
+        trade_include.parent.mkdir(parents=True)
+        trade_include.touch()
+        monkeypatch.setitem(account_gateway.ACCOUNTS[alias], "terminal", str(terminal))
 
 
 @pytest.mark.parametrize("alias", ["xau5m_m5", "titan_m5"])
