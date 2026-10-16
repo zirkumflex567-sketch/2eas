@@ -17,3 +17,5 @@ Defaults are period 20 and multiplier 2.0. Period is an integer from 2 through 2
 ## Verification
 
 Run `node scripts/test_chart_studio_indicators.cjs`, focused workspace tests, `node scripts/smoke_chart_studio_beta.cjs`, JavaScript syntax checks, `python -m compileall -q app.py chart_studio`, and `git diff --check`. Review the complete diff before updating `main` and deploying. Do not run any backtest, Strategy Tester, broker write, or Blueberry request.
+
+**Live acceptance (2026-10-16, main `1768270`):** The four permitted demo charts each returned 150 broker-verified XAU M15 bars and LIVE status; Chromium observed 58 GETs, no writes, no browser/API failures, and no Blueberry request. The deployed Beta Linear Regression Channel rendered upper/middle/lower on `titan`, with 131 valid values per line from 150 bars; 18 requests were GET-only, with no Blueberry request or mutation. Local focused tests and the complete Beta Chromium smoke passed; independent review reported no remaining findings. Native-v5 parity, production cutover, hardware and duration gates remain open.
