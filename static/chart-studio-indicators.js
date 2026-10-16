@@ -16,6 +16,7 @@ const REGISTRY=Object.freeze({
  cci:{name:"Commodity Channel Index",type:"oscillator",period:20,min:2,max:200},
  momentum:{name:"Momentum",type:"oscillator",period:10,min:2,max:200},
  roc:{name:"Rate of Change (%)",type:"oscillator",period:10,min:2,max:200},
+ sar:{name:"Parabolic SAR",type:"overlay",step:.02,maxStep:.2},
  donchian:{name:"Donchian-Kanal",type:"overlay",period:20,min:2,max:200},
  keltner:{name:"Keltner-Kanal",type:"overlay",period:20,atrPeriod:10,multiplier:2,min:2,max:200},
  vwap:{name:"Session-VWAP (Volumenproxy)",type:"overlay",timeZone:"UTC",sessionStart:"00:00"}
@@ -123,6 +124,30 @@ function roc(input,period=10){
   const reference=bars[i-period].close;
   if(reference===0)continue;
   out.push({time:bars[i].time,value:(bars[i].close/reference-1)*100});
+ }
+ return out;
+}
+function parabolicSar(input,step=.02,maxStep=.2){
+ const bars=validateBars(input),out=[];
+ const validAf=value=>Number.isFinite(value)&&value>=.01&&value<=.5&&Math.abs(value*100-Math.round(value*100))<1e-8;
+ if(bars.length<2||!validAf(step)||!validAf(maxStep)||step>.1||maxStep<step)return out;
+ let up=bars[1].close>=bars[0].close;
+ let sar=up?Math.min(bars[0].low,bars[1].low):Math.max(bars[0].high,bars[1].high);
+ let extreme=up?Math.max(bars[0].high,bars[1].high):Math.min(bars[0].low,bars[1].low);
+ let acceleration=step;
+ out.push({time:bars[1].time,value:sar,trend:up?"UP":"DOWN",color:up?"#41d89a":"#f47789"});
+ for(let i=2;i<bars.length;i++){
+  let projected=sar+acceleration*(extreme-sar);
+  projected=up?Math.min(projected,bars[i-1].low,bars[i-2].low):Math.max(projected,bars[i-1].high,bars[i-2].high);
+  const reversed=up?bars[i].low<=projected:bars[i].high>=projected;
+  if(reversed){
+   sar=extreme;up=!up;extreme=up?bars[i].high:bars[i].low;acceleration=step;
+  }else{
+   sar=projected;
+   const extended=up?bars[i].high>extreme:bars[i].low<extreme;
+   if(extended){extreme=up?bars[i].high:bars[i].low;acceleration=Math.min(maxStep,acceleration+step)}
+  }
+  out.push({time:bars[i].time,value:sar,trend:up?"UP":"DOWN",color:up?"#41d89a":"#f47789"});
  }
  return out;
 }
@@ -276,6 +301,7 @@ function calc(kind,candles,settings={}){
  if(kind==="cci")return {cci:cci(candles,settings.period??20)};
  if(kind==="momentum")return {momentum:momentum(candles,settings.period??10)};
  if(kind==="roc")return {roc:roc(candles,settings.period??10)};
+ if(kind==="sar")return {sar:parabolicSar(candles,settings.step??.02,settings.maxStep??.2)};
  if(kind==="vwap")return {vwap:vwap(candles,settings)};
  if(kind==="donchian")return {donchian:donchian(candles,settings.period??20)};
  if(kind==="keltner")return {keltner:keltner(candles,settings.period??20,settings.atrPeriod??10,settings.multiplier??2)};
@@ -285,7 +311,7 @@ function defaults(){
  return {rsi:{enabled:false,period:14},macd:{enabled:false,fast:12,slow:26,signal:9},
   atr:{enabled:false,period:14},volume:{enabled:false,upColor:"#41cce9",downColor:"#f7758b"},adx:{enabled:false,period:14},
   stochastic:{enabled:false,period:14,smoothK:3,smoothD:3},stochrsi:{enabled:false,period:14,stochPeriod:14,smoothK:3,smoothD:3},cci:{enabled:false,period:20},
-  momentum:{enabled:false,period:10},roc:{enabled:false,period:10},supertrend:{enabled:false,period:10,multiplier:3},
+  momentum:{enabled:false,period:10},roc:{enabled:false,period:10},sar:{enabled:false,step:.02,maxStep:.2},supertrend:{enabled:false,period:10,multiplier:3},
   donchian:{enabled:false,period:20},keltner:{enabled:false,period:20,atrPeriod:10,multiplier:2},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
 }
 function restore(account){
@@ -299,6 +325,9 @@ function restore(account){
      if(Object.hasOwn(result[id],prop)&&Number.isInteger(raw[id][prop])&&raw[id][prop]>=minimum&&raw[id][prop]<=maximum)
       result[id][prop]=raw[id][prop];
     }
+    if(id==="sar")for(const prop of ["step","maxStep"])
+     if(Number.isFinite(raw[id][prop])&&raw[id][prop]>=.01&&raw[id][prop]<=.5&&Math.abs(raw[id][prop]*100-Math.round(raw[id][prop]*100))<1e-8&&(prop!=="step"||raw[id][prop]<=.1))result.sar[prop]=raw[id][prop];
+    if(id==="sar"&&result.sar.step>result.sar.maxStep)result.sar={...defaults().sar,enabled:result.sar.enabled};
     if(["supertrend","keltner"].includes(id)&&Number.isFinite(raw[id].multiplier)&&raw[id].multiplier>=.1&&raw[id].multiplier<=10&&Math.abs(raw[id].multiplier*10-Math.round(raw[id].multiplier*10))<1e-8)result[id].multiplier=raw[id].multiplier;
     if(id==="volume")for(const prop of ["upColor","downColor"])
      if(typeof raw[id][prop]==="string"&&/^#[0-9a-fA-F]{6}$/.test(raw[id][prop]))result[id][prop]=raw[id][prop].toLowerCase();
@@ -328,11 +357,11 @@ function box(kind){
   const input=document.createElement("input");input.type="text";input.value=settings[prop];input.dataset.parameter=prop;input.dataset.kind=kind;
   input.setAttribute("aria-label",cfg.name+": "+labelText);label.append(input);row.append(label);
  }
- for(const prop of ["period","atrPeriod","fast","slow","signal","smoothK","smoothD","multiplier"]){
+ for(const prop of ["period","atrPeriod","fast","slow","signal","smoothK","smoothD","multiplier","step","maxStep"]){
   if(!Object.hasOwn(cfg,prop))continue;
-  const label=document.createElement("span");label.textContent=prop==="smoothK"?"%K Glättung":prop==="smoothD"?"%D Glättung":prop==="multiplier"?"Faktor":prop==="period"?"Periode":prop;
-  const input=document.createElement("input");input.type="number";input.min=prop==="smoothK"||prop==="smoothD"?1:prop==="multiplier"?.1:2;input.max=prop==="slow"?300:prop==="smoothK"||prop==="smoothD"?100:prop==="multiplier"?10:200;
-  input.step=prop==="multiplier"?.1:1;input.value=String(settings[prop]);input.dataset.parameter=prop;input.dataset.kind=kind;
+  const label=document.createElement("span");label.textContent=prop==="smoothK"?"%K Glättung":prop==="smoothD"?"%D Glättung":prop==="multiplier"?"Faktor":prop==="step"?"AF-Schritt":prop==="maxStep"?"AF-Maximum":prop==="period"?"Periode":prop;
+  const input=document.createElement("input");input.type="number";input.min=prop==="smoothK"||prop==="smoothD"?1:prop==="multiplier"?.1:prop==="step"||prop==="maxStep"?.01:2;input.max=prop==="slow"?300:prop==="smoothK"||prop==="smoothD"?100:prop==="multiplier"?10:prop==="step"?.1:prop==="maxStep"?.5:200;
+  input.step=prop==="multiplier"?.1:prop==="step"||prop==="maxStep"?.01:1;input.value=String(settings[prop]);input.dataset.parameter=prop;input.dataset.kind=kind;
   input.setAttribute("aria-label",cfg.name+": "+prop);
   row.append(label,input);
  }
@@ -345,7 +374,7 @@ function syncPanel(){
 }
 function data(kind){return calc(kind,state.bars,state.settings[kind])}
 function addReadout(kind,calculated){
- const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],vwap:["VWAP"]}[kind];
+ const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],sar:["SAR"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],vwap:["VWAP"]}[kind];
  if(kind==="donchian"||kind==="keltner"){
   const components=["upper","middle","lower"];
   for(let i=0;i<components.length;i++)for(const point of calculated[kind][components[i]]){
@@ -448,6 +477,20 @@ function renderPanes(){
    }
    continue;
   }
+  if(id==="sar"){
+   const calculated=state.settings.sar.enabled?data("sar"):null;
+   if(calculated)addReadout(id,calculated);
+   if(!state.sarUpOverlay&&state.settings.sar.enabled)state.sarUpOverlay=state.chart.addLineSeries({title:"Parabolic SAR · Aufwärtstrend",color:"#41d89a",lineWidth:2,lastValueVisible:true,priceLineVisible:false});
+   if(!state.sarDownOverlay&&state.settings.sar.enabled)state.sarDownOverlay=state.chart.addLineSeries({title:"Parabolic SAR · Abwärtstrend",color:"#f47789",lineWidth:2,lastValueVisible:true,priceLineVisible:false});
+   const visible=!!state.settings.sar.enabled,suffix=" · AF "+state.settings.sar.step+" / "+state.settings.sar.maxStep;
+   state.sarUpOverlay?.applyOptions({visible,title:"Parabolic SAR · Aufwärtstrend"+suffix});
+   state.sarDownOverlay?.applyOptions({visible,title:"Parabolic SAR · Abwärtstrend"+suffix});
+   if(calculated){const byTime=new Map(calculated.sar.map(point=>[point.time,point]));
+    state.sarUpOverlay.setData(state.bars.map(bar=>{const point=byTime.get(bar.time);return point?.trend==="UP"?{time:bar.time,value:point.value}:{time:bar.time}}));
+    state.sarDownOverlay.setData(state.bars.map(bar=>{const point=byTime.get(bar.time);return point?.trend==="DOWN"?{time:bar.time,value:point.value}:{time:bar.time}}));
+   }
+   continue;
+  }
   if(id==="vwap"){
    const calculated=state.settings.vwap.enabled?data("vwap"):null;
    if(calculated)addReadout(id,calculated);
@@ -478,7 +521,7 @@ function readout(time){
  if(!state)return "";
  const rows=state.readouts.get(Number(time))||[];
  const values=[];
- const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],vwap:["VWAP"]};
+ const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],sar:["SAR"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],vwap:["VWAP"]};
  for(const id of Object.keys(REGISTRY))if(state.settings[id].enabled){
   for(const label of components[id]){
    const row=rows.find(item=>item.kind===id&&item.label===label);
@@ -518,6 +561,11 @@ function updateConfig(kind,prop,val){
  else if(["supertrend","keltner"].includes(kind)&&prop==="multiplier"){
   const n=Number(val);if(!Number.isFinite(n)||n<.1||n>10||Math.abs(n*10-Math.round(n*10))>1e-8){state.notice.textContent="Faktor muss zwischen 0,1 und 10,0 in 0,1-Schritten liegen.";syncPanel();return false}state.settings[kind].multiplier=n;
  }
+ else if(kind==="sar"&&["step","maxStep"].includes(prop)){
+  const n=Number(val),candidate={...state.settings.sar,[prop]:n};
+  if(!Number.isFinite(n)||n<.01||n>.5||Math.abs(n*100-Math.round(n*100))>1e-8||prop==="step"&&n>.1||candidate.step>candidate.maxStep){state.notice.textContent="SAR benötigt AF-Schritt 0,01–0,10 und AF-Maximum ≥ Schritt bis 0,50, jeweils in 0,01-Schritten.";syncPanel();return false}
+  state.settings.sar[prop]=n;
+ }
  else if(Object.hasOwn(REGISTRY[kind],prop)){
   const n=Number(val),minimum=prop==="smoothK"||prop==="smoothD"?1:2,maximum=prop==="slow"?300:prop==="smoothK"||prop==="smoothD"?100:200;
   if(!Number.isInteger(n)||n<minimum||n>maximum){state.notice.textContent="Ungültiger Parameter ("+minimum+"–"+maximum+")";return false}
@@ -539,14 +587,16 @@ function applySettings(raw){
   if(id==="volume")for(const key of ["upColor","downColor"])
    if(typeof input[key]==="string"&&/^#[0-9a-fA-F]{6}$/.test(input[key]))fresh.volume[key]=input[key].toLowerCase();
   if(id==="vwap"){const config=sessionConfig(input);if(config){fresh.vwap.timeZone=config.timeZone;fresh.vwap.sessionStart=config.sessionStart}}
-  for(const key of ["period","atrPeriod","fast","slow","signal","smoothK","smoothD","multiplier"]){
+  for(const key of ["period","atrPeriod","fast","slow","signal","smoothK","smoothD","multiplier","step","maxStep"]){
    const value=Number(input[key]);
    if(key==="multiplier"&&["supertrend","keltner"].includes(id)){if(Number.isFinite(value)&&value>=.1&&value<=10&&Math.abs(value*10-Math.round(value*10))<1e-8)fresh[id][key]=value;continue}
+   if(id==="sar"&&["step","maxStep"].includes(key)){if(Number.isFinite(value)&&value>=.01&&value<=.5&&Math.abs(value*100-Math.round(value*100))<1e-8&&(key!=="step"||value<=.1))fresh.sar[key]=value;continue}
    const minimum=key==="smoothK"||key==="smoothD"?1:2,maximum=key==="slow"?300:key==="smoothK"||key==="smoothD"?100:200;
    if(Object.hasOwn(fresh[id],key)&&Number.isInteger(value)&&value>=minimum&&value<=maximum)
     fresh[id][key]=value;
   }
  }
+ if(fresh.sar.step>fresh.sar.maxStep)fresh.sar={...defaults().sar,enabled:fresh.sar.enabled};
  if(fresh.macd.fast>=fresh.macd.slow)fresh.macd.fast=Math.max(2,fresh.macd.slow-1);
  state.settings=fresh;persist();syncPanel();renderPanes();
 }
@@ -559,7 +609,7 @@ function mount({chart,host,panel,account="titan"}){
  head.textContent="Zusätzliche Indikator-Panes · unabhängig ein-/ausblendbar";panel.append(head,controls);
  const notice=document.createElement("p");notice.className="cs-indicator-notice";notice.textContent="Indikatoren basieren auf geladenen Brokerkerzen. Warm-up erforderlich.";
  panel.append(notice);
- state={chart,host,stack,controls,notice,account,settings:restore(account),bars:[],signature:null,panes:new Map(),vwapOverlay:null,supertrendUpOverlay:null,supertrendDownOverlay:null,donchianOverlays:null,keltnerOverlays:null,readouts:new Map()};
+ state={chart,host,stack,controls,notice,account,settings:restore(account),bars:[],signature:null,panes:new Map(),vwapOverlay:null,supertrendUpOverlay:null,supertrendDownOverlay:null,sarUpOverlay:null,sarDownOverlay:null,donchianOverlays:null,keltnerOverlays:null,readouts:new Map()};
  controls.addEventListener("change",evt=>{
   const target=evt.target;
   if(!target.dataset.kind)return;
@@ -570,5 +620,5 @@ function mount({chart,host,panel,account="titan"}){
  syncPanel();renderPanes();
 }
 window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,updateConfig,settings,readout,
- registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,stochRsi,cci,momentum,roc,macd,atr,adx,supertrend,donchian,keltner,vwap,volumes})});
+ registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,stochRsi,cci,momentum,roc,parabolicSar,macd,atr,adx,supertrend,donchian,keltner,vwap,volumes})});
 })();

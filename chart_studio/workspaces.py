@@ -21,7 +21,7 @@ DRAWING_TYPES = frozenset({"horizontal", "vertical", "text", "trend", "rect", "f
 UI_FLAGS = frozenset({"ema20", "ema50", "ema200", "sma20", "sma50",
                       "bb", "positions"})
 UI_NUMBERS = frozenset({"bbPeriod", "bbStdDev"})
-INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap", "stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner"})
+INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap", "stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner", "sar"})
 PERIOD_FIELDS = frozenset({"period", "atrPeriod", "fast", "slow", "signal", "smoothK", "smoothD"})
 SESSION_FIELDS = frozenset({"timeZone", "sessionStart"})
 TIMEFRAMES = frozenset({"M1", "M5", "M15", "M30", "H1", "H4", "D1"})
@@ -160,6 +160,8 @@ def validate_document(raw: Any) -> dict:
         accepted_fields = PERIOD_FIELDS | {"enabled"} | color_fields | session_fields
         if kind in {"supertrend", "keltner"}:
             accepted_fields = accepted_fields | {"multiplier"}
+        if kind == "sar":
+            accepted_fields = accepted_fields | {"step", "maxStep"}
         if not isinstance(values, dict) or any(k not in accepted_fields for k in values):
             raise StoreError("Ungültige Indikator-Parameter.")
         cleaned = {}
@@ -182,6 +184,12 @@ def validate_document(raw: Any) -> dict:
                     except (ZoneInfoNotFoundError, ValueError):
                         raise StoreError("Ungültige VWAP-IANA-Zeitzone.") from None
             else:
+                if param in {"step", "maxStep"} and kind == "sar":
+                    value = _number(value, param)
+                    if not 0.01 <= value <= 0.5 or abs(value * 100 - round(value * 100)) > 1e-8 or param == "step" and value > 0.1:
+                        raise StoreError("SAR AF-Schritt muss 0.01-0.10 und AF-Maximum 0.01-0.50 betragen; beide in 0.01-Schritten.")
+                    cleaned[param] = value
+                    continue
                 if param == "multiplier" and kind in {"supertrend", "keltner"}:
                     value = _number(value, param)
                     if not 0.1 <= value <= 10 or abs(value * 10 - round(value * 10)) > 1e-8:
@@ -198,6 +206,8 @@ def validate_document(raw: Any) -> dict:
                 if not minimum <= value <= maximum:
                     raise StoreError("Indikator-Periode außerhalb der Grenzen.")
             cleaned[param] = value
+        if kind == "sar" and cleaned.get("step", 0.02) > cleaned.get("maxStep", 0.2):
+            raise StoreError("SAR AF-Maximum darf nicht kleiner als der AF-Schritt sein.")
         clean_indicators[kind] = cleaned
     tf = raw["timeframe"]
     if not isinstance(tf, str) or tf not in TIMEFRAMES:

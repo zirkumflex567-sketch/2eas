@@ -190,4 +190,26 @@ assert.equal(math.vwap(sessionBars,{timeZone:"No/Such_Zone",sessionStart:"09:30"
 assert.equal(math.vwap(sessionBars,{timeZone:"UTC",sessionStart:"24:00"}).length,0);
 assert.ok(src.includes("Tick-/Realvolumenproxy"));
 
-console.log("PASS Chart Studio RSI/Stochastic/ATR/MACD/ADX/VWAP and broker volume math, warm-up, time alignment, read-only checks");
+// Parabolic SAR advances only from prior state, reverses at the projected stop,
+// and exposes separate trend values for overlay rendering.
+const sarBars=[
+ {time:1700600000,open:10,high:11,low:8,close:10},
+ {time:1700600060,open:10,high:12,low:9,close:11},
+ {time:1700600120,open:11,high:13,low:10,close:12},
+ {time:1700600180,open:12,high:14,low:11,close:13},
+ {time:1700600240,open:13,high:15,low:7,close:8}
+];
+const sar=math.parabolicSar(sarBars,.02,.2);
+assert.deepEqual(Array.from(sar,point=>point.trend),["UP","UP","UP","DOWN"]);
+const fallingSar=math.parabolicSar(sarBars.map(bar=>({...bar,open:20-bar.open,high:20-bar.low,low:20-bar.high,close:20-bar.close})),.02,.2);
+assert.deepEqual(Array.from(fallingSar,point=>point.trend),["DOWN","DOWN","DOWN","UP"]);
+assert.deepEqual(Array.from(sar,point=>point.time),sarBars.slice(1).map(bar=>bar.time));
+near(sar[0].value,8);near(sar[1].value,8);near(sar[2].value,8.2);near(sar[3].value,14);
+assert.deepEqual(Array.from(math.parabolicSar(sarBars.slice(0,4),.02,.2),point=>point.value),Array.from(sar.slice(0,3),point=>point.value),"Appending future bars cannot alter past SAR values");
+assert.equal(math.parabolicSar(sarBars,.0,.2).length,0);
+assert.equal(math.parabolicSar(sarBars,.03,.02).length,0);
+assert.equal(window.ChartStudioIndicators.calculate("sar",sarBars,{step:.02,maxStep:.2}).sar.length,4);
+assert.ok(Object.hasOwn(window.ChartStudioIndicators.registry,"sar"));
+assert.deepEqual(JSON.parse(JSON.stringify(window.ChartStudioIndicators.settings().sar)),{enabled:false,step:.02,maxStep:.2});
+
+console.log("PASS Chart Studio RSI/Stochastic/ATR/MACD/ADX/VWAP/SAR and broker volume math, warm-up, time alignment, read-only checks");

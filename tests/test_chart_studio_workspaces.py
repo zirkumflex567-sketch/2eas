@@ -333,6 +333,22 @@ class SqliteLayoutTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(StoreError):
                 validate_document({**original, "indicators": {"keltner": invalid}})
 
+    def test_parabolic_sar_settings_roundtrip_and_bounds(self):
+        original = example()
+        settings = {"enabled": True, "step": 0.02, "maxStep": 0.2}
+        document = {**original, "indicators": {"sar": settings}}
+        self.assertEqual(validate_document(document)["indicators"]["sar"], settings)
+        self.store.put("local-owner", "titan", "XAUUSD", "Parabolic SAR", document, 0)
+        self.assertEqual(self.store.get("local-owner", "titan", "XAUUSD", "Parabolic SAR")["document"]["indicators"]["sar"], settings)
+        for invalid in [
+            {**settings, "step": 0}, {**settings, "step": 0.101},
+            {**settings, "maxStep": 0.049}, {**settings, "maxStep": 0.501},
+            {**settings, "step": 0.03, "maxStep": 0.02},
+            {**settings, "step": 0.015}, {**settings, "unknown": 1},
+        ]:
+            with self.subTest(invalid=invalid), self.assertRaises(StoreError):
+                validate_document({**original, "indicators": {"sar": invalid}})
+
     def test_bollinger_settings_are_backward_compatible_strict_and_scoped(self):
         old = example()
         self.assertEqual(validate_document(old)["options"], old["options"])
