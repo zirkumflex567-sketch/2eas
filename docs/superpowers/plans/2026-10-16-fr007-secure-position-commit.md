@@ -47,7 +47,8 @@
 - [ ] Add failing tests for mismatched identity/peer/account/symbol/ticket/revision, expired/consumed preview, altered values, stale quote, invalid tick/stops/freeze geometry and unknown/hard-locked guard. Assert no send in every case.
 - [ ] Test that SL-only preserves TP, TP-only preserves SL, explicit clear uses the documented zero-price semantics, and ambiguous/no-op requests are rejected.
 - [ ] Test the guard contract separately for hard lock, daily DD/max-risk policy, symbol position cap, and action classification; risk-reducing SL/TP changes do not inherit entry-news blocks, while uncertainty blocks risk increases.
-- [ ] Implement scope-bound one-time preview consumption, fresh account/ticket/quote/metadata reads, final revision verification and a fail-closed guard-provider interface under the account gateway lock.
+- [x] Add atomic scope-bound one-time consumption to the preview registry; expiry, scope mismatch, replay and concurrent consumption tests pass.
+- [ ] Complete commit orchestration with fresh account/ticket/quote/metadata reads, final revision verification and a fail-closed guard-provider interface under the account gateway lock.
 - [ ] Add order-check/retcode handling only where the MT5 adapter supports it; never treat `order_check` as success.
 - [ ] Run focused tests and verify all denial cases remain no-send.
 
