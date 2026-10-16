@@ -1,14 +1,15 @@
 """Dependency-injected Chart Studio read routes, sharing the account gateway."""
 import time
 import numbers
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Annotated
-from fastapi import HTTPException, Query
+from fastapi import HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from chart_studio.broker_reads import (
     SYMBOL_PATTERN, BrokerReadError, broker_rows, symbol_summary, symbol_model, require_symbol,
     verified_read, positions_read, trades_read, provenance,
-    portfolio_read,
+    portfolio_read, decimal as broker_decimal,
 )
 from chart_studio.history_cursor import utc_range
 
@@ -62,6 +63,119 @@ def install_read_routes(app, mt5, *, now=None):
     def portfolio(account: Account, scenarioSymbol: Symbol = 'XAUUSD'):
         return response(verified_read(mt5, account,
                         lambda spec: portfolio_read(mt5, spec, scenarioSymbol)))
+
+    @app.get('/api/chart/v1/footprint')
+    def footprint(request: Request, account: Account, symbol: Symbol,
+                  timeframe: Annotated[str, Query(pattern=r'^(M1|M5|M15)$')]):
+        # Do not expose funded-account market data through this experimental feed.
+        if account == 'blueberry':
+            raise HTTPException(403, 'Footprint-Demodaten sind für diesen Account gesperrt.')
+        if set(request.query_params) != {'account','symbol','timeframe'} or any(
+                len(request.query_params.getlist(key)) != 1 for key in request.query_params):
+            raise HTTPException(422, 'Footprint akzeptiert nur Account, Symbol und M1/M5/M15.')
+
+        durations = {'M1':60, 'M5':300, 'M15':900}
+        timeframe_value = getattr(mt5, 'TIMEFRAME_'+timeframe, {'M1':1,'M5':5,'M15':15}[timeframe])
+        buy_flag = getattr(mt5, 'TICK_FLAG_BUY', None)
+        sell_flag = getattr(mt5, 'TICK_FLAG_SELL', None)
+        all_ticks_flag = getattr(mt5, 'COPY_TICKS_ALL', None)
+
+        def unavailable(spec, reason, *, bar_open=None, tick_count=0, ignored=0):
+            return {**provenance(spec), 'symbol':symbol, 'status':'UNAVAILABLE', 'reason':reason,
+                    'timeframe':timeframe, 'barOpenUtc':bar_open, 'executionCount':0,
+                    'ignoredTickCount':ignored, 'tickCount':tick_count, 'levels':[]}
+
+        def field(row, name):
+            try:
+                return row[name]
+            except (KeyError, IndexError, TypeError, ValueError):
+                return getattr(row, name)
+
+        def operation(spec):
+            require_symbol(mt5, symbol)
+            if (not callable(getattr(mt5, 'copy_rates_from_pos', None)) or
+                    not callable(getattr(mt5, 'copy_ticks_range', None)) or
+                    type(all_ticks_flag) is not int or type(buy_flag) is not int or
+                    type(sell_flag) is not int or buy_flag <= 0 or sell_flag <= 0 or
+                    buy_flag == sell_flag):
+                return unavailable(spec, 'TICK_SOURCE_UNAVAILABLE')
+            raw_bars = mt5.copy_rates_from_pos(symbol, timeframe_value, 1, 1)
+            if raw_bars is None or len(raw_bars) != 1:
+                return unavailable(spec, 'CANDLE_HISTORY_UNAVAILABLE')
+            try:
+                raw_open = field(raw_bars[0], 'time')
+                if isinstance(raw_open, bool) or not isinstance(raw_open, numbers.Integral) or raw_open <= 0:
+                    raise ValueError('invalid candle time')
+                open_epoch = int(raw_open)
+                start = datetime.fromtimestamp(open_epoch, timezone.utc)
+                stop = start + timedelta(seconds=durations[timeframe])
+                bar_open = start.isoformat(timespec='seconds').replace('+00:00','Z')
+            except (TypeError, ValueError, OverflowError, OSError, IndexError):
+                return unavailable(spec, 'CANDLE_HISTORY_INVALID')
+            ticks = mt5.copy_ticks_range(symbol, start, stop, all_ticks_flag)
+            if ticks is None:
+                return unavailable(spec, 'TICK_HISTORY_UNAVAILABLE', bar_open=bar_open)
+            try:
+                tick_count = len(ticks)
+                if tick_count > 100000:
+                    return unavailable(spec, 'TICK_COUNT_LIMIT', bar_open=bar_open, tick_count=tick_count)
+            except (TypeError, ValueError):
+                return unavailable(spec, 'TICK_HISTORY_INVALID', bar_open=bar_open)
+
+            levels = {}
+            execution_count = 0
+            ignored = 0
+            invalid_execution = False
+            for tick in ticks:
+                is_buy = is_sell = None
+                try:
+                    flags = field(tick, 'flags')
+                    if isinstance(flags, bool) or not isinstance(flags, numbers.Integral):
+                        raise ValueError('flags')
+                    is_buy = bool(int(flags) & buy_flag)
+                    is_sell = bool(int(flags) & sell_flag)
+                    if not is_buy and not is_sell:
+                        ignored += 1
+                        continue
+                    if is_buy and is_sell:
+                        invalid_execution = True
+                        ignored += 1
+                        continue
+                    tick_time = field(tick, 'time_msc')
+                    if (isinstance(tick_time, bool) or not isinstance(tick_time, numbers.Integral) or
+                            not int(start.timestamp()*1000) <= int(tick_time) < int(stop.timestamp()*1000)):
+                        raise ValueError('tick outside requested bar')
+                    last = broker_decimal(float(field(tick, 'last')), positive=True)
+                    volume = broker_decimal(float(field(tick, 'volume_real')), positive=True)
+                    price_key = last
+                    item = levels.setdefault(price_key, {'buy':Decimal(0), 'sell':Decimal(0), 'trades':0})
+                    side = 'buy' if is_buy else 'sell'
+                    item[side] += Decimal(volume)
+                    item['trades'] += 1
+                    execution_count += 1
+                except (BrokerReadError, TypeError, ValueError, OverflowError, InvalidOperation, KeyError, AttributeError):
+                    if is_buy is not None and is_sell is not None and is_buy != is_sell:
+                        invalid_execution = True
+                    ignored += 1
+            if invalid_execution:
+                return unavailable(spec, 'INVALID_EXECUTION_TICK', bar_open=bar_open,
+                                   tick_count=tick_count, ignored=ignored)
+            if execution_count == 0:
+                return unavailable(spec, 'NO_VERIFIED_EXECUTIONS', bar_open=bar_open,
+                                   tick_count=tick_count, ignored=ignored)
+            output=[]
+            for price in sorted(levels, key=Decimal):
+                value=levels[price]
+                buy=value['buy']; sell=value['sell']
+                output.append({'price':price,
+                    'buyVolume':broker_decimal(buy), 'sellVolume':broker_decimal(sell),
+                    'delta':broker_decimal(buy-sell, signed=True), 'trades':value['trades']})
+            return {**provenance(spec), 'symbol':symbol, 'status':'AVAILABLE', 'reason':None,
+                    'timeframe':timeframe, 'barOpenUtc':bar_open,
+                    'barCloseUtc':stop.isoformat(timespec='seconds').replace('+00:00','Z'),
+                    'executionCount':execution_count, 'ignoredTickCount':ignored,
+                    'tickCount':tick_count, 'levels':output}
+        return response(verified_read(mt5, account, operation))
 
     @app.get('/api/chart/v1/trades')
     def trades(account: Account, symbol: Symbol,

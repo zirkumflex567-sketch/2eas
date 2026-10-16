@@ -14,10 +14,17 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   }
   browser=await chromium.launch({headless:true,executablePath:process.env.CHART_STUDIO_CHROMIUM_PATH||undefined});
   const page=await browser.newPage({viewport:{width:1400,height:960}});
-  const errors=[],requests=[],store=new Map();
+  const errors=[],requests=[],footprintReads=[],store=new Map();
   page.on("pageerror",e=>errors.push(e.message));
   page.on("request",req=>{if(req.method()!=="GET")requests.push({method:req.method(),url:req.url()})});
   const secret="fixture-server-multi-average-token-123456789";
+  let footprintBody={source:"MT5_VERIFIED",canExecute:false,status:"UNAVAILABLE",reason:"NO_VERIFIED_EXECUTIONS",levels:[]};
+  await page.route("**/api/chart/v1/footprint**",async route=>{
+   const req=route.request(),url=new URL(req.url());
+   footprintReads.push({method:req.method(),account:url.searchParams.get("account"),symbol:url.searchParams.get("symbol"),timeframe:url.searchParams.get("timeframe")});
+   return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({
+    ...footprintBody,account:url.searchParams.get("account"),symbol:url.searchParams.get("symbol"),timeframe:url.searchParams.get("timeframe")})});
+  });
   await page.route("**/api/chart/v1/workspace**",async route=>{
    const req=route.request(),url=new URL(req.url());
    const send=(status,body)=>route.fulfill({status,contentType:"application/json",body:JSON.stringify(body)});
@@ -78,8 +85,36 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await page.evaluate(()=>ChartStudioOscillators.applySettings([]));
   await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("");
   assert.deepEqual(await catalog.locator(".cs-catalog-entry").evaluateAll(rows=>rows.map(row=>row.dataset.indicator)),
-   ["ema","sma","wma","rma","smma","rsi","macd","atr","adx","cci","stochastic","momentum","roc","volume","vwap"],
+   ["ema","sma","wma","rma","smma","rsi","macd","atr","adx","cci","stochastic","stochrsi","supertrend","momentum","roc","volume","vwap","footprint"],
    "The searchable catalog lists each registered indicator family");
+  assert.equal(await catalog.getByRole("searchbox",{name:"Indikator suchen"}).inputValue(),"");
+  await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("Footprint");
+  const footprint= catalog.locator('[data-indicator="footprint"]');
+  assert.equal(await footprint.count(),1);
+  await footprint.getByRole("button",{name:"Footprint-Daten prüfen"}).click();
+  await page.getByText(/UNAVAILABLE.*keine verifizierten Ausführungen/i).waitFor();
+  assert.deepEqual(footprintReads,[{method:"GET",account:"titan",symbol:"XAUUSD",timeframe:"M15"}],
+   "Footprint is an explicit, account/symbol/timeframe-scoped read only");
+  footprintBody={source:"MT5_VERIFIED",canExecute:false,status:"AVAILABLE",reason:null,executionCount:2,
+   tickCount:2,ignoredTickCount:0,barOpenUtc:"2026-10-16T08:00:00Z",
+   levels:[{price:"4010.2",buyVolume:"0.3",sellVolume:"0.1",delta:"0.2",trades:2}]};
+  await footprint.getByRole("button",{name:"Footprint-Daten prüfen"}).click();
+  await page.getByText(/AVAILABLE.*2 verifizierte Ausführungen/).waitFor();
+  assert.equal(await page.locator(".cs-footprint-levels tbody tr").count(),1);
+  assert.deepEqual(await page.locator(".cs-footprint-levels tbody tr").first().locator("td").allTextContents(),
+   ["4010.2","0.3","0.1","0.2","2"],"Only the verified execution-side levels are rendered");
+  footprintBody={source:"MT5_VERIFIED",canExecute:false,status:"AVAILABLE",reason:null,executionCount:1,
+   tickCount:1,ignoredTickCount:0,barOpenUtc:"2026-10-16T08:00:00Z",
+   levels:[{price:"NaN",buyVolume:"0.3",sellVolume:"0.1",delta:"0.2",trades:1}]};
+  await footprint.getByRole("button",{name:"Footprint-Daten prüfen"}).click();
+  await page.getByText(/UNAVAILABLE.*nicht verifiziert/i).waitFor();
+  assert.equal(await page.locator(".cs-footprint-levels tbody tr").count(),0,
+   "Malformed broker-decimal strings are never rendered as footprint levels");
+  assert.deepEqual(footprintReads,[
+   {method:"GET",account:"titan",symbol:"XAUUSD",timeframe:"M15"},
+   {method:"GET",account:"titan",symbol:"XAUUSD",timeframe:"M15"},
+   {method:"GET",account:"titan",symbol:"XAUUSD",timeframe:"M15"}
+  ]);
   async function areaCleanup(){
     await page.locator('[data-instance="ma1"] [data-action="remove"]').click();
   }

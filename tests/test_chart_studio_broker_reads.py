@@ -66,6 +66,11 @@ class MT5Fake:
         self.symbols = (symbol(), symbol('EURUSD.a', digits=5, point=.00001, trade_tick_size=.00001, trade_mode=1))
         self.wrong = None
         self.rates = {}
+        self.footprint_ticks = None
+        self.COPY_TICKS_ALL = 7
+        self.COPY_TICKS_INFO = 1
+        self.TICK_FLAG_BUY = 32
+        self.TICK_FLAG_SELL = 64
 
     def initialize(self, path, **kwargs):
         self.calls.append(('initialize', path))
@@ -121,6 +126,11 @@ class MT5Fake:
         self.calls.append(('rates', name, timeframe, start_pos, count))
         return self.rates.get(name)
 
+    def copy_ticks_range(self, name, start, stop, flags):
+        assert gateway._lock._is_owned()
+        self.calls.append(('ticks', name, start, stop, flags))
+        return self.footprint_ticks
+
     def order_send(self, *args, **kwargs):
         self.writes += 1
         raise AssertionError('broker write forbidden')
@@ -173,6 +183,88 @@ def test_stopped_terminal_never_initializes(client, fake, monkeypatch):
     monkeypatch.setattr(gateway, 'terminal_running', lambda _: False)
     assert read(client).status_code == 503
     assert fake.calls == []
+
+
+def footprint_bar(fake):
+    fake.rates['XAUUSD'] = (NS(time=NOW-900, open=4000., high=4002., low=3998., close=4001.),)
+
+
+def test_footprint_aggregates_only_verified_buy_and_sell_execution_ticks(client, fake):
+    footprint_bar(fake)
+    fake.footprint_ticks = [
+        {'last':4001.0, 'volume_real':.2, 'flags':fake.TICK_FLAG_BUY, 'time_msc':(NOW-899)*1000},
+        {'last':4001.0, 'volume_real':.3, 'flags':fake.TICK_FLAG_BUY, 'time_msc':(NOW-898)*1000},
+        {'last':4002.0, 'volume_real':.4, 'flags':fake.TICK_FLAG_SELL, 'time_msc':(NOW-897)*1000},
+        {'last':4003., 'volume_real':5., 'flags':0, 'time_msc':(NOW-895)*1000},
+    ]
+    response = read(client, endpoint='footprint', timeframe='M15')
+    assert response.status_code == 200
+    body = response.json()
+    assert body['status'] == 'AVAILABLE'
+    assert body['source'] == 'MT5_VERIFIED' and body['canExecute'] is False
+    assert body['symbol'] == 'XAUUSD' and body['timeframe'] == 'M15'
+    assert body['executionCount'] == 3 and body['ignoredTickCount'] == 1
+    assert body['levels'] == [
+        {'price':'4001', 'buyVolume':'0.5', 'sellVolume':'0', 'delta':'0.5', 'trades':2},
+        {'price':'4002', 'buyVolume':'0', 'sellVolume':'0.4', 'delta':'-0.4', 'trades':1},
+    ]
+    call = next(item for item in fake.calls if item[0] == 'ticks')
+    assert call[1] == 'XAUUSD' and call[4] == fake.COPY_TICKS_ALL
+    assert fake.writes == 0
+
+
+def test_footprint_returns_unavailable_for_no_verified_execution_ticks(client, fake):
+    footprint_bar(fake)
+    fake.footprint_ticks = [
+        {'bid':4000., 'ask':4000.1, 'last':0., 'volume_real':0., 'flags':0, 'time_msc':(NOW-899)*1000},
+    ]
+    response = read(client, endpoint='footprint', timeframe='M15')
+    assert response.status_code == 200
+    assert response.json()['status'] == 'UNAVAILABLE'
+    assert response.json()['reason'] == 'NO_VERIFIED_EXECUTIONS'
+    assert response.json()['levels'] == []
+
+
+def test_footprint_fails_closed_on_ambiguous_or_malformed_execution_ticks(client, fake):
+    footprint_bar(fake)
+    fake.footprint_ticks = [
+        {'last':4001., 'volume_real':.2, 'flags':fake.TICK_FLAG_BUY, 'time_msc':(NOW-899)*1000},
+        {'last':4002., 'volume_real':.3, 'flags':fake.TICK_FLAG_BUY|fake.TICK_FLAG_SELL,
+         'time_msc':(NOW-898)*1000},
+    ]
+    response = read(client, endpoint='footprint', timeframe='M15')
+    assert response.status_code == 200
+    body = response.json()
+    assert body['status'] == 'UNAVAILABLE' and body['reason'] == 'INVALID_EXECUTION_TICK'
+    assert body['levels'] == []
+    fake.footprint_ticks = [
+        {'last':0., 'volume_real':.3, 'flags':fake.TICK_FLAG_BUY, 'time_msc':(NOW-898)*1000},
+    ]
+    response = read(client, endpoint='footprint', timeframe='M15')
+    assert response.json()['status'] == 'UNAVAILABLE'
+    assert response.json()['reason'] == 'INVALID_EXECUTION_TICK'
+
+
+def test_footprint_denies_blueberry_before_gateway_or_mt5_access(client, fake):
+    response = client.get('/api/chart/v1/footprint', params={
+        'account':'blueberry', 'symbol':'XAUUSD', 'timeframe':'M15'})
+    assert response.status_code == 403
+    assert fake.calls == []
+
+
+def test_footprint_fails_closed_when_history_reader_is_unavailable(client, fake):
+    footprint_bar(fake)
+    fake.copy_ticks_range = None
+    response = read(client, endpoint='footprint', timeframe='M15')
+    assert response.status_code == 200
+    assert response.json()['status'] == 'UNAVAILABLE'
+    assert response.json()['reason'] == 'TICK_SOURCE_UNAVAILABLE'
+
+
+def test_footprint_rejects_unbounded_or_unsupported_timeframes_before_mt5(client, fake):
+    assert read(client, endpoint='footprint', timeframe='D1').status_code == 422
+    assert read(client, endpoint='footprint', timeframe='M15', extra='x').status_code == 422
+    assert not any(call[0] in ('rates','ticks') for call in fake.calls)
 
 
 def test_parallel_accounts_are_locked_and_never_cross(client, fake):

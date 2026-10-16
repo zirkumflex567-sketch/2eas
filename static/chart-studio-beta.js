@@ -1303,7 +1303,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  catch(err){console.warn("Sessions/Struktur nicht verfügbar:",err)}
  try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}
  catch (err) {console.warn("Chart Studio indicator pane could not load:",err);}
- try {window.ChartStudioCatalog?.mount({panel});}
+ try {window.ChartStudioCatalog?.mount({panel,getContext:()=>s?{account:s.account,symbol:chartSymbol(),timeframe:s.tf}:null});}
  catch (err) {console.warn("Chart indicator catalog unavailable:",err);}
  try {window.ChartStudioAverages?.mount({chart,panel,account:accountId});}
  catch (err) {console.warn("Chart Studio average editor unavailable:",err);}

@@ -33,6 +33,11 @@
 .cs-catalog-entry button{border:1px solid #6cbdcf;background:#194658;color:#fff;
  border-radius:6px;padding:7px;cursor:pointer;min-height:36px}
 .cs-catalog-entry button:focus-visible,.cs-catalog input:focus-visible{outline:2px solid #65dcf4;outline-offset:2px}
+.cs-footprint-status{display:block;margin:8px 0;padding:8px;border-left:3px solid #54c9e8;background:rgba(10,38,51,.78);font-size:12px;line-height:1.45}
+.cs-footprint-levels{max-width:100%;overflow:auto}
+.cs-footprint-levels table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.cs-footprint-levels th,.cs-footprint-levels td{padding:5px 8px;border-bottom:1px solid rgba(137,196,210,.24);text-align:right;white-space:nowrap}
+.cs-footprint-levels th:first-child,.cs-footprint-levels td:first-child{text-align:left}
 
 /* Read-only replay, separate from broker chart and production position overlays. */
 .cs-replay{margin:12px 0;padding:10px;border:1px solid rgba(107,208,226,.5);
