@@ -155,8 +155,11 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
                             status_code=status, headers={'Cache-Control':'no-store'})
 
     def tick_observation(account, result):
-        if result.get('status') != 'AVAILABLE':
+        if result.get('status') != 'AVAILABLE' and result.get('reason') != 'NO_COMPLETE_CANDLES':
             return {'status': 'UNAVAILABLE', 'reason': 'OHLC_POSITION_UNAVAILABLE'}
+        if not all(result.get(key) for key in ('positionIdentifier', 'symbol', 'side',
+                                               'entryPrice', 'entryTimeUtc', 'exitTimeUtc')):
+            return {'status': 'UNAVAILABLE', 'reason': 'TICK_CONTEXT_UNAVAILABLE'}
         reader = getattr(mt5, 'copy_ticks_range', None)
         flags = getattr(mt5, 'COPY_TICKS_INFO', None)
         if not callable(reader) or type(flags) is not int:

@@ -216,7 +216,15 @@ def estimate_ohlc_mfe_mae(position_identifier, lifecycle_records, snapshot_recor
             if opened_us >= entry_us and closed_us <= exit_us:
                 full_bars.append(bar)
         if not full_bars:
-            return _unavailable("NO_COMPLETE_CANDLES")
+            return {
+                **_unavailable("NO_COMPLETE_CANDLES"),
+                "positionIdentifier": position_identifier,
+                "symbol": entry_snap.get("chartView", {}).get("symbol"),
+                "side": side,
+                "entryPrice": _plain(entry_price),
+                "entryTimeUtc": entry["asOfUtc"],
+                "exitTimeUtc": exit_["asOfUtc"],
+            }
 
         favorable = []
         adverse = []

@@ -155,6 +155,44 @@ def test_position_mfe_mae_adds_scoped_observed_mt5_ticks(monkeypatch):
     assert mt5.calls[0][1].tzinfo is timezone.utc and mt5.calls[0][2].tzinfo is timezone.utc
 
 
+def test_position_mfe_mae_can_observe_ticks_when_no_complete_ohlc_candles_exist(monkeypatch):
+    store = Store()
+    # Retain valid, deal-linked snapshots but provide no candle fully inside the position.
+    outside = [{"timeUtc": "2026-10-14T09:45:00Z", "open": "100", "high": "102",
+                "low": "99", "close": "101", "tickVolume": 100, "spread": 2, "realVolume": 0}]
+    for snapshot in store.records["SNAPSHOT"]:
+        snapshot["payload"]["marketData"] = {
+            "source": "MT5_COMPLETED_BARS", "bars": outside,
+            "sha256": sha256(evidence_models.canonical_bytes(outside)).hexdigest(),
+        }
+
+    entry_ms = int(datetime(2026, 10, 14, 10, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    rows = [
+        {"time_msc": entry_ms + 1, "bid": 103.0, "ask": 103.1},
+        {"time_msc": entry_ms + 2, "bid": 99.0, "ask": 99.1},
+    ]
+    mt5 = TickMT5(rows)
+
+    @contextmanager
+    def verified_demo_session(_mt5, account):
+        assert account == "titan"
+        yield evidence_models.gateway.ACCOUNTS[account]
+
+    monkeypatch.setattr(evidence_models.gateway, "traced_session", verified_demo_session)
+    response = _client(store, mt5).get("/api/chart/v1/lifecycle/positions/9001/mfe-mae",
+                                      params={"account": "titan"})
+
+    assert response.status_code == 200
+    body = response.json()["result"]
+    assert body["status"] == "UNAVAILABLE"
+    assert body["reason"] == "NO_COMPLETE_CANDLES"
+    assert body["tickObservation"]["status"] == "AVAILABLE"
+    assert body["tickObservation"]["quality"] == "TICK_OBSERVED"
+    assert body["tickObservation"]["exact"] is False
+    assert body["tickObservation"]["intrabarOrder"] == "UNKNOWN"
+    assert mt5.calls[0][0] == "XAUUSD"
+
+
 def test_position_mfe_mae_does_not_fetch_ticks_for_challenge_account():
     mt5 = TickMT5([])
     response = _client(Store(), mt5).get("/api/chart/v1/lifecycle/positions/9001/mfe-mae",
