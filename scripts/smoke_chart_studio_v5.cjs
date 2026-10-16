@@ -292,6 +292,45 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.changeAccount("at026-other");const isolated=engine.readDataWindow(changed.time).indicators?.length??0;
    engine.destroy();host.remove();return {initial:initial?.value,expected:reference.middle.at(-1).value,updated:updated?.value,updatedReference,badMultiplierRejected,isolated};
   });
+  const linearRegressionProbe=await page.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:900px;height:360px;position:fixed;left:-2000px;top:0";document.body.append(host);
+   const engine=ChartStudioV5.createStudioV5(host,"at027-native-linear-regression"),bars=Array.from({length:24},(_,i)=>{const close=2100+i*.17+Math.sin(i/3)*1.7;return {time:1700600000+i*60,open:close-.3,high:close+1.1,low:close-1.2,close}});
+   engine.setCandles(bars);
+   const apiAvailable=typeof engine.addLinearRegression==="function"&&typeof engine.updateLinearRegression==="function"&&typeof engine.removeLinearRegression==="function"&&typeof engine.linearRegressionOptions==="function";
+   if(!apiAvailable){engine.destroy();host.remove();return {apiAvailable}}
+    const matches=(rows,period=5,multiplier=1.5)=>{
+     const reference=ChartStudioIndicators.calculate("linearRegression",rows,{period,multiplier}).linearRegression,native=engine.inspect().linearRegressionSeries.find(item=>item.id==="regression-main");
+     const arraysMatch=["upper","middle","lower"].every(key=>native.lines[key].length===reference[key].length&&native.lines[key].every((point,index)=>point.time===reference[key][index].time&&Math.abs(point.value-reference[key][index].value)<1e-9));
+     const readoutMatches=rows.every(bar=>{const actual=engine.readDataWindow(bar.time).indicators.find(item=>item.id==="regression-main"),expected=reference.middle.find(point=>point.time===bar.time);return expected?actual?.state==="AVAILABLE"&&Math.abs(actual.value-expected.value)<1e-9:actual?.state!=="AVAILABLE"});
+     return arraysMatch&&readoutMatches;
+    };
+    engine.addLinearRegression({id:"regression-main",period:5,multiplier:1.5,color:"#55d7ee"});
+    const initialMatches=matches(bars),initialOptions=engine.linearRegressionOptions("regression-main"),initialInspection=engine.inspect(),nativeInitial=initialInspection.linearRegressionSeries.find(item=>item.id==="regression-main"),referenceInitial=ChartStudioIndicators.calculate("linearRegression",bars,{period:5,multiplier:1.5}).linearRegression;
+    const nativeArraysMatch=["upper","middle","lower"].every(key=>nativeInitial.lines[key].length===referenceInitial[key].length&&nativeInitial.lines[key].every((point,index)=>point.time===referenceInitial[key][index].time&&Math.abs(point.value-referenceInitial[key][index].value)<1e-9));
+    const helper=ChartStudioV5.calculateLinearRegressionChannel,perfect=helper(Array.from({length:5},(_,i)=>({time:1700601000+i*60,open:i+1,high:i+1,low:i+1,close:i+1})),5,2),residual=helper([{time:1,open:1,high:1,low:1,close:1},{time:2,open:2,high:2,low:2,close:2},{time:3,open:4,high:4,low:4,close:4}],3,2);
+    const knownResidual=Math.abs(residual.middle[0]?.value-23/6)<1e-9&&Math.abs((residual.upper[0]?.value-residual.middle[0]?.value)-2/Math.sqrt(18))<1e-9;
+    const noProjection=nativeInitial.lines.middle.length===bars.length-5+1&&nativeInitial.lines.middle.at(-1).time===bars.at(-1).time&&nativeInitial.lines.middle[0].time===bars[4].time;
+    const logicalInstanceCount=initialInspection.linearRegressionCount,renderedLineCount=initialInspection.linearRegressionLineCount;
+    const replacementBars=bars.map(bar=>({...bar,open:bar.open+30,high:bar.high+30,low:bar.low+30,close:bar.close+30}));engine.setCandles(replacementBars);const historyMatches=matches(replacementBars);
+    const changed={...replacementBars.at(-1),close:replacementBars.at(-1).close+4,high:replacementBars.at(-1).high+4};engine.updateLast(changed);const changedBars=[...replacementBars.slice(0,-1),changed],formingMatches=matches(changedBars);
+   const repeated={...changed,close:changed.close-2,low:changed.low-2};engine.updateLast(repeated);const repeatedBars=[...changedBars.slice(0,-1),repeated],repeatedMatches=matches(repeatedBars);
+   const appended={...repeated,time:repeated.time+60,open:repeated.close,close:repeated.close+.4,high:repeated.close+1,low:repeated.close-.7};engine.updateLast(appended);const appendedBars=[...repeatedBars,appended],appendMatches=matches(appendedBars);
+    const updateAccepted=engine.updateLinearRegression("regression-main",{period:7,multiplier:2.5,color:"#a78bfa"}),updatedOptions=engine.linearRegressionOptions("regression-main"),updatedMatches=matches(appendedBars,7,2.5);
+    let badPeriodRejected=false,badMultiplierRejected=false,badPatchRejected=false,badOptionRejected=false,identityCollisionRejected=false;
+   try{engine.addLinearRegression({id:"regression-bad-period",period:201,multiplier:2,color:"#ffffff"})}catch(_){badPeriodRejected=true}
+   try{engine.updateLinearRegression("regression-main",{multiplier:2.55})}catch(_){badMultiplierRejected=true}
+   try{engine.updateLinearRegression("regression-main",{unknown:true})}catch(_){badPatchRejected=true}
+    try{engine.addLinearRegression({id:"regression-extra",period:5,multiplier:1,color:"#ffffff",unexpected:true})}catch(_){badOptionRejected=true}
+    try{engine.addAverage({id:"regression-main",color:"#ffffff"},[])}catch(_){identityCollisionRejected=true}
+   const rejectedPatchPreserved=JSON.stringify(engine.linearRegressionOptions("regression-main"))===JSON.stringify(updatedOptions);
+    engine.updateLinearRegression("regression-main",{visible:false});const hidden=engine.linearRegressionOptions("regression-main")?.visible===false&&engine.inspect().linearRegressionSeries[0].visible.every(value=>value===false);engine.updateLinearRegression("regression-main",{visible:true});const shown=engine.inspect().linearRegressionSeries[0].visible.every(value=>value===true);
+    const removed=engine.removeLinearRegression("regression-main"),countAfterRemoval=engine.inspect().linearRegressionCount;
+     for(let i=0;i<19;i++)engine.addLinearRegression({id:`regression-${i}`,period:5,multiplier:1,color:"#55d7ee"});
+     engine.addAverage({id:"regression-shared-slot",color:"#ffffff"},[]);
+   let instanceLimitEnforced=false;try{engine.addLinearRegression({id:"regression-over-limit",period:5,multiplier:1,color:"#ffffff"})}catch(_){instanceLimitEnforced=true}
+     const finalInspection=engine.inspect(),fullCount=finalInspection.linearRegressionCount,sharedAverageCount=finalInspection.averageCount;engine.changeAccount("at027-other");const accountCleared=engine.inspect().linearRegressionCount===0&&engine.inspect().averageCount===0,isolated=engine.readDataWindow(appended.time).indicators?.length??0;
+     engine.destroy();host.remove();return {apiAvailable,initialMatches,initialOptions,logicalInstanceCount,renderedLineCount,nativeArraysMatch,knownResidual,perfectLine:perfect.upper.length===1&&perfect.upper[0].value===perfect.middle[0].value&&perfect.middle[0].value===perfect.lower[0].value,noProjection,historyMatches,formingMatches,repeatedMatches,appendMatches,updateAccepted,updatedOptions,updatedMatches,badPeriodRejected,badMultiplierRejected,badPatchRejected,badOptionRejected,identityCollisionRejected,rejectedPatchPreserved,hidden,shown,instanceLimitEnforced,fullCount,sharedAverageCount,accountCleared,isolated,removed,countAfterRemoval};
+  });
   const oscillatorProbe=await page.evaluate(()=>{
    const host=document.createElement("div");host.style.cssText="width:900px;height:420px;position:fixed;left:-2000px;top:0";document.body.append(host);
    const engine=ChartStudioV5.createStudioV5(host,"at001-native-oscillator",{symbol:"XAUUSD",timeframe:"M5"});
@@ -540,6 +579,35 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(keltnerProbe.updated,keltnerProbe.updatedReference,"Forming-bar updates recalculate Keltner boundaries");
   assert.equal(keltnerProbe.badMultiplierRejected,true);
   assert.equal(keltnerProbe.isolated,0,"Changing account clears Keltner readouts");
+  assert.equal(linearRegressionProbe.apiAvailable,true,"Native v5 exposes the regression channel overlay API");
+  assert.equal(linearRegressionProbe.initialMatches,true,"Native v5 regression middle values match the Beta OLS reference");
+   assert.equal(linearRegressionProbe.nativeArraysMatch,true,"Native upper, middle and lower series match Beta OLS values and timestamps");
+   assert.equal(linearRegressionProbe.knownResidual,true,"The channel uses residual population deviation times the multiplier");
+   assert.equal(linearRegressionProbe.perfectLine,true,"A perfect linear series has zero channel width");
+   assert.equal(linearRegressionProbe.noProjection,true,"The channel starts after full lookback and never projects beyond loaded candles");
+   assert.equal(linearRegressionProbe.logicalInstanceCount,1,"Three native lines count as one logical indicator instance");
+   assert.equal(linearRegressionProbe.renderedLineCount,3,"The channel renders upper, middle and lower native series");
+   assert.equal(linearRegressionProbe.historyMatches,true,"Replacing chart history refreshes all channel series and readouts");
+  assert.equal(linearRegressionProbe.formingMatches,true,"Replacing the forming bar updates the regression channel");
+  assert.equal(linearRegressionProbe.repeatedMatches,true,"Repeated forming-bar updates replace the same regression values");
+  assert.equal(linearRegressionProbe.appendMatches,true,"Appending a candle advances the native regression channel");
+  assert.equal(linearRegressionProbe.updatedMatches,true,"Updated period and width match Beta OLS values");
+  assert.equal(linearRegressionProbe.badPeriodRejected,true);
+  assert.equal(linearRegressionProbe.badMultiplierRejected,true);
+  assert.equal(linearRegressionProbe.badPatchRejected,true);
+   assert.equal(linearRegressionProbe.badOptionRejected,true);
+   assert.equal(linearRegressionProbe.identityCollisionRejected,true);
+  assert.equal(linearRegressionProbe.rejectedPatchPreserved,true,"Rejected changes preserve the valid regression configuration");
+  assert.equal(linearRegressionProbe.hidden,true,"Native regression series expose visibility updates");
+   assert.equal(linearRegressionProbe.shown,true);
+   assert.equal(linearRegressionProbe.updateAccepted,true);
+  assert.equal(linearRegressionProbe.instanceLimitEnforced,true,"Regression overlays count against the shared indicator limit");
+   assert.equal(linearRegressionProbe.fullCount,19);
+   assert.equal(linearRegressionProbe.sharedAverageCount,1,"One regression overlay shares the cap with one ordinary average");
+  assert.equal(linearRegressionProbe.accountCleared,true,"Changing account removes prior regression series");
+  assert.equal(linearRegressionProbe.isolated,0);
+  assert.equal(linearRegressionProbe.removed,true);
+  assert.equal(linearRegressionProbe.countAfterRemoval,0);
   assert.equal(movingAverageProbe.independent[0].value,12.125,"EMA close instance uses its own source and period");
   assert.equal(movingAverageProbe.independent[1].value,32.5,"EMA high instance uses its own source and display shift");
   assert.equal(movingAverageProbe.edited.find(x=>x.id==="ema-close").value,movingAverageProbe.editedExpected,"Editing one EMA period/source leaves its instance isolated");
