@@ -766,7 +766,8 @@ body .stone-chart-expanded > .panel-heading {
 }
 body .stone-chart-expanded #cs-beta-panel,
 body .stone-chart-expanded .cs-beta-panel {
-  max-height: calc(100vh - 140px) !important;
+  max-height: min(42vh, 520px) !important;
+  min-height: 0 !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   overscroll-behavior: contain !important;

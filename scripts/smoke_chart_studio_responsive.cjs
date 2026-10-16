@@ -26,7 +26,9 @@ const {spawn}=require("node:child_process"),path=require("node:path"),fs=require
    assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].period,34);
    assert.equal(await page.locator("#cs-beta-panel").isVisible(),true);
    await page.locator(".cs-catalog input[type='search']").fill("RSI");
-   assert.equal(await page.locator(".cs-catalog-entry").count(),1);
+   const matches=await page.locator(".cs-catalog-entry strong").allTextContents();
+   assert.deepEqual(matches.sort(),["Relative Strength Index","StochRSI"],
+    "the RSI search includes both RSI catalog entries");
    const geometry=await page.evaluate(()=>{
     const panel=document.getElementById("cs-beta-panel").getBoundingClientRect();
     return {viewport:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,
