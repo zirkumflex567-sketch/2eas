@@ -13,6 +13,7 @@ export type AveragePoint = {time:UTCTimestamp;value:number};
 export type AverageOptions = {id:string;color:string;lineWidth?:1|2|3|4;visible?:boolean;title?:string};
 export type MovingAverageOptions = AverageOptions&{type:"EMA"|"SMA"|"WMA"|"RMA"|"SMMA";period:number;source?:"close"|"open"|"high"|"low"|"hl2"|"hlc3"|"ohlc4";displayShift?:number};
 export type DonchianOptions = AverageOptions&{period:number};
+export type BollingerOptions = AverageOptions&{period?:number;stdDev?:number};
 export type KeltnerOptions = AverageOptions&{period:number;atrPeriod:number;multiplier:number};
 export type LinearRegressionOptions = AverageOptions&{period:number;multiplier:number};
 export type SupertrendOptions = AverageOptions&{period:number;multiplier:number};
@@ -452,6 +453,20 @@ function donchianData(bars:readonly Candle[],period:number){
  }
  return {upper,middle,lower};
 }
+export function calculateBollingerBands(input:readonly Candle[],period:number,stdDev:number):{upper:AveragePoint[];middle:AveragePoint[];lower:AveragePoint[]}{
+ const upper:AveragePoint[]=[],middle:AveragePoint[]=[],lower:AveragePoint[]=[];
+ if(!Number.isInteger(period)||period<2||period>300||!Number.isFinite(stdDev)||stdDev<.1||stdDev>10||Math.abs(stdDev*10-Math.round(stdDev*10))>1e-8)return {upper,middle,lower};
+ let sum=0,squares=0,runLength=0;
+ for(let i=0;i<input.length;i++){
+  const bar=input[i];if(!bar||!validBar(bar)){sum=0;squares=0;runLength=0;continue}
+  const value=bar.close;sum+=value;squares+=value*value;runLength++;
+  if(runLength>period){const dropped=input[i-period].close;sum-=dropped;squares-=dropped*dropped;runLength=period}
+  if(runLength===period){const mean=sum/period,deviation=Math.sqrt(Math.max(0,squares/period-mean*mean)),time=bar.time;
+   middle.push({time,value:mean});upper.push({time,value:mean+stdDev*deviation});lower.push({time,value:mean-stdDev*deviation});
+  }
+ }
+ return {upper,middle,lower};
+}
 function keltnerData(bars:readonly Candle[],options:KeltnerOptions){
  const {period,atrPeriod,multiplier}=options;
  if(!Number.isInteger(period)||period<2||period>200||!Number.isInteger(atrPeriod)||atrPeriod<2||atrPeriod>200||
@@ -540,6 +555,9 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  const averages=new Map<string,LineApi>();
  type DonchianGroup={options:DonchianOptions;series:[LineApi,LineApi,LineApi]};
  const donchianOverlays=new Map<string,DonchianGroup>();
+ type ResolvedBollingerOptions=Omit<BollingerOptions,"period"|"stdDev">&{period:number;stdDev:number};
+ type BollingerGroup={options:ResolvedBollingerOptions;series:[LineApi,LineApi,LineApi];values:{upper:AveragePoint[];middle:AveragePoint[];lower:AveragePoint[]}};
+ const bollingerOverlays=new Map<string,BollingerGroup>();
  type KeltnerGroup={options:KeltnerOptions;series:[LineApi,LineApi,LineApi]};
  const keltnerOverlays=new Map<string,KeltnerGroup>();
   type LinearRegressionGroup={options:LinearRegressionOptions;series:[LineApi,LineApi,LineApi];values:{upper:AveragePoint[];middle:AveragePoint[];lower:AveragePoint[]}};
@@ -1190,7 +1208,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   for(const series of paneLines.values())series.setData([]);
   for(const group of oscillators.values())for(const series of group.series.values())series.setData([] as never);
   for(const group of supertrendOverlays.values()){group.up.setData([]);group.down.setData([])}
-  readoutIndicators.clear();price.setData(bars);refreshManagedMovingAverages();refreshDonchianOverlays();refreshKeltnerOverlays();refreshLinearRegressionOverlays();
+  readoutIndicators.clear();price.setData(bars);refreshManagedMovingAverages();refreshDonchianOverlays();refreshBollingerOverlays();refreshKeltnerOverlays();refreshLinearRegressionOverlays();
   refreshSupertrendOverlays();refreshOscillators();
   if(volume)volume.setData(volumeRows());
   hydrateDrawings();
@@ -1203,8 +1221,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  function applyAverageData(opts:AverageOptions,data:readonly AveragePoint[]){
   guard();
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color))throw Error("Invalid line options");
-  if(averages.size+paneLines.size+oscillators.size+donchianOverlays.size+keltnerOverlays.size+linearRegressionOverlays.size+supertrendOverlays.size>=maxIndicatorInstances&&!averages.has(opts.id))throw Error("Indicator instance limit");
-  if(oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||supertrendOverlays.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");
+  if(averages.size+paneLines.size+oscillators.size+donchianOverlays.size+keltnerOverlays.size+linearRegressionOverlays.size+supertrendOverlays.size+bollingerOverlays.size>=maxIndicatorInstances&&!averages.has(opts.id))throw Error("Indicator instance limit");
+  if(oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||supertrendOverlays.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id)||bollingerOverlays.has(opts.id))throw Error("Duplicate chart object identity");
   const values=validSeriesData(data);
   let series=averages.get(opts.id);
   if(!series){series=newLine(opts);averages.set(opts.id,series)}
@@ -1227,13 +1245,53 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    readoutIndicators.set(id,{id,title:group.options.title??`Donchian ${group.options.period}`,kind:"OVERLAY",values:new Map(values.middle.map(point=>[point.time,point.value]))});
   }
  }
+ function validBollingerOptions(options:ResolvedBollingerOptions){
+  return !!options&&typeof options==="object"&&!Array.isArray(options)&&
+   Object.keys(options).every(key=>["id","period","stdDev","color","lineWidth","visible","title"].includes(key))&&
+   /^[-_a-zA-Z0-9]{1,32}$/.test(options.id)&&colorPattern.test(options.color)&&Number.isInteger(options.period)&&options.period>=2&&options.period<=300&&
+   Number.isFinite(options.stdDev)&&options.stdDev>=.1&&options.stdDev<=10&&Math.abs(options.stdDev*10-Math.round(options.stdDev*10))<=1e-8&&
+   (options.lineWidth===undefined||(Number.isInteger(options.lineWidth)&&options.lineWidth>=1&&options.lineWidth<=4))&&
+   (options.visible===undefined||typeof options.visible==="boolean")&&(options.title===undefined||(typeof options.title==="string"&&options.title.length<=80&&!/[\u0000-\u001f\u007f]/.test(options.title)));
+ }
+ function refreshBollingerOverlays(){
+  for(const [id,group] of bollingerOverlays){
+   const values=calculateBollingerBands(bars,group.options.period,group.options.stdDev),keys:["upper","middle","lower"]=["upper","middle","lower"];
+   for(let i=0;i<3;i++)group.series[i].setData(values[keys[i]]);
+   group.values=values;readoutIndicators.set(id,{id,title:group.options.title??`Bollinger ${group.options.period}`,kind:"OVERLAY",values:new Map(values.middle.map(point=>[point.time,point.value]))});
+  }
+ }
+ function addBollinger(options:BollingerOptions){
+  guard();const normalized={...options,period:options.period??20,stdDev:options.stdDev??2,visible:options.visible??true};
+  if(!validBollingerOptions(normalized))throw Error("Invalid Bollinger configuration");
+  if(oscillators.has(normalized.id)||averages.has(normalized.id)||donchianOverlays.has(normalized.id)||keltnerOverlays.has(normalized.id)||linearRegressionOverlays.has(normalized.id)||supertrendOverlays.has(normalized.id)||paneLines.has(normalized.id)||priceLevels.has(normalized.id)||timeMarkers.has(normalized.id)||textAnnotations.has(normalized.id)||trendLines.has(normalized.id)||rectangles.has(normalized.id)||rays.has(normalized.id)||fibonacci.has(normalized.id)||channels.has(normalized.id)||measurements.has(normalized.id))throw Error("Duplicate chart object identity");
+  if(averages.size+paneLines.size+oscillators.size+donchianOverlays.size+bollingerOverlays.size+keltnerOverlays.size+linearRegressionOverlays.size+supertrendOverlays.size>=maxIndicatorInstances&&!bollingerOverlays.has(normalized.id))throw Error("Indicator instance limit");
+  const existing=bollingerOverlays.get(normalized.id);
+  const series:[LineApi,LineApi,LineApi]=existing?.series??[
+   newLine({id:normalized.id+"-upper",color:normalized.color,lineWidth:normalized.lineWidth??2,visible:normalized.visible,title:`${normalized.title??"Bollinger"} Upper`}),
+   newLine({id:normalized.id+"-middle",color:"#9f8be0",lineWidth:1,visible:normalized.visible,title:`${normalized.title??"Bollinger"} Middle`}),
+   newLine({id:normalized.id+"-lower",color:normalized.color,lineWidth:normalized.lineWidth??2,visible:normalized.visible,title:`${normalized.title??"Bollinger"} Lower`})
+  ];
+  const colors=[normalized.color,"#9f8be0",normalized.color];
+  for(let i=0;i<3;i++)series[i].applyOptions({color:colors[i],lineWidth:i===1?1:normalized.lineWidth??2,visible:normalized.visible,title:`${normalized.title??"Bollinger"} ${["Upper","Middle","Lower"][i]}`});
+  bollingerOverlays.set(normalized.id,{options:normalized,series,values:existing?.values??{upper:[],middle:[],lower:[]}});refreshBollingerOverlays();
+ }
+ function updateBollinger(id:string,patch:Partial<Omit<BollingerOptions,"id">>){
+  guard();const existing=bollingerOverlays.get(id);if(!existing)return false;
+  if(!patch||typeof patch!=="object"||Array.isArray(patch)||Object.keys(patch).some(key=>!["period","stdDev","color","lineWidth","visible","title"].includes(key)))throw Error("Invalid Bollinger update");
+  const next={...existing.options,...patch};if(!validBollingerOptions(next))throw Error("Invalid Bollinger configuration");addBollinger(next);return true;
+ }
+ function bollingerOptions(id:string){guard();const group=bollingerOverlays.get(id);return group?{...group.options}:undefined}
+ function removeBollinger(id:string){
+  guard();const group=bollingerOverlays.get(id);if(!group)return false;
+  for(const series of group.series)chart.removeSeries(series);bollingerOverlays.delete(id);readoutIndicators.delete(id);return true;
+ }
  function addDonchian(options:DonchianOptions){
   guard();if(!options||!/^[-_a-zA-Z0-9]{1,32}$/.test(options.id)||!colorPattern.test(options.color)||
    !Number.isInteger(options.period)||options.period<2||options.period>200||
    (options.lineWidth!==undefined&&(!Number.isInteger(options.lineWidth)||options.lineWidth<1||options.lineWidth>4))||
    (options.visible!==undefined&&typeof options.visible!=="boolean"))throw Error("Invalid Donchian configuration");
-  if(oscillators.has(options.id)||averages.has(options.id)||linearRegressionOverlays.has(options.id)||keltnerOverlays.has(options.id)||supertrendOverlays.has(options.id)||paneLines.has(options.id)||priceLevels.has(options.id)||timeMarkers.has(options.id)||textAnnotations.has(options.id)||trendLines.has(options.id)||rectangles.has(options.id)||rays.has(options.id)||fibonacci.has(options.id)||channels.has(options.id)||measurements.has(options.id))throw Error("Duplicate chart object identity");
-  if(averages.size+paneLines.size+oscillators.size+donchianOverlays.size+keltnerOverlays.size+linearRegressionOverlays.size+supertrendOverlays.size>=maxIndicatorInstances&&!donchianOverlays.has(options.id))throw Error("Indicator instance limit");
+  if(oscillators.has(options.id)||averages.has(options.id)||linearRegressionOverlays.has(options.id)||keltnerOverlays.has(options.id)||supertrendOverlays.has(options.id)||paneLines.has(options.id)||priceLevels.has(options.id)||timeMarkers.has(options.id)||textAnnotations.has(options.id)||trendLines.has(options.id)||rectangles.has(options.id)||rays.has(options.id)||fibonacci.has(options.id)||channels.has(options.id)||measurements.has(options.id)||bollingerOverlays.has(options.id))throw Error("Duplicate chart object identity");
+  if(averages.size+paneLines.size+oscillators.size+donchianOverlays.size+keltnerOverlays.size+linearRegressionOverlays.size+supertrendOverlays.size+bollingerOverlays.size>=maxIndicatorInstances&&!donchianOverlays.has(options.id))throw Error("Indicator instance limit");
   const current=donchianOverlays.get(options.id),normalized={...options,visible:options.visible??true};
   const series:[LineApi,LineApi,LineApi]=current?.series??[
    newLine({id:options.id+"-upper",color:options.color,lineWidth:options.lineWidth??2,visible:normalized.visible,title:`${options.title??"Donchian"} Upper`}),
@@ -1261,8 +1319,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    !Number.isFinite(options.multiplier)||options.multiplier<.1||options.multiplier>10||Math.abs(options.multiplier*10-Math.round(options.multiplier*10))>1e-8||
    (options.lineWidth!==undefined&&(!Number.isInteger(options.lineWidth)||options.lineWidth<1||options.lineWidth>4))||
    (options.visible!==undefined&&typeof options.visible!=="boolean"))throw Error("Invalid Keltner configuration");
-   if(oscillators.has(options.id)||averages.has(options.id)||donchianOverlays.has(options.id)||linearRegressionOverlays.has(options.id)||supertrendOverlays.has(options.id)||paneLines.has(options.id)||priceLevels.has(options.id)||timeMarkers.has(options.id)||textAnnotations.has(options.id)||trendLines.has(options.id)||rectangles.has(options.id)||rays.has(options.id)||fibonacci.has(options.id)||channels.has(options.id)||measurements.has(options.id))throw Error("Duplicate chart object identity");
-   if(averages.size+paneLines.size+oscillators.size+donchianOverlays.size+keltnerOverlays.size+linearRegressionOverlays.size+supertrendOverlays.size>=maxIndicatorInstances&&!keltnerOverlays.has(options.id))throw Error("Indicator instance limit");
+   if(oscillators.has(options.id)||averages.has(options.id)||donchianOverlays.has(options.id)||linearRegressionOverlays.has(options.id)||supertrendOverlays.has(options.id)||paneLines.has(options.id)||priceLevels.has(options.id)||timeMarkers.has(options.id)||textAnnotations.has(options.id)||trendLines.has(options.id)||rectangles.has(options.id)||rays.has(options.id)||fibonacci.has(options.id)||channels.has(options.id)||measurements.has(options.id)||bollingerOverlays.has(options.id))throw Error("Duplicate chart object identity");
+   if(averages.size+paneLines.size+oscillators.size+donchianOverlays.size+keltnerOverlays.size+linearRegressionOverlays.size+supertrendOverlays.size+bollingerOverlays.size>=maxIndicatorInstances&&!keltnerOverlays.has(options.id))throw Error("Indicator instance limit");
   const existing=keltnerOverlays.get(options.id),normalized={...options,visible:options.visible??true};
   const series:[LineApi,LineApi,LineApi]=existing?.series??[
    newLine({id:options.id+"-upper",color:options.color,lineWidth:options.lineWidth??2,visible:normalized.visible,title:`${options.title??"Keltner"} Upper`}),
@@ -1294,8 +1352,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   }
   function addLinearRegression(options:LinearRegressionOptions){
    guard();if(!validLinearRegressionOptions(options))throw Error("Invalid Linear Regression configuration");
-   if(oscillators.has(options.id)||averages.has(options.id)||donchianOverlays.has(options.id)||keltnerOverlays.has(options.id)||supertrendOverlays.has(options.id)||paneLines.has(options.id)||priceLevels.has(options.id)||timeMarkers.has(options.id)||textAnnotations.has(options.id)||trendLines.has(options.id)||rectangles.has(options.id)||rays.has(options.id)||fibonacci.has(options.id)||channels.has(options.id)||measurements.has(options.id))throw Error("Duplicate chart object identity");
-   if(averages.size+paneLines.size+oscillators.size+donchianOverlays.size+keltnerOverlays.size+linearRegressionOverlays.size+supertrendOverlays.size>=maxIndicatorInstances&&!linearRegressionOverlays.has(options.id))throw Error("Indicator instance limit");
+   if(oscillators.has(options.id)||averages.has(options.id)||donchianOverlays.has(options.id)||keltnerOverlays.has(options.id)||supertrendOverlays.has(options.id)||paneLines.has(options.id)||priceLevels.has(options.id)||timeMarkers.has(options.id)||textAnnotations.has(options.id)||trendLines.has(options.id)||rectangles.has(options.id)||rays.has(options.id)||fibonacci.has(options.id)||channels.has(options.id)||measurements.has(options.id)||bollingerOverlays.has(options.id))throw Error("Duplicate chart object identity");
+   if(averages.size+paneLines.size+oscillators.size+donchianOverlays.size+keltnerOverlays.size+linearRegressionOverlays.size+supertrendOverlays.size+bollingerOverlays.size>=maxIndicatorInstances&&!linearRegressionOverlays.has(options.id))throw Error("Indicator instance limit");
    const existing=linearRegressionOverlays.get(options.id),normalized={...options,visible:options.visible??true};
    const series:[LineApi,LineApi,LineApi]=existing?.series??[
     newLine({id:options.id+"-upper",color:options.color,lineWidth:options.lineWidth??2,visible:normalized.visible,title:`${options.title??"Linear Regression"} Upper`}),
@@ -1346,8 +1404,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function addSupertrend(options:SupertrendOptions){
   guard();if(!validSupertrendConfiguration(options))throw Error("Invalid Supertrend configuration");
-  if(oscillators.has(options.id)||averages.has(options.id)||donchianOverlays.has(options.id)||linearRegressionOverlays.has(options.id)||keltnerOverlays.has(options.id)||supertrendOverlays.has(options.id)||paneLines.has(options.id)||priceLevels.has(options.id)||timeMarkers.has(options.id)||textAnnotations.has(options.id)||trendLines.has(options.id)||rectangles.has(options.id)||rays.has(options.id)||fibonacci.has(options.id)||channels.has(options.id)||measurements.has(options.id))throw Error("Duplicate chart object identity");
-  if(averages.size+paneLines.size+oscillators.size+donchianOverlays.size+keltnerOverlays.size+linearRegressionOverlays.size+supertrendOverlays.size>=maxIndicatorInstances)throw Error("Indicator instance limit");
+  if(oscillators.has(options.id)||averages.has(options.id)||donchianOverlays.has(options.id)||linearRegressionOverlays.has(options.id)||keltnerOverlays.has(options.id)||supertrendOverlays.has(options.id)||paneLines.has(options.id)||priceLevels.has(options.id)||timeMarkers.has(options.id)||textAnnotations.has(options.id)||trendLines.has(options.id)||rectangles.has(options.id)||rays.has(options.id)||fibonacci.has(options.id)||channels.has(options.id)||measurements.has(options.id)||bollingerOverlays.has(options.id))throw Error("Duplicate chart object identity");
+  if(averages.size+paneLines.size+oscillators.size+donchianOverlays.size+keltnerOverlays.size+linearRegressionOverlays.size+supertrendOverlays.size+bollingerOverlays.size>=maxIndicatorInstances)throw Error("Indicator instance limit");
   const normalized={...options,visible:options.visible??true},title=options.title??`Supertrend ${options.period} × ${options.multiplier}`;
   const up=newLine({id:options.id+"-up",color:options.color,lineWidth:options.lineWidth??2,visible:normalized.visible,title:title+" · Aufwärtstrend"});
   const down=newLine({id:options.id+"-down",color:"#f47789",lineWidth:options.lineWidth??2,visible:normalized.visible,title:title+" · Abwärtstrend"});
@@ -1412,7 +1470,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function addPriceLevel(opts:PriceLevelOptions){
   guard();validatePriceLevel(opts);
-  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");
+  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id)||bollingerOverlays.has(opts.id))throw Error("Duplicate chart object identity");
   const existing=priceLevels.get(opts.id);
   const options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};
   if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options.price,options.color,options.visible);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
@@ -1440,7 +1498,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function addTimeMarker(opts:TimeMarkerOptions,requireLoadedTime=true){
   guard();validateTimeMarker(opts,requireLoadedTime);
-  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");
+  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id)||bollingerOverlays.has(opts.id))throw Error("Duplicate chart object identity");
   const existing=timeMarkers.get(opts.id);
   const options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};
   if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options.time,options.color,options.visible);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
@@ -1469,7 +1527,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function addTextAnnotation(opts:TextAnnotationOptions,requireLoadedTime=true){
   guard();validateTextAnnotation(opts,requireLoadedTime);
-  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");
+  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id)||bollingerOverlays.has(opts.id))throw Error("Duplicate chart object identity");
   const existing=textAnnotations.get(opts.id);
   const options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};
   if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
@@ -1496,7 +1554,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function addTrendLine(opts:TrendLineOptions,requireLoadedAnchors=true){
   guard();validateTrendLine(opts,requireLoadedAnchors);
-  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");
+  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id)||bollingerOverlays.has(opts.id))throw Error("Duplicate chart object identity");
   const existing=trendLines.get(opts.id),options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};
   if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
   if(drawingCount()>=maxNativeDrawings)throw Error("Native drawing limit");
@@ -1517,7 +1575,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function addRectangle(opts:RectangleOptions,requireLoadedAnchors=true){
   guard();validateRectangle(opts,requireLoadedAnchors);
-  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");
+  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id)||bollingerOverlays.has(opts.id))throw Error("Duplicate chart object identity");
   const existing=rectangles.get(opts.id),options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};
   if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
   if(drawingCount()>=maxNativeDrawings)throw Error("Native drawing limit");
@@ -1534,7 +1592,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function addRay(opts:RayOptions,requireLoadedAnchors=true){
   guard();validateTrendLine(opts,requireLoadedAnchors);
-  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");
+  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id)||bollingerOverlays.has(opts.id))throw Error("Duplicate chart object identity");
   const existing=rays.get(opts.id),options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};
   if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
   if(drawingCount()>=maxNativeDrawings)throw Error("Native drawing limit");
@@ -1563,7 +1621,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function addFibonacci(opts:FibonacciOptions,requireLoadedAnchors=true){
   guard();const normalized=normalizeFibonacciOptions(opts,requireLoadedAnchors);
-  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id))throw Error("Duplicate chart object identity");
+  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||bollingerOverlays.has(opts.id))throw Error("Duplicate chart object identity");
   const existing=fibonacci.get(opts.id),options={...normalized,visible:normalized.visible??existing?.options.visible??true,locked:normalized.locked??existing?.options.locked??false};
   if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
   if(drawingCount()>=maxNativeDrawings)throw Error("Native drawing limit");
@@ -1598,13 +1656,13 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function measurementLabel(options:MeasurementOptions){const read=measurementReadoutValue(options);return `${read.priceDelta>=0?"+":""}${read.priceDelta.toFixed(2)} (${read.percentChange>=0?"+":""}${read.percentChange.toFixed(2)}%) · ${read.bars} bars`}
  function measurementReadoutValue(options:MeasurementOptions){const start=barsByTime.get(options.startTime),end=barsByTime.get(options.endTime);if(!start||!end)throw Error("Invalid or unavailable measurement");return {priceDelta:options.endPrice-options.startPrice,percentChange:(options.endPrice-options.startPrice)/options.startPrice*100,bars:Math.abs(bars.indexOf(end)-bars.indexOf(start))}}
- function addMeasurement(opts:MeasurementOptions){guard();validateTrendLine(opts,true);if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");const existing=measurements.get(opts.id),options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}if(drawingCount()>=maxNativeDrawings)throw Error("Native drawing limit");const primitive=new MeasurementPrimitive(opts.id,options,measurementLabel(options));price.attachPrimitive(primitive);measurements.set(opts.id,{primitive,options});recordDrawingChange(opts.id,null,snapshotDrawing(opts.id))}
+ function addMeasurement(opts:MeasurementOptions){guard();validateTrendLine(opts,true);if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id)||bollingerOverlays.has(opts.id))throw Error("Duplicate chart object identity");const existing=measurements.get(opts.id),options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}if(drawingCount()>=maxNativeDrawings)throw Error("Native drawing limit");const primitive=new MeasurementPrimitive(opts.id,options,measurementLabel(options));price.attachPrimitive(primitive);measurements.set(opts.id,{primitive,options});recordDrawingChange(opts.id,null,snapshotDrawing(opts.id))}
  function updateMeasurement(id:string,patch:Partial<Pick<MeasurementOptions,"startTime"|"startPrice"|"endTime"|"endPrice"|"color"|"visible"|"locked">>){guard();const item=measurements.get(id);if(!item)throw Error("Unknown measurement");const before=snapshotDrawing(id),options={...item.options,...patch};validateTrendLine(options,patch.startTime!==undefined||patch.endTime!==undefined);const label=measurementLabel(options);item.primitive.set(options);item.primitive.setReadout(label);item.options=options;if(activeDrag?.id!==id)recordDrawingChange(id,before,snapshotDrawing(id))}
  function removeMeasurement(id:string){guard();const item=measurements.get(id);if(!item)return false;const before=snapshotDrawing(id);price.detachPrimitive(item.primitive);measurements.delete(id);if(selectedDrawingIds.has(id))selectDrawings([...selectedDrawingIds].filter(selected=>selected!==id));recordDrawingChange(id,before,null);return true}
  function measurementReadout(id:string){guard();const item=measurements.get(id);return item?measurementReadoutValue(item.options):null}
  function addChannel(opts:ChannelOptions,requireLoadedAnchors=true){
   guard();validateChannel(opts,requireLoadedAnchors);
-  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id))throw Error("Duplicate chart object identity");
+  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||paneLines.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||bollingerOverlays.has(opts.id))throw Error("Duplicate chart object identity");
   const existing=channels.get(opts.id),options={...opts,visible:opts.visible??existing?.options.visible??true,locked:opts.locked??existing?.options.locked??false};
   if(existing){const before=snapshotDrawing(opts.id);existing.primitive.set(options);existing.options=options;recordDrawingChange(opts.id,before,snapshotDrawing(opts.id));return}
   if(drawingCount()>=maxNativeDrawings)throw Error("Native drawing limit");
@@ -1783,8 +1841,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color))
    throw Error("Invalid pane line");
   const values=validSeriesData(data);
-  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id))throw Error("Duplicate chart object identity");
-  if(averages.size+paneLines.size+oscillators.size+donchianOverlays.size+keltnerOverlays.size+linearRegressionOverlays.size+supertrendOverlays.size>=maxIndicatorInstances&&!paneLines.has(opts.id))throw Error("Indicator instance limit");
+  if(supertrendOverlays.has(opts.id)||oscillators.has(opts.id)||donchianOverlays.has(opts.id)||linearRegressionOverlays.has(opts.id)||keltnerOverlays.has(opts.id)||averages.has(opts.id)||priceLevels.has(opts.id)||timeMarkers.has(opts.id)||textAnnotations.has(opts.id)||trendLines.has(opts.id)||rectangles.has(opts.id)||rays.has(opts.id)||fibonacci.has(opts.id)||channels.has(opts.id)||measurements.has(opts.id)||bollingerOverlays.has(opts.id))throw Error("Duplicate chart object identity");
+  if(averages.size+paneLines.size+oscillators.size+donchianOverlays.size+keltnerOverlays.size+linearRegressionOverlays.size+supertrendOverlays.size+bollingerOverlays.size>=maxIndicatorInstances&&!paneLines.has(opts.id))throw Error("Indicator instance limit");
   if(paneLines.size+oscillators.size>=8&&!paneLines.has(opts.id))throw Error("Native pane limit");
   let series=paneLines.get(opts.id);
   if(!series){
@@ -1835,8 +1893,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  function addOscillator(options:OscillatorOptions){
   guard();if(!options||!/^[-_a-zA-Z0-9]{1,32}$/.test(options.id)||!colorPattern.test(options.color)||!(["rsi","atr","macd","adx","stochastic","stochrsi","cci","momentum","roc","obv","mfi"] as string[]).includes(options.kind)||
    (options.lineWidth!==undefined&&![1,2,3,4].includes(options.lineWidth)))throw Error("Invalid oscillator options");
-  if(supertrendOverlays.has(options.id)||oscillators.has(options.id)||donchianOverlays.has(options.id)||linearRegressionOverlays.has(options.id)||keltnerOverlays.has(options.id)||averages.has(options.id)||paneLines.has(options.id)||priceLevels.has(options.id)||timeMarkers.has(options.id)||textAnnotations.has(options.id)||trendLines.has(options.id)||rectangles.has(options.id)||rays.has(options.id)||fibonacci.has(options.id)||channels.has(options.id)||measurements.has(options.id))throw Error("Duplicate chart object identity");
-  if(averages.size+paneLines.size+oscillators.size+donchianOverlays.size+keltnerOverlays.size+linearRegressionOverlays.size+supertrendOverlays.size>=maxIndicatorInstances)throw Error("Indicator instance limit");
+  if(supertrendOverlays.has(options.id)||oscillators.has(options.id)||donchianOverlays.has(options.id)||linearRegressionOverlays.has(options.id)||keltnerOverlays.has(options.id)||averages.has(options.id)||paneLines.has(options.id)||priceLevels.has(options.id)||timeMarkers.has(options.id)||textAnnotations.has(options.id)||trendLines.has(options.id)||rectangles.has(options.id)||rays.has(options.id)||fibonacci.has(options.id)||channels.has(options.id)||measurements.has(options.id)||bollingerOverlays.has(options.id))throw Error("Duplicate chart object identity");
+  if(averages.size+paneLines.size+oscillators.size+donchianOverlays.size+keltnerOverlays.size+linearRegressionOverlays.size+supertrendOverlays.size+bollingerOverlays.size>=maxIndicatorInstances)throw Error("Indicator instance limit");
   if(paneLines.size+oscillators.size>=8)throw Error("Native pane limit");
   const normalized={...options,settings:{...options.settings}} as OscillatorOptions;
   const calculator=createIncrementalOscillator([],normalized.kind,normalized.settings);
@@ -1913,7 +1971,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   for(const indicator of readoutIndicators.values()){indicator.values.delete(c.time);indicator.directions?.delete(c.time)}
   price.update(c);if(volume)volume.update(volumeRows()[bars.length-1]);
   for(const [id,state] of managedMovingAverages)updateManagedMovingAverage(id,state);
-  refreshDonchianOverlays();refreshKeltnerOverlays();refreshLinearRegressionOverlays();
+  refreshDonchianOverlays();refreshBollingerOverlays();refreshKeltnerOverlays();refreshLinearRegressionOverlays();
   for(const group of supertrendOverlays.values())updateSupertrendLast(group,c,bars.length-1,replacing&&group.lastTime===c.time);
   refreshOscillators(true);
  }
@@ -1959,6 +2017,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   averages.clear();managedMovingAverages.clear();
   for(const group of donchianOverlays.values())for(const series of group.series)chart.removeSeries(series);
   donchianOverlays.clear();
+  for(const group of bollingerOverlays.values())for(const series of group.series)chart.removeSeries(series);
+  bollingerOverlays.clear();
   for(const group of keltnerOverlays.values())for(const series of group.series)chart.removeSeries(series);
   keltnerOverlays.clear();
    for(const group of linearRegressionOverlays.values())for(const series of group.series)chart.removeSeries(series);
@@ -1973,10 +2033,10 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  function inspect(){guard();return {version:VERSION,account:activeAccount,positionOverlayCount:positionOverlayLines.size,positionOverlays:readPositionOverlays().lines,
   displayTimeZone,
   candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
-    averageCount:averages.size,nativePaneLines:paneLines.size,oscillatorCount:oscillators.size,supertrendCount:supertrendOverlays.size,linearRegressionCount:linearRegressionOverlays.size,linearRegressionLineCount:[...linearRegressionOverlays.values()].reduce((count,group)=>count+group.series.length,0),linearRegressionSeries:[...linearRegressionOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),oscillatorPaneCount:new Set(Array.from(oscillators.values(),group=>{const series=group.series.values().next().value;return series?chart.panes().findIndex(pane=>pane.getSeries().includes(series)):-1}).filter(index=>index>=0)).size,nativePrimitives:drawingCount(),selectedDrawingId,selectedDrawingIds:[...selectedDrawingIds],hoveredDrawingId,
+    averageCount:averages.size,nativePaneLines:paneLines.size,oscillatorCount:oscillators.size,supertrendCount:supertrendOverlays.size,bollingerCount:bollingerOverlays.size,bollingerSeries:[...bollingerOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),linearRegressionCount:linearRegressionOverlays.size,linearRegressionLineCount:[...linearRegressionOverlays.values()].reduce((count,group)=>count+group.series.length,0),linearRegressionSeries:[...linearRegressionOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),oscillatorPaneCount:new Set(Array.from(oscillators.values(),group=>{const series=group.series.values().next().value;return series?chart.panes().findIndex(pane=>pane.getSeries().includes(series)):-1}).filter(index=>index>=0)).size,nativePrimitives:drawingCount(),selectedDrawingId,selectedDrawingIds:[...selectedDrawingIds],hoveredDrawingId,
   paneCount:chart.panes().length,volumeVisible:!!volume,persistenceStatus,persistenceError}}
- function destroy(){if(destroyed)return;finishDrag(true);clearPositionOverlays();destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();managedMovingAverages.clear();donchianOverlays.clear();keltnerOverlays.clear();linearRegressionOverlays.clear();supertrendOverlays.clear();paneLines.clear();oscillators.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();measurements.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
-  return Object.freeze({setCandles,addAverage,addMovingAverage,addDonchian,removeDonchian,addKeltner,removeKeltner,addLinearRegression,updateLinearRegression,removeLinearRegression,linearRegressionOptions,addSupertrend,updateSupertrend,removeSupertrend,supertrendOptions,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,addPriceLevel,updatePriceLevel,removePriceLevel,
+ function destroy(){if(destroyed)return;finishDrag(true);clearPositionOverlays();destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();managedMovingAverages.clear();donchianOverlays.clear();bollingerOverlays.clear();keltnerOverlays.clear();linearRegressionOverlays.clear();supertrendOverlays.clear();paneLines.clear();oscillators.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();measurements.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
+  return Object.freeze({setCandles,addAverage,addMovingAverage,addDonchian,removeDonchian,addBollinger,updateBollinger,removeBollinger,bollingerOptions,addKeltner,removeKeltner,addLinearRegression,updateLinearRegression,removeLinearRegression,linearRegressionOptions,addSupertrend,updateSupertrend,removeSupertrend,supertrendOptions,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,drawingPosition,drawingAnchorPosition,readDrawing,exportDrawings,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,
   addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,addOscillator,updateOscillator,removeOscillator,moveOscillator,oscillatorOptions,oscillatorPaneLayout,resizePane,paneHeights,showVolume,visibleLogicalRange,setVisibleLogicalRange,setDisplayTimeZone,displayTimeZone:()=>displayTimeZone,formatTimeLabel:formatDisplayTime,formatCrosshairTime,readDataWindow,
   updateLast,changeAccount,averageOptions,setPositionOverlays,readPositionOverlays,inspect,destroy});

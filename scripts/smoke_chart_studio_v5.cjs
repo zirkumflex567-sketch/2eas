@@ -292,6 +292,42 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.changeAccount("at026-other");const isolated=engine.readDataWindow(changed.time).indicators?.length??0;
    engine.destroy();host.remove();return {initial:initial?.value,expected:reference.middle.at(-1).value,updated:updated?.value,updatedReference,badMultiplierRejected,isolated};
   });
+  const bollingerProbe=await page.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:900px;height:360px;position:fixed;left:-2000px;top:0";document.body.append(host);
+   const engine=ChartStudioV5.createStudioV5(host,"at028-native-bollinger"),bars=Array.from({length:36},(_,i)=>{const close=2000+Math.sin(i/3)*4+i*.3;return {time:1700550000+i*60,open:close-.2,high:close+1,low:close-1,close}});
+   engine.setCandles(bars);
+   const apiAvailable=typeof engine.addBollinger==="function"&&typeof engine.updateBollinger==="function"&&typeof engine.removeBollinger==="function"&&typeof engine.bollingerOptions==="function";
+   if(!apiAvailable){engine.destroy();host.remove();return {apiAvailable}}
+   let defaultsAccepted=false,defaultOptions=null;try{engine.addBollinger({id:"bollinger-defaults",color:"#d0a0ff"});defaultOptions=engine.bollingerOptions("bollinger-defaults");defaultsAccepted=defaultOptions.period===20&&defaultOptions.stdDev===2;engine.removeBollinger("bollinger-defaults")}catch(_){}
+   const matches=(rows,period=5,stdDev=1.5)=>{
+    const reference=ChartStudioBeta.calculations.bollinger(rows,period,stdDev),native=engine.inspect().bollingerSeries.find(item=>item.id==="bollinger-main");
+    const arraysMatch=["upper","middle","lower"].every(key=>native.lines[key].length===reference[key].length&&native.lines[key].every((point,index)=>point.time===reference[key][index].time&&Math.abs(point.value-reference[key][index].value)<1e-7));
+    const readoutMatches=rows.every(bar=>{const actual=engine.readDataWindow(bar.time).indicators.find(item=>item.id==="bollinger-main"),expected=reference.middle.find(point=>point.time===bar.time);return expected?actual?.state==="AVAILABLE"&&Math.abs(actual.value-expected.value)<1e-7:actual?.state!=="AVAILABLE"});
+    return arraysMatch&&readoutMatches;
+   };
+   engine.addBollinger({id:"bollinger-main",period:5,stdDev:1.5,color:"#b9a1ff"});
+   const initialMatches=matches(bars),initialOptions=engine.bollingerOptions("bollinger-main"),initial=engine.inspect().bollingerSeries.find(item=>item.id==="bollinger-main");
+   const noProjection=initial.lines.middle.length===bars.length-5+1&&initial.lines.middle[0].time===bars[4].time&&initial.lines.middle.at(-1).time===bars.at(-1).time;
+   const replacement=bars.map(bar=>({...bar,open:bar.open+50,high:bar.high+50,low:bar.low+50,close:bar.close+50}));engine.setCandles(replacement);const historyMatches=matches(replacement);
+   let changed={...replacement.at(-1),close:replacement.at(-1).close+8,high:replacement.at(-1).high+8};engine.updateLast(changed);let current=[...replacement.slice(0,-1),changed],formingMatches=matches(current);
+   changed={...changed,close:changed.close-3,low:changed.low-2};engine.updateLast(changed);current=[...current.slice(0,-1),changed];const repeatedMatches=matches(current);
+   const appended={time:current.at(-1).time+60,open:changed.close,high:changed.close+2,low:changed.close-1,close:changed.close+1};engine.updateLast(appended);current=[...current,appended];const appendMatches=matches(current);
+   const updated=engine.updateBollinger("bollinger-main",{period:8,stdDev:2,color:"#63d8e8",visible:false,title:"BB custom"}),updatedMatches=matches(current,8,2),updatedOptions=engine.bollingerOptions("bollinger-main"),updatedSeries=engine.inspect().bollingerSeries.find(item=>item.id==="bollinger-main");
+   let badPeriodRejected=false,badDeviationRejected=false,badPatchRejected=false,unknownOptionRejected=false,identityCollisionRejected=false;
+   try{engine.addBollinger({id:"bollinger-bad-period",period:301,stdDev:2,color:"#ffffff"})}catch(_){badPeriodRejected=true}
+   try{engine.addBollinger({id:"bollinger-bad-deviation",period:20,stdDev:10.15,color:"#ffffff"})}catch(_){badDeviationRejected=true}
+   try{engine.updateBollinger("bollinger-main",{period:1})}catch(_){badPatchRejected=true}
+   try{engine.addBollinger({id:"bollinger-unknown-option",period:20,stdDev:2,color:"#ffffff",forwardProjection:true})}catch(_){unknownOptionRejected=true}
+   try{engine.addPriceLevel({id:"bollinger-main",price:2000,color:"#ffffff"})}catch(_){identityCollisionRejected=true}
+   const rejectedPatchPreserved=engine.bollingerOptions("bollinger-main").period===8&&engine.bollingerOptions("bollinger-main").stdDev===2;
+   const lineCount=updatedSeries.visible.length,logicalCount=engine.inspect().bollingerCount;
+   const removed=engine.removeBollinger("bollinger-main"),afterRemove=engine.inspect().bollingerCount;
+   engine.addBollinger({id:"bollinger-isolated",period:5,stdDev:2,color:"#ffffff"});engine.changeAccount("at028-other");const isolated=engine.readDataWindow(appended.time).indicators?.length??0;
+   engine.changeAccount("at028-capacity");for(let i=0;i<19;i++)engine.addAverage({id:`bollinger-cap-${i}`,color:"#aabbcc"},bars.map(bar=>({time:bar.time,value:bar.close})));
+   engine.addBollinger({id:"bollinger-cap-last",period:5,stdDev:2,color:"#ffffff"});let overLimitRejected=false;try{engine.addAverage({id:"bollinger-cap-over",color:"#ffffff"},bars.map(bar=>({time:bar.time,value:bar.close})))}catch(_){overLimitRejected=true}
+   const combinedCount=engine.inspect().averageCount+engine.inspect().bollingerCount;
+   engine.destroy();host.remove();return {apiAvailable,defaultsAccepted,defaultOptions,initialMatches,initialOptions,noProjection,historyMatches,formingMatches,repeatedMatches,appendMatches,updated,updatedMatches,updatedOptions,updatedSeriesVisible:updatedSeries.visible,logicalCount,lineCount,badPeriodRejected,badDeviationRejected,badPatchRejected,unknownOptionRejected,identityCollisionRejected,rejectedPatchPreserved,removed,afterRemove,isolated,overLimitRejected,combinedCount};
+  });
   const linearRegressionProbe=await page.evaluate(()=>{
    const host=document.createElement("div");host.style.cssText="width:900px;height:360px;position:fixed;left:-2000px;top:0";document.body.append(host);
    const engine=ChartStudioV5.createStudioV5(host,"at027-native-linear-regression"),bars=Array.from({length:24},(_,i)=>{const close=2100+i*.17+Math.sin(i/3)*1.7;return {time:1700600000+i*60,open:close-.3,high:close+1.1,low:close-1.2,close}});
@@ -579,6 +615,32 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(keltnerProbe.updated,keltnerProbe.updatedReference,"Forming-bar updates recalculate Keltner boundaries");
   assert.equal(keltnerProbe.badMultiplierRejected,true);
   assert.equal(keltnerProbe.isolated,0,"Changing account clears Keltner readouts");
+  assert.equal(bollingerProbe.apiAvailable,true,"Native v5 exposes the Bollinger overlay API");
+  assert.equal(bollingerProbe.defaultsAccepted,true,"Native Bollinger defaults match the Beta settings");
+  assert.equal(bollingerProbe.initialMatches,true,"All native Bollinger bands and readout values match Beta population-deviation semantics");
+  assert.equal(bollingerProbe.initialOptions.period,5);
+  assert.equal(bollingerProbe.noProjection,true,"Bollinger bands start after a full lookback and do not project forward");
+  assert.equal(bollingerProbe.historyMatches,true);
+  assert.equal(bollingerProbe.formingMatches,true);
+  assert.equal(bollingerProbe.repeatedMatches,true);
+  assert.equal(bollingerProbe.appendMatches,true);
+  assert.equal(bollingerProbe.updated,true);
+  assert.equal(bollingerProbe.updatedMatches,true);
+  assert.equal(bollingerProbe.updatedOptions.stdDev,2);
+  assert.deepEqual(bollingerProbe.updatedSeriesVisible,[false,false,false]);
+  assert.equal(bollingerProbe.logicalCount,1);
+  assert.equal(bollingerProbe.lineCount,3);
+  assert.equal(bollingerProbe.badPeriodRejected,true);
+  assert.equal(bollingerProbe.badDeviationRejected,true);
+  assert.equal(bollingerProbe.badPatchRejected,true);
+  assert.equal(bollingerProbe.unknownOptionRejected,true);
+  assert.equal(bollingerProbe.identityCollisionRejected,true);
+  assert.equal(bollingerProbe.rejectedPatchPreserved,true);
+  assert.equal(bollingerProbe.removed,true);
+  assert.equal(bollingerProbe.afterRemove,0);
+  assert.equal(bollingerProbe.isolated,0,"Changing account clears Bollinger readouts");
+  assert.equal(bollingerProbe.overLimitRejected,true);
+  assert.equal(bollingerProbe.combinedCount,20);
   assert.equal(linearRegressionProbe.apiAvailable,true,"Native v5 exposes the regression channel overlay API");
   assert.equal(linearRegressionProbe.initialMatches,true,"Native v5 regression middle values match the Beta OLS reference");
    assert.equal(linearRegressionProbe.nativeArraysMatch,true,"Native upper, middle and lower series match Beta OLS values and timestamps");
