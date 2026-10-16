@@ -103,15 +103,30 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process");
    "Repeated forming-bar updates retain full-calculator parity");
   assert.equal(await page.evaluate(()=>window.__streamSeriesUpdates.length),5,
    "Repeated forming-bar updates touch only the five RSI/MACD/ATR series tails");
+  await page.evaluate(()=>{
+   window.__streamProbe.deltas.length=0;window.__streamProbe.parityFailures.length=0;window.__streamSeriesUpdates.length=0;
+   const previous=__perfLatest.at(-1),time=previous.time+900,close=previous.close+.2;
+   __perfLatest.push({time,open:previous.close,high:Math.max(previous.close,close)+.5,
+    low:Math.min(previous.close,close)-.5,close,tick_volume:15,real_volume:0});
+   ChartStudioBeta.updateCandles(__perfLatest);
+  });
+  assert.deepEqual(await page.evaluate(()=>Object.values(window.__chartPerfCounts)),[3,3,3,3],
+   "A new candle advances the retained streams without recalculating full RSI/MACD/ATR history");
+  assert.equal(await page.evaluate(()=>window.__streamProbe.updates),12,
+   "Appending one candle advances all four active incremental streams exactly once");
+  assert.deepEqual(await page.evaluate(()=>window.__streamProbe.parityFailures),[],
+   "Appended-bar stream values retain full-calculator parity");
+  assert.equal(await page.evaluate(()=>window.__streamSeriesUpdates.length),5,
+   "The appended candle updates only the five visible multi-instance indicator tails");
   await page.evaluate(()=>ChartStudioBeta.updateCandles(__perfLatest.map(c=>({...c}))));
-  assert.deepEqual(await page.evaluate(()=>Object.values(window.__chartPerfCounts)),[2,2,2,2]);
+  assert.deepEqual(await page.evaluate(()=>Object.values(window.__chartPerfCounts)),[3,3,3,3]);
   await page.evaluate(()=>{
    window.__perfCorrected=__perfLatest.map(c=>({...c}));
    __perfCorrected[40].high+=2;__perfCorrected[40].close+=1;
    window.__streamProbe.updates=0;window.__streamProbe.deltas.length=0;window.__streamSeriesUpdates.length=0;
    ChartStudioBeta.updateCandles(__perfCorrected);
   });
-  assert.deepEqual(await page.evaluate(()=>Object.values(window.__chartPerfCounts)),[3,3,3,3],
+  assert.deepEqual(await page.evaluate(()=>Object.values(window.__chartPerfCounts)),[4,4,4,4],
    "Older historical bar correction must invalidate ALL indicator caches");
   assert.ok(await page.evaluate(()=>window.__streamProbe.builds)>=4,
    "Historical correction rebuilds incremental indicator state from corrected history");
@@ -121,7 +136,7 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process");
    await page.evaluate(()=>ChartStudioDataSignature.signature(__perfCorrected)));
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
   await page.evaluate(()=>ChartStudioBeta.updateCandles(__perfCorrected));
-  assert.deepEqual(await page.evaluate(()=>Object.values(window.__chartPerfCounts)),[4,4,4,4],
+  assert.deepEqual(await page.evaluate(()=>Object.values(window.__chartPerfCounts)),[5,5,5,5],
    "Different broker account must not retain prior account's fingerprint");
   await page.evaluate(()=>ChartStudioBeta.timeframe("H1"));
   await page.evaluate(()=>{for(const key in window.__chartPerfCounts)window.__chartPerfCounts[key]=0});
