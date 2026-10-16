@@ -25,12 +25,12 @@
 - [x] Add failing tests for normalized chart bars and exclusive historical paging.
 - [x] Normalize the current and historical `/api/candles` results before indicator/readout construction.
 - [x] Apply the same policy to regime bars, footprint bars/ticks, and recorded snapshot bars.
-- [x] Verify 307 focused Python tests; post-deployment browser chart smoke and four-feed read-only acceptance remain in delivery.
+- [x] Verify 307 focused Python tests and post-deployment browser/API acceptance across four explicit demo feeds without writes.
 
 ### Task 3: Delivery
 
 **Files:** `docs/OPEN_TASKS.md`, `docs/MT5_DATA_AVAILABILITY_2026-10-09.md`
 
 - [x] Document the live evidence and limits without raw ticks or private price details.
-- [ ] Commit/push to main, guarded-restart local runtime, fast-forward htown `/stt`, and verify exact revision/digest.
-- [ ] Do not use Blueberry or start any backtest/Strategy Tester.
+- [x] Commit/push to main, guarded-restart local runtime, fast-forward htown `/stt`, and verify exact revision/digest.
+- [x] Do not use Blueberry or start any backtest/Strategy Tester.
