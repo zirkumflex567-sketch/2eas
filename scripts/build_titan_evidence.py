@@ -15,6 +15,11 @@ from pathlib import Path
 
 
 ALLOWED_ACCOUNTS = frozenset({"xau5m_m5", "titan_m5"})
+EXPECTED_PRESETS = {"xau5m_m5": "puprime250.set", "titan_m5": "puprime500.set"}
+EXPECTED_PRESET_SHA256 = {
+    "xau5m_m5": "ff92ce8710e151cb73d304e411338c411db487bc3983f15eec541138a0aea286",
+    "titan_m5": "feb3030fee155bb41e8604a67117519f97db00beac614e103180813faf697e69",
+}
 EA_NAME = "XAU_Titan_Pro_BasketGuard"
 
 
@@ -25,6 +30,40 @@ class BuildVariant:
     compiler: Path
     include_root: Path
     log: Path
+
+
+def _input_names(source_text: str) -> set[str]:
+    names = re.findall(r"^\s*input\s+(?:\w+)\s+(\w+)\s*=", source_text, re.M)
+    if not names or len(names) != len(set(names)):
+        raise ValueError("EA input schema is empty or contains duplicate names")
+    return set(names)
+
+
+def _preset_input_names(path: Path) -> tuple[bytes, set[str]]:
+    if not path.is_file():
+        raise FileNotFoundError("account preset file not found")
+    raw = path.read_bytes()
+    encoding = "utf-16" if b"\0" in raw[:128] else "utf-8-sig"
+    try:
+        text = raw.decode(encoding)
+    except UnicodeDecodeError as exc:
+        raise ValueError("preset encoding is unsupported") from exc
+    names = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith((";", "#")):
+            continue
+        name, separator, value = line.partition("=")
+        if not separator:
+            raise ValueError("preset contains a malformed input record")
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+            raise ValueError("preset contains an invalid input name")
+        if not value.strip():
+            raise ValueError("preset contains an empty value")
+        names.append(name)
+    if len(names) != len(set(names)):
+        raise ValueError("preset contains duplicate input names")
+    return raw, set(names)
 
 
 def _mql_string(value: str) -> str:
@@ -50,10 +89,15 @@ def _atomic_write(path: Path, content: bytes) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
-def prepare_variant(repo_root: Path, alias: str, output_root: Path) -> BuildVariant:
+def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_path: Path) -> BuildVariant:
     """Generate an account-bound source package in output_root/alias."""
     if alias not in ALLOWED_ACCOUNTS:
         raise ValueError(f"account {alias!r} is not allowlisted for Titan evidence builds")
+    if Path(preset_path).name.casefold() != EXPECTED_PRESETS[alias].casefold():
+        raise ValueError(f"preset filename is not bound to account {alias!r}")
+    preset_digest = hashlib.sha256(Path(preset_path).read_bytes()).hexdigest()
+    if preset_digest != EXPECTED_PRESET_SHA256[alias]:
+        raise ValueError(f"preset content hash is not bound to account {alias!r}")
 
     repo_root = repo_root.resolve()
     output_root_input = Path(output_root).absolute()
@@ -91,6 +135,16 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path) -> BuildVari
     helper_path = repo_root / "ChartStudioEvidenceSpool.mqh"
     source_bytes = source_path.read_bytes()
     helper_bytes = helper_path.read_bytes()
+    preset_raw, preset_names = _preset_input_names(Path(preset_path))
+    source_text = source_bytes.decode("utf-8-sig")
+    source_names = _input_names(source_text)
+    if preset_names != source_names:
+        missing = sorted(source_names - preset_names)
+        unknown = sorted(preset_names - source_names)
+        raise ValueError(
+            "preset inputs do not match EA input schema "
+            f"(missing={len(missing)}, unknown={len(unknown)})"
+        )
     source_hash = hashlib.sha256(source_bytes + b"\0" + helper_bytes).hexdigest()
     ctx = AccountContext.from_config(alias)
     producer = DEFAULT_EVIDENCE_PRODUCERS[alias]
@@ -108,7 +162,6 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path) -> BuildVari
         f"#define CS_EVIDENCE_EXPECTED_SERVER {_mql_string(spec['server'])}",
         f"#define CS_EVIDENCE_EXPECTED_TERMINAL_PATH {_mql_string(term_root)}",
     ]
-    source_text = source_bytes.decode("utf-8-sig")
     insertion = "#include <Trade\\Trade.mqh>"
     if source_text.count(insertion) != 1:
         raise ValueError("expected unique standard Trade include in Titan EA")
@@ -144,6 +197,10 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path) -> BuildVari
         "terminalIdentityHash": ctx.terminal_identity_hash,
         "sourceAndIncludeSha256": source_hash,
         "generatedSourceSha256": hashlib.sha256(variant_source.read_bytes()).hexdigest(),
+        "presetName": Path(preset_path).name,
+        "presetSha256": hashlib.sha256(preset_raw).hexdigest(),
+        "presetInputCount": len(preset_names),
+        "inputSchemaSha256": hashlib.sha256("\n".join(sorted(source_names)).encode("utf-8")).hexdigest(),
         "compiler": str(compiler),
         "portableIncludeRoot": str(include_root),
         "artifact": str(ex5),
@@ -195,16 +252,21 @@ def compile_variant(variant: BuildVariant) -> Path:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("account", choices=sorted(ALLOWED_ACCOUNTS))
+    parser.add_argument("--preset", required=True, type=Path, help="the exact preset to bind to this instrumented candidate")
     parser.add_argument("--prepare-only", action="store_true", help="generate source and manifest without compiling")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    variant = prepare_variant(root, args.account, root / "output" / "ea-evidence-builds")
-    if args.prepare_only:
-        print(f"Prepared {variant.source}; manifest {variant.manifest}")
+    try:
+        variant = prepare_variant(root, args.account, root / "output" / "ea-evidence-builds", preset_path=args.preset)
+        if args.prepare_only:
+            print(f"Prepared {variant.source}; manifest {variant.manifest}")
+            return 0
+        artifact = compile_variant(variant)
+        print(f"Compiled candidate {artifact}; manifest {variant.manifest}")
         return 0
-    artifact = compile_variant(variant)
-    print(f"Compiled candidate {artifact}; manifest {variant.manifest}")
-    return 0
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"Recorder build refused: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
