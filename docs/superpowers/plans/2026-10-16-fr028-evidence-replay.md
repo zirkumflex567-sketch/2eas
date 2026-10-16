@@ -23,4 +23,6 @@
 ### Task 3: Verify and record boundaries
 - [x] Run the replay Chromium smoke and related evidence UI tests plus `git diff --check`.
 - [x] Update FR-028 in `docs/OPEN_TASKS.md`; keep Strategy Tester/backtests deferred and full EA-state/indicator recomputation open.
-- [ ] Commit and deploy on main after CI; verify live via the four authorized demos without touching Blueberry or sending writes.
+- [x] Commit and deploy on main; verify live via the four authorized demos without touching Blueberry or sending writes.
+
+**Verification (2026-10-16):** Replay contract and Beta Chromium UI smokes passed. Both GitHub CI workflows passed for application commit `3775843573778a76914a2f9de5f5dc9d3fe39ec9`. The guarded `/stt` runtime and htown `main` checkout were verified at that commit. Live read-only chart acceptance passed for all four authorized demos: 150 XAU M15 bars per account, 57 GET requests, zero mutations, zero browser/API failures, and no Blueberry request.
