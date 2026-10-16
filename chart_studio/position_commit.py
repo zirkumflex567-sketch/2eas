@@ -32,7 +32,7 @@ class PositionCommitService:
         observed = self.clock()
         quote = reads.quote_model(self.mt5.symbol_info_tick(symbol), spec, now=observed)
         age = observed * 1000 - quote['quoteTimeUtcMs']
-        if not -500 <= age <= 5000:
+        if not -1000 <= age <= 5000:
             raise self._error(503, 'QUOTE_NOT_FRESH')
         actual_number(Decimal(quote['bid']))
         actual_number(Decimal(quote['ask']))

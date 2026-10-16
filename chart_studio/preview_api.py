@@ -101,11 +101,13 @@ def install_preview_routes(app, mt5, *, now=None, monotonic=None):
         observed=clock()
         model=reads.quote_model(mt5.symbol_info_tick(payload.symbol),spec,now=observed)
         age=observed*1000-model['quoteTimeUtcMs']
-        if not -500<=age<=5000: raise failure(503,'QUOTE_NOT_FRESH')
+        # Match broker_reads.quote_model: ticks up to one second ahead of the
+        # local clock are still classified as FRESH by the read-only quote API.
+        if not -1000<=age<=5000: raise failure(503,'QUOTE_NOT_FRESH')
         actual_number(Decimal(model['bid']))
         actual_number(Decimal(model['ask']))
-        model.update(ageMs=age,minimumAgeMs=-500,maximumAgeMs=5000,
-                     allowedFutureSkewMs=500,observedServerUtc=utc(observed))
+        model.update(ageMs=age,minimumAgeMs=-1000,maximumAgeMs=5000,
+                     allowedFutureSkewMs=1000,observedServerUtc=utc(observed))
         return selected[0],model
 
     router = APIRouter(route_class=PreviewRoute)

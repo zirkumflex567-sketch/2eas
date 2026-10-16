@@ -110,7 +110,7 @@ def test_registry_exact_expiry_and_independent_copies():
     with pytest.raises(HTTPException): registry.lookup(first['previewId'],'other')
     clock[0]=10
     with pytest.raises(HTTPException): registry.lookup(first['previewId'],'scope')
-@pytest.mark.parametrize('age,expected',[(-501,503),(-500,200),(5000,200),(5001,503)])
+@pytest.mark.parametrize('age,expected',[(-1001,503),(-1000,200),(-501,200),(-500,200),(5000,200),(5001,503)])
 def test_quote_signed_age_inclusive_bounds(api,age,expected):
     client,fake,payload=api
     raw=int((NOW+10800)*1000-age)
@@ -298,7 +298,7 @@ def test_volume_actual_step_rejected(api):
     assert response.status_code==503
     assert response.json()['detail']['code']=='NUMERIC_POLICY_UNSUPPORTED'
 
-@pytest.mark.parametrize('age,expected',[(-501,503),(-500,200),(5000,200),(5001,503)])
+@pytest.mark.parametrize('age,expected',[(-1001,503),(-1000,200),(-501,200),(-500,200),(5000,200),(5001,503)])
 def test_final_quote_signed_age_boundaries(api,age,expected):
     client,fake,payload=api
     def calculation(*args):
