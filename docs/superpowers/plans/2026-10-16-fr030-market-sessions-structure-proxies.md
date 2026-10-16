@@ -27,7 +27,7 @@
 - [x] Add failing tests for configurable right-bar-confirmed swing highs/lows, tick-size and ATR-based equal-level tolerance, both equal highs and equal lows, and wick-through/close-back sweeps requiring a closed configured ConfirmTF candle whose close time is at or before `asOfUtc`.
 - [x] Confirm RED, then implement deterministic pivots, equal-level grouping, sweep confirmation and exact `confirmedAt` timestamps.
 - [x] Label every equal/sweep result `STRUCTURE_LIQUIDITY_HYPOTHESIS`; expose no claim of real resting orders or institutional flow.
-- [ ] Finish invalid/malformed ConfirmTF and missing-history boundary cases; existing tests cover partial sessions, open ConfirmTF candles, unconfirmed pivots and both sweep directions.
+- [x] Validate ConfirmTF against supported intervals at or above the chart timeframe; invalid values report `INVALID_TIMEFRAME`. Empty or only-open ConfirmTF history reports `NO_HISTORY`, never confirms a sweep, and the UI explicitly renders the missing closed-history state. If the feed later recovers, the Beta retries an empty history after 30 seconds on the next candle update. Tests cover unsupported/too-small/NaN/infinite intervals, empty history, an open higher-timeframe candle, and UI recovery from empty history.
 
 ### Task 3: Beta controls and read-only canvas overlay
 
@@ -43,7 +43,7 @@
 
 **Files:** Update `docs/OPEN_TASKS.md` and this plan.
 
-- [ ] Finish the full local Python workspace suite. Beta smoke, focused Node test, JavaScript syntax, Python compile, frontend syntax and `git diff --check` pass; the full run had five optional-spool fixture failures, and those five pass when that local optional environment variable is unset.
+- [x] Finish the full local Python workspace suite with optional spool variables unset (`1293 passed, 1 skipped, 413 subtests passed`). Focused market-structure Node tests, full Beta Chromium smoke, JavaScript syntax, Python compile, frontend syntax and `git diff --check` pass.
 - [x] Verify the overlay makes no broker mutation or strategy/backtest call; keep live/hardware acceptance explicitly open.
-- [ ] Commit/push on `main`, guarded-restart local runtime, update htown `/stt`, and verify matching runtime revision/digest and static asset delivery.
+- [x] Commit/push the ConfirmTF boundary fix on `main`, guarded-restart local runtime, update htown `/stt`, and verify matching runtime revision/digest and static asset delivery.
 - [x] Record AT-045/046 contract and four-demo OHLC evidence while preserving live-hardware and calendar-coverage limitations.

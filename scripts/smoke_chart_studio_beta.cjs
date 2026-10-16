@@ -22,7 +22,7 @@ const {createHash}=require("node:crypto");
   let alertPollingEnabled=false,alertQuotePrice=4100.125,alertQuoteRequests=[],quoteReadRequests=[];
 let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,invalidStopGeometry=false,trailingStop=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,deferTitanPositions=false,releaseTitanPositions=null,holdScope=null,heldScopeResolvers=[],completedHeldScopeResponses=0,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,multiPositionRows=false,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badOrderShape=false,badDealRow=false,symbolCatalogTruncated=false,symbolCatalogInvalidRows=0,hideFavoriteSymbol=false,evidenceRequests=[],executionQualityRequests=[],mfeRequests=[],historicalMtfRequests=[],lifecycleFixtureEnabled=false;
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
-  const confirmTfReads=[],regimeRequests=[];let historicalMtfEnabled=false;
+  const confirmTfReads=[],regimeRequests=[];let historicalMtfEnabled=false,confirmTfHistoryAvailable=false;
   const calendarRequests=[];
   let calendarRevisionPhase=0;
   await page.route("**/api/chart/v1/regimes?*",async route=>{
@@ -38,7 +38,8 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
     const url=new URL(route.request().url()),params=Object.fromEntries(url.searchParams);
     if(historicalMtfEnabled){const tfSeconds={D1:86400,H4:14400,H1:3600,M15:900,M5:300}[params.tf];historicalMtfRequests.push({method:route.request().method(),params});assert.ok(tfSeconds,"historical MTF uses a supported frame");const asOf=Math.floor(Date.parse("2026-10-14T12:30:00Z")/1000),anchor=Math.floor(asOf/tfSeconds)*tfSeconds;const candles=Array.from({length:301},(_,index)=>{const time=anchor-(300-index)*tfSeconds,close=4100+index*0.01;return {time,open:close,high:close+0.5,low:close-0.5,close}});await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({accountId:params.account,symbol:params.symbol,timeframe:params.tf,source:"MT5_VERIFIED",canExecute:false,candles})});return}
     confirmTfReads.push({method:route.request().method(),account:url.searchParams.get("account"),symbol:url.searchParams.get("symbol"),tf:url.searchParams.get("tf"),count:url.searchParams.get("count")});
-    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({accountId:"titan",symbol:url.searchParams.get("symbol"),timeframe:url.searchParams.get("tf"),source:"MT5_VERIFIED",canExecute:false,candles:[]})});
+    const candles=confirmTfHistoryAvailable?[{time:Math.floor(Date.parse("2026-10-14T11:00:00Z")/1000),open:4100,high:4101,low:4099,close:4100.5}]:[];
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({accountId:"titan",symbol:url.searchParams.get("symbol"),timeframe:url.searchParams.get("tf"),source:"MT5_VERIFIED",canExecute:false,candles})});
   });
   page.on("request",req=>{if(!["GET","HEAD","OPTIONS"].includes(req.method())&&req.url().includes("/api/chart/v1/"))brokerMutationRequests.push({method:req.method(),url:req.url()})});
   await page.route("**/api/chart/v1/scenarios/preview*",async route=>{
@@ -202,8 +203,16 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await thirdCalendar;
   assert.match(await page.locator('[data-testid="economic-calendar"]').textContent(),/Nicht mehr im MT5-Feed \(Status UNKNOWN\): Employment/);
   await page.locator('[aria-label="Sweep ConfirmTF"]').selectOption("3600");
-  await page.waitForFunction(()=>document.querySelector('[data-testid="market-structure"] [role="status"]')?.textContent.includes("ConfirmTF UNKNOWN")===false);
+  await page.waitForFunction(()=>document.querySelector('[data-testid="market-structure"] > div > p[role="status"]')?.textContent.includes("keine geschlossenen ConfirmTF-Kerzen"));
+  assert.match(await page.locator('[data-testid="market-structure"] > div > p[role="status"]').textContent(),/ConfirmTF UNKNOWN · keine geschlossenen ConfirmTF-Kerzen/,
+   "An empty MT5 ConfirmTF response is not presented as successfully loaded confirmation data");
   assert.deepEqual(confirmTfReads.at(-1),{method:"GET",account:"titan",symbol:"XAUUSD",tf:"H1",count:"1000"},"A higher ConfirmTF uses an explicit account/symbol-scoped read-only MT5 candle fetch");
+  confirmTfHistoryAvailable=true;
+  const confirmTfRetry=page.waitForResponse(response=>{const url=new URL(response.url());return url.pathname==="/api/candles"&&url.searchParams.get("tf")==="H1"});
+  await page.evaluate(()=>{const now=Date.now;Date.now=()=>now()+31001;const bars=window.__chartSmokeCandles.map((bar,index)=>index===window.__chartSmokeCandles.length-1?{...bar,high:bar.high+0.01,close:bar.close+0.01}:bar);ChartStudioBeta.updateCandles(bars);Date.now=now});
+  await confirmTfRetry;
+  await page.waitForFunction(()=>document.querySelector('[data-testid="market-structure"] > div > p[role="status"]')?.textContent.includes("ConfirmTF H1"));
+  assert.equal(confirmTfReads.length,2,"Missing ConfirmTF history is retried after its refresh interval");
   assert.equal(requests.length,0,"ConfirmTF loading never sends a write request");
   await page.locator(".cs-market-structure > summary").click();
   await page.evaluate(()=>window.addEventListener("chartstudio:symbol-change",()=>{candleSeries.setData(window.__chartSmokeCandles);ChartStudioBeta.updateCandles(window.__chartSmokeCandles)}));

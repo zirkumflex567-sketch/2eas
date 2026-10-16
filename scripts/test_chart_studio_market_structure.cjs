@@ -84,4 +84,15 @@ assert.ok(lowStructure.equalLevels.some(item=>item.kind==="LOW"));
 assert.ok(lowStructure.sweeps.some(item=>item.direction==="BELOW"&&item.evidenceType==="STRUCTURE_LIQUIDITY_HYPOTHESIS"));
 const h1Confirm=api.analyze(structureBars,{asOfUtc:origin+15*60,timeframeSeconds:60,sessions:[],swingStrength:2,atrPeriod:3,equalAtrMultiplier:0.1,tickSize:0.01,confirmTimeframeSeconds:3600,confirmCandles:[{time:origin+12*60,open:109,high:111,low:108,close:109},{time:origin+13*60,open:109,high:110,low:107,close:108} ]});
 assert.equal(h1Confirm.sweeps.length,0,"A ConfirmTF candle later than asOf cannot confirm an already detected structure");
+for(const invalidConfirmTf of [30,2700,NaN,Infinity]){
+ const invalid=api.analyze(structureBars,{asOfUtc:origin+15*60,timeframeSeconds:60,sessions:[],swingStrength:2,atrPeriod:3,equalAtrMultiplier:0.1,tickSize:0.01,confirmTimeframeSeconds:invalidConfirmTf,confirmCandles:structureBars});
+ assert.equal(invalid.confirmStatus,"INVALID_TIMEFRAME",`Unsupported ConfirmTF ${invalidConfirmTf} is reported as UNKNOWN`);
+ assert.equal(invalid.sweeps.length,0,"An invalid ConfirmTF cannot confirm a sweep");
+}
+const missingConfirm=api.analyze(structureBars,{asOfUtc:origin+15*60,timeframeSeconds:60,sessions:[],swingStrength:2,atrPeriod:3,equalAtrMultiplier:0.1,tickSize:0.01,confirmTimeframeSeconds:900,confirmCandles:[]});
+assert.equal(missingConfirm.confirmStatus,"NO_HISTORY","An empty ConfirmTF feed is explicitly unavailable");
+assert.equal(missingConfirm.sweeps.length,0,"Missing ConfirmTF history cannot confirm a sweep");
+const openConfirm=api.analyze(structureBars,{asOfUtc:origin+15*60,timeframeSeconds:60,sessions:[],swingStrength:2,atrPeriod:3,equalAtrMultiplier:0.1,tickSize:0.01,confirmTimeframeSeconds:900,confirmCandles:[{time:origin+10*60,open:109,high:111,low:108,close:109}]});
+assert.equal(openConfirm.confirmStatus,"NO_HISTORY","An open ConfirmTF candle is not confirmation history");
+assert.equal(openConfirm.sweeps.length,0,"An open ConfirmTF candle cannot confirm a sweep");
 console.log("PASS Chart Studio market structure: IANA DST, OHLC coverage, opening range, confirmed pivots, equal levels and sweep hypotheses");
