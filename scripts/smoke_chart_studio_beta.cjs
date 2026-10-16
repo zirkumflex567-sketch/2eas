@@ -833,6 +833,23 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.match(keltnerReadout,/Upper\s+\d/);assert.match(keltnerReadout,/Middle\s+\d/);assert.match(keltnerReadout,/Lower\s+\d/);
   assert.deepEqual(await page.evaluate(()=>JSON.parse(JSON.stringify(ChartStudioIndicators.settings().keltner))),{enabled:true,period:3,atrPeriod:2,multiplier:1.5});
   await page.locator('.cs-indicator-control input[data-kind="keltner"][type="checkbox"]').uncheck();
+  assert.ok(await page.evaluate(()=>ChartStudioCatalog.search("atr bands").some(({id,desc})=>id==="atrBands"&&/SMA.*Wilder-ATR/.test(desc))));
+  await page.locator('.cs-indicator-control input[data-kind="atrBands"][type="checkbox"]').check();
+  for(const [parameter,value] of [["period","3"],["atrPeriod","2"],["multiplier","1.5"]]){
+   const input=page.locator(`.cs-indicator-control input[data-kind="atrBands"][data-parameter="${parameter}"]`);
+   await input.fill(value);await input.press("Tab");
+  }
+  const atrBandsReadout=await page.evaluate(()=>ChartStudioIndicators.readout(window.__chartSmokeCandles.at(-1).time));
+  assert.match(atrBandsReadout,/Upper\s+\d/);assert.match(atrBandsReadout,/Middle\s+\d/);assert.match(atrBandsReadout,/Lower\s+\d/);
+  assert.deepEqual(await page.evaluate(()=>JSON.parse(JSON.stringify(ChartStudioIndicators.settings().atrBands))),{enabled:true,period:3,atrPeriod:2,multiplier:1.5});
+  const atrBandsCenter=await page.evaluate(()=>{
+   const bars=window.__chartSmokeCandles,reference=ChartStudioIndicators.calculate("atrBands",bars,{period:3,atrPeriod:2,multiplier:1.5}).atrBands;
+   return {middle:reference.middle.at(-1).value,upper:reference.upper.at(-1).value,lower:reference.lower.at(-1).value,
+    calculated:reference.middle.length>0,stored:JSON.parse(localStorage.getItem("2eas:studio:indicators:v1:"+ChartStudioBeta.getState().account)).atrBands};
+  });
+  assert.equal(atrBandsCenter.calculated,true);assert.equal(atrBandsCenter.stored.period,3);assert.equal(atrBandsCenter.stored.atrPeriod,2);
+  assert.ok(atrBandsCenter.upper>atrBandsCenter.middle&&atrBandsCenter.middle>atrBandsCenter.lower);
+  await page.locator('.cs-indicator-control input[data-kind="atrBands"][type="checkbox"]').uncheck();
   assert.ok(await page.evaluate(()=>ChartStudioCatalog.search("linear regression").some(({id})=>id==="linearRegression")));
   await page.evaluate(()=>{
     const chart=window.__chart,addLineSeries=chart.addLineSeries.bind(chart);

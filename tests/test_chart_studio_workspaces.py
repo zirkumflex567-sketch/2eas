@@ -349,6 +349,25 @@ class SqliteLayoutTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(StoreError):
                 validate_document({**original, "indicators": {"keltner": invalid}})
 
+    def test_atr_bands_settings_roundtrip_and_strict_bounds(self):
+        original = example()
+        settings = {"enabled": True, "period": 20, "atrPeriod": 14, "multiplier": 2.0}
+        document = {**original, "indicators": {"atrBands": settings}}
+        self.assertEqual(validate_document(document)["indicators"]["atrBands"], settings)
+        saved = self.store.put("local-owner", "titan", "XAUUSD", "ATR Bands", document, 0)
+        self.assertEqual(saved["document"]["indicators"]["atrBands"], settings)
+        reloaded = WorkspaceStore(self.path).get("local-owner", "titan", "XAUUSD", "ATR Bands")
+        self.assertEqual(reloaded["document"]["indicators"]["atrBands"], settings)
+        self.assertEqual(validate_document(original), original, "Existing schema-v1 workspaces remain unchanged")
+        for invalid in [
+            {**settings, "period": 1}, {**settings, "period": 201},
+            {**settings, "atrPeriod": 1}, {**settings, "atrPeriod": 201},
+            {**settings, "multiplier": 0}, {**settings, "multiplier": 10.1},
+            {**settings, "multiplier": 2.05}, {**settings, "unknown": True},
+        ]:
+            with self.subTest(invalid=invalid), self.assertRaises(StoreError):
+                validate_document({**original, "indicators": {"atrBands": invalid}})
+
     def test_parabolic_sar_settings_roundtrip_and_bounds(self):
         original = example()
         settings = {"enabled": True, "step": 0.02, "maxStep": 0.2}

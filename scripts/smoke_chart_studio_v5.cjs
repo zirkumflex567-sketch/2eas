@@ -316,6 +316,35 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.changeAccount("at026-other");const isolated=engine.readDataWindow(changed.time).indicators?.length??0;
    engine.destroy();host.remove();return {initial:initial?.value,expected:reference.middle.at(-1).value,updated:updated?.value,updatedReference,badMultiplierRejected,isolated};
   });
+  const atrBandsProbe=await page.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:900px;height:360px;position:fixed;left:-2000px;top:0";document.body.append(host);
+   const engine=ChartStudioV5.createStudioV5(host,"at029-native-atr-bands"),bars=[
+    {time:1700062000,open:9,high:11,low:9,close:10},{time:1700062060,open:10,high:12,low:10,close:12},
+    {time:1700062120,open:12,high:16,low:12,close:13},{time:1700062180,open:14,high:17,low:14,close:15}
+   ];
+   engine.setCandles(bars);
+   const apiAvailable=typeof engine.addAtrBands==="function"&&typeof engine.updateAtrBands==="function"&&typeof engine.removeAtrBands==="function"&&typeof engine.atrBandsOptions==="function";
+   if(!apiAvailable){engine.destroy();host.remove();return {apiAvailable}}
+   let defaultsAccepted=false,defaultOptions=null;try{engine.addAtrBands({id:"atr-bands-defaults",color:"#55d7ee"});defaultOptions=engine.atrBandsOptions("atr-bands-defaults");defaultsAccepted=defaultOptions.period===20&&defaultOptions.atrPeriod===14&&defaultOptions.multiplier===2;engine.removeAtrBands("atr-bands-defaults")}catch(_){}
+   engine.addAtrBands({id:"atr-bands-main",period:2,atrPeriod:2,multiplier:2,color:"#55d7ee"});
+   const reference=ChartStudioIndicators.calculate("atrBands",bars,{period:2,atrPeriod:2,multiplier:2}).atrBands,inspected=engine.inspect().atrBandsSeries.find(item=>item.id==="atr-bands-main");
+   const initialMatches=["upper","middle","lower"].every(key=>inspected.lines[key].length===reference[key].length&&inspected.lines[key].every((point,index)=>point.time===reference[key][index].time&&Math.abs(point.value-reference[key][index].value)<1e-8));
+   const middle=engine.readDataWindow(bars.at(-1).time).indicators.find(item=>item.id==="atr-bands-main-middle");
+   const changed={...bars.at(-1),high:19,low:13,close:16};engine.updateLast(changed);
+   const updated=engine.readDataWindow(changed.time).indicators.find(item=>item.id==="atr-bands-main-middle"),updatedReference=ChartStudioIndicators.calculate("atrBands",[...bars.slice(0,-1),changed],{period:2,atrPeriod:2,multiplier:2}).atrBands.middle.at(-1).value;
+   const updatedSuccessfully=engine.updateAtrBands("atr-bands-main",{period:3,atrPeriod:2,multiplier:1,visible:false}),updatedValues=engine.inspect().atrBandsSeries.find(item=>item.id==="atr-bands-main"),updatedOptions=engine.atrBandsOptions("atr-bands-main");
+   let badMultiplierRejected=false,badPatchRejected=false,badPeriodRejected=false,collisionRejected=false,keltnerCollisionRejected=false;try{engine.addAtrBands({id:"atr-bands-bad",period:2,atrPeriod:2,multiplier:10.15,color:"#ffffff"})}catch(_){badMultiplierRejected=true}
+   try{engine.updateAtrBands("atr-bands-main",{atrPeriod:201})}catch(_){badPatchRejected=true}
+   try{engine.addAtrBands({id:"atr-bands-bad-period",period:1,atrPeriod:2,multiplier:2,color:"#ffffff"})}catch(_){badPeriodRejected=true}
+   try{engine.addPriceLevel({id:"atr-bands-main",price:12,color:"#ffffff"})}catch(_){collisionRejected=true}
+   try{engine.addKeltner({id:"atr-bands-main",period:2,atrPeriod:2,multiplier:2,color:"#ffffff"})}catch(_){keltnerCollisionRejected=true}
+   const rejectedPreserved=engine.atrBandsOptions("atr-bands-main").atrPeriod===2,removed=engine.removeAtrBands("atr-bands-main"),afterRemove=engine.readDataWindow(changed.time).indicators.some(item=>item.id.startsWith("atr-bands-main-"));
+   engine.changeAccount("at029-other");const isolated=engine.inspect().atrBandsCount;
+   engine.changeAccount("at029-capacity");for(let i=0;i<19;i++)engine.addAverage({id:`atr-band-cap-${i}`,color:"#aabbcc"},bars.map(bar=>({time:bar.time,value:bar.close})));
+   engine.addAtrBands({id:"atr-bands-cap-last",period:2,atrPeriod:2,multiplier:2,color:"#ffffff"});let overLimitRejected=false;try{engine.addAverage({id:"atr-band-cap-over",color:"#ffffff"},bars.map(bar=>({time:bar.time,value:bar.close})))}catch(_){overLimitRejected=true}
+   const combinedCount=engine.inspect().averageCount+engine.inspect().atrBandsCount;
+   engine.destroy();host.remove();return {apiAvailable,defaultsAccepted,defaultOptions,initialMatches,middle:middle?.value,expected:reference.middle.at(-1).value,updated:updated?.value,updatedReference,updatedSuccessfully,updatedOptions,updatedVisibility:updatedValues.visible,badMultiplierRejected,badPatchRejected,badPeriodRejected,rejectedPreserved,collisionRejected,keltnerCollisionRejected,removed,afterRemove,isolated,overLimitRejected,combinedCount};
+  });
   const bollingerProbe=await page.evaluate(()=>{
    const host=document.createElement("div");host.style.cssText="width:900px;height:360px;position:fixed;left:-2000px;top:0";document.body.append(host);
    const engine=ChartStudioV5.createStudioV5(host,"at028-native-bollinger"),bars=Array.from({length:36},(_,i)=>{const close=2000+Math.sin(i/3)*4+i*.3;return {time:1700550000+i*60,open:close-.2,high:close+1,low:close-1,close}});
@@ -639,6 +668,26 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(keltnerProbe.updated,keltnerProbe.updatedReference,"Forming-bar updates recalculate Keltner boundaries");
   assert.equal(keltnerProbe.badMultiplierRejected,true);
   assert.equal(keltnerProbe.isolated,0,"Changing account clears Keltner readouts");
+  assert.equal(atrBandsProbe.apiAvailable,true,"Native v5 exposes the grouped ATR Bands overlay API");
+  assert.equal(atrBandsProbe.defaultsAccepted,true,"Native ATR Bands use the documented 20 / 14 × 2 defaults");
+  assert.equal(atrBandsProbe.initialMatches,true,"Native ATR Bands match the shared SMA/Wilder-ATR formula at every timestamp");
+  assert.equal(atrBandsProbe.middle,atrBandsProbe.expected);
+  assert.equal(atrBandsProbe.updated,atrBandsProbe.updatedReference,"Forming updates replace the ATR Bands value without look-ahead");
+  assert.equal(atrBandsProbe.updatedSuccessfully,true);
+  assert.equal(atrBandsProbe.updatedOptions.atrPeriod,2);
+  assert.equal(atrBandsProbe.updatedOptions.multiplier,1);
+  assert.deepEqual(atrBandsProbe.updatedVisibility,[false,false,false]);
+  assert.equal(atrBandsProbe.badMultiplierRejected,true);
+  assert.equal(atrBandsProbe.badPatchRejected,true);
+  assert.equal(atrBandsProbe.badPeriodRejected,true);
+  assert.equal(atrBandsProbe.rejectedPreserved,true,"Invalid patches leave the active ATR Bands unchanged");
+  assert.equal(atrBandsProbe.collisionRejected,true);
+  assert.equal(atrBandsProbe.keltnerCollisionRejected,true,"Keltner cannot reuse an ATR Bands identity");
+  assert.equal(atrBandsProbe.removed,true);
+  assert.equal(atrBandsProbe.afterRemove,false,"Removing ATR Bands clears its readout values");
+  assert.equal(atrBandsProbe.isolated,0,"Account changes clear native ATR Bands instances");
+  assert.equal(atrBandsProbe.overLimitRejected,true,"ATR Bands count as one logical item in the shared indicator limit");
+  assert.equal(atrBandsProbe.combinedCount,20);
   assert.equal(bollingerProbe.apiAvailable,true,"Native v5 exposes the Bollinger overlay API");
   assert.equal(bollingerProbe.defaultsAccepted,true,"Native Bollinger defaults match the Beta settings");
   assert.equal(bollingerProbe.initialMatches,true,"All native Bollinger bands and readout values match Beta population-deviation semantics");

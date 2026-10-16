@@ -78,6 +78,24 @@ assert.equal(math.keltner(keltnerBars,1,2,1).middle.length,0);
 assert.equal(math.keltner(keltnerBars,2,201,1).middle.length,0);
 assert.equal(math.keltner(keltnerBars,2,2,10.15).middle.length,0);
 assert.equal(window.ChartStudioIndicators.calculate("keltner",keltnerBars,{period:2,atrPeriod:2,multiplier:1}).keltner.lower.length,2);
+const atrBandBars=[
+ {time:1700062000,open:9,high:11,low:9,close:10},
+ {time:1700062060,open:10,high:12,low:10,close:12},
+ {time:1700062120,open:12,high:16,low:12,close:13},
+ {time:1700062180,open:13,high:17,low:14,close:15}
+];
+const atrBandInput=JSON.stringify(atrBandBars),atrBands=math.atrBands(atrBandBars,2,2,2);
+assert.deepEqual(Array.from(atrBands.middle,point=>point.time),atrBandBars.slice(1).map(bar=>bar.time));
+assert.deepEqual(Array.from(atrBands.middle,point=>point.value),[11,12.5,14]);
+assert.deepEqual(Array.from(atrBands.upper,point=>point.value),[15,18.5,21]);
+assert.deepEqual(Array.from(atrBands.lower,point=>point.value),[7,6.5,7]);
+assert.equal(atrBands.upper[1].time,atrBandBars[2].time,"ATR Bands use only their current and previous candles");
+assert.notDeepEqual(Array.from(atrBands.middle,point=>point.value),Array.from(math.keltner(atrBandBars,2,2,2).middle,point=>point.value),"SMA-centered ATR Bands are distinct from EMA-centered Keltner channels");
+assert.deepEqual(JSON.stringify(atrBandBars),atrBandInput,"Calculations never mutate source candles");
+for(const args of [[1,2,2],[201,2,2],[2,1,2],[2,201,2],[2,2,.15],[2,2,10.1]])assert.equal(math.atrBands(atrBandBars,...args).middle.length,0);
+assert.equal(window.ChartStudioIndicators.calculate("atrBands",atrBandBars,{period:2,atrPeriod:2,multiplier:2}).atrBands.lower.length,3);
+assert.ok(Object.hasOwn(window.ChartStudioIndicators.registry,"atrBands"));
+assert.deepEqual(JSON.parse(JSON.stringify(window.ChartStudioIndicators.settings().atrBands)),{enabled:false,period:20,atrPeriod:14,multiplier:2});
 const macd=math.macd(ascending,12,26,9);
 assert.equal(macd.macd.length,75);
 assert.equal(macd.signal.length,67);

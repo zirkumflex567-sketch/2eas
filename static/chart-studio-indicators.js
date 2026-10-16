@@ -21,6 +21,7 @@ const REGISTRY=Object.freeze({
  mfi:{name:"Money Flow Index (Volumenproxy)",type:"oscillator",period:14,min:2,max:200},
  donchian:{name:"Donchian-Kanal",type:"overlay",period:20,min:2,max:200},
  keltner:{name:"Keltner-Kanal",type:"overlay",period:20,atrPeriod:10,multiplier:2,min:2,max:200},
+ atrBands:{name:"ATR Bands",type:"overlay",period:20,atrPeriod:14,multiplier:2,min:2,max:200},
  linearRegression:{name:"Linear Regression Channel",type:"overlay",period:20,multiplier:2,min:2,max:200},
  vwap:{name:"Session-VWAP (Volumenproxy)",type:"overlay",timeZone:"UTC",sessionStart:"00:00"}
 });
@@ -295,6 +296,20 @@ function keltner(input,period=20,atrPeriod=10,multiplier=2){
  }
  return {upper,middle,lower};
 }
+function atrBands(input,period=20,atrPeriod=14,multiplier=2){
+ const bars=validateBars(input),upper=[],middle=[],lower=[];
+ if(!Number.isInteger(period)||period<2||period>200||!Number.isInteger(atrPeriod)||atrPeriod<2||atrPeriod>200||
+  !Number.isFinite(multiplier)||multiplier<.1||multiplier>10||Math.abs(multiplier*10-Math.round(multiplier*10))>1e-8)return {upper,middle,lower};
+ const ranges=new Map(atr(bars,atrPeriod).map(point=>[point.time,point]));let sum=0;
+ for(let i=0;i<bars.length;i++){
+  sum+=bars[i].close;if(i>=period)sum-=bars[i-period].close;
+  if(i<period-1)continue;
+  const range=ranges.get(bars[i].time);if(!range)continue;
+  const center=sum/period,width=range.value*multiplier,time=bars[i].time;
+  middle.push({time,value:center});upper.push({time,value:center+width});lower.push({time,value:center-width});
+ }
+ return {upper,middle,lower};
+}
 function linearRegressionChannel(input,period=20,multiplier=2){
  const bars=validateBars(input),upper=[],middle=[],lower=[];
  if(!Number.isInteger(period)||period<2||period>200||!Number.isFinite(multiplier)||multiplier<.1||multiplier>10||Math.abs(multiplier*10-Math.round(multiplier*10))>1e-8)return {upper,middle,lower};
@@ -356,6 +371,7 @@ function calc(kind,candles,settings={}){
  if(kind==="vwap")return {vwap:vwap(candles,settings)};
  if(kind==="donchian")return {donchian:donchian(candles,settings.period??20)};
  if(kind==="keltner")return {keltner:keltner(candles,settings.period??20,settings.atrPeriod??10,settings.multiplier??2)};
+ if(kind==="atrBands")return {atrBands:atrBands(candles,settings.period??20,settings.atrPeriod??14,settings.multiplier??2)};
  if(kind==="linearRegression")return {linearRegression:linearRegressionChannel(candles,settings.period??20,settings.multiplier??2)};
  throw Error("Unknown indicator: "+kind);
 }
@@ -428,7 +444,7 @@ function defaults(){
   atr:{enabled:false,period:14},volume:{enabled:false,upColor:"#41cce9",downColor:"#f7758b"},adx:{enabled:false,period:14},
   stochastic:{enabled:false,period:14,smoothK:3,smoothD:3},stochrsi:{enabled:false,period:14,stochPeriod:14,smoothK:3,smoothD:3},cci:{enabled:false,period:20},
   momentum:{enabled:false,period:10},roc:{enabled:false,period:10},sar:{enabled:false,step:.02,maxStep:.2},obv:{enabled:false},mfi:{enabled:false,period:14},supertrend:{enabled:false,period:10,multiplier:3},
-  donchian:{enabled:false,period:20},keltner:{enabled:false,period:20,atrPeriod:10,multiplier:2},linearRegression:{enabled:false,period:20,multiplier:2},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
+  donchian:{enabled:false,period:20},keltner:{enabled:false,period:20,atrPeriod:10,multiplier:2},atrBands:{enabled:false,period:20,atrPeriod:14,multiplier:2},linearRegression:{enabled:false,period:20,multiplier:2},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
 }
 function restore(account){
  try{const raw=JSON.parse(localStorage.getItem(storagePrefix+account)||"null");
@@ -444,7 +460,7 @@ function restore(account){
     if(id==="sar")for(const prop of ["step","maxStep"])
      if(Number.isFinite(raw[id][prop])&&raw[id][prop]>=.01&&raw[id][prop]<=.5&&Math.abs(raw[id][prop]*100-Math.round(raw[id][prop]*100))<1e-8&&(prop!=="step"||raw[id][prop]<=.1))result.sar[prop]=raw[id][prop];
     if(id==="sar"&&result.sar.step>result.sar.maxStep)result.sar={...defaults().sar,enabled:result.sar.enabled};
-    if(["supertrend","keltner","linearRegression"].includes(id)&&Number.isFinite(raw[id].multiplier)&&raw[id].multiplier>=.1&&raw[id].multiplier<=10&&Math.abs(raw[id].multiplier*10-Math.round(raw[id].multiplier*10))<1e-8)result[id].multiplier=raw[id].multiplier;
+    if(["supertrend","keltner","atrBands","linearRegression"].includes(id)&&Number.isFinite(raw[id].multiplier)&&raw[id].multiplier>=.1&&raw[id].multiplier<=10&&Math.abs(raw[id].multiplier*10-Math.round(raw[id].multiplier*10))<1e-8)result[id].multiplier=raw[id].multiplier;
     if(id==="volume")for(const prop of ["upColor","downColor"])
      if(typeof raw[id][prop]==="string"&&/^#[0-9a-fA-F]{6}$/.test(raw[id][prop]))result[id][prop]=raw[id][prop].toLowerCase();
     if(id==="vwap"){const config=sessionConfig(raw[id]);if(config){result.vwap.timeZone=config.timeZone;result.vwap.sessionStart=config.sessionStart}}
@@ -506,8 +522,8 @@ function oneTailChange(previous,next){
  return sameLength?previous.at(-1).time===next.at(-1).time:next.at(-1).time>previous.at(-1).time;
 }
 function addReadout(kind,calculated,onlyTime=null){
- const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],sar:["SAR"],obv:["OBV · Broker-Volumen"],mfi:["MFI · Volumenproxy"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],linearRegression:["Upper","Middle","Lower"],vwap:["VWAP"]}[kind];
- if(kind==="donchian"||kind==="keltner"||kind==="linearRegression"){
+ const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],sar:["SAR"],obv:["OBV · Broker-Volumen"],mfi:["MFI · Volumenproxy"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],atrBands:["Upper","Middle","Lower"],linearRegression:["Upper","Middle","Lower"],vwap:["VWAP"]}[kind];
+ if(kind==="donchian"||kind==="keltner"||kind==="atrBands"||kind==="linearRegression"){
   const components=["upper","middle","lower"];
   for(let i=0;i<components.length;i++)for(const point of calculated[kind][components[i]]){
    if(onlyTime!==null&&point.time!==onlyTime)continue;
@@ -585,7 +601,7 @@ function renderPanes(incrementalUpdates=null){
  if(!incrementalUpdates)state.readouts=new Map();
  else state.readouts.delete(readoutTime);
  for(const id of Object.keys(REGISTRY)){
-  if(id==="donchian"||id==="keltner"||id==="linearRegression"){
+  if(id==="donchian"||id==="keltner"||id==="atrBands"||id==="linearRegression"){
    const calculated=state.settings[id].enabled?data(id):null,key=id+"Overlays";
    if(calculated)addReadout(id,calculated,readoutTime);
    if(!state[key]&&state.settings[id].enabled){
@@ -595,7 +611,7 @@ function renderPanes(incrementalUpdates=null){
      lower:state.chart.addLineSeries({title:id+" Lower",color:"#f3c56a",lineWidth:2,lastValueVisible:true,priceLineVisible:false})
     };
    }
-   const visible=!!state.settings[id].enabled,settings=state.settings[id],suffix=id==="donchian"?String(settings.period):id==="keltner"?settings.period+" / "+settings.atrPeriod+" × "+settings.multiplier:settings.period+" × "+settings.multiplier+"σ";
+   const visible=!!state.settings[id].enabled,settings=state.settings[id],suffix=id==="donchian"?String(settings.period):id==="keltner"||id==="atrBands"?settings.period+" / "+settings.atrPeriod+" × "+settings.multiplier:id==="linearRegression"?settings.period+" × "+settings.multiplier+"σ":"";
    if(state[key])for(const line of ["upper","middle","lower"]){
     const series=state[key][line];series.applyOptions({visible,title:id+" "+line+" · "+suffix});
     if(calculated){const byTime=new Map(calculated[id][line].map(point=>[point.time,point]));series.setData(state.bars.map(bar=>byTime.get(bar.time)||{time:bar.time}));}
@@ -678,7 +694,7 @@ function readout(time){
  if(!state)return "";
  const rows=state.readouts.get(Number(time))||[];
  const values=[];
- const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],sar:["SAR"],obv:["OBV · Broker-Volumen"],mfi:["MFI · Volumenproxy"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],linearRegression:["Upper","Middle","Lower"],vwap:["VWAP"]};
+ const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],sar:["SAR"],obv:["OBV · Broker-Volumen"],mfi:["MFI · Volumenproxy"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],atrBands:["Upper","Middle","Lower"],linearRegression:["Upper","Middle","Lower"],vwap:["VWAP"]};
  for(const id of Object.keys(REGISTRY))if(state.settings[id].enabled){
   for(const label of components[id]){
    const row=rows.find(item=>item.kind===id&&item.label===label);
@@ -727,7 +743,7 @@ function updateConfig(kind,prop,val){
   if(!sessionConfig(candidate)){state.notice.textContent=prop==="timeZone"?"Ungültige IANA-Zeitzone.":"Sessionstart muss HH:MM sein.";syncPanel();return false}
   state.settings.vwap[prop]=String(val);
  }
- else if(["supertrend","keltner","linearRegression"].includes(kind)&&prop==="multiplier"){
+ else if(["supertrend","keltner","atrBands","linearRegression"].includes(kind)&&prop==="multiplier"){
   const n=Number(val);if(!Number.isFinite(n)||n<.1||n>10||Math.abs(n*10-Math.round(n*10))>1e-8){state.notice.textContent="Faktor muss zwischen 0,1 und 10,0 in 0,1-Schritten liegen.";syncPanel();return false}state.settings[kind].multiplier=n;
  }
  else if(kind==="sar"&&["step","maxStep"].includes(prop)){
@@ -758,7 +774,7 @@ function applySettings(raw){
   if(id==="vwap"){const config=sessionConfig(input);if(config){fresh.vwap.timeZone=config.timeZone;fresh.vwap.sessionStart=config.sessionStart}}
   for(const key of ["period","atrPeriod","fast","slow","signal","smoothK","smoothD","multiplier","step","maxStep"]){
    const value=Number(input[key]);
-   if(key==="multiplier"&&["supertrend","keltner","linearRegression"].includes(id)){if(Number.isFinite(value)&&value>=.1&&value<=10&&Math.abs(value*10-Math.round(value*10))<1e-8)fresh[id][key]=value;continue}
+   if(key==="multiplier"&&["supertrend","keltner","atrBands","linearRegression"].includes(id)){if(Number.isFinite(value)&&value>=.1&&value<=10&&Math.abs(value*10-Math.round(value*10))<1e-8)fresh[id][key]=value;continue}
    if(id==="sar"&&["step","maxStep"].includes(key)){if(Number.isFinite(value)&&value>=.01&&value<=.5&&Math.abs(value*100-Math.round(value*100))<1e-8&&(key!=="step"||value<=.1))fresh.sar[key]=value;continue}
    const minimum=key==="smoothK"||key==="smoothD"?1:2,maximum=key==="slow"?300:key==="smoothK"||key==="smoothD"?100:200;
    if(Object.hasOwn(fresh[id],key)&&Number.isInteger(value)&&value>=minimum&&value<=maximum)
@@ -789,5 +805,5 @@ function mount({chart,host,panel,account="titan"}){
  syncPanel();renderPanes();
 }
 window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,updateConfig,settings,readout,createIncremental,
- registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,stochRsi,cci,momentum,roc,parabolicSar,obv,mfi,macd,atr,adx,supertrend,donchian,keltner,linearRegressionChannel,vwap,volumes})});
+ registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,stochRsi,cci,momentum,roc,parabolicSar,obv,mfi,macd,atr,adx,supertrend,donchian,keltner,atrBands,linearRegressionChannel,vwap,volumes})});
 })();
