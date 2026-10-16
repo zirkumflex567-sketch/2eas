@@ -867,6 +867,22 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(groupDuplicate.keyboardCopies.map(item=>item.color),["#ffaa66","#38bdf8","#a78bfa"]);
   assert.deepEqual(groupDuplicate.keyboardUndo,[true,true,true]);
   assert.deepEqual(groupDuplicate.keyboardUndoRemoved,[null,null,null]);
+  const groupDuplicateLimit=await page.evaluate(()=>{
+   const rows=Array.from({length:40},(_,i)=>{const p=4000+i;return {time:1700300000+i*900,open:p,high:p+2,low:p-2,close:p+1}});
+   const host=document.createElement("div");host.style.cssText="width:800px;height:400px";document.body.append(host);
+   const engine=ChartStudioV5.createStudioV5(host,"groupduplicatelimit",{symbol:"XAUUSD",timeframe:"M15"});engine.setCandles(rows);
+   for(let i=0;i<997;i++)engine.addPriceLevel({id:`filler-${i}`,price:4001+i,color:"#64748b"});
+   engine.addPriceLevel({id:"limit-price",price:4100,color:"#ffaa66"});engine.addTimeMarker({id:"limit-time",time:rows[20].time,color:"#38bdf8"});
+   const before=engine.inspect().nativePrimitives;engine.selectDrawings(["limit-price","limit-time"]);
+   let rejected=false;try{engine.duplicateSelectedDrawings()}catch(_){rejected=true}
+   const after=engine.inspect().nativePrimitives,priceCopy=engine.readDrawing("limit-price-copy1"),timeCopy=engine.readDrawing("limit-time-copy1");
+   engine.destroy();host.remove();return {before,after,rejected,priceCopy,timeCopy};
+  });
+  assert.equal(groupDuplicateLimit.before,999);
+  assert.equal(groupDuplicateLimit.rejected,true);
+  assert.equal(groupDuplicateLimit.after,999,"A group duplicate at the native capacity limit leaves no partial copies");
+  assert.equal(groupDuplicateLimit.priceCopy,null);
+  assert.equal(groupDuplicateLimit.timeCopy,null);
   assert.deepEqual(result.isolated.selectedDrawingIds,[]);
   assert.equal(result.updatedPrimitive.nativePrimitives,2);
   assert.equal(result.removedPrimitive,true);

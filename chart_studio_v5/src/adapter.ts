@@ -1252,6 +1252,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  function duplicateSelectedDrawings():string[]{
   guard();const sourceIds=[...selectedDrawingIds];
   if(sourceIds.some(id=>!snapshotDrawing(id)))throw Error("Drawing selection changed");
+  if(drawingCount()+sourceIds.length>maxNativeDrawings)throw Error("Native drawing limit");
   const duplicates:string[]=[];
   for(const sourceId of sourceIds){
    selectDrawing(sourceId);const duplicateId=duplicateSelectedDrawing();
