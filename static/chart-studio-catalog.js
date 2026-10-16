@@ -13,6 +13,7 @@ const entries=Object.freeze([
  {id:"cci",name:"Commodity Channel Index",group:"Momentum",desc:"CCI mit 20-Perioden-Standard",type:"oscillator",kind:"cci"},
  {id:"stochastic",name:"Stochastic",group:"Momentum",desc:"%K/%D-Oszillator mit konfigurierbarer Glättung",type:"oscillator",kind:"stochastic"},
  {id:"stochrsi",name:"StochRSI",group:"Momentum",desc:"Stochastic RSI mit RSI-, Stochastik- und Glättungsperioden",type:"oscillator",kind:"stochrsi"},
+ {id:"supertrend",name:"Supertrend",group:"Trend",desc:"ATR-basierter, farbiger Trend-Overlay (Standard 10 × 3,0)",type:"toggle",kind:"supertrend"},
  {id:"momentum",name:"Momentum",group:"Momentum",desc:"Close-Differenz zum Schlusskurs vor der gewählten Periode",type:"oscillator",kind:"momentum"},
  {id:"roc",name:"Rate of Change (ROC)",group:"Momentum",desc:"Prozentuale Close-Änderung über die gewählte Periode",type:"oscillator",kind:"roc"},
  {id:"volume",name:"Broker-Volumen",group:"Volumen",desc:"Reales oder Tickvolumen, kein garantierter Orderflow",type:"toggle",kind:"volume"},

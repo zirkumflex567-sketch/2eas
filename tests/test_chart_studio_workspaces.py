@@ -284,6 +284,24 @@ class SqliteLayoutTests(unittest.TestCase):
         with self.assertRaises(StoreError):
             validate_document({**old,"movingAverages":"no"})
 
+    def test_supertrend_settings_roundtrip_and_bounds(self):
+        original = example()
+        settings = {"enabled":True,"period":10,"multiplier":3.0}
+        document = {**original,"indicators":{"supertrend":settings}}
+        self.assertEqual(validate_document(document)["indicators"]["supertrend"],settings)
+        saved = self.store.put("local-owner","titan","XAUUSD","Supertrend",document,0)
+        self.assertEqual(self.store.get("local-owner","titan","XAUUSD","Supertrend")["document"],document)
+        for invalid in [
+            {**settings,"period":1},{**settings,"period":201},
+            {**settings,"multiplier":0},{**settings,"multiplier":10.1},
+            {**settings,"period":10.0},{**settings,"multiplier":2.55},
+            {**settings,"multiplier":float("nan")},{**settings,"unknown":1},
+        ]:
+            with self.subTest(invalid=invalid),self.assertRaises(StoreError):
+                validate_document({**original,"indicators":{"supertrend":invalid}})
+        with self.assertRaises(StoreError):
+            validate_document({**original,"indicators":{"rsi":{"enabled":True,"period":14,"multiplier":3}}})
+
     def test_bollinger_settings_are_backward_compatible_strict_and_scoped(self):
         old = example()
         self.assertEqual(validate_document(old)["options"], old["options"])
