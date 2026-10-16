@@ -77,11 +77,11 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   const autoFibonacciOverlayProbe=await autoFibPage.evaluate(()=>{
    const host=document.createElement("div");host.id="v5-auto-fib-probe";host.style.cssText="width:640px;height:360px;position:fixed;left:20px;top:20px;z-index:20";document.body.append(host);
    const engine=ChartStudioV5.createStudioV5(host,"titan",{symbol:"XAUUSD",timeframe:"M15"}),start=1712500000,pairs=[[10,8],[9,7],[12,4],[14,8],[15,9],[20,12],[18,10],[17,11],[16,10]],bars=pairs.map(([high,low],i)=>({time:start+i*900,open:(high+low)/2,high,low,close:(high+low)/2})),asOf={source:"MT5_VERIFIED",account:"titan",symbol:"XAUUSD",timeframe:"M15",timeUtc:start+9*900};
-   engine.setCandles(bars);engine.setVisibleLogicalRange({from:0,to:10});const initial=engine.setAutoFibonacci({timeframeSeconds:900},asOf),readout=engine.readDataWindow(bars[8].time).autoFibonacci;
+   engine.setCandles(bars);engine.setVisibleLogicalRange({from:0,to:10});const initial=engine.setAutoFibonacci({timeframeSeconds:900},asOf),preConfirmationReadout=engine.readDataWindow(bars[7].time).autoFibonacci??null,readout=engine.readDataWindow(bars[8].time).autoFibonacci;
    let badScopeRejected=false;try{engine.setAutoFibonacci({timeframeSeconds:900},{...asOf,account:"other"})}catch(_){badScopeRejected=true}
    const afterInvalid=engine.readAutoFibonacci(),forming={...bars.at(-1),time:start+10*900,high:100,low:1,close:50};engine.updateLast(forming);const afterForming=engine.readAutoFibonacci();
    const cleared=engine.clearAutoFibonacci(),afterClear=engine.readAutoFibonacci();engine.setAutoFibonacci({timeframeSeconds:900},asOf);window.__v5AutoFibEngine=engine;
-   return {initial,readout,badScopeRejected,afterInvalid,afterForming,cleared,afterClear,status:engine.inspect()};
+   return {initial,preConfirmationReadout,readout,badScopeRejected,afterInvalid,afterForming,cleared,afterClear,status:engine.inspect()};
   });
   assert.equal(autoFibonacciOverlayProbe.initial.result.available,true);
   assert.equal(autoFibonacciOverlayProbe.initial.result.direction,"UP");
@@ -89,6 +89,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(autoFibonacciOverlayProbe.initial.series.filter(line=>line.points.length>0).length,7);
   assert.equal(autoFibonacciOverlayProbe.initial.series[0].points[0].time,1712507200,"Rendered lines start at swing confirmation");
   assert.equal(autoFibonacciOverlayProbe.initial.result.confirmedAt,1712507200);
+  assert.equal(autoFibonacciOverlayProbe.preConfirmationReadout,null,"Unconfirmed historical bars cannot see future Auto-Fibonacci anchors");
   assert.equal(autoFibonacciOverlayProbe.readout.algorithmVersion,"confirmed-swing-auto-fib-v1");
   assert.equal(autoFibonacciOverlayProbe.badScopeRejected,true);
   assert.equal(autoFibonacciOverlayProbe.initial.series.every(line=>line.visible===true),true,"Each Fibonacci ratio is visible in the native chart");
@@ -97,6 +98,14 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(autoFibonacciOverlayProbe.cleared,true);assert.equal(autoFibonacciOverlayProbe.afterClear,null);
   const autoFibCleanup=await autoFibPage.evaluate(()=>{const e=window.__v5AutoFibEngine;e.changeAccount("other");const result=e.readAutoFibonacci();e.destroy();document.querySelector("#v5-auto-fib-probe")?.remove();return result});
   assert.equal(autoFibCleanup,null,"Account changes clear native v5 auto-Fibonacci lines");
+  const autoFibLimit=await autoFibPage.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:400px;height:240px;position:fixed;left:-2000px;top:0";document.body.append(host);
+   const e=ChartStudioV5.createStudioV5(host,"auto-fib-limit",{symbol:"XAUUSD",timeframe:"M15"}),start=1712500000,pairs=[[10,8],[9,7],[12,4],[14,8],[15,9],[20,12],[18,10],[17,11],[16,10]],bars=pairs.map(([high,low],i)=>({time:start+i*900,open:(high+low)/2,high,low,close:(high+low)/2})),asOf={source:"MT5_VERIFIED",account:"auto-fib-limit",symbol:"XAUUSD",timeframe:"M15",timeUtc:start+9*900};e.setCandles(bars);
+   for(let i=0;i<20;i++)e.addAverage({id:`cap-${i}`,color:"#ffffff"},[]);let atLimitRejected=false;try{e.setAutoFibonacci({timeframeSeconds:900},asOf)}catch(_){atLimitRejected=true}
+   e.removeAverage("cap-19");const acceptedAfterRemoval=e.setAutoFibonacci({timeframeSeconds:900},asOf).result.available;let nextRejected=false;try{e.addAverage({id:"cap-extra",color:"#ffffff"},[])}catch(_){nextRejected=true}
+   const count=e.inspect().averageCount;e.destroy();host.remove();return {atLimitRejected,acceptedAfterRemoval,nextRejected,count};
+  });
+  assert.deepEqual(autoFibLimit,{atLimitRejected:true,acceptedAfterRemoval:true,nextRejected:true,count:19},"Auto-Fibonacci counts once against the shared 20-indicator limit");
   assert.deepEqual(autoFibErrors,[]);await autoFibPage.close();
   await page.addScriptTag({path:path.resolve("chart_studio_v5/node_modules/lightweight-charts/dist/lightweight-charts.standalone.development.js")});
   await page.addScriptTag({path:path.resolve("static/chart-studio-beta.js")});
