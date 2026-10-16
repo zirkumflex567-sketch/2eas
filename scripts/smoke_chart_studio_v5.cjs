@@ -358,6 +358,28 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const flatRow=flatEngine.readDataWindow(flatBars.at(-1).time).indicators,flatWarmup=flatEngine.readDataWindow(flatBars[1].time).indicators;flatEngine.destroy();flatHost.remove();
   return {references,panes,before,after,row,paneCount,movedMacdPane,badOrderRejected,badPeriodRejected,badStochasticRejected,badCciRejected,extraCciSettingRejected,atomicCount,afterOneRemoval,isolated,paneLimitRejected,paneLimitCount,updatedReadout,updatedReferences,repeatedFormingReadoutMatches,historicalReadoutSurvivesUpdate,appendedReadoutMatches,settingsRebuildMatches,replacementReadoutMatches,replacementHistoricalMatches,flatRow,flatWarmup,drawingCollisionRejected,averageCollisionRejected,paneLineCollisionRejected};
   });
+  const volumeFlowProbe=await page.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:500px;height:320px;position:fixed;left:-2000px;top:0";document.body.append(host);
+   const engine=ChartStudioV5.createStudioV5(host,"volume-flow-parity",{symbol:"XAUUSD",timeframe:"M15"});
+   const bars=Array.from({length:48},(_,i)=>{const close=2000+Math.sin(i/3)*4+i*.13;return {time:1712500000+i*900,open:close-.2,high:close+.8,low:close-.7,close,tick_volume:100+i*7,real_volume:i%3===0?0:10+i}});
+   engine.setCandles(bars);engine.addOscillator({id:"obv-probe",kind:"obv",settings:{},color:"#55deaa"});
+   engine.addOscillator({id:"mfi-probe",kind:"mfi",settings:{period:14},color:"#e9bc72"});
+   const read=rows=>{const time=rows.at(-1).time;return Object.fromEntries(engine.readDataWindow(time).indicators.map(item=>[item.id,{value:item.value,state:item.state}]))};
+   const compare=rows=>{const actual=read(rows),obv=ChartStudioIndicators.calculate("obv",rows,{}).obv.at(-1).value,mfi=ChartStudioIndicators.calculate("mfi",rows,{period:14}).mfi.at(-1).value;return {obv:actual["obv-probe:obv"]?.value,mfi:actual["mfi-probe:mfi"]?.value,expectedObv:obv,expectedMfi:mfi}};
+   const initial=compare(bars),changed={...bars.at(-1),close:bars.at(-1).close+1.4,high:bars.at(-1).high+1.4,real_volume:0};engine.updateLast(changed);
+   const changedBars=[...bars.slice(0,-1),changed],forming=compare(changedBars),changedAgain={...changed,close:changed.close-.6,low:changed.low-.6,tick_volume:777};engine.updateLast(changedAgain);
+   const repeatedBars=[...bars.slice(0,-1),changedAgain],repeatedForming=compare(repeatedBars),next={...changedAgain,time:changedAgain.time+900,open:changedAgain.close,close:changedAgain.close+1,high:changedAgain.close+1.4,low:changedAgain.close-.5,real_volume:40};engine.updateLast(next);
+   const appended=compare([...repeatedBars,next]);let badPeriodRejected=false;
+   try{engine.updateOscillator("mfi-probe",{settings:{period:201}})}catch(_){badPeriodRejected=true}
+   const settings=engine.oscillatorOptions("mfi-probe").settings;engine.destroy();host.remove();
+   return {initial,forming,repeatedForming,appended,badPeriodRejected,settings};
+  });
+  for(const state of [volumeFlowProbe.initial,volumeFlowProbe.forming,volumeFlowProbe.repeatedForming,volumeFlowProbe.appended]){
+   assert.ok(Math.abs(state.obv-state.expectedObv)<1e-8,"Native OBV matches Beta with real-volume/tick-volume fallback");
+   assert.ok(Math.abs(state.mfi-state.expectedMfi)<1e-8,"Native MFI matches Beta with real-volume/tick-volume fallback");
+  }
+  assert.equal(volumeFlowProbe.badPeriodRejected,true,"Native MFI enforces period bounds");
+  assert.equal(volumeFlowProbe.settings.period,14,"Rejected native MFI settings leave the prior configuration intact");
   const momentumRocProbe=await page.evaluate(()=>{
    const host=document.createElement("div");host.style.cssText="width:420px;height:280px;position:fixed;left:-2000px;top:0";document.body.append(host);
    const bars=Array.from({length:40},(_,i)=>{const close=100+Math.sin(i/4)*3+i*.2;return {time:1712000000+i*300,open:close-.2,high:close+.8,low:close-.7,close}});

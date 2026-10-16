@@ -1,7 +1,7 @@
 import type {Candle,AveragePoint} from "./adapter";
 
-export type OscillatorKind="rsi"|"atr"|"macd"|"adx"|"stochastic"|"stochrsi"|"cci"|"momentum"|"roc";
-export type OscillatorSettings={period:number}|{fast:number;slow:number;signal:number}|{period:number;smoothK:number;smoothD:number}|{period:number;stochPeriod:number;smoothK:number;smoothD:number};
+export type OscillatorKind="rsi"|"atr"|"macd"|"adx"|"stochastic"|"stochrsi"|"cci"|"momentum"|"roc"|"obv"|"mfi";
+export type OscillatorSettings={}|{period:number}|{fast:number;slow:number;signal:number}|{period:number;smoothK:number;smoothD:number}|{period:number;stochPeriod:number;smoothK:number;smoothD:number};
 export type OscillatorValues=Record<string,AveragePoint[]>;
 export type IncrementalOscillator={snapshot():OscillatorValues;updateLast(bar:Candle):OscillatorValues};
 export const MAX_OSCILLATOR_BARS=150000;
@@ -11,6 +11,7 @@ function checkBars(input:readonly Candle[]):Candle[]{
  let previous=0;
  for(const bar of input){
   if(!Number.isSafeInteger(bar.time)||bar.time<=previous||!Number.isFinite(bar.open)||!Number.isFinite(bar.high)||!Number.isFinite(bar.low)||!Number.isFinite(bar.close))throw Error("Invalid oscillator candles");
+  if((bar.tick_volume!==undefined&&(!Number.isFinite(bar.tick_volume)||bar.tick_volume<0))||(bar.real_volume!==undefined&&(!Number.isFinite(bar.real_volume)||bar.real_volume<0)))throw Error("Invalid oscillator volume");
   previous=bar.time;
  }
  return [...input];
@@ -74,6 +75,24 @@ function roc(bars:readonly Candle[],period:number):AveragePoint[]{
  }
  return out;
 }
+function brokerVolume(bar:Candle):number{return (bar.real_volume??0)>0?bar.real_volume!:bar.tick_volume??0}
+function obv(bars:readonly Candle[]):AveragePoint[]{
+ const out:AveragePoint[]=[];if(!bars.length)return out;let value=0;out.push(point(bars,0,value));
+ for(let i=1;i<bars.length;i++){if(bars[i].close>bars[i-1].close)value+=brokerVolume(bars[i]);else if(bars[i].close<bars[i-1].close)value-=brokerVolume(bars[i]);out.push(point(bars,i,value))}
+ return out;
+}
+function mfi(bars:readonly Candle[],period:number):AveragePoint[]{
+ const out:AveragePoint[]=[],positive:number[]=[],negative:number[]=[],volumes:number[]=[];
+ for(let i=1;i<bars.length;i++){
+  const bar=bars[i],previous=bars[i-1],price=(bar.high+bar.low+bar.close)/3,previousPrice=(previous.high+previous.low+previous.close)/3,volume=brokerVolume(bar),flow=price*volume;
+  positive.push(price>previousPrice?flow:0);negative.push(price<previousPrice?flow:0);volumes.push(volume);
+  if(positive.length>period){positive.shift();negative.shift();volumes.shift()}
+  if(positive.length<period||volumes.reduce((sum,item)=>sum+item,0)<=0)continue;
+  const pos=positive.reduce((sum,item)=>sum+item,0),neg=negative.reduce((sum,item)=>sum+item,0);
+  out.push(point(bars,i,pos+neg===0?50:100*pos/(pos+neg)));
+ }
+ return out;
+}
 function tr(bars:readonly Candle[],i:number){const b=bars[i],prev=bars[i-1]?.close;return Math.max(b.high-b.low,prev===undefined?0:Math.abs(b.high-prev),prev===undefined?0:Math.abs(b.low-prev))}
 function atr(bars:readonly Candle[],period:number):AveragePoint[]{
  const out:AveragePoint[]=[];if(bars.length<period)return out;let mean=0;for(let i=0;i<period;i++)mean+=tr(bars,i);mean/=period;out.push(point(bars,period-1,mean));
@@ -105,6 +124,8 @@ export function calculateOscillator(input:readonly Candle[],kind:OscillatorKind,
  if(kind==="cci")return {cci:cci(bars,(settings as {period:number}).period)};
  if(kind==="momentum")return {momentum:momentum(bars,(settings as {period:number}).period)};
  if(kind==="roc")return {roc:roc(bars,(settings as {period:number}).period)};
+ if(kind==="obv")return {obv:obv(bars)};
+ if(kind==="mfi")return {mfi:mfi(bars,(settings as {period:number}).period)};
  if(kind==="rsi")return {rsi:rsi(bars,(settings as {period:number}).period)};
  if(kind==="atr")return {atr:atr(bars,(settings as {period:number}).period)};
  if(kind==="adx")return adx(bars,(settings as {period:number}).period);
@@ -120,7 +141,9 @@ type StreamState=
  |{kind:"stochrsi";close:number|null;count:number;gainSum:number;lossSum:number;gain:number|null;loss:number|null;rsiWindow:number[];rawWindow:number[];kWindow:number[];rawSum:number;kSum:number}
  |{kind:"cci";window:number[];sum:number}
  |{kind:"momentum";lookback:number[]}
- |{kind:"roc";lookback:number[]};
+ |{kind:"roc";lookback:number[]}
+ |{kind:"obv";value:number}
+ |{kind:"mfi";positive:number[];negative:number[];volumes:number[]};
 type StreamStep={state:StreamState;points:OscillatorValues};
 function initialState(kind:OscillatorKind):StreamState{
  if(kind==="rsi")return {kind,count:0,gainSum:0,lossSum:0,gain:null,loss:null};
@@ -129,6 +152,8 @@ function initialState(kind:OscillatorKind):StreamState{
  if(kind==="adx")return {kind,tr:0,plus:0,minus:0,dxCount:0,dxSum:0,average:null};
  if(kind==="cci")return {kind,window:[],sum:0};
  if(kind==="stochrsi")return {kind,close:null,count:0,gainSum:0,lossSum:0,gain:null,loss:null,rsiWindow:[],rawWindow:[],kWindow:[],rawSum:0,kSum:0};
+ if(kind==="obv")return {kind,value:0};
+ if(kind==="mfi")return {kind,positive:[],negative:[],volumes:[]};
  if(kind==="momentum"||kind==="roc")return {kind,lookback:[]};
  return {kind,raw:[],k:[],sumRaw:0,sumK:0};
 }
@@ -152,6 +177,19 @@ function oscillatorStep(state:StreamState,bar:Candle,index:number,previous:Candl
   else average=(average!*(period-1)+current)/period;
   if(average!==null)add("atr",average);
   return {state:{kind:"atr",count,sum,average},points};
+ }
+ if(state.kind==="obv"){
+  if(index===0){add("obv",state.value);return {state,points}}
+  const value=state.value+(bar.close>previous!.close?brokerVolume(bar):bar.close<previous!.close?-brokerVolume(bar):0);
+  add("obv",value);return {state:{kind:"obv",value},points};
+ }
+ if(state.kind==="mfi"){
+  if(index===0)return {state,points};
+  const period=(settings as {period:number}).period,price=(bar.high+bar.low+bar.close)/3,previousPrice=(previous!.high+previous!.low+previous!.close)/3,volume=brokerVolume(bar),flow=price*volume;
+  const positive=[...state.positive,price>previousPrice?flow:0],negative=[...state.negative,price<previousPrice?flow:0],volumes=[...state.volumes,volume];
+  if(positive.length>period){positive.shift();negative.shift();volumes.shift()}
+  if(positive.length===period&&volumes.reduce((sum,item)=>sum+item,0)>0){const pos=positive.reduce((sum,item)=>sum+item,0),neg=negative.reduce((sum,item)=>sum+item,0);add("mfi",pos+neg===0?50:100*pos/(pos+neg))}
+  return {state:{kind:"mfi",positive,negative,volumes},points};
  }
  if(state.kind==="macd"){
   const {fast,slow,signal}=settings as {fast:number;slow:number;signal:number};
@@ -220,7 +258,7 @@ function oscillatorStep(state:StreamState,bar:Candle,index:number,previous:Candl
 export function createIncrementalOscillator(input:readonly Candle[],kind:OscillatorKind,settings:OscillatorSettings):IncrementalOscillator{
  validateSettings(kind,settings);
  const bars=checkBars(input),configuration={...settings};
- const keys=kind==="rsi"?["rsi"]:kind==="atr"?["atr"]:kind==="macd"?["macd","signal","histogram"]:kind==="adx"?["adx","plusDi","minusDi"]:kind==="stochrsi"?["stochRsiK","stochRsiD"]:kind==="cci"?["cci"]:kind==="momentum"?["momentum"]:kind==="roc"?["roc"]:["stochK","stochD"];
+ const keys=kind==="rsi"?["rsi"]:kind==="atr"?["atr"]:kind==="macd"?["macd","signal","histogram"]:kind==="adx"?["adx","plusDi","minusDi"]:kind==="stochrsi"?["stochRsiK","stochRsiD"]:kind==="cci"?["cci"]:kind==="momentum"?["momentum"]:kind==="roc"?["roc"]:kind==="obv"?["obv"]:kind==="mfi"?["mfi"]:["stochK","stochD"];
  const values:OscillatorValues=Object.fromEntries(keys.map(key=>[key,[]]));
  const snapshot=()=>Object.fromEntries(Object.entries(values).map(([key,points])=>[key,points.map(point=>({...point}))]));
  let state=initialState(kind),beforeCurrent=state;
@@ -246,8 +284,9 @@ export function createIncrementalOscillator(input:readonly Candle[],kind:Oscilla
 }
 function validateSettings(kind:OscillatorKind,settings:OscillatorSettings){
  if(!settings||typeof settings!=="object"||Array.isArray(settings))throw Error("Invalid oscillator settings");
- const keys=Object.keys(settings).sort().join(","),expected=kind==="macd"?"fast,signal,slow":kind==="stochastic"?"period,smoothD,smoothK":kind==="stochrsi"?"period,smoothD,smoothK,stochPeriod":"period";
+ const keys=Object.keys(settings).sort().join(","),expected=kind==="obv"?"":kind==="macd"?"fast,signal,slow":kind==="stochastic"?"period,smoothD,smoothK":kind==="stochrsi"?"period,smoothD,smoothK,stochPeriod":"period";
  if(keys!==expected)throw Error("Invalid oscillator settings");
+ if(kind==="obv")return;
  if(kind==="macd"){
   if(!("fast" in settings)||!bounded(settings.fast,2,300)||!bounded(settings.slow,3,300)||settings.fast>=settings.slow||!bounded(settings.signal,2,200))throw Error("Invalid MACD settings");
   return;
@@ -262,5 +301,5 @@ function validateSettings(kind:OscillatorKind,settings:OscillatorSettings){
   if(!("period" in settings)||!("stochPeriod" in settings)||!("smoothK" in settings)||!("smoothD" in settings)||!bounded(settings.period,2,200)||!bounded(settings.stochPeriod,2,200)||!bounded(settings.smoothK,1,100)||!bounded(settings.smoothD,1,100))throw Error("Invalid StochRSI settings");return;
  }
  if(!("period" in settings)||!bounded(settings.period,2,200))throw Error("Invalid oscillator period");
- if(kind!=="rsi"&&kind!=="atr"&&kind!=="adx"&&kind!=="cci"&&kind!=="momentum"&&kind!=="roc")throw Error("Unknown oscillator kind");
+ if(kind!=="rsi"&&kind!=="atr"&&kind!=="adx"&&kind!=="cci"&&kind!=="momentum"&&kind!=="roc"&&kind!=="mfi")throw Error("Unknown oscillator kind");
 }

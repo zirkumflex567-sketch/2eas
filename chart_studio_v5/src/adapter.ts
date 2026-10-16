@@ -1661,8 +1661,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const series=paneLines.get(id);if(!series)throw Error("Unknown native pane line");
   series.moveToPane(paneIndex);persistDrawings();
  }
- const oscillatorComponents=(kind:OscillatorKind):string[]=>kind==="rsi"?["rsi"]:kind==="atr"?["atr"]:kind==="macd"?["macd","signal","histogram"]:kind==="stochastic"?["stochK","stochD"]:kind==="stochrsi"?["stochRsiK","stochRsiD"]:kind==="cci"?["cci"]:kind==="momentum"?["momentum"]:kind==="roc"?["roc"]:["adx","plusDi","minusDi"];
- const oscillatorTitles=(kind:OscillatorKind):Record<string,string>=>kind==="macd"?{macd:"MACD",signal:"Signal",histogram:"Histogram"}:kind==="adx"?{adx:"ADX",plusDi:"+DI",minusDi:"−DI"}:kind==="stochastic"?{stochK:"%K",stochD:"%D"}:kind==="stochrsi"?{stochRsiK:"StochRSI %K",stochRsiD:"StochRSI %D"}:kind==="cci"?{cci:"CCI"}:kind==="momentum"?{momentum:"Momentum"}:kind==="roc"?{roc:"ROC (%)"}:kind==="rsi"?{rsi:"RSI"}:{atr:"ATR"};
+ const oscillatorComponents=(kind:OscillatorKind):string[]=>kind==="rsi"?["rsi"]:kind==="atr"?["atr"]:kind==="macd"?["macd","signal","histogram"]:kind==="stochastic"?["stochK","stochD"]:kind==="stochrsi"?["stochRsiK","stochRsiD"]:kind==="cci"?["cci"]:kind==="momentum"?["momentum"]:kind==="roc"?["roc"]:kind==="obv"?["obv"]:kind==="mfi"?["mfi"]:["adx","plusDi","minusDi"];
+ const oscillatorTitles=(kind:OscillatorKind):Record<string,string>=>kind==="macd"?{macd:"MACD",signal:"Signal",histogram:"Histogram"}:kind==="adx"?{adx:"ADX",plusDi:"+DI",minusDi:"−DI"}:kind==="stochastic"?{stochK:"%K",stochD:"%D"}:kind==="stochrsi"?{stochRsiK:"StochRSI %K",stochRsiD:"StochRSI %D"}:kind==="cci"?{cci:"CCI"}:kind==="momentum"?{momentum:"Momentum"}:kind==="roc"?{roc:"ROC (%)"}:kind==="obv"?{obv:"OBV"}:kind==="mfi"?{mfi:"MFI"}:kind==="rsi"?{rsi:"RSI"}:{atr:"ATR"};
  function replaceOscillatorData(group:OscillatorGroup,incremental=false){
   const rows=incremental
    ?group.calculator.updateLast(bars[bars.length-1])
@@ -1691,7 +1691,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function refreshOscillators(incremental=false){for(const group of oscillators.values())replaceOscillatorData(group,incremental)}
  function addOscillator(options:OscillatorOptions){
-  guard();if(!options||!/^[-_a-zA-Z0-9]{1,32}$/.test(options.id)||!colorPattern.test(options.color)||!(["rsi","atr","macd","adx","stochastic","stochrsi","cci","momentum","roc"] as string[]).includes(options.kind)||
+  guard();if(!options||!/^[-_a-zA-Z0-9]{1,32}$/.test(options.id)||!colorPattern.test(options.color)||!(["rsi","atr","macd","adx","stochastic","stochrsi","cci","momentum","roc","obv","mfi"] as string[]).includes(options.kind)||
    (options.lineWidth!==undefined&&![1,2,3,4].includes(options.lineWidth)))throw Error("Invalid oscillator options");
   if(oscillators.has(options.id)||donchianOverlays.has(options.id)||keltnerOverlays.has(options.id)||averages.has(options.id)||paneLines.has(options.id)||priceLevels.has(options.id)||timeMarkers.has(options.id)||textAnnotations.has(options.id)||trendLines.has(options.id)||rectangles.has(options.id)||rays.has(options.id)||fibonacci.has(options.id)||channels.has(options.id)||measurements.has(options.id))throw Error("Duplicate chart object identity");
   if(averages.size+paneLines.size+oscillators.size+donchianOverlays.size+keltnerOverlays.size>=maxIndicatorInstances)throw Error("Indicator instance limit");
