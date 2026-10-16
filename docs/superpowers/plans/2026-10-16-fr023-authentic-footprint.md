@@ -41,5 +41,5 @@
 
 - [x] Run focused tests and applicable UI/read API checks (158 Python tests; ChartStudio browser smokes).
 - [x] Read-only check the four explicitly authorized demo feeds through the new route; Blueberry was not queried.
-- [x] Record the result and limits without raw ticks or price-level details. The future broker candle timestamp prevented checking current executions, so FR-023 remains partial.
+- [x] Record the result and limits without raw ticks or price-level details. One closed M15 bar per demo returned zero verified executions after explicit broker-time normalization; FR-023 remains partial pending more samples and feed capability evidence.
 - [x] Commit to main, push, verify runtime identity locally and on htown `/stt`; GitHub checks were not yet confirmed. No Strategy Tester/backtests started.
