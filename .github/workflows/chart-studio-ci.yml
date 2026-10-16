@@ -104,6 +104,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Chromium native v5 proof (read-only)
         run: node scripts/smoke_chart_studio_v5.cjs
+      - name: Chromium native v5 Parabolic SAR proof (read-only)
+        run: node scripts/smoke_chart_studio_v5_parabolic_sar.cjs
       - name: Run Chromium UI smoke (no MT5 server)
         run: |
           $ErrorActionPreference = "Stop"
