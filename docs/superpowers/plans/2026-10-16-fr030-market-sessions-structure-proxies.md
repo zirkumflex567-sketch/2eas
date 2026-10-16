@@ -46,4 +46,4 @@
 - [ ] Finish the full local Python workspace suite. Beta smoke, focused Node test, JavaScript syntax, Python compile, frontend syntax and `git diff --check` pass; the full run had five optional-spool fixture failures, and those five pass when that local optional environment variable is unset.
 - [x] Verify the overlay makes no broker mutation or strategy/backtest call; keep live/hardware acceptance explicitly open.
 - [ ] Commit/push on `main`, guarded-restart local runtime, update htown `/stt`, and verify matching runtime revision/digest and static asset delivery.
-- [ ] Record AT-045/046 evidence while preserving live-hardware and calendar-coverage limitations.
+- [x] Record AT-045/046 contract and four-demo OHLC evidence while preserving live-hardware and calendar-coverage limitations.
