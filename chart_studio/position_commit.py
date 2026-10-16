@@ -233,4 +233,3 @@ class PositionCommitService:
                 except Exception:
                     pass
             raise self._error(503, 'BROKER_DATA_UNAVAILABLE') from exc
-
