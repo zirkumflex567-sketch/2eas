@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Annotated
 from fastapi import HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+import broker_clock
 from chart_studio.broker_reads import (
     SYMBOL_PATTERN, BrokerReadError, broker_rows, symbol_summary, symbol_model, require_symbol,
     verified_read, positions_read, trades_read, provenance,
@@ -106,7 +107,11 @@ def install_read_routes(app, mt5, *, now=None):
                 raw_open = field(raw_bars[0], 'time')
                 if isinstance(raw_open, bool) or not isinstance(raw_open, numbers.Integral) or raw_open <= 0:
                     raise ValueError('invalid candle time')
-                open_epoch = int(raw_open)
+                # Live MT5 demo reads show the rates timestamp aligned with the
+                # configured broker wall clock (quote rawBrokerEpoch), not UTC.
+                # Convert through the same explicit per-account policy as ticks.
+                offset_seconds = broker_clock.offset_seconds(spec)
+                open_epoch = broker_clock.to_utc_epoch(int(raw_open), spec)
                 start = datetime.fromtimestamp(open_epoch, timezone.utc)
                 stop = start + timedelta(seconds=durations[timeframe])
                 bar_open = start.isoformat(timespec='seconds').replace('+00:00','Z')
@@ -144,8 +149,9 @@ def install_read_routes(app, mt5, *, now=None):
                         ignored += 1
                         continue
                     tick_time = field(tick, 'time_msc')
+                    tick_time_utc = int(tick_time) - offset_seconds*1000
                     if (isinstance(tick_time, bool) or not isinstance(tick_time, numbers.Integral) or
-                            not int(start.timestamp()*1000) <= int(tick_time) < int(stop.timestamp()*1000)):
+                            not int(start.timestamp()*1000) <= tick_time_utc < int(stop.timestamp()*1000)):
                         raise ValueError('tick outside requested bar')
                     last = broker_decimal(float(field(tick, 'last')), positive=True)
                     volume = broker_decimal(float(field(tick, 'volume_real')), positive=True)

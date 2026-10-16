@@ -6,6 +6,7 @@ import json
 import ntpath
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace as NS
 
@@ -186,16 +187,22 @@ def test_stopped_terminal_never_initializes(client, fake, monkeypatch):
 
 
 def footprint_bar(fake):
-    fake.rates['XAUUSD'] = (NS(time=NOW-900, open=4000., high=4002., low=3998., close=4001.),)
+    # This broker returns bar opens as UTC+03 wall-clock epochs, matching quote
+    # timestamps. Normalize them with the explicit account clock policy.
+    fake.rates['XAUUSD'] = (NS(time=NOW+10800-900, open=4000., high=4002., low=3998., close=4001.),)
+
+
+def broker_tick_msc(utc_seconds):
+    return (utc_seconds+10800)*1000
 
 
 def test_footprint_aggregates_only_verified_buy_and_sell_execution_ticks(client, fake):
     footprint_bar(fake)
     fake.footprint_ticks = [
-        {'last':4001.0, 'volume_real':.2, 'flags':fake.TICK_FLAG_BUY, 'time_msc':(NOW-899)*1000},
-        {'last':4001.0, 'volume_real':.3, 'flags':fake.TICK_FLAG_BUY, 'time_msc':(NOW-898)*1000},
-        {'last':4002.0, 'volume_real':.4, 'flags':fake.TICK_FLAG_SELL, 'time_msc':(NOW-897)*1000},
-        {'last':4003., 'volume_real':5., 'flags':0, 'time_msc':(NOW-895)*1000},
+        {'last':4001.0, 'volume_real':.2, 'flags':fake.TICK_FLAG_BUY, 'time_msc':broker_tick_msc(NOW-899)},
+        {'last':4001.0, 'volume_real':.3, 'flags':fake.TICK_FLAG_BUY, 'time_msc':broker_tick_msc(NOW-898)},
+        {'last':4002.0, 'volume_real':.4, 'flags':fake.TICK_FLAG_SELL, 'time_msc':broker_tick_msc(NOW-897)},
+        {'last':4003., 'volume_real':5., 'flags':0, 'time_msc':broker_tick_msc(NOW-895)},
     ]
     response = read(client, endpoint='footprint', timeframe='M15')
     assert response.status_code == 200
@@ -203,6 +210,7 @@ def test_footprint_aggregates_only_verified_buy_and_sell_execution_ticks(client,
     assert body['status'] == 'AVAILABLE'
     assert body['source'] == 'MT5_VERIFIED' and body['canExecute'] is False
     assert body['symbol'] == 'XAUUSD' and body['timeframe'] == 'M15'
+    assert body['barOpenUtc'] == datetime.fromtimestamp(NOW-900, timezone.utc).isoformat(timespec='seconds').replace('+00:00','Z')
     assert body['executionCount'] == 3 and body['ignoredTickCount'] == 1
     assert body['levels'] == [
         {'price':'4001', 'buyVolume':'0.5', 'sellVolume':'0', 'delta':'0.5', 'trades':2},
@@ -210,13 +218,14 @@ def test_footprint_aggregates_only_verified_buy_and_sell_execution_ticks(client,
     ]
     call = next(item for item in fake.calls if item[0] == 'ticks')
     assert call[1] == 'XAUUSD' and call[4] == fake.COPY_TICKS_ALL
+    assert call[2].timestamp() == NOW-900 and call[3].timestamp() == NOW
     assert fake.writes == 0
 
 
 def test_footprint_returns_unavailable_for_no_verified_execution_ticks(client, fake):
     footprint_bar(fake)
     fake.footprint_ticks = [
-        {'bid':4000., 'ask':4000.1, 'last':0., 'volume_real':0., 'flags':0, 'time_msc':(NOW-899)*1000},
+        {'bid':4000., 'ask':4000.1, 'last':0., 'volume_real':0., 'flags':0, 'time_msc':broker_tick_msc(NOW-899)},
     ]
     response = read(client, endpoint='footprint', timeframe='M15')
     assert response.status_code == 200
@@ -228,9 +237,9 @@ def test_footprint_returns_unavailable_for_no_verified_execution_ticks(client, f
 def test_footprint_fails_closed_on_ambiguous_or_malformed_execution_ticks(client, fake):
     footprint_bar(fake)
     fake.footprint_ticks = [
-        {'last':4001., 'volume_real':.2, 'flags':fake.TICK_FLAG_BUY, 'time_msc':(NOW-899)*1000},
+        {'last':4001., 'volume_real':.2, 'flags':fake.TICK_FLAG_BUY, 'time_msc':broker_tick_msc(NOW-899)},
         {'last':4002., 'volume_real':.3, 'flags':fake.TICK_FLAG_BUY|fake.TICK_FLAG_SELL,
-         'time_msc':(NOW-898)*1000},
+         'time_msc':broker_tick_msc(NOW-898)},
     ]
     response = read(client, endpoint='footprint', timeframe='M15')
     assert response.status_code == 200
@@ -238,7 +247,7 @@ def test_footprint_fails_closed_on_ambiguous_or_malformed_execution_ticks(client
     assert body['status'] == 'UNAVAILABLE' and body['reason'] == 'INVALID_EXECUTION_TICK'
     assert body['levels'] == []
     fake.footprint_ticks = [
-        {'last':0., 'volume_real':.3, 'flags':fake.TICK_FLAG_BUY, 'time_msc':(NOW-898)*1000},
+        {'last':0., 'volume_real':.3, 'flags':fake.TICK_FLAG_BUY, 'time_msc':broker_tick_msc(NOW-898)},
     ]
     response = read(client, endpoint='footprint', timeframe='M15')
     assert response.json()['status'] == 'UNAVAILABLE'
@@ -246,7 +255,7 @@ def test_footprint_fails_closed_on_ambiguous_or_malformed_execution_ticks(client
 
 
 def test_footprint_rejects_a_future_bar_before_reading_ticks(client, fake):
-    fake.rates['XAUUSD'] = (NS(time=NOW+60, open=4000., high=4002., low=3998., close=4001.),)
+    fake.rates['XAUUSD'] = (NS(time=NOW+10800+60, open=4000., high=4002., low=3998., close=4001.),)
     response = read(client, endpoint='footprint', timeframe='M15')
     assert response.status_code == 200
     assert response.json()['status'] == 'UNAVAILABLE'
