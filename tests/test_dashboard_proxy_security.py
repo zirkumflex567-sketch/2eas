@@ -21,7 +21,7 @@ def proxy(monkeypatch):
     app = FastAPI()
     install_control_security(app)
     writes = []
-    for path in ('modify_position', 'close_position', 'reset_drawdown'):
+    for path in ('modify_position', 'close_position', 'reset_drawdown', 'chart/v1/position/commit-stop'):
         def mutate():
             writes.append(True)
             return {'success': True}
@@ -49,11 +49,11 @@ def test_verified_proxy_gets_role_and_only_trade_can_mutate(proxy, user, role):
     assert response.json()['role'] == role
     assert response.json()['control_enabled'] == (role == 'trade')
     assert 'Secure' in response.headers['set-cookie']
-    for route in ('modify_position', 'close_position', 'reset_drawdown'):
+    for route in ('modify_position', 'close_position', 'reset_drawdown', 'chart/v1/position/commit-stop'):
         result = client.post('/api/' + route, headers={**headers(user), 'Origin': 'https://' + HOST,
                              'X-Dashboard-CSRF': response.json()['csrf_token']})
         assert result.status_code == (200 if role == 'trade' else 403)
-    assert len(writes) == (3 if role == 'trade' else 0)
+    assert len(writes) == (4 if role == 'trade' else 0)
 
 
 @pytest.mark.parametrize('changes', [
