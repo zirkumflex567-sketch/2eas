@@ -50,7 +50,7 @@ input int      InpTradeEndHour            = 23;          // Handelsende Stunde
 input int      InpTradeEndMinute          = 45;          // Handelsende Minute
 
 input group "=== 04 / Blueberry Funded Prop-Firm Schutz ==="
-input bool     InpEnablePropProtection    = true;        // Harter Prop-Firm Notaus aktiv (Standard: true für maximalen Kontoschutz)
+input bool     InpEnablePropProtection    = false;       // Legacy-setfile-Feld; der Challenge-Schutz ist hart an Blueberry gebunden
 input double   InpMaxDailyDrawdownPercent = 3.5;         // Max. Tagesverlust % (Notbremse vor 4.0% Regel)
 input double   InpMaxTotalDrawdownPercent = 9.0;         // Max. Gesamtverlust % (Notbremse vor 10.0% Regel)
 input bool     InpTotalDDBasedOnInitial   = true;        // Max Drawdown Basis (true = Statisch vom Startkapital wie Blueberry; false = Trailing)
@@ -93,6 +93,13 @@ datetime       m_last_entry_time   = 0;
 datetime       m_current_day_date = 0;
 double         m_day_start_balance = 0.0;
 double         m_initial_account_balance = 0.0;
+
+// Challenge protection belongs only to the explicitly configured Blueberry account.
+bool IsBlueberryChallengeAccount()
+{
+   return AccountInfoInteger(ACCOUNT_LOGIN) == 5120620 &&
+          AccountInfoString(ACCOUNT_SERVER) == "BlueberryMarketsSVG-Live";
+}
 double         m_peak_equity = 0.0;
 bool           m_daily_lockout = false;
 bool           m_total_lockout = false;
@@ -235,6 +242,9 @@ int OnInit()
    m_last_m15_bar_time = iTime(_Symbol, m_calc_timeframe, 0);
    m_last_entry_time   = GetLastEntryTimeForMagic();
 
+   PrintFormat("Blueberry challenge protection binding: %s",
+               IsBlueberryChallengeAccount() ? "ACTIVE" : "disabled for non-Blueberry account");
+
    // Live Chart Indicators: Automatically ensure EMA 9 is rendered and clean up TEMA 9
    SetupChartIndicators();
 
@@ -352,7 +362,7 @@ void OnTick()
       m_peak_equity = current_equity;
 
    // 1. Hard Blueberry Funded Prop-Firm Drawdown Protection
-   if(InpEnablePropProtection)
+   if(IsBlueberryChallengeAccount())
    {
       // Daily Drawdown Protection (Calculated against true day start balance)
       if(InpMaxDailyDrawdownPercent > 0.0 && m_day_start_balance > 0.0)

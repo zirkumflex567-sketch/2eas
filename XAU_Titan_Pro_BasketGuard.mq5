@@ -15,6 +15,7 @@
 #include <Trade\PositionInfo.mqh>
 string CSParameterSetCanonical();
 string CSParameterSetHash="";
+bool IsBlueberryChallengeAccount();
 #include "ChartStudioEvidenceSpool.mqh"
 
 //--- Input Parameters
@@ -74,7 +75,7 @@ input bool     InpBlockFridayLateEntries  = true;        // Keine neuen Freitags
 input int      InpFridayStopEntryHour     = 19;
 
 input group "=== 04 / Blueberry Funded Prop-Firm Schutz ==="
-input bool     InpEnablePropProtection    = true;        // Harter Prop-Firm Notaus aktiv (Standard: true für maximalen Kontoschutz)
+input bool     InpEnablePropProtection    = false;       // Legacy-setfile-Feld; der Challenge-Schutz ist hart an Blueberry gebunden
 input double   InpMaxDailyDrawdownPercent = 3.5;         // Max. Tagesverlust % (Notbremse vor 4.0% Regel)
 input double   InpMaxTotalDrawdownPercent = 9.0;         // Max. Gesamtverlust % (Notbremse vor 10.0% Regel)
 input bool     InpTotalDDBasedOnInitial   = true;        // Max Drawdown Basis (true = Statisch vom Startkapital wie Blueberry; false = Trailing)
@@ -147,7 +148,7 @@ string CSParameterSetCanonical()
    result+="InpFridayCloseMinute="+IntegerToString(InpFridayCloseMinute)+"\n";
    result+="InpBlockFridayLateEntries="+(InpBlockFridayLateEntries ? "1" : "0")+"\n";
    result+="InpFridayStopEntryHour="+IntegerToString(InpFridayStopEntryHour)+"\n";
-   result+="InpEnablePropProtection="+(InpEnablePropProtection ? "1" : "0")+"\n";
+   result+="InpEnablePropProtection="+(IsBlueberryChallengeAccount() ? "1" : "0")+"\n";
    result+="InpMaxDailyDrawdownPercent="+DoubleToString(InpMaxDailyDrawdownPercent,16)+"\n";
    result+="InpMaxTotalDrawdownPercent="+DoubleToString(InpMaxTotalDrawdownPercent,16)+"\n";
    result+="InpTotalDDBasedOnInitial="+(InpTotalDDBasedOnInitial ? "1" : "0")+"\n";
@@ -193,6 +194,13 @@ bool           m_total_lockout = false;
 bool           m_target_reached = false;
 datetime       m_last_guard_exit_time = 0;
 bool           m_wait_for_signal_reset = false;
+
+// Challenge protection belongs only to the explicitly configured Blueberry account.
+bool IsBlueberryChallengeAccount()
+{
+   return AccountInfoInteger(ACCOUNT_LOGIN) == 5120620 &&
+          AccountInfoString(ACCOUNT_SERVER) == "BlueberryMarketsSVG-Live";
+}
 double         m_basket_peak_profit = 0.0;
 int            m_basket_peak_count = 0;
 double         m_basket_ticket_sum = 0.0;
@@ -541,6 +549,8 @@ int OnInit()
    // Live Restart Protection: Synchronize bar time and last entry time from history/positions
    m_last_m15_bar_time = iTime(_Symbol, m_calc_timeframe, 0);
    m_last_entry_time   = GetLastEntryTimeForMagic();
+   PrintFormat("Blueberry challenge protection binding: %s",
+               IsBlueberryChallengeAccount() ? "ACTIVE" : "disabled for non-Blueberry account");
    if(PersistGuardState() && GlobalVariableCheck(BasketStateKey("exit")))
       m_last_guard_exit_time = (datetime)GlobalVariableGet(BasketStateKey("exit"));
    if(PersistGuardState() && GlobalVariableCheck(BasketStateKey("wait")))
@@ -673,7 +683,7 @@ void OnTick()
       m_peak_equity = current_equity;
 
    // 1. Hard Blueberry Funded Prop-Firm Drawdown Protection
-   if(InpEnablePropProtection)
+   if(IsBlueberryChallengeAccount())
    {
       // Daily Drawdown Protection (Calculated against true day start balance)
       if(InpMaxDailyDrawdownPercent > 0.0 && m_day_start_balance > 0.0)
