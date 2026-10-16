@@ -385,6 +385,23 @@ class SqliteLayoutTests(unittest.TestCase):
                 validate_document({**original, "indicators": {"ichimoku": invalid}})
         self.assertEqual(validate_document({**original, "indicators": {"ichimoku": {"displacement": 0}}})["indicators"]["ichimoku"]["displacement"], 0)
 
+    def test_pivot_settings_and_provenance_roundtrip_strictly(self):
+        original = example()
+        settings = {"enabled": True, "basis": "W1", "algorithmVersion": "classic-floor-v1",
+                    "source": "MT5_VERIFIED", "sourceWindow": {"from": 1700000000, "to": 1700600000}}
+        document = {**original, "indicators": {"pivots": settings}}
+        self.assertEqual(validate_document(document)["indicators"]["pivots"], settings)
+        self.store.put("local-owner", "titan", "XAUUSD", "Pivots", document, 0)
+        self.assertEqual(self.store.get("local-owner", "titan", "XAUUSD", "Pivots")["document"]["indicators"]["pivots"], settings)
+        for invalid in [
+            {**settings, "basis": "M15"}, {**settings, "basis": []},
+            {**settings, "algorithmVersion": "unknown"}, {**settings, "source": "SYNTHETIC"},
+            {**settings, "sourceWindow": {"from": 1700600000, "to": 1700000000}},
+            {**settings, "sourceWindow": {"from": 1.5, "to": 2}}, {**settings, "extra": True},
+        ]:
+            with self.subTest(invalid=invalid), self.assertRaises(StoreError):
+                validate_document({**original, "indicators": {"pivots": invalid}})
+
     def test_parabolic_sar_settings_roundtrip_and_bounds(self):
         original = example()
         settings = {"enabled": True, "step": 0.02, "maxStep": 0.2}

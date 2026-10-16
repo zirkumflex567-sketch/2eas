@@ -21,7 +21,7 @@ DRAWING_TYPES = frozenset({"horizontal", "vertical", "text", "trend", "rect", "f
 UI_FLAGS = frozenset({"ema20", "ema50", "ema200", "sma20", "sma50",
                       "bb", "positions"})
 UI_NUMBERS = frozenset({"bbPeriod", "bbStdDev"})
-INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap", "stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner", "atrBands", "linearRegression", "ichimoku", "sar", "obv", "mfi"})
+INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap", "stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner", "atrBands", "linearRegression", "ichimoku", "pivots", "sar", "obv", "mfi"})
 PERIOD_FIELDS = frozenset({"period", "atrPeriod", "fast", "slow", "signal", "smoothK", "smoothD"})
 SESSION_FIELDS = frozenset({"timeZone", "sessionStart"})
 TIMEFRAMES = frozenset({"M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1"})
@@ -162,6 +162,8 @@ def validate_document(raw: Any) -> dict:
             accepted_fields = accepted_fields | {"multiplier"}
         if kind == "ichimoku":
             accepted_fields = accepted_fields | {"tenkanPeriod", "kijunPeriod", "senkouBPeriod", "displacement"}
+        if kind == "pivots":
+            accepted_fields = {"enabled", "basis", "algorithmVersion", "source", "sourceWindow"}
         if kind == "sar":
             accepted_fields = accepted_fields | {"step", "maxStep"}
         if kind == "obv":
@@ -175,6 +177,22 @@ def validate_document(raw: Any) -> dict:
             if param == "enabled":
                 if type(value) is not bool:
                     raise StoreError("Indikator-Sichtbarkeit muss boolesch sein.")
+            elif kind == "pivots" and param == "basis":
+                if not isinstance(value, str) or value not in {"D1", "W1"}:
+                    raise StoreError("Pivot-Basis muss D1 oder W1 sein.")
+            elif kind == "pivots" and param == "algorithmVersion":
+                if value != "classic-floor-v1":
+                    raise StoreError("Unbekannte Pivot-Formelversion.")
+            elif kind == "pivots" and param == "source":
+                if value != "MT5_VERIFIED":
+                    raise StoreError("Pivot-Quelle muss MT5_VERIFIED sein.")
+            elif kind == "pivots" and param == "sourceWindow":
+                if value is not None and (not isinstance(value, dict) or set(value) != {"from", "to"} or
+                    type(value["from"]) is not int or type(value["to"]) is not int or
+                    value["from"] <= 0 or value["to"] < value["from"]):
+                    raise StoreError("Ungültiges Pivot-Quellzeitfenster.")
+                if value is not None:
+                    value = {"from": value["from"], "to": value["to"]}
             elif param in color_fields:
                 if not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
                     raise StoreError("Ungültige Volumenfarbe.")

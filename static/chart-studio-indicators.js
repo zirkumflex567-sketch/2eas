@@ -24,6 +24,7 @@ const REGISTRY=Object.freeze({
  atrBands:{name:"ATR Bands",type:"overlay",period:20,atrPeriod:14,multiplier:2,min:2,max:200},
  linearRegression:{name:"Linear Regression Channel",type:"overlay",period:20,multiplier:2,min:2,max:200},
  ichimoku:{name:"Ichimoku Cloud",type:"overlay",tenkanPeriod:9,kijunPeriod:26,senkouBPeriod:52,displacement:26,min:2,max:200},
+ pivots:{name:"Pivot Points · MT5",type:"overlay",basis:"D1"},
  vwap:{name:"Session-VWAP (Volumenproxy)",type:"overlay",timeZone:"UTC",sessionStart:"00:00"}
 });
 const storagePrefix="2eas:studio:indicators:v1:";
@@ -409,7 +410,30 @@ function calc(kind,candles,settings={}){
  if(kind==="atrBands")return {atrBands:atrBands(candles,settings.period??20,settings.atrPeriod??14,settings.multiplier??2)};
  if(kind==="linearRegression")return {linearRegression:linearRegressionChannel(candles,settings.period??20,settings.multiplier??2)};
  if(kind==="ichimoku")return {ichimoku:ichimoku(candles,settings)};
+ if(kind==="pivots")return {pivots:pivotPoints(settings.sourceBars||[],candles,settings.basis||"D1")};
  throw Error("Unknown indicator: "+kind);
+}
+function pivotPoints(sourceInput,targetInput,basis="D1"){
+ const empty={available:false,reason:"Keine bestätigte MT5-Quellhistorie verfügbar.",algorithmVersion:"classic-floor-v1",source:"MT5_VERIFIED",basis,lines:{p:[],r1:[],r2:[],r3:[],s1:[],s2:[],s3:[]}};
+ if(!["D1","W1"].includes(basis)||!Array.isArray(sourceInput)||!Array.isArray(targetInput)||sourceInput.length<2)return empty;
+ const source=[];let previous=0;
+ for(const raw of sourceInput){
+  if(!raw||!Number.isSafeInteger(raw.time)||raw.time<=previous||![raw.open,raw.high,raw.low,raw.close].every(Number.isFinite))return {...empty,reason:"MT5-Quellkerzen sind ungültig, unsortiert oder enthalten doppelte Zeitstempel."};
+  const bar={time:raw.time,open:raw.open,high:raw.high,low:raw.low,close:raw.close};
+  if(bar.high<Math.max(bar.open,bar.close,bar.low)||bar.low>Math.min(bar.open,bar.close,bar.high))return {...empty,reason:"MT5-Quellkerze hat inkonsistente OHLC-Werte."};
+  source.push(bar);previous=bar.time;
+ }
+ const lines={p:[],r1:[],r2:[],r3:[],s1:[],s2:[],s3:[]};let interval=0;
+ for(const raw of targetInput){
+  const time=Number(raw?.time);if(!Number.isSafeInteger(time)||time<=0)continue;
+  while(interval+1<source.length-1&&time>=source[interval+2].time)interval++;
+  if(time<source[1].time)continue;
+  const from=source[interval+1],bar=source[interval],p=(bar.high+bar.low+bar.close)/3,range=bar.high-bar.low;
+  const values={p,r1:2*p-bar.low,s1:2*p-bar.high,r2:p+range,s2:p-range,r3:bar.high+2*(p-bar.low),s3:bar.low-2*(bar.high-p)};
+  const validTo=source[interval+2]?.time??null;
+  for(const key of Object.keys(lines))lines[key].push({time,value:values[key],sourceTime:bar.time,validFrom:from.time,validTo});
+ }
+ return {...empty,available:Object.values(lines).some(points=>points.length),reason:null,lines};
 }
 function createIncremental(kind,input,settings={}){
  if(!["rsi","atr","macd"].includes(kind))throw Error("Unsupported incremental indicator");
@@ -480,7 +504,7 @@ function defaults(){
   atr:{enabled:false,period:14},volume:{enabled:false,upColor:"#41cce9",downColor:"#f7758b"},adx:{enabled:false,period:14},
   stochastic:{enabled:false,period:14,smoothK:3,smoothD:3},stochrsi:{enabled:false,period:14,stochPeriod:14,smoothK:3,smoothD:3},cci:{enabled:false,period:20},
   momentum:{enabled:false,period:10},roc:{enabled:false,period:10},sar:{enabled:false,step:.02,maxStep:.2},obv:{enabled:false},mfi:{enabled:false,period:14},supertrend:{enabled:false,period:10,multiplier:3},
-  donchian:{enabled:false,period:20},keltner:{enabled:false,period:20,atrPeriod:10,multiplier:2},atrBands:{enabled:false,period:20,atrPeriod:14,multiplier:2},linearRegression:{enabled:false,period:20,multiplier:2},ichimoku:{enabled:false,tenkanPeriod:9,kijunPeriod:26,senkouBPeriod:52,displacement:26},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
+  donchian:{enabled:false,period:20},keltner:{enabled:false,period:20,atrPeriod:10,multiplier:2},atrBands:{enabled:false,period:20,atrPeriod:14,multiplier:2},linearRegression:{enabled:false,period:20,multiplier:2},ichimoku:{enabled:false,tenkanPeriod:9,kijunPeriod:26,senkouBPeriod:52,displacement:26},pivots:{enabled:false,basis:"D1",algorithmVersion:"classic-floor-v1",source:"MT5_VERIFIED",sourceWindow:null},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
 }
 function restore(account){
  try{const raw=JSON.parse(localStorage.getItem(storagePrefix+account)||"null");
@@ -500,6 +524,11 @@ function restore(account){
     if(id==="volume")for(const prop of ["upColor","downColor"])
      if(typeof raw[id][prop]==="string"&&/^#[0-9a-fA-F]{6}$/.test(raw[id][prop]))result[id][prop]=raw[id][prop].toLowerCase();
     if(id==="vwap"){const config=sessionConfig(raw[id]);if(config){result.vwap.timeZone=config.timeZone;result.vwap.sessionStart=config.sessionStart}}
+    if(id==="pivots"){
+     if(["D1","W1"].includes(raw[id].basis))result.pivots.basis=raw[id].basis;
+     if(raw[id].algorithmVersion==="classic-floor-v1"&&raw[id].source==="MT5_VERIFIED"&&raw[id].sourceWindow&&Number.isSafeInteger(raw[id].sourceWindow.from)&&Number.isSafeInteger(raw[id].sourceWindow.to)&&raw[id].sourceWindow.from>0&&raw[id].sourceWindow.to>=raw[id].sourceWindow.from)
+      result.pivots.sourceWindow={from:raw[id].sourceWindow.from,to:raw[id].sourceWindow.to};
+    }
    }
   }
   return result;
@@ -524,6 +553,12 @@ function box(kind){
   const label=document.createElement("span");label.textContent=labelText;
   const input=document.createElement("input");input.type="text";input.value=settings[prop];input.dataset.parameter=prop;input.dataset.kind=kind;
   input.setAttribute("aria-label",cfg.name+": "+labelText);label.append(input);row.append(label);
+ }
+ if(kind==="pivots"){
+  const label=document.createElement("span");label.textContent="Basis";
+  const select=document.createElement("select");select.dataset.parameter="basis";select.dataset.kind=kind;select.setAttribute("aria-label","Pivot Points Basis");
+  for(const value of ["D1","W1"]){const option=document.createElement("option");option.value=value;option.textContent=value;option.selected=settings.basis===value;select.append(option)}
+  row.append(label,select);
  }
  for(const prop of ["period","atrPeriod","fast","slow","signal","smoothK","smoothD","multiplier","step","maxStep","tenkanPeriod","kijunPeriod","senkouBPeriod","displacement"]){
   if(!Object.hasOwn(cfg,prop))continue;
@@ -644,6 +679,16 @@ function renderPanes(incrementalUpdates=null){
  if(!incrementalUpdates)state.readouts=new Map();
  else state.readouts.delete(readoutTime);
  for(const id of Object.keys(REGISTRY)){
+  if(id==="pivots"){
+   const calculated=state.settings.pivots.enabled&&state.pivotSource?pivotPoints(state.pivotSource,state.bars,state.settings.pivots.basis):null;
+   const keys=["p","r1","r2","r3","s1","s2","s3"],colors={p:"#f4d35e",r1:"#54d6ef",r2:"#41d89a",r3:"#b58aff",s1:"#f47789",s2:"#ffae57",s3:"#e6e6e6"};
+   if(!state.pivotOverlays&&state.settings.pivots.enabled)state.pivotOverlays=Object.fromEntries(keys.map(key=>[key,state.chart.addLineSeries({title:"Pivot "+key.toUpperCase(),color:colors[key],lineWidth:key==="p"?2:1,lastValueVisible:true,priceLineVisible:false})]));
+   if(state.pivotOverlays)for(const key of keys){const series=state.pivotOverlays[key];series.applyOptions({visible:!!state.settings.pivots.enabled,title:"Pivot "+key.toUpperCase()+" · "+state.settings.pivots.basis});
+    const points=calculated?.lines[key]||[],byTime=new Map(points.map(point=>[point.time,point]));series.setData(state.bars.map(bar=>byTime.has(bar.time)?{time:bar.time,value:byTime.get(bar.time).value}:{time:bar.time}));}
+   state.pivotMetaByTime.clear();if(calculated?.available){for(const point of calculated.lines.p)state.pivotMetaByTime.set(point.time,{sourceTime:point.sourceTime,validFrom:point.validFrom,validTo:point.validTo,basis:calculated.basis,algorithmVersion:calculated.algorithmVersion});
+    const labels={p:"P",r1:"R1",r2:"R2",r3:"R3",s1:"S1",s2:"S2",s3:"S3"};for(const key of keys)for(const point of calculated.lines[key]){if(readoutTime!==null&&point.time!==readoutTime)continue;const rows=state.readouts.get(point.time)||[];rows.push({kind:"pivots",label:labels[key],value:point.value});state.readouts.set(point.time,rows)}}
+   continue;
+  }
   if(id==="ichimoku"){
    const calculated=state.settings.ichimoku.enabled?data(id):null,key="ichimokuOverlays";state.ichimokuValues=calculated?.ichimoku??null;
    if(calculated)addReadout(id,calculated,readoutTime);
@@ -745,15 +790,47 @@ function readout(time){
  if(!state)return "";
  const rows=state.readouts.get(Number(time))||[];
  const values=[];
- const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],sar:["SAR"],obv:["OBV · Broker-Volumen"],mfi:["MFI · Volumenproxy"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],atrBands:["Upper","Middle","Lower"],linearRegression:["Upper","Middle","Lower"],ichimoku:["Tenkan","Kijun","Senkou A (Quelle)","Senkou B (Quelle)","Chikou (Quelle)"],vwap:["VWAP"]};
+ const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],sar:["SAR"],obv:["OBV · Broker-Volumen"],mfi:["MFI · Volumenproxy"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],atrBands:["Upper","Middle","Lower"],linearRegression:["Upper","Middle","Lower"],ichimoku:["Tenkan","Kijun","Senkou A (Quelle)","Senkou B (Quelle)","Chikou (Quelle)"],pivots:["P","R1","R2","R3","S1","S2","S3"],vwap:["VWAP"]};
  for(const id of Object.keys(REGISTRY))if(state.settings[id].enabled){
   for(const label of components[id]){
    const row=rows.find(item=>item.kind===id&&item.label===label);
    if(row)values.push(row.label+" "+(row.kind==="volume"?row.value.toFixed(0):row.value.toFixed(2))+(row.trend?" · "+(row.trend==="UP"?"Aufwärtstrend":"Abwärtstrend"):""));
-   else values.push(id==="vwap"?"VWAP · Kein Volumen":label+" · Warm-up");
+   else values.push(id==="vwap"?"VWAP · Kein Volumen":id==="pivots"?"Pivot · nicht verfügbar":label+" · Warm-up");
   }
  }
+ const pivotMeta=state.pivotMetaByTime.get(Number(time));if(state.settings.pivots.enabled&&pivotMeta)values.push("Quelle "+pivotMeta.basis+" "+new Date(pivotMeta.sourceTime*1000).toISOString().slice(0,10)+" · gültig ab "+new Date(pivotMeta.validFrom*1000).toISOString()+" · "+pivotMeta.algorithmVersion);
  return values.join(" · ")||"Keine aktiven Indikatoren";
+}
+let pivotRequestGeneration=0;
+function schedulePivotRefresh(){
+ if(!state)return;
+ clearInterval(state.pivotRefreshTimer);state.pivotRefreshTimer=null;
+ if(state.settings.pivots.enabled)state.pivotRefreshTimer=setInterval(()=>{if(state?.settings.pivots.enabled)loadPivotSource()},5*60*1000);
+}
+function loadPivotSource(){
+ if(!state)return;
+ state.pivotController?.abort();state.pivotController=null;
+ const generation=++pivotRequestGeneration,scope={account:state.account,symbol:state.symbol,timeframe:state.timeframe,basis:state.settings.pivots.basis};
+ state.pivotSource=null;state.pivotMetaByTime.clear();
+ schedulePivotRefresh();
+ if(!state.settings.pivots.enabled){renderPanes();return}
+ state.settings.pivots.algorithmVersion="classic-floor-v1";state.settings.pivots.source="MT5_VERIFIED";state.settings.pivots.sourceWindow=null;persist();
+ if(!scope.account||!scope.symbol){state.notice.textContent="Pivot Points nicht verfügbar · Konto oder Broker-Symbol fehlt.";renderPanes();return}
+ const controller=new AbortController();state.pivotController=controller;renderPanes();
+ const root=window.location.pathname.startsWith("/stt")?"/stt":"";
+ const url=root+"/api/candles?"+new URLSearchParams({account:scope.account,symbol:scope.symbol,tf:scope.basis,count:"500"});
+ fetch(url,{method:"GET",cache:"no-store",signal:controller.signal}).then(async response=>{
+  const payload=await response.json();
+  if(response.status<200||response.status>=300)throw Error(payload?.detail||"MT5-Historie konnte nicht geladen werden.");
+  if(generation!==pivotRequestGeneration||state.account!==scope.account||state.symbol!==scope.symbol||state.timeframe!==scope.timeframe||state.settings.pivots.basis!==scope.basis)return;
+  if(payload?.source!=="MT5_VERIFIED"||payload?.canExecute!==false||payload?.accountId!==scope.account||payload?.symbol!==scope.symbol||payload?.timeframe!==scope.basis||!Array.isArray(payload?.candles))throw Error("MT5-Historie weicht bei Konto, Symbol, Basis oder Provenienz vom angeforderten Scope ab.");
+  const probe=pivotPoints(payload.candles,[{time:Number(payload.candles[1]?.time)}],scope.basis);
+  if(!probe.available)throw Error(probe.reason||"Keine abgeschlossene Pivot-Periode verfügbar.");
+  state.pivotSource=payload.candles.map(bar=>({...bar}));state.settings.pivots.sourceWindow={from:Number(payload.candles[0].time),to:Number(payload.candles.at(-1).time)};persist();state.notice.textContent="Pivot Points · "+scope.basis+" · MT5_VERIFIED · "+payload.symbol;renderPanes();
+ }).catch(error=>{
+  if(error?.name==="AbortError"||generation!==pivotRequestGeneration)return;
+  state.pivotSource=null;state.pivotMetaByTime.clear();state.notice.textContent="Pivot Points nicht verfügbar · "+String(error?.message||error);renderPanes();
+ });
 }
 function updateBars(bars){
  if(!state||!Array.isArray(bars))return;
@@ -776,15 +853,26 @@ function updateBars(bars){
  state.signature=signature;state.bars=next;
  renderPanes();
 }
-function switchAccount(account){
+function switchAccount(account,symbol=null){
  if(!state)return;
- state.account=account;
+ state.account=account;if(typeof symbol==="string")state.symbol=symbol;
  state.settings=restore(account);state.signature=null;state.bars=[];
- syncPanel();renderPanes();
+ loadPivotSource();syncPanel();renderPanes();
+}
+function setScope(account,symbol,timeframe){
+ if(!state)return;
+ const changed=state.account!==account||state.symbol!==symbol||state.timeframe!==timeframe;
+ state.account=account;state.symbol=symbol;state.timeframe=timeframe;
+ if(changed){state.pivotController?.abort();state.pivotSource=null;state.pivotMetaByTime.clear();loadPivotSource()}
+ renderPanes();
 }
 function updateConfig(kind,prop,val){
  if(!state||!REGISTRY[kind])return false;
  if(prop==="enabled")state.settings[kind].enabled=val===true;
+ else if(kind==="pivots"&&prop==="basis"){
+  if(!["D1","W1"].includes(String(val)))return false;
+  state.settings.pivots.basis=String(val);state.settings.pivots.sourceWindow=null;state.pivotSource=null;state.pivotMetaByTime.clear();loadPivotSource();
+ }
  else if(kind==="volume"&&["upColor","downColor"].includes(prop)){
   if(typeof val!=="string"||!/^#[0-9a-fA-F]{6}$/.test(val))return false;
   state.settings.volume[prop]=val.toLowerCase();
@@ -812,6 +900,8 @@ function updateConfig(kind,prop,val){
   state.notice.textContent="MACD benötigt fast < slow; Werte korrigiert.";
  }
  persist();syncPanel();renderPanes();state.notice.textContent=REGISTRY[kind].name+" aktualisiert.";
+ if(kind==="pivots"&&prop==="enabled"&&val===true)loadPivotSource();
+ if(kind==="pivots"&&prop==="enabled"&&val!==true){state.pivotController?.abort();state.pivotController=null;pivotRequestGeneration++;state.pivotSource=null;state.pivotMetaByTime.clear();schedulePivotRefresh()}
  return true;
 }
 function applySettings(raw){
@@ -820,6 +910,11 @@ function applySettings(raw){
  for(const id of Object.keys(REGISTRY)){
   const input=raw[id];if(!input||typeof input!=="object")continue;
   fresh[id].enabled=input.enabled===true;
+  if(id==="pivots"){
+   if(["D1","W1"].includes(input.basis))fresh.pivots.basis=input.basis;
+   if(input.algorithmVersion==="classic-floor-v1"&&input.source==="MT5_VERIFIED"&&input.sourceWindow&&Number.isSafeInteger(input.sourceWindow.from)&&Number.isSafeInteger(input.sourceWindow.to)&&input.sourceWindow.from>0&&input.sourceWindow.to>=input.sourceWindow.from)
+    fresh.pivots.sourceWindow={from:input.sourceWindow.from,to:input.sourceWindow.to};
+  }
   if(id==="volume")for(const key of ["upColor","downColor"])
    if(typeof input[key]==="string"&&/^#[0-9a-fA-F]{6}$/.test(input[key]))fresh.volume[key]=input[key].toLowerCase();
   if(id==="vwap"){const config=sessionConfig(input);if(config){fresh.vwap.timeZone=config.timeZone;fresh.vwap.sessionStart=config.sessionStart}}
@@ -834,9 +929,9 @@ function applySettings(raw){
  }
  if(fresh.sar.step>fresh.sar.maxStep)fresh.sar={...defaults().sar,enabled:fresh.sar.enabled};
  if(fresh.macd.fast>=fresh.macd.slow)fresh.macd.fast=Math.max(2,fresh.macd.slow-1);
-  state.settings=fresh;persist();syncPanel();renderPanes();
+  state.settings=fresh;persist();syncPanel();renderPanes();if(fresh.pivots.enabled)loadPivotSource();
 }
-function mount({chart,host,panel,account="titan",onRender}){
+function mount({chart,host,panel,account="titan",symbol="XAUUSD",onRender}){
  if(state||!chart||!host||!panel)return;
  const stack=document.createElement("div");stack.className="cs-indicator-panes";
  host.parentElement.insertAdjacentElement("afterend",stack);
@@ -845,7 +940,7 @@ function mount({chart,host,panel,account="titan",onRender}){
  head.textContent="Zusätzliche Indikator-Panes · unabhängig ein-/ausblendbar";panel.append(head,controls);
  const notice=document.createElement("p");notice.className="cs-indicator-notice";notice.textContent="Indikatoren basieren auf geladenen Brokerkerzen. Warm-up erforderlich.";
  panel.append(notice);
- state={chart,host,stack,controls,notice,account,onRender,timeframe:"M15",settings:restore(account),bars:[],signature:null,panes:new Map(),streams:new Map(),vwapOverlay:null,supertrendUpOverlay:null,supertrendDownOverlay:null,sarUpOverlay:null,sarDownOverlay:null,donchianOverlays:null,keltnerOverlays:null,ichimokuValues:null,readouts:new Map()};
+ state={chart,host,stack,controls,notice,account,symbol,onRender,timeframe:"M15",settings:restore(account),bars:[],signature:null,panes:new Map(),streams:new Map(),vwapOverlay:null,supertrendUpOverlay:null,supertrendDownOverlay:null,sarUpOverlay:null,sarDownOverlay:null,donchianOverlays:null,keltnerOverlays:null,ichimokuValues:null,readouts:new Map(),pivotSource:null,pivotOverlays:null,pivotMetaByTime:new Map(),pivotController:null,pivotRefreshTimer:null};
  controls.addEventListener("change",evt=>{
   const target=evt.target;
   if(!target.dataset.kind)return;
@@ -853,9 +948,9 @@ function mount({chart,host,panel,account="titan",onRender}){
   else updateConfig(target.dataset.kind,target.dataset.parameter,target.value);
  });
  chart.timeScale().subscribeVisibleLogicalRangeChange(syncRanges);
- syncPanel();renderPanes();
+ syncPanel();renderPanes();if(state.settings.pivots.enabled)loadPivotSource();
 }
-function setTimeframe(timeframe){if(!state||!Object.hasOwn({M1:1,M5:1,M15:1,M30:1,H1:1,H4:1,D1:1,W1:1},timeframe))return;state.timeframe=timeframe;renderPanes()}
-window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,setTimeframe,updateConfig,settings,readout,ichimokuValues:()=>state?.ichimokuValues??null,createIncremental,
- registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,stochRsi,cci,momentum,roc,parabolicSar,obv,mfi,macd,atr,adx,supertrend,donchian,keltner,atrBands,linearRegressionChannel,ichimoku,vwap,volumes})});
+function setTimeframe(timeframe){if(!state||!Object.hasOwn({M1:1,M5:1,M15:1,M30:1,H1:1,H4:1,D1:1,W1:1},timeframe))return;setScope(state.account,state.symbol,timeframe)}
+window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,setScope,setTimeframe,updateConfig,settings,readout,ichimokuValues:()=>state?.ichimokuValues??null,createIncremental,
+ registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,stochRsi,cci,momentum,roc,parabolicSar,obv,mfi,macd,atr,adx,supertrend,donchian,keltner,atrBands,linearRegressionChannel,ichimoku,pivotPoints,vwap,volumes})});
 })();

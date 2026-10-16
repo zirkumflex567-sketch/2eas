@@ -22,7 +22,7 @@ const {createHash}=require("node:crypto");
   let alertPollingEnabled=false,alertQuotePrice=4100.125,alertQuoteRequests=[],quoteReadRequests=[];
 let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,invalidStopGeometry=false,trailingStop=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,deferTitanPositions=false,releaseTitanPositions=null,holdScope=null,heldScopeResolvers=[],completedHeldScopeResponses=0,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,multiPositionRows=false,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badOrderShape=false,badDealRow=false,symbolCatalogTruncated=false,symbolCatalogInvalidRows=0,hideFavoriteSymbol=false,evidenceRequests=[],executionQualityRequests=[],mfeRequests=[],historicalMtfRequests=[],lifecycleFixtureEnabled=false;
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
-  const confirmTfReads=[],regimeRequests=[];let historicalMtfEnabled=false,confirmTfHistoryAvailable=false;
+  const confirmTfReads=[],regimeRequests=[],pivotRequests=[];let historicalMtfEnabled=false,confirmTfHistoryAvailable=false,pivotWrongSymbol=false;
   const calendarRequests=[];
   let calendarRevisionPhase=0;
   await page.route("**/api/chart/v1/regimes?*",async route=>{
@@ -36,6 +36,11 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   });
   await page.route("**/api/candles?*",async route=>{
     const url=new URL(route.request().url()),params=Object.fromEntries(url.searchParams);
+    if(params.count==="500"){
+      pivotRequests.push({method:route.request().method(),params});
+      const candles=[{time:1699827200,open:100,high:110,low:90,close:105},{time:1699913600,open:105,high:115,low:95,close:110},{time:1700000000,open:110,high:120,low:100,close:115},{time:1700086400,open:115,high:125,low:105,close:120}];
+      await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({accountId:params.account,symbol:pivotWrongSymbol?"XAUUSD.p":params.symbol,timeframe:params.tf,source:"MT5_VERIFIED",canExecute:false,candles})});return;
+    }
     if(historicalMtfEnabled){const tfSeconds={D1:86400,H4:14400,H1:3600,M15:900,M5:300}[params.tf];historicalMtfRequests.push({method:route.request().method(),params});assert.ok(tfSeconds,"historical MTF uses a supported frame");const asOf=Math.floor(Date.parse("2026-10-14T12:30:00Z")/1000),anchor=Math.floor(asOf/tfSeconds)*tfSeconds;const candles=Array.from({length:301},(_,index)=>{const time=anchor-(300-index)*tfSeconds,close=4100+index*0.01;return {time,open:close,high:close+0.5,low:close-0.5,close}});await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({accountId:params.account,symbol:params.symbol,timeframe:params.tf,source:"MT5_VERIFIED",canExecute:false,candles})});return}
     confirmTfReads.push({method:route.request().method(),account:url.searchParams.get("account"),symbol:url.searchParams.get("symbol"),tf:url.searchParams.get("tf"),count:url.searchParams.get("count")});
     const candles=confirmTfHistoryAvailable?[{time:Math.floor(Date.parse("2026-10-14T11:00:00Z")/1000),open:4100,high:4101,low:4099,close:4100.5}]:[];
@@ -745,6 +750,20 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().tool),"cursor");
 
   await page.evaluate(()=>ChartStudioBeta.updateCandles(window.__chartSmokeCandles));
+  const pivotToggle=page.locator('.cs-indicator-control input[data-kind="pivots"][type="checkbox"]');
+  if(await pivotToggle.isChecked())await pivotToggle.uncheck();
+  await pivotToggle.check();
+  await page.waitForFunction(()=>ChartStudioIndicators.readout(window.__chartSmokeCandles.at(-1).time).includes("classic-floor-v1"));
+  assert.ok(await page.evaluate(()=>ChartStudioIndicators.readout(window.__chartSmokeCandles.at(-1).time)).then(text=>text.includes("R1")&&text.includes("S3")&&text.includes("Quelle D1")));
+  assert.deepEqual(pivotRequests.at(-1),{method:"GET",params:{account:"titan",symbol:"XAUUSD",tf:"D1",count:"500"}});
+  assert.deepEqual(await page.evaluate(()=>ChartStudioBeta.exportDocument().indicators.pivots),{enabled:true,basis:"D1",algorithmVersion:"classic-floor-v1",source:"MT5_VERIFIED",sourceWindow:{from:1699827200,to:1700086400}},"Workspace preserves algorithm, provenance, basis and source window");
+  await page.locator('.cs-indicator-control select[data-kind="pivots"][data-parameter="basis"]').selectOption("W1");
+  await page.waitForFunction(()=>document.querySelector(".cs-indicator-notice")?.textContent.includes("Pivot Points · W1"));
+  assert.equal(pivotRequests.at(-1).params.tf,"W1");
+  pivotWrongSymbol=true;await page.locator('.cs-indicator-control select[data-kind="pivots"][data-parameter="basis"]').selectOption("D1");
+  await page.waitForFunction(()=>document.querySelector(".cs-indicator-notice")?.textContent.includes("weicht bei Konto"));
+  assert.ok(pivotRequests.every(item=>item.method==="GET"));
+  pivotWrongSymbol=false;await pivotToggle.uncheck();
   await page.locator('.cs-indicator-control input[data-kind="rsi"][type="checkbox"]').check();
   await page.waitForSelector('.cs-indicator-pane[data-indicator="rsi"]',{state:"visible"});
   await page.evaluate(()=>{const bar=window.__chartSmokeCandles.at(-1);window.__chartCrosshairSubscribers[0]({time:bar.time,seriesData:new Map([[candleSeries,bar]])})});

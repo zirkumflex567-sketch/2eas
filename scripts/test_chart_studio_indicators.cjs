@@ -340,3 +340,37 @@ for(const [kind,options,keys] of [
 }
 
 console.log("PASS Chart Studio RSI/Stochastic/ATR/MACD/ADX/VWAP/SAR/OBV/MFI/Donchian/Keltner/linear-regression math, warm-up, alignment and read-only checks");
+
+// Classic floor pivots use only completed source candles, retain their levels
+// through observed-session gaps, and carry exact source-window metadata.
+const pivotSource=[
+ {time:1700000000,open:100,high:110,low:90,close:105},
+ {time:1700086400,open:105,high:115,low:95,close:110},
+ {time:1700259200,open:110,high:120,low:100,close:115}
+];
+const pivotInputSnapshot=JSON.stringify(pivotSource);
+const pivotTarget=[1700000000,1700086400,1700172800,1700259200,1700345600].map(time=>({time}));
+const pivots=math.pivotPoints(pivotSource,pivotTarget,"D1");
+assert.equal(pivots.algorithmVersion,"classic-floor-v1");
+assert.equal(pivots.source,"MT5_VERIFIED");
+assert.equal(pivots.basis,"D1");
+assert.equal(pivots.lines.p.length,4,"no level before a later source bar confirms the close");
+assert.equal(pivots.lines.p[0].time,1700086400);
+near(pivots.lines.p[0].value,101.6666666667,1e-8);
+near(pivots.lines.r1[0].value,113.3333333333,1e-8);
+near(pivots.lines.s1[0].value,93.3333333333,1e-8);
+near(pivots.lines.r2[0].value,121.6666666667,1e-8);
+near(pivots.lines.s2[0].value,81.6666666667,1e-8);
+near(pivots.lines.r3[0].value,133.3333333333,1e-8);
+near(pivots.lines.s3[0].value,73.3333333333,1e-8);
+assert.equal(pivots.lines.p[1].validTo,1700259200,"levels carry through a weekend/market gap");
+assert.equal(pivots.lines.p[2].sourceTime,1700086400);
+assert.equal(pivots.lines.p[2].validTo,null,"latest confirmed level remains active without a future boundary");
+assert.equal(JSON.stringify(pivotSource),pivotInputSnapshot,"Pivot calculation does not mutate broker source candles");
+for(const malformed of [
+ [pivotSource[0],pivotSource[0],pivotSource[1]],
+ [pivotSource[1],pivotSource[0]],
+ [pivotSource[0],{...pivotSource[1],high:94}],
+ [pivotSource[0],{...pivotSource[1],close:Infinity}]
+])assert.equal(math.pivotPoints(malformed,pivotTarget,"D1").available,false,"malformed source must fail closed");
+assert.equal(math.pivotPoints(pivotSource,pivotTarget,"M15").available,false,"unsupported source basis fails closed");

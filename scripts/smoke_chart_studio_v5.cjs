@@ -447,6 +447,35 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.changeAccount("at027-native-ichimoku-other");const accountCleared=engine.inspect().ichimokuCount===0&&engine.inspect().averageCount===0;
    engine.destroy();host.remove();return {apiAvailable,initialMatches,logicalCount,options,cadences,collisionRejected,invalidRejected,rejectedPatchPreserved,formingMatches,appendMatches,updated,updatedMatches,zeroDisplacement,removed,afterRemove,isolated,overLimitRejected,combinedCount,accountCleared};
   });
+  const pivotProbe=await page.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:900px;height:360px;position:fixed;left:-2000px;top:0";document.body.append(host);
+   const account="at030-native-pivots",symbol="XAUUSD",engine=ChartStudioV5.createStudioV5(host,account,{symbol,timeframe:"M15"});
+   const source=[{time:1699827200,open:100,high:110,low:90,close:105},{time:1699913600,open:105,high:115,low:95,close:110},{time:1700000000,open:110,high:120,low:100,close:115},{time:1700086400,open:115,high:125,low:105,close:120}];
+   const bars=Array.from({length:24},(_,i)=>({time:1700000000+i*900,open:4100+i,high:4102+i,low:4098+i,close:4101+i}));engine.setCandles(bars);
+   const apiAvailable=typeof ChartStudioV5.calculatePivotPoints==="function"&&typeof engine.addPivotPoints==="function"&&typeof engine.updatePivotPoints==="function"&&typeof engine.removePivotPoints==="function"&&typeof engine.pivotOptions==="function";
+   if(!apiAvailable){engine.destroy();host.remove();return {apiAvailable}}
+   const options={id:"pivots-main",color:"#f4d35e",account,symbol,basis:"D1",source:"MT5_VERIFIED",sourceWindow:{from:source[0].time,to:source.at(-1).time}};
+   const match=rows=>{
+    const expected=ChartStudioIndicators.math.pivotPoints(source,rows,"D1"),actual=engine.inspect().pivotSeries.find(item=>item.id===options.id);
+    const keys=["p","r1","r2","r3","s1","s2","s3"];
+    return !!actual&&keys.every(key=>actual.lines[key].length===expected.lines[key].length&&actual.lines[key].every((point,index)=>point.time===expected.lines[key][index].time&&point.sourceTime===expected.lines[key][index].sourceTime&&point.validFrom===expected.lines[key][index].validFrom&&point.validTo===expected.lines[key][index].validTo&&Math.abs(point.value-expected.lines[key][index].value)<1e-9))&&
+     rows.every(bar=>keys.every(key=>{const expectedPoint=expected.lines[key].find(point=>point.time===bar.time),readout=engine.readDataWindow(bar.time).indicators.find(item=>item.id===options.id+":"+key);return expectedPoint?readout?.state==="AVAILABLE"&&Math.abs(readout.value-expectedPoint.value)<1e-9:readout?.state!=="AVAILABLE"}));
+   };
+   engine.addPivotPoints(options,source);const initialMatches=match(bars),count=engine.inspect().pivotCount,metadata=engine.pivotOptions(options.id);
+   let accountRejected=false,symbolRejected=false,duplicateRejected=false;
+   try{engine.addPivotPoints({...options,account:"other-account",id:"pivot-account-bad"},source)}catch(_){accountRejected=true}
+   try{engine.addPivotPoints({...options,symbol:"XAUUSD.p",id:"pivot-symbol-bad"},source)}catch(_){symbolRejected=true}
+   try{engine.addAverage({id:options.id,color:"#ffffff"},[])}catch(_){duplicateRejected=true}
+   const changed={...bars.at(-1),close:bars.at(-1).close+2,high:bars.at(-1).high+2};engine.updateLast(changed);const formingMatches=match([...bars.slice(0,-1),changed]);
+   const appended={...changed,time:changed.time+900,open:changed.close,high:changed.close+1,low:changed.close-1,close:changed.close+.4};engine.updateLast(appended);const appendMatches=match([...bars.slice(0,-1),changed,appended]);
+   const changedSource=source.map(bar=>({...bar}));changedSource[2]={...changedSource[2],high:changedSource[2].high+2};const sourceUpdated=engine.updatePivotPoints(options.id,changedSource),sourceMatches=sourceUpdated&&engine.inspect().pivotSeries.find(item=>item.id===options.id).lines.p.at(-1).value===ChartStudioIndicators.math.pivotPoints(changedSource,[appended],"D1").lines.p[0].value;
+   let wrongBasisRejected=false;try{engine.addPivotPoints({...options,id:"pivot-basis-bad",basis:"M15"},source)}catch(_){wrongBasisRejected=true}
+   const removed=engine.removePivotPoints(options.id),afterRemove=engine.inspect().pivotCount;
+   engine.addPivotPoints({...options,id:"pivots-account-cleanup"},source);engine.changeAccount("at030-native-pivots-other");const accountCleared=engine.inspect().pivotCount===0;
+   engine.destroy();host.remove();return {apiAvailable,initialMatches,count,metadata,accountRejected,symbolRejected,duplicateRejected,formingMatches,appendMatches,sourceUpdated,sourceMatches,wrongBasisRejected,removed,afterRemove,accountCleared};
+  });
+  assert.equal(pivotProbe.apiAvailable,true);assert.equal(pivotProbe.initialMatches,true);assert.equal(pivotProbe.count,1);assert.equal(pivotProbe.metadata.source,"MT5_VERIFIED");assert.equal(pivotProbe.metadata.basis,"D1");
+  assert.equal(pivotProbe.accountRejected,true);assert.equal(pivotProbe.symbolRejected,true);assert.equal(pivotProbe.duplicateRejected,true);assert.equal(pivotProbe.formingMatches,true);assert.equal(pivotProbe.appendMatches,true);assert.equal(pivotProbe.sourceUpdated,true);assert.equal(pivotProbe.sourceMatches,true);assert.equal(pivotProbe.wrongBasisRejected,true);assert.equal(pivotProbe.removed,true);assert.equal(pivotProbe.afterRemove,0);assert.equal(pivotProbe.accountCleared,true);
   const oscillatorProbe=await page.evaluate(()=>{
    const host=document.createElement("div");host.style.cssText="width:900px;height:420px;position:fixed;left:-2000px;top:0";document.body.append(host);
    const engine=ChartStudioV5.createStudioV5(host,"at001-native-oscillator",{symbol:"XAUUSD",timeframe:"M5"});

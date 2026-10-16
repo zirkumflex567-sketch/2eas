@@ -19,6 +19,7 @@ const entries=Object.freeze([
  {id:"atrBands",name:"ATR Bands",group:"Volatilität",desc:"SMA-Mittellinie plus/minus Wilder-ATR (20 / 14 × 2); eigener Kanal neben dem EMA-zentrierten Keltner",type:"toggle",kind:"atrBands"},
  {id:"linearRegression",name:"Linear Regression Channel",group:"Trend",desc:"Rollierende OLS-Mittellinie mit Residual-Standardabweichungsband; kein Vorwärtsprojekt",type:"toggle",kind:"linearRegression"},
  {id:"ichimoku",name:"Ichimoku Cloud",group:"Trend",desc:"Tenkan/Kijun, vorwärts projizierte Senkou-Wolke und rückwärts versetztes Chikou; Quellenzeiten bleiben sichtbar",type:"toggle",kind:"ichimoku"},
+ {id:"pivots",name:"Classic Pivot Points",group:"Levels",desc:"Brokerbestätigte D1/W1-Pivots P sowie R1–R3/S1–S3 aus abgeschlossenen MT5-Kerzen; keine synthetischen Bars",type:"toggle",kind:"pivots"},
  {id:"momentum",name:"Momentum",group:"Momentum",desc:"Close-Differenz zum Schlusskurs vor der gewählten Periode",type:"oscillator",kind:"momentum"},
  {id:"roc",name:"Rate of Change (ROC)",group:"Momentum",desc:"Prozentuale Close-Änderung über die gewählte Periode",type:"oscillator",kind:"roc"},
  {id:"sar",name:"Parabolic SAR",group:"Trend",desc:"Trendfolge-Overlay mit konfigurierbarem Beschleunigungsfaktor (AF 0,02 / 0,20)",type:"toggle",kind:"sar"},
