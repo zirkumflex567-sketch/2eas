@@ -6,6 +6,7 @@
 "use strict";
 const MAX=8, PREFIX="2eas:studio:oscillators:v2:", LEGACY_PREFIX="2eas:studio:oscillators:v1:";
 const KINDS=Object.freeze(["rsi","macd","atr","adx","stochastic","stochrsi","cci","momentum","roc"]);
+const STREAM_KINDS=new Set(["rsi","macd","atr"]);
 const COLORS=Object.freeze(["#e8bb72","#54cee9","#a995ff","#63dfb6","#f7a1ae","#f1dca5","#82bdfa","#dfa2ec"]);
 const clone=o=>JSON.parse(JSON.stringify(o));
 const validColor=c=>typeof c==="string"&&/^#[0-9a-fA-F]{6}$/.test(c);
@@ -80,6 +81,20 @@ function destroyPane(id){
  const p=state.panes.get(id);if(!p)return;
  p.observer?.disconnect();p.chart.remove();p.shell.remove();state.panes.delete(id);
 }
+function streamSettings(cfg){
+ return cfg.kind==="macd"?{fast:cfg.fast,slow:cfg.slow,signal:cfg.signal}:{period:cfg.period};
+}
+function streamKey(cfg){return JSON.stringify([cfg.kind,streamSettings(cfg)])}
+function sameBar(a,b){return a&&b&&a.time===b.time&&a.open===b.open&&a.high===b.high&&a.low===b.low&&
+ a.close===b.close&&a.tick_volume===b.tick_volume&&a.real_volume===b.real_volume}
+function oneTailChange(previous,next){
+ if(!previous.length||!next.length)return false;
+ const sameLength=next.length===previous.length,append=next.length===previous.length+1;
+ if(!sameLength&&!append)return false;
+ const untouched=sameLength?previous.length-1:previous.length;
+ for(let i=0;i<untouched;i++)if(!sameBar(previous[i],next[i]))return false;
+ return sameLength?previous.at(-1).time===next.at(-1).time:next.at(-1).time>previous.at(-1).time;
+}
 function createPane(cfg){
  const shell=document.createElement("section");shell.className="cs-indicator-pane cs-osc-pane";
  shell.dataset.instance=cfg.id;shell.dataset.kind=cfg.kind;
@@ -131,10 +146,11 @@ function createPane(cfg){
  state.panes.set(cfg.id,pane);
  return pane;
 }
-function redraw(){
+function redraw(incrementalUpdates=null){
  if(!state)return;
  const ids=new Set(state.items.filter(item=>item.visible).map(item=>item.id));
  for(const id of [...state.panes.keys()])if(!ids.has(id))destroyPane(id);
+ if(!incrementalUpdates)state.streams.clear();
  const api=window.ChartStudioIndicators;
  for(const cfg of state.items){
   if(!cfg.visible)continue;
@@ -148,6 +164,24 @@ function redraw(){
    if(kind===cfg.kind||kind==="macd"||kind==="stochK")series.applyOptions({color:cfg.color,lineWidth:cfg.lineWidth});
    else if(kind==="signal")series.applyOptions({lineWidth:cfg.lineWidth});
   }
+  if(STREAM_KINDS.has(cfg.kind)){
+   let stream=state.streams.get(cfg.id);
+   if(!incrementalUpdates||!stream||stream.key!==streamKey(cfg)){
+    if(typeof api?.createIncremental==="function"){
+     stream={key:streamKey(cfg),engine:api.createIncremental(cfg.kind,state.bars,streamSettings(cfg))};
+     state.streams.set(cfg.id,stream);
+    }else{state.streams.delete(cfg.id);stream=null}
+   }
+   const delta=incrementalUpdates?.get(cfg.id);
+   if(stream&&delta){
+    const time=state.bars.at(-1)?.time;
+    for(const [name,series] of Object.entries(p.lines)){
+     const rows=delta[name]||[],point=rows.at(-1);
+     if(point)series.update(point);else if(time)series.update({time});
+    }
+    continue;
+   }
+  }else state.streams.delete(cfg.id);
   const calculated=api?.calculate(cfg.kind,state.bars,cfg)||{};
   const aligned=new Map();
   for(const [name,series] of Object.entries(p.lines)){
@@ -247,8 +281,23 @@ function updateBars(bars){
   [bars.length,first.time,first.close,last.time,last.open,last.close,
    last.high,last.low,last.tick_volume,last.real_volume].join("|");
  if(signature===state.signature)return;
+ const previous=state.bars,next=window.ChartStudioIndicators?.math.validateBars(bars)||[];
+ if(oneTailChange(previous,next)){
+  const updates=new Map(),active=state.items.filter(item=>item.visible&&STREAM_KINDS.has(item.kind));
+  let valid=active.length>0;
+  for(const cfg of active){
+   const stream=state.streams.get(cfg.id);
+   if(!stream||stream.key!==streamKey(cfg)){valid=false;break}
+  }
+  if(valid){
+   try{for(const cfg of active)updates.set(cfg.id,state.streams.get(cfg.id).engine.updateLast(next.at(-1)))}
+   catch(_){state.streams.clear();updates.clear()}
+  }
+  state.signature=signature;state.bars=next;
+  if(updates.size){redraw(updates);return}
+ }else state.streams.clear();
  state.signature=signature;
- state.bars=window.ChartStudioIndicators?.math.validateBars(bars)||[];
+ state.bars=next;
  redraw();
 }
 function switchAccount(account){
@@ -277,7 +326,7 @@ function mount({chart,host,panel,account="titan"}){
  // Keep the original legacy indicator panes untouched.
  host.parentElement.insertAdjacentElement("afterend",stack);
  state={chart,host,root,rows,stack,status,count,account,
-  items:restore(account),bars:[],signature:null,panes:new Map()};
+  items:restore(account),bars:[],signature:null,panes:new Map(),streams:new Map()};
  tools.addEventListener("click",event=>{
   const kind=event.target.closest("button[data-add]")?.dataset.add;
   if(kind)add(kind);

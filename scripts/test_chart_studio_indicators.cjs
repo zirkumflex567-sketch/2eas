@@ -258,4 +258,36 @@ assert.equal(window.ChartStudioIndicators.calculate("mfi",flowBars,{period:2}).m
 assert.ok(Object.hasOwn(window.ChartStudioIndicators.registry,"obv"));
 assert.deepEqual(JSON.parse(JSON.stringify(window.ChartStudioIndicators.settings().mfi)),{enabled:false,period:14});
 
+// Incremental RSI/MACD/ATR streams must match a complete calculation after
+// same-bar replacement and append, including warm-up transitions.
+const initialStreamBars=Array.from({length:60},(_,i)=>{
+ const close=100+Math.sin(i/3)*4+i*.07;
+ return {time:1700800000+i*900,open:close-.2,high:close+1+(i%4)*.1,low:close-1-(i%3)*.1,close};
+});
+for(const [kind,options,keys] of [
+ ["rsi",{period:14},["rsi"]],
+ ["atr",{period:14},["atr"]],
+ ["macd",{fast:12,slow:26,signal:9},["macd","signal","histogram"]]
+]){
+ const streamBars=initialStreamBars.map(bar=>({...bar}));
+ const incremental=window.ChartStudioIndicators.createIncremental(kind,streamBars,options);
+ assert.equal(typeof incremental.snapshot,"function");
+ assert.equal(typeof incremental.updateLast,"function");
+ const equalFull=()=>{
+  const expected=window.ChartStudioIndicators.calculate(kind,streamBars,options);
+  const actual=incremental.snapshot();
+  for(const key of keys)assert.deepEqual(JSON.parse(JSON.stringify(actual[key])),JSON.parse(JSON.stringify(expected[key])),kind+" "+key+" parity");
+ };
+ equalFull();
+ const replacement={...streamBars.at(-1),close:streamBars.at(-1).close+1.15,high:streamBars.at(-1).high+1.2};
+ streamBars[streamBars.length-1]=replacement;
+ incremental.updateLast(replacement);equalFull();
+ const replacementAgain={...replacement,close:replacement.close-.7,low:replacement.low-.8};
+ streamBars[streamBars.length-1]=replacementAgain;
+ incremental.updateLast(replacementAgain);equalFull();
+ const appended={time:streamBars.at(-1).time+900,open:101,high:103,low:99,close:102.5};
+ streamBars.push(appended);incremental.updateLast(appended);equalFull();
+ assert.throws(()=>incremental.updateLast({...streamBars[0],time:streamBars[0].time+1}),/out of order/i);
+}
+
 console.log("PASS Chart Studio RSI/Stochastic/ATR/MACD/ADX/VWAP/SAR/OBV/MFI/Donchian/Keltner/linear-regression math, warm-up, alignment and read-only checks");

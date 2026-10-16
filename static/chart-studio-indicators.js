@@ -359,6 +359,70 @@ function calc(kind,candles,settings={}){
  if(kind==="linearRegression")return {linearRegression:linearRegressionChannel(candles,settings.period??20,settings.multiplier??2)};
  throw Error("Unknown indicator: "+kind);
 }
+function createIncremental(kind,input,settings={}){
+ if(!["rsi","atr","macd"].includes(kind))throw Error("Unsupported incremental indicator");
+ const normalized=kind==="macd"?{fast:settings.fast,slow:settings.slow,signal:settings.signal}:{period:settings.period};
+ if(kind==="macd"){
+  if(!Number.isInteger(normalized.fast)||normalized.fast<2||normalized.fast>300||
+     !Number.isInteger(normalized.slow)||normalized.slow<3||normalized.slow>300||normalized.fast>=normalized.slow||
+     !Number.isInteger(normalized.signal)||normalized.signal<2||normalized.signal>200)throw Error("Invalid incremental MACD settings");
+ }else if(!Number.isInteger(normalized.period)||normalized.period<2||normalized.period>200)throw Error("Invalid incremental period");
+ const bars=validateBars(input),keys=kind==="macd"?["macd","signal","histogram"]:[kind];
+ const values=Object.fromEntries(keys.map(key=>[key,[]]));
+ const initial=()=>kind==="rsi"?{count:0,gainSum:0,lossSum:0,gain:null,loss:null}:
+  kind==="atr"?{count:0,sum:0,average:null}:{fast:null,slow:null,signal:null,ready:0};
+ const step=(prior,bar,index,previous)=>{
+  const next={...prior},points=Object.fromEntries(keys.map(key=>[key,[]]));
+  const add=(key,value,color)=>{const row={time:bar.time,value};if(color)row.color=color;points[key].push(row)};
+  if(kind==="rsi"){
+   if(index===0)return {state:next,points};
+   const change=bar.close-previous.close;
+   if(next.count<normalized.period){next.gainSum+=Math.max(change,0);next.lossSum+=Math.max(-change,0);next.count++;
+    if(next.count===normalized.period){next.gain=next.gainSum/normalized.period;next.loss=next.lossSum/normalized.period}}
+   else{next.gain=(next.gain*(normalized.period-1)+Math.max(change,0))/normalized.period;
+    next.loss=(next.loss*(normalized.period-1)+Math.max(-change,0))/normalized.period}
+   if(next.count>=normalized.period){const gain=next.gain,loss=next.loss;
+    add("rsi",gain===0&&loss===0?50:loss===0?100:gain===0?0:100-100/(1+gain/loss))}
+  }else if(kind==="atr"){
+   const tr=Math.max(bar.high-bar.low,previous?Math.abs(bar.high-previous.close):0,previous?Math.abs(bar.low-previous.close):0);
+   if(next.count<normalized.period){next.sum+=tr;next.count++;if(next.count===normalized.period)next.average=next.sum/normalized.period}
+   else next.average=(next.average*(normalized.period-1)+tr)/normalized.period;
+   if(next.average!==null)add("atr",next.average);
+  }else{
+   const {fast,slow,signal}=normalized;
+   next.fast=next.fast===null?bar.close:next.fast+2/(fast+1)*(bar.close-next.fast);
+   next.slow=next.slow===null?bar.close:next.slow+2/(slow+1)*(bar.close-next.slow);
+   if(index>=slow-1){const value=next.fast-next.slow;next.ready++;
+    next.signal=next.signal===null?value:next.signal+2/(signal+1)*(value-next.signal);
+    add("macd",value);
+    if(next.ready>=signal){add("signal",next.signal);add("histogram",value-next.signal,value>=next.signal?"rgba(66,213,178,.75)":"rgba(249,107,126,.75)")}}
+  }
+  return {state:next,points};
+ };
+ let current=initial(),beforeCurrent=current;
+ for(let i=0;i<bars.length;i++){
+  beforeCurrent=current;
+  const result=step(current,bars[i],i,bars[i-1]);current=result.state;
+  for(const key of keys)values[key].push(...result.points[key]);
+ }
+ const snapshot=()=>Object.fromEntries(keys.map(key=>[key,values[key].map(row=>({...row}))]));
+ return Object.freeze({snapshot,updateLast(bar){
+  const checked=validateBars([bar]);
+  if(checked.length!==1)throw Error("Invalid incremental candle");
+  const candidate=checked[0],last=bars.at(-1),replace=!!last&&candidate.time===last.time;
+  if(last&&candidate.time<last.time)throw Error("Incremental history is out of order");
+  let index,previous,baseline;
+  if(replace){index=bars.length-1;previous=bars[index-1];baseline=beforeCurrent;bars[index]=candidate}
+  else{index=bars.length;previous=last;baseline=current;beforeCurrent=current;bars.push(candidate)}
+  const result=step(baseline,candidate,index,previous);current=result.state;
+  const delta={};
+  for(const key of keys){const rows=result.points[key],series=values[key];
+   if(replace&&series.at(-1)?.time===candidate.time)series.pop();
+   if(rows.length){series.push(...rows);delta[key]=rows.map(row=>({...row}))}else delta[key]=[];
+  }
+  return delta;
+ }});
+}
 function defaults(){
  return {rsi:{enabled:false,period:14},macd:{enabled:false,fast:12,slow:26,signal:9},
   atr:{enabled:false,period:14},volume:{enabled:false,upColor:"#41cce9",downColor:"#f7758b"},adx:{enabled:false,period:14},
@@ -425,17 +489,35 @@ function syncPanel(){
  for(const id of Object.keys(REGISTRY))state.controls.append(box(id));
 }
 function data(kind){return calc(kind,state.bars,state.settings[kind])}
-function addReadout(kind,calculated){
+const STREAM_KINDS=new Set(["rsi","macd","atr"]);
+function streamSettings(kind){
+ const cfg=state.settings[kind];
+ return kind==="macd"?{fast:cfg.fast,slow:cfg.slow,signal:cfg.signal}:{period:cfg.period};
+}
+function streamKey(kind){return JSON.stringify([kind,streamSettings(kind)])}
+function sameBar(a,b){return a&&b&&a.time===b.time&&a.open===b.open&&a.high===b.high&&a.low===b.low&&
+ a.close===b.close&&a.tick_volume===b.tick_volume&&a.real_volume===b.real_volume}
+function oneTailChange(previous,next){
+ if(!previous.length||!next.length)return false;
+ const sameLength=next.length===previous.length,append=next.length===previous.length+1;
+ if(!sameLength&&!append)return false;
+ const untouched=sameLength?previous.length-1:previous.length;
+ for(let i=0;i<untouched;i++)if(!sameBar(previous[i],next[i]))return false;
+ return sameLength?previous.at(-1).time===next.at(-1).time:next.at(-1).time>previous.at(-1).time;
+}
+function addReadout(kind,calculated,onlyTime=null){
  const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],sar:["SAR"],obv:["OBV · Broker-Volumen"],mfi:["MFI · Volumenproxy"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],linearRegression:["Upper","Middle","Lower"],vwap:["VWAP"]}[kind];
  if(kind==="donchian"||kind==="keltner"||kind==="linearRegression"){
   const components=["upper","middle","lower"];
   for(let i=0;i<components.length;i++)for(const point of calculated[kind][components[i]]){
+   if(onlyTime!==null&&point.time!==onlyTime)continue;
    const rows=state.readouts.get(point.time)||[];rows.push({kind,label:labels[i],value:point.value});state.readouts.set(point.time,rows);
   }
   return;
  }
  const keys=Object.keys(calculated);
  for(let i=0;i<keys.length;i++)for(const point of calculated[keys[i]]||[]){
+  if(onlyTime!==null&&point.time!==onlyTime)continue;
   const rows=state.readouts.get(point.time)||[];
   rows.push({kind,label:labels[i],value:point.value,trend:point.trend});state.readouts.set(point.time,rows);
  }
@@ -496,13 +578,16 @@ function createPane(kind){
  state.panes.set(kind,pane);
  return pane;
 }
-function renderPanes(){
+function renderPanes(incrementalUpdates=null){
  if(!state)return;
- state.readouts=new Map();
+ if(!incrementalUpdates)state.streams.clear();
+ const readoutTime=incrementalUpdates?state.bars.at(-1)?.time:null;
+ if(!incrementalUpdates)state.readouts=new Map();
+ else state.readouts.delete(readoutTime);
  for(const id of Object.keys(REGISTRY)){
   if(id==="donchian"||id==="keltner"||id==="linearRegression"){
    const calculated=state.settings[id].enabled?data(id):null,key=id+"Overlays";
-   if(calculated)addReadout(id,calculated);
+   if(calculated)addReadout(id,calculated,readoutTime);
    if(!state[key]&&state.settings[id].enabled){
     state[key]={
      upper:state.chart.addLineSeries({title:id+" Upper",color:"#55d7ee",lineWidth:2,lastValueVisible:true,priceLineVisible:false}),
@@ -519,7 +604,7 @@ function renderPanes(){
   }
   if(id==="supertrend"){
    const calculated=state.settings.supertrend.enabled?data("supertrend"):null;
-   if(calculated)addReadout(id,calculated);
+   if(calculated)addReadout(id,calculated,readoutTime);
    if(!state.supertrendUpOverlay&&state.settings.supertrend.enabled)state.supertrendUpOverlay=state.chart.addLineSeries({title:"Supertrend · Aufwärtstrend",color:"#41d89a",lineWidth:2,lastValueVisible:true,priceLineVisible:false});
    if(!state.supertrendDownOverlay&&state.settings.supertrend.enabled)state.supertrendDownOverlay=state.chart.addLineSeries({title:"Supertrend · Abwärtstrend",color:"#f47789",lineWidth:2,lastValueVisible:true,priceLineVisible:false});
    const visible=!!state.settings.supertrend.enabled,titleSuffix=" · ATR "+state.settings.supertrend.period+" × "+state.settings.supertrend.multiplier;
@@ -533,7 +618,7 @@ function renderPanes(){
   }
   if(id==="sar"){
    const calculated=state.settings.sar.enabled?data("sar"):null;
-   if(calculated)addReadout(id,calculated);
+   if(calculated)addReadout(id,calculated,readoutTime);
    if(!state.sarUpOverlay&&state.settings.sar.enabled)state.sarUpOverlay=state.chart.addLineSeries({title:"Parabolic SAR · Aufwärtstrend",color:"#41d89a",lineWidth:2,lastValueVisible:true,priceLineVisible:false});
    if(!state.sarDownOverlay&&state.settings.sar.enabled)state.sarDownOverlay=state.chart.addLineSeries({title:"Parabolic SAR · Abwärtstrend",color:"#f47789",lineWidth:2,lastValueVisible:true,priceLineVisible:false});
    const visible=!!state.settings.sar.enabled,suffix=" · AF "+state.settings.sar.step+" / "+state.settings.sar.maxStep;
@@ -547,7 +632,7 @@ function renderPanes(){
   }
   if(id==="vwap"){
    const calculated=state.settings.vwap.enabled?data("vwap"):null;
-   if(calculated)addReadout(id,calculated);
+   if(calculated)addReadout(id,calculated,readoutTime);
    if(state.settings.vwap.enabled&&!state.vwapOverlay){
     state.vwapOverlay=state.chart.addLineSeries({title:"Session-VWAP "+state.settings.vwap.sessionStart+" "+state.settings.vwap.timeZone+" · Tick-/Realvolumenproxy",
      color:"#f1da9b",lineWidth:2,lastValueVisible:true,priceLineVisible:false});
@@ -560,8 +645,26 @@ function renderPanes(){
   }
   if(!state.settings[id].enabled){destroyPane(id);continue}
   const pane=state.panes.get(id)||createPane(id);
-  const calculated=data(id);
-  addReadout(id,calculated);
+  let stream=null;
+  if(STREAM_KINDS.has(id)){
+   stream=state.streams.get(id);
+   if(!incrementalUpdates||!stream||stream.key!==streamKey(id)){
+    const api=window.ChartStudioIndicators;
+    stream=typeof api?.createIncremental==="function"?{key:streamKey(id),engine:api.createIncremental(id,state.bars,streamSettings(id))}:null;
+    if(stream)state.streams.set(id,stream);else state.streams.delete(id);
+   }
+  }
+  const delta=incrementalUpdates?.get(id);
+  const calculated=delta||(stream?stream.engine.snapshot():data(id));
+  addReadout(id,calculated,readoutTime);
+  if(delta){
+   const time=state.bars.at(-1)?.time;
+   for(const [key,series] of Object.entries(pane.lines)){
+    const point=(delta[key]||[]).at(-1);
+    if(point)series.update(point);else if(time)series.update({time});
+   }
+   continue;
+  }
   for(const [key,series] of Object.entries(pane.lines)){
    // Align warm-up bars to the primary chart's logical coordinates.
    const byTime=new Map((calculated[key]||[]).map(p=>[p.time,p]));
@@ -591,7 +694,19 @@ function updateBars(bars){
  const signature=window.ChartStudioDataSignature?.signature(bars)||
   [bars.length,last.time,last.close,last.high,last.low,last.tick_volume,last.real_volume].join(":");
  if(signature===state.signature)return;
- state.signature=signature;state.bars=bars;
+ const previous=state.bars,next=window.ChartStudioIndicators?.math.validateBars(bars)||[];
+ if(oneTailChange(previous,next)){
+  const active=Object.keys(REGISTRY).filter(id=>STREAM_KINDS.has(id)&&state.settings[id].enabled);
+  const updates=new Map();let valid=active.length>0;
+  for(const id of active){const stream=state.streams.get(id);if(!stream||stream.key!==streamKey(id)){valid=false;break}}
+  if(valid){
+   try{for(const id of active)updates.set(id,state.streams.get(id).engine.updateLast(next.at(-1)))}
+   catch(_){state.streams.clear();updates.clear()}
+  }
+  state.signature=signature;state.bars=next;
+  if(updates.size){renderPanes(updates);return}
+ }else state.streams.clear();
+ state.signature=signature;state.bars=next;
  renderPanes();
 }
 function switchAccount(account){
@@ -663,7 +778,7 @@ function mount({chart,host,panel,account="titan"}){
  head.textContent="Zusätzliche Indikator-Panes · unabhängig ein-/ausblendbar";panel.append(head,controls);
  const notice=document.createElement("p");notice.className="cs-indicator-notice";notice.textContent="Indikatoren basieren auf geladenen Brokerkerzen. Warm-up erforderlich.";
  panel.append(notice);
- state={chart,host,stack,controls,notice,account,settings:restore(account),bars:[],signature:null,panes:new Map(),vwapOverlay:null,supertrendUpOverlay:null,supertrendDownOverlay:null,sarUpOverlay:null,sarDownOverlay:null,donchianOverlays:null,keltnerOverlays:null,readouts:new Map()};
+ state={chart,host,stack,controls,notice,account,settings:restore(account),bars:[],signature:null,panes:new Map(),streams:new Map(),vwapOverlay:null,supertrendUpOverlay:null,supertrendDownOverlay:null,sarUpOverlay:null,sarDownOverlay:null,donchianOverlays:null,keltnerOverlays:null,readouts:new Map()};
  controls.addEventListener("change",evt=>{
   const target=evt.target;
   if(!target.dataset.kind)return;
@@ -673,6 +788,6 @@ function mount({chart,host,panel,account="titan"}){
  chart.timeScale().subscribeVisibleLogicalRangeChange(syncRanges);
  syncPanel();renderPanes();
 }
-window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,updateConfig,settings,readout,
+window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,updateConfig,settings,readout,createIncremental,
  registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,stochRsi,cci,momentum,roc,parabolicSar,obv,mfi,macd,atr,adx,supertrend,donchian,keltner,linearRegressionChannel,vwap,volumes})});
 })();
