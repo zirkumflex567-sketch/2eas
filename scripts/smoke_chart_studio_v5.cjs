@@ -1506,6 +1506,33 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    assert.deepEqual([touchMoved.endTime,touchMoved.endPrice],[touchStart.anchor.endTime,touchStart.anchor.endPrice]);
    await touchPage.screenshot({path:path.join(folder,"chart-studio-v5-touch-390-dpr150.png"),fullPage:true});
   }finally{await touchContext.close()}
+  const positionOverlayProbe=await page.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:900px;height:360px;position:fixed;left:-2000px;top:0";document.body.append(host);
+   const engine=ChartStudioV5.createStudioV5(host,"titan",{symbol:"XAUUSD",timeframe:"M15"}),bars=Array.from({length:5},(_,i)=>({time:1700600000+i*900,open:4100,high:4110,low:4090,close:4105}));engine.setCandles(bars);
+   const snapshot={scope:{account:"titan",symbol:"XAUUSD",timeframe:"M15"},source:"MT5_VERIFIED",canExecute:false,positions:[{ticket:"1001",side:"BUY",entryPrice:4101,stopLoss:4090,takeProfit:4120},{ticket:"1002",side:"SELL",entryPrice:4108,stopLoss:null,takeProfit:null}]};
+   let supported=typeof engine.setPositionOverlays==="function";let first=null,rejected={};
+   if(supported){first=engine.setPositionOverlays(snapshot);const before=engine.inspect().positionOverlayCount;
+    for(const [name,bad] of Object.entries({account:{...snapshot,scope:{...snapshot.scope,account:"other"}},symbol:{...snapshot,scope:{...snapshot.scope,symbol:"EURUSD"}},timeframe:{...snapshot,scope:{...snapshot.scope,timeframe:"H1"}}})){try{engine.setPositionOverlays(bad)}catch(_){rejected[name]=true}if(engine.inspect().positionOverlayCount!==0)throw Error("scope mismatch retained stale position lines");engine.setPositionOverlays(snapshot)}
+    for(const [name,bad] of Object.entries({source:{...snapshot,source:"UNVERIFIED"},executable:{...snapshot,canExecute:true},duplicate:{...snapshot,positions:[snapshot.positions[0],snapshot.positions[0]]},malformed:{...snapshot,positions:[{...snapshot.positions[0],entryPrice:0}]}})){try{engine.setPositionOverlays(bad)}catch(_){rejected[name]=true}}
+    const afterInvalid=engine.inspect().positionOverlayCount;engine.setPositionOverlays({...snapshot,positions:[{ticket:"1003",side:"BUY",entryPrice:4103,stopLoss:null,takeProfit:null}]});const replaced=engine.inspect().positionOverlays;
+    const drawings=engine.exportDrawings(),accountBefore=engine.inspect().positionOverlayCount;engine.changeAccount("goldm15");const accountAfter=engine.inspect().positionOverlayCount;
+    engine.changeAccount("titan");engine.setCandles(bars);engine.setPositionOverlays(snapshot);engine.destroy();host.remove();
+    return {supported,first,rejected,before,afterInvalid,replaced,drawings,accountBefore,accountAfter};
+   }
+   engine.destroy();host.remove();return {supported};
+  });
+  assert.equal(positionOverlayProbe.supported,true,"v5 adapter exposes read-only position overlays");
+  assert.equal(positionOverlayProbe.first.count,4);
+  assert.deepEqual(positionOverlayProbe.first.lines.map(line=>line.label),["BUY Entry","BUY SL","BUY TP","SELL Entry"]);
+  assert.deepEqual(positionOverlayProbe.rejected,{account:true,symbol:true,timeframe:true,source:true,executable:true,duplicate:true,malformed:true});
+  assert.equal(positionOverlayProbe.before,4);
+  assert.equal(positionOverlayProbe.afterInvalid,4,"Invalid same-scope snapshots leave the current overlays intact");
+  assert.equal(positionOverlayProbe.replaced.length,1);
+  assert.equal(positionOverlayProbe.drawings,"{\"schemaVersion\":1,\"symbol\":\"XAUUSD\",\"timeframe\":\"M15\",\"drawings\":[]}");
+  assert.equal(positionOverlayProbe.accountBefore,1);
+  assert.equal(positionOverlayProbe.accountAfter,0);
+  assert.deepEqual(errors,[]);
+  assert.deepEqual(writes,[]);
   await page.screenshot({path:path.join(folder,"chart-studio-v5-poc.png"),fullPage:true});
   console.log("PASS native v5 chart, configurable oscillator panes, move/resize, averages, volume, account isolation, no writes");
  }finally{if(browser)await Promise.race([browser.close(),new Promise(resolve=>setTimeout(resolve,3000))]);if(server.exitCode===null){server.kill();await Promise.race([new Promise(resolve=>server.once("exit",resolve)),new Promise(resolve=>setTimeout(resolve,1000))])}}

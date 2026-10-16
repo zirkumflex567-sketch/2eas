@@ -25,6 +25,9 @@ export type MeasurementOptions = TrendLineOptions;
 export type RayOptions = TrendLineOptions;
 export type FibonacciOptions = TrendLineOptions&{levels?:number[]};
 export type ChartStorageScope = {symbol:string;timeframe:string};
+export type PositionOverlayScope = {account:string;symbol:string;timeframe:string};
+export type ReadOnlyPositionOverlaySnapshot = {scope:PositionOverlayScope;source:"MT5_VERIFIED";canExecute:false;positions:Array<{ticket:string;side:"BUY"|"SELL";entryPrice:number;stopLoss?:number|null;takeProfit?:number|null}>};
+export type PositionOverlayLine = {ticket:string;side:"BUY"|"SELL";role:"Entry"|"SL"|"TP";price:number;label:string};
 export type DataWindowReadout = {
  state:"AVAILABLE"|"UNAVAILABLE";account:string;source:"CHART_FEED";time:number;timeUtc:string;
  reason?:"BAR_NOT_LOADED";ohlc?:{open:number;high:number;low:number;close:number};
@@ -471,6 +474,27 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   crosshair:{mode:0}});
  const price=chart.addSeries(CandlestickSeries,{upColor:"#1bca99",downColor:"#f16b8d",
   borderVisible:false,wickUpColor:"#1bca99",wickDownColor:"#f16b8d"});
+ const positionOverlayLines=new Map<string,{line:ReturnType<typeof price.createPriceLine>;readback:PositionOverlayLine}>();
+ function clearPositionOverlays(){for(const item of positionOverlayLines.values())price.removePriceLine(item.line);positionOverlayLines.clear()}
+ function setPositionOverlays(snapshot:ReadOnlyPositionOverlaySnapshot){
+  guard();const expected={account:activeAccount,symbol:drawingScope?.symbol??"",timeframe:drawingScope?.timeframe??""},received=snapshot?.scope;
+  if(!received||received.account!==expected.account||received.symbol!==expected.symbol||received.timeframe!==expected.timeframe){clearPositionOverlays();throw Error("Position overlay scope mismatch")}
+  if(snapshot.source!=="MT5_VERIFIED"||snapshot.canExecute!==false||!Array.isArray(snapshot.positions)||snapshot.positions.length>500)throw Error("Invalid read-only position overlay snapshot");
+  const tickets=new Set<string>(),candidate:PositionOverlayLine[]=[];
+  for(const row of snapshot.positions){
+   if(!row||typeof row.ticket!=="string"||!/^[A-Za-z0-9_-]{1,64}$/.test(row.ticket)||tickets.has(row.ticket)||(row.side!=="BUY"&&row.side!=="SELL"))throw Error("Invalid or duplicate position ticket");tickets.add(row.ticket);
+   for(const [role,value] of [["Entry",row.entryPrice],["SL",row.stopLoss],["TP",row.takeProfit]] as const){
+    if((role==="Entry"||value!==undefined&&value!==null)&&(!Number.isFinite(value)||value!<=0))throw Error("Invalid position overlay price");
+    if(value===undefined||value===null)continue;candidate.push({ticket:row.ticket,side:row.side,role,price:value,label:`${row.side} ${role}`});
+   }
+  }
+  const created:Array<{line:ReturnType<typeof price.createPriceLine>;readback:PositionOverlayLine}>=[];
+  try{for(const item of candidate){const line=price.createPriceLine({price:item.price,color:item.role==="SL"?"#ff657a":item.role==="TP"?"#35d6c2":item.side==="BUY"?"#49c6ff":"#ffb84d",lineWidth:item.role==="Entry"?2:1,lineStyle:item.role==="SL"?2:item.role==="TP"?1:0,axisLabelVisible:true,title:item.label});created.push({line,readback:item})}}
+  catch(error){for(const item of created)price.removePriceLine(item.line);throw error}
+  clearPositionOverlays();for(const item of created)positionOverlayLines.set(`${item.readback.ticket}:${item.readback.role}`,item);
+  return {count:positionOverlayLines.size,lines:Array.from(positionOverlayLines.values(),item=>({...item.readback}))};
+ }
+ function readPositionOverlays(){guard();return {count:positionOverlayLines.size,lines:Array.from(positionOverlayLines.values(),item=>({...item.readback}))}}
  const newLine=(opts:AverageOptions)=>chart.addSeries(LineSeries,{
   color:opts.color,lineWidth:opts.lineWidth??2,visible:opts.visible??true,
   title:opts.title??opts.id,priceLineVisible:false,lastValueVisible:true});
@@ -1773,6 +1797,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function changeAccount(next:string){
   guard();if(!/^[a-zA-Z0-9_-]{1,50}$/.test(next))throw Error("Invalid account");
+  clearPositionOverlays();
   finishDrag(true);selectDrawing(null);hoveredDrawingId=null;
   undoStack.length=0;redoStack.length=0;
   drawingsHydrated=false;lastPersistedSnapshot=null;persistenceError=null;persistenceStatus=drawingScope?"PENDING":"DISABLED";
@@ -1797,14 +1822,14 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   for(const line of paneLines.values())chart.removeSeries(line);
   paneLines.clear();readoutIndicators.clear();if(volume)volume.setData([]);
  }
- function inspect(){guard();return {version:VERSION,account:activeAccount,
+ function inspect(){guard();return {version:VERSION,account:activeAccount,positionOverlayCount:positionOverlayLines.size,positionOverlays:readPositionOverlays().lines,
   displayTimeZone,
   candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
     averageCount:averages.size,nativePaneLines:paneLines.size,oscillatorCount:oscillators.size,oscillatorPaneCount:new Set(Array.from(oscillators.values(),group=>{const series=group.series.values().next().value;return series?chart.panes().findIndex(pane=>pane.getSeries().includes(series)):-1}).filter(index=>index>=0)).size,nativePrimitives:drawingCount(),selectedDrawingId,selectedDrawingIds:[...selectedDrawingIds],hoveredDrawingId,
   paneCount:chart.panes().length,volumeVisible:!!volume,persistenceStatus,persistenceError}}
- function destroy(){if(destroyed)return;finishDrag(true);destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();managedMovingAverages.clear();donchianOverlays.clear();keltnerOverlays.clear();paneLines.clear();oscillators.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();measurements.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
+ function destroy(){if(destroyed)return;finishDrag(true);clearPositionOverlays();destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();managedMovingAverages.clear();donchianOverlays.clear();keltnerOverlays.clear();paneLines.clear();oscillators.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();measurements.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
   return Object.freeze({setCandles,addAverage,addMovingAverage,addDonchian,removeDonchian,addKeltner,removeKeltner,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,drawingPosition,drawingAnchorPosition,readDrawing,exportDrawings,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,
   addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,addOscillator,updateOscillator,removeOscillator,moveOscillator,oscillatorOptions,oscillatorPaneLayout,resizePane,paneHeights,showVolume,visibleLogicalRange,setVisibleLogicalRange,setDisplayTimeZone,displayTimeZone:()=>displayTimeZone,formatTimeLabel:formatDisplayTime,formatCrosshairTime,readDataWindow,
-  updateLast,changeAccount,averageOptions,inspect,destroy});
+  updateLast,changeAccount,averageOptions,setPositionOverlays,readPositionOverlays,inspect,destroy});
 }

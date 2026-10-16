@@ -19,6 +19,10 @@
 - Run: `npm install --prefix chart_studio_v5 --package-lock=false --no-audit --no-fund`, `npm --prefix chart_studio_v5 run check`, `npm --prefix chart_studio_v5 run build`, then `node scripts/smoke_chart_studio_v5.cjs` after installing the repository's Playwright Chromium dependencies. CI repeats these steps and stores a screenshot.
 - Source is modular TypeScript. Generated `dist/` is not committed. No LWC 5 script or compiled bundles are shipped to production in this RFC.
 
+- The isolated adapter accepts caller-supplied MT5_VERIFIED position snapshots through a read-only native Entry/SL/TP overlay API. Account/symbol/timeframe must exactly match the renderer and canExecute must be false; invalid same-scope replacements are atomic, scope mismatches clear stale lines, and account changes/destroy clean up. These overlays never enter drawing persistence/JSON, perform no broker reads, and do not change the production v4 mount.
+
+- The isolated adapter accepts caller-supplied MT5_VERIFIED position snapshots through a read-only native Entry/SL/TP overlay API. Account/symbol/timeframe must exactly match the renderer and canExecute must be false; invalid same-scope replacements are atomic, scope mismatches clear stale lines, and account changes/destroy clean up. These overlays never enter drawing persistence/JSON, perform no broker reads, and do not change the production v4 mount.
+
 ## License, provenance and version lock
 
 Lightweight Charts™ is distributed under Apache-2.0; its attribution requirements include linking to TradingView and retaining the upstream NOTICE. The v5 browser fixture includes a link to https://www.tradingview.com/. **Before actual main-dashboard migration**, display the mandatory attribution persistently in the UI and bundle the upstream NOTICE/LICENSE text appropriately (do not substitute a generic source-code link). Refer to https://tradingview.github.io/lightweight-charts/docs/ and https://tradingview.github.io/lightweight-charts/docs/migrations/from-v4-to-v5.

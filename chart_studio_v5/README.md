@@ -2,6 +2,8 @@
 
 Experimental TypeScript browser adapter. **No MT5 access, broker mutation or dashboard cutover.**
 
+The adapter also exposes `setPositionOverlays(snapshot)` / `readPositionOverlays()` for caller-supplied, read-only `MT5_VERIFIED` position snapshots. Each snapshot must match the renderer's account, symbol and timeframe and set `canExecute: false`; up to 500 unique tickets produce native Entry/SL/TP lines. Missing stops/targets remain absent. Invalid same-scope replacements preserve the current lines, while a scope mismatch clears them to avoid showing stale broker data. Account changes and destroy remove the lines. Position overlays are not user drawings and are excluded from persistence and portable JSON. This API does not fetch MT5 data and is not wired into production v4.
+
 Build on Node.js 22:
 
 ```sh
