@@ -9124,6 +9124,8 @@ var ChartStudioV5 = (() => {
     }, chart.panes().length);
     let volume = null;
     let volumeZones = null;
+    const autoFibRatios = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1], autoFibColors = ["#eab308", "#f97316", "#22d3ee", "#f8fafc", "#a78bfa", "#22c55e", "#fb7185"];
+    let autoFibonacci = null;
     let bars = [], barsByTime = /* @__PURE__ */ new Map(), activeAccount = accountId, destroyed = false;
     function guard() {
       if (destroyed) throw Error("Chart was destroyed");
@@ -9893,6 +9895,7 @@ var ChartStudioV5 = (() => {
       refreshPivotOverlays();
       refreshOscillators();
       refreshVolumeZones();
+      refreshAutoFibonacci();
       if (volume) volume.setData(volumeRows());
       hydrateDrawings();
       if (drawingsHydrated && persistenceStatus === "READY") persistDrawings();
@@ -9937,6 +9940,47 @@ var ChartStudioV5 = (() => {
       if (!volumeZones) return false;
       price.detachPrimitive(volumeZones.primitive);
       volumeZones = null;
+      return true;
+    }
+    function refreshAutoFibonacci() {
+      if (!autoFibonacci) return;
+      autoFibonacci.result = calculateAutoFibonacci(bars, drawingScope?.timeframe ?? "", autoFibonacci.asOf.timeUtc);
+      autoFibRatios.forEach((ratio, index) => autoFibonacci.series[index].setData(autoFibonacci.result.lines[String(ratio)].points));
+    }
+    function setAutoFibonacci(options, asOf) {
+      guard();
+      if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some((key) => !["timeframeSeconds", "visible"].includes(key)) || !Number.isSafeInteger(options.timeframeSeconds) || options.timeframeSeconds <= 0 || options.timeframeSeconds > 604800 || options.visible !== void 0 && typeof options.visible !== "boolean") throw Error("Invalid auto-Fibonacci configuration");
+      if (!asOf || typeof asOf !== "object" || Array.isArray(asOf) || Object.keys(asOf).some((key) => !["source", "account", "symbol", "timeframe", "timeUtc"].includes(key)) || asOf.source !== "MT5_VERIFIED" || asOf.account !== activeAccount || !drawingScope || asOf.symbol !== drawingScope.symbol || asOf.timeframe !== drawingScope.timeframe || !Number.isSafeInteger(asOf.timeUtc) || asOf.timeUtc <= 0) throw Error("Auto-Fibonacci as-of does not match verified chart scope");
+      const scopedSeconds = { M1: 60, M5: 300, M15: 900, M30: 1800, H1: 3600, H4: 14400, D1: 86400, W1: 604800 }[drawingScope.timeframe];
+      if (scopedSeconds === void 0 || options.timeframeSeconds !== scopedSeconds) throw Error("Auto-Fibonacci timeframe does not match chart scope");
+      const normalized = { ...options }, verifiedAsOf = { ...asOf }, result = calculateAutoFibonacci(bars, drawingScope.timeframe, verifiedAsOf.timeUtc), visible = normalized.visible ?? true;
+      if (autoFibonacci) {
+        autoFibonacci.options = normalized;
+        autoFibonacci.asOf = verifiedAsOf;
+        autoFibonacci.result = result;
+        autoFibRatios.forEach((ratio, index) => {
+          autoFibonacci.series[index].applyOptions({ visible, title: `Auto Fib ${(ratio * 100).toFixed(1)}%` });
+          autoFibonacci.series[index].setData(result.lines[String(ratio)].points);
+        });
+      } else {
+        const series = autoFibRatios.map((ratio, index) => {
+          const line = createPaneLine({ id: `auto-fib-${index}`, color: autoFibColors[index], lineWidth: 1, visible, title: `Auto Fib ${(ratio * 100).toFixed(1)}%` }, 0);
+          line.setData(result.lines[String(ratio)].points);
+          return line;
+        });
+        autoFibonacci = { options: normalized, asOf: verifiedAsOf, result, series };
+      }
+      return readAutoFibonacci();
+    }
+    function readAutoFibonacci() {
+      guard();
+      return autoFibonacci ? { options: { ...autoFibonacci.options }, asOf: { ...autoFibonacci.asOf }, result: JSON.parse(JSON.stringify(autoFibonacci.result)), series: autoFibonacci.series.map((series) => ({ title: series.options().title, visible: series.options().visible, points: series.data().map((point2) => ({ ...point2 })) })) } : null;
+    }
+    function clearAutoFibonacci() {
+      guard();
+      if (!autoFibonacci) return false;
+      for (const series of autoFibonacci.series) chart.removeSeries(series);
+      autoFibonacci = null;
       return true;
     }
     function applyAverageData(opts, data) {
@@ -11544,6 +11588,7 @@ var ChartStudioV5 = (() => {
       refreshIchimokuOverlays();
       refreshPivotOverlays();
       refreshVolumeZones();
+      refreshAutoFibonacci();
       for (const group of supertrendOverlays.values()) updateSupertrendLast(group, c2, bars.length - 1, replacing && group.lastTime === c2.time);
       for (const group of parabolicSarOverlays.values()) updateParabolicSarLast(group, c2, bars.length - 1, replacing && group.lastTime === c2.time);
       refreshOscillators(true);
@@ -11583,6 +11628,7 @@ var ChartStudioV5 = (() => {
         ohlc: { open: candle.open, high: candle.high, low: candle.low, close: candle.close },
         volume: real ? { value: candle.real_volume, source: "REAL_VOLUME" } : hasTick ? { value: candle.tick_volume, source: "TICK_VOLUME_PROXY" } : { value: null, source: "UNAVAILABLE" },
         ...volumeZones ? { volumeZones: { status: volumeZones.result.status, zones: volumeZones.result.zones.filter((zone) => zone.time === time).map(({ algorithmVersion, source, label, volume: volume2, medianVolume, threshold, multiplier, start, end, high, low }) => ({ algorithmVersion, source, label, volume: volume2, medianVolume, threshold, multiplier, start, end, high, low })) } } : {},
+        ...autoFibonacci?.result.available && time >= autoFibonacci.result.confirmedAt && time <= autoFibonacci.asOf.timeUtc ? { autoFibonacci: { algorithmVersion: autoFibonacci.result.algorithmVersion, source: autoFibonacci.result.source, timeframe: autoFibonacci.result.timeframe, direction: autoFibonacci.result.direction, start: autoFibonacci.result.start, end: autoFibonacci.result.end, confirmedAt: autoFibonacci.result.confirmedAt, levels: autoFibRatios.map((ratio) => ({ ratio, value: autoFibonacci.result.lines[String(ratio)].value })) } } : {},
         indicators: Array.from(readoutIndicators.values(), (indicator) => {
           const value = indicator.values.get(time), available = value !== void 0;
           const direction = indicator.directions?.get(time);
@@ -11598,6 +11644,7 @@ var ChartStudioV5 = (() => {
         price.detachPrimitive(volumeZones.primitive);
         volumeZones = null;
       }
+      clearAutoFibonacci();
       finishDrag(true);
       selectDrawing(null);
       hoveredDrawingId = null;
@@ -11862,6 +11909,9 @@ var ChartStudioV5 = (() => {
       setVolumeZones,
       readVolumeZones,
       clearVolumeZones,
+      setAutoFibonacci,
+      readAutoFibonacci,
+      clearAutoFibonacci,
       setPositionOverlays,
       readPositionOverlays,
       inspect,

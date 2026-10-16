@@ -73,6 +73,31 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   const volumeZoneCleanup=await zonePage.evaluate(()=>{const engine=window.__v5VolumeZoneEngine;engine.changeAccount("other");const cleared={read:engine.readVolumeZones(),count:engine.inspect().volumeZoneCount,status:engine.inspect().volumeZoneStatus};engine.destroy();document.querySelector("#v5-volume-zone-probe")?.remove();return cleared});
   assert.deepEqual(volumeZoneCleanup,{read:null,count:0,status:"DISABLED"},"Account changes clear native v5 volume zones");
   assert.deepEqual(zoneErrors,[]);await zonePage.close();
+  const autoFibPage=await browser.newPage({viewport:{width:1280,height:840}}),autoFibErrors=[];autoFibPage.on("pageerror",error=>autoFibErrors.push(error.message));await autoFibPage.goto("http://127.0.0.1:8872/chart_studio_v5/fixture.html",{waitUntil:"networkidle"});
+  const autoFibonacciOverlayProbe=await autoFibPage.evaluate(()=>{
+   const host=document.createElement("div");host.id="v5-auto-fib-probe";host.style.cssText="width:640px;height:360px;position:fixed;left:20px;top:20px;z-index:20";document.body.append(host);
+   const engine=ChartStudioV5.createStudioV5(host,"titan",{symbol:"XAUUSD",timeframe:"M15"}),start=1712500000,pairs=[[10,8],[9,7],[12,4],[14,8],[15,9],[20,12],[18,10],[17,11],[16,10]],bars=pairs.map(([high,low],i)=>({time:start+i*900,open:(high+low)/2,high,low,close:(high+low)/2})),asOf={source:"MT5_VERIFIED",account:"titan",symbol:"XAUUSD",timeframe:"M15",timeUtc:start+9*900};
+   engine.setCandles(bars);engine.setVisibleLogicalRange({from:0,to:10});const initial=engine.setAutoFibonacci({timeframeSeconds:900},asOf),readout=engine.readDataWindow(bars[8].time).autoFibonacci;
+   let badScopeRejected=false;try{engine.setAutoFibonacci({timeframeSeconds:900},{...asOf,account:"other"})}catch(_){badScopeRejected=true}
+   const afterInvalid=engine.readAutoFibonacci(),forming={...bars.at(-1),time:start+10*900,high:100,low:1,close:50};engine.updateLast(forming);const afterForming=engine.readAutoFibonacci();
+   const cleared=engine.clearAutoFibonacci(),afterClear=engine.readAutoFibonacci();engine.setAutoFibonacci({timeframeSeconds:900},asOf);window.__v5AutoFibEngine=engine;
+   return {initial,readout,badScopeRejected,afterInvalid,afterForming,cleared,afterClear,status:engine.inspect()};
+  });
+  assert.equal(autoFibonacciOverlayProbe.initial.result.available,true);
+  assert.equal(autoFibonacciOverlayProbe.initial.result.direction,"UP");
+  assert.equal(Object.keys(autoFibonacciOverlayProbe.initial.series).length,7);
+  assert.equal(autoFibonacciOverlayProbe.initial.series.filter(line=>line.points.length>0).length,7);
+  assert.equal(autoFibonacciOverlayProbe.initial.series[0].points[0].time,1712507200,"Rendered lines start at swing confirmation");
+  assert.equal(autoFibonacciOverlayProbe.initial.result.confirmedAt,1712507200);
+  assert.equal(autoFibonacciOverlayProbe.readout.algorithmVersion,"confirmed-swing-auto-fib-v1");
+  assert.equal(autoFibonacciOverlayProbe.badScopeRejected,true);
+  assert.equal(autoFibonacciOverlayProbe.initial.series.every(line=>line.visible===true),true,"Each Fibonacci ratio is visible in the native chart");
+  assert.deepEqual(autoFibonacciOverlayProbe.afterInvalid,autoFibonacciOverlayProbe.initial,"Invalid auto-Fibonacci scope preserves existing lines");
+  assert.equal(autoFibonacciOverlayProbe.afterForming.result.end.time,1712504500,"Forming candle cannot change confirmed Fibonacci swing anchors");
+  assert.equal(autoFibonacciOverlayProbe.cleared,true);assert.equal(autoFibonacciOverlayProbe.afterClear,null);
+  const autoFibCleanup=await autoFibPage.evaluate(()=>{const e=window.__v5AutoFibEngine;e.changeAccount("other");const result=e.readAutoFibonacci();e.destroy();document.querySelector("#v5-auto-fib-probe")?.remove();return result});
+  assert.equal(autoFibCleanup,null,"Account changes clear native v5 auto-Fibonacci lines");
+  assert.deepEqual(autoFibErrors,[]);await autoFibPage.close();
   await page.addScriptTag({path:path.resolve("chart_studio_v5/node_modules/lightweight-charts/dist/lightweight-charts.standalone.development.js")});
   await page.addScriptTag({path:path.resolve("static/chart-studio-beta.js")});
   await page.addScriptTag({path:path.resolve("static/chart-studio-averages.js")});

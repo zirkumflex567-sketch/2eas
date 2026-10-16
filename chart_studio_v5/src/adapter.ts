@@ -23,6 +23,7 @@ export type SupertrendOptions = AverageOptions&{period:number;multiplier:number}
 export type ParabolicSarOptions = AverageOptions&{step:number;maxStep:number};
 export type VolumeZonesOptions = {timeframeSeconds:number;lookback?:number;multiplier?:number;visible?:boolean};
 export type VolumeZonesAsOf = {source:"MT5_VERIFIED";account:string;symbol:string;timeframe:string;timeUtc:number};
+export type AutoFibonacciOptions = {timeframeSeconds:number;visible?:boolean};
 export type IchimokuOptions = AverageOptions&{tenkanPeriod?:number;kijunPeriod?:number;senkouBPeriod?:number;displacement?:number};
 export type IchimokuPoint = AveragePoint&{sourceTime:UTCTimestamp;projected?:true};
 export type IchimokuValues = {tenkan:IchimokuPoint[];kijun:IchimokuPoint[];senkouA:IchimokuPoint[];senkouB:IchimokuPoint[];chikou:IchimokuPoint[]};
@@ -51,6 +52,7 @@ export type DataWindowReadout = {
  reason?:"BAR_NOT_LOADED";ohlc?:{open:number;high:number;low:number;close:number};
  volume?:{value:number|null;source:"REAL_VOLUME"|"TICK_VOLUME_PROXY"|"UNAVAILABLE"};
  volumeZones?:{status:VolumeZoneResult["status"];zones:Array<Pick<VolumeZone,"algorithmVersion"|"source"|"label"|"volume"|"medianVolume"|"threshold"|"multiplier"|"start"|"end"|"high"|"low">>};
+ autoFibonacci?:Pick<AutoFibonacciValues,"algorithmVersion"|"source"|"timeframe"|"direction"|"start"|"end"|"confirmedAt">&{levels:Array<{ratio:number;value:number}>};
  indicators?:Array<{id:string;title:string;kind:"OVERLAY"|"PANE";value:number|null;direction?:"UP"|"DOWN";state:"AVAILABLE"|"WARMUP_OR_MISSING"}>;
 };
 export function calculateLinearRegressionChannel(input:readonly Candle[],period:number,multiplier:number):{upper:AveragePoint[];middle:AveragePoint[];lower:AveragePoint[]}{
@@ -1001,6 +1003,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  type VolumeApi=ReturnType<typeof newVolume>;
  let volume:VolumeApi|null=null;
  let volumeZones:{options:VolumeZonesOptions;asOf:VolumeZonesAsOf;result:VolumeZoneResult;primitive:VolumeZonePrimitive}|null=null;
+ const autoFibRatios=[0,.236,.382,.5,.618,.786,1] as const,autoFibColors=["#eab308","#f97316","#22d3ee","#f8fafc","#a78bfa","#22c55e","#fb7185"];
+ let autoFibonacci:{options:AutoFibonacciOptions;asOf:VolumeZonesAsOf;result:AutoFibonacciValues;series:ReturnType<typeof createPaneLine>[]}|null=null;
  let bars:Candle[]=[],barsByTime=new Map<number,Candle>(),activeAccount=accountId,destroyed=false;
  function guard(){if(destroyed)throw Error("Chart was destroyed")}
  function persistenceKey(account=activeAccount){
@@ -1415,7 +1419,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   for(const group of supertrendOverlays.values()){group.up.setData([]);group.down.setData([])}
   for(const group of parabolicSarOverlays.values()){group.up.setData([]);group.down.setData([])}
   readoutIndicators.clear();price.setData(bars);refreshManagedMovingAverages();refreshDonchianOverlays();refreshBollingerOverlays();refreshKeltnerOverlays();refreshAtrBandsOverlays();refreshLinearRegressionOverlays();
-  refreshSupertrendOverlays();refreshParabolicSar();refreshIchimokuOverlays();refreshPivotOverlays();refreshOscillators();refreshVolumeZones();
+  refreshSupertrendOverlays();refreshParabolicSar();refreshIchimokuOverlays();refreshPivotOverlays();refreshOscillators();refreshVolumeZones();refreshAutoFibonacci();
   if(volume)volume.setData(volumeRows());
   hydrateDrawings();
   if(drawingsHydrated&&persistenceStatus==="READY")persistDrawings();
@@ -1441,6 +1445,18 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function readVolumeZones(){guard();return volumeZones?{options:{...volumeZones.options},asOf:{...volumeZones.asOf},result:JSON.parse(JSON.stringify(volumeZones.result))}:null}
  function clearVolumeZones(){guard();if(!volumeZones)return false;price.detachPrimitive(volumeZones.primitive);volumeZones=null;return true}
+ function refreshAutoFibonacci(){if(!autoFibonacci)return;autoFibonacci.result=calculateAutoFibonacci(bars,drawingScope?.timeframe??"",autoFibonacci.asOf.timeUtc);autoFibRatios.forEach((ratio,index)=>autoFibonacci!.series[index].setData(autoFibonacci!.result.lines[String(ratio) as keyof AutoFibonacciValues["lines"]].points))}
+ function setAutoFibonacci(options:AutoFibonacciOptions,asOf:VolumeZonesAsOf){
+  guard();if(!options||typeof options!=="object"||Array.isArray(options)||Object.keys(options).some(key=>!["timeframeSeconds","visible"].includes(key))||!Number.isSafeInteger(options.timeframeSeconds)||options.timeframeSeconds<=0||options.timeframeSeconds>604800||(options.visible!==undefined&&typeof options.visible!=="boolean"))throw Error("Invalid auto-Fibonacci configuration");
+  if(!asOf||typeof asOf!=="object"||Array.isArray(asOf)||Object.keys(asOf).some(key=>!["source","account","symbol","timeframe","timeUtc"].includes(key))||asOf.source!=="MT5_VERIFIED"||asOf.account!==activeAccount||!drawingScope||asOf.symbol!==drawingScope.symbol||asOf.timeframe!==drawingScope.timeframe||!Number.isSafeInteger(asOf.timeUtc)||asOf.timeUtc<=0)throw Error("Auto-Fibonacci as-of does not match verified chart scope");
+  const scopedSeconds=({M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400,W1:604800} as Record<string,number>)[drawingScope.timeframe];if(scopedSeconds===undefined||options.timeframeSeconds!==scopedSeconds)throw Error("Auto-Fibonacci timeframe does not match chart scope");
+  const normalized={...options},verifiedAsOf={...asOf},result=calculateAutoFibonacci(bars,drawingScope.timeframe,verifiedAsOf.timeUtc),visible=normalized.visible??true;
+  if(autoFibonacci){autoFibonacci.options=normalized;autoFibonacci.asOf=verifiedAsOf;autoFibonacci.result=result;autoFibRatios.forEach((ratio,index)=>{autoFibonacci!.series[index].applyOptions({visible,title:`Auto Fib ${(ratio*100).toFixed(1)}%`});autoFibonacci!.series[index].setData(result.lines[String(ratio) as keyof AutoFibonacciValues["lines"]].points)})}
+  else{const series=autoFibRatios.map((ratio,index)=>{const line=createPaneLine({id:`auto-fib-${index}`,color:autoFibColors[index],lineWidth:1,visible,title:`Auto Fib ${(ratio*100).toFixed(1)}%`},0);line.setData(result.lines[String(ratio) as keyof AutoFibonacciValues["lines"]].points);return line});autoFibonacci={options:normalized,asOf:verifiedAsOf,result,series}}
+  return readAutoFibonacci();
+ }
+ function readAutoFibonacci(){guard();return autoFibonacci?{options:{...autoFibonacci.options},asOf:{...autoFibonacci.asOf},result:JSON.parse(JSON.stringify(autoFibonacci.result)),series:autoFibonacci.series.map(series=>({title:series.options().title,visible:series.options().visible,points:series.data().map(point=>({...point}))}))}:null}
+ function clearAutoFibonacci(){guard();if(!autoFibonacci)return false;for(const series of autoFibonacci.series)chart.removeSeries(series);autoFibonacci=null;return true}
  function applyAverageData(opts:AverageOptions,data:readonly AveragePoint[]){
   guard();
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color))throw Error("Invalid line options");
@@ -2356,7 +2372,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   price.update(c);if(volume)volume.update(volumeRows()[bars.length-1]);
   for(const [id,state] of managedMovingAverages)updateManagedMovingAverage(id,state);
   refreshDonchianOverlays();refreshBollingerOverlays();refreshKeltnerOverlays();refreshAtrBandsOverlays();refreshLinearRegressionOverlays();refreshIchimokuOverlays();refreshPivotOverlays();
-  refreshVolumeZones();for(const group of supertrendOverlays.values())updateSupertrendLast(group,c,bars.length-1,replacing&&group.lastTime===c.time);
+  refreshVolumeZones();refreshAutoFibonacci();for(const group of supertrendOverlays.values())updateSupertrendLast(group,c,bars.length-1,replacing&&group.lastTime===c.time);
   for(const group of parabolicSarOverlays.values())updateParabolicSarLast(group,c,bars.length-1,replacing&&group.lastTime===c.time);
   refreshOscillators(true);
  }
@@ -2377,6 +2393,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    ohlc:{open:candle.open,high:candle.high,low:candle.low,close:candle.close},
    volume:real?{value:candle.real_volume!,source:"REAL_VOLUME"}:hasTick?{value:candle.tick_volume!,source:"TICK_VOLUME_PROXY"}:{value:null,source:"UNAVAILABLE"},
    ...(volumeZones?{volumeZones:{status:volumeZones.result.status,zones:volumeZones.result.zones.filter(zone=>zone.time===time).map(({algorithmVersion,source,label,volume,medianVolume,threshold,multiplier,start,end,high,low})=>({algorithmVersion,source,label,volume,medianVolume,threshold,multiplier,start,end,high,low}))}}:{}),
+   ...(autoFibonacci?.result.available&&time>=autoFibonacci.result.confirmedAt!&&time<=autoFibonacci.asOf.timeUtc?{autoFibonacci:{algorithmVersion:autoFibonacci.result.algorithmVersion,source:autoFibonacci.result.source,timeframe:autoFibonacci.result.timeframe,direction:autoFibonacci.result.direction,start:autoFibonacci.result.start,end:autoFibonacci.result.end,confirmedAt:autoFibonacci.result.confirmedAt,levels:autoFibRatios.map(ratio=>({ratio,value:autoFibonacci!.result.lines[String(ratio) as keyof AutoFibonacciValues["lines"]].value!}))}}:{}),
    indicators:Array.from(readoutIndicators.values(),indicator=>{
     const value=indicator.values.get(time),available=value!==undefined;
     const direction=indicator.directions?.get(time);
@@ -2385,7 +2402,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function changeAccount(next:string){
   guard();if(!/^[a-zA-Z0-9_-]{1,50}$/.test(next))throw Error("Invalid account");
-  clearPositionOverlays();if(volumeZones){price.detachPrimitive(volumeZones.primitive);volumeZones=null}
+  clearPositionOverlays();if(volumeZones){price.detachPrimitive(volumeZones.primitive);volumeZones=null}clearAutoFibonacci();
   finishDrag(true);selectDrawing(null);hoveredDrawingId=null;
   undoStack.length=0;redoStack.length=0;
   drawingsHydrated=false;lastPersistedSnapshot=null;persistenceError=null;persistenceStatus=drawingScope?"PENDING":"DISABLED";
@@ -2432,5 +2449,5 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   return Object.freeze({setCandles,addAverage,addMovingAverage,addDonchian,removeDonchian,addBollinger,updateBollinger,removeBollinger,bollingerOptions,addKeltner,removeKeltner,addAtrBands,updateAtrBands,removeAtrBands,atrBandsOptions,addLinearRegression,updateLinearRegression,removeLinearRegression,linearRegressionOptions,addIchimoku,updateIchimoku,removeIchimoku,ichimokuOptions,addPivotPoints,updatePivotPoints,pivotOptions,removePivotPoints,addSupertrend,updateSupertrend,removeSupertrend,supertrendOptions,addParabolicSar,updateParabolicSar,removeParabolicSar,parabolicSarOptions,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,deleteSelectedDrawings,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,drawingPosition,drawingAnchorPosition,readDrawing,exportDrawings,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,duplicateSelectedDrawings,
   addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,addOscillator,updateOscillator,removeOscillator,moveOscillator,oscillatorOptions,oscillatorPaneLayout,resizePane,paneHeights,showVolume,visibleLogicalRange,setVisibleLogicalRange,setDisplayTimeZone,displayTimeZone:()=>displayTimeZone,formatTimeLabel:formatDisplayTime,formatCrosshairTime,readDataWindow,
-  updateLast,changeAccount,averageOptions,setVolumeZones,readVolumeZones,clearVolumeZones,setPositionOverlays,readPositionOverlays,inspect,destroy});
+  updateLast,changeAccount,averageOptions,setVolumeZones,readVolumeZones,clearVolumeZones,setAutoFibonacci,readAutoFibonacci,clearAutoFibonacci,setPositionOverlays,readPositionOverlays,inspect,destroy});
 }
