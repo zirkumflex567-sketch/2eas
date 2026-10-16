@@ -6,7 +6,9 @@
 import {createChart, CandlestickSeries, LineSeries, HistogramSeries, TickMarkType, type ISeriesPrimitive, type LogicalRange, type Time, type UTCTimestamp} from "lightweight-charts";
 import type {CanvasRenderingTarget2D} from "fancy-canvas";
 import {calculateOscillator,createIncrementalOscillator,MAX_OSCILLATOR_BARS,type IncrementalOscillator,type OscillatorKind,type OscillatorSettings} from "./oscillators";
+import {calculateVolumeZones,type VolumeZone,type VolumeZoneResult} from "./volume-zones";
 export {createIncrementalOscillator};
+export {calculateVolumeZones};
 export const VERSION = "5.2.1";
 export type Candle = {time:UTCTimestamp;open:number;high:number;low:number;close:number;tick_volume?:number;real_volume?:number};
 export type AveragePoint = {time:UTCTimestamp;value:number};
@@ -19,6 +21,8 @@ export type AtrBandsOptions = AverageOptions&{period?:number;atrPeriod?:number;m
 export type LinearRegressionOptions = AverageOptions&{period:number;multiplier:number};
 export type SupertrendOptions = AverageOptions&{period:number;multiplier:number};
 export type ParabolicSarOptions = AverageOptions&{step:number;maxStep:number};
+export type VolumeZonesOptions = {timeframeSeconds:number;lookback?:number;multiplier?:number;visible?:boolean};
+export type VolumeZonesAsOf = {source:"MT5_VERIFIED";account:string;symbol:string;timeframe:string;timeUtc:number};
 export type IchimokuOptions = AverageOptions&{tenkanPeriod?:number;kijunPeriod?:number;senkouBPeriod?:number;displacement?:number};
 export type IchimokuPoint = AveragePoint&{sourceTime:UTCTimestamp;projected?:true};
 export type IchimokuValues = {tenkan:IchimokuPoint[];kijun:IchimokuPoint[];senkouA:IchimokuPoint[];senkouB:IchimokuPoint[];chikou:IchimokuPoint[]};
@@ -46,6 +50,7 @@ export type DataWindowReadout = {
  state:"AVAILABLE"|"UNAVAILABLE";account:string;source:"CHART_FEED";time:number;timeUtc:string;
  reason?:"BAR_NOT_LOADED";ohlc?:{open:number;high:number;low:number;close:number};
  volume?:{value:number|null;source:"REAL_VOLUME"|"TICK_VOLUME_PROXY"|"UNAVAILABLE"};
+ volumeZones?:{status:VolumeZoneResult["status"];zones:Array<Pick<VolumeZone,"algorithmVersion"|"source"|"label"|"volume"|"medianVolume"|"threshold"|"multiplier"|"start"|"end"|"high"|"low">>};
  indicators?:Array<{id:string;title:string;kind:"OVERLAY"|"PANE";value:number|null;direction?:"UP"|"DOWN";state:"AVAILABLE"|"WARMUP_OR_MISSING"}>;
 };
 export function calculateLinearRegressionChannel(input:readonly Candle[],period:number,multiplier:number):{upper:AveragePoint[];middle:AveragePoint[];lower:AveragePoint[]}{
@@ -476,6 +481,27 @@ class IchimokuCloudPrimitive implements ISeriesPrimitive {
   });
  }})}]}
  set(values:IchimokuValues,visible:boolean){this.values=values;this.visible=visible;this.requestUpdate?.()}
+}
+class VolumeZonePrimitive implements ISeriesPrimitive {
+ private chart:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]["chart"]|null=null;
+ private series:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]["series"]|null=null;
+ private requestUpdate:(()=>void)|null=null;
+ constructor(private result:VolumeZoneResult,private visible=true){}
+ attached(param:Parameters<NonNullable<ISeriesPrimitive["attached"]>>[0]){this.chart=param.chart;this.series=param.series;this.requestUpdate=param.requestUpdate}
+ detached(){this.chart=null;this.series=null;this.requestUpdate=null}
+ updateAllViews(){}
+ paneViews(){if(!this.visible)return [];return [{zOrder:()=>"bottom" as const,renderer:()=>({draw:(target:CanvasRenderingTarget2D)=>{
+  const chart=this.chart,series=this.series;if(!chart||!series)return;
+  target.useMediaCoordinateSpace(({context,mediaSize})=>{
+   const scale=chart.timeScale();for(const zone of this.result.zones){const x1=scale.timeToCoordinate(zone.start);let x2:number|null=scale.timeToCoordinate(zone.end);
+    if(x2===null&&zone.end===zone.observedEnd){const last=scale.timeToCoordinate(zone.lastClosedBarTime),previous=zone.previousClosedBarTime===null?null:scale.timeToCoordinate(zone.previousClosedBarTime);if(last!==null&&Number.isFinite(last))x2=last+(previous!==null&&last>previous?last-previous:0)}
+    const a=series.priceToCoordinate(zone.high),b=series.priceToCoordinate(zone.low);if(x1===null||x2===null||a===null||b===null||![x1,x2,a,b].every(Number.isFinite))continue;
+    const left=Math.max(0,Math.min(x1,x2)),right=Math.min(mediaSize.width,Math.max(x1,x2)),top=Math.max(0,Math.min(a,b)),bottom=Math.min(mediaSize.height,Math.max(a,b));if(right<=left||bottom<=top)continue;
+    context.save();context.fillStyle=zone.source==="REAL_VOLUME"?"rgba(244,211,94,.14)":"rgba(255,174,87,.11)";context.strokeStyle=zone.source==="REAL_VOLUME"?"rgba(244,211,94,.8)":"rgba(255,174,87,.8)";context.setLineDash(zone.source==="REAL_VOLUME"?[]:[4,3]);context.fillRect(left,top,right-left,bottom-top);context.strokeRect(left,top,right-left,bottom-top);context.setLineDash([]);context.font="10px sans-serif";context.fillStyle="#fff1cf";context.fillText(zone.label+" · "+zone.multiplier+"× Median",left+3,Math.max(11,top+11),Math.max(20,right-left-6));context.restore();
+   }
+  });
+ }})}]}
+ set(result:VolumeZoneResult,visible:boolean){this.result=result;this.visible=visible;this.requestUpdate?.()}
 }
 const colorPattern = /^#[0-9a-fA-F]{6}$/;
 function validBar(c:Candle):boolean {
@@ -974,6 +1000,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   priceLineVisible:false,lastValueVisible:false},chart.panes().length);
  type VolumeApi=ReturnType<typeof newVolume>;
  let volume:VolumeApi|null=null;
+ let volumeZones:{options:VolumeZonesOptions;asOf:VolumeZonesAsOf;result:VolumeZoneResult;primitive:VolumeZonePrimitive}|null=null;
  let bars:Candle[]=[],barsByTime=new Map<number,Candle>(),activeAccount=accountId,destroyed=false;
  function guard(){if(destroyed)throw Error("Chart was destroyed")}
  function persistenceKey(account=activeAccount){
@@ -1388,7 +1415,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   for(const group of supertrendOverlays.values()){group.up.setData([]);group.down.setData([])}
   for(const group of parabolicSarOverlays.values()){group.up.setData([]);group.down.setData([])}
   readoutIndicators.clear();price.setData(bars);refreshManagedMovingAverages();refreshDonchianOverlays();refreshBollingerOverlays();refreshKeltnerOverlays();refreshAtrBandsOverlays();refreshLinearRegressionOverlays();
-  refreshSupertrendOverlays();refreshParabolicSar();refreshIchimokuOverlays();refreshPivotOverlays();refreshOscillators();
+  refreshSupertrendOverlays();refreshParabolicSar();refreshIchimokuOverlays();refreshPivotOverlays();refreshOscillators();refreshVolumeZones();
   if(volume)volume.setData(volumeRows());
   hydrateDrawings();
   if(drawingsHydrated&&persistenceStatus==="READY")persistDrawings();
@@ -1397,6 +1424,23 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   return bars.map(c=>({time:c.time,value:Math.max(0,(c.real_volume??0)>0?c.real_volume!:c.tick_volume??0),
    color:c.close>=c.open?"#4bc3d7":"#dc6987"}));
  }
+ function refreshVolumeZones(){if(!volumeZones)return;volumeZones.result=calculateVolumeZones(bars,{timeframeSeconds:volumeZones.options.timeframeSeconds,asOfUtc:volumeZones.asOf.timeUtc,lookback:volumeZones.options.lookback??20,multiplier:volumeZones.options.multiplier??2});volumeZones.primitive.set(volumeZones.result,volumeZones.options.visible??true)}
+ function setVolumeZones(options:VolumeZonesOptions,asOf:VolumeZonesAsOf){
+  guard();if(!options||typeof options!=="object"||Array.isArray(options)||Object.keys(options).some(key=>!["timeframeSeconds","lookback","multiplier","visible"].includes(key))||
+   !Number.isSafeInteger(options.timeframeSeconds)||options.timeframeSeconds<=0||options.timeframeSeconds>86400||
+   (options.lookback!==undefined&&(!Number.isInteger(options.lookback)||options.lookback<5||options.lookback>100))||
+   (options.multiplier!==undefined&&(!Number.isFinite(options.multiplier)||options.multiplier<1||options.multiplier>10))||
+   (options.visible!==undefined&&typeof options.visible!=="boolean"))throw Error("Invalid volume-zone configuration");
+  if(!asOf||typeof asOf!=="object"||Array.isArray(asOf)||Object.keys(asOf).some(key=>!["source","account","symbol","timeframe","timeUtc"].includes(key))||asOf.source!=="MT5_VERIFIED"||asOf.account!==activeAccount||!drawingScope||asOf.symbol!==drawingScope.symbol||asOf.timeframe!==drawingScope.timeframe||!Number.isSafeInteger(asOf.timeUtc)||asOf.timeUtc<=0)throw Error("Volume-zone as-of does not match verified chart scope");
+  const scopedSeconds=drawingScope?({M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400} as Record<string,number>)[drawingScope.timeframe]:undefined;
+  if(drawingScope&&(scopedSeconds===undefined||options.timeframeSeconds!==scopedSeconds))throw Error("Volume-zone timeframe does not match chart scope");
+  const normalized={...options},verifiedAsOf={...asOf},result=calculateVolumeZones(bars,{timeframeSeconds:normalized.timeframeSeconds,asOfUtc:verifiedAsOf.timeUtc,lookback:normalized.lookback??20,multiplier:normalized.multiplier??2});
+  if(volumeZones){volumeZones.options=normalized;volumeZones.asOf=verifiedAsOf;volumeZones.result=result;volumeZones.primitive.set(result,normalized.visible??true)}
+  else{const primitive=new VolumeZonePrimitive(result,normalized.visible??true);price.attachPrimitive(primitive);volumeZones={options:normalized,asOf:verifiedAsOf,result,primitive}}
+  return readVolumeZones();
+ }
+ function readVolumeZones(){guard();return volumeZones?{options:{...volumeZones.options},asOf:{...volumeZones.asOf},result:JSON.parse(JSON.stringify(volumeZones.result))}:null}
+ function clearVolumeZones(){guard();if(!volumeZones)return false;price.detachPrimitive(volumeZones.primitive);volumeZones=null;return true}
  function applyAverageData(opts:AverageOptions,data:readonly AveragePoint[]){
   guard();
   if(!opts||!/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id)||!colorPattern.test(opts.color))throw Error("Invalid line options");
@@ -2312,7 +2356,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   price.update(c);if(volume)volume.update(volumeRows()[bars.length-1]);
   for(const [id,state] of managedMovingAverages)updateManagedMovingAverage(id,state);
   refreshDonchianOverlays();refreshBollingerOverlays();refreshKeltnerOverlays();refreshAtrBandsOverlays();refreshLinearRegressionOverlays();refreshIchimokuOverlays();refreshPivotOverlays();
-  for(const group of supertrendOverlays.values())updateSupertrendLast(group,c,bars.length-1,replacing&&group.lastTime===c.time);
+  refreshVolumeZones();for(const group of supertrendOverlays.values())updateSupertrendLast(group,c,bars.length-1,replacing&&group.lastTime===c.time);
   for(const group of parabolicSarOverlays.values())updateParabolicSarLast(group,c,bars.length-1,replacing&&group.lastTime===c.time);
   refreshOscillators(true);
  }
@@ -2332,6 +2376,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   return {state:"AVAILABLE",account:activeAccount,source:"CHART_FEED",time,timeUtc:new Date(time*1000).toISOString(),
    ohlc:{open:candle.open,high:candle.high,low:candle.low,close:candle.close},
    volume:real?{value:candle.real_volume!,source:"REAL_VOLUME"}:hasTick?{value:candle.tick_volume!,source:"TICK_VOLUME_PROXY"}:{value:null,source:"UNAVAILABLE"},
+   ...(volumeZones?{volumeZones:{status:volumeZones.result.status,zones:volumeZones.result.zones.filter(zone=>zone.time===time).map(({algorithmVersion,source,label,volume,medianVolume,threshold,multiplier,start,end,high,low})=>({algorithmVersion,source,label,volume,medianVolume,threshold,multiplier,start,end,high,low}))}}:{}),
    indicators:Array.from(readoutIndicators.values(),indicator=>{
     const value=indicator.values.get(time),available=value!==undefined;
     const direction=indicator.directions?.get(time);
@@ -2340,7 +2385,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function changeAccount(next:string){
   guard();if(!/^[a-zA-Z0-9_-]{1,50}$/.test(next))throw Error("Invalid account");
-  clearPositionOverlays();
+  clearPositionOverlays();if(volumeZones){price.detachPrimitive(volumeZones.primitive);volumeZones=null}
   finishDrag(true);selectDrawing(null);hoveredDrawingId=null;
   undoStack.length=0;redoStack.length=0;
   drawingsHydrated=false;lastPersistedSnapshot=null;persistenceError=null;persistenceStatus=drawingScope?"PENDING":"DISABLED";
@@ -2379,13 +2424,13 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   paneLines.clear();readoutIndicators.clear();if(volume)volume.setData([]);
  }
  function inspect(){guard();return {version:VERSION,account:activeAccount,positionOverlayCount:positionOverlayLines.size,positionOverlays:readPositionOverlays().lines,
-  displayTimeZone,
+  displayTimeZone,volumeZoneStatus:volumeZones?.result.status??"DISABLED",volumeZoneCount:volumeZones?.result.zones.length??0,
   candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
     averageCount:averages.size,nativePaneLines:paneLines.size,oscillatorCount:oscillators.size,supertrendCount:supertrendOverlays.size,parabolicSarCount:parabolicSarOverlays.size,ichimokuCount:ichimokuOverlays.size,pivotCount:pivotOverlays.size,pivotSeries:[...pivotOverlays.entries()].map(([id,group])=>({id,options:{...group.options,sourceWindow:{...group.options.sourceWindow}},lines:Object.fromEntries((["p","r1","r2","r3","s1","s2","s3"] as const).map(key=>[key,group.values.lines[key].map(point=>({...point}))])),visible:Array.from(group.series.values(),series=>series.options().visible)})),ichimokuSeries:[...ichimokuOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:Object.fromEntries((["tenkan","kijun","senkouA","senkouB","chikou"] as const).map(key=>[key,group.values[key].map(point=>({...point}))])),visible:group.series.map(series=>series.options().visible)})),bollingerCount:bollingerOverlays.size,bollingerSeries:[...bollingerOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),atrBandsCount:atrBandsOverlays.size,atrBandsSeries:[...atrBandsOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),linearRegressionCount:linearRegressionOverlays.size,linearRegressionLineCount:[...linearRegressionOverlays.values()].reduce((count,group)=>count+group.series.length,0),linearRegressionSeries:[...linearRegressionOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),oscillatorPaneCount:new Set(Array.from(oscillators.values(),group=>{const series=group.series.values().next().value;return series?chart.panes().findIndex(pane=>pane.getSeries().includes(series)):-1}).filter(index=>index>=0)).size,nativePrimitives:drawingCount(),selectedDrawingId,selectedDrawingIds:[...selectedDrawingIds],hoveredDrawingId,
   paneCount:chart.panes().length,volumeVisible:!!volume,persistenceStatus,persistenceError}}
- function destroy(){if(destroyed)return;finishDrag(true);clearPositionOverlays();destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();managedMovingAverages.clear();donchianOverlays.clear();bollingerOverlays.clear();keltnerOverlays.clear();atrBandsOverlays.clear();ichimokuOverlays.clear();pivotOverlays.clear();linearRegressionOverlays.clear();supertrendOverlays.clear();parabolicSarOverlays.clear();paneLines.clear();oscillators.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();measurements.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
+ function destroy(){if(destroyed)return;finishDrag(true);clearPositionOverlays();if(volumeZones){price.detachPrimitive(volumeZones.primitive);volumeZones=null}destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();managedMovingAverages.clear();donchianOverlays.clear();bollingerOverlays.clear();keltnerOverlays.clear();atrBandsOverlays.clear();ichimokuOverlays.clear();pivotOverlays.clear();linearRegressionOverlays.clear();supertrendOverlays.clear();parabolicSarOverlays.clear();paneLines.clear();oscillators.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();measurements.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
   return Object.freeze({setCandles,addAverage,addMovingAverage,addDonchian,removeDonchian,addBollinger,updateBollinger,removeBollinger,bollingerOptions,addKeltner,removeKeltner,addAtrBands,updateAtrBands,removeAtrBands,atrBandsOptions,addLinearRegression,updateLinearRegression,removeLinearRegression,linearRegressionOptions,addIchimoku,updateIchimoku,removeIchimoku,ichimokuOptions,addPivotPoints,updatePivotPoints,pivotOptions,removePivotPoints,addSupertrend,updateSupertrend,removeSupertrend,supertrendOptions,addParabolicSar,updateParabolicSar,removeParabolicSar,parabolicSarOptions,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,deleteSelectedDrawings,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,drawingPosition,drawingAnchorPosition,readDrawing,exportDrawings,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,duplicateSelectedDrawings,
   addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,addOscillator,updateOscillator,removeOscillator,moveOscillator,oscillatorOptions,oscillatorPaneLayout,resizePane,paneHeights,showVolume,visibleLogicalRange,setVisibleLogicalRange,setDisplayTimeZone,displayTimeZone:()=>displayTimeZone,formatTimeLabel:formatDisplayTime,formatCrosshairTime,readDataWindow,
-  updateLast,changeAccount,averageOptions,setPositionOverlays,readPositionOverlays,inspect,destroy});
+  updateLast,changeAccount,averageOptions,setVolumeZones,readVolumeZones,clearVolumeZones,setPositionOverlays,readPositionOverlays,inspect,destroy});
 }

@@ -19,6 +19,60 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   page.on("request",request=>{if(request.method()!=="GET")writes.push(request.url())});
   await page.goto("http://127.0.0.1:8872/chart_studio_v5/fixture.html",{waitUntil:"networkidle"});
   assert.equal(await page.evaluate(()=>window.__chartV5Ready),true);
+  await page.addScriptTag({path:path.resolve("static/chart-studio-market-structure.js")});
+  const volumeZoneCalculation=await page.evaluate(()=>{
+   const start=1712500000,bars=Array.from({length:26},(_,i)=>({time:start+i*900,open:100,high:102,low:99,close:101,tick_volume:i===20?30:10,real_volume:0})),before=JSON.stringify(bars);
+   const result=ChartStudioV5.calculateVolumeZones(bars,{timeframeSeconds:900,asOfUtc:start+26*900,lookback:20,multiplier:2});
+   const future=ChartStudioV5.calculateVolumeZones([...bars,{time:start+26*900,open:100,high:102,low:99,close:101,tick_volume:500,real_volume:0}],{timeframeSeconds:900,asOfUtc:start+26*900,lookback:20,multiplier:2});
+   const reference=ChartStudioMarketStructure.core.analyze(bars,{timeframeSeconds:900,asOfUtc:start+26*900,sessions:[],volumeZones:true,volumeLookback:20,volumeMultiplier:2}).volumeZones;
+   const realBars=bars.map((bar,index)=>({...bar,real_volume:index===20?30:10,tick_volume:index===20?300:1})),real=ChartStudioV5.calculateVolumeZones(realBars,{timeframeSeconds:900,asOfUtc:start+26*900});
+   const short=ChartStudioV5.calculateVolumeZones(bars.slice(0,20),{timeframeSeconds:900,asOfUtc:start+20*900});
+   const invalid=ChartStudioV5.calculateVolumeZones(bars,{timeframeSeconds:900,asOfUtc:start+26*900,lookback:101});
+   return {result,unchanged:before===JSON.stringify(bars),future,reference,real,short,invalid};
+  });
+  assert.equal(volumeZoneCalculation.result.algorithmVersion,"volume-range-median-v1");
+  assert.equal(volumeZoneCalculation.result.zones.length,1);
+  assert.equal(volumeZoneCalculation.result.zones[0].source,"TICK_VOLUME_PROXY");
+  assert.equal(volumeZoneCalculation.result.zones[0].medianVolume,10);
+  assert.equal(volumeZoneCalculation.result.zones[0].end,1712523400);
+  assert.equal(volumeZoneCalculation.unchanged,true);
+  assert.deepEqual(volumeZoneCalculation.future.zones.map(zone=>zone.time),volumeZoneCalculation.result.zones.map(zone=>zone.time));
+  assert.equal(volumeZoneCalculation.real.zones[0].source,"REAL_VOLUME");
+  assert.equal(volumeZoneCalculation.short.status,"WARMUP");
+  assert.equal(volumeZoneCalculation.invalid.status,"INVALID_CONFIGURATION");
+  assert.deepEqual(volumeZoneCalculation.result.zones.map(({time,start,end,high,low,source,volume,medianVolume})=>({time,start,end,high,low,source,volume,medianVolume})),volumeZoneCalculation.reference.zones.map(({time,start,end,high,low,source,volume,medianVolume})=>({time,start,end,high,low,source,volume,medianVolume})),"Native v5 volume-zone math matches the Beta reference");
+  const zonePage=await browser.newPage({viewport:{width:1280,height:840}}),zoneErrors=[];zonePage.on("pageerror",error=>zoneErrors.push(error.message));
+  await zonePage.goto("http://127.0.0.1:8872/chart_studio_v5/fixture.html",{waitUntil:"networkidle"});
+  await zonePage.addScriptTag({path:path.resolve("chart_studio_v5/node_modules/lightweight-charts/dist/lightweight-charts.standalone.development.js")});
+  const volumeZoneOverlayProbe=await zonePage.evaluate(()=>{
+   const host=document.createElement("div");host.id="v5-volume-zone-probe";host.style.cssText="width:640px;height:360px;position:fixed;left:20px;top:20px;z-index:20";document.body.append(host);
+   const engine=ChartStudioV5.createStudioV5(host,"titan",{symbol:"XAUUSD",timeframe:"M15"}),start=1712500000,asOf={source:"MT5_VERIFIED",account:"titan",symbol:"XAUUSD",timeframe:"M15",timeUtc:start+26*900},bars=Array.from({length:26},(_,i)=>({time:start+i*900,open:100,high:102,low:99,close:101,tick_volume:i===20?30:10,real_volume:0}));
+   engine.setCandles(bars);engine.setVisibleLogicalRange({from:0,to:26});
+   const initial=engine.setVolumeZones({timeframeSeconds:900,lookback:20,multiplier:2},asOf),readout=engine.readDataWindow(bars[20].time).volumeZones;
+   let invalidRejected=false,scopeTimeframeRejected=false,asOfScopeRejected=false;try{engine.setVolumeZones({timeframeSeconds:900,lookback:101},asOf)}catch(_){invalidRejected=true}
+   try{engine.setVolumeZones({timeframeSeconds:300},asOf)}catch(_){scopeTimeframeRejected=true}
+   try{engine.setVolumeZones({timeframeSeconds:900},{...asOf,account:"other"})}catch(_){asOfScopeRejected=true}
+   const afterInvalid=engine.readVolumeZones(),changed=engine.setVolumeZones({timeframeSeconds:900,lookback:20,multiplier:4},asOf),hidden=engine.setVolumeZones({timeframeSeconds:900,lookback:20,multiplier:2,visible:false},asOf);
+   const manuallyCleared=engine.clearVolumeZones(),afterClear=engine.readVolumeZones();engine.setVolumeZones({timeframeSeconds:900,lookback:20,multiplier:2,visible:true},asOf);
+   const last={...bars.at(-1),time:start+26*900,tick_volume:900};engine.updateLast(last);
+   const forming=engine.readVolumeZones(),status=engine.inspect();window.__v5VolumeZoneEngine=engine;
+   return {initial,readout,invalidRejected,scopeTimeframeRejected,asOfScopeRejected,afterInvalid,changed,hidden,manuallyCleared,afterClear,forming,status};
+  });
+  assert.equal(volumeZoneOverlayProbe.initial.result.zones.length,1);
+  assert.equal(volumeZoneOverlayProbe.readout.zones[0].source,"TICK_VOLUME_PROXY");
+  assert.equal(volumeZoneOverlayProbe.invalidRejected,true);
+  assert.equal(volumeZoneOverlayProbe.scopeTimeframeRejected,true);
+  assert.equal(volumeZoneOverlayProbe.asOfScopeRejected,true);
+  assert.deepEqual(volumeZoneOverlayProbe.afterInvalid,volumeZoneOverlayProbe.initial,"Rejected v5 zone settings preserve the existing overlay");
+  assert.equal(volumeZoneOverlayProbe.changed.result.status,"NO_TRIGGERS","Updating the multiplier recalculates the existing zone overlay");
+  assert.equal(volumeZoneOverlayProbe.hidden.options.visible,false,"Native v5 volume zones can be hidden without removing their readout");
+  assert.equal(volumeZoneOverlayProbe.manuallyCleared,true);assert.equal(volumeZoneOverlayProbe.afterClear,null);
+  assert.deepEqual(volumeZoneOverlayProbe.forming.result.zones.map(zone=>zone.time),volumeZoneOverlayProbe.initial.result.zones.map(zone=>zone.time),"A forming v5 volume candle cannot trigger a zone");
+  assert.equal(volumeZoneOverlayProbe.status.volumeZoneCount,1);
+  await zonePage.locator("#v5-volume-zone-probe").screenshot({path:path.resolve("output/visual-smoke/chart-studio-v5-volume-zones.png")});
+  const volumeZoneCleanup=await zonePage.evaluate(()=>{const engine=window.__v5VolumeZoneEngine;engine.changeAccount("other");const cleared={read:engine.readVolumeZones(),count:engine.inspect().volumeZoneCount,status:engine.inspect().volumeZoneStatus};engine.destroy();document.querySelector("#v5-volume-zone-probe")?.remove();return cleared});
+  assert.deepEqual(volumeZoneCleanup,{read:null,count:0,status:"DISABLED"},"Account changes clear native v5 volume zones");
+  assert.deepEqual(zoneErrors,[]);await zonePage.close();
   await page.addScriptTag({path:path.resolve("chart_studio_v5/node_modules/lightweight-charts/dist/lightweight-charts.standalone.development.js")});
   await page.addScriptTag({path:path.resolve("static/chart-studio-beta.js")});
   await page.addScriptTag({path:path.resolve("static/chart-studio-averages.js")});

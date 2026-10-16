@@ -21,12 +21,14 @@ var ChartStudioV5 = (() => {
   // src/adapter.ts
   var adapter_exports = {};
   __export(adapter_exports, {
-    VERSION: () => VERSION,
+    VERSION: () => VERSION2,
     calculateAtrBands: () => calculateAtrBands,
+    calculateAutoFibonacci: () => calculateAutoFibonacci,
     calculateBollingerBands: () => calculateBollingerBands,
     calculateIchimoku: () => calculateIchimoku,
     calculateLinearRegressionChannel: () => calculateLinearRegressionChannel,
     calculatePivotPoints: () => calculatePivotPoints,
+    calculateVolumeZones: () => calculateVolumeZones,
     createIncrementalOscillator: () => createIncrementalOscillator,
     createStudioV5: () => createStudioV5
   });
@@ -7490,8 +7492,44 @@ var ChartStudioV5 = (() => {
     if (kind !== "rsi" && kind !== "atr" && kind !== "adx" && kind !== "cci" && kind !== "momentum" && kind !== "roc" && kind !== "mfi") throw Error("Unknown oscillator kind");
   }
 
+  // src/volume-zones.ts
+  var VERSION = "volume-range-median-v1";
+  var MAX_ZONES = 3e3;
+  function calculateVolumeZones(input, options) {
+    const lookback = options?.lookback ?? 20, multiplier = options?.multiplier ?? 2, empty = { status: "INVALID_CONFIGURATION", algorithmVersion: VERSION, lookbackBars: Number.isInteger(lookback) ? lookback : 20, multiplier: Number.isFinite(multiplier) ? multiplier : 2, source: "OHLC_VOLUME_ONLY", zones: [] };
+    const tf = Number(options?.timeframeSeconds), asOf = Number(options?.asOfUtc);
+    if (!Array.isArray(input) || input.length > MAX_OSCILLATOR_BARS || !Number.isSafeInteger(tf) || tf <= 0 || tf > 86400 || !Number.isFinite(asOf) || asOf <= 0 || !Number.isSafeInteger(lookback) || lookback < 5 || lookback > 100 || !Number.isFinite(multiplier) || multiplier < 1 || multiplier > 10) return empty;
+    const closed = input.filter((bar) => bar && Number.isSafeInteger(bar.time) && bar.time > 0 && bar.time + tf <= asOf && Number.isFinite(bar.open) && bar.open > 0 && Number.isFinite(bar.high) && Number.isFinite(bar.low) && Number.isFinite(bar.close) && bar.low > 0 && bar.high >= Math.max(bar.open, bar.close, bar.low) && bar.low <= Math.min(bar.open, bar.close, bar.high) && (bar.tick_volume === void 0 || Number.isFinite(bar.tick_volume) && bar.tick_volume >= 0) && (bar.real_volume === void 0 || Number.isFinite(bar.real_volume) && bar.real_volume >= 0)).map((bar) => ({ ...bar })).sort((a2, b2) => a2.time - b2.time).filter((bar, index, all) => index === 0 || bar.time !== all[index - 1].time);
+    if (closed.length <= lookback) return { ...empty, status: "WARMUP", zones: [] };
+    const volume = (bar, source) => {
+      const value = source === "REAL_VOLUME" ? bar.real_volume : bar.tick_volume;
+      return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+    };
+    let evaluated = 0, hasVolume = false;
+    const zones = [];
+    for (let i = lookback; i < closed.length; i++) {
+      const bar = closed[i], source = (bar.real_volume ?? 0) > 0 ? "REAL_VOLUME" : (bar.tick_volume ?? 0) > 0 ? "TICK_VOLUME_PROXY" : null;
+      if (!source) continue;
+      hasVolume = true;
+      const previous = closed.slice(i - lookback, i).map((item) => volume(item, source));
+      if (previous.some((value) => value === null)) continue;
+      const sorted = previous;
+      sorted.sort((a2, b2) => a2 - b2);
+      const mid = sorted.length >> 1, median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+      if (!(median > 0) || !Number.isFinite(median)) continue;
+      evaluated++;
+      const current = volume(bar, source), threshold = median * multiplier;
+      if (current === null || !Number.isFinite(threshold) || current < threshold) continue;
+      const last = closed[closed.length - 1], observedEnd = last.time + tf, end = Math.min(bar.time + tf * 20, observedEnd);
+      if (end <= bar.time) continue;
+      zones.push({ time: bar.time, start: bar.time, end, high: bar.high, low: bar.low, volume: current, medianVolume: median, multiplier, threshold, source, algorithmVersion: VERSION, label: source === "REAL_VOLUME" ? "Realvolumen-OHLC-Range" : "Tickvolumenproxy-OHLC-Range", closedAt: bar.time + tf, observedEnd, lastClosedBarTime: last.time, previousClosedBarTime: closed[closed.length - 2]?.time ?? null });
+    }
+    const status = zones.length ? "AVAILABLE" : evaluated ? "NO_TRIGGERS" : hasVolume ? "NO_COMPARABLE_BASELINE" : "NO_VOLUME_DATA";
+    return { ...empty, status, zones: zones.slice(-MAX_ZONES) };
+  }
+
   // src/adapter.ts
-  var VERSION = "5.2.1";
+  var VERSION2 = "5.2.1";
   function calculateLinearRegressionChannel(input, period, multiplier) {
     const upper = [], middle = [], lower = [];
     if (!Number.isInteger(period) || period < 2 || period > 200 || !Number.isFinite(multiplier) || multiplier < 0.1 || multiplier > 10 || Math.abs(multiplier * 10 - Math.round(multiplier * 10)) > 1e-8) return { upper, middle, lower };
@@ -7584,6 +7622,38 @@ var ChartStudioV5 = (() => {
       for (const key of Object.keys(lines)) lines[key].push({ time, value: values[key], sourceTime: current.time, validFrom: confirmedAt, validTo });
     }
     return { ...empty, available: Object.values(lines).some((points) => points.length > 0), reason: void 0, lines };
+  }
+  function calculateAutoFibonacci(input, timeframe = "M15", asOfUtc = Math.floor(Date.now() / 1e3)) {
+    const ratios = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1], keys = ["0", "0.236", "0.382", "0.5", "0.618", "0.786", "1"];
+    const cadences = { M1: 60, M5: 300, M15: 900, M30: 1800, H1: 3600, H4: 14400, D1: 86400, W1: 604800 }, seconds = cadences[timeframe];
+    const lines = { "0": { ratio: 0, value: null, points: [] }, "0.236": { ratio: 0.236, value: null, points: [] }, "0.382": { ratio: 0.382, value: null, points: [] }, "0.5": { ratio: 0.5, value: null, points: [] }, "0.618": { ratio: 0.618, value: null, points: [] }, "0.786": { ratio: 0.786, value: null, points: [] }, "1": { ratio: 1, value: null, points: [] } };
+    const empty = { available: false, algorithmVersion: "confirmed-swing-auto-fib-v1", source: "MT5_VERIFIED", timeframe, swingStrength: 2, reason: "WARMUP_OR_MISSING", direction: null, start: null, end: null, confirmedAt: null, lines };
+    if (!seconds || !Number.isSafeInteger(asOfUtc) || asOfUtc <= 0 || !Array.isArray(input) || input.length > MAX_OSCILLATOR_BARS) return { ...empty, reason: "INVALID_INPUT_OR_TIMEFRAME" };
+    let previous = 0;
+    for (const bar of input) {
+      if (!validBar(bar) || bar.time <= previous) return { ...empty, reason: "INVALID_OHLC_ORDER_OR_TIMESTAMP" };
+      previous = bar.time;
+    }
+    const closed = input.filter((bar) => bar.time + seconds <= asOfUtc), pivots = [];
+    for (let i = 2; i < closed.length - 2; i++) {
+      const bar = closed[i], left = closed.slice(i - 2, i), right = closed.slice(i + 1, i + 3);
+      const high = left.every((item) => bar.high > item.high) && right.every((item) => bar.high > item.high), low = left.every((item) => bar.low < item.low) && right.every((item) => bar.low < item.low);
+      if (high === low) continue;
+      const pivot = { type: high ? "HIGH" : "LOW", time: bar.time, price: high ? bar.high : bar.low, confirmedAt: closed[i + 2].time + seconds };
+      const prior = pivots[pivots.length - 1];
+      if (prior?.type === pivot.type) {
+        if (pivot.type === "HIGH" ? pivot.price > prior.price : pivot.price < prior.price) pivots[pivots.length - 1] = pivot;
+      } else pivots.push(pivot);
+    }
+    if (pivots.length < 2) return empty;
+    const start = pivots[pivots.length - 2], end = pivots[pivots.length - 1], direction = start.type === "LOW" && end.type === "HIGH" ? "UP" : start.type === "HIGH" && end.type === "LOW" ? "DOWN" : null, range = Math.abs(end.price - start.price);
+    if (!direction || !Number.isFinite(range) || range <= 0) return { ...empty, reason: "NO_CONFIRMED_IMPULSE" };
+    for (let i = 0; i < ratios.length; i++) {
+      const ratio = ratios[i], value = direction === "UP" ? end.price - range * ratio : end.price + range * ratio;
+      if (!Number.isFinite(value)) return { ...empty, reason: "INVALID_LEVEL_PRICE" };
+      lines[keys[i]] = { ratio, value, points: input.filter((bar) => bar.time >= end.confirmedAt && bar.time <= asOfUtc).map((bar) => ({ time: bar.time, value })) };
+    }
+    return { ...empty, available: true, reason: null, direction, start, end, confirmedAt: end.confirmedAt, lines };
   }
   function utcDateForTime(time) {
     if (typeof time === "number") return new Date(time * 1e3);
@@ -8318,6 +8388,65 @@ var ChartStudioV5 = (() => {
       this.requestUpdate?.();
     }
   };
+  var VolumeZonePrimitive = class {
+    constructor(result, visible = true) {
+      this.result = result;
+      this.visible = visible;
+      this.chart = null;
+      this.series = null;
+      this.requestUpdate = null;
+    }
+    attached(param) {
+      this.chart = param.chart;
+      this.series = param.series;
+      this.requestUpdate = param.requestUpdate;
+    }
+    detached() {
+      this.chart = null;
+      this.series = null;
+      this.requestUpdate = null;
+    }
+    updateAllViews() {
+    }
+    paneViews() {
+      if (!this.visible) return [];
+      return [{ zOrder: () => "bottom", renderer: () => ({ draw: (target) => {
+        const chart = this.chart, series = this.series;
+        if (!chart || !series) return;
+        target.useMediaCoordinateSpace(({ context, mediaSize }) => {
+          const scale = chart.timeScale();
+          for (const zone of this.result.zones) {
+            const x1 = scale.timeToCoordinate(zone.start);
+            let x2 = scale.timeToCoordinate(zone.end);
+            if (x2 === null && zone.end === zone.observedEnd) {
+              const last = scale.timeToCoordinate(zone.lastClosedBarTime), previous = zone.previousClosedBarTime === null ? null : scale.timeToCoordinate(zone.previousClosedBarTime);
+              if (last !== null && Number.isFinite(last)) x2 = last + (previous !== null && last > previous ? last - previous : 0);
+            }
+            const a2 = series.priceToCoordinate(zone.high), b2 = series.priceToCoordinate(zone.low);
+            if (x1 === null || x2 === null || a2 === null || b2 === null || ![x1, x2, a2, b2].every(Number.isFinite)) continue;
+            const left = Math.max(0, Math.min(x1, x2)), right = Math.min(mediaSize.width, Math.max(x1, x2)), top = Math.max(0, Math.min(a2, b2)), bottom = Math.min(mediaSize.height, Math.max(a2, b2));
+            if (right <= left || bottom <= top) continue;
+            context.save();
+            context.fillStyle = zone.source === "REAL_VOLUME" ? "rgba(244,211,94,.14)" : "rgba(255,174,87,.11)";
+            context.strokeStyle = zone.source === "REAL_VOLUME" ? "rgba(244,211,94,.8)" : "rgba(255,174,87,.8)";
+            context.setLineDash(zone.source === "REAL_VOLUME" ? [] : [4, 3]);
+            context.fillRect(left, top, right - left, bottom - top);
+            context.strokeRect(left, top, right - left, bottom - top);
+            context.setLineDash([]);
+            context.font = "10px sans-serif";
+            context.fillStyle = "#fff1cf";
+            context.fillText(zone.label + " \xB7 " + zone.multiplier + "\xD7 Median", left + 3, Math.max(11, top + 11), Math.max(20, right - left - 6));
+            context.restore();
+          }
+        });
+      } }) }];
+    }
+    set(result, visible) {
+      this.result = result;
+      this.visible = visible;
+      this.requestUpdate?.();
+    }
+  };
   var colorPattern = /^#[0-9a-fA-F]{6}$/;
   function validBar(c2) {
     return Number.isSafeInteger(c2.time) && c2.time > 0 && Number.isFinite(new Date(c2.time * 1e3).getTime()) && [c2.open, c2.high, c2.low, c2.close].every((n) => Number.isFinite(n) && n > 0) && (c2.tick_volume === void 0 || Number.isFinite(c2.tick_volume) && c2.tick_volume >= 0) && (c2.real_volume === void 0 || Number.isFinite(c2.real_volume) && c2.real_volume >= 0) && c2.high >= Math.max(c2.open, c2.close, c2.low) && c2.low <= Math.min(c2.open, c2.close, c2.high);
@@ -8994,6 +9123,7 @@ var ChartStudioV5 = (() => {
       lastValueVisible: false
     }, chart.panes().length);
     let volume = null;
+    let volumeZones = null;
     let bars = [], barsByTime = /* @__PURE__ */ new Map(), activeAccount = accountId, destroyed = false;
     function guard() {
       if (destroyed) throw Error("Chart was destroyed");
@@ -9762,6 +9892,7 @@ var ChartStudioV5 = (() => {
       refreshIchimokuOverlays();
       refreshPivotOverlays();
       refreshOscillators();
+      refreshVolumeZones();
       if (volume) volume.setData(volumeRows());
       hydrateDrawings();
       if (drawingsHydrated && persistenceStatus === "READY") persistDrawings();
@@ -9772,6 +9903,41 @@ var ChartStudioV5 = (() => {
         value: Math.max(0, (c2.real_volume ?? 0) > 0 ? c2.real_volume : c2.tick_volume ?? 0),
         color: c2.close >= c2.open ? "#4bc3d7" : "#dc6987"
       }));
+    }
+    function refreshVolumeZones() {
+      if (!volumeZones) return;
+      volumeZones.result = calculateVolumeZones(bars, { timeframeSeconds: volumeZones.options.timeframeSeconds, asOfUtc: volumeZones.asOf.timeUtc, lookback: volumeZones.options.lookback ?? 20, multiplier: volumeZones.options.multiplier ?? 2 });
+      volumeZones.primitive.set(volumeZones.result, volumeZones.options.visible ?? true);
+    }
+    function setVolumeZones(options, asOf) {
+      guard();
+      if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some((key) => !["timeframeSeconds", "lookback", "multiplier", "visible"].includes(key)) || !Number.isSafeInteger(options.timeframeSeconds) || options.timeframeSeconds <= 0 || options.timeframeSeconds > 86400 || options.lookback !== void 0 && (!Number.isInteger(options.lookback) || options.lookback < 5 || options.lookback > 100) || options.multiplier !== void 0 && (!Number.isFinite(options.multiplier) || options.multiplier < 1 || options.multiplier > 10) || options.visible !== void 0 && typeof options.visible !== "boolean") throw Error("Invalid volume-zone configuration");
+      if (!asOf || typeof asOf !== "object" || Array.isArray(asOf) || Object.keys(asOf).some((key) => !["source", "account", "symbol", "timeframe", "timeUtc"].includes(key)) || asOf.source !== "MT5_VERIFIED" || asOf.account !== activeAccount || !drawingScope || asOf.symbol !== drawingScope.symbol || asOf.timeframe !== drawingScope.timeframe || !Number.isSafeInteger(asOf.timeUtc) || asOf.timeUtc <= 0) throw Error("Volume-zone as-of does not match verified chart scope");
+      const scopedSeconds = drawingScope ? { M1: 60, M5: 300, M15: 900, M30: 1800, H1: 3600, H4: 14400, D1: 86400 }[drawingScope.timeframe] : void 0;
+      if (drawingScope && (scopedSeconds === void 0 || options.timeframeSeconds !== scopedSeconds)) throw Error("Volume-zone timeframe does not match chart scope");
+      const normalized = { ...options }, verifiedAsOf = { ...asOf }, result = calculateVolumeZones(bars, { timeframeSeconds: normalized.timeframeSeconds, asOfUtc: verifiedAsOf.timeUtc, lookback: normalized.lookback ?? 20, multiplier: normalized.multiplier ?? 2 });
+      if (volumeZones) {
+        volumeZones.options = normalized;
+        volumeZones.asOf = verifiedAsOf;
+        volumeZones.result = result;
+        volumeZones.primitive.set(result, normalized.visible ?? true);
+      } else {
+        const primitive = new VolumeZonePrimitive(result, normalized.visible ?? true);
+        price.attachPrimitive(primitive);
+        volumeZones = { options: normalized, asOf: verifiedAsOf, result, primitive };
+      }
+      return readVolumeZones();
+    }
+    function readVolumeZones() {
+      guard();
+      return volumeZones ? { options: { ...volumeZones.options }, asOf: { ...volumeZones.asOf }, result: JSON.parse(JSON.stringify(volumeZones.result)) } : null;
+    }
+    function clearVolumeZones() {
+      guard();
+      if (!volumeZones) return false;
+      price.detachPrimitive(volumeZones.primitive);
+      volumeZones = null;
+      return true;
     }
     function applyAverageData(opts, data) {
       guard();
@@ -11377,6 +11543,7 @@ var ChartStudioV5 = (() => {
       refreshLinearRegressionOverlays();
       refreshIchimokuOverlays();
       refreshPivotOverlays();
+      refreshVolumeZones();
       for (const group of supertrendOverlays.values()) updateSupertrendLast(group, c2, bars.length - 1, replacing && group.lastTime === c2.time);
       for (const group of parabolicSarOverlays.values()) updateParabolicSarLast(group, c2, bars.length - 1, replacing && group.lastTime === c2.time);
       refreshOscillators(true);
@@ -11415,6 +11582,7 @@ var ChartStudioV5 = (() => {
         timeUtc: new Date(time * 1e3).toISOString(),
         ohlc: { open: candle.open, high: candle.high, low: candle.low, close: candle.close },
         volume: real ? { value: candle.real_volume, source: "REAL_VOLUME" } : hasTick ? { value: candle.tick_volume, source: "TICK_VOLUME_PROXY" } : { value: null, source: "UNAVAILABLE" },
+        ...volumeZones ? { volumeZones: { status: volumeZones.result.status, zones: volumeZones.result.zones.filter((zone) => zone.time === time).map(({ algorithmVersion, source, label, volume: volume2, medianVolume, threshold, multiplier, start, end, high, low }) => ({ algorithmVersion, source, label, volume: volume2, medianVolume, threshold, multiplier, start, end, high, low })) } } : {},
         indicators: Array.from(readoutIndicators.values(), (indicator) => {
           const value = indicator.values.get(time), available = value !== void 0;
           const direction = indicator.directions?.get(time);
@@ -11426,6 +11594,10 @@ var ChartStudioV5 = (() => {
       guard();
       if (!/^[a-zA-Z0-9_-]{1,50}$/.test(next)) throw Error("Invalid account");
       clearPositionOverlays();
+      if (volumeZones) {
+        price.detachPrimitive(volumeZones.primitive);
+        volumeZones = null;
+      }
       finishDrag(true);
       selectDrawing(null);
       hoveredDrawingId = null;
@@ -11498,11 +11670,13 @@ var ChartStudioV5 = (() => {
     function inspect() {
       guard();
       return {
-        version: VERSION,
+        version: VERSION2,
         account: activeAccount,
         positionOverlayCount: positionOverlayLines.size,
         positionOverlays: readPositionOverlays().lines,
         displayTimeZone,
+        volumeZoneStatus: volumeZones?.result.status ?? "DISABLED",
+        volumeZoneCount: volumeZones?.result.zones.length ?? 0,
         candleCount: bars.length,
         lastTime: bars[bars.length - 1]?.time ?? null,
         averageCount: averages.size,
@@ -11539,6 +11713,10 @@ var ChartStudioV5 = (() => {
       if (destroyed) return;
       finishDrag(true);
       clearPositionOverlays();
+      if (volumeZones) {
+        price.detachPrimitive(volumeZones.primitive);
+        volumeZones = null;
+      }
       destroyed = true;
       host.removeEventListener("pointerdown", onPointerDown, true);
       host.removeEventListener("pointermove", onPointerMove, true);
@@ -11681,6 +11859,9 @@ var ChartStudioV5 = (() => {
       updateLast,
       changeAccount,
       averageOptions,
+      setVolumeZones,
+      readVolumeZones,
+      clearVolumeZones,
       setPositionOverlays,
       readPositionOverlays,
       inspect,
