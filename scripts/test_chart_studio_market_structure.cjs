@@ -58,6 +58,30 @@ assert.equal(complete.sessions[0].high,109);
 assert.equal(complete.sessions[0].low,99);
 assert.deepEqual(Array.from([complete.sessions[0].openingRange.high,complete.sessions[0].openingRange.low]),[105,99]);
 assert.equal(complete.sessions[0].openingRange.coverage,"COMPLETE");
+
+// Volume zones are closed-bar OHLC ranges triggered by a same-source trailing median.
+const volumeStart=stamp("2026-01-05T00:00:00Z"),volumeBars=Array.from({length:26},(_,i)=>({time:volumeStart+i*900,open:100,high:102,low:99,close:101,tick_volume:i===20?30:10,real_volume:0}));
+const volumeInputSnapshot=JSON.stringify(volumeBars),volumeModel=api.analyze(volumeBars,{asOfUtc:volumeStart+26*900,timeframeSeconds:900,sessions:[],volumeZones:true,volumeLookback:20,volumeMultiplier:2});
+assert.equal(volumeModel.volumeZones.status,"AVAILABLE");assert.equal(volumeModel.volumeZones.algorithmVersion,"volume-range-median-v1");
+assert.equal(volumeModel.volumeZones.zones.length,1);assert.equal(volumeModel.volumeZones.zones[0].source,"TICK_VOLUME_PROXY");
+assert.equal(volumeModel.volumeZones.zones[0].medianVolume,10);assert.equal(volumeModel.volumeZones.zones[0].volume,30);
+assert.equal(volumeModel.volumeZones.zones[0].start,volumeBars[20].time);assert.equal(volumeModel.volumeZones.zones[0].end,volumeStart+26*900);
+assert.equal(JSON.stringify(volumeBars),volumeInputSnapshot,"Volume-zone analysis must not mutate broker candles");
+const extendedVolumeBars=Array.from({length:50},(_,i)=>({time:volumeStart+i*900,open:100,high:102,low:99,close:101,tick_volume:i===20?30:10,real_volume:0}));
+const boundedZone=api.analyze(extendedVolumeBars,{asOfUtc:volumeStart+50*900,timeframeSeconds:900,sessions:[],volumeZones:true}).volumeZones.zones[0];
+assert.equal(boundedZone.end,volumeStart+40*900,"A volume zone is bounded to twenty chart bars after its trigger");
+assert.equal(api.analyze(volumeBars,{asOfUtc:volumeStart+26*900,timeframeSeconds:900,sessions:[],volumeZones:true,volumeMultiplier:11}).volumeZones.status,"INVALID_CONFIGURATION");
+const realBars=volumeBars.map((bar,i)=>({...bar,real_volume:i===20?30:10,tick_volume:i===20?300:1}));
+const realZones=api.analyze(realBars,{asOfUtc:volumeStart+26*900,timeframeSeconds:900,sessions:[],volumeZones:true}).volumeZones;
+assert.equal(realZones.zones[0].source,"REAL_VOLUME");assert.equal(realZones.zones[0].medianVolume,10);
+const futureVolume=api.analyze([...volumeBars,{time:volumeStart+26*900,open:110,high:111,low:109,close:110,tick_volume:100,real_volume:0}],{asOfUtc:volumeStart+26*900,timeframeSeconds:900,sessions:[],volumeZones:true});
+assert.deepEqual(futureVolume.volumeZones.zones.map(zone=>zone.time),volumeModel.volumeZones.zones.map(zone=>zone.time),"Future/forming OHLC and volume cannot trigger or extend zones");
+const shortVolume=api.analyze(volumeBars.slice(0,20),{asOfUtc:volumeStart+20*900,timeframeSeconds:900,sessions:[],volumeZones:true});
+assert.equal(shortVolume.volumeZones.status,"WARMUP");assert.equal(shortVolume.volumeZones.zones.length,0);
+const zoneDraws=[],zoneLabels=[],zoneContext=new Proxy({fillStyle:"",strokeStyle:"",fillRect(...args){zoneDraws.push({fillStyle:this.fillStyle,rect:args})},fillText(text){zoneLabels.push(String(text))}},{get(target,key){if(key in target)return target[key];return ()=>{}},set(target,key,value){target[key]=value;return true}});
+const zone=volumeModel.volumeZones.zones[0];api.draw(zoneContext,{...volumeModel,sessions:[],previous:{},pivots:[],equalLevels:[],sweeps:[]},{timeToX:time=>time===zone.start?20:time===volumeStart+25*900?75:time===volumeStart+24*900?70:null,priceToY:price=>price===102?30:60},{w:200,h:100});
+assert.ok(zoneDraws.some(item=>item.fillStyle==="rgba(255,174,87,.11)"&&JSON.stringify(item.rect)==="[20,30,60,30]"),"Tick-volume OHLC zones must be rendered as a bounded shaded chart range");
+assert.ok(zoneLabels.some(label=>label.includes("Tickvolumenproxy-OHLC-Range · 2× Median")),"Rendered zones identify their volume source and threshold");
 const gapped=api.analyze(bars.filter((_,i)=>i!==2),{asOfUtc:start+8*900,timeframeSeconds:900,
  sessions:[{id:"custom",label:"Test",timeZone:"America/New_York",start:"08:00",end:"10:00"}],openingRangeMinutes:60});
 assert.equal(gapped.sessions[0].coverage,"PARTIAL","Missing OHLC intervals are explicit");
