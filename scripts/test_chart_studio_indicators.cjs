@@ -374,3 +374,39 @@ for(const malformed of [
  [pivotSource[0],{...pivotSource[1],close:Infinity}]
 ])assert.equal(math.pivotPoints(malformed,pivotTarget,"D1").available,false,"malformed source must fail closed");
 assert.equal(math.pivotPoints(pivotSource,pivotTarget,"M15").available,false,"unsupported source basis fails closed");
+
+// Auto-Fibonacci uses only right-confirmed, closed swing pivots and never plots back in time.
+const swingPairs=[[10,8],[9,7],[12,4],[14,8],[15,9],[20,12],[18,10],[17,11],[16,10]];
+const swingBars=swingPairs.map(([high,low],index)=>({time:1701000000+index*900,open:(high+low)/2,high,low,close:(high+low)/2}));
+const swingAsOf=swingBars[7].time+900;
+const swingInputSnapshot=JSON.stringify(swingBars);
+const autoFib=math.autoFibonacci(swingBars,"M15",swingAsOf);
+assert.equal(JSON.stringify(swingBars),swingInputSnapshot,"Auto-Fibonacci does not mutate broker source candles");
+assert.equal(autoFib.available,true);
+assert.equal(autoFib.algorithmVersion,"confirmed-swing-auto-fib-v1");
+assert.equal(autoFib.source,"MT5_VERIFIED");
+assert.equal(autoFib.direction,"UP");
+assert.equal(autoFib.swingStrength,2);
+assert.equal(autoFib.start.type,"LOW");assert.equal(autoFib.start.time,swingBars[2].time);near(autoFib.start.price,4);
+assert.equal(autoFib.end.type,"HIGH");assert.equal(autoFib.end.time,swingBars[5].time);near(autoFib.end.price,20);
+assert.equal(autoFib.confirmedAt,swingBars[7].time+900);
+assert.equal(autoFib.lines["0"].points[0].time,swingBars[8].time,"no level is drawn until after the right-side confirmation bar closes");
+for(const [ratio,price] of [[0,20],[.236,16.224],[.382,13.888],[.5,12],[.618,10.112],[.786,7.424],[1,4]])near(autoFib.lines[String(ratio)].value,price,1e-8);
+const notYetConfirmed=math.autoFibonacci(swingBars,"M15",swingBars[7].time+899);
+assert.equal(notYetConfirmed.available,false,"forming right-side bars cannot confirm a swing");
+const descendingPairs=swingPairs.map(([high,low])=>[60-low,60-high]);
+const descendingBars=descendingPairs.map(([high,low],index)=>({time:1702000000+index*900,open:(high+low)/2,high,low,close:(high+low)/2}));
+const descending=math.autoFibonacci(descendingBars,"M15",descendingBars[7].time+900);
+assert.equal(descending.available,true);assert.equal(descending.direction,"DOWN");
+near(descending.lines["0.5"].value,48);
+const tiedPairs=swingPairs.map(([high,low],index)=>index===6?[20,low]:[high,low]);
+assert.equal(math.autoFibonacci(tiedPairs.map(([high,low],index)=>({time:1703000000+index*900,open:(high+low)/2,high,low,close:(high+low)/2})),"M15",1703000000+9*900).available,false,"equal neighboring highs are not swing pivots");
+assert.equal(math.autoFibonacci(swingBars,"M15",swingAsOf).lines["0.5"].points.at(-1).time,swingBars.at(-1).time);
+assert.equal(math.autoFibonacci(swingBars,"M15",swingBars[7].time+900).lines["0.5"].points[0].time,swingBars[8].time);
+assert.equal(math.autoFibonacci(swingBars,"M13",swingAsOf).available,false);
+assert.equal(math.autoFibonacci([...swingBars].reverse(),"M15",swingAsOf).available,false,"unsorted bars fail closed");
+assert.equal(math.autoFibonacci(swingBars.map((bar,index)=>index===1?{...bar,time:swingBars[0].time}:bar),"M15",swingAsOf).available,false,"duplicate timestamps fail closed");
+assert.equal(math.autoFibonacci(swingBars.map(bar=>({...bar,high:bar.high*Number.MAX_VALUE,low:bar.low*Number.MAX_VALUE,open:bar.open*Number.MAX_VALUE,close:bar.close*Number.MAX_VALUE})),"M15",swingAsOf).available,false,"overflowing levels fail closed");
+assert.deepEqual(JSON.parse(JSON.stringify(window.ChartStudioIndicators.calculate("autoFib",swingBars,{timeframe:"M15",asOfUtc:swingAsOf}).autoFib)),JSON.parse(JSON.stringify(autoFib)));
+assert.ok(Object.hasOwn(window.ChartStudioIndicators.registry,"autoFib"));
+assert.deepEqual(JSON.parse(JSON.stringify(window.ChartStudioIndicators.settings().autoFib)),{enabled:false,algorithmVersion:"confirmed-swing-auto-fib-v1",source:"MT5_VERIFIED"});

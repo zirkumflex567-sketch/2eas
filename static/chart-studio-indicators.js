@@ -24,6 +24,7 @@ const REGISTRY=Object.freeze({
  atrBands:{name:"ATR Bands",type:"overlay",period:20,atrPeriod:14,multiplier:2,min:2,max:200},
  linearRegression:{name:"Linear Regression Channel",type:"overlay",period:20,multiplier:2,min:2,max:200},
  ichimoku:{name:"Ichimoku Cloud",type:"overlay",tenkanPeriod:9,kijunPeriod:26,senkouBPeriod:52,displacement:26,min:2,max:200},
+ autoFib:{name:"Auto-Fibo · bestätigte Swings",type:"overlay",algorithmVersion:"confirmed-swing-auto-fib-v1",source:"MT5_VERIFIED"},
  pivots:{name:"Pivot Points · MT5",type:"overlay",basis:"D1"},
  vwap:{name:"Session-VWAP (Volumenproxy)",type:"overlay",timeZone:"UTC",sessionStart:"00:00"}
 });
@@ -410,6 +411,7 @@ function calc(kind,candles,settings={}){
  if(kind==="atrBands")return {atrBands:atrBands(candles,settings.period??20,settings.atrPeriod??14,settings.multiplier??2)};
  if(kind==="linearRegression")return {linearRegression:linearRegressionChannel(candles,settings.period??20,settings.multiplier??2)};
  if(kind==="ichimoku")return {ichimoku:ichimoku(candles,settings)};
+ if(kind==="autoFib")return {autoFib:autoFibonacci(candles,settings.timeframe||"M15",settings.asOfUtc??Math.floor(Date.now()/1000))};
  if(kind==="pivots")return {pivots:pivotPoints(settings.sourceBars||[],candles,settings.basis||"D1")};
  throw Error("Unknown indicator: "+kind);
 }
@@ -434,6 +436,40 @@ function pivotPoints(sourceInput,targetInput,basis="D1"){
   for(const key of Object.keys(lines))lines[key].push({time,value:values[key],sourceTime:bar.time,validFrom:from.time,validTo});
  }
  return {...empty,available:Object.values(lines).some(points=>points.length),reason:null,lines};
+}
+function autoFibonacci(input,timeframe="M15",asOfUtc=Math.floor(Date.now()/1000)){
+ const ratios=[0,.236,.382,.5,.618,.786,1],algorithmVersion="confirmed-swing-auto-fib-v1",timeframes={M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400,W1:604800};
+ const empty={available:false,reason:"WARMUP_OR_MISSING",algorithmVersion,source:"MT5_VERIFIED",timeframe,swingStrength:2,direction:null,start:null,end:null,confirmedAt:null,lines:Object.fromEntries(ratios.map(ratio=>[String(ratio),{ratio,value:null,points:[]}]))};
+ const seconds=timeframes[timeframe];
+ if(!seconds||!Number.isSafeInteger(asOfUtc)||asOfUtc<=0||!Array.isArray(input)||input.length>100000)return {...empty,reason:"INVALID_INPUT_OR_TIMEFRAME"};
+ const bars=[];let previous=0;
+ for(const raw of input){
+  if(!raw||!Number.isSafeInteger(raw.time)||raw.time<=previous||![raw.open,raw.high,raw.low,raw.close].every(Number.isFinite))return {...empty,reason:"INVALID_OHLC_ORDER_OR_TIMESTAMP"};
+  if(raw.high<Math.max(raw.open,raw.low,raw.close)||raw.low>Math.min(raw.open,raw.high,raw.close))return {...empty,reason:"INVALID_OHLC_RANGE"};
+  bars.push({time:raw.time,open:raw.open,high:raw.high,low:raw.low,close:raw.close});previous=raw.time;
+ }
+ const closed=bars.filter(bar=>bar.time+seconds<=asOfUtc),strength=2,pivots=[];
+ for(let index=strength;index<closed.length-strength;index++){
+  const bar=closed[index],left=closed.slice(index-strength,index),right=closed.slice(index+1,index+strength+1);
+  const swingHigh=left.every(item=>bar.high>item.high)&&right.every(item=>bar.high>item.high);
+  const swingLow=left.every(item=>bar.low<item.low)&&right.every(item=>bar.low<item.low);
+  if(swingHigh===swingLow)continue;
+  const pivot={type:swingHigh?"HIGH":"LOW",time:bar.time,price:swingHigh?bar.high:bar.low,confirmedAt:closed[index+strength].time+seconds};
+  const prior=pivots.at(-1);
+  if(prior?.type===pivot.type){if(pivot.type==="HIGH"?pivot.price>prior.price:pivot.price<prior.price)pivots[pivots.length-1]=pivot}
+  else pivots.push(pivot);
+ }
+ if(pivots.length<2)return {...empty,reason:"WARMUP_OR_MISSING"};
+ const start=pivots.at(-2),end=pivots.at(-1),direction=start.type==="LOW"&&end.type==="HIGH"?"UP":start.type==="HIGH"&&end.type==="LOW"?"DOWN":null;
+ if(!direction||!Number.isFinite(start.price)||!Number.isFinite(end.price)||start.price===end.price)return {...empty,reason:"NO_CONFIRMED_IMPULSE"};
+ const range=Math.abs(end.price-start.price),lines={};
+ if(!Number.isFinite(range)||range<=0)return {...empty,reason:"NO_CONFIRMED_IMPULSE"};
+ for(const ratio of ratios){
+  const value=direction==="UP"?end.price-range*ratio:end.price+range*ratio;
+  if(!Number.isFinite(value))return {...empty,reason:"INVALID_LEVEL_PRICE"};
+  lines[String(ratio)]={ratio,value,points:bars.filter(bar=>bar.time>=end.confirmedAt).map(bar=>({time:bar.time,value}))};
+ }
+ return {...empty,available:true,reason:null,direction,start,end,confirmedAt:end.confirmedAt,lines};
 }
 function createIncremental(kind,input,settings={}){
  if(!["rsi","atr","macd"].includes(kind))throw Error("Unsupported incremental indicator");
@@ -504,7 +540,7 @@ function defaults(){
   atr:{enabled:false,period:14},volume:{enabled:false,upColor:"#41cce9",downColor:"#f7758b"},adx:{enabled:false,period:14},
   stochastic:{enabled:false,period:14,smoothK:3,smoothD:3},stochrsi:{enabled:false,period:14,stochPeriod:14,smoothK:3,smoothD:3},cci:{enabled:false,period:20},
   momentum:{enabled:false,period:10},roc:{enabled:false,period:10},sar:{enabled:false,step:.02,maxStep:.2},obv:{enabled:false},mfi:{enabled:false,period:14},supertrend:{enabled:false,period:10,multiplier:3},
-  donchian:{enabled:false,period:20},keltner:{enabled:false,period:20,atrPeriod:10,multiplier:2},atrBands:{enabled:false,period:20,atrPeriod:14,multiplier:2},linearRegression:{enabled:false,period:20,multiplier:2},ichimoku:{enabled:false,tenkanPeriod:9,kijunPeriod:26,senkouBPeriod:52,displacement:26},pivots:{enabled:false,basis:"D1",algorithmVersion:"classic-floor-v1",source:"MT5_VERIFIED",sourceWindow:null},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
+  donchian:{enabled:false,period:20},keltner:{enabled:false,period:20,atrPeriod:10,multiplier:2},atrBands:{enabled:false,period:20,atrPeriod:14,multiplier:2},linearRegression:{enabled:false,period:20,multiplier:2},ichimoku:{enabled:false,tenkanPeriod:9,kijunPeriod:26,senkouBPeriod:52,displacement:26},pivots:{enabled:false,basis:"D1",algorithmVersion:"classic-floor-v1",source:"MT5_VERIFIED",sourceWindow:null},autoFib:{enabled:false,algorithmVersion:"confirmed-swing-auto-fib-v1",source:"MT5_VERIFIED"},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
 }
 function restore(account){
  try{const raw=JSON.parse(localStorage.getItem(storagePrefix+account)||"null");
@@ -575,7 +611,7 @@ function syncPanel(){
  state.controls.replaceChildren();
  for(const id of Object.keys(REGISTRY))state.controls.append(box(id));
 }
-function data(kind){return calc(kind,state.bars,kind==="ichimoku"?{...state.settings[kind],timeframe:state.timeframe}:state.settings[kind])}
+function data(kind){return calc(kind,state.bars,kind==="ichimoku"||kind==="autoFib"?{...state.settings[kind],timeframe:state.timeframe,asOfUtc:Math.floor(Date.now()/1000)}:state.settings[kind])}
 const STREAM_KINDS=new Set(["rsi","macd","atr"]);
 function streamSettings(kind){
  const cfg=state.settings[kind];
@@ -593,7 +629,7 @@ function oneTailChange(previous,next){
  return sameLength?previous.at(-1).time===next.at(-1).time:next.at(-1).time>previous.at(-1).time;
 }
 function addReadout(kind,calculated,onlyTime=null){
- const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],sar:["SAR"],obv:["OBV · Broker-Volumen"],mfi:["MFI · Volumenproxy"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],atrBands:["Upper","Middle","Lower"],linearRegression:["Upper","Middle","Lower"],ichimoku:["Tenkan","Kijun","Senkou A (Quelle)","Senkou B (Quelle)","Chikou (Quelle)"],vwap:["VWAP"]}[kind];
+ const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],sar:["SAR"],obv:["OBV · Broker-Volumen"],mfi:["MFI · Volumenproxy"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],atrBands:["Upper","Middle","Lower"],linearRegression:["Upper","Middle","Lower"],ichimoku:["Tenkan","Kijun","Senkou A (Quelle)","Senkou B (Quelle)","Chikou (Quelle)"],autoFib:["0%","23,6%","38,2%","50%","61,8%","78,6%","100%"],vwap:["VWAP"]}[kind];
  if(kind==="ichimoku"){
   for(const [component,label] of [["tenkan",labels[0]],["kijun",labels[1]],["senkouA",labels[2]],["senkouB",labels[3]],["chikou",labels[4]]])for(const point of calculated.ichimoku[component]){
    if(onlyTime!==null&&point.sourceTime!==onlyTime)continue;
@@ -687,6 +723,17 @@ function renderPanes(incrementalUpdates=null){
     const points=calculated?.lines[key]||[],byTime=new Map(points.map(point=>[point.time,point]));series.setData(state.bars.map(bar=>byTime.has(bar.time)?{time:bar.time,value:byTime.get(bar.time).value}:{time:bar.time}));}
    state.pivotMetaByTime.clear();if(calculated?.available){for(const point of calculated.lines.p)state.pivotMetaByTime.set(point.time,{sourceTime:point.sourceTime,validFrom:point.validFrom,validTo:point.validTo,basis:calculated.basis,algorithmVersion:calculated.algorithmVersion});
     const labels={p:"P",r1:"R1",r2:"R2",r3:"R3",s1:"S1",s2:"S2",s3:"S3"};for(const key of keys)for(const point of calculated.lines[key]){if(readoutTime!==null&&point.time!==readoutTime)continue;const rows=state.readouts.get(point.time)||[];rows.push({kind:"pivots",label:labels[key],value:point.value});state.readouts.set(point.time,rows)}}
+   continue;
+  }
+  if(id==="autoFib"){
+   const calculated=state.settings.autoFib.enabled?data("autoFib").autoFib:null,keys=["0","0.236","0.382","0.5","0.618","0.786","1"],colors={"0":"#f4d35e","0.236":"#54d6ef","0.382":"#41d89a","0.5":"#b58aff","0.618":"#f47789","0.786":"#ffae57","1":"#e6e6e6"};
+   if(!state.autoFibOverlays&&state.settings.autoFib.enabled)state.autoFibOverlays=Object.fromEntries(keys.map(key=>[key,state.chart.addLineSeries({title:"Auto-Fibo "+(Number(key)*100)+"%",color:colors[key],lineWidth:key==="0"||key==="1"?2:1,lastValueVisible:true,priceLineVisible:false})]));
+   if(!incrementalUpdates)state.autoFibMetaByTime.clear();
+   if(state.autoFibOverlays)for(const key of keys){const series=state.autoFibOverlays[key];series.applyOptions({visible:!!state.settings.autoFib.enabled,title:"Auto-Fibo "+(Number(key)*100)+"% · bestätigter Swing"});const line=calculated?.lines[key];series.setData(line?.points||[]);
+    if(calculated?.available&&line)for(const point of line.points){if(readoutTime!==null&&point.time!==readoutTime)continue;const rows=state.readouts.get(point.time)||[];rows.push({kind:"autoFib",label:key==="0"?"0%":key==="1"?"100%":(Number(key)*100).toLocaleString("de-DE")+"%",value:line.value});state.readouts.set(point.time,rows);state.autoFibMetaByTime.set(point.time,{algorithmVersion:calculated.algorithmVersion,direction:calculated.direction,start:calculated.start,end:calculated.end,confirmedAt:calculated.confirmedAt});}
+   }
+   if(state.settings.autoFib.enabled&&calculated&&!calculated.available)state.notice.textContent="Auto-Fibo nicht verfügbar · "+calculated.reason+" · confirmed-swing-auto-fib-v1";
+   else if(state.settings.autoFib.enabled&&calculated?.available)state.notice.textContent="Auto-Fibo · MT5_VERIFIED · confirmed-swing-auto-fib-v1 · Pivotstärke 2";
    continue;
   }
   if(id==="ichimoku"){
@@ -790,7 +837,7 @@ function readout(time){
  if(!state)return "";
  const rows=state.readouts.get(Number(time))||[];
  const values=[];
- const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],sar:["SAR"],obv:["OBV · Broker-Volumen"],mfi:["MFI · Volumenproxy"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],atrBands:["Upper","Middle","Lower"],linearRegression:["Upper","Middle","Lower"],ichimoku:["Tenkan","Kijun","Senkou A (Quelle)","Senkou B (Quelle)","Chikou (Quelle)"],pivots:["P","R1","R2","R3","S1","S2","S3"],vwap:["VWAP"]};
+ const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],sar:["SAR"],obv:["OBV · Broker-Volumen"],mfi:["MFI · Volumenproxy"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],atrBands:["Upper","Middle","Lower"],linearRegression:["Upper","Middle","Lower"],ichimoku:["Tenkan","Kijun","Senkou A (Quelle)","Senkou B (Quelle)","Chikou (Quelle)"],pivots:["P","R1","R2","R3","S1","S2","S3"],autoFib:["0%","23,6%","38,2%","50%","61,8%","78,6%","100%"],vwap:["VWAP"]};
  for(const id of Object.keys(REGISTRY))if(state.settings[id].enabled){
   for(const label of components[id]){
    const row=rows.find(item=>item.kind===id&&item.label===label);
@@ -799,6 +846,7 @@ function readout(time){
   }
  }
  const pivotMeta=state.pivotMetaByTime.get(Number(time));if(state.settings.pivots.enabled&&pivotMeta)values.push("Quelle "+pivotMeta.basis+" "+new Date(pivotMeta.sourceTime*1000).toISOString().slice(0,10)+" · gültig ab "+new Date(pivotMeta.validFrom*1000).toISOString()+" · "+pivotMeta.algorithmVersion);
+ const autoFibMeta=state.autoFibMetaByTime.get(Number(time));if(state.settings.autoFib.enabled&&autoFibMeta)values.push("MT5_VERIFIED · "+autoFibMeta.algorithmVersion+" · "+(autoFibMeta.direction==="UP"?"Aufwärtsimpuls":"Abwärtsimpuls")+" · Swing "+new Date(autoFibMeta.start.time*1000).toISOString()+" → "+new Date(autoFibMeta.end.time*1000).toISOString()+" · bestätigt ab "+new Date(autoFibMeta.confirmedAt*1000).toISOString());
  return values.join(" · ")||"Keine aktiven Indikatoren";
 }
 let pivotRequestGeneration=0;
@@ -899,7 +947,9 @@ function updateConfig(kind,prop,val){
   state.settings.macd.fast=Math.min(state.settings.macd.fast,state.settings.macd.slow-1);
   state.notice.textContent="MACD benötigt fast < slow; Werte korrigiert.";
  }
- persist();syncPanel();renderPanes();state.notice.textContent=REGISTRY[kind].name+" aktualisiert.";
+ persist();syncPanel();renderPanes();
+ if(kind==="autoFib"&&state.settings.autoFib.enabled){const result=data("autoFib");state.notice.textContent=result?.available?"Auto-Fibo · MT5_VERIFIED · confirmed-swing-auto-fib-v1 · Pivotstärke 2":"Auto-Fibo nicht verfügbar · "+(result?.reason||"WARMUP_OR_MISSING")+" · confirmed-swing-auto-fib-v1"}
+ else state.notice.textContent=REGISTRY[kind].name+" aktualisiert.";
  if(kind==="pivots"&&prop==="enabled"&&val===true)loadPivotSource();
  if(kind==="pivots"&&prop==="enabled"&&val!==true){state.pivotController?.abort();state.pivotController=null;pivotRequestGeneration++;state.pivotSource=null;state.pivotMetaByTime.clear();schedulePivotRefresh()}
  return true;
@@ -940,7 +990,7 @@ function mount({chart,host,panel,account="titan",symbol="XAUUSD",onRender}){
  head.textContent="Zusätzliche Indikator-Panes · unabhängig ein-/ausblendbar";panel.append(head,controls);
  const notice=document.createElement("p");notice.className="cs-indicator-notice";notice.textContent="Indikatoren basieren auf geladenen Brokerkerzen. Warm-up erforderlich.";
  panel.append(notice);
- state={chart,host,stack,controls,notice,account,symbol,onRender,timeframe:"M15",settings:restore(account),bars:[],signature:null,panes:new Map(),streams:new Map(),vwapOverlay:null,supertrendUpOverlay:null,supertrendDownOverlay:null,sarUpOverlay:null,sarDownOverlay:null,donchianOverlays:null,keltnerOverlays:null,ichimokuValues:null,readouts:new Map(),pivotSource:null,pivotOverlays:null,pivotMetaByTime:new Map(),pivotController:null,pivotRefreshTimer:null};
+ state={chart,host,stack,controls,notice,account,symbol,onRender,timeframe:"M15",settings:restore(account),bars:[],signature:null,panes:new Map(),streams:new Map(),vwapOverlay:null,supertrendUpOverlay:null,supertrendDownOverlay:null,sarUpOverlay:null,sarDownOverlay:null,donchianOverlays:null,keltnerOverlays:null,ichimokuValues:null,readouts:new Map(),pivotSource:null,pivotOverlays:null,pivotMetaByTime:new Map(),autoFibOverlays:null,autoFibMetaByTime:new Map(),pivotController:null,pivotRefreshTimer:null};
  controls.addEventListener("change",evt=>{
   const target=evt.target;
   if(!target.dataset.kind)return;
@@ -952,5 +1002,5 @@ function mount({chart,host,panel,account="titan",symbol="XAUUSD",onRender}){
 }
 function setTimeframe(timeframe){if(!state||!Object.hasOwn({M1:1,M5:1,M15:1,M30:1,H1:1,H4:1,D1:1,W1:1},timeframe))return;setScope(state.account,state.symbol,timeframe)}
 window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,setScope,setTimeframe,updateConfig,settings,readout,ichimokuValues:()=>state?.ichimokuValues??null,createIncremental,
- registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,stochRsi,cci,momentum,roc,parabolicSar,obv,mfi,macd,atr,adx,supertrend,donchian,keltner,atrBands,linearRegressionChannel,ichimoku,pivotPoints,vwap,volumes})});
+ registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,stochRsi,cci,momentum,roc,parabolicSar,obv,mfi,macd,atr,adx,supertrend,donchian,keltner,atrBands,linearRegressionChannel,ichimoku,pivotPoints,autoFibonacci,vwap,volumes})});
 })();
