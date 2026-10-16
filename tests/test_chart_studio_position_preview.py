@@ -554,6 +554,58 @@ def _prepare_commit_service(client, fake, tmp_path, guard=None, *, order_check_r
     return store, sent
 
 
+@pytest.mark.parametrize(('identity', 'peer', 'confirmed'), [
+    (('local', 'testclient', 'read'), 'testclient', True),
+    (('local', 'testclient', 'trade'), '', True),
+    (('local', 'testclient', 'trade'), 'testclient', False),
+])
+def test_commit_requires_trade_identity_peer_and_explicit_confirmation(api, tmp_path, identity, peer, confirmed):
+    from types import SimpleNamespace
+    from chart_studio.position_commit import PositionCommitService
+    from chart_studio.position_commit_store import PositionCommitStore
+    client, fake, request = api
+    preview = client.post('/api/chart/v1/position/preview-stop', json={
+        **request, 'candidate': {'slPrice': '3999.00'},
+    }).json()
+    store = PositionCommitStore(tmp_path / 'private' / 'identity-commit.sqlite3', checkout_root=tmp_path / 'checkout')
+    service = PositionCommitService(fake, client.app.state.position_preview_registry, store, None, now=lambda: NOW)
+    payload = SimpleNamespace(account='titan', symbol='XAUUSD',
+        positionTicket=preview['positionTicket'], expectedRevision=preview['positionRevision'],
+        previewId=preview['previewId'], userConfirmed=confirmed,
+        idempotencyKey='abababab-abab-4bab-8bab-abababababab')
+    fake.calls.clear()
+    with pytest.raises(HTTPException) as rejected:
+        service.commit(payload, identity, peer)
+    assert rejected.value.status_code == 403
+    assert rejected.value.detail['code'] == 'IDENTITY_REQUIRED'
+    assert fake.calls == []
+    assert fake.writes == 0
+
+
+@pytest.mark.parametrize(('account', 'symbol'), [
+    ('titan_m5', 'XAUUSD'),
+    ('titan', 'EURUSD.a'),
+    ('blueberry', 'XAUUSD.pi'),
+])
+def test_commit_rejects_account_symbol_mismatch_before_gateway(api, tmp_path, account, symbol):
+    from types import SimpleNamespace
+    from chart_studio.position_commit import PositionCommitService
+    from chart_studio.position_commit_store import PositionCommitStore
+    client, fake, _ = api
+    store = PositionCommitStore(tmp_path / 'private' / 'scope-commit.sqlite3', checkout_root=tmp_path / 'checkout')
+    service = PositionCommitService(fake, None, store, None, now=lambda: NOW)
+    payload = SimpleNamespace(account=account, symbol=symbol, positionTicket='1',
+        expectedRevision='a' * 64, previewId='p' * 40, userConfirmed=True,
+        idempotencyKey='cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd')
+    fake.calls.clear()
+    with pytest.raises(HTTPException) as rejected:
+        service.commit(payload, ('local', 'testclient', 'trade'), 'testclient')
+    assert rejected.value.status_code == 403
+    assert rejected.value.detail['code'] == 'DEMO_ACCOUNT_REQUIRED'
+    assert fake.calls == []
+    assert fake.writes == 0
+
+
 def test_enabled_commit_route_runs_only_injected_demo_service_and_idempotently_replays(api, tmp_path):
     client, fake, preview_request = api
     preview = client.post('/api/chart/v1/position/preview-stop', json={
@@ -819,6 +871,27 @@ def test_commit_rechecks_quote_and_symbol_rules_after_order_check(api, tmp_path,
     response, _ = _post_enabled_commit(client, preview)
     assert response.status_code == expected_status
     assert response.json()['detail']['code'] == expected_code
+    assert sent == []
+    assert fake.writes == 0
+
+
+def test_commit_rejects_fresh_quote_that_moves_stop_into_broker_boundary(api, tmp_path):
+    from types import SimpleNamespace
+    client, fake, request = api
+    preview = client.post('/api/chart/v1/position/preview-stop', json={
+        **request, 'candidate': {'slPrice': '3999.00'},
+    }).json()
+    assert preview['valid'] is True
+    _, sent = _prepare_commit_service(client, fake, tmp_path)
+    def order_check(_):
+        # Keep the quote fresh, but move the BUY stop inside both stop and freeze levels.
+        fake.tick.bid = 3999.03
+        fake.tick.ask = 3999.08
+        return SimpleNamespace(retcode=0)
+    fake.order_check = order_check
+    response, _ = _post_enabled_commit(client, preview)
+    assert response.status_code == 422
+    assert response.json()['detail']['code'] == 'GEOMETRY_INVALID'
     assert sent == []
     assert fake.writes == 0
 
