@@ -14,6 +14,7 @@ const entries=Object.freeze([
  {id:"stochastic",name:"Stochastic",group:"Momentum",desc:"%K/%D-Oszillator mit konfigurierbarer Glättung",type:"oscillator",kind:"stochastic"},
  {id:"stochrsi",name:"StochRSI",group:"Momentum",desc:"Stochastic RSI mit RSI-, Stochastik- und Glättungsperioden",type:"oscillator",kind:"stochrsi"},
  {id:"supertrend",name:"Supertrend",group:"Trend",desc:"ATR-basierter, farbiger Trend-Overlay (Standard 10 × 3,0)",type:"toggle",kind:"supertrend"},
+ {id:"donchian",name:"Donchian-Kanal",group:"Trend",desc:"20-Kerzen-Hoch/Tief mit Mittellinie; vollständiger Lookback erforderlich",type:"toggle",kind:"donchian"},
  {id:"momentum",name:"Momentum",group:"Momentum",desc:"Close-Differenz zum Schlusskurs vor der gewählten Periode",type:"oscillator",kind:"momentum"},
  {id:"roc",name:"Rate of Change (ROC)",group:"Momentum",desc:"Prozentuale Close-Änderung über die gewählte Periode",type:"oscillator",kind:"roc"},
  {id:"volume",name:"Broker-Volumen",group:"Volumen",desc:"Reales oder Tickvolumen, kein garantierter Orderflow",type:"toggle",kind:"volume"},

@@ -16,6 +16,7 @@ const REGISTRY=Object.freeze({
  cci:{name:"Commodity Channel Index",type:"oscillator",period:20,min:2,max:200},
  momentum:{name:"Momentum",type:"oscillator",period:10,min:2,max:200},
  roc:{name:"Rate of Change (%)",type:"oscillator",period:10,min:2,max:200},
+ donchian:{name:"Donchian-Kanal",type:"overlay",period:20,min:2,max:200},
  vwap:{name:"Session-VWAP (Volumenproxy)",type:"overlay",timeZone:"UTC",sessionStart:"00:00"}
 });
 const storagePrefix="2eas:studio:indicators:v1:";
@@ -214,6 +215,16 @@ function supertrend(input,period=10,multiplier=3){
  }
  return out;
 }
+function donchian(input,period=20){
+ const bars=validateBars(input),upper=[],middle=[],lower=[];
+ if(!Number.isInteger(period)||period<2||period>200)return {upper,middle,lower};
+ for(let i=period-1;i<bars.length;i++){
+  let high=-Infinity,low=Infinity;
+  for(let j=i-period+1;j<=i;j++){high=Math.max(high,bars[j].high);low=Math.min(low,bars[j].low)}
+  const time=bars[i].time;upper.push({time,value:high});middle.push({time,value:(high+low)/2});lower.push({time,value:low});
+ }
+ return {upper,middle,lower};
+}
 function sessionConfig(settings={}){
  const timeZone=settings.timeZone??"UTC",sessionStart=settings.sessionStart??"00:00";
  if(typeof timeZone!=="string"||timeZone.length>64||typeof sessionStart!=="string"||!/^([01]\d|2[0-3]):[0-5]\d$/.test(sessionStart))return null;
@@ -254,13 +265,15 @@ function calc(kind,candles,settings={}){
  if(kind==="momentum")return {momentum:momentum(candles,settings.period??10)};
  if(kind==="roc")return {roc:roc(candles,settings.period??10)};
  if(kind==="vwap")return {vwap:vwap(candles,settings)};
+ if(kind==="donchian")return {donchian:donchian(candles,settings.period??20)};
  throw Error("Unknown indicator: "+kind);
 }
 function defaults(){
  return {rsi:{enabled:false,period:14},macd:{enabled:false,fast:12,slow:26,signal:9},
   atr:{enabled:false,period:14},volume:{enabled:false,upColor:"#41cce9",downColor:"#f7758b"},adx:{enabled:false,period:14},
   stochastic:{enabled:false,period:14,smoothK:3,smoothD:3},stochrsi:{enabled:false,period:14,stochPeriod:14,smoothK:3,smoothD:3},cci:{enabled:false,period:20},
-  momentum:{enabled:false,period:10},roc:{enabled:false,period:10},supertrend:{enabled:false,period:10,multiplier:3},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
+  momentum:{enabled:false,period:10},roc:{enabled:false,period:10},supertrend:{enabled:false,period:10,multiplier:3},
+  donchian:{enabled:false,period:20},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
 }
 function restore(account){
  try{const raw=JSON.parse(localStorage.getItem(storagePrefix+account)||"null");
@@ -319,7 +332,14 @@ function syncPanel(){
 }
 function data(kind){return calc(kind,state.bars,state.settings[kind])}
 function addReadout(kind,calculated){
- const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],vwap:["VWAP"]}[kind];
+ const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],donchian:["Upper","Middle","Lower"],vwap:["VWAP"]}[kind];
+ if(kind==="donchian"){
+  const components=["upper","middle","lower"];
+  for(let i=0;i<components.length;i++)for(const point of calculated.donchian[components[i]]){
+   const rows=state.readouts.get(point.time)||[];rows.push({kind,label:labels[i],value:point.value});state.readouts.set(point.time,rows);
+  }
+  return;
+ }
  const keys=Object.keys(calculated);
  for(let i=0;i<keys.length;i++)for(const point of calculated[keys[i]]||[]){
   const rows=state.readouts.get(point.time)||[];
@@ -384,6 +404,23 @@ function renderPanes(){
  if(!state)return;
  state.readouts=new Map();
  for(const id of Object.keys(REGISTRY)){
+  if(id==="donchian"){
+   const calculated=state.settings.donchian.enabled?data(id):null;
+   if(calculated)addReadout(id,calculated);
+   if(!state.donchianOverlays&&state.settings.donchian.enabled){
+    state.donchianOverlays={
+     upper:state.chart.addLineSeries({title:"Donchian Upper",color:"#55d7ee",lineWidth:2,lastValueVisible:true,priceLineVisible:false}),
+     middle:state.chart.addLineSeries({title:"Donchian Mitte",color:"#b7c8d0",lineWidth:1,lastValueVisible:false,priceLineVisible:false}),
+     lower:state.chart.addLineSeries({title:"Donchian Lower",color:"#f3c56a",lineWidth:2,lastValueVisible:true,priceLineVisible:false})
+    };
+   }
+   const visible=!!state.settings.donchian.enabled;
+   if(state.donchianOverlays)for(const key of ["upper","middle","lower"]){
+    const series=state.donchianOverlays[key];series.applyOptions({visible,title:key==="upper"?"Donchian Upper · "+state.settings.donchian.period:key==="middle"?"Donchian Mitte · "+state.settings.donchian.period:"Donchian Lower · "+state.settings.donchian.period});
+    if(calculated){const byTime=new Map(calculated.donchian[key].map(point=>[point.time,point]));series.setData(state.bars.map(bar=>byTime.get(bar.time)||{time:bar.time}));}
+   }
+   continue;
+  }
   if(id==="supertrend"){
    const calculated=state.settings.supertrend.enabled?data("supertrend"):null;
    if(calculated)addReadout(id,calculated);
@@ -428,7 +465,7 @@ function readout(time){
  if(!state)return "";
  const rows=state.readouts.get(Number(time))||[];
  const values=[];
- const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],vwap:["VWAP"]};
+ const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],donchian:["Upper","Middle","Lower"],vwap:["VWAP"]};
  for(const id of Object.keys(REGISTRY))if(state.settings[id].enabled){
   for(const label of components[id]){
    const row=rows.find(item=>item.kind===id&&item.label===label);
@@ -509,7 +546,7 @@ function mount({chart,host,panel,account="titan"}){
  head.textContent="Zusätzliche Indikator-Panes · unabhängig ein-/ausblendbar";panel.append(head,controls);
  const notice=document.createElement("p");notice.className="cs-indicator-notice";notice.textContent="Indikatoren basieren auf geladenen Brokerkerzen. Warm-up erforderlich.";
  panel.append(notice);
- state={chart,host,stack,controls,notice,account,settings:restore(account),bars:[],signature:null,panes:new Map(),vwapOverlay:null,supertrendUpOverlay:null,supertrendDownOverlay:null,readouts:new Map()};
+ state={chart,host,stack,controls,notice,account,settings:restore(account),bars:[],signature:null,panes:new Map(),vwapOverlay:null,supertrendUpOverlay:null,supertrendDownOverlay:null,donchianOverlays:null,readouts:new Map()};
  controls.addEventListener("change",evt=>{
   const target=evt.target;
   if(!target.dataset.kind)return;
@@ -520,5 +557,5 @@ function mount({chart,host,panel,account="titan"}){
  syncPanel();renderPanes();
 }
 window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,updateConfig,settings,readout,
- registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,stochRsi,cci,momentum,roc,macd,atr,adx,supertrend,vwap,volumes})});
+ registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,stochRsi,cci,momentum,roc,macd,atr,adx,supertrend,donchian,vwap,volumes})});
 })();

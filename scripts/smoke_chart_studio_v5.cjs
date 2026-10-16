@@ -269,6 +269,17 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.destroy();host.remove();
    return {independent,edited,editedExpected,forming,formingExpected,badPeriodRejected,nativeRows,reference,extraTypes,ema20Reference,ema20Edited,ema20EditedExpected,reloaded,replacementExpected,matrixMismatches,ema20Styles,editedEma20Style};
   });
+  const donchianProbe=await page.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:900px;height:360px;position:fixed;left:-2000px;top:0";document.body.append(host);
+   const engine=ChartStudioV5.createStudioV5(host,"at025-native-donchian"),bars=Array.from({length:8},(_,i)=>({time:1700400000+i*60,open:10+i,high:12+i,low:8+i,close:11+i}));
+   engine.setCandles(bars);engine.addDonchian({id:"donchian-main",period:3,color:"#55d7ee"});
+   const row=engine.readDataWindow(bars.at(-1).time).indicators.find(item=>item.id==="donchian-main");
+   const changed={...bars.at(-1),high:30,low:6,close:20};engine.updateLast(changed);
+   const updated=engine.readDataWindow(changed.time).indicators.find(item=>item.id==="donchian-main");
+   let badPeriodRejected=false;try{engine.addDonchian({id:"donchian-bad",period:201,color:"#ffffff"})}catch(_){badPeriodRejected=true}
+   engine.changeAccount("at025-other");const isolated=engine.readDataWindow(changed.time).indicators?.length??0;
+   engine.destroy();host.remove();return {row,updated,badPeriodRejected,isolated};
+  });
   const oscillatorProbe=await page.evaluate(()=>{
    const host=document.createElement("div");host.style.cssText="width:900px;height:420px;position:fixed;left:-2000px;top:0";document.body.append(host);
    const engine=ChartStudioV5.createStudioV5(host,"at001-native-oscillator",{symbol:"XAUUSD",timeframe:"M5"});
@@ -487,6 +498,10 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.ok(paneResizeAfter[0]<paneResizeSetup.heights[0]-20,`Dragging the native separator shrinks the price pane (${JSON.stringify({before:paneResizeSetup.heights,after:paneResizeAfter,xy:[paneResizeSetup.x,paneResizeSetup.y]})})`);
   assert.ok(paneResizeAfter[1]>paneResizeSetup.heights[1]+20,"Dragging the native separator expands the RSI pane");
   assert.deepEqual(movingAverageProbe.independent.slice(0,2).map(x=>x.id),["ema-close","ema-high"]);
+  assert.equal(donchianProbe.row.value,16,"The native Donchian overlay exposes its middle channel in the data window");
+  assert.equal(donchianProbe.updated.value,18,"Forming-bar updates recalculate all Donchian boundaries");
+  assert.equal(donchianProbe.badPeriodRejected,true);
+  assert.equal(donchianProbe.isolated,0,"Changing account clears Donchian readouts");
   assert.equal(movingAverageProbe.independent[0].value,12.125,"EMA close instance uses its own source and period");
   assert.equal(movingAverageProbe.independent[1].value,32.5,"EMA high instance uses its own source and display shift");
   assert.equal(movingAverageProbe.edited.find(x=>x.id==="ema-close").value,movingAverageProbe.editedExpected,"Editing one EMA period/source leaves its instance isolated");

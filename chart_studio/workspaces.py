@@ -21,7 +21,7 @@ DRAWING_TYPES = frozenset({"horizontal", "vertical", "text", "trend", "rect", "f
 UI_FLAGS = frozenset({"ema20", "ema50", "ema200", "sma20", "sma50",
                       "bb", "positions"})
 UI_NUMBERS = frozenset({"bbPeriod", "bbStdDev"})
-INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap", "stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc"})
+INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap", "stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian"})
 PERIOD_FIELDS = frozenset({"period", "fast", "slow", "signal", "smoothK", "smoothD"})
 SESSION_FIELDS = frozenset({"timeZone", "sessionStart"})
 TIMEFRAMES = frozenset({"M1", "M5", "M15", "M30", "H1", "H4", "D1"})
@@ -191,7 +191,7 @@ def validate_document(raw: Any) -> dict:
                 _number(value, param, integer=True)
                 if param in {"smoothK", "smoothD"}:
                     minimum, maximum = 1, 100
-                elif kind in {"stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc"} and param in {"period", "stochPeriod"}:
+                elif kind in {"stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian"} and param in {"period", "stochPeriod"}:
                     minimum, maximum = 2, 200
                 else:
                     minimum, maximum = 2, 300

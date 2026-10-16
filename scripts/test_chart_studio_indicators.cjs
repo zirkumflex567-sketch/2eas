@@ -28,6 +28,24 @@ assert.equal(math.supertrend(supertrendBars,10,0).length,0);
 assert.equal(math.supertrend(supertrendBars,10,10.1).length,0);
 const flatSupertrend=math.supertrend(supertrendBars.map(bar=>({...bar,open:5,high:6,low:4,close:5})),2,3);
 assert.ok(flatSupertrend.every(point=>Number.isFinite(point.value)));
+const donchianBars=[
+ {time:1700060000,open:5,high:10,low:0,close:5},
+ {time:1700060060,open:6,high:11,low:1,close:6},
+ {time:1700060120,open:7,high:12,low:2,close:7},
+ {time:1700060180,open:8,high:13,low:3,close:8}
+];
+const donchian=math.donchian(donchianBars,3);
+assert.deepEqual(Array.from(donchian.upper,point=>point.value),[12,13]);
+assert.deepEqual(Array.from(donchian.middle,point=>point.value),[6,7]);
+assert.deepEqual(Array.from(donchian.lower,point=>point.value),[0,1]);
+assert.equal(donchian.upper[0].time,donchianBars[2].time,"Donchian values start only after the complete lookback");
+assert.equal(math.donchian(donchianBars.slice(0,2),3).upper.length,0);
+assert.equal(math.donchian(donchianBars,1).upper.length,0);
+assert.equal(math.donchian(donchianBars,201).upper.length,0);
+assert.equal(math.donchian(donchianBars,2.5).upper.length,0);
+assert.equal(window.ChartStudioIndicators.calculate("donchian",donchianBars,{period:3}).donchian.lower.length,2);
+assert.ok(Object.hasOwn(window.ChartStudioIndicators.registry,"donchian"));
+assert.deepEqual(JSON.parse(JSON.stringify(window.ChartStudioIndicators.settings().donchian)),{enabled:false,period:20});
 const macd=math.macd(ascending,12,26,9);
 assert.equal(macd.macd.length,75);
 assert.equal(macd.signal.length,67);

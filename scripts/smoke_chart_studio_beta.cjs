@@ -749,6 +749,15 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await supertrendFactor.fill("2.5");await supertrendFactor.press("Tab");
   assert.deepEqual(await page.evaluate(()=>{const s=ChartStudioIndicators.settings().supertrend;return [s.enabled,s.period,s.multiplier]}),[true,10,2.5]);
   assert.match(await page.evaluate(()=>ChartStudioIndicators.readout(window.__chartSmokeCandles.at(-1).time)),/Supertrend .*trend/);
+  assert.ok(await page.evaluate(()=>ChartStudioCatalog.search("donchian").some(({id})=>id==="donchian")));
+  await page.locator('.cs-indicator-control input[data-kind="donchian"][type="checkbox"]').check();
+  const donchianPeriod=page.locator('.cs-indicator-control input[data-kind="donchian"][data-parameter="period"]');
+  await donchianPeriod.fill("3");await donchianPeriod.press("Tab");
+  const donchianReadout=await page.evaluate(()=>ChartStudioIndicators.readout(window.__chartSmokeCandles.at(-1).time));
+  assert.match(donchianReadout,/Upper\s+\d/);assert.match(donchianReadout,/Middle\s+\d/);assert.match(donchianReadout,/Lower\s+\d/);
+  assert.equal(await page.evaluate(()=>ChartStudioIndicators.settings().donchian.enabled),true);
+  await page.locator('.cs-indicator-control input[data-kind="donchian"][type="checkbox"]').uncheck();
+  assert.equal(await page.evaluate(()=>ChartStudioIndicators.settings().donchian.enabled),false);
   await page.locator('.cs-indicator-control input[data-kind="stochastic"][type="checkbox"]').check();
   await page.waitForSelector('.cs-indicator-pane[data-indicator="stochastic"]',{state:"visible"});
   const stochasticReadout=await page.evaluate(()=>ChartStudioIndicators.readout(window.__chartSmokeCandles.at(-1).time));
