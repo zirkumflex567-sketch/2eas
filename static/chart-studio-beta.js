@@ -352,13 +352,42 @@ function renderEvidence(){
      if(s?.account===accountId&&s.evidence.generation===generation)excursionButton.disabled=false;
     }
    });
-   details.append(summary,caption,canvas,exportButton,excursionButton,excursionStatus,pre);
+   const replayButton=document.createElement("button");replayButton.type="button";replayButton.className="cs-evidence-snapshot-replay";replayButton.textContent="Belegten Snapshot abspielen";
+   replayButton.setAttribute("aria-label","Eingefrorenen Broker-Snapshot und referenzierte Ereignisse read-only abspielen");
+   const replayStatus=document.createElement("p");replayStatus.className="cs-evidence-snapshot-replay-status";replayStatus.setAttribute("role","status");replayStatus.setAttribute("aria-live","polite");replayStatus.hidden=true;
+   replayButton.addEventListener("click",()=>{replayStatus.hidden=false;startEvidenceSnapshotReplay(record,replayButton,replayStatus)});
+   details.append(summary,caption,canvas,exportButton,excursionButton,excursionStatus,replayButton,replayStatus,pre);
   }else details.append(summary,pre);
   li.append(details);list.append(li);
  }
  more.hidden=!state.cursor;more.disabled=state.loading;
 }
 function clearEvidence(){if(!s?.evidence)return;s.evidence.generation++;s.evidence={rows:[],cursor:null,query:null,meta:null,loading:false,error:"",truncated:false,generation:s.evidence.generation};renderEvidence()}
+async function startEvidenceSnapshotReplay(record,button,status){
+ const account=record?.accountId||record?.payload?.accountId,generation=s?.evidence?.generation;
+ if(!account||s?.account!==account||record?.type!=="SNAPSHOT"||record.provenance!=="RECORDED")return;
+ if(!window.ChartStudioReplay?.startSnapshot){status.textContent="Replay nicht verfügbar.";return}
+ const refs=[...(record.payload?.decisionEventIds||[]),...(record.payload?.lifecycleEventIds||[])];button.disabled=true;status.textContent="Snapshot und belegte Ereignisse werden geprüft …";
+ try{
+  if(refs.length>500)throw Error("Ereignislimit überschritten");const events=[],seen=new Set();
+  for(const ref of refs){
+   if(!ref||!["DECISION","LIFECYCLE"].includes(ref.type)||typeof ref.id!=="string"||!/^[A-Za-z0-9_-]{1,64}$/.test(ref.id)||!Number.isSafeInteger(ref.dataRevision)||ref.dataRevision<1)throw Error("Ungültige Ereignisreferenz im Snapshot");
+   const key=ref.type+":"+ref.id+":"+ref.dataRevision;if(seen.has(key))continue;seen.add(key);
+   const path=ref.type==="DECISION"?"decisions":"lifecycle",params=new URLSearchParams({account,revision:String(ref.dataRevision)});
+   const url=(window.location.pathname.startsWith("/stt")?"/stt":"")+"/api/chart/v1/"+path+"/"+encodeURIComponent(ref.id)+"?"+params.toString();
+   const response=window.DashboardRuntime?.request
+    ?await window.DashboardRuntime.request(url,{method:"GET",cache:"no-store"},10000,false)
+    :await fetch(url,{method:"GET",cache:"no-store",credentials:"same-origin"});
+   const data=await response.json(),event=data?.record;
+   if(!response.ok||data?.schemaVersion!==1||data?.accountId!==account||data?.canExecute!==false||!event||event.type!==ref.type||event.id!==ref.id||event.accountId!==account||event.dataRevision!==ref.dataRevision||event.provenance!=="RECORDED")throw Error("Belegtes Ereignis nicht verfügbar · "+(data?.detail?.code||"SCOPE_OR_REVISION_MISMATCH"));
+   events.push(event);
+  }
+  if(s?.account!==account||s.evidence.generation!==generation)return;
+  const result=await window.ChartStudioReplay.startSnapshot({record,events});
+  status.textContent="RECORDED · "+result.bars+" eingefrorene Bars · "+result.events+" belegte Ereignisse · Hash "+result.sourceRevision.slice(0,16)+"… · kein Backtest/Orderversand";
+ }catch(error){if(s?.account===account&&s.evidence.generation===generation)status.textContent="Replay nicht verfügbar · "+String(error?.message||"INVALID_EVIDENCE")}
+ finally{button.disabled=false}
+}
 async function loadExecutionQuality(){
  const status=s?.panel?.querySelector("#cs-execution-quality-status"),button=s?.panel?.querySelector("#cs-execution-quality-load");
  if(!status||!button)return;const account=s.account;
@@ -1072,7 +1101,7 @@ function symbol(value){
  if(s.tool==="position-draft"||s.tool==="plan")setTool("cursor");
  s.symbol=value;s.marketQuote=null;s.coordinates.setScope({account:s.account,symbol:value,timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.magnet=get(magnetKey(),false)===true;
  s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
- s.candles=[];s.candleSignature=null;s.positions=[];s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.brokerMarkers=[];
+ s.candles=[];s.candleSignature=null;s.positions=[];s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.brokerMarkers=[];window.ChartStudioReplay?.switchContext(s.account,s.tf,value);
  s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.undo=[];s.redo=[];
  clearScenarioDraft("Chartsymbol geändert · neue Quote und Preise eingeben; nur read-only.");
  clearDataWindowPin();clearEvidence();
@@ -1098,7 +1127,7 @@ function account(id,preferredSymbol,deferPortfolio=false){if(!s)return;cancelPla
  window.ChartStudioChartTypes?.switchAccount(id);
  window.ChartStudioServerSync?.account(id);
  window.ChartStudioBrokerPanel?.setAccount(id,preferredSymbol);
- window.ChartStudioReplay?.switchContext(id,s.tf);
+ window.ChartStudioReplay?.switchContext(id,s.tf,chartSymbol());
  renderScenarioSnapshots();if(!deferPortfolio)loadPortfolio(id,chartSymbol());
  const scenarioStatus=s.panel.querySelector("#cs-scenario-ab-status");if(scenarioStatus)scenarioStatus.textContent="A/B-Snapshots für "+id+" · lokal · nur verifizierte Vorschauen.";
  showOpts();refreshProfiles();updateSeries();window.ChartStudioObjectManager?.render();requestDraw()}
@@ -1108,7 +1137,7 @@ function timeframe(tf){if(s){s.extensions?.clear();cancelPlanPreview();if(s.posi
   window.ChartStudioOscillators?.updateBars([]);
   window.ChartStudioChartTypes?.updateBars([]);
   window.ChartStudioAverages?.updateBars([]);
-  window.ChartStudioReplay?.switchContext(s.account,tf);
+  window.ChartStudioReplay?.switchContext(s.account,tf,chartSymbol());
  requestDraw()}}
 function brokerMarkerCounts(){return {plotted:s?.brokerMarkers.filter(marker=>marker.plotted).length||0,unplotted:s?.brokerMarkers.filter(marker=>!marker.plotted).length||0}}
 function refreshBrokerMarkerTimes(){if(!s)return;const bars=new Set(s.candles.map(c=>Number(c.time)));s.brokerMarkers=s.brokerMarkers.map(marker=>({...marker,plotted:bars.has(marker.chartTimeSeconds)}));window.ChartStudioBrokerPanel?.updateMarkerAvailability(brokerMarkerCounts())}
@@ -1323,7 +1352,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  try{s.mtfConfluence=window.ChartStudioMTFPanel?.mount({panel,account:accountId,symbol:chartSymbol(),timeframe:tf})||null}
  catch(err){console.warn("MTF-Konfluenz nicht verfügbar:",err)}
  account(accountId,undefined,true);
- try{window.ChartStudioReplay?.mount({panel,account:accountId,timeframe:tf})}
+ try{window.ChartStudioReplay?.mount({panel,account:accountId,symbol:chartSymbol(),timeframe:tf})}
  catch(err){console.warn("Read-only chart replay unavailable:",err)}
  try{window.ChartStudioServerSync?.mount({panel,account:accountId,
    exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,

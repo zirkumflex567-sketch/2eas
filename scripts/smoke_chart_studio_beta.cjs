@@ -3,6 +3,7 @@ const { chromium }=require("playwright");
 const {spawn}=require("node:child_process");
 const assert=require("node:assert/strict");
 const fs=require("node:fs"),path=require("node:path");
+const {createHash}=require("node:crypto");
 (async()=>{
  const server=spawn("python",["-m","http.server","8864","--bind","127.0.0.1"],
   {cwd:process.cwd(),windowsHide:true,stdio:"pipe"});
@@ -87,6 +88,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await page.route("**/api/chart/v1/lifecycle**",async route=>{
     const url=new URL(route.request().url());evidenceRequests.push({path:url.pathname,params:Object.fromEntries(url.searchParams)});
     const accountId=url.searchParams.get("account"),record={schemaVersion:1,type:"LIFECYCLE",id:"mt5_deal_93001",accountId,dataRevision:1,provenance:"RECORDED",payload:{id:"mt5_deal_93001",accountId,positionIdentifier:"92990",eventType:"ENTRY",source:"MT5_DEAL",asOfUtc:"2026-10-15T15:30:00Z",actor:"BROKER",dataQuality:"OBSERVED",dealTicket:"93001",orderTicket:"92999",dealEntry:"IN",dealSide:"BUY",price:"4101.25",volume:"0.03",commission:"-0.12",fee:"0",swap:"0",profit:"0",capturedAtUtc:"2026-10-15T15:31:00Z"}};
+    if(url.pathname.endsWith("/mt5_deal_93001")){const event={...record,payload:{...record.payload,asOfUtc:"2026-10-14T12:30:00Z",capturedAtUtc:"2026-10-14T12:31:00Z"}};await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({schemaVersion:1,accountId,canExecute:false,record:event})});return}
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({schemaVersion:1,accountId,availability:lifecycleFixtureEnabled?"RECORDED":"NOT_RECORDED",storeState:lifecycleFixtureEnabled?"INITIALIZED":"NOT_INITIALIZED",coverage:lifecycleFixtureEnabled?"ROLLING_WINDOW":"UNKNOWN",gaps:0,canExecute:false,records:lifecycleFixtureEnabled?[record]:[],hasMore:false,nextCursor:null})});
   });
   await page.route("**/api/chart/v1/lifecycle/positions/*/mfe-mae*",async route=>{
@@ -98,7 +100,9 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
     const url=new URL(route.request().url());evidenceRequests.push({path:url.pathname,params:Object.fromEntries(url.searchParams)});
     const bars=[{timeUtc:"2026-10-14T12:00:00.000000Z",open:"4100",high:"4110",low:"4095",close:"4108",tickVolume:10,spread:18,realVolume:0},
       {timeUtc:"2026-10-14T12:15:00.000000Z",open:"4108",high:"4112",low:"4102",close:"4104",tickVolume:12,spread:18,realVolume:0}];
-    const record={schemaVersion:1,type:"SNAPSHOT",id:"snap_1",accountId:url.searchParams.get("account"),dataRevision:1,provenance:"RECORDED",payload:{snapshotId:"snap_1",accountId:url.searchParams.get("account"),positionIdentifier:"92990",dealTicket:"93001",captureType:"ENTRY",asOfUtc:"2026-10-14T12:30:00Z",chartView:{symbol:"XAUUSD",timeframe:"M15",fromUtc:bars[0].timeUtc,toUtc:bars[1].timeUtc,seriesType:"CANDLE",priceScale:"NORMAL"},marketDataRef:{sourceType:"MARKET_BAR"},marketData:{source:"MT5_COMPLETED_BARS",bars,sha256:"a".repeat(64)},decisionEventIds:[],lifecycleEventIds:[{type:"LIFECYCLE",id:"mt5_deal_93001",dataRevision:1}],renderStatus:"DATA_ONLY"}};
+    const canonical=value=>Array.isArray(value)?"["+value.map(canonical).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+canonical(value[key])).join(",")+"}":JSON.stringify(value);
+    const sha256=createHash("sha256").update(canonical(bars)).digest("hex"),accountId=url.searchParams.get("account"),asOfUtc="2026-10-14T12:30:00Z";
+    const record={schemaVersion:1,type:"SNAPSHOT",id:"snap_1",accountId,brokerServer:"ICMarketsEU-Demo",terminalIdentityHash:"a".repeat(64),dataRevision:1,provenance:"RECORDED",payload:{snapshotId:"snap_1",accountId,positionIdentifier:"92990",dealTicket:"93001",captureType:"ENTRY",asOfUtc,chartView:{symbol:"XAUUSD",timeframe:"M15",fromUtc:bars[0].timeUtc,toUtc:bars[1].timeUtc,seriesType:"CANDLE",priceScale:"NORMAL"},marketDataRef:{id:"bars_"+sha256.slice(0,48),sourceType:"MARKET_BAR",accountId,brokerServer:"ICMarketsEU-Demo",symbol:"XAUUSD",eventTimeUtc:bars[1].timeUtc,recordedAtUtc:asOfUtc,sourceRevision:sha256,confidenceKind:"OBSERVED"},marketData:{source:"MT5_COMPLETED_BARS",bars,sha256},decisionEventIds:[],lifecycleEventIds:[{type:"LIFECYCLE",id:"mt5_deal_93001",dataRevision:1}],indicatorInstanceRevisions:[],renderStatus:"DATA_ONLY",renderAssetRef:null,createdAtUtc:asOfUtc}};
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({schemaVersion:1,accountId:url.searchParams.get("account"),availability:"RECORDED",storeState:"INITIALIZED",coverage:"RECORDED",gaps:0,canExecute:false,records:[record],hasMore:false,nextCursor:null})});
   });
   await page.route("**/api/chart/v1/symbol-info?*",async route=>{
@@ -261,6 +265,17 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   const pngBytes=fs.readFileSync(await pngDownload.path());
   assert.deepEqual([...pngBytes.subarray(0,8)],[137,80,78,71,13,10,26,10],"Snapshot export downloads a real PNG from the frozen candle canvas");
   assert.ok(pngBytes.length>100,"Snapshot export contains rendered chart pixels");
+  assert.equal(await page.locator("#cs-evidence-list button.cs-evidence-snapshot-replay").count(),1,"Recorded snapshots expose read-only evidence replay");
+  await page.locator("#cs-evidence-list button.cs-evidence-snapshot-replay").click();
+  await page.waitForFunction(()=>document.querySelector("#cs-evidence-list .cs-evidence-snapshot-replay-status")?.textContent.includes("2 eingefrorene Bars"));
+  assert.match(await page.locator("#cs-evidence-list .cs-evidence-snapshot-replay-status").textContent(),/1 belegte Ereignisse/);
+  assert.ok(evidenceRequests.some(request=>request.path.endsWith("/lifecycle/mt5_deal_93001")&&request.params.account==="titan"&&request.params.revision==="1"),"Replay loads only the exact referenced account/revision with GET");
+  await page.locator(".cs-replay summary").click();
+  let replayState=await page.evaluate(()=>ChartStudioReplay.inspect());
+  assert.equal(replayState.mode,"RECORDED_SNAPSHOT");assert.equal(replayState.snapshotBars,2);assert.deepEqual(replayState.visibleEventIds,[],"Entry cannot appear before its recorded event time");
+  await page.locator(".cs-replay-actions button").nth(1).click();
+  replayState=await page.evaluate(()=>ChartStudioReplay.inspect());
+  assert.deepEqual(replayState.visibleEventIds,["mt5_deal_93001"],"The broker entry appears only after the replay cursor reaches its recorded UTC time");
   assert.deepEqual(await page.evaluate(()=>JSON.stringify({drawings:ChartStudioBeta.getState().drawings,options:ChartStudioBeta.getState().options})),chartBeforeEvidence,"Evidence browsing does not mutate chart state");
   assert.equal(requests.length,0,"Evidence browsing sends no POST or trade mutation");
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));assert.equal(await page.locator("#cs-evidence-list li").count(),0,"Account switch clears prior-account evidence");
