@@ -32,6 +32,7 @@ from chart_studio.read_api import install_read_routes, Symbol
 from chart_studio.preview_api import install_preview_routes
 from chart_studio.position_commit_api import install_position_commit_routes
 from chart_studio.evidence_api import install_evidence_routes
+from chart_studio.indicator_extension_api import install_indicator_extension_routes
 from dashboard_security import install_control_security
 from chart_studio.workspaces import WorkspaceStore, StoreError, WorkspaceMissing, RevisionConflict
 from functools import lru_cache
@@ -72,6 +73,7 @@ async def dashboard_cache_policy(request: Request, call_next):
 
 
 install_evidence_routes(app, mt5=mt5)
+install_indicator_extension_routes(app)
 
 SYMBOL = "XAUUSD"
 TIMEFRAME = mt5.TIMEFRAME_M15
@@ -1666,6 +1668,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="static/chart-studio-indicators.js"></script>
   <script src="static/chart-studio-alerts.js"></script>
   <script src="static/chart-studio-market-structure.js"></script>
+  <script src="static/chart-studio-indicator-extensions.js"></script>
   <script src="static/chart-studio-server-sync.js"></script>
   <script src="static/chart-studio-drawing-geometry.js"></script>
   <script src="static/chart-studio-averages.js"></script>

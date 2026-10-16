@@ -189,3 +189,9 @@
 .cs-calendar-events button{min-height:30px;margin:0 6px 4px 0;padding:4px 10px;border:1px solid #bb9848;border-radius:5px;background:#382f1b;color:#fff4d1;cursor:pointer}
 .cs-regime-status strong{color:#8eeaff;font-size:13px}
 .cs-regime-status button{min-height:30px;margin:0 6px 4px 0;padding:4px 10px;border:1px solid #52aabe;border-radius:5px;background:#103242;color:#e8fbff;cursor:pointer}
+.cs-indicator-extension-panel{margin:12px 0;padding:12px;border:1px solid rgba(83,205,230,.28);border-radius:10px;background:rgba(7,22,32,.55)}
+.cs-indicator-extension-panel summary{cursor:pointer;font-weight:700;color:#73d9f1}
+.cs-indicator-extension-panel label{display:flex;align-items:center;gap:10px;margin:12px 0;flex-wrap:wrap}
+.cs-indicator-extension-panel button{padding:8px 12px;border:1px solid rgba(83,205,230,.45);border-radius:8px;color:#e7f7fb;background:#102b38}
+.cs-indicator-extension-panel button:hover{background:#174050}
+.cs-indicator-extension-panel [data-extension-status]{min-height:1.5em;color:#b9d1da}

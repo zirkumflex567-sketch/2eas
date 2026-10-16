@@ -92,10 +92,25 @@ operation-unit budget. Runtime metering repeats the work bound and aborts at a
 runs; separate `tracemalloc` profiling recorded an 835 KB peak. These are
 local fixture measurements, not target-hardware acceptance.
 
-This is only the internal validation/calculation engine. Browser catalog and
-chart integration, production trust-key provisioning/rotation, user-facing
-import/export, sandbox security review, and target-hardware profiling remain
-open under FR-024.
+The Chart Studio Beta now has a session-only signed-package import and preview.
+`POST /api/chart/v1/indicator-extensions/preview` accepts bounded current-chart
+bars and returns `CALLER_SUPPLIED_BARS`; it does not call MT5 or persist input
+or output. The browser plots only the computed line on the active chart and
+removes it on account, symbol, or timeframe changes. The endpoint fails closed
+unless the host injects `CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON`; the package
+cannot supply its own trusted key. This does not make the browser bars
+authoritative evidence or the output a broker signal.
+
+The environment value is a JSON object keyed by signer ID, with each value the
+base64 encoding of one raw 32-byte Ed25519 public key, for example
+`{"release-key-2026":"<base64-public-key>"}`. Provision and rotate this
+public trust map through the host's protected environment; never place private
+signing keys in this setting or the repository.
+
+Production trust-key provisioning/rotation, import of a package signed by a
+provisioned live key, user-facing export, native indicator-catalog integration,
+independent sandbox security review, and target-hardware profiling remain open
+under FR-024.
 
 ## Immutable evidence Phase 0
 

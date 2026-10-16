@@ -8,6 +8,7 @@
 <script src="lightweight-charts.js"></script>
 <script src="stone-chart-effects.js"></script>
 <script src="chart-studio-data-signature.js"></script>
+  <script src="chart-studio-indicator-extensions.js"></script>
   <script src="chart-studio-indicators.js"></script>
   <script src="chart-studio-alerts.js"></script>
   <script src="chart-studio-market-structure.js"></script>
@@ -31,6 +32,7 @@ const host=document.getElementById("tv-chart");
 const chart=LightweightCharts.createChart(host,{width:host.clientWidth,height:host.clientHeight,
  layout:{background:{color:"#071721"},textColor:"#c3dbe4"},
  timeScale:{timeVisible:true,rightOffset:7,barSpacing:7}});
+window.__chart=chart;
 window.__chartCrosshairSubscribers=[];
 const subscribeCrosshairMove=chart.subscribeCrosshairMove.bind(chart);
 const unsubscribeCrosshairMove=chart.unsubscribeCrosshairMove.bind(chart);

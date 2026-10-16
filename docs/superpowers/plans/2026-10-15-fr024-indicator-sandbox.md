@@ -53,3 +53,7 @@ Limits are explicit and independently tested: package <=64 KiB encoded bytes; <=
 - Any malformed package, invalid signature, unsupported operation, limit overrun, arithmetic overflow, or evaluator exception produces a bounded error and no partial result.
 - No imported source code is run. No MT5 terminal or broker function is reachable from this module.
 - No browser catalog/integration, deployment, demo, hardware, or write approval is implied by unit tests.
+
+## Follow-up: browser preview slice (2026-10-16)
+
+See [FR-024 browser preview integration](2026-10-16-fr024-browser-preview.md). The Beta drawer now accepts a user-selected JSON package, submits only in-memory chart bars to a bounded server preview route, and plots verified results on the current chart without persistence. Host public keys remain an explicit environment-injected trust map; no signer key was generated or provisioned. Until a trusted key is provisioned and a real signed package is accepted, FR-024 stays partially complete.
