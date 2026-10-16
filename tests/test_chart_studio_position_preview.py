@@ -736,6 +736,27 @@ def test_guard_receives_risk_increase_classification_for_loosened_stop(api, tmp_
     assert fake.writes == 0
 
 
+@pytest.mark.parametrize(('side', 'old_tp', 'new_tp', 'expected'), [
+    ('BUY', '4020.00', '4030.00', True),
+    ('BUY', '4020.00', '4010.00', False),
+    ('SELL', '3980.00', '3970.00', True),
+    ('SELL', '3980.00', '3990.00', False),
+    ('BUY', '4020.00', None, True),
+    ('BUY', None, '4030.00', False),
+])
+def test_guard_classifies_take_profit_risk_direction(side, old_tp, new_tp, expected):
+    from chart_studio.position_commit import PositionCommitService
+    observed = []
+    guard = type('Guard', (), {'evaluate': lambda self, **kw: observed.append(kw) or {
+        'state': 'ALLOW', 'source': 'TEST', 'hardLock': False,
+    }})()
+    service = PositionCommitService(None, None, None, guard)
+    position = {'side': side, 'sl': '3990.00', 'tp': old_tp}
+    service._guard(object(), position, {'tpPrice': new_tp})
+    assert observed[0]['riskIncreasing'] is expected
+    assert observed[0]['action'] == ('RISK_INCREASING_PROTECTION' if expected else 'RISK_REDUCING_PROTECTION')
+
+
 def test_commit_rejects_noop_preview_without_order_send(api, tmp_path):
     client, fake, request = api
     preview = client.post('/api/chart/v1/position/preview-stop', json={

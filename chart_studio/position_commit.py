@@ -55,6 +55,16 @@ class PositionCommitService:
                 increasing = Decimal(proposed) < Decimal(old)
             else:
                 increasing = Decimal(proposed) > Decimal(old)
+        if 'tpPrice' in changes:
+            proposed = changes['tpPrice']
+            old = position['tp']
+            if proposed is None:
+                increasing = increasing or old is not None
+            elif old is not None:
+                if position['side'] == 'BUY':
+                    increasing = increasing or Decimal(proposed) > Decimal(old)
+                else:
+                    increasing = increasing or Decimal(proposed) < Decimal(old)
         action = 'RISK_INCREASING_PROTECTION' if increasing else 'RISK_REDUCING_PROTECTION'
         try:
             decision = evaluator(spec=spec, position=position, action=action,

@@ -40,13 +40,13 @@
 - [x] Run the deny/schema tests: RED before route implementation, GREEN afterward.
 - [x] Add a separate `POST /api/chart/v1/position/commit-stop` route and strict schema. Production app installs it with `enabled=False`, no guard provider and no write-capable service.
 - [x] Add the path to exact control middleware so only the existing authenticated trade-session/CSRF/Origin policy can reach its handler.
-- [x] Run focused backend and proxy-security tests; confirm disabled deployment remains no-write. (`172 passed, 1 skipped`; the POSIX permission-mode test is skipped on Windows.)
+- [x] Run focused backend and proxy-security tests; confirm disabled deployment remains no-write. (`178 passed, 1 skipped`; the POSIX permission-mode test is skipped on Windows.)
 
 ### Task 2: Bind a confirmed commit to a current preview and broker state
 
 - [ ] Complete the denial matrix; current tests cover scope-bound token, expired/consumed/replayed preview, EA revision race, hard lock, geometry, no-send and demo-only account restriction. Remaining scope: every identity/symbol mismatch, stale quote, freeze/tick edge and unknown guard state.
 - [x] Test SL-only preserves TP, TP-only preserves SL, explicit clear, and reject ambiguous/no-op requests.
-- [ ] Test the guard contract separately for hard lock, daily DD/max-risk policy, symbol position cap, and action classification; risk-reducing SL/TP changes do not inherit entry-news blocks, while uncertainty blocks risk increases.
+- [ ] Test hard lock and conservative BUY/SELL SL/TP action classification with a fake guard. Authoritative daily DD/max-risk and symbol-position-cap policies remain open; risk-reducing SL/TP changes must not inherit entry-news blocks, while uncertainty blocks risk increases.
 - [x] Add atomic scope-bound one-time consumption to the preview registry; expiry, scope mismatch, replay and concurrent consumption tests pass.
 - [x] Implement injected commit orchestration with fresh account/ticket/quote/metadata reads, final revision verification and a fail-closed guard-provider contract under the account gateway lock. Production wiring still has no provider and stays disabled.
 - [x] Add supported MT5 `order_check` preflight and retcode handling; a successful check is followed by fresh revision/guard validation and is never treated as the broker change.
