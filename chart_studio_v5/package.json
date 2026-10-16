@@ -5,7 +5,8 @@
   "description": "Opt-in, read-only Lightweight Charts v5 migration adapter",
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",
-    "build": "esbuild src/adapter.ts --bundle --format=iife --global-name=ChartStudioV5 --target=es2020 --outfile=dist/chart-studio-v5.js"
+    "build": "esbuild src/adapter.ts --bundle --format=iife --global-name=ChartStudioV5 --target=es2020 --outfile=dist/chart-studio-v5.js",
+    "build:production": "esbuild src/adapter.ts --bundle --format=iife --global-name=ChartStudioV5 --target=es2020 --outfile=../static/chart-studio-v5.js"
   },
   "devDependencies": {
     "lightweight-charts": "5.2.1",

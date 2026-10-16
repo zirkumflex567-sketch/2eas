@@ -1795,6 +1795,9 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="static/chart-studio-mtf.js"></script>
   <script src="static/chart-studio-mtf-panel.js"></script>
   <script src="static/chart-studio-beta.js"></script>
+  <script>window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;</script>
+  <script src="static/chart-studio-v5-feed.js"></script>
+  <script src="static/chart-studio-v5-preview.js"></script>
   <script src="static/stone-celebrations.js"></script>
   <style>
     html, body {
@@ -2105,6 +2108,9 @@ HTML_CONTENT = """<!DOCTYPE html>
             <button type="button" id="stone-chart-expand-btn" aria-controls="tv-chart" aria-pressed="false"
               aria-label="Chart vergrößern" class="stone-chart-expand-trigger stone-chart-expand-primary"
               title="Chart bildschirmfüllend vergrößern · Esc zum Schließen">⛶ CHART GROSS</button>
+            <button type="button" id="chart-v5-preview-btn" aria-controls="chart-v5-preview-panel"
+              aria-expanded="false" hidden class="px-2 py-1 rounded border border-cyan-400/40 bg-cyan-900/20 text-cyan-200 text-[10px] font-bold"
+              title="Separater read-only v5-Kerzenpreview; v4 bleibt aktiv">V5 Vorschau</button>
             <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-sans" title="Zeiteinheit dient nur der Ansicht - der EA rechnet weiter strikt auf M15">Ansicht</span>
 
             <!-- Timeframe Selector Pills -->
@@ -2170,6 +2176,14 @@ HTML_CONTENT = """<!DOCTYPE html>
             <div id="chart-load-status" role="status" aria-live="polite" hidden></div>
           </div>
         </div>
+        <section id="chart-v5-preview-panel" hidden class="mt-3 rounded-lg border border-cyan-400/30 bg-slate-950/70 p-3" aria-label="Lightweight Charts v5 read-only preview">
+          <div class="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <strong id="chart-v5-preview-title">Native v5 · nur verifizierte MT5-Kerzen</strong>
+            <span id="chart-v5-preview-status" role="status" aria-live="polite">Vorschau noch nicht geöffnet.</span>
+          </div>
+          <div id="chart-v5-preview-host" class="w-full rounded border border-slate-700" style="height: 460px; min-width: 260px;"></div>
+          <p class="mt-2 text-[10px] text-slate-400">Read-only-Vorschau. Hauptchart und alle Werkzeuge bleiben auf v4. Powered by <a class="text-cyan-300 underline" href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">TradingView Lightweight Charts™</a>. <a class="text-cyan-300 underline" href="static/chart-studio-v5-NOTICE.txt">NOTICE</a> · <a class="text-cyan-300 underline" href="static/chart-studio-v5-LICENSE.txt">Apache-2.0</a> · <a class="text-cyan-300 underline" href="static/chart-studio-v5-THIRD-PARTY-LICENSES.txt">Drittanbieter-Lizenzen</a>.</p>
+        </section>
       </div>
 
       <!-- 2.2 VOLUMENPROFILE & SUPPORT/RESISTANCE (Under Chart) -->
@@ -3425,11 +3439,15 @@ HTML_CONTENT = """<!DOCTYPE html>
       const generation = accountGeneration;
       const reqTf = activeTimeframe;
       const reqSymbol = activeChartSymbol;
+      const reqAccount = activeAccount;
       const historyScope = candleHistoryScope(activeAccount, reqSymbol, reqTf);
       if (candleHistory.scope !== historyScope) candleHistory = {scope:historyScope,pages:[],latest:null,hasMore:false,loading:false};
+      const v5Preview = window.ChartStudioV5Preview;
+      v5Preview?.setScope({account:reqAccount,symbol:reqSymbol,timeframe:reqTf});
       const requestKey = generation + '/' + reqSymbol + '/' + reqTf;
       if (candlesBusy === requestKey) return;
       candlesBusy = requestKey;
+      let v5Request = v5Preview?.beginRead();
       try {
         const res = await accountFetch('/api/candles?tf=' + encodeURIComponent(reqTf) + '&symbol=' + encodeURIComponent(reqSymbol));
         const data = await res.json();
@@ -3447,12 +3465,15 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (data.symbol && data.symbol !== activeChartSymbol && accounts[activeAccount]?.symbol === data.symbol) {
           activeChartSymbol = data.symbol;
           candleHistory.scope = candleHistoryScope(activeAccount, activeChartSymbol, reqTf);
+          v5Preview?.setScope({account:reqAccount,symbol:activeChartSymbol,timeframe:reqTf});
+          v5Request = v5Preview?.beginRead();
           updateChartScopeLabel();
           const title = document.getElementById('chart-title-text');
           if (title) title.textContent = `${activeChartSymbol} ${reqTf} Chart`;
           try { window.ChartStudioBeta?.symbol(activeChartSymbol); } catch (_) {}
         }
         if (!Array.isArray(data.candles) || data.candles.length === 0) {
+          v5Preview?.clear(`${activeChartSymbol} ${activeTimeframe}: keine MT5-Kerzen verfügbar.`);
           setChartLoadStatus(`${activeChartSymbol} ${activeTimeframe}: keine MT5-Kerzen verfügbar.`, 'empty');
           return;
         }
@@ -3469,6 +3490,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         candleHistory.latest = data;
         if (!candleHistory.pages.length) candleHistory.hasMore = data.page?.hasMore === true;
         const renderData = mergeCandleHistory(data);
+        v5Preview?.update({...data,candles:renderData.candles},v5Request);
 
         currentCandlesCount = renderData.candles.length;
         const latest = renderData.candles[renderData.candles.length - 1];
@@ -3548,6 +3570,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (err.name !== 'AbortError') console.error('[Cockpit] Kerzen-Ladefehler:', err);
         reportAccountError(err, generation);
         if (generation === accountGeneration && err.name !== 'AbortError') {
+          v5Preview?.clear(`MT5-Kerzen derzeit nicht verfügbar: ${String(err.message||'Feed prüfen.').slice(0,120)}`);
           setChartLoadStatus(`Kerzen nicht verfügbar: ${err.message || 'MT5-Feed prüfen.'}`, 'error');
         }
       } finally { if (candlesBusy === requestKey) candlesBusy = null; }
@@ -4719,7 +4742,12 @@ HTML_CONTENT = """<!DOCTYPE html>
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    return HTMLResponse(content=HTML_CONTENT)
+    enabled = os.getenv("CHART_STUDIO_V5_PREVIEW_ENABLED", "0") == "1"
+    flag = "true" if enabled else "false"
+    return HTMLResponse(content=HTML_CONTENT.replace(
+        "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;",
+        f"window.CHART_STUDIO_V5_PREVIEW_ENABLED = {flag};",
+        1))
 
 @app.get("/mobile", response_class=HTMLResponse)
 @app.get("/light", response_class=HTMLResponse)

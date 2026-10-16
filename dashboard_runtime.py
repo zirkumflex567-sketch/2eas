@@ -30,7 +30,7 @@ _ENV_KEYS = {'DASHBOARD_ALLOWED_HOSTS', 'DASHBOARD_PROXY_SECRET', 'DASHBOARD_PRO
              'CHART_STUDIO_STORAGE_TOKEN', 'CHART_STUDIO_STORAGE_ENABLED', 'CHART_STUDIO_DB',
              'CHART_STUDIO_EVIDENCE_ROOT', 'CHART_STUDIO_EVIDENCE_DB',
              'CHART_STUDIO_EVIDENCE_SPOOL_ROOT', 'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS',
-             'CHART_STUDIO_DEVICE_SYNC_ENABLED'}
+             'CHART_STUDIO_DEVICE_SYNC_ENABLED', 'CHART_STUDIO_V5_PREVIEW_ENABLED'}
 
 
 def _path_is_within(path, root):
@@ -115,6 +115,9 @@ def validate_environment_file(root, private_path):
         device_sync_enabled = values.get('CHART_STUDIO_DEVICE_SYNC_ENABLED', '0')
         if device_sync_enabled not in ('0', '1'):
             raise ValueError('invalid device sync gate')
+        v5_preview_enabled = values.get('CHART_STUDIO_V5_PREVIEW_ENABLED', '0')
+        if v5_preview_enabled not in ('0', '1'):
+            raise ValueError('invalid v5 preview gate')
     except (OSError, ValueError, TypeError):
         raise ValueError('Invalid private environment') from None
 

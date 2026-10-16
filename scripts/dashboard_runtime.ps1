@@ -124,7 +124,8 @@ try {
                      'DASHBOARD_CONTROL_TOKEN','DASHBOARD_QUOTE_MAX_AGE_SECONDS','CHART_STUDIO_STORAGE_TOKEN',
                      'CHART_STUDIO_STORAGE_ENABLED','CHART_STUDIO_DB','CHART_STUDIO_EVIDENCE_ROOT',
                      'CHART_STUDIO_EVIDENCE_DB','CHART_STUDIO_EVIDENCE_SPOOL_ROOT',
-                     'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS','CHART_STUDIO_DEVICE_SYNC_ENABLED')
+                     'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS','CHART_STUDIO_DEVICE_SYNC_ENABLED',
+                     'CHART_STUDIO_V5_PREVIEW_ENABLED')
     $environment = @{}
     if ($PrivateEnvJson) {
         $privatePath = (Resolve-Path -LiteralPath $PrivateEnvJson).Path
@@ -143,6 +144,9 @@ try {
                 $property.Value.Contains([char]0)) { Reject 'Private environment contains an invalid key or value.' }
             if ($property.Name -ceq 'CHART_STUDIO_DEVICE_SYNC_ENABLED' -and $property.Value -cnotin @('0','1')) {
                 Reject 'Private environment contains an invalid device-sync feature flag.'
+            }
+            if ($property.Name -ceq 'CHART_STUDIO_V5_PREVIEW_ENABLED' -and $property.Value -cnotin @('0','1')) {
+                Reject 'Private environment contains an invalid v5 preview feature flag.'
             }
             $environment[$property.Name] = $property.Value
         }
