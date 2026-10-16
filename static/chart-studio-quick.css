@@ -165,3 +165,12 @@
 .cs-alerts li{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
 .cs-alerts li span{flex:1 1 220px}
 .cs-alerts button:focus-visible,.cs-alerts input:focus-visible,.cs-alerts select:focus-visible{outline:2px solid #65dded;outline-offset:2px}
+
+.cs-market-structure{margin:8px 0;padding:8px;border:1px solid rgba(179,151,223,.45);border-radius:8px;background:rgba(19,23,39,.42)}
+.cs-market-structure>summary{cursor:pointer;font-weight:700;color:#ead9ff}
+.cs-market-structure p{font-size:12px;line-height:1.45;color:#d1dce9}
+.cs-market-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.cs-market-controls label,.cs-market-structure>div>label{display:flex;flex-wrap:wrap;align-items:center;gap:5px;font-size:12px}
+.cs-market-structure input,.cs-market-structure select{max-width:100%;min-height:30px;box-sizing:border-box;background:#102e3b;color:#fff;border:1px solid #7fa9b7;border-radius:5px;padding:4px}
+.cs-market-structure input[type=checkbox]{min-height:auto;accent-color:#c79bff}
+.cs-market-structure :focus-visible{outline:2px solid #cfadff;outline-offset:2px}

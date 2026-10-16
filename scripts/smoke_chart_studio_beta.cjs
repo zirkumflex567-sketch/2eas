@@ -18,9 +18,14 @@ const fs=require("node:fs"),path=require("node:path");
   browser=await chromium.launch({headless:true,executablePath:process.env.CHART_STUDIO_CHROMIUM_PATH||undefined});
   const page=await browser.newPage({viewport:{width:1280,height:850},deviceScaleFactor:1.5});
   const consoleErrors=[],brokerMutationRequests=[];page.on("pageerror",e=>consoleErrors.push(e.message));
-  let alertPollingEnabled=false,alertQuotePrice=4100.125,alertQuoteRequests=[];
+  let alertPollingEnabled=false,alertQuotePrice=4100.125,alertQuoteRequests=[],quoteReadRequests=[];
   let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,invalidStopGeometry=false,trailingStop=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,deferTitanPositions=false,releaseTitanPositions=null,holdScope=null,heldScopeResolvers=[],completedHeldScopeResponses=0,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,multiPositionRows=false,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badOrderShape=false,badDealRow=false,symbolCatalogTruncated=false,symbolCatalogInvalidRows=0,hideFavoriteSymbol=false,evidenceRequests=[],mfeRequests=[],lifecycleFixtureEnabled=false;
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
+  const confirmTfReads=[];
+  await page.route("**/api/candles?*",async route=>{
+    const url=new URL(route.request().url());confirmTfReads.push({method:route.request().method(),account:url.searchParams.get("account"),symbol:url.searchParams.get("symbol"),tf:url.searchParams.get("tf"),count:url.searchParams.get("count")});
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({accountId:"titan",symbol:url.searchParams.get("symbol"),timeframe:url.searchParams.get("tf"),source:"MT5_VERIFIED",canExecute:false,candles:[]})});
+  });
   page.on("request",req=>{if(!["GET","HEAD","OPTIONS"].includes(req.method())&&req.url().includes("/api/chart/v1/"))brokerMutationRequests.push({method:req.method(),url:req.url()})});
   await page.route("**/api/chart/v1/scenarios/preview*",async route=>{
     const req=route.request().postDataJSON();
@@ -54,6 +59,7 @@ const fs=require("node:fs"),path=require("node:path");
   });
   await page.route("**/api/chart/v1/quotes?*",async route=>{
     const url=new URL(route.request().url());
+    quoteReadRequests.push({method:route.request().method(),account:url.searchParams.get("account"),symbol:url.searchParams.get("symbol")});
     const symbol=url.searchParams.get("symbol"),fx=symbol==="EURUSD";
     if(alertPollingEnabled){alertQuoteRequests.push({account:url.searchParams.get("account"),symbol,method:route.request().method()});return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),symbol,bid:(alertQuotePrice-.01).toFixed(2),ask:(alertQuotePrice+.01).toFixed(2),quoteTimeUtc:new Date().toISOString(),ageSeconds:0,freshness:"FRESH",source:"MT5_VERIFIED",canExecute:false})})}
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),symbol,bid:fx?"1.10000":"4100.00",ask:fx?"1.10002":"4100.25",tickSize:fx?0.00001:0.01,digits:fx?5:2,currency:"USD",quoteTimeUtc:"2026-10-14T13:00:00.000000Z",ageSeconds:0,freshness:"FRESH",source:badQuote?"UNVERIFIED":"MT5_VERIFIED",canExecute:false})});
@@ -157,10 +163,18 @@ const fs=require("node:fs"),path=require("node:path");
   });
   await page.goto("http://127.0.0.1:8864/static/chart-studio-fixture.html",{waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartSmokeReady===true);
+  await page.waitForFunction(()=>document.querySelector('[data-testid="market-structure"] [role="status"]')?.textContent.includes("geschlossene MT5-verifizierte OHLC-Kerzen"));
+  assert.deepEqual(quoteReadRequests[0],{method:"GET",account:"titan",symbol:"XAUUSD"},"Market structure obtains its as-of time from an explicit read-only account quote");
+  await page.locator("#cs-beta-toggle").click();
+  await page.locator(".cs-market-structure > summary").click();
+  await page.locator('[aria-label="Sweep ConfirmTF"]').selectOption("3600");
+  await page.waitForFunction(()=>document.querySelector('[data-testid="market-structure"] [role="status"]')?.textContent.includes("ConfirmTF UNKNOWN")===false);
+  assert.deepEqual(confirmTfReads.at(-1),{method:"GET",account:"titan",symbol:"XAUUSD",tf:"H1",count:"1000"},"A higher ConfirmTF uses an explicit account/symbol-scoped read-only MT5 candle fetch");
+  assert.equal(requests.length,0,"ConfirmTF loading never sends a write request");
+  await page.locator(".cs-market-structure > summary").click();
   await page.evaluate(()=>window.addEventListener("chartstudio:symbol-change",()=>{candleSeries.setData(window.__chartSmokeCandles);ChartStudioBeta.updateCandles(window.__chartSmokeCandles)}));
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().coordinateApiVersion),4,
    "The production Beta mount remains explicitly bound to the vendored v4 chart");
-  await page.locator("#cs-beta-toggle").click();
   await page.locator("#cs-evidence-panel > summary").click();
   const chartBeforeEvidence=await page.evaluate(()=>JSON.stringify({drawings:ChartStudioBeta.getState().drawings,options:ChartStudioBeta.getState().options}));
   await page.locator("#cs-evidence-load").click();
@@ -1325,6 +1339,7 @@ const fs=require("node:fs"),path=require("node:path");
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
   assert.match(await page.locator(".cs-alerts li").first().textContent(),/Ausgelöst/,"Triggered state is restored in its original account scope");
   assert.equal(brokerMutationRequests.length,mutationsBeforeAlerts,"Price alerts never issue broker mutations");
+  assert.ok(quoteReadRequests.every(request=>request.method==="GET"&&request.account!=="blueberry"),"The demo smoke uses scoped read-only quotes and never queries Blueberry");
   alertPollingEnabled=false;
   const output=path.join("output","visual-smoke");
   fs.mkdirSync(output,{recursive:true});

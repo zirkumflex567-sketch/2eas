@@ -60,6 +60,8 @@ jobs:
           node --check static/chart-studio-indicators.js
           node --check static/chart-studio-alerts.js
           node scripts/test_chart_studio_alerts.cjs
+          node --check static/chart-studio-market-structure.js
+          node scripts/test_chart_studio_market_structure.cjs
           node --check static/chart-studio-oscillators.js
           node --check static/chart-studio-chart-types.js
           node scripts/test_chart_studio_chart_types.cjs

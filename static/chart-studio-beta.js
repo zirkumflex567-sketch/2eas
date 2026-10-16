@@ -898,6 +898,7 @@ function render(){
  const pw=Math.ceil(d.w*ratio),ph=Math.ceil(d.h*ratio);if(c.width!==pw||c.height!==ph){c.width=pw;c.height=ph}
  const ctx=c.getContext("2d");ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,d.w,d.h);
  drawBollingerFill(ctx);
+ s.marketStructure?.draw(ctx,s.coordinates,d);
  if(s.opts.positions)drawPositions(ctx,d);
  drawPositionDraft(ctx,d);
  drawBrokerDeals(ctx,d);
@@ -1035,7 +1036,7 @@ function symbol(value){
  if(!s||!valid)return false;if(value===chartSymbol())return true;
  cancelPlanPreview();window.ChartStudioBrokerPanel?.invalidateDraft("Chartsymbol geändert · Positionsentwurf verworfen.");
  if(s.tool==="position-draft"||s.tool==="plan")setTool("cursor");
- s.symbol=value;s.coordinates.setScope({account:s.account,symbol:value,timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.magnet=get(magnetKey(),false)===true;
+ s.symbol=value;s.marketQuote=null;s.coordinates.setScope({account:s.account,symbol:value,timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.magnet=get(magnetKey(),false)===true;
  s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
  s.candles=[];s.candleSignature=null;s.positions=[];s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.brokerMarkers=[];
  s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.undo=[];s.redo=[];
@@ -1049,7 +1050,7 @@ function symbol(value){
  refreshProfiles();showOpts();updateSeries();window.ChartStudioObjectManager?.render();requestDraw();
  window.dispatchEvent(new CustomEvent("chartstudio:symbol-change",{detail:{account:s.account,symbol:value,timeframe:s.tf}}));return true;
 }
-function account(id,preferredSymbol,deferPortfolio=false){if(!s)return;cancelPlanPreview();s.account=id;if(typeof preferredSymbol==="string"&&/^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$/.test(preferredSymbol))s.symbol=preferredSymbol;const scenarioSymbol=s.panel.querySelector("#cs-scenario-symbol");if(scenarioSymbol)scenarioSymbol.textContent=chartSymbol();s.favorites=normalizeFavorites(get(favoritesKey(),[]));s.shortcuts=normalizeShortcuts(get(shortcutsKey(),{}));renderToolPreferences();s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});clearEvidence();s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioLoading=false;s.portfolioError="";if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
+function account(id,preferredSymbol,deferPortfolio=false){if(!s)return;cancelPlanPreview();s.account=id;if(typeof preferredSymbol==="string"&&/^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$/.test(preferredSymbol))s.symbol=preferredSymbol;const scenarioSymbol=s.panel.querySelector("#cs-scenario-symbol");if(scenarioSymbol)scenarioSymbol.textContent=chartSymbol();s.favorites=normalizeFavorites(get(favoritesKey(),[]));s.shortcuts=normalizeShortcuts(get(shortcutsKey(),{}));renderToolPreferences();s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});clearEvidence();s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioLoading=false;s.portfolioError="";if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
  s.lastScenarioPreview=null;s.marketQuote=null;clearScenarioDraft("Konto geändert · neue Quote und Preise eingeben; Gebühren/Risikobudget neu bestätigen.",true);clearDataWindowPin();
   s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
   const fibInput=s.panel.querySelector("#cs-fib-levels");if(fibInput)fibInput.value=window.ChartStudioFib?.display(s.fibLevels)||"";
@@ -1067,7 +1068,7 @@ function account(id,preferredSymbol,deferPortfolio=false){if(!s)return;cancelPla
  renderScenarioSnapshots();if(!deferPortfolio)loadPortfolio(id,chartSymbol());
  const scenarioStatus=s.panel.querySelector("#cs-scenario-ab-status");if(scenarioStatus)scenarioStatus.textContent="A/B-Snapshots für "+id+" · lokal · nur verifizierte Vorschauen.";
  showOpts();refreshProfiles();updateSeries();window.ChartStudioObjectManager?.render();requestDraw()}
-function timeframe(tf){if(s){cancelPlanPreview();if(s.positionDraft)window.ChartStudioBrokerPanel?.invalidateDraft("Timeframe geändert · Positionsentwurf verworfen.");s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.tf=tf;s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});window.ChartStudioBrokerPanel?.setTimeframe(tf);s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");refreshProfiles();
+function timeframe(tf){if(s){cancelPlanPreview();if(s.positionDraft)window.ChartStudioBrokerPanel?.invalidateDraft("Timeframe geändert · Positionsentwurf verworfen.");s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.tf=tf;s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});window.ChartStudioBrokerPanel?.setTimeframe(tf);s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");refreshProfiles();
  clearDataWindowPin();
  window.ChartStudioIndicators?.updateBars([]);
   window.ChartStudioOscillators?.updateBars([]);
@@ -1085,6 +1086,7 @@ function updateCandles(c){if(s&&Array.isArray(c)){
   window.ChartStudioOscillators?.updateBars(c);
   window.ChartStudioChartTypes?.updateBars(c);
   window.ChartStudioAverages?.updateBars(c);
+  s.marketStructure?.updateBars();
    window.ChartStudioReplay?.updateBars(c);
  requestDraw()}}
 function updatePositions(accountId,positions){if(s&&s.account===accountId){s.positions=Array.isArray(positions)?positions:[];requestDraw()}}
@@ -1113,7 +1115,7 @@ function setVerifiedMarketQuote(accountId,data){
   ?new Date(data.quoteTimeUtc*1000).toISOString():data?.quoteTimeUtc;
  const valid=data?.account===accountId&&data?.symbol===chartSymbol()&&data?.source==="MT5_VERIFIED"&&data?.canExecute===false&&/^[A-Z]{3,12}$/.test(data?.currency||"")&&Number.isInteger(digits)&&digits>=0&&digits<=10&&Number.isFinite(bid)&&bid>0&&Number.isFinite(ask)&&ask>=bid&&Number.isFinite(age)&&age>=0&&typeof quoteTimeUtc==="string"&&/(?:Z|\+00:00)$/.test(quoteTimeUtc)&&Number.isFinite(Date.parse(quoteTimeUtc))&&["FRESH","STALE","FUTURE"].includes(data?.freshness);
  s.marketQuote=valid?{bid,ask,digits,currency:data.currency,quoteTimeUtc,ageSeconds:age,freshness:data.freshness,source:data.source}:null;
- renderDataWindow();return valid;
+ renderDataWindow();s.marketStructure?.updateBars();return valid;
 }
 function renderDataWindow(){
  if(!s?.dataWindow)return;const view=s.dataWindow,panel=s.panel;
@@ -1262,6 +1264,8 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  renderToolPreferences();
  try{s.alerts=window.ChartStudioAlerts?.mount({panel,getContext:()=>s?{account:s.account,symbol:chartSymbol(),timeframe:s.tf}:null})||null}
  catch(err){console.warn("Preisalarme nicht verfügbar:",err)}
+ try{s.marketStructure=window.ChartStudioMarketStructure?.mount({panel,getContext:()=>s?{account:s.account,symbol:chartSymbol(),timeframe:s.tf}:null,getCandles:()=>s?.candles||[],getAsOfUtc:()=>s?.marketQuote?.quoteTimeUtc||null,refreshQuote:async scope=>{const root=window.location.pathname.startsWith("/stt")?"/stt":"",query=new URLSearchParams({account:scope.account,symbol:scope.symbol});const response=await fetch(root+"/api/chart/v1/quotes?"+query,{method:"GET",cache:"no-store",credentials:"same-origin"}),data=await response.json();if(!s||s.account!==scope.account||chartSymbol()!==scope.symbol||s.tf!==scope.timeframe)return;if(!response.ok||data.account!==scope.account||data.symbol!==scope.symbol||!setVerifiedMarketQuote(scope.account,data))setVerifiedMarketQuote(scope.account,null)},onRender:requestDraw})||null}
+ catch(err){console.warn("Sessions/Struktur nicht verfügbar:",err)}
  try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}
  catch (err) {console.warn("Chart Studio indicator pane could not load:",err);}
  try {window.ChartStudioCatalog?.mount({panel});}
@@ -1485,6 +1489,6 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();
 }
-window.ChartStudioBeta=Object.freeze({mount,account,symbol,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,coordinates:Object.freeze({create:createChartCoordinates}),preferences:Object.freeze({normalizeFavorites,normalizeShortcuts,resolveShortcut}),getLiveMAs,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,symbol:s.symbol,timeframe:s.tf,favorites:json(s.favorites),shortcuts:json(effectiveShortcuts(s.shortcuts)),coordinateApiVersion:s.coordinates.apiVersion,drawings:json(s.draw),options:json(s.opts),brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),portfolio:s.portfolio?json(s.portfolio):null,positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
+window.ChartStudioBeta=Object.freeze({mount,account,symbol,timeframe,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,coordinates:Object.freeze({create:createChartCoordinates}),preferences:Object.freeze({normalizeFavorites,normalizeShortcuts,resolveShortcut}),getLiveMAs,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,symbol:s.symbol,timeframe:s.tf,favorites:json(s.favorites),shortcuts:json(effectiveShortcuts(s.shortcuts)),coordinateApiVersion:s.coordinates.apiVersion,drawings:json(s.draw),options:json(s.opts),marketStructure:s.marketStructure?.getSummary?.()||null,brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),portfolio:s.portfolio?json(s.portfolio):null,positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
  scenario:s.scenario?json(s.scenario):null,tool:s.tool,magnet:s.magnet,selected:s.selected}:null});
 })();
