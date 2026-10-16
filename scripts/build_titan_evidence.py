@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 import os
 import subprocess
@@ -20,7 +21,9 @@ EXPECTED_PRESET_SHA256 = {
     "xau5m_m5": "ff92ce8710e151cb73d304e411338c411db487bc3983f15eec541138a0aea286",
     "titan_m5": "feb3030fee155bb41e8604a67117519f97db00beac614e103180813faf697e69",
 }
-EA_NAME = "XAU_Titan_Pro_BasketGuard"
+EA_NAME = "XAU_Titan_Pro_EvidenceCapture"
+SOURCE_NAME = "XAU_Titan_Pro_EvidenceBase.mq5"
+EXPECTED_SOURCE_SHA256 = "abf32bba67c0e186f136b99c376888f9b787005428c5a7b34b39566884399cde"
 
 
 @dataclass(frozen=True)
@@ -39,7 +42,182 @@ def _input_names(source_text: str) -> set[str]:
     return set(names)
 
 
-def _preset_input_names(path: Path) -> tuple[bytes, set[str]]:
+def _parameter_hash_function(source_text: str, names: set[str]) -> str:
+    declarations = re.findall(r"^\s*input\s+(\w+)\s+(\w+)\s*=", source_text, re.M)
+    if {name for _kind, name in declarations} != names:
+        raise ValueError("EA input declarations could not be serialized")
+    lines = ["string CSParameterSetCanonical()", "  {", "   string result=\"\";"]
+    for kind, name in declarations:
+        if kind == "bool":
+            expression = f'({name} ? "1" : "0")'
+        elif kind == "string":
+            expression = f"CSJsonQuote({name})"
+        elif kind in {"double", "float"}:
+            expression = f"DoubleToString({name},16)"
+        else:
+            expression = f"IntegerToString((long){name})"
+        lines.append(f'   result+="{name}="+{expression}+"\\n";')
+    lines.extend(["   return result;", "  }"])
+    return "\n".join(lines)
+
+
+def _expected_parameter_hash(source_text: str, values: dict[str, str]) -> str:
+    declarations = re.findall(r"^\s*input\s+(\w+)\s+(\w+)\s*=", source_text, re.M)
+    if {name for _kind, name in declarations} != set(values):
+        raise ValueError("preset values do not match the EA input schema")
+    canonical = []
+    for kind, name in declarations:
+        value = values[name]
+        if kind == "bool":
+            normalized = value.casefold()
+            if normalized not in {"true", "false", "0", "1"}:
+                raise ValueError(f"preset boolean is invalid for {name}")
+            encoded = "1" if normalized in {"true", "1"} else "0"
+        elif kind in {"double", "float"}:
+            try:
+                number = float(value)
+            except ValueError as exc:
+                raise ValueError(f"preset number is invalid for {name}") from exc
+            if not math.isfinite(number):
+                raise ValueError(f"preset number is invalid for {name}")
+            encoded = format(number, ".16f")
+        elif kind == "string":
+            if any(ord(char) < 0x20 for char in value):
+                raise ValueError(f"preset string contains unsupported control characters for {name}")
+            encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        else:
+            try:
+                number = float(value)
+            except ValueError as exc:
+                raise ValueError(f"preset integer is invalid for {name}") from exc
+            if not math.isfinite(number) or not number.is_integer():
+                raise ValueError(f"preset integer is invalid for {name}")
+            encoded = str(int(number))
+        canonical.append(f"{name}={encoded}\n")
+    return hashlib.sha256("".join(canonical).encode("utf-8")).hexdigest()
+
+
+def _instrument_source(source_text: str, account_alias: str, producer: str,
+                       terminal_hash: str, source_hash: str, expected_parameter_hash: str, login: int,
+                       server: str, terminal_path: str) -> str:
+    trade_include = '#include <Trade\\PositionInfo.mqh>'
+    definitions = [
+        "#define CS_EVIDENCE_CAPTURE",
+        f"#define CS_EVIDENCE_ACCOUNT_ID {_mql_string(account_alias)}",
+        f"#define CS_EVIDENCE_PRODUCER_ID {_mql_string(producer)}",
+        f"#define CS_EVIDENCE_TERMINAL_HASH {_mql_string(terminal_hash)}",
+        f"#define CS_EVIDENCE_SOURCE_HASH {_mql_string(source_hash)}",
+        f"#define CS_EVIDENCE_EXPECTED_PARAMETER_SET_HASH {_mql_string(expected_parameter_hash)}",
+        f"#define CS_EVIDENCE_EXPECTED_LOGIN {int(login)}",
+        f"#define CS_EVIDENCE_EXPECTED_SERVER {_mql_string(server)}",
+        f"#define CS_EVIDENCE_EXPECTED_TERMINAL_PATH {_mql_string(terminal_path)}",
+        "string CSParameterSetCanonical();",
+        'string CSParameterSetHash="";',
+        '#include "ChartStudioEvidenceSpool.mqh"',
+    ]
+    if source_text.count(trade_include) != 1:
+        raise ValueError("expected unique standard PositionInfo include in Titan source")
+    source_text = source_text.replace(trade_include, trade_include + "\n" + "\n".join(definitions), 1)
+
+    source_names = _input_names(source_text)
+    hash_function = _parameter_hash_function(source_text, source_names)
+    anchor = "//+------------------------------------------------------------------+\n//| Setup Robust Live Execution"
+    if source_text.count(anchor) != 1:
+        raise ValueError("expected unique execution setup insertion point")
+    source_text = source_text.replace(anchor, hash_function + "\n\n" + anchor, 1)
+
+    init_anchor = '   PrintFormat("XAU_Titan_Pro initialized.'
+    init_capture = '''#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+   CSParameterSetHash=CSHashText(CSParameterSetCanonical());
+   if(CSParameterSetHash=="")
+      Print("ChartStudio evidence recorder disabled: parameter hash unavailable.");
+   else if(CSParameterSetHash!=CS_EVIDENCE_EXPECTED_PARAMETER_SET_HASH)
+     {
+      Print("ChartStudio evidence recorder disabled: active inputs differ from the approved preset.");
+      CSRecorderDisabled=true;
+     }
+   else if(CSInitializeEvidenceProducer() && !EventSetTimer(1))
+     {
+      Print("ChartStudio evidence recorder disabled: timer unavailable.");
+      CSRecorderReady=false;
+      CSRecorderDisabled=true;
+     }
+#endif
+
+'''
+    if source_text.count(init_anchor) != 1:
+        raise ValueError("expected unique initialization log insertion point")
+    source_text = source_text.replace(init_anchor, init_capture + init_anchor, 1)
+
+    deinit_anchor = "void OnDeinit(const int reason)\n{"
+    if source_text.count(deinit_anchor) != 1:
+        raise ValueError("expected unique deinitialization function")
+    source_text = source_text.replace(deinit_anchor, deinit_anchor + "\n#ifdef CS_EVIDENCE_CAPTURE_ENABLED\n   EventKillTimer();\n#endif", 1)
+    event_handlers = '''
+void OnTimer()
+  {
+   CSFlushEvidenceQueue();
+  }
+
+void OnTradeTransaction(const MqlTradeTransaction &trans,
+                        const MqlTradeRequest &request,
+                        const MqlTradeResult &result)
+  {
+  }
+
+'''
+    handler_anchor = "//+------------------------------------------------------------------+\n//| Check if within Elite Trading Window"
+    if source_text.count(handler_anchor) != 1:
+        raise ValueError("expected unique event-handler insertion point")
+    source_text = source_text.replace(handler_anchor, event_handlers + handler_anchor, 1)
+
+    signal_anchor = "   bool sell_signal = base_sell && sell_not_overextended && sell_run_ok && sell_sr_ok;"
+    signal_capture = '''
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+   string timeframe="M15";
+   string features=CSFeature("close_1",CSNumber(close1,m_symbol.Digits()),"price",timeframe)+","+
+      CSFeature("open_1",CSNumber(open1,m_symbol.Digits()),"price",timeframe)+","+
+      CSFeature("trend_ema_1",CSNumber(trend_ema[1],m_symbol.Digits()),"price",timeframe)+","+
+      CSFeature("fast_ema_1",CSNumber(fast_ema[1],m_symbol.Digits()),"price",timeframe)+","+
+      CSFeature("slow_ema_1",CSNumber(slow_ema[1],m_symbol.Digits()),"price",timeframe)+","+
+      CSFeature("rsi_1",CSNumber(rsi_val[1],4),"rsi_points",timeframe)+","+
+      CSFeature("atr_1",CSNumber(atr_val[1],m_symbol.Digits()),"price",timeframe)+","+
+      CSFeature("swing_high",CSNumber(swing_high,m_symbol.Digits()),"price",timeframe)+","+
+      CSFeature("swing_low",CSNumber(swing_low,m_symbol.Digits()),"price",timeframe);
+   string predicates=CSPredicate("base_buy",CSBoolNumber(base_buy),"EQ","1",base_buy ? "PASS" : "BLOCK","BASE_BUY")+","+
+      CSPredicate("base_sell",CSBoolNumber(base_sell),"EQ","1",base_sell ? "PASS" : "BLOCK","BASE_SELL")+","+
+      CSPredicate("buy_not_overextended",CSBoolNumber(buy_not_overextended),"EQ","1",buy_not_overextended ? "PASS" : "BLOCK","BUY_EXTENSION")+","+
+      CSPredicate("sell_not_overextended",CSBoolNumber(sell_not_overextended),"EQ","1",sell_not_overextended ? "PASS" : "BLOCK","SELL_EXTENSION")+","+
+      CSPredicate("buy_run_ok",CSBoolNumber(buy_run_ok),"EQ","1",buy_run_ok ? "PASS" : "BLOCK","BUY_RUN")+","+
+      CSPredicate("sell_run_ok",CSBoolNumber(sell_run_ok),"EQ","1",sell_run_ok ? "PASS" : "BLOCK","SELL_RUN")+","+
+      CSPredicate("buy_sr_ok",CSBoolNumber(buy_sr_ok),"EQ","1",buy_sr_ok ? "PASS" : "BLOCK","BUY_SR")+","+
+      CSPredicate("sell_sr_ok",CSBoolNumber(sell_sr_ok),"EQ","1",sell_sr_ok ? "PASS" : "BLOCK","SELL_SR")+","+
+      CSPredicate("buy_signal",CSBoolNumber(buy_signal),"EQ","1",buy_signal ? "PASS" : "BLOCK","BUY_SIGNAL")+","+
+      CSPredicate("sell_signal",CSBoolNumber(sell_signal),"EQ","1",sell_signal ? "PASS" : "BLOCK","SELL_SIGNAL");
+   CSEnqueueDecision("SIGNAL",(buy_signal || sell_signal) ? "PASS" : "BLOCK",
+                     rates[0].time,features,predicates);
+#endif
+'''
+    if source_text.count(signal_anchor) != 1:
+        raise ValueError("expected unique closed-bar signal insertion point")
+    source_text = source_text.replace(signal_anchor, signal_anchor + "\n" + signal_capture, 1)
+
+    for direction, method in (("BUY", "Buy"), ("SELL", "Sell")):
+        call = f"if(m_trade.{method}(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment))"
+        replacement = f'''bool cs_order_sent=m_trade.{method}(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment);
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+            CSEnqueueDecision("ORDER_ATTEMPT",cs_order_sent ? "PASS" : "BLOCK",rates[0].time,
+               features,CSPredicate("broker_order",cs_order_sent ? "1" : "0","EQ","1",
+                  cs_order_sent ? "PASS" : "BLOCK","BROKER_RESULT"));
+#endif
+            if(cs_order_sent)'''
+        if source_text.count(call) != 1:
+            raise ValueError(f"expected unique {method} order call")
+        source_text = source_text.replace(call, replacement, 1)
+    return source_text
+
+
+def _preset_input_names(path: Path) -> tuple[bytes, dict[str, str]]:
     if not path.is_file():
         raise FileNotFoundError("account preset file not found")
     raw = path.read_bytes()
@@ -48,6 +226,7 @@ def _preset_input_names(path: Path) -> tuple[bytes, set[str]]:
         text = raw.decode(encoding)
     except UnicodeDecodeError as exc:
         raise ValueError("preset encoding is unsupported") from exc
+    values = {}
     names = []
     for line in text.splitlines():
         line = line.strip()
@@ -61,9 +240,12 @@ def _preset_input_names(path: Path) -> tuple[bytes, set[str]]:
         if not value.strip():
             raise ValueError("preset contains an empty value")
         names.append(name)
+        values[name] = value.strip()
+    if not values:
+        raise ValueError("preset contains no input records")
     if len(names) != len(set(names)):
         raise ValueError("preset contains duplicate input names")
-    return raw, set(names)
+    return raw, values
 
 
 def _mql_string(value: str) -> str:
@@ -131,41 +313,41 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_pa
     if not (include_root / "Include" / "Trade" / "Trade.mqh").is_file():
         raise FileNotFoundError(f"portable MT5 Include tree is incomplete for {alias}")
 
-    source_path = repo_root / f"{EA_NAME}.mq5"
+    source_path = repo_root / SOURCE_NAME
+    installed_source_path = include_root / "Experts" / "XAU_Titan_Pro.mq5"
+    installed_binary_path = include_root / "Experts" / "XAU_Titan_Pro.ex5"
     helper_path = repo_root / "ChartStudioEvidenceSpool.mqh"
     source_bytes = source_path.read_bytes()
     helper_bytes = helper_path.read_bytes()
-    preset_raw, preset_names = _preset_input_names(Path(preset_path))
-    source_text = source_bytes.decode("utf-8-sig")
+    source_digest = hashlib.sha256(source_bytes).hexdigest()
+    if source_digest != EXPECTED_SOURCE_SHA256:
+        raise ValueError("recorder base source hash is not the verified installed Titan version")
+    if not installed_source_path.is_file() or hashlib.sha256(installed_source_path.read_bytes()).hexdigest() != EXPECTED_SOURCE_SHA256:
+        raise ValueError(f"installed Titan source does not match the verified recorder base for {alias}")
+    if not installed_binary_path.is_file():
+        raise FileNotFoundError(f"installed Titan binary not found for {alias}")
+    installed_binary_hash = hashlib.sha256(installed_binary_path.read_bytes()).hexdigest()
+    preset_raw, preset_values = _preset_input_names(Path(preset_path))
+    source_text = source_bytes.decode("utf-8-sig").replace("\r\n", "\n")
     source_names = _input_names(source_text)
-    if preset_names != source_names:
-        missing = sorted(source_names - preset_names)
-        unknown = sorted(preset_names - source_names)
+    if set(preset_values) != source_names:
+        missing = sorted(source_names - set(preset_values))
+        unknown = sorted(set(preset_values) - source_names)
         raise ValueError(
             "preset inputs do not match EA input schema "
             f"(missing={len(missing)}, unknown={len(unknown)})"
         )
+    expected_parameter_hash = _expected_parameter_hash(source_text, preset_values)
     source_hash = hashlib.sha256(source_bytes + b"\0" + helper_bytes).hexdigest()
     ctx = AccountContext.from_config(alias)
     producer = DEFAULT_EVIDENCE_PRODUCERS[alias]
     if not producer:
         raise ValueError(f"no evidence producer configured for {alias}")
-
     term_root = str(terminal.parent)
-    definitions = [
-        "#define CS_EVIDENCE_CAPTURE",
-        f"#define CS_EVIDENCE_ACCOUNT_ID {_mql_string(alias)}",
-        f"#define CS_EVIDENCE_PRODUCER_ID {_mql_string(producer)}",
-        f"#define CS_EVIDENCE_TERMINAL_HASH {_mql_string(ctx.terminal_identity_hash)}",
-        f"#define CS_EVIDENCE_SOURCE_HASH {_mql_string(source_hash)}",
-        f"#define CS_EVIDENCE_EXPECTED_LOGIN {int(spec['login'])}",
-        f"#define CS_EVIDENCE_EXPECTED_SERVER {_mql_string(spec['server'])}",
-        f"#define CS_EVIDENCE_EXPECTED_TERMINAL_PATH {_mql_string(term_root)}",
-    ]
-    insertion = "#include <Trade\\Trade.mqh>"
-    if source_text.count(insertion) != 1:
-        raise ValueError("expected unique standard Trade include in Titan EA")
-    generated = source_text.replace(insertion, "\n".join(definitions) + "\n" + insertion, 1)
+    generated = _instrument_source(
+        source_text, alias, producer, ctx.terminal_identity_hash, source_hash, expected_parameter_hash,
+        int(spec["login"]), spec["server"], term_root,
+    )
 
     variant_dir = output_root_input / alias
     if _is_link_or_junction(variant_dir):
@@ -196,11 +378,14 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_pa
         "producerId": producer,
         "terminalIdentityHash": ctx.terminal_identity_hash,
         "sourceAndIncludeSha256": source_hash,
+        "sourceSha256": source_digest,
+        "installedBinarySha256": installed_binary_hash,
         "generatedSourceSha256": hashlib.sha256(variant_source.read_bytes()).hexdigest(),
         "presetName": Path(preset_path).name,
         "presetSha256": hashlib.sha256(preset_raw).hexdigest(),
-        "presetInputCount": len(preset_names),
+        "presetInputCount": len(preset_values),
         "inputSchemaSha256": hashlib.sha256("\n".join(sorted(source_names)).encode("utf-8")).hexdigest(),
+        "expectedParameterSetHash": expected_parameter_hash,
         "compiler": str(compiler),
         "portableIncludeRoot": str(include_root),
         "artifact": str(ex5),

@@ -13,7 +13,7 @@ import build_titan_evidence as BUILD
 
 
 def _compatible_preset(tmp_path, alias="xau5m_m5"):
-    source = (ROOT / f"{BUILD.EA_NAME}.mq5").read_text(encoding="utf-8-sig")
+    source = (ROOT / "XAU_Titan_Pro_EvidenceBase.mq5").read_text(encoding="utf-8-sig")
     names = re.findall(r"^\s*input\s+(?:\w+)\s+(\w+)\s*=", source, re.M)
     path = tmp_path / BUILD.EXPECTED_PRESETS[alias]
     raw = ("\ufeff" + "\r\n".join(f"{name}=0" for name in names)).encode("utf-16-le")
@@ -37,6 +37,10 @@ def configured_demo_terminal_fixtures(tmp_path, monkeypatch):
         trade_include = terminal_root / "MQL5" / "Include" / "Trade" / "Trade.mqh"
         trade_include.parent.mkdir(parents=True)
         trade_include.touch()
+        experts = terminal_root / "MQL5" / "Experts"
+        experts.mkdir(parents=True)
+        shutil.copyfile(ROOT / BUILD.SOURCE_NAME, experts / "XAU_Titan_Pro.mq5")
+        (experts / "XAU_Titan_Pro.ex5").write_bytes(b"fixture-installed-binary")
         monkeypatch.setitem(account_gateway.ACCOUNTS[alias], "terminal", str(terminal))
 
 
@@ -50,7 +54,7 @@ def test_prepare_creates_identity_bound_capture_variant_only_under_output(tmp_pa
 
         source = result.source.read_text(encoding="utf-8-sig")
         assert result.source.parent == target
-        assert result.source.name == "XAU_Titan_Pro_BasketGuard.mq5"
+        assert result.source.name == "XAU_Titan_Pro_EvidenceCapture.mq5"
         assert '#define CS_EVIDENCE_CAPTURE' in source
         assert f'#define CS_EVIDENCE_ACCOUNT_ID "{alias}"' in source
         assert "CS_EVIDENCE_EXPECTED_LOGIN" in source
@@ -61,7 +65,18 @@ def test_prepare_creates_identity_bound_capture_variant_only_under_output(tmp_pa
         manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
         assert manifest["presetSha256"] == hashlib.sha256(preset.read_bytes()).hexdigest()
         assert manifest["presetName"] == preset.name
-        assert manifest["presetInputCount"] == 65
+        assert manifest["presetInputCount"] == 50
+        assert manifest["sourceSha256"] == BUILD.EXPECTED_SOURCE_SHA256
+        assert manifest["expectedParameterSetHash"] == BUILD._expected_parameter_hash(
+            (ROOT / BUILD.SOURCE_NAME).read_text(encoding="utf-8-sig"),
+            BUILD._preset_input_names(preset)[1],
+        )
+        assert manifest["expectedParameterSetHash"] in source
+        assert manifest["installedBinarySha256"] == hashlib.sha256(b"fixture-installed-binary").hexdigest()
+        assert len(re.findall(r"^\s*input\s+(?:\w+)\s+\w+\s*=", source, re.M)) == 50
+        assert source.count("m_trade.Buy(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment)") == 1
+        assert source.count("m_trade.Sell(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment)") == 1
+        assert 'CSEnqueueDecision("SIGNAL"' in source
         assert result.source.with_suffix(".ex5").parent == target
         assert not result.source.with_suffix(".ex5").exists()
     finally:
@@ -121,8 +136,8 @@ def test_prepare_atomically_replaces_hardlinked_generated_files(tmp_path):
 def test_prepare_clears_stale_compile_outputs_before_writing_source(monkeypatch, tmp_path):
     alias_output = ROOT / "output" / "test-evidence-build" / "xau5m_m5"
     alias_output.mkdir(parents=True, exist_ok=True)
-    artifact = alias_output / "XAU_Titan_Pro_BasketGuard.ex5"
-    log = alias_output / "XAU_Titan_Pro_BasketGuard.log"
+    artifact = alias_output / "XAU_Titan_Pro_EvidenceCapture.ex5"
+    log = alias_output / "XAU_Titan_Pro_EvidenceCapture.log"
     artifact.write_bytes(b"stale")
     log.write_bytes(b"stale success log")
     monkeypatch.setattr(BUILD, "_atomic_write", lambda *args: (_ for _ in ()).throw(OSError("simulated write failure")))
@@ -137,7 +152,7 @@ def test_prepare_clears_stale_compile_outputs_before_writing_source(monkeypatch,
 
 @pytest.mark.parametrize("mismatch", ["missing", "unknown", "duplicate"])
 def test_prepare_refuses_incompatible_preset_inputs_before_writing_variant(tmp_path, mismatch):
-    source = (ROOT / f"{BUILD.EA_NAME}.mq5").read_text(encoding="utf-8-sig")
+    source = (ROOT / BUILD.SOURCE_NAME).read_text(encoding="utf-8-sig")
     names = re.findall(r"^\s*input\s+(?:\w+)\s+(\w+)\s*=", source, re.M)
     preset = tmp_path / BUILD.EXPECTED_PRESETS["xau5m_m5"]
     if mismatch == "missing":
@@ -154,6 +169,30 @@ def test_prepare_refuses_incompatible_preset_inputs_before_writing_variant(tmp_p
     try:
         message = "duplicate input names" if mismatch == "duplicate" else "preset inputs do not match"
         with pytest.raises(ValueError, match=message):
+            BUILD.prepare_variant(ROOT, "xau5m_m5", target, preset_path=preset)
+        assert not target.exists()
+    finally:
+        shutil.rmtree(target, ignore_errors=True)
+
+
+def test_recorder_base_matches_installed_titan_source_and_setfile_schema():
+    source_path = ROOT / "XAU_Titan_Pro_EvidenceBase.mq5"
+    assert hashlib.sha256(source_path.read_bytes()).hexdigest() == BUILD.EXPECTED_SOURCE_SHA256
+    source_names = BUILD._input_names(source_path.read_text(encoding="utf-8-sig"))
+    assert len(source_names) == 50
+
+
+def test_prepare_refuses_terminal_source_drift_before_writing_variant(tmp_path):
+    import account_gateway
+
+    preset = _compatible_preset(tmp_path)
+    terminal_root = Path(account_gateway.ACCOUNTS["xau5m_m5"]["terminal"]).parent
+    installed_source = terminal_root / "MQL5" / "Experts" / "XAU_Titan_Pro.mq5"
+    installed_source.write_bytes(installed_source.read_bytes() + b"// drift\n")
+    target = ROOT / "output" / "test-evidence-build-source-drift"
+    shutil.rmtree(target, ignore_errors=True)
+    try:
+        with pytest.raises(ValueError, match="installed Titan source does not match"):
             BUILD.prepare_variant(ROOT, "xau5m_m5", target, preset_path=preset)
         assert not target.exists()
     finally:
