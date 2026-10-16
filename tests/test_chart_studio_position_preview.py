@@ -445,3 +445,33 @@ def test_numeric_equivalent_existing_frozen_leg_is_unchanged(api,leg,actual,equi
     payload['candidate']={leg+'Price':None}
     data=client.post('/api/chart/v1/position/preview-stop',json=payload).json()
     assert leg.upper()+'_EXISTING_FROZEN' in data['geometry']['reasons']
+
+def test_preview_registry_consume_is_scope_bound_and_one_time():
+    from fastapi import HTTPException
+    from chart_studio.position_preview import PreviewRegistry
+    registry = PreviewRegistry(monotonic=lambda: 10.)
+    token = registry.put('scope-a', {'preview': 'safe'})['previewId']
+    with pytest.raises(HTTPException):
+        registry.consume(token, 'scope-b')
+    assert registry.consume(token, 'scope-a')['preview'] == 'safe'
+    with pytest.raises(HTTPException) as expired:
+        registry.consume(token, 'scope-a')
+    assert expired.value.status_code == 410
+
+
+def test_preview_registry_consume_race_has_exactly_one_winner():
+    import concurrent.futures
+    from fastapi import HTTPException
+    from chart_studio.position_preview import PreviewRegistry
+    registry = PreviewRegistry(monotonic=lambda: 10.)
+    token = registry.put('scope-a', {'preview': 'safe'})['previewId']
+    def consume(_):
+        try:
+            registry.consume(token, 'scope-a')
+            return 'consumed'
+        except HTTPException:
+            return 'rejected'
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(consume, range(8)))
+    assert results.count('consumed') == 1
+    assert results.count('rejected') == 7
