@@ -53,8 +53,8 @@
 
 ### Task 3: Add durable idempotency, broker readback and audit
 
-- [ ] Add failing tests for atomic key reservation, identical duplicate, conflicting key reuse, simultaneous confirms, broker rejection, ambiguous send timeout and restart-safe `UNKNOWN` recovery.
-- [ ] Implement a private SQLite store outside the checkout. Persist an idempotency reservation before a single send and append secret-free audit events; reject unsafe DB paths/permissions or missing configuration.
+- [ ] Add remaining failing tests for broker rejection, ambiguous send timeout and competing confirms; store-level atomic reservation, identical duplicate, conflicting key reuse and explicit restart-safe `UNKNOWN` recovery tests are present.
+- [x] Implement the isolated private SQLite store outside the checkout. It persists an idempotency reservation before a future send and appends secret-free audit events; unsafe checkout paths and broad POSIX directory permissions are rejected. It is not yet wired to a commit service or production configuration.
 - [ ] After accepted retcode, fetch the authoritative position again and report `SAVED` only when exact requested levels and a new broker revision are read back. Otherwise record `UNKNOWN`/`BROKER_REJECTED`; never retry send automatically.
 - [ ] Keep AT-016/AT-017's already-recorded browser draft-abort and simulated trailing-race tests as regression evidence; do not claim this backend package supplies their missing hardware/real-EA race acceptance.
 - [ ] Run focused tests, relevant position-preview/proxy regressions, full contract suite and security review.
