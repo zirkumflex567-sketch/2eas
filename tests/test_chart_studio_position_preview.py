@@ -475,3 +475,274 @@ def test_preview_registry_consume_race_has_exactly_one_winner():
         results = list(pool.map(consume, range(8)))
     assert results.count('consumed') == 1
     assert results.count('rejected') == 7
+
+def test_commit_service_sends_once_then_requires_exact_broker_readback(api, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from chart_studio.position_commit import PositionCommitService
+    from chart_studio.position_commit_store import PositionCommitStore
+    client, fake, preview_request = api
+    preview = client.post('/api/chart/v1/position/preview-stop', json={
+        **preview_request,
+        'candidate': {'slPrice': '3999.00'},
+    }).json()
+    fake.TRADE_ACTION_SLTP = 6
+    fake.TRADE_RETCODE_DONE = 10009
+    fake.order_check = lambda request: SimpleNamespace(retcode=0)
+    sent = []
+    def send(request):
+        sent.append(dict(request))
+        current = fake.positions[0]
+        current.sl = request['sl']
+        current.tp = request['tp']
+        current.time_update += 1
+        current.time_update_msc += 1000
+        return SimpleNamespace(retcode=fake.TRADE_RETCODE_DONE)
+    fake.order_send = send
+    class Guard:
+        def evaluate(self, **kwargs):
+            return {'state': 'ALLOW', 'source': 'TEST_GUARD', 'hardLock': False}
+    store = PositionCommitStore(tmp_path / 'private' / 'commit.sqlite3', checkout_root=tmp_path / 'checkout')
+    service = PositionCommitService(fake, client.app.state.position_preview_registry,
+                                    store, Guard(), now=lambda: NOW)
+    identity, peer = ('local', 'testclient', 'trade'), 'testclient'
+    result = service.commit(SimpleNamespace(
+        account='titan', symbol='XAUUSD', positionTicket=str(fake.positions[0].ticket),
+        expectedRevision=preview['positionRevision'], previewId=preview['previewId'],
+        userConfirmed=True, idempotencyKey='11111111-1111-4111-8111-111111111111'), identity, peer)
+    assert result['status'] == 'SAVED'
+    assert result['slPrice'] == '3999'
+    assert result['tpPrice'] is None
+    assert result['verified'] is True
+    assert len(sent) == 1
+    assert sent[0]['position'] == fake.positions[0].ticket
+    assert sent[0]['sl'] == 3999.
+    assert sent[0]['tp'] == 0.
+    assert store.reserve('local:testclient', '11111111-1111-4111-8111-111111111111', {
+        'account': 'titan', 'symbol': 'XAUUSD', 'ticket': str(fake.positions[0].ticket),
+        'revision': preview['positionRevision'], 'previewId': preview['previewId'],
+    }).state == 'SAVED'
+
+
+def _prepare_commit_service(client, fake, tmp_path, guard=None, *, order_check_retcode=0,
+                            apply_readback=True, broker_response="done"):
+    from chart_studio.position_commit import PositionCommitService
+    from chart_studio.position_commit_store import PositionCommitStore
+    from chart_studio.position_commit_api import install_position_commit_routes
+    fake.TRADE_ACTION_SLTP = 6
+    fake.TRADE_RETCODE_DONE = 10009
+    fake.order_check = lambda request: type('Check', (), {'retcode': order_check_retcode})()
+    sent = []
+    def send(request):
+        sent.append(dict(request))
+        if broker_response == 'none':
+            return None
+        if apply_readback:
+            current = fake.positions[0]
+            current.sl, current.tp = request['sl'], request['tp']
+            current.time_update += 1
+            current.time_update_msc += 1000
+        code = 10016 if broker_response == 'reject' else fake.TRADE_RETCODE_DONE
+        return type('Result', (), {'retcode': code})()
+    fake.order_send = send
+    guard = guard or type('AllowGuard', (), {'evaluate': lambda self, **kw: {
+        'state': 'ALLOW', 'source': 'TEST_GUARD', 'hardLock': False}})()
+    store = PositionCommitStore(tmp_path / 'private' / 'route-commit.sqlite3', checkout_root=tmp_path / 'checkout')
+    service = PositionCommitService(fake, client.app.state.position_preview_registry,
+                                    store, guard, now=lambda: NOW)
+    install_position_commit_routes(client.app, fake, enabled=True, guard_provider=guard,
+                                   audit_store=store, commit_service=service)
+    return store, sent
+
+
+def test_enabled_commit_route_runs_only_injected_demo_service_and_idempotently_replays(api, tmp_path):
+    client, fake, preview_request = api
+    preview = client.post('/api/chart/v1/position/preview-stop', json={
+        **preview_request, 'candidate': {'slPrice': '3999.00'},
+    }).json()
+    store, sent = _prepare_commit_service(client, fake, tmp_path)
+    session = client.get('/api/control_session')
+    assert session.status_code == 200
+    payload = {'schemaVersion': 1, 'account': 'titan', 'symbol': 'XAUUSD',
+               'positionTicket': preview['positionTicket'], 'expectedRevision': preview['positionRevision'],
+               'previewId': preview['previewId'], 'userConfirmed': True,
+               'idempotencyKey': '22222222-2222-4222-8222-222222222222'}
+    headers = {'X-Dashboard-CSRF': session.json()['csrf_token']}
+    first = client.post('/api/chart/v1/position/commit-stop', json=payload, headers=headers)
+    second = client.post('/api/chart/v1/position/commit-stop', json=payload, headers=headers)
+    assert first.status_code == second.status_code == 200
+    assert first.json()['status'] == second.json()['status'] == 'SAVED'
+    assert first.json()['slPrice'] == '3999'
+    assert first.json()['tpPrice'] is None
+    assert len(sent) == 1
+    assert store.reserve('local:testclient', payload['idempotencyKey'], {
+        'account': 'titan', 'symbol': 'XAUUSD', 'ticket': preview['positionTicket'],
+        'revision': preview['positionRevision'], 'previewId': preview['previewId'],
+    }).state == 'SAVED'
+
+
+@pytest.mark.parametrize('guard_result', [
+    {'state': 'ALLOW', 'source': 'TEST_GUARD', 'hardLock': True},
+    {'state': 'UNKNOWN', 'source': 'TEST_GUARD', 'hardLock': False},
+])
+def test_commit_service_fails_closed_on_hard_lock_and_never_reads_blueberry(api, tmp_path, guard_result):
+    from types import SimpleNamespace
+    from fastapi import HTTPException
+    from chart_studio.position_commit import PositionCommitService
+    from chart_studio.position_commit_store import PositionCommitStore
+    client, fake, preview_request = api
+    preview = client.post('/api/chart/v1/position/preview-stop', json={
+        **preview_request, 'candidate': {'slPrice': '3999.00'},
+    }).json()
+    decisions = []
+    class LockedGuard:
+        def evaluate(self, **kwargs):
+            decisions.append(kwargs)
+            return guard_result
+    store = PositionCommitStore(tmp_path / 'private' / 'guard-commit.sqlite3', checkout_root=tmp_path / 'checkout')
+    service = PositionCommitService(fake, client.app.state.position_preview_registry,
+                                    store, LockedGuard(), now=lambda: NOW)
+    payload = SimpleNamespace(account='titan', symbol='XAUUSD',
+        positionTicket=preview['positionTicket'], expectedRevision=preview['positionRevision'],
+        previewId=preview['previewId'], userConfirmed=True,
+        idempotencyKey='33333333-3333-4333-8333-333333333333')
+    with pytest.raises(HTTPException) as blocked:
+        service.commit(payload, ('local', 'testclient', 'trade'), 'testclient')
+    assert blocked.value.status_code == 403
+    assert decisions[0]['action'] == 'RISK_REDUCING_PROTECTION'
+    assert decisions[0]['riskIncreasing'] is False
+    assert fake.writes == 0
+    blueberry = SimpleNamespace(account='blueberry', symbol='XAUUSD.pi',
+        positionTicket='1', expectedRevision='a'*64, previewId='p'*40,
+        userConfirmed=True, idempotencyKey='44444444-4444-4444-8444-444444444444')
+    with pytest.raises(HTTPException) as forbidden:
+        service.commit(blueberry, ('local', 'testclient', 'trade'), 'testclient')
+    assert forbidden.value.status_code == 403
+    assert forbidden.value.detail['code'] == 'DEMO_ACCOUNT_REQUIRED'
+    assert fake.writes == 0
+
+
+def _post_enabled_commit(client, preview, *, key='55555555-5555-4555-8555-555555555555'):
+    session = client.get('/api/control_session')
+    assert session.status_code == 200
+    payload = {'schemaVersion': 1, 'account': preview['account'], 'symbol': preview['symbol'],
+               'positionTicket': preview['positionTicket'], 'expectedRevision': preview['positionRevision'],
+               'previewId': preview['previewId'], 'userConfirmed': True, 'idempotencyKey': key}
+    response = client.post('/api/chart/v1/position/commit-stop', json=payload,
+                           headers={'X-Dashboard-CSRF': session.json()['csrf_token']})
+    return response, payload
+
+
+def test_commit_order_check_rejection_never_sends(api, tmp_path):
+    client, fake, request = api
+    preview = client.post('/api/chart/v1/position/preview-stop', json={
+        **request, 'candidate': {'slPrice': '3999.00'},
+    }).json()
+    store, sent = _prepare_commit_service(client, fake, tmp_path, order_check_retcode=10016)
+    response, payload = _post_enabled_commit(client, preview)
+    assert response.status_code == 422
+    assert response.json()['detail']['code'] == 'ORDER_CHECK_REJECTED'
+    assert store.reserve('local:testclient', payload['idempotencyKey'], {
+        'account': 'titan', 'symbol': 'XAUUSD', 'ticket': preview['positionTicket'],
+        'revision': preview['positionRevision'], 'previewId': preview['previewId'],
+    }).result['brokerRetcode'] == 10016
+    assert sent == []
+
+
+@pytest.mark.parametrize('broker_response,apply_readback,expected', [
+    ('none', True, 'UNKNOWN'),
+    ('done', False, 'UNKNOWN'),
+    ('reject', True, 'BROKER_REJECTED'),
+])
+def test_ambiguous_or_rejected_broker_outcomes_are_never_retried(api, tmp_path, broker_response, apply_readback, expected):
+    client, fake, request = api
+    preview = client.post('/api/chart/v1/position/preview-stop', json={
+        **request, 'candidate': {'slPrice': '3999.00'},
+    }).json()
+    _, sent = _prepare_commit_service(client, fake, tmp_path, apply_readback=apply_readback,
+                                      broker_response=broker_response)
+    response, payload = _post_enabled_commit(client, preview)
+    again = client.post('/api/chart/v1/position/commit-stop', json=payload,
+                        headers={'X-Dashboard-CSRF': client.get('/api/control_session').json()['csrf_token']})
+    assert response.status_code == again.status_code == 200
+    assert response.json()['status'] == again.json()['status'] == expected
+    assert len(sent) == 1
+
+
+def test_tp_only_commit_preserves_live_stop_and_clear_stop_is_explicit(api, tmp_path):
+    client, fake, request = api
+    preview = client.post('/api/chart/v1/position/preview-stop', json={
+        **request, 'candidate': {'tpPrice': '4002.00'},
+    }).json()
+    _, sent = _prepare_commit_service(client, fake, tmp_path)
+    response, _ = _post_enabled_commit(client, preview, key='66666666-6666-4666-8666-666666666666')
+    assert response.status_code == 200 and response.json()['status'] == 'SAVED'
+    assert sent[0]['sl'] == 3990.
+    assert sent[0]['tp'] == 4002.
+
+    # A separate proposal explicitly clears SL; omission would preserve it.
+    clear_preview = client.post('/api/chart/v1/position/preview-stop', json={
+        **request, 'expectedRevision': response.json()['positionRevision'],
+        'candidate': {'slPrice': None}, 'clientRequestId': '77777777-7777-4777-8777-777777777777',
+    }).json()
+    _, clear_sent = _prepare_commit_service(client, fake, tmp_path / 'clear')
+    cleared, _ = _post_enabled_commit(client, clear_preview, key='88888888-8888-4888-8888-888888888888')
+    assert cleared.status_code == 200 and cleared.json()['status'] == 'SAVED'
+    assert clear_sent[0]['sl'] == 0.
+    assert clear_sent[0]['tp'] == 4002.
+
+def test_commit_rejects_trailing_revision_race_without_sending(api, tmp_path):
+    from types import SimpleNamespace
+    client, fake, request = api
+    preview = client.post('/api/chart/v1/position/preview-stop', json={
+        **request, 'candidate': {'slPrice': '3999.00'},
+    }).json()
+    # Simulate the EA trailing the stop after the preview was created.
+    fake.positions[0].sl = 3991.0
+    fake.positions[0].time_update += 1
+    fake.positions[0].time_update_msc += 1000
+    _, sent = _prepare_commit_service(client, fake, tmp_path)
+    result, _ = _post_enabled_commit(client, preview, key='99999999-9999-4999-8999-999999999999')
+    assert result.status_code == 409
+    assert result.json()['detail']['code'] == 'POSITION_CHANGED'
+    assert sent == []
+
+
+def test_guard_receives_risk_increase_classification_for_loosened_stop(api, tmp_path):
+    from fastapi import HTTPException
+    from types import SimpleNamespace
+    from chart_studio.position_commit import PositionCommitService
+    from chart_studio.position_commit_store import PositionCommitStore
+    client, fake, request = api
+    preview = client.post('/api/chart/v1/position/preview-stop', json={
+        **request, 'candidate': {'slPrice': '3988.00'},
+    }).json()
+    observed = []
+    class RiskGuard:
+        def evaluate(self, **kwargs):
+            observed.append(kwargs)
+            return {'state': 'BLOCK', 'source': 'TEST_POLICY', 'hardLock': False}
+    store = PositionCommitStore(tmp_path / 'private' / 'risk-commit.sqlite3', checkout_root=tmp_path / 'checkout')
+    service = PositionCommitService(fake, client.app.state.position_preview_registry,
+                                    store, RiskGuard(), now=lambda: NOW)
+    payload = SimpleNamespace(account='titan', symbol='XAUUSD',
+        positionTicket=preview['positionTicket'], expectedRevision=preview['positionRevision'],
+        previewId=preview['previewId'], userConfirmed=True,
+        idempotencyKey='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+    with pytest.raises(HTTPException) as blocked:
+        service.commit(payload, ('local', 'testclient', 'trade'), 'testclient')
+    assert blocked.value.status_code == 403
+    assert observed[0]['action'] == 'RISK_INCREASING_PROTECTION'
+    assert observed[0]['riskIncreasing'] is True
+    assert fake.writes == 0
+
+
+def test_commit_rejects_noop_preview_without_order_send(api, tmp_path):
+    client, fake, request = api
+    preview = client.post('/api/chart/v1/position/preview-stop', json={
+        **request, 'candidate': {'slPrice': '3990.00'},
+    }).json()
+    _, sent = _prepare_commit_service(client, fake, tmp_path)
+    response, _ = _post_enabled_commit(client, preview)
+    assert response.status_code == 422
+    assert response.json()['detail']['code'] == 'NO_CHANGE'
+    assert sent == []

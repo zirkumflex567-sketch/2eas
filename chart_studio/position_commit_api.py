@@ -1,15 +1,12 @@
-"""Fail-closed endpoint contract for Chart Studio position commits.
-
-This module deliberately contains no broker mutation implementation. A release
-must provide a separately reviewed service, trusted guard and private audit
-store; merely setting a flag can never make this route send broker requests.
-"""
+"""Role-bound endpoint for the independently guarded Chart Studio commit service."""
 import re
 from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, StrictBool, StrictStr, field_validator
+from chart_studio.position_preview import PreviewLimiter
 
 
 class PositionCommitRequest(BaseModel):
@@ -89,14 +86,21 @@ def install_position_commit_routes(
     audit_store=None,
     commit_service=None,
 ):
-    """Install only a deny-by-default placeholder until reviewed write service exists."""
+    """Install the commit endpoint; only a fully injected service can enable it."""
     # Keep references explicit in app state for startup diagnostics without
     # inferring capability from environment variables or a lone Boolean flag.
-    app.state.position_commit_dependencies_supplied = bool(
-        enabled and guard_provider is not None and audit_store is not None
-        and commit_service is not None
+    registry = getattr(app.state, 'position_preview_registry', None)
+    configured = bool(
+        enabled is True and guard_provider is not None and audit_store is not None
+        and commit_service is not None and getattr(commit_service, 'mt5', None) is mt5
+        and getattr(commit_service, 'guard', None) is guard_provider
+        and getattr(commit_service, 'store', None) is audit_store
+        and getattr(commit_service, 'previews', None) is registry and registry is not None
     )
-    app.state.position_commit_write_capable = False
+    app.state.position_commit_dependencies_supplied = configured
+    app.state.position_commit_write_capable = configured
+    limiter = PreviewLimiter()
+    app.state.position_commit_limiter = limiter
     router = APIRouter()
 
     @router.post('/api/chart/v1/position/commit-stop')
@@ -109,12 +113,13 @@ def install_position_commit_routes(
                 'code': 'IDENTITY_REQUIRED', 'canExecute': False, 'canCommit': False,
                 'guard': {'state': 'UNKNOWN', 'source': 'NONE'},
             })
-        # This shipping candidate has no approved/reviewed broker-write service.
-        # Reject before using the MT5 object, including when enabled=True alone.
-        raise HTTPException(503, {
-            'code': 'COMMIT_DISABLED', 'canExecute': False, 'canCommit': False,
-            'guard': {'state': 'UNKNOWN', 'source': 'NONE'},
-        })
+        if not configured:
+            raise HTTPException(503, {
+                'code': 'COMMIT_DISABLED', 'canExecute': False, 'canCommit': False,
+                'guard': {'state': 'UNKNOWN', 'source': 'NONE'},
+            })
+        with limiter.acquire(identity[:2]):
+            result = commit_service.commit(payload, identity, peer)
+        return JSONResponse(result, headers={'Cache-Control': 'no-store'})
 
     app.include_router(router)
-

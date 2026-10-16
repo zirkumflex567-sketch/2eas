@@ -6,7 +6,7 @@ import pytest
 
 def commit_payload(sl='3999.00'):
     return {'account': 'titan', 'symbol': 'XAUUSD', 'ticket': '123',
-            'revision': 'a' * 64, 'sl': sl}
+            'revision': 'a' * 64, 'previewId': 'p' * 40 + sl}
 
 def store_at(tmp_path):
     from chart_studio.position_commit_store import PositionCommitStore
@@ -72,7 +72,7 @@ def test_result_fields_are_allowlisted_and_cannot_store_secrets(tmp_path):
     with pytest.raises(ValueError):
         store.reserve('trade-user', 'ffffffff-ffff-4fff-8fff-ffffffffffff',
                       {'account': 'titan', 'symbol': 'XAUUSD', 'ticket': '123', 'revision': 'a' * 64,
-                       'password': 'do-not-store'})
+                       'previewId': 'p' * 40, 'password': 'do-not-store'})
 
 
 def test_store_rejects_paths_inside_checkout(tmp_path):

@@ -36,28 +36,28 @@
 
 ### Task 1: Lock down the disabled route and request contract
 
-- [x] Add failing tests proving disabled production wiring and attempted `enabled=True` without required dependencies reject before MT5 gateway access or `order_send`. (The request model strictly validates confirmation, preview ID, account, symbol, ticket, revision and idempotency; malformed-payload cases are still to be added.)
-- [ ] Run those tests and confirm the expected red failures.
+- [x] Add tests proving disabled production wiring and attempted `enabled=True` without required dependencies reject before MT5 gateway access or `order_send`; malformed/unconfirmed request cases also reject.
+- [x] Run the deny/schema tests: RED before route implementation, GREEN afterward.
 - [x] Add a separate `POST /api/chart/v1/position/commit-stop` route and strict schema. Production app installs it with `enabled=False`, no guard provider and no write-capable service.
 - [x] Add the path to exact control middleware so only the existing authenticated trade-session/CSRF/Origin policy can reach its handler.
-- [x] Run focused backend and proxy-security tests; confirm disabled deployment remains no-write. (`151 passed`; one unrelated real-app import test could not run because this environment lacks the `MetaTrader5` Python package.)
+- [x] Run focused backend and proxy-security tests; confirm disabled deployment remains no-write. (`172 passed, 1 skipped`; the POSIX permission-mode test is skipped on Windows.)
 
 ### Task 2: Bind a confirmed commit to a current preview and broker state
 
-- [ ] Add failing tests for mismatched identity/peer/account/symbol/ticket/revision, expired/consumed preview, altered values, stale quote, invalid tick/stops/freeze geometry and unknown/hard-locked guard. Assert no send in every case.
-- [ ] Test that SL-only preserves TP, TP-only preserves SL, explicit clear uses the documented zero-price semantics, and ambiguous/no-op requests are rejected.
+- [ ] Complete the denial matrix; current tests cover scope-bound token, expired/consumed/replayed preview, EA revision race, hard lock, geometry, no-send and demo-only account restriction. Remaining scope: every identity/symbol mismatch, stale quote, freeze/tick edge and unknown guard state.
+- [x] Test SL-only preserves TP, TP-only preserves SL, explicit clear, and reject ambiguous/no-op requests.
 - [ ] Test the guard contract separately for hard lock, daily DD/max-risk policy, symbol position cap, and action classification; risk-reducing SL/TP changes do not inherit entry-news blocks, while uncertainty blocks risk increases.
 - [x] Add atomic scope-bound one-time consumption to the preview registry; expiry, scope mismatch, replay and concurrent consumption tests pass.
-- [ ] Complete commit orchestration with fresh account/ticket/quote/metadata reads, final revision verification and a fail-closed guard-provider interface under the account gateway lock.
-- [ ] Add order-check/retcode handling only where the MT5 adapter supports it; never treat `order_check` as success.
-- [ ] Run focused tests and verify all denial cases remain no-send.
+- [x] Implement injected commit orchestration with fresh account/ticket/quote/metadata reads, final revision verification and a fail-closed guard-provider contract under the account gateway lock. Production wiring still has no provider and stays disabled.
+- [x] Add supported MT5 `order_check` preflight and retcode handling; a successful check is followed by fresh revision/guard validation and is never treated as the broker change.
+- [x] Run focused tests; all covered denial paths assert no send. Remaining denial-matrix gaps are listed in Task 2 above.
 
 ### Task 3: Add durable idempotency, broker readback and audit
 
-- [ ] Add remaining failing tests for broker rejection, ambiguous send timeout and competing confirms; store-level atomic reservation, identical duplicate, conflicting key reuse and explicit restart-safe `UNKNOWN` recovery tests are present.
-- [x] Implement the isolated private SQLite store outside the checkout. It persists an idempotency reservation before a future send and appends secret-free audit events; unsafe checkout paths and broad POSIX directory permissions are rejected. It is not yet wired to a commit service or production configuration.
-- [ ] After accepted retcode, fetch the authoritative position again and report `SAVED` only when exact requested levels and a new broker revision are read back. Otherwise record `UNKNOWN`/`BROKER_REJECTED`; never retry send automatically.
-- [ ] Keep AT-016/AT-017's already-recorded browser draft-abort and simulated trailing-race tests as regression evidence; do not claim this backend package supplies their missing hardware/real-EA race acceptance.
+- [x] Cover atomic key reservation, identical duplicate, conflicting key reuse, competing reservations, broker rejection, ambiguous timeout, readback mismatch and restart-safe `UNKNOWN` recovery in fake/store tests.
+- [x] Implement the private SQLite store outside the checkout, wire it to the injected service and persist reservations/audit; unsafe checkout paths and broad POSIX directory permissions are rejected. It remains unconfigured in production.
+- [x] After accepted retcode, fetch the authoritative position and report `SAVED` only when exact requested levels and a new revision are read back; otherwise record `UNKNOWN`/`BROKER_REJECTED` without retry.
+- [ ] Add browser draft-abort regression evidence. The simulated EA trailing-revision race is covered by `test_commit_rejects_trailing_revision_race_without_sending`; real-EA/hardware race acceptance remains open.
 - [ ] Run focused tests, relevant position-preview/proxy regressions, full contract suite and security review.
 
 ### Task 4: Review candidate while preserving the release gate

@@ -24,12 +24,15 @@ class Reservation:
     result: dict | None = None
 
 
-_PAYLOAD_KEYS = frozenset({'account', 'symbol', 'ticket', 'revision', 'sl', 'tp', 'clearSL', 'clearTP'})
+_PAYLOAD_KEYS = frozenset({'account', 'symbol', 'ticket', 'revision', 'previewId'})
 _PAYLOAD_SCOPE = frozenset({'account', 'symbol', 'ticket', 'revision'})
 _RESULT_KEYS = frozenset({'status', 'positionRevision', 'slPrice', 'tpPrice',
                           'brokerRetcode', 'code', 'verified'})
 _TERMINAL = frozenset({'SAVED', 'BROKER_REJECTED', 'UNKNOWN'})
-_RESULT_CODES = frozenset({'INTERRUPTED', 'BROKER_REJECTED', 'BROKER_TIMEOUT', 'READBACK_MISMATCH', 'UNKNOWN'})
+_RESULT_CODES = frozenset({'INTERRUPTED', 'BROKER_REJECTED', 'BROKER_TIMEOUT', 'READBACK_MISMATCH', 'UNKNOWN', 'POSITION_CHANGED', 'SYMBOL_CHANGED',
+                         'QUOTE_NOT_FRESH', 'GEOMETRY_INVALID', 'GUARD_BLOCKED',
+                         'GUARD_UNAVAILABLE', 'BROKER_DATA_UNAVAILABLE', 'ORDER_CHECK_REJECTED',
+                         'NO_CHANGE', 'PREVIEW_EXPIRED', 'PREVIEW_MISMATCH', 'DEMO_ACCOUNT_REQUIRED'})
 
 
 def _canonical_json(value, *, limit=16384):
@@ -146,11 +149,11 @@ class PositionCommitStore:
 
     @staticmethod
     def _payload(payload):
-        if (not isinstance(payload, dict) or not _PAYLOAD_SCOPE <= set(payload) or
-                not set(payload) <= _PAYLOAD_KEYS or not set(payload) - _PAYLOAD_SCOPE):
+        if (not isinstance(payload, dict) or not _PAYLOAD_KEYS <= set(payload) or
+                set(payload) != _PAYLOAD_KEYS):
             raise ValueError('Commit payload fields are not allowed')
-        if any(type(value) not in (str, bool) for value in payload.values()):
-            raise ValueError('Commit payload values must be strings or booleans')
+        if any(not isinstance(value, str) for value in payload.values()):
+            raise ValueError('Commit payload values must be strings')
         return hashlib.sha256(_canonical_json(payload)).hexdigest()
 
     @staticmethod
