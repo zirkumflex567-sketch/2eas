@@ -1245,6 +1245,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   else if(source.kind==="RECT")addRectangle({...source.options,id});
   else if(source.kind==="RAY")addRay({...source.options,id});
   else if(source.kind==="CHANNEL")addChannel({...source.options,id});
+  else if(source.kind==="MEASURE")addMeasurement({...source.options,id});
   else addFibonacci({...source.options,id});
   selectDrawing(id);return id;
  }

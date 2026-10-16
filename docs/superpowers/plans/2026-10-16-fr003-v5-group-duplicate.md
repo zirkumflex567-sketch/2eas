@@ -14,9 +14,9 @@ Duplicate every selected native v5 drawing from the keyboard or adapter API. Pre
 
 ## Verification
 
-- [x] Add Chromium API and Ctrl+D tests with selected price-level and time-marker drawings.
+- [x] Add Chromium API and Ctrl+D tests with selected price-level, time-marker and measurement drawings.
 - [x] Observe the expected RED failure: `duplicateSelectedDrawings` is unavailable.
-- [x] Verify both copies preserve their drawing kinds, both copies become selected, and each supports individual undo/redo.
+- [x] Verify all copies preserve their drawing kinds/options (including measurements), all copies become selected, and each supports individual undo/redo.
 - [x] Run `npm --prefix chart_studio_v5 run check`.
 - [x] Run `npm --prefix chart_studio_v5 run build`.
 - [x] Run `node scripts/smoke_chart_studio_v5.cjs` including AT-025 capacity evidence.
