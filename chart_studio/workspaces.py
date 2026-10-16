@@ -21,7 +21,7 @@ DRAWING_TYPES = frozenset({"horizontal", "vertical", "text", "trend", "rect", "f
 UI_FLAGS = frozenset({"ema20", "ema50", "ema200", "sma20", "sma50",
                       "bb", "positions"})
 UI_NUMBERS = frozenset({"bbPeriod", "bbStdDev"})
-INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap", "stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner", "sar", "obv", "mfi"})
+INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap", "stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner", "linearRegression", "sar", "obv", "mfi"})
 PERIOD_FIELDS = frozenset({"period", "atrPeriod", "fast", "slow", "signal", "smoothK", "smoothD"})
 SESSION_FIELDS = frozenset({"timeZone", "sessionStart"})
 TIMEFRAMES = frozenset({"M1", "M5", "M15", "M30", "H1", "H4", "D1"})
@@ -158,7 +158,7 @@ def validate_document(raw: Any) -> dict:
         color_fields = {"upColor", "downColor"} if kind == "volume" else set()
         session_fields = SESSION_FIELDS if kind == "vwap" else set()
         accepted_fields = PERIOD_FIELDS | {"enabled"} | color_fields | session_fields
-        if kind in {"supertrend", "keltner"}:
+        if kind in {"supertrend", "keltner", "linearRegression"}:
             accepted_fields = accepted_fields | {"multiplier"}
         if kind == "sar":
             accepted_fields = accepted_fields | {"step", "maxStep"}
@@ -194,16 +194,16 @@ def validate_document(raw: Any) -> dict:
                         raise StoreError("SAR AF-Schritt muss 0.01-0.10 und AF-Maximum 0.01-0.50 betragen; beide in 0.01-Schritten.")
                     cleaned[param] = value
                     continue
-                if param == "multiplier" and kind in {"supertrend", "keltner"}:
+                if param == "multiplier" and kind in {"supertrend", "keltner", "linearRegression"}:
                     value = _number(value, param)
                     if not 0.1 <= value <= 10 or abs(value * 10 - round(value * 10)) > 1e-8:
-                        raise StoreError("Supertrend-Faktor muss 0.1–10.0 in 0.1-Schritten sein.")
+                        raise StoreError("Indikator-Faktor muss 0.1–10.0 in 0.1-Schritten sein.")
                     cleaned[param] = value
                     continue
                 _number(value, param, integer=True)
                 if param in {"smoothK", "smoothD"}:
                     minimum, maximum = 1, 100
-                elif kind in {"stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner", "mfi"} and param in {"period", "atrPeriod", "stochPeriod"}:
+                elif kind in {"stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner", "linearRegression", "mfi"} and param in {"period", "atrPeriod", "stochPeriod"}:
                     minimum, maximum = 2, 200
                 else:
                     minimum, maximum = 2, 300

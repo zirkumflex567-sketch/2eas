@@ -833,6 +833,63 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.match(keltnerReadout,/Upper\s+\d/);assert.match(keltnerReadout,/Middle\s+\d/);assert.match(keltnerReadout,/Lower\s+\d/);
   assert.deepEqual(await page.evaluate(()=>JSON.parse(JSON.stringify(ChartStudioIndicators.settings().keltner))),{enabled:true,period:3,atrPeriod:2,multiplier:1.5});
   await page.locator('.cs-indicator-control input[data-kind="keltner"][type="checkbox"]').uncheck();
+  assert.ok(await page.evaluate(()=>ChartStudioCatalog.search("linear regression").some(({id})=>id==="linearRegression")));
+  await page.evaluate(()=>{
+    const chart=window.__chart,addLineSeries=chart.addLineSeries.bind(chart);
+    window.__linearRegressionSeriesCapture=[];
+    chart.addLineSeries=options=>{
+      const series=addLineSeries(options),match=/^linearRegression (Upper|Mitte|Lower)$/.exec(options.title||"");
+      if(!match)return series;
+      const capture={line:{Upper:"upper",Mitte:"middle",Lower:"lower"}[match[1]],title:options.title,calls:[],latest:null};
+      window.__linearRegressionSeriesCapture.push(capture);
+      return {applyOptions:next=>series.applyOptions(next),setData:rows=>{capture.calls.push(rows.length);capture.latest=rows.map(point=>({...point}));series.setData(rows)}};
+    };
+  });
+  await page.locator('.cs-indicator-control input[data-kind="linearRegression"][type="checkbox"]').check();
+  const regressionPeriod=page.locator('.cs-indicator-control input[data-kind="linearRegression"][data-parameter="period"]');
+  const regressionFactor=page.locator('.cs-indicator-control input[data-kind="linearRegression"][data-parameter="multiplier"]');
+  await regressionPeriod.fill("3");await regressionPeriod.press("Tab");
+  await regressionFactor.fill("1.5");await regressionFactor.press("Tab");
+  const regressionReadout=await page.evaluate(()=>ChartStudioIndicators.readout(window.__chartSmokeCandles.at(-1).time));
+  assert.match(regressionReadout,/Upper\s+\d/);assert.match(regressionReadout,/Middle\s+\d/);assert.match(regressionReadout,/Lower\s+\d/);
+  assert.deepEqual(await page.evaluate(()=>JSON.parse(JSON.stringify(ChartStudioIndicators.settings().linearRegression))),{enabled:true,period:3,multiplier:1.5});
+  const regressionValues=await page.evaluate(()=>ChartStudioIndicators.calculate("linearRegression",window.__chartSmokeCandles,{period:3,multiplier:1.5}).linearRegression);
+  const regressionCandleCount=await page.evaluate(()=>window.__chartSmokeCandles.length);
+  assert.equal(regressionValues.upper.length,regressionCandleCount-2,"The enabled channel supplies three full-lookback price series");
+  const renderedRegression=await page.evaluate(()=>{
+    const captures=window.__linearRegressionSeriesCapture||[];
+    return Object.fromEntries(captures.map(item=>[item.line,{title:item.title,calls:item.calls.length,points:item.latest?.length??0,last:item.latest?.at(-1)??null}]));
+  });
+  assert.deepEqual(Object.keys(renderedRegression).sort(),["lower","middle","upper"],"The overlay renderer creates all three regression lines");
+  for(const line of ["upper","middle","lower"]){
+    assert.equal(renderedRegression[line].points,regressionCandleCount,"Each rendered line is aligned to the full candle history");
+    assert.equal(renderedRegression[line].last.time,await page.evaluate(()=>window.__chartSmokeCandles.at(-1).time),"The rendered regression endpoint uses the current candle");
+    assert.equal(renderedRegression[line].last.value,regressionValues[line].at(-1).value,"The rendered regression endpoint matches the calculated channel");
+  }
+  const regressionTick=await page.evaluate(()=>{
+    const before=window.__chartSmokeCandles,after=before.map(bar=>({...bar}));
+    after[after.length-1]={...after.at(-1),close:after.at(-1).close+5,high:after.at(-1).high+5};
+    window.__chartSmokeCandles=after;ChartStudioIndicators.updateBars(after);
+    const values=ChartStudioIndicators.calculate("linearRegression",after,{period:3,multiplier:1.5}).linearRegression;
+    const captures=Object.fromEntries(window.__linearRegressionSeriesCapture.map(item=>[item.line,item]));
+    return Object.fromEntries(["upper","middle","lower"].map(line=>[line,{calls:captures[line].calls.length,points:captures[line].latest.length,last:captures[line].latest.at(-1),expected:values[line].at(-1)}]));
+  });
+  for(const line of ["upper","middle","lower"]){
+    assert.equal(regressionTick[line].calls,renderedRegression[line].calls+1,"A forming-bar tick updates each rendered channel series");
+    assert.equal(regressionTick[line].points,regressionCandleCount,"A forming-bar tick replaces the endpoint without adding a candle");
+    assert.deepEqual(regressionTick[line].last,regressionTick[line].expected,"Each rendered endpoint matches the recalculated forming-bar value");
+  }
+  await page.evaluate(()=>ChartStudioIndicators.switchAccount("goldm15"));
+  assert.equal(await page.evaluate(()=>ChartStudioIndicators.settings().linearRegression.enabled),false,"Regression settings remain account scoped");
+  await page.evaluate(()=>{ChartStudioIndicators.switchAccount("titan");ChartStudioIndicators.updateBars(window.__chartSmokeCandles)});
+  assert.deepEqual(await page.evaluate(()=>{const {enabled,period,multiplier}=ChartStudioIndicators.settings().linearRegression;return {enabled,period,multiplier}}),{enabled:true,period:3,multiplier:1.5},"The regression parameters restore for the original account");
+  const regressionWorkspace=await page.evaluate(()=>ChartStudioBeta.exportDocument());
+  assert.deepEqual(regressionWorkspace.indicators.linearRegression,{enabled:true,period:3,multiplier:1.5},"The native Beta workspace export includes regression settings");
+  await page.evaluate(()=>ChartStudioIndicators.updateConfig("linearRegression","enabled",false));
+  assert.equal(await page.evaluate(document=>ChartStudioBeta.importDocument(document),regressionWorkspace),true,"A workspace imports for its current chart scope");
+  assert.deepEqual(await page.evaluate(()=>{const {enabled,period,multiplier}=ChartStudioIndicators.settings().linearRegression;return {enabled,period,multiplier}}),{enabled:true,period:3,multiplier:1.5},"Workspace import restores regression calculation and parameters");
+  assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem("2eas:studio:indicators:v1:titan")).linearRegression),{enabled:true,period:3,multiplier:1.5},"The account-local browser profile persists regression settings");
+  await page.locator('.cs-indicator-control input[data-kind="linearRegression"][type="checkbox"]').uncheck();
   await page.locator('.cs-indicator-control input[data-kind="stochastic"][type="checkbox"]').check();
   await page.waitForSelector('.cs-indicator-pane[data-indicator="stochastic"]',{state:"visible"});
   const stochasticReadout=await page.evaluate(()=>ChartStudioIndicators.readout(window.__chartSmokeCandles.at(-1).time));

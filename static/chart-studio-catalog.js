@@ -16,6 +16,7 @@ const entries=Object.freeze([
  {id:"supertrend",name:"Supertrend",group:"Trend",desc:"ATR-basierter, farbiger Trend-Overlay (Standard 10 × 3,0)",type:"toggle",kind:"supertrend"},
  {id:"donchian",name:"Donchian-Kanal",group:"Trend",desc:"20-Kerzen-Hoch/Tief mit Mittellinie; vollständiger Lookback erforderlich",type:"toggle",kind:"donchian"},
  {id:"keltner",name:"Keltner-Kanal",group:"Volatilität",desc:"EMA-Mittellinie mit Wilder-ATR-Bändern; konfigurierbare Perioden und Breite",type:"toggle",kind:"keltner"},
+ {id:"linearRegression",name:"Linear Regression Channel",group:"Trend",desc:"Rollierende OLS-Mittellinie mit Residual-Standardabweichungsband; kein Vorwärtsprojekt",type:"toggle",kind:"linearRegression"},
  {id:"momentum",name:"Momentum",group:"Momentum",desc:"Close-Differenz zum Schlusskurs vor der gewählten Periode",type:"oscillator",kind:"momentum"},
  {id:"roc",name:"Rate of Change (ROC)",group:"Momentum",desc:"Prozentuale Close-Änderung über die gewählte Periode",type:"oscillator",kind:"roc"},
  {id:"sar",name:"Parabolic SAR",group:"Trend",desc:"Trendfolge-Overlay mit konfigurierbarem Beschleunigungsfaktor (AF 0,02 / 0,20)",type:"toggle",kind:"sar"},

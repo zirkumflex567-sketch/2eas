@@ -46,6 +46,26 @@ assert.equal(math.donchian(donchianBars,2.5).upper.length,0);
 assert.equal(window.ChartStudioIndicators.calculate("donchian",donchianBars,{period:3}).donchian.lower.length,2);
 assert.ok(Object.hasOwn(window.ChartStudioIndicators.registry,"donchian"));
 assert.deepEqual(JSON.parse(JSON.stringify(window.ChartStudioIndicators.settings().donchian)),{enabled:false,period:20});
+const regressionBars=[1,2,4,4].map((close,index)=>({time:1700060500+index*60,open:close,high:close+1,low:close-1,close}));
+const regression=math.linearRegressionChannel(regressionBars,3,2);
+assert.deepEqual(Array.from(regression.middle,point=>point.time),regressionBars.slice(2).map(bar=>bar.time),"Regression channel begins only after a full lookback");
+near(regression.middle[0].value,23/6,1e-9);
+near(regression.upper[0].value,23/6+2/Math.sqrt(18),1e-9,"Regression channel uses population residual deviation without future bars");
+near(regression.lower[0].value,23/6-2/Math.sqrt(18),1e-9);
+const updatedRegressionBars=regressionBars.map(bar=>({...bar}));updatedRegressionBars[3].close=5;
+const updatedRegression=math.linearRegressionChannel(updatedRegressionBars,3,2);
+assert.deepEqual(Array.from(updatedRegression.middle,point=>point.time),Array.from(regression.middle,point=>point.time));
+assert.notEqual(updatedRegression.middle[1].value,regression.middle[1].value,"A forming-bar update recalculates its existing window without adding a bar");
+const straightRegression=math.linearRegressionChannel([1,2,3,4].map((close,index)=>({...regressionBars[index],close})),3,2);
+assert.ok(straightRegression.upper.every((point,index)=>point.value===straightRegression.middle[index].value));
+assert.equal(math.linearRegressionChannel(regressionBars.slice(0,2),3,2).upper.length,0);
+assert.equal(math.linearRegressionChannel(regressionBars,1,2).upper.length,0);
+assert.equal(math.linearRegressionChannel(regressionBars,201,2).upper.length,0);
+assert.equal(math.linearRegressionChannel(regressionBars,3,0).upper.length,0);
+assert.equal(math.linearRegressionChannel(regressionBars,3,10.1).upper.length,0);
+assert.equal(window.ChartStudioIndicators.calculate("linearRegression",regressionBars,{period:3,multiplier:2}).linearRegression.upper.length,2);
+assert.ok(Object.hasOwn(window.ChartStudioIndicators.registry,"linearRegression"));
+assert.deepEqual(JSON.parse(JSON.stringify(window.ChartStudioIndicators.settings().linearRegression)),{enabled:false,period:20,multiplier:2});
 const keltnerBars=[
  {time:1700061000,open:5,high:10,low:0,close:5},
  {time:1700061060,open:6,high:11,low:1,close:6},
@@ -238,4 +258,4 @@ assert.equal(window.ChartStudioIndicators.calculate("mfi",flowBars,{period:2}).m
 assert.ok(Object.hasOwn(window.ChartStudioIndicators.registry,"obv"));
 assert.deepEqual(JSON.parse(JSON.stringify(window.ChartStudioIndicators.settings().mfi)),{enabled:false,period:14});
 
-console.log("PASS Chart Studio RSI/Stochastic/ATR/MACD/ADX/VWAP/SAR/OBV/MFI and broker volume math, warm-up, time alignment, read-only checks");
+console.log("PASS Chart Studio RSI/Stochastic/ATR/MACD/ADX/VWAP/SAR/OBV/MFI/Donchian/Keltner/linear-regression math, warm-up, alignment and read-only checks");
