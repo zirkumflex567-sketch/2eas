@@ -758,6 +758,18 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.equal(await page.evaluate(()=>ChartStudioIndicators.settings().donchian.enabled),true);
   await page.locator('.cs-indicator-control input[data-kind="donchian"][type="checkbox"]').uncheck();
   assert.equal(await page.evaluate(()=>ChartStudioIndicators.settings().donchian.enabled),false);
+  assert.ok(await page.evaluate(()=>ChartStudioCatalog.search("keltner").some(({id})=>id==="keltner")));
+  await page.locator('.cs-indicator-control input[data-kind="keltner"][type="checkbox"]').check();
+  const keltnerPeriod=page.locator('.cs-indicator-control input[data-kind="keltner"][data-parameter="period"]');
+  const keltnerAtr=page.locator('.cs-indicator-control input[data-kind="keltner"][data-parameter="atrPeriod"]');
+  const keltnerFactor=page.locator('.cs-indicator-control input[data-kind="keltner"][data-parameter="multiplier"]');
+  await keltnerPeriod.fill("3");await keltnerPeriod.press("Tab");
+  await keltnerAtr.fill("2");await keltnerAtr.press("Tab");
+  await keltnerFactor.fill("1.5");await keltnerFactor.press("Tab");
+  const keltnerReadout=await page.evaluate(()=>ChartStudioIndicators.readout(window.__chartSmokeCandles.at(-1).time));
+  assert.match(keltnerReadout,/Upper\s+\d/);assert.match(keltnerReadout,/Middle\s+\d/);assert.match(keltnerReadout,/Lower\s+\d/);
+  assert.deepEqual(await page.evaluate(()=>JSON.parse(JSON.stringify(ChartStudioIndicators.settings().keltner))),{enabled:true,period:3,atrPeriod:2,multiplier:1.5});
+  await page.locator('.cs-indicator-control input[data-kind="keltner"][type="checkbox"]').uncheck();
   await page.locator('.cs-indicator-control input[data-kind="stochastic"][type="checkbox"]').check();
   await page.waitForSelector('.cs-indicator-pane[data-indicator="stochastic"]',{state:"visible"});
   const stochasticReadout=await page.evaluate(()=>ChartStudioIndicators.readout(window.__chartSmokeCandles.at(-1).time));

@@ -46,6 +46,18 @@ assert.equal(math.donchian(donchianBars,2.5).upper.length,0);
 assert.equal(window.ChartStudioIndicators.calculate("donchian",donchianBars,{period:3}).donchian.lower.length,2);
 assert.ok(Object.hasOwn(window.ChartStudioIndicators.registry,"donchian"));
 assert.deepEqual(JSON.parse(JSON.stringify(window.ChartStudioIndicators.settings().donchian)),{enabled:false,period:20});
+const keltnerBars=[
+ {time:1700061000,open:5,high:10,low:0,close:5},
+ {time:1700061060,open:6,high:11,low:1,close:6},
+ {time:1700061120,open:7,high:12,low:2,close:7}
+];
+const keltner=math.keltner(keltnerBars,2,2,1);
+assert.equal(keltner.middle.length,2);near(keltner.middle[0].value,5+2/3);near(keltner.upper[0].value,5+2/3+10);near(keltner.lower[0].value,5+2/3-10);
+near(keltner.middle[1].value,5+2/3+2/3*(7-(5+2/3)));near(keltner.upper[1].value,keltner.middle[1].value+10);
+assert.equal(math.keltner(keltnerBars,1,2,1).middle.length,0);
+assert.equal(math.keltner(keltnerBars,2,201,1).middle.length,0);
+assert.equal(math.keltner(keltnerBars,2,2,10.15).middle.length,0);
+assert.equal(window.ChartStudioIndicators.calculate("keltner",keltnerBars,{period:2,atrPeriod:2,multiplier:1}).keltner.lower.length,2);
 const macd=math.macd(ascending,12,26,9);
 assert.equal(macd.macd.length,75);
 assert.equal(macd.signal.length,67);

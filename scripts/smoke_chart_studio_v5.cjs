@@ -280,6 +280,18 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.changeAccount("at025-other");const isolated=engine.readDataWindow(changed.time).indicators?.length??0;
    engine.destroy();host.remove();return {row,updated,badPeriodRejected,isolated};
   });
+  const keltnerProbe=await page.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:900px;height:360px;position:fixed;left:-2000px;top:0";document.body.append(host);
+   const engine=ChartStudioV5.createStudioV5(host,"at026-native-keltner"),bars=Array.from({length:8},(_,i)=>({time:1700500000+i*60,open:20+i,high:24+i,low:18+i,close:21+i}));
+   engine.setCandles(bars);engine.addKeltner({id:"keltner-main",period:3,atrPeriod:2,multiplier:1,color:"#55d7ee"});
+   const reference=window.ChartStudioIndicators.calculate("keltner",bars,{period:3,atrPeriod:2,multiplier:1}).keltner;
+   const initial=engine.readDataWindow(bars.at(-1).time).indicators.find(item=>item.id==="keltner-main");
+   const changed={...bars.at(-1),high:40,low:10,close:25};engine.updateLast(changed);
+   const updated=engine.readDataWindow(changed.time).indicators.find(item=>item.id==="keltner-main"),updatedReference=window.ChartStudioIndicators.calculate("keltner",[...bars.slice(0,-1),changed],{period:3,atrPeriod:2,multiplier:1}).keltner.middle.at(-1).value;
+   let badMultiplierRejected=false;try{engine.addKeltner({id:"keltner-bad",period:3,atrPeriod:2,multiplier:10.15,color:"#ffffff"})}catch(_){badMultiplierRejected=true}
+   engine.changeAccount("at026-other");const isolated=engine.readDataWindow(changed.time).indicators?.length??0;
+   engine.destroy();host.remove();return {initial:initial?.value,expected:reference.middle.at(-1).value,updated:updated?.value,updatedReference,badMultiplierRejected,isolated};
+  });
   const oscillatorProbe=await page.evaluate(()=>{
    const host=document.createElement("div");host.style.cssText="width:900px;height:420px;position:fixed;left:-2000px;top:0";document.body.append(host);
    const engine=ChartStudioV5.createStudioV5(host,"at001-native-oscillator",{symbol:"XAUUSD",timeframe:"M5"});
@@ -502,6 +514,10 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(donchianProbe.updated.value,18,"Forming-bar updates recalculate all Donchian boundaries");
   assert.equal(donchianProbe.badPeriodRejected,true);
   assert.equal(donchianProbe.isolated,0,"Changing account clears Donchian readouts");
+  assert.equal(keltnerProbe.initial,keltnerProbe.expected,"The native Keltner channel matches beta EMA/ATR semantics");
+  assert.equal(keltnerProbe.updated,keltnerProbe.updatedReference,"Forming-bar updates recalculate Keltner boundaries");
+  assert.equal(keltnerProbe.badMultiplierRejected,true);
+  assert.equal(keltnerProbe.isolated,0,"Changing account clears Keltner readouts");
   assert.equal(movingAverageProbe.independent[0].value,12.125,"EMA close instance uses its own source and period");
   assert.equal(movingAverageProbe.independent[1].value,32.5,"EMA high instance uses its own source and display shift");
   assert.equal(movingAverageProbe.edited.find(x=>x.id==="ema-close").value,movingAverageProbe.editedExpected,"Editing one EMA period/source leaves its instance isolated");

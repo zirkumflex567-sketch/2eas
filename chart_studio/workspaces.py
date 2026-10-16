@@ -21,8 +21,8 @@ DRAWING_TYPES = frozenset({"horizontal", "vertical", "text", "trend", "rect", "f
 UI_FLAGS = frozenset({"ema20", "ema50", "ema200", "sma20", "sma50",
                       "bb", "positions"})
 UI_NUMBERS = frozenset({"bbPeriod", "bbStdDev"})
-INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap", "stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian"})
-PERIOD_FIELDS = frozenset({"period", "fast", "slow", "signal", "smoothK", "smoothD"})
+INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap", "stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner"})
+PERIOD_FIELDS = frozenset({"period", "atrPeriod", "fast", "slow", "signal", "smoothK", "smoothD"})
 SESSION_FIELDS = frozenset({"timeZone", "sessionStart"})
 TIMEFRAMES = frozenset({"M1", "M5", "M15", "M30", "H1", "H4", "D1"})
 MAX_DOCUMENT_BYTES = 524288
@@ -158,7 +158,7 @@ def validate_document(raw: Any) -> dict:
         color_fields = {"upColor", "downColor"} if kind == "volume" else set()
         session_fields = SESSION_FIELDS if kind == "vwap" else set()
         accepted_fields = PERIOD_FIELDS | {"enabled"} | color_fields | session_fields
-        if kind == "supertrend":
+        if kind in {"supertrend", "keltner"}:
             accepted_fields = accepted_fields | {"multiplier"}
         if not isinstance(values, dict) or any(k not in accepted_fields for k in values):
             raise StoreError("Ungültige Indikator-Parameter.")
@@ -182,7 +182,7 @@ def validate_document(raw: Any) -> dict:
                     except (ZoneInfoNotFoundError, ValueError):
                         raise StoreError("Ungültige VWAP-IANA-Zeitzone.") from None
             else:
-                if param == "multiplier" and kind == "supertrend":
+                if param == "multiplier" and kind in {"supertrend", "keltner"}:
                     value = _number(value, param)
                     if not 0.1 <= value <= 10 or abs(value * 10 - round(value * 10)) > 1e-8:
                         raise StoreError("Supertrend-Faktor muss 0.1–10.0 in 0.1-Schritten sein.")
@@ -191,7 +191,7 @@ def validate_document(raw: Any) -> dict:
                 _number(value, param, integer=True)
                 if param in {"smoothK", "smoothD"}:
                     minimum, maximum = 1, 100
-                elif kind in {"stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian"} and param in {"period", "stochPeriod"}:
+                elif kind in {"stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner"} and param in {"period", "atrPeriod", "stochPeriod"}:
                     minimum, maximum = 2, 200
                 else:
                     minimum, maximum = 2, 300

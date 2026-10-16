@@ -317,6 +317,22 @@ class SqliteLayoutTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(StoreError):
                 validate_document({**original, "indicators": {"donchian": invalid}})
 
+    def test_keltner_settings_roundtrip_and_bounds(self):
+        original = example()
+        settings = {"enabled": True, "period": 20, "atrPeriod": 10, "multiplier": 2.0}
+        document = {**original, "indicators": {"keltner": settings}}
+        self.assertEqual(validate_document(document)["indicators"]["keltner"], settings)
+        self.store.put("local-owner", "titan", "XAUUSD", "Keltner", document, 0)
+        self.assertEqual(self.store.get("local-owner", "titan", "XAUUSD", "Keltner")["document"]["indicators"]["keltner"], settings)
+        for invalid in [
+            {**settings, "period": 1}, {**settings, "period": 201},
+            {**settings, "atrPeriod": 1}, {**settings, "atrPeriod": 201},
+            {**settings, "multiplier": 0}, {**settings, "multiplier": 10.1},
+            {**settings, "multiplier": 2.05}, {**settings, "unknown": 1},
+        ]:
+            with self.subTest(invalid=invalid), self.assertRaises(StoreError):
+                validate_document({**original, "indicators": {"keltner": invalid}})
+
     def test_bollinger_settings_are_backward_compatible_strict_and_scoped(self):
         old = example()
         self.assertEqual(validate_document(old)["options"], old["options"])
