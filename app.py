@@ -3430,7 +3430,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           });
         } catch (_) { /* Read-only EMA display is optional. */ }
       } catch (err) {
-        console.error('[Cockpit] Kerzen-Ladefehler:', err);
+        if (err.name !== 'AbortError') console.error('[Cockpit] Kerzen-Ladefehler:', err);
         reportAccountError(err, generation);
         if (generation === accountGeneration && err.name !== 'AbortError') {
           setChartLoadStatus(`Kerzen nicht verfügbar: ${err.message || 'MT5-Feed prüfen.'}`, 'error');
