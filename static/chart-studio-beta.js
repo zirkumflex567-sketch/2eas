@@ -781,6 +781,21 @@ function drawBollingerFill(ctx){
  }
  if(upper.length<2)return;ctx.save();ctx.beginPath();ctx.moveTo(...upper[0]);for(let i=1;i<upper.length;i++)ctx.lineTo(...upper[i]);for(let i=lower.length-1;i>=0;i--)ctx.lineTo(...lower[i]);ctx.closePath();ctx.fillStyle="rgba(185,161,255,.10)";ctx.fill();ctx.restore();
 }
+function drawIchimokuCloud(ctx){
+ const values=window.ChartStudioIndicators?.ichimokuValues?.();if(!values?.senkouA?.length||!values?.senkouB?.length)return;
+ const lower=new Map(values.senkouB.map(point=>[point.time,point])),upper=values.senkouA.filter(point=>lower.has(point.time));if(upper.length<2)return;
+ const firstSourceIndex=s.candles.findIndex(bar=>bar.time===upper[0].sourceTime),offset=firstSourceIndex<0?0:firstSourceIndex+(window.ChartStudioIndicators.settings().ichimoku.displacement||0);
+ const visible=s.coordinates.visibleLogicalRange(),start=Math.max(0,Math.floor(visible?.from??0)-offset-2),end=Math.min(upper.length-1,Math.ceil(visible?.to??s.candles.length)-offset+2);
+ ctx.save();for(let i=start;i<end;i++){
+  const a0=upper[i],a1=upper[i+1],b0=lower.get(a0.time),b1=lower.get(a1.time);if(!b0||!b1)continue;
+  const points=[[s.coordinates.timeToX(a0.time),s.coordinates.priceToY(a0.value)],[s.coordinates.timeToX(a1.time),s.coordinates.priceToY(a1.value)],[s.coordinates.timeToX(b1.time),s.coordinates.priceToY(b1.value)],[s.coordinates.timeToX(b0.time),s.coordinates.priceToY(b0.value)]];
+  if(points.some(([x,y])=>!Number.isFinite(x)||!Number.isFinite(y)))continue;
+  const d0=a0.value-b0.value,d1=a1.value-b1.value,fill=(poly,green)=>{ctx.beginPath();ctx.moveTo(...poly[0]);for(let j=1;j<poly.length;j++)ctx.lineTo(...poly[j]);ctx.closePath();ctx.fillStyle=green?"rgba(65,216,154,.12)":"rgba(244,119,137,.12)";ctx.fill()};
+  if(d0*d1<0){const t=d0/(d0-d1),cross=[points[0][0]+(points[1][0]-points[0][0])*t,points[0][1]+(points[1][1]-points[0][1])*t];fill([points[0],cross,points[3]],d0>0);fill([cross,points[1],points[2]],d1>0)}
+  else fill(points,(d0===0?d1:d0)>=0);
+ }
+ ctx.restore();
+}
 function project(anchor){
  let x=null,y=null;
  try{x=s.coordinates.timeToX(anchor.time);y=s.coordinates.priceToY(anchor.price)}catch(_){}
@@ -983,7 +998,7 @@ function render(){
  c.style.left=d.left+"px";c.style.top=d.top+"px";c.style.width=d.w+"px";c.style.height=d.h+"px";
  const pw=Math.ceil(d.w*ratio),ph=Math.ceil(d.h*ratio);if(c.width!==pw||c.height!==ph){c.width=pw;c.height=ph}
  const ctx=c.getContext("2d");ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,d.w,d.h);
- drawBollingerFill(ctx);
+ drawBollingerFill(ctx);drawIchimokuCloud(ctx);
  s.marketStructure?.draw(ctx,s.coordinates,d);
  if(s.opts.positions)drawPositions(ctx,d);
  drawPositionDraft(ctx,d);
@@ -1154,7 +1169,7 @@ function account(id,preferredSymbol,deferPortfolio=false){if(!s)return;cancelPla
  renderScenarioSnapshots();if(!deferPortfolio)loadPortfolio(id,chartSymbol());
  const scenarioStatus=s.panel.querySelector("#cs-scenario-ab-status");if(scenarioStatus)scenarioStatus.textContent="A/B-Snapshots für "+id+" · lokal · nur verifizierte Vorschauen.";
  showOpts();refreshProfiles();updateSeries();window.ChartStudioObjectManager?.render();requestDraw()}
-function timeframe(tf){if(s){s.extensions?.clear();cancelPlanPreview();if(s.positionDraft)window.ChartStudioBrokerPanel?.invalidateDraft("Timeframe geändert · Positionsentwurf verworfen.");s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.tf=tf;s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});window.ChartStudioBrokerPanel?.setTimeframe(tf);s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");refreshProfiles();
+function timeframe(tf){if(s){s.extensions?.clear();cancelPlanPreview();if(s.positionDraft)window.ChartStudioBrokerPanel?.invalidateDraft("Timeframe geändert · Positionsentwurf verworfen.");s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.tf=tf;window.ChartStudioIndicators?.setTimeframe(tf);s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});window.ChartStudioBrokerPanel?.setTimeframe(tf);s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");refreshProfiles();
  clearDataWindowPin();
  window.ChartStudioIndicators?.updateBars([]);
   window.ChartStudioOscillators?.updateBars([]);
@@ -1357,7 +1372,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   getContext:()=>s?{account:s.account,symbol:chartSymbol(),timeframe:s.tf}:null,
   getCandles:()=>s?.candles||[]})||null}
  catch(err){console.warn("Signierte Indikator-Erweiterungen nicht verfügbar:",err)}
- try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId});}
+ try {window.ChartStudioIndicators?.mount({chart,host,panel,account:accountId,onRender:requestDraw});window.ChartStudioIndicators?.setTimeframe(tf);}
  catch (err) {console.warn("Chart Studio indicator pane could not load:",err);}
  try {window.ChartStudioCatalog?.mount({panel,getContext:()=>s?{account:s.account,symbol:chartSymbol(),timeframe:s.tf}:null});}
  catch (err) {console.warn("Chart indicator catalog unavailable:",err);}

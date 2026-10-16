@@ -368,6 +368,23 @@ class SqliteLayoutTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(StoreError):
                 validate_document({**original, "indicators": {"atrBands": invalid}})
 
+    def test_ichimoku_settings_roundtrip_and_strict_bounds(self):
+        original = example()
+        settings = {"enabled": True, "tenkanPeriod": 9, "kijunPeriod": 26,
+                    "senkouBPeriod": 52, "displacement": 26}
+        document = {**original, "indicators": {"ichimoku": settings}}
+        self.assertEqual(validate_document(document)["indicators"]["ichimoku"], settings)
+        self.store.put("local-owner", "titan", "XAUUSD", "Ichimoku", document, 0)
+        self.assertEqual(self.store.get("local-owner", "titan", "XAUUSD", "Ichimoku")["document"]["indicators"]["ichimoku"], settings)
+        for invalid in [
+            {**settings, "tenkanPeriod": 1}, {**settings, "kijunPeriod": 201},
+            {**settings, "senkouBPeriod": 1}, {**settings, "displacement": -1},
+            {**settings, "displacement": 201}, {**settings, "unknown": True},
+        ]:
+            with self.subTest(invalid=invalid), self.assertRaises(StoreError):
+                validate_document({**original, "indicators": {"ichimoku": invalid}})
+        self.assertEqual(validate_document({**original, "indicators": {"ichimoku": {"displacement": 0}}})["indicators"]["ichimoku"]["displacement"], 0)
+
     def test_parabolic_sar_settings_roundtrip_and_bounds(self):
         original = example()
         settings = {"enabled": True, "step": 0.02, "maxStep": 0.2}

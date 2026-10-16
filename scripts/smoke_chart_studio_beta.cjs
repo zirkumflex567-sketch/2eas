@@ -779,6 +779,34 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await page.locator('.cs-indicator-control input[data-kind="vwap"][type="checkbox"]').check();
   assert.equal(await page.evaluate(()=>ChartStudioIndicators.settings().vwap.enabled),true);
   assert.ok(await page.evaluate(()=>ChartStudioCatalog.search("supertrend").some(({id})=>id==="supertrend")));
+  assert.ok(await page.evaluate(()=>ChartStudioCatalog.search("ichimoku").some(({id})=>id==="ichimoku")));
+  await page.locator('.cs-indicator-control input[data-kind="ichimoku"][type="checkbox"]').check();
+  for(const [parameter,value] of [["tenkanPeriod","2"],["kijunPeriod","3"],["senkouBPeriod","4"],["displacement","2"]]){
+    const input=page.locator(`.cs-indicator-control input[data-kind="ichimoku"][data-parameter="${parameter}"]`);
+    await input.fill(value);await input.press("Tab");
+  }
+  assert.deepEqual(await page.evaluate(()=>{const s=ChartStudioIndicators.settings().ichimoku;return [s.enabled,s.tenkanPeriod,s.kijunPeriod,s.senkouBPeriod,s.displacement]}),[true,2,3,4,2]);
+  const ichimokuDisplacement=page.locator('.cs-indicator-control input[data-kind="ichimoku"][data-parameter="displacement"]');
+  await ichimokuDisplacement.fill("201");await ichimokuDisplacement.press("Tab");
+  assert.equal(await page.evaluate(()=>ChartStudioIndicators.settings().ichimoku.displacement),2,"Out-of-range displacement changes are rejected atomically");
+  await page.evaluate(()=>ChartStudioIndicators.switchAccount("goldm15"));
+  assert.equal(await page.evaluate(()=>ChartStudioIndicators.settings().ichimoku.enabled),false,"Ichimoku settings are isolated by account");
+  await page.evaluate(()=>{ChartStudioIndicators.switchAccount("titan");ChartStudioIndicators.updateBars(window.__chartSmokeCandles)});
+  assert.deepEqual(await page.evaluate(()=>{const s=ChartStudioIndicators.settings().ichimoku;return [s.enabled,s.tenkanPeriod,s.kijunPeriod,s.senkouBPeriod,s.displacement]}),[true,2,3,4,2],"Ichimoku settings restore within the same account");
+  assert.match(await page.evaluate(()=>ChartStudioIndicators.readout(window.__chartSmokeCandles.at(-1).time)),/Tenkan .*Kijun .*Senkou A \(Quelle\).*Senkou B \(Quelle\).*Chikou \(Quelle\)/,"Ichimoku exposes source-attributed values in the live chart data window");
+  for(const [parameter,value] of [["tenkanPeriod","9"],["kijunPeriod","26"],["senkouBPeriod","52"],["displacement","26"]]){
+    const input=page.locator(`.cs-indicator-control input[data-kind="ichimoku"][data-parameter="${parameter}"]`);
+    await input.fill(value);await input.press("Tab");
+  }
+  await page.evaluate(()=>{
+    const original=window.__chartSmokeCandles,base=original[0].time,extended=Array.from({length:500},(_,index)=>{const close=4100+Math.sin(index/8)*12+index*.11;return {time:base+index*900,open:close-1,high:close+3,low:close-4,close:close+1,tick_volume:800+index*2,real_volume:0}});
+    window.__ichimokuOriginalCandles=original;window.__chartSmokeCandles=extended;candleSeries.setData(extended);ChartStudioBeta.updateCandles(extended);ChartStudioIndicators.updateBars(extended);chart.timeScale().setVisibleLogicalRange({from:180,to:220});
+  });
+  await page.waitForTimeout(50);
+  const cloudPixels=()=>page.evaluate(()=>{const c=document.querySelector("canvas.cs-beta-canvas"),p=c.getContext("2d").getImageData(0,0,c.width,c.height).data;let green=0,red=0;for(let i=0;i<p.length;i+=4){if(p[i+3]>0&&p[i+1]>p[i]*1.25)green++;if(p[i+3]>0&&p[i]>p[i+1]*1.3&&p[i+2]>p[i+1]*1.1)red++}return {green,red}});
+  const scrolledCloud=await cloudPixels();
+  assert.ok(scrolledCloud.green+scrolledCloud.red>0,"Ichimoku cloud is drawn inside a scrolled viewport after warm-up and displacement");
+  await page.evaluate(()=>{window.__chartSmokeCandles=window.__ichimokuOriginalCandles;candleSeries.setData(window.__chartSmokeCandles);ChartStudioBeta.updateCandles(window.__chartSmokeCandles);ChartStudioIndicators.updateBars(window.__chartSmokeCandles);chart.timeScale().fitContent()});
   await page.locator('.cs-indicator-control input[data-kind="supertrend"][type="checkbox"]').check();
   const supertrendFactor=page.locator('.cs-indicator-control input[data-kind="supertrend"][data-parameter="multiplier"]');
   await supertrendFactor.fill("2.5");await supertrendFactor.press("Tab");
@@ -1004,6 +1032,8 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await page.evaluate(doc=>ChartStudioBeta.importDocument({...doc,options:{...doc.options,bbPeriod:20,bbStdDev:2,bbFill:true}}),bbWorkspace);
   assert.deepEqual(await page.evaluate(()=>{const s=ChartStudioBeta.getState();return [s.options.bbPeriod,s.options.bbStdDev,s.options.bbFill]}),[20,2,true]);
   await page.evaluate(()=>{ChartStudioBeta.updateCandles(window.__chartSmokeCandles);candleSeries.setData(window.__chartSmokeCandles)});
+  const ichimokuToggle=page.locator('.cs-indicator-control input[data-kind="ichimoku"][type="checkbox"]');
+  if(await ichimokuToggle.isChecked())await ichimokuToggle.uncheck();
   await page.waitForFunction(()=>{const c=document.querySelector("canvas.cs-beta-canvas");if(!c)return false;const p=c.getContext("2d").getImageData(0,0,c.width,c.height).data;for(let i=3;i<p.length;i+=4)if(p[i])return true;return false});
   const countOverlayPixels=()=>page.evaluate(()=>{const c=document.querySelector("canvas.cs-beta-canvas"),p=c.getContext("2d").getImageData(0,0,c.width,c.height).data;let count=0;for(let i=3;i<p.length;i+=4)if(p[i])count++;return count});
   assert.ok(await countOverlayPixels()>0,"Enabled Bollinger fill paints into the chart overlay");

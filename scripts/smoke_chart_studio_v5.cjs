@@ -420,6 +420,33 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
      const finalInspection=engine.inspect(),fullCount=finalInspection.linearRegressionCount,sharedAverageCount=finalInspection.averageCount;engine.changeAccount("at027-other");const accountCleared=engine.inspect().linearRegressionCount===0&&engine.inspect().averageCount===0,isolated=engine.readDataWindow(appended.time).indicators?.length??0;
      engine.destroy();host.remove();return {apiAvailable,initialMatches,initialOptions,logicalInstanceCount,renderedLineCount,nativeArraysMatch,knownResidual,perfectLine:perfect.upper.length===1&&perfect.upper[0].value===perfect.middle[0].value&&perfect.middle[0].value===perfect.lower[0].value,noProjection,historyMatches,formingMatches,repeatedMatches,appendMatches,updateAccepted,updatedOptions,updatedMatches,badPeriodRejected,badMultiplierRejected,badPatchRejected,badOptionRejected,identityCollisionRejected,rejectedPatchPreserved,hidden,shown,instanceLimitEnforced,fullCount,sharedAverageCount,accountCleared,isolated,removed,countAfterRemoval};
   });
+  const ichimokuProbe=await page.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:900px;height:360px;position:fixed;left:-2000px;top:0";document.body.append(host);
+   const engine=ChartStudioV5.createStudioV5(host,"at027-native-ichimoku",{symbol:"XAUUSD",timeframe:"M15"}),bars=Array.from({length:24},(_,i)=>{const close=2200+Math.sin(i/3)*4+i*.13;return {time:1700600000+i*900,open:close-.3,high:close+1.1,low:close-1.2,close}});
+   engine.setCandles(bars);const apiAvailable=typeof engine.addIchimoku==="function"&&typeof engine.updateIchimoku==="function"&&typeof engine.removeIchimoku==="function"&&typeof engine.ichimokuOptions==="function"&&typeof ChartStudioV5.calculateIchimoku==="function";
+   if(!apiAvailable){engine.destroy();host.remove();return {apiAvailable}}
+   const settings={tenkanPeriod:2,kijunPeriod:3,senkouBPeriod:4,displacement:2},reference=(rows,config=settings)=>ChartStudioIndicators.calculate("ichimoku",rows,{...config,timeframe:"M15"}).ichimoku;
+   const matches=(rows,config=settings)=>{
+    const expected=reference(rows,config),native=engine.inspect().ichimokuSeries.find(item=>item.id==="ichimoku-main");if(!native)return false;
+    const keys=["tenkan","kijun","senkouA","senkouB","chikou"];
+    return keys.every(key=>native.lines[key].length===expected[key].length&&native.lines[key].every((point,index)=>point.time===expected[key][index].time&&point.sourceTime===expected[key][index].sourceTime&&Math.abs(point.value-expected[key][index].value)<1e-9&&!!point.projected===!!expected[key][index].projected))&&
+     rows.every(bar=>keys.every(key=>{const expectedPoint=expected[key].find(point=>point.sourceTime===bar.time),actual=engine.readDataWindow(bar.time).indicators.find(item=>item.id==="ichimoku-main:"+key);return expectedPoint?actual?.state==="AVAILABLE"&&Math.abs(actual.value-expectedPoint.value)<1e-9:actual?.state!=="AVAILABLE"}));
+   };
+   const cadence=ChartStudioV5.calculateIchimoku(bars,{...settings,timeframe:"M15"}),cadenceTable={M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400,W1:604800},cadences=Object.entries(cadenceTable).every(([timeframe,seconds])=>{const value=ChartStudioV5.calculateIchimoku(bars,{...settings,timeframe}),last=value.senkouA.filter(point=>point.projected).at(-1);return !!last&&last.time===bars.at(-1).time+settings.displacement*seconds});
+   engine.addIchimoku({id:"ichimoku-main",...settings,color:"#55d7ee"});const initialMatches=matches(bars),logicalCount=engine.inspect().ichimokuCount,options=engine.ichimokuOptions("ichimoku-main");
+   let collisionRejected=false;try{engine.addAverage({id:"ichimoku-main",color:"#ffffff"},[])}catch(_){collisionRejected=true}
+   let invalidRejected=false;try{engine.updateIchimoku("ichimoku-main",{displacement:201})}catch(_){invalidRejected=true}
+   const rejectedPatchPreserved=JSON.stringify(engine.ichimokuOptions("ichimoku-main"))===JSON.stringify(options);
+   const changed={...bars.at(-1),close:bars.at(-1).close+2,high:bars.at(-1).high+2};engine.updateLast(changed);const formingMatches=matches([...bars.slice(0,-1),changed]);
+   const appended={...changed,time:changed.time+900,open:changed.close,high:changed.close+1,low:changed.close-1,close:changed.close+.4};engine.updateLast(appended);const appendMatches=matches([...bars.slice(0,-1),changed,appended]);
+   const updated=engine.updateIchimoku("ichimoku-main",{tenkanPeriod:3,displacement:0,color:"#a78bfa"}),updatedMatches=matches([...bars.slice(0,-1),changed,appended],{tenkanPeriod:3,kijunPeriod:3,senkouBPeriod:4,displacement:0});
+   const zeroDisplacement=updatedMatches&&engine.ichimokuOptions("ichimoku-main").displacement===0,removed=engine.removeIchimoku("ichimoku-main"),afterRemove=engine.inspect().ichimokuCount,isolated=engine.readDataWindow(appended.time).indicators.some(item=>item.id.startsWith("ichimoku-main:"));
+   engine.addIchimoku({id:"ichimoku-limit",...settings,color:"#55d7ee"});for(let i=0;i<19;i++)engine.addAverage({id:"ichimoku-average-"+i,color:"#55d7ee"},[]);
+   let overLimitRejected=false;try{engine.addAverage({id:"ichimoku-over-limit",color:"#ffffff"},[])}catch(_){overLimitRejected=true}
+   const combinedCount=engine.inspect().ichimokuCount+engine.inspect().averageCount;
+   engine.changeAccount("at027-native-ichimoku-other");const accountCleared=engine.inspect().ichimokuCount===0&&engine.inspect().averageCount===0;
+   engine.destroy();host.remove();return {apiAvailable,initialMatches,logicalCount,options,cadences,collisionRejected,invalidRejected,rejectedPatchPreserved,formingMatches,appendMatches,updated,updatedMatches,zeroDisplacement,removed,afterRemove,isolated,overLimitRejected,combinedCount,accountCleared};
+  });
   const oscillatorProbe=await page.evaluate(()=>{
    const host=document.createElement("div");host.style.cssText="width:900px;height:420px;position:fixed;left:-2000px;top:0";document.body.append(host);
    const engine=ChartStudioV5.createStudioV5(host,"at001-native-oscillator",{symbol:"XAUUSD",timeframe:"M5"});
@@ -714,6 +741,24 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(bollingerProbe.isolated,0,"Changing account clears Bollinger readouts");
   assert.equal(bollingerProbe.overLimitRejected,true);
   assert.equal(bollingerProbe.combinedCount,20);
+  assert.equal(ichimokuProbe.apiAvailable,true,"Native v5 exposes Ichimoku formulas and grouped overlay APIs");
+  assert.equal(ichimokuProbe.initialMatches,true,"All Ichimoku components, source times, projections and data-window values match Beta");
+  assert.equal(ichimokuProbe.logicalCount,1,"Five Ichimoku lines count as one shared indicator instance");
+  assert.equal(ichimokuProbe.cadences,true,"Tail projections use the explicit fixed cadence for every supported timeframe");
+  assert.equal(ichimokuProbe.collisionRejected,true);
+  assert.equal(ichimokuProbe.invalidRejected,true);
+  assert.equal(ichimokuProbe.rejectedPatchPreserved,true,"Invalid Ichimoku updates leave the active overlay unchanged");
+  assert.equal(ichimokuProbe.formingMatches,true);
+  assert.equal(ichimokuProbe.appendMatches,true);
+  assert.equal(ichimokuProbe.updated,true);
+  assert.equal(ichimokuProbe.updatedMatches,true);
+  assert.equal(ichimokuProbe.zeroDisplacement,true);
+  assert.equal(ichimokuProbe.removed,true);
+  assert.equal(ichimokuProbe.afterRemove,0);
+  assert.equal(ichimokuProbe.isolated,false,"Removing Ichimoku clears every component readout");
+  assert.equal(ichimokuProbe.overLimitRejected,true);
+  assert.equal(ichimokuProbe.combinedCount,20);
+  assert.equal(ichimokuProbe.accountCleared,true,"Changing account removes the complete Ichimoku group");
   assert.equal(linearRegressionProbe.apiAvailable,true,"Native v5 exposes the regression channel overlay API");
   assert.equal(linearRegressionProbe.initialMatches,true,"Native v5 regression middle values match the Beta OLS reference");
    assert.equal(linearRegressionProbe.nativeArraysMatch,true,"Native upper, middle and lower series match Beta OLS values and timestamps");

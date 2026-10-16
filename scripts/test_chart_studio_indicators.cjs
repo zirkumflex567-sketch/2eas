@@ -96,6 +96,37 @@ for(const args of [[1,2,2],[201,2,2],[2,1,2],[2,201,2],[2,2,.15],[2,2,10.1]])ass
 assert.equal(window.ChartStudioIndicators.calculate("atrBands",atrBandBars,{period:2,atrPeriod:2,multiplier:2}).atrBands.lower.length,3);
 assert.ok(Object.hasOwn(window.ChartStudioIndicators.registry,"atrBands"));
 assert.deepEqual(JSON.parse(JSON.stringify(window.ChartStudioIndicators.settings().atrBands)),{enabled:false,period:20,atrPeriod:14,multiplier:2});
+const ichimokuBars=[10,11,9,12,13,10,15].map((close,index)=>({time:1700063000+index*60,open:close,high:close+1,low:close-1,close}));
+const ichimokuInput=JSON.stringify(ichimokuBars),ichimoku=math.ichimoku(ichimokuBars,{tenkanPeriod:2,kijunPeriod:3,senkouBPeriod:4,displacement:2});
+assert.deepEqual(Array.from(ichimoku.tenkan,point=>point.time),ichimokuBars.slice(1).map(bar=>bar.time));
+near(ichimoku.tenkan[0].value,10.5);near(ichimoku.kijun[0].value,10);
+assert.equal(ichimoku.senkouA[0].sourceTime,ichimokuBars[2].time);
+assert.equal(ichimoku.senkouA[0].time,ichimokuBars[4].time,"Senkou A is projected by observed bar index");
+near(ichimoku.senkouA[0].value,10);
+assert.equal(ichimoku.senkouB[0].sourceTime,ichimokuBars[3].time);
+assert.equal(ichimoku.senkouB[0].time,ichimokuBars[5].time);
+near(ichimoku.senkouB[0].value,10.5);
+assert.equal(ichimoku.chikou[0].sourceTime,ichimokuBars[2].time);
+assert.equal(ichimoku.chikou[0].time,ichimokuBars[0].time,"Chikou plots the current close back by the configured observed bars");
+near(ichimoku.chikou[0].value,9);
+assert.deepEqual(JSON.stringify(ichimokuBars),ichimokuInput,"Ichimoku never mutates source candles");
+assert.equal(math.ichimoku(ichimokuBars.slice(0,3),{tenkanPeriod:2,kijunPeriod:3,senkouBPeriod:4,displacement:2}).senkouB.length,0,"Senkou B requires its full source lookback");
+assert.equal(math.ichimoku(ichimokuBars.slice(0,3),{tenkanPeriod:2,kijunPeriod:3,senkouBPeriod:4,displacement:2}).chikou.length,1,"Chikou uses only already-observed source closes");
+for(const bad of [{tenkanPeriod:1,kijunPeriod:3,senkouBPeriod:4,displacement:2},{tenkanPeriod:2,kijunPeriod:201,senkouBPeriod:4,displacement:2},{tenkanPeriod:2,kijunPeriod:3,senkouBPeriod:1,displacement:2},{tenkanPeriod:2,kijunPeriod:3,senkouBPeriod:4,displacement:201}])assert.equal(math.ichimoku(ichimokuBars,bad).tenkan.length,0,"Invalid Ichimoku settings fail closed");
+assert.deepEqual(JSON.parse(JSON.stringify(window.ChartStudioIndicators.calculate("ichimoku",ichimokuBars,{tenkanPeriod:2,kijunPeriod:3,senkouBPeriod:4,displacement:2}).ichimoku)),JSON.parse(JSON.stringify(ichimoku)));
+assert.ok(Object.hasOwn(window.ChartStudioIndicators.registry,"ichimoku"));
+assert.deepEqual(JSON.parse(JSON.stringify(window.ChartStudioIndicators.settings().ichimoku)),{enabled:false,tenkanPeriod:9,kijunPeriod:26,senkouBPeriod:52,displacement:26});
+const gapIchimokuBars=ichimokuBars.map((bar,index)=>({...bar,time:bar.time+(index>2?3600:0)}));
+const gapIchimoku=math.ichimoku(gapIchimokuBars,{tenkanPeriod:2,kijunPeriod:3,senkouBPeriod:4,displacement:1});
+assert.equal(gapIchimoku.senkouA[0].time,gapIchimokuBars[3].time,"Observed target bars use their actual timestamps across session gaps");
+const projectedIchimoku=math.ichimoku(ichimokuBars,{tenkanPeriod:2,kijunPeriod:3,senkouBPeriod:4,displacement:2,timeframe:"M15"});
+assert.ok(projectedIchimoku.senkouA.some(point=>point.projected&&point.time===ichimokuBars.at(-1).time+900));
+assert.ok(projectedIchimoku.senkouA.every(point=>point.sourceTime<=ichimokuBars.at(-1).time));
+assert.equal(math.ichimoku(ichimokuBars,{tenkanPeriod:2,kijunPeriod:3,senkouBPeriod:4,displacement:0}).senkouA.at(-1).time,ichimokuBars.at(-1).time);
+for(const [bars,expected] of [[[],0],[ichimokuBars.slice(0,1),0],[ichimokuBars.slice(0,2),1]]){
+ const result=math.ichimoku(bars,{tenkanPeriod:2,kijunPeriod:3,senkouBPeriod:4,displacement:0});
+ assert.equal(result.tenkan.length,expected,"Ichimoku handles empty, one-bar and exact Tenkan warm-up boundaries");
+}
 const macd=math.macd(ascending,12,26,9);
 assert.equal(macd.macd.length,75);
 assert.equal(macd.signal.length,67);

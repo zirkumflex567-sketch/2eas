@@ -23,6 +23,7 @@ const REGISTRY=Object.freeze({
  keltner:{name:"Keltner-Kanal",type:"overlay",period:20,atrPeriod:10,multiplier:2,min:2,max:200},
  atrBands:{name:"ATR Bands",type:"overlay",period:20,atrPeriod:14,multiplier:2,min:2,max:200},
  linearRegression:{name:"Linear Regression Channel",type:"overlay",period:20,multiplier:2,min:2,max:200},
+ ichimoku:{name:"Ichimoku Cloud",type:"overlay",tenkanPeriod:9,kijunPeriod:26,senkouBPeriod:52,displacement:26,min:2,max:200},
  vwap:{name:"Session-VWAP (Volumenproxy)",type:"overlay",timeZone:"UTC",sessionStart:"00:00"}
 });
 const storagePrefix="2eas:studio:indicators:v1:";
@@ -326,6 +327,40 @@ function linearRegressionChannel(input,period=20,multiplier=2){
  }
  return {upper,middle,lower};
 }
+function ichimoku(input,settings={}){
+ const bars=validateBars(input),tenkan=[],kijun=[],senkouA=[],senkouB=[],chikou=[];
+ const tenkanPeriod=settings.tenkanPeriod??9,kijunPeriod=settings.kijunPeriod??26;
+ const senkouBPeriod=settings.senkouBPeriod??52,displacement=settings.displacement??26;
+ const secondsByTimeframe={M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400,W1:604800};
+ const seconds=secondsByTimeframe[settings.timeframe];
+ if(![tenkanPeriod,kijunPeriod,senkouBPeriod].every(value=>Number.isInteger(value)&&value>=2&&value<=200)||
+    !Number.isInteger(displacement)||displacement<0||displacement>200)return {tenkan,kijun,senkouA,senkouB,chikou};
+ const midpoint=(index,period)=>{
+  if(index<period-1)return null;
+  let high=-Infinity,low=Infinity;
+  for(let j=index-period+1;j<=index;j++){high=Math.max(high,bars[j].high);low=Math.min(low,bars[j].low)}
+  return (high+low)/2;
+ };
+ const tenkanByIndex=new Map(),kijunByIndex=new Map(),spanBByIndex=new Map();
+ for(let i=0;i<bars.length;i++){
+  const t=midpoint(i,tenkanPeriod),k=midpoint(i,kijunPeriod),b=midpoint(i,senkouBPeriod);
+  if(t!==null){tenkan.push({time:bars[i].time,sourceTime:bars[i].time,value:t});tenkanByIndex.set(i,t)}
+  if(k!==null){kijun.push({time:bars[i].time,sourceTime:bars[i].time,value:k});kijunByIndex.set(i,k)}
+  if(i>=displacement){const sourceIndex=i-displacement;chikou.push({time:bars[sourceIndex].time,sourceTime:bars[i].time,value:bars[i].close,projectedBack:true})}
+  if(b!==null)spanBByIndex.set(i,b);
+ }
+ for(let i=0;i<bars.length;i++){
+  const t=tenkanByIndex.get(i),k=kijunByIndex.get(i),b=spanBByIndex.get(i);
+  const targetIndex=i+displacement;
+  let targetTime,projected=false;
+  if(targetIndex<bars.length)targetTime=bars[targetIndex].time;
+  else if(seconds){targetTime=bars.at(-1).time+(targetIndex-(bars.length-1))*seconds;projected=true}
+  else continue;
+  if(t!==undefined&&k!==undefined)senkouA.push({time:targetTime,sourceTime:bars[i].time,value:(t+k)/2,...(projected?{projected:true}:{})});
+  if(b!==undefined)senkouB.push({time:targetTime,sourceTime:bars[i].time,value:b,...(projected?{projected:true}:{})});
+ }
+ return {tenkan,kijun,senkouA,senkouB,chikou};
+}
 function sessionConfig(settings={}){
  const timeZone=settings.timeZone??"UTC",sessionStart=settings.sessionStart??"00:00";
  if(typeof timeZone!=="string"||timeZone.length>64||typeof sessionStart!=="string"||!/^([01]\d|2[0-3]):[0-5]\d$/.test(sessionStart))return null;
@@ -373,6 +408,7 @@ function calc(kind,candles,settings={}){
  if(kind==="keltner")return {keltner:keltner(candles,settings.period??20,settings.atrPeriod??10,settings.multiplier??2)};
  if(kind==="atrBands")return {atrBands:atrBands(candles,settings.period??20,settings.atrPeriod??14,settings.multiplier??2)};
  if(kind==="linearRegression")return {linearRegression:linearRegressionChannel(candles,settings.period??20,settings.multiplier??2)};
+ if(kind==="ichimoku")return {ichimoku:ichimoku(candles,settings)};
  throw Error("Unknown indicator: "+kind);
 }
 function createIncremental(kind,input,settings={}){
@@ -444,7 +480,7 @@ function defaults(){
   atr:{enabled:false,period:14},volume:{enabled:false,upColor:"#41cce9",downColor:"#f7758b"},adx:{enabled:false,period:14},
   stochastic:{enabled:false,period:14,smoothK:3,smoothD:3},stochrsi:{enabled:false,period:14,stochPeriod:14,smoothK:3,smoothD:3},cci:{enabled:false,period:20},
   momentum:{enabled:false,period:10},roc:{enabled:false,period:10},sar:{enabled:false,step:.02,maxStep:.2},obv:{enabled:false},mfi:{enabled:false,period:14},supertrend:{enabled:false,period:10,multiplier:3},
-  donchian:{enabled:false,period:20},keltner:{enabled:false,period:20,atrPeriod:10,multiplier:2},atrBands:{enabled:false,period:20,atrPeriod:14,multiplier:2},linearRegression:{enabled:false,period:20,multiplier:2},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
+  donchian:{enabled:false,period:20},keltner:{enabled:false,period:20,atrPeriod:10,multiplier:2},atrBands:{enabled:false,period:20,atrPeriod:14,multiplier:2},linearRegression:{enabled:false,period:20,multiplier:2},ichimoku:{enabled:false,tenkanPeriod:9,kijunPeriod:26,senkouBPeriod:52,displacement:26},vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}};
 }
 function restore(account){
  try{const raw=JSON.parse(localStorage.getItem(storagePrefix+account)||"null");
@@ -452,8 +488,8 @@ function restore(account){
   if(raw&&typeof raw==="object")for(const id of Object.keys(REGISTRY)){
    if(raw[id]&&typeof raw[id]==="object"){
     result[id].enabled=raw[id].enabled===true;
-    for(const prop of ["period","atrPeriod","stochPeriod","fast","slow","signal","smoothK","smoothD"]){
-     const minimum=prop==="smoothK"||prop==="smoothD"?1:2,maximum=prop==="slow"?300:prop==="smoothK"||prop==="smoothD"?100:200;
+    for(const prop of ["period","atrPeriod","stochPeriod","fast","slow","signal","smoothK","smoothD","tenkanPeriod","kijunPeriod","senkouBPeriod","displacement"]){
+     const minimum=prop==="displacement"?0:prop==="smoothK"||prop==="smoothD"?1:2,maximum=prop==="slow"?300:prop==="smoothK"||prop==="smoothD"?100:200;
      if(Object.hasOwn(result[id],prop)&&Number.isInteger(raw[id][prop])&&raw[id][prop]>=minimum&&raw[id][prop]<=maximum)
       result[id][prop]=raw[id][prop];
     }
@@ -489,10 +525,10 @@ function box(kind){
   const input=document.createElement("input");input.type="text";input.value=settings[prop];input.dataset.parameter=prop;input.dataset.kind=kind;
   input.setAttribute("aria-label",cfg.name+": "+labelText);label.append(input);row.append(label);
  }
- for(const prop of ["period","atrPeriod","fast","slow","signal","smoothK","smoothD","multiplier","step","maxStep"]){
+ for(const prop of ["period","atrPeriod","fast","slow","signal","smoothK","smoothD","multiplier","step","maxStep","tenkanPeriod","kijunPeriod","senkouBPeriod","displacement"]){
   if(!Object.hasOwn(cfg,prop))continue;
-  const label=document.createElement("span");label.textContent=prop==="smoothK"?"%K Glättung":prop==="smoothD"?"%D Glättung":prop==="multiplier"?"Faktor":prop==="step"?"AF-Schritt":prop==="maxStep"?"AF-Maximum":prop==="period"?"Periode":prop;
-  const input=document.createElement("input");input.type="number";input.min=prop==="smoothK"||prop==="smoothD"?1:prop==="multiplier"?.1:prop==="step"||prop==="maxStep"?.01:2;input.max=prop==="slow"?300:prop==="smoothK"||prop==="smoothD"?100:prop==="multiplier"?10:prop==="step"?.1:prop==="maxStep"?.5:200;
+  const label=document.createElement("span");label.textContent=prop==="smoothK"?"%K Glättung":prop==="smoothD"?"%D Glättung":prop==="multiplier"?"Faktor":prop==="step"?"AF-Schritt":prop==="maxStep"?"AF-Maximum":prop==="period"?"Periode":prop==="tenkanPeriod"?"Tenkan":prop==="kijunPeriod"?"Kijun":prop==="senkouBPeriod"?"Senkou B":"Versatz";
+  const input=document.createElement("input");input.type="number";input.min=prop==="smoothK"||prop==="smoothD"?1:prop==="multiplier"?.1:prop==="step"||prop==="maxStep"?.01:prop==="displacement"?0:2;input.max=prop==="slow"?300:prop==="smoothK"||prop==="smoothD"?100:prop==="multiplier"?10:prop==="step"?.1:prop==="maxStep"?.5:200;
   input.step=prop==="multiplier"?.1:prop==="step"||prop==="maxStep"?.01:1;input.value=String(settings[prop]);input.dataset.parameter=prop;input.dataset.kind=kind;
   input.setAttribute("aria-label",cfg.name+": "+prop);
   row.append(label,input);
@@ -504,7 +540,7 @@ function syncPanel(){
  state.controls.replaceChildren();
  for(const id of Object.keys(REGISTRY))state.controls.append(box(id));
 }
-function data(kind){return calc(kind,state.bars,state.settings[kind])}
+function data(kind){return calc(kind,state.bars,kind==="ichimoku"?{...state.settings[kind],timeframe:state.timeframe}:state.settings[kind])}
 const STREAM_KINDS=new Set(["rsi","macd","atr"]);
 function streamSettings(kind){
  const cfg=state.settings[kind];
@@ -522,7 +558,14 @@ function oneTailChange(previous,next){
  return sameLength?previous.at(-1).time===next.at(-1).time:next.at(-1).time>previous.at(-1).time;
 }
 function addReadout(kind,calculated,onlyTime=null){
- const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],sar:["SAR"],obv:["OBV · Broker-Volumen"],mfi:["MFI · Volumenproxy"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],atrBands:["Upper","Middle","Lower"],linearRegression:["Upper","Middle","Lower"],vwap:["VWAP"]}[kind];
+ const labels={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],sar:["SAR"],obv:["OBV · Broker-Volumen"],mfi:["MFI · Volumenproxy"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],atrBands:["Upper","Middle","Lower"],linearRegression:["Upper","Middle","Lower"],ichimoku:["Tenkan","Kijun","Senkou A (Quelle)","Senkou B (Quelle)","Chikou (Quelle)"],vwap:["VWAP"]}[kind];
+ if(kind==="ichimoku"){
+  for(const [component,label] of [["tenkan",labels[0]],["kijun",labels[1]],["senkouA",labels[2]],["senkouB",labels[3]],["chikou",labels[4]]])for(const point of calculated.ichimoku[component]){
+   if(onlyTime!==null&&point.sourceTime!==onlyTime)continue;
+   const rows=state.readouts.get(point.sourceTime)||[];rows.push({kind,label,value:point.value});state.readouts.set(point.sourceTime,rows);
+  }
+  return;
+ }
  if(kind==="donchian"||kind==="keltner"||kind==="atrBands"||kind==="linearRegression"){
   const components=["upper","middle","lower"];
   for(let i=0;i<components.length;i++)for(const point of calculated[kind][components[i]]){
@@ -601,6 +644,13 @@ function renderPanes(incrementalUpdates=null){
  if(!incrementalUpdates)state.readouts=new Map();
  else state.readouts.delete(readoutTime);
  for(const id of Object.keys(REGISTRY)){
+  if(id==="ichimoku"){
+   const calculated=state.settings.ichimoku.enabled?data(id):null,key="ichimokuOverlays";state.ichimokuValues=calculated?.ichimoku??null;
+   if(calculated)addReadout(id,calculated,readoutTime);
+   if(!state[key]&&state.settings[id].enabled){state[key]={tenkan:state.chart.addLineSeries({title:"Ichimoku Tenkan",color:"#55d7ee",lineWidth:1,lastValueVisible:false,priceLineVisible:false}),kijun:state.chart.addLineSeries({title:"Ichimoku Kijun",color:"#f3c56a",lineWidth:1,lastValueVisible:false,priceLineVisible:false}),senkouA:state.chart.addLineSeries({title:"Ichimoku Senkou A",color:"#41d89a",lineWidth:1,lastValueVisible:false,priceLineVisible:false}),senkouB:state.chart.addLineSeries({title:"Ichimoku Senkou B",color:"#f47789",lineWidth:1,lastValueVisible:false,priceLineVisible:false}),chikou:state.chart.addLineSeries({title:"Ichimoku Chikou",color:"#b58aff",lineWidth:1,lastValueVisible:false,priceLineVisible:false})};}
+   if(state[key])for(const component of ["tenkan","kijun","senkouA","senkouB","chikou"]){const series=state[key][component];series.applyOptions({visible:!!state.settings[id].enabled});if(calculated){const points=calculated.ichimoku[component];series.setData(points.map(point=>({time:point.time,value:point.value})))}}
+   continue;
+  }
   if(id==="donchian"||id==="keltner"||id==="atrBands"||id==="linearRegression"){
    const calculated=state.settings[id].enabled?data(id):null,key=id+"Overlays";
    if(calculated)addReadout(id,calculated,readoutTime);
@@ -689,12 +739,13 @@ function renderPanes(incrementalUpdates=null){
  }
  syncRanges();
  window.ChartStudioBeta?.refreshDataWindowIndicators();
+ state.onRender?.();
 }
 function readout(time){
  if(!state)return "";
  const rows=state.readouts.get(Number(time))||[];
  const values=[];
- const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],sar:["SAR"],obv:["OBV · Broker-Volumen"],mfi:["MFI · Volumenproxy"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],atrBands:["Upper","Middle","Lower"],linearRegression:["Upper","Middle","Lower"],vwap:["VWAP"]};
+ const components={rsi:["RSI"],atr:["ATR"],macd:["MACD","Signal","Histogram"],volume:["Volumen"],adx:["ADX","+DI","−DI"],stochastic:["%K","%D"],stochrsi:["StochRSI %K","StochRSI %D"],supertrend:["Supertrend"],cci:["CCI"],momentum:["Momentum"],roc:["ROC (%)"],sar:["SAR"],obv:["OBV · Broker-Volumen"],mfi:["MFI · Volumenproxy"],donchian:["Upper","Middle","Lower"],keltner:["Upper","Middle","Lower"],atrBands:["Upper","Middle","Lower"],linearRegression:["Upper","Middle","Lower"],ichimoku:["Tenkan","Kijun","Senkou A (Quelle)","Senkou B (Quelle)","Chikou (Quelle)"],vwap:["VWAP"]};
  for(const id of Object.keys(REGISTRY))if(state.settings[id].enabled){
   for(const label of components[id]){
    const row=rows.find(item=>item.kind===id&&item.label===label);
@@ -752,7 +803,7 @@ function updateConfig(kind,prop,val){
   state.settings.sar[prop]=n;
  }
  else if(Object.hasOwn(REGISTRY[kind],prop)){
-  const n=Number(val),minimum=prop==="smoothK"||prop==="smoothD"?1:2,maximum=prop==="slow"?300:prop==="smoothK"||prop==="smoothD"?100:200;
+  const n=Number(val),minimum=prop==="displacement"?0:prop==="smoothK"||prop==="smoothD"?1:2,maximum=prop==="slow"?300:prop==="smoothK"||prop==="smoothD"?100:200;
   if(!Number.isInteger(n)||n<minimum||n>maximum){state.notice.textContent="Ungültiger Parameter ("+minimum+"–"+maximum+")";return false}
   state.settings[kind][prop]=n;
  }
@@ -776,16 +827,16 @@ function applySettings(raw){
    const value=Number(input[key]);
    if(key==="multiplier"&&["supertrend","keltner","atrBands","linearRegression"].includes(id)){if(Number.isFinite(value)&&value>=.1&&value<=10&&Math.abs(value*10-Math.round(value*10))<1e-8)fresh[id][key]=value;continue}
    if(id==="sar"&&["step","maxStep"].includes(key)){if(Number.isFinite(value)&&value>=.01&&value<=.5&&Math.abs(value*100-Math.round(value*100))<1e-8&&(key!=="step"||value<=.1))fresh.sar[key]=value;continue}
-   const minimum=key==="smoothK"||key==="smoothD"?1:2,maximum=key==="slow"?300:key==="smoothK"||key==="smoothD"?100:200;
+   const minimum=key==="displacement"?0:key==="smoothK"||key==="smoothD"?1:2,maximum=key==="slow"?300:key==="smoothK"||key==="smoothD"?100:200;
    if(Object.hasOwn(fresh[id],key)&&Number.isInteger(value)&&value>=minimum&&value<=maximum)
     fresh[id][key]=value;
   }
  }
  if(fresh.sar.step>fresh.sar.maxStep)fresh.sar={...defaults().sar,enabled:fresh.sar.enabled};
  if(fresh.macd.fast>=fresh.macd.slow)fresh.macd.fast=Math.max(2,fresh.macd.slow-1);
- state.settings=fresh;persist();syncPanel();renderPanes();
+  state.settings=fresh;persist();syncPanel();renderPanes();
 }
-function mount({chart,host,panel,account="titan"}){
+function mount({chart,host,panel,account="titan",onRender}){
  if(state||!chart||!host||!panel)return;
  const stack=document.createElement("div");stack.className="cs-indicator-panes";
  host.parentElement.insertAdjacentElement("afterend",stack);
@@ -794,7 +845,7 @@ function mount({chart,host,panel,account="titan"}){
  head.textContent="Zusätzliche Indikator-Panes · unabhängig ein-/ausblendbar";panel.append(head,controls);
  const notice=document.createElement("p");notice.className="cs-indicator-notice";notice.textContent="Indikatoren basieren auf geladenen Brokerkerzen. Warm-up erforderlich.";
  panel.append(notice);
- state={chart,host,stack,controls,notice,account,settings:restore(account),bars:[],signature:null,panes:new Map(),streams:new Map(),vwapOverlay:null,supertrendUpOverlay:null,supertrendDownOverlay:null,sarUpOverlay:null,sarDownOverlay:null,donchianOverlays:null,keltnerOverlays:null,readouts:new Map()};
+ state={chart,host,stack,controls,notice,account,onRender,timeframe:"M15",settings:restore(account),bars:[],signature:null,panes:new Map(),streams:new Map(),vwapOverlay:null,supertrendUpOverlay:null,supertrendDownOverlay:null,sarUpOverlay:null,sarDownOverlay:null,donchianOverlays:null,keltnerOverlays:null,ichimokuValues:null,readouts:new Map()};
  controls.addEventListener("change",evt=>{
   const target=evt.target;
   if(!target.dataset.kind)return;
@@ -804,6 +855,7 @@ function mount({chart,host,panel,account="titan"}){
  chart.timeScale().subscribeVisibleLogicalRangeChange(syncRanges);
  syncPanel();renderPanes();
 }
-window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,updateConfig,settings,readout,createIncremental,
- registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,stochRsi,cci,momentum,roc,parabolicSar,obv,mfi,macd,atr,adx,supertrend,donchian,keltner,atrBands,linearRegressionChannel,vwap,volumes})});
+function setTimeframe(timeframe){if(!state||!Object.hasOwn({M1:1,M5:1,M15:1,M30:1,H1:1,H4:1,D1:1,W1:1},timeframe))return;state.timeframe=timeframe;renderPanes()}
+window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,setTimeframe,updateConfig,settings,readout,ichimokuValues:()=>state?.ichimokuValues??null,createIncremental,
+ registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,stochRsi,cci,momentum,roc,parabolicSar,obv,mfi,macd,atr,adx,supertrend,donchian,keltner,atrBands,linearRegressionChannel,ichimoku,vwap,volumes})});
 })();

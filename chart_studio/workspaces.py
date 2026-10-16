@@ -21,10 +21,10 @@ DRAWING_TYPES = frozenset({"horizontal", "vertical", "text", "trend", "rect", "f
 UI_FLAGS = frozenset({"ema20", "ema50", "ema200", "sma20", "sma50",
                       "bb", "positions"})
 UI_NUMBERS = frozenset({"bbPeriod", "bbStdDev"})
-INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap", "stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner", "atrBands", "linearRegression", "sar", "obv", "mfi"})
+INDICATORS = frozenset({"rsi", "atr", "macd", "volume", "adx", "vwap", "stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner", "atrBands", "linearRegression", "ichimoku", "sar", "obv", "mfi"})
 PERIOD_FIELDS = frozenset({"period", "atrPeriod", "fast", "slow", "signal", "smoothK", "smoothD"})
 SESSION_FIELDS = frozenset({"timeZone", "sessionStart"})
-TIMEFRAMES = frozenset({"M1", "M5", "M15", "M30", "H1", "H4", "D1"})
+TIMEFRAMES = frozenset({"M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1"})
 MAX_DOCUMENT_BYTES = 524288
 MAX_DRAWINGS = 1000
 
@@ -160,6 +160,8 @@ def validate_document(raw: Any) -> dict:
         accepted_fields = PERIOD_FIELDS | {"enabled"} | color_fields | session_fields
         if kind in {"supertrend", "keltner", "atrBands", "linearRegression"}:
             accepted_fields = accepted_fields | {"multiplier"}
+        if kind == "ichimoku":
+            accepted_fields = accepted_fields | {"tenkanPeriod", "kijunPeriod", "senkouBPeriod", "displacement"}
         if kind == "sar":
             accepted_fields = accepted_fields | {"step", "maxStep"}
         if kind == "obv":
@@ -201,9 +203,11 @@ def validate_document(raw: Any) -> dict:
                     cleaned[param] = value
                     continue
                 _number(value, param, integer=True)
-                if param in {"smoothK", "smoothD"}:
+                if param == "displacement" and kind == "ichimoku":
+                    minimum, maximum = 0, 200
+                elif param in {"smoothK", "smoothD"}:
                     minimum, maximum = 1, 100
-                elif kind in {"stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner", "atrBands", "linearRegression", "mfi"} and param in {"period", "atrPeriod", "stochPeriod"}:
+                elif kind in {"stochastic", "stochrsi", "supertrend", "cci", "momentum", "roc", "donchian", "keltner", "atrBands", "linearRegression", "ichimoku", "mfi"} and param in {"period", "atrPeriod", "stochPeriod", "tenkanPeriod", "kijunPeriod", "senkouBPeriod", "displacement"}:
                     minimum, maximum = 2, 200
                 else:
                     minimum, maximum = 2, 300
