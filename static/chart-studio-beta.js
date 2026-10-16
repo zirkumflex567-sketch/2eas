@@ -1122,7 +1122,7 @@ function symbol(value){
  if(!s||!valid)return false;if(value===chartSymbol())return true;
  s.extensions?.clear();cancelPlanPreview();window.ChartStudioBrokerPanel?.invalidateDraft("Chartsymbol geändert · Positionsentwurf verworfen.");
  if(s.tool==="position-draft"||s.tool==="plan")setTool("cursor");
- s.symbol=value;s.marketQuote=null;s.coordinates.setScope({account:s.account,symbol:value,timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.magnet=get(magnetKey(),false)===true;
+ s.symbol=value;window.ChartStudioServerSync?.scope(s.account,value);s.marketQuote=null;s.coordinates.setScope({account:s.account,symbol:value,timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.magnet=get(magnetKey(),false)===true;
  s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
  s.candles=[];s.candleSignature=null;s.positions=[];s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.brokerMarkers=[];window.ChartStudioReplay?.switchContext(s.account,s.tf,value);
  s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.undo=[];s.redo=[];
@@ -1377,7 +1377,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  account(accountId,undefined,true);
  try{window.ChartStudioReplay?.mount({panel,account:accountId,symbol:chartSymbol(),timeframe:tf})}
  catch(err){console.warn("Read-only chart replay unavailable:",err)}
- try{window.ChartStudioServerSync?.mount({panel,account:accountId,
+ try{window.ChartStudioServerSync?.mount({panel,account:accountId,getSymbol:()=>chartSymbol(),
    exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,
    getAccount:()=>s?.account})}catch(err){console.warn("Chart-Workspace-Sync nicht verfügbar:",err)}
  try{window.ChartStudioBrokerPanel?.mount({panel,account:accountId,timeframe:tf})}

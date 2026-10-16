@@ -51,6 +51,9 @@ jobs:
           node --check static/chart-studio-export.js
           node --check static/chart-studio-beta.js
           node --check static/chart-studio-indicator-extensions.js
+          node --check static/chart-studio-server-sync.js
+          node tests/test_chart_studio_device_sync_crypto.cjs
+          node --check tests/test_chart_studio_device_sync_frontend.cjs
           node --check scripts/test_chart_studio_indicator_extension_ui.cjs
           node --check scripts/smoke_live_snapshot_history.cjs
           node --check static/chart-studio-data-signature.js
@@ -58,7 +61,6 @@ jobs:
           node --check static/chart-studio-object-manager.js
           node --check static/chart-studio-drawing-geometry.js
           node scripts/test_chart_studio_drawings.cjs
-          node --check static/chart-studio-server-sync.js
           node --check static/chart-studio-indicators.js
           node --check static/chart-studio-alerts.js
           node scripts/test_chart_studio_alerts.cjs
@@ -108,6 +110,7 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           node scripts/test_chart_studio_alert_storage.cjs
           node scripts/test_chart_studio_indicator_extension_ui.cjs
+          node tests/test_chart_studio_device_sync_frontend.cjs
           node scripts/smoke_chart_studio_replay.cjs
           node scripts/smoke_chart_studio_responsive.cjs
           node scripts/smoke_chart_studio_fib.cjs

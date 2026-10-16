@@ -1531,13 +1531,16 @@ body.theme-stone #stone-fx-panel button:focus-visible {
  color:#d4ebf2;font:11px/1.5 ui-monospace,Consolas,monospace}
 .cs-server-sync-head{color:#f9d39e;font-weight:800;margin-bottom:8px;letter-spacing:.06em}
 .cs-server-sync-row{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:8px}
-.cs-server-sync input,.cs-server-sync select{min-width:155px;max-width:240px;flex:1 1 155px;
+.cs-server-sync input,.cs-server-sync select,.cs-server-sync textarea{min-width:155px;max-width:100%;flex:1 1 155px;
  border:1px solid #597c87;border-radius:5px;background:#071924;
  color:#dff9ff;padding:8px}
+.cs-server-sync textarea{flex-basis:100%;font:12px/1.45 ui-monospace,Consolas,monospace;overflow-wrap:anywhere;resize:vertical}
 .cs-server-sync button{min-height:34px;padding:7px 11px;cursor:pointer;
  border:1px solid #5a8595;border-radius:5px;background:#214151;color:#e7f7fc}
 .cs-server-sync button:hover{filter:brightness(1.17)}
+.cs-server-sync button:disabled{opacity:.5;cursor:not-allowed;filter:none}
 .cs-server-sync p{margin:9px 0 0;color:#b7cbd4;overflow-wrap:anywhere}
+.cs-sync-conflict{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:8px;padding:9px;border:1px solid #d39442;border-radius:6px;background:#20190f;color:#f7d8a4}
 /* Chart Studio multi-instance moving-average editor: read-only chart overlays. */
 .cs-ma-editor{margin:14px 0;padding:13px;border:1px solid #5c8495;border-radius:10px;
  background:linear-gradient(122deg,rgba(10,26,39,.97),rgba(30,49,63,.93));

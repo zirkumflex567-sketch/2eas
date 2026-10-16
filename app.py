@@ -5,6 +5,8 @@ import threading
 import math
 import json
 import hmac
+from collections import defaultdict, deque
+from urllib.parse import urlsplit
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 import webbrowser
 from datetime import datetime, timezone, timedelta
@@ -35,6 +37,9 @@ from chart_studio.evidence_api import install_evidence_routes
 from chart_studio.indicator_extension_api import install_indicator_extension_routes
 from dashboard_security import install_control_security
 from chart_studio.workspaces import WorkspaceStore, StoreError, WorkspaceMissing, RevisionConflict
+from chart_studio.device_sync import (DeviceSyncStore, DeviceSyncError,
+                                      DeviceSyncMissing, DeviceSyncConflict,
+                                      validate_envelope)
 from functools import lru_cache
 from dashboard_runtime import install_runtime
 from mobile_views import MOBILE_HTML, ASCII_HTML
@@ -1321,6 +1326,110 @@ def chart_workspace_store():
     return _chart_store_at(os.getenv("CHART_STUDIO_DB", str(default_path)))
 
 
+@lru_cache(maxsize=4)
+def _chart_device_sync_store_at(path: str):
+    resolved = Path(path).expanduser().resolve()
+    static = (BASE_DIR / "static").resolve()
+    if resolved == static or static in resolved.parents:
+        raise HTTPException(503, "Datenbank darf nicht im öffentlichen Static-Verzeichnis liegen.")
+    return DeviceSyncStore(resolved)
+
+
+def chart_device_sync_store():
+    default_path = BASE_DIR / "state" / "chart_studio.sqlite3"
+    return _chart_device_sync_store_at(os.getenv("CHART_STUDIO_DB", str(default_path)))
+
+
+_device_sync_writes = defaultdict(deque)
+_device_sync_write_lock = threading.Lock()
+
+
+def require_device_sync_identity(request: Request, *, write: bool = False) -> tuple[str, str]:
+    if os.getenv("CHART_STUDIO_DEVICE_SYNC_ENABLED", "0") != "1":
+        raise HTTPException(503, "Verschlüsselter Gerätesync ist deaktiviert.")
+    identity = getattr(request.state, "control_identity", None)
+    if not identity or len(identity) != 3 or identity[0] != "proxy":
+        raise HTTPException(403, "Gerätesync benötigt einen verifizierten Proxy-Nutzer.")
+    owner, role = identity[1], identity[2]
+    if role not in {"read", "layout", "trade"}:
+        raise HTTPException(403, "Rolle ist für Gerätesync nicht freigegeben.")
+    if write:
+        if role not in {"layout", "trade"}:
+            raise HTTPException(403, "Layout-Recht zum Schreiben erforderlich.")
+        origin = request.headers.get("origin", "")
+        try:
+            parsed = urlsplit(origin)
+        except ValueError:
+            raise HTTPException(403, "Gerätesync-Schreibzugriff benötigt denselben Origin.") from None
+        host = request.headers.get("host", "")
+        if (not origin or parsed.scheme != request.url.scheme or parsed.netloc != host or
+                parsed.path not in ("", "/") or parsed.query or parsed.fragment or
+                request.headers.get("sec-fetch-site") not in (None, "same-origin")):
+            raise HTTPException(403, "Gerätesync-Schreibzugriff benötigt denselben Origin.")
+        now = time.monotonic()
+        with _device_sync_write_lock:
+            writes = _device_sync_writes[owner]
+            while writes and writes[0] <= now - 60:
+                writes.popleft()
+            if len(writes) >= 30:
+                raise HTTPException(429, "Zu viele Sync-Schreibvorgänge.")
+            writes.append(now)
+    return owner, role
+
+
+def device_sync_error(error: DeviceSyncError):
+    if isinstance(error, DeviceSyncConflict):
+        raise HTTPException(409, {"code": error.code,
+                                  "message": str(error),
+                                  "currentRevision": error.current_revision}) from error
+    status = 404 if isinstance(error, DeviceSyncMissing) else 422
+    raise HTTPException(status, {"code": error.code, "message": str(error)}) from error
+
+
+@app.get("/api/chart/v1/device-sync/{bundle_id}")
+def api_chart_device_sync_get(bundle_id: str, request: Request,
+                              account: str, symbol: str):
+    owner, _ = require_device_sync_identity(request)
+    try:
+        result = chart_device_sync_store().current(owner, bundle_id, account, symbol)
+    except DeviceSyncError as error:
+        device_sync_error(error)
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/chart/v1/device-sync/{bundle_id}/history")
+def api_chart_device_sync_history(bundle_id: str, request: Request,
+                                  account: str, symbol: str):
+    owner, _ = require_device_sync_identity(request)
+    try:
+        items = chart_device_sync_store().history(owner, bundle_id, account, symbol)
+    except DeviceSyncError as error:
+        device_sync_error(error)
+    return JSONResponse({"bundleId": bundle_id, "account": account,
+                         "symbol": symbol, "items": items},
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.put("/api/chart/v1/device-sync/{bundle_id}")
+def api_chart_device_sync_put(bundle_id: str, req: dict, request: Request):
+    owner, _ = require_device_sync_identity(request, write=True)
+    required = {"account", "symbol", "expectedRevision", "formatVersion",
+                "nonce", "ciphertext"}
+    if not isinstance(req, dict) or set(req) != required:
+        raise HTTPException(422, "Nur ein verschlüsseltes Bundle-Envelope ist erlaubt.")
+    try:
+        validate_envelope(bundle_id, req["account"], req["symbol"],
+                          req["formatVersion"], req["nonce"],
+                          req["ciphertext"])
+        result = chart_device_sync_store().put(
+            owner, bundle_id, req["account"], req["symbol"],
+            req["formatVersion"], req["nonce"], req["ciphertext"],
+            req["expectedRevision"])
+    except DeviceSyncError as error:
+        device_sync_error(error)
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
+
+
 def chart_store_error(error: StoreError):
     status = 409 if isinstance(error, RevisionConflict) else (
         404 if isinstance(error, WorkspaceMissing) else 422
@@ -1400,6 +1509,7 @@ def api_chart_capabilities():
             "brokerTradeHistoryReads": True,
             "persistentServerDrawings": os.getenv("CHART_STUDIO_STORAGE_ENABLED") == "1"
             and len(os.getenv("CHART_STUDIO_STORAGE_TOKEN", "")) >= 32,
+            "encryptedDeviceSync": os.getenv("CHART_STUDIO_DEVICE_SYNC_ENABLED") == "1",
             "realStopDragging": False, "brokerMutations": False,
             "eaDecisionHistory": False, "immutableSnapshots": False,
             "immutableEvidenceReads": True, "trustedEvidenceProvider": True,
