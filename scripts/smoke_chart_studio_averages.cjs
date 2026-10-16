@@ -65,7 +65,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await page.evaluate(()=>ChartStudioOscillators.applySettings([]));
   await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("");
   assert.deepEqual(await catalog.locator(".cs-catalog-entry").evaluateAll(rows=>rows.map(row=>row.dataset.indicator)),
-   ["ema","sma","wma","rma","smma","rsi","macd","atr","adx","cci","stochastic","stochrsi","supertrend","donchian","keltner","momentum","roc","sar","obv","mfi","volume","vwap","footprint"],
+   ["ema","sma","wma","rma","smma","rsi","macd","atr","adx","cci","stochastic","stochrsi","supertrend","donchian","keltner","linearRegression","momentum","roc","sar","obv","mfi","volume","vwap","footprint"],
    "The searchable catalog lists each registered indicator family");
   assert.equal(await catalog.getByRole("searchbox",{name:"Indikator suchen"}).inputValue(),"");
   await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("Footprint");
