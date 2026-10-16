@@ -37,3 +37,8 @@ Current focused regression: 155 passed across MFE/MAE, lifecycle capture, eviden
 ## Verification result
 
 Pure/API regression set at initial implementation: 148 passed. `node --check` passed for the beta UI and both smoke scripts; Chromium beta smoke passed. Live read-only GETs returned AVAILABLE on all four authorized demo accounts with 28, 51, 15 and 36 observed M15 bars respectively. No Blueberry request, MT5 mutation, or backtest. That initial Main and htown `/stt` deployment was `fbadc661`; the tick-observation extension and latest runtime identity are recorded above.
+
+
+## Follow-up: independent tick evidence when OHLC bars are absent (16 Oct 2026)
+
+The `xau5m_m5` demo had a valid, linked lifecycle and entry/exit snapshots, but its exit snapshot ended before entry, so no completed OHLC candle covered the position. Preserve `NO_COMPLETE_CANDLES` for OHLC and independently query bounded MT5 tick history only after the lifecycle and snapshot links pass validation. The endpoint may return `TICK_OBSERVED` beside OHLC `UNAVAILABLE`; tick coverage remains incomplete, `exact=false`, and `intrabarOrder=UNKNOWN`. Regression test: `test_position_mfe_mae_can_observe_ticks_when_no_complete_ohlc_candles_exist`. Focused MFE/lifecycle/spool tests: 83 passed. Live read-only demo result: 19,772 ticks on `xau5m_m5`, all four demos had tick observations, 68 GETs, no writes or Blueberry requests. This does not close partial-fill, full-position-ownership, hardware, or exact-tick acceptance.
