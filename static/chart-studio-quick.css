@@ -151,3 +151,17 @@
 .cs-symbol-favorite button{min-height:30px;padding:4px 7px}
 .cs-symbol-favorite [data-remove-favorite]{min-width:30px;padding-inline:6px}
 @media(max-width:480px){.cs-broker-read-content label{flex:1 1 125px;min-width:0}.cs-broker-read-panel fieldset{padding:7px}}
+
+.cs-alerts{margin:8px 0;padding:8px;border:1px solid rgba(103,194,211,.42);border-radius:8px;background:rgba(8,26,36,.6)}
+.cs-alerts>summary{cursor:pointer;font-weight:700;color:#c8eff5}
+.cs-alerts-body{padding:8px 0}
+.cs-alert-form{display:flex;flex-wrap:wrap;align-items:end;gap:8px}
+.cs-alert-form label{display:flex;flex:1 1 130px;flex-direction:column;gap:4px;font-size:12px}
+.cs-alert-form input,.cs-alert-form select,.cs-alerts button{min-height:34px;max-width:100%;box-sizing:border-box;background:#102e3b;color:#fff;border:1px solid #7fa9b7;border-radius:5px;padding:5px}
+.cs-alerts button{cursor:pointer}
+.cs-alerts button:disabled{opacity:.55;cursor:not-allowed}
+.cs-alerts [role=status]{font-size:12px;min-height:1.3em;color:#c8e6ee;overflow-wrap:anywhere}
+.cs-alerts ul{display:grid;gap:6px;padding-left:20px}
+.cs-alerts li{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+.cs-alerts li span{flex:1 1 220px}
+.cs-alerts button:focus-visible,.cs-alerts input:focus-visible,.cs-alerts select:focus-visible{outline:2px solid #65dded;outline-offset:2px}

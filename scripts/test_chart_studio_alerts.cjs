@@ -1,0 +1,43 @@
+"use strict";
+const assert=require("node:assert/strict"),vm=require("node:vm"),fs=require("node:fs");
+let clock=1700000000000;const window={};vm.runInNewContext(fs.readFileSync("static/chart-studio-alerts.js","utf8"),{window,Date,Number,Math,Set,Map,JSON,Object,Array,String,RegExp});
+const core=window.ChartStudioAlerts.core;
+const quote=(price,overrides={})=>({account:"titan",symbol:"XAUUSD",source:"MT5_VERIFIED",canExecute:false,bid:price-.1,ask:price+.1,ageSeconds:0,freshness:"FRESH",quoteTimeUtc:new Date(clock).toISOString(),...overrides});
+const observe=(engine,q)=>Array.from(engine.observe(q));
+const tick=(engine,price,overrides={})=>{clock+=5000;return observe(engine,quote(price,{...overrides,quoteTimeUtc:overrides.quoteTimeUtc||new Date(clock).toISOString()}))};
+const engine=core.createEngine({account:"titan",symbol:"XAUUSD",timeframe:"M15",now:()=>clock});
+const rule=engine.add({id:"alert-1",direction:"ABOVE",price:100});
+assert.equal(rule.direction,"ABOVE");
+assert.deepEqual(observe(engine,quote(99)),[]); // first quote arms baseline only
+assert.equal(tick(engine,101).length,1);
+assert.deepEqual(tick(engine,102),[]); // one notification per crossing
+assert.equal(engine.list()[0].triggered,true);
+assert.equal(engine.rearm("alert-1"),true);
+assert.deepEqual(tick(engine,102),[]); // re-arm also needs baseline
+assert.equal(tick(engine,99).length,0);
+assert.equal(tick(engine,101).length,1);
+const stale=core.createEngine({account:"titan",symbol:"XAUUSD",timeframe:"M15",now:()=>clock});
+stale.add({id:"s",direction:"ABOVE",price:100});
+assert.deepEqual(observe(stale,quote(99)),[]);
+clock+=5000;assert.deepEqual(observe(stale,quote(101,{freshness:"STALE",ageSeconds:31,quoteTimeUtc:new Date(clock-31000).toISOString()})),[]);
+assert.deepEqual(tick(stale,101),[]); // stale gap cannot synthesize crossing
+assert.equal(tick(stale,99).length,0);
+assert.equal(tick(stale,101).length,1);
+assert.deepEqual(observe(stale,quote(102,{account:"blueberry",quoteTimeUtc:new Date(clock+5000).toISOString()})),[]);
+clock+=5000;assert.deepEqual(observe(stale,quote(102,{canExecute:true})),[]);
+clock+=5000;assert.deepEqual(observe(stale,quote(102,{source:"OHLC_ESTIMATE"})),[]);
+clock+=5000;assert.deepEqual(observe(stale,quote(102)),[]); // duplicate timestamp
+assert.equal(stale.add({id:"bad",direction:"SIDEWAYS",price:4}),null);
+assert.equal(stale.add({id:"nan",direction:"BELOW",price:NaN}),null);
+assert.equal(stale.add({id:"too-high",direction:"BELOW",price:1e100}),null);
+const below=core.createEngine({account:"titan",symbol:"XAUUSD",timeframe:"M15",now:()=>clock});
+below.add({id:"below-1",direction:"BELOW",price:100});
+assert.deepEqual(observe(below,quote(101)),[]);
+assert.equal(tick(below,99).length,1,"A downward price crossing triggers once");
+const capped=core.createEngine({account:"titan",symbol:"XAUUSD",timeframe:"M15",now:()=>clock});
+for(let i=0;i<core.MAX_RULES;i++)assert.ok(capped.add({id:"cap-"+i,direction:"ABOVE",price:100+i}));
+assert.equal(capped.add({id:"cap-0",direction:"ABOVE",price:200}),null,"Duplicate ids are rejected");
+assert.equal(capped.add({id:"cap-overflow",direction:"ABOVE",price:200}),null,"Rule limit is enforced");
+assert.equal(capped.remove("cap-4"),true);
+assert.ok(capped.add({id:"cap-reuse",direction:"ABOVE",price:200}),"Removing a rule releases capacity");
+console.log("PASS Chart Studio alert upward/downward crossing, stale-gap, provenance, dedup, rearm, capacity, and validation tests");

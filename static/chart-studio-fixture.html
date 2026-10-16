@@ -9,6 +9,7 @@
 <script src="stone-chart-effects.js"></script>
 <script src="chart-studio-data-signature.js"></script>
   <script src="chart-studio-indicators.js"></script>
+  <script src="chart-studio-alerts.js"></script>
 <script src="chart-studio-server-sync.js"></script>
 <script src="chart-studio-drawing-geometry.js"></script>
 <script src="chart-studio-averages.js"></script>
@@ -49,6 +50,8 @@ const candles=Array.from({length:120},(_,i)=>{
   tick_volume:800+i*2,real_volume:0};
 });
 window.__chartSmokeCandles=candles;
+window.__notifications=[];window.__notificationPermissionCalls=0;
+window.Notification=class {static permission="default";static async requestPermission(){window.__notificationPermissionCalls++;this.permission="granted";return this.permission}constructor(title,options){window.__notifications.push({title,options})}};
 candleSeries.setData(candles);
 emas.forEach((series,j)=>series.setData(candles.map(c=>({time:c.time,value:c.close-2+j}))));
 chart.timeScale().fitContent();

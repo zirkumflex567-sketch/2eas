@@ -1655,6 +1655,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="static/stone-chart-effects.js"></script>
   <script src="static/chart-studio-data-signature.js"></script>
   <script src="static/chart-studio-indicators.js"></script>
+  <script src="static/chart-studio-alerts.js"></script>
   <script src="static/chart-studio-server-sync.js"></script>
   <script src="static/chart-studio-drawing-geometry.js"></script>
   <script src="static/chart-studio-averages.js"></script>
