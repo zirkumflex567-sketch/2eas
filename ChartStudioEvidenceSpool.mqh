@@ -27,6 +27,12 @@
 #ifndef CS_EVIDENCE_EXPECTED_TERMINAL_PATH
 #define CS_EVIDENCE_EXPECTED_TERMINAL_PATH ""
 #endif
+#ifndef CS_EVIDENCE_STRATEGY_ID
+#define CS_EVIDENCE_STRATEGY_ID "xau_titan_pro_basket_guard"
+#endif
+#ifndef CS_EVIDENCE_STRATEGY_VERSION
+#define CS_EVIDENCE_STRATEGY_VERSION "7_20"
+#endif
 
 #define CS_QUEUE_CAPACITY 64
 #define CS_QUEUE_BATCH 8
@@ -151,7 +157,8 @@ void CSEnqueueDecision(const string stage,const string outcome,const datetime ba
       ",\"accountId\":"+CSJsonQuote(CS_EVIDENCE_ACCOUNT_ID)+
       ",\"terminalIdentityHash\":"+CSJsonQuote(CS_EVIDENCE_TERMINAL_HASH)+
       ",\"symbol\":"+CSJsonQuote(_Symbol)+
-      ",\"strategyId\":\"xau_titan_pro_basket_guard\",\"strategyVersion\":\"7_20\",\"subsystemId\":"+
+      ",\"strategyId\":"+CSJsonQuote(CS_EVIDENCE_STRATEGY_ID)+",\"strategyVersion\":"+
+      CSJsonQuote(CS_EVIDENCE_STRATEGY_VERSION)+",\"subsystemId\":"+
       CSJsonQuote(CS_EVIDENCE_SOURCE_HASH)+",\"parameterSetHash\":"+CSJsonQuote(CSParameterSetHash)+
       ",\"decisionTimeUtc\":"+CSJsonQuote(request_time_utc!="" ? request_time_utc : CSUtc(now_utc))+
       ",\"evaluatedBarCloseUtc\":"+CSJsonQuote(CSUtc(close_utc))+
