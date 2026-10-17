@@ -8782,6 +8782,48 @@ var ChartStudioV5 = (() => {
     const fibonacci = /* @__PURE__ */ new Map();
     const channels = /* @__PURE__ */ new Map();
     const measurements = /* @__PURE__ */ new Map();
+    let placementTool = null, placementAnchor = null, placementSequence = 0;
+    const drawingState = (phase, id) => host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state", { detail: { kind: placementTool, phase, ...id ? { id } : {} } }));
+    const cancelDrawingTool = (notify = true) => {
+      if (!placementTool) return;
+      placementTool = null;
+      placementAnchor = null;
+      if (notify) drawingState("CANCELLED");
+    };
+    const placeDrawingAt = (time, x2, y2) => {
+      if (!placementTool) return;
+      const { width } = chart.paneSize(), paneHeight = chart.panes()[0]?.getHeight() ?? 0;
+      if (x2 < 0 || x2 > width || y2 < 0 || y2 > paneHeight || typeof time !== "number" || !Number.isSafeInteger(time) || !barsByTime.has(time)) {
+        drawingState("ERROR");
+        return;
+      }
+      const value = price.coordinateToPrice(y2);
+      if (value === null || !Number.isFinite(value) || value <= 0) {
+        drawingState("ERROR");
+        return;
+      }
+      const anchor = { time, price: value };
+      if (!placementAnchor) {
+        placementAnchor = anchor;
+        drawingState("FIRST_ANCHOR");
+        return;
+      }
+      if (placementAnchor.time === anchor.time) {
+        drawingState("ERROR");
+        return;
+      }
+      const id = `preview-${placementTool.toLowerCase()}-${++placementSequence}`;
+      try {
+        const options = { id, startTime: placementAnchor.time, startPrice: placementAnchor.price, endTime: anchor.time, endPrice: anchor.price, color: placementTool === "TREND" ? "#49c6ff" : "#ffb84d" };
+        if (placementTool === "TREND") addTrendLine(options);
+        else addRay(options);
+        placementTool = null;
+        placementAnchor = null;
+        host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state", { detail: { kind: options.id.startsWith("preview-trend") ? "TREND" : "RAY", phase: "CREATED", id } }));
+      } catch (_2) {
+        drawingState("ERROR");
+      }
+    };
     const maxNativeDrawings = 1e3, maxIndicatorInstances = 20;
     const drawingCount = () => priceLevels.size + timeMarkers.size + textAnnotations.size + trendLines.size + rectangles.size + rays.size + fibonacci.size + channels.size + measurements.size;
     const undoStack = [], redoStack = [];
@@ -8831,6 +8873,14 @@ var ChartStudioV5 = (() => {
     };
     const onPointerDown = (event) => {
       if (event.button !== 0 || !event.isPrimary) return;
+      if (placementTool) {
+        if (event.shiftKey) return;
+        const rect = host.getBoundingClientRect(), x2 = event.clientX - rect.left, y2 = event.clientY - rect.top;
+        placeDrawingAt(chart.timeScale().coordinateToTime(x2), x2, y2);
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
       const drawingId = hoveredDrawingId ?? drawingAt(event.clientX, event.clientY) ?? (event.pointerType === "touch" ? touchAnchorAt(event.clientX, event.clientY) : null);
       if (!drawingId) {
         if (!event.shiftKey) selectDrawing(null);
@@ -11716,6 +11766,18 @@ var ChartStudioV5 = (() => {
       readoutIndicators.clear();
       if (volume) volume.setData([]);
     }
+    function setDrawingTool(tool) {
+      guard();
+      if (tool !== null && tool !== "TREND" && tool !== "RAY") throw Error("Invalid drawing tool");
+      cancelDrawingTool(false);
+      placementTool = tool;
+      placementAnchor = null;
+      if (tool) drawingState("SECOND_ANCHOR");
+      return true;
+    }
+    function drawingToolState() {
+      return { tool: placementTool, hasFirstAnchor: !!placementAnchor };
+    }
     function inspect() {
       guard();
       return {
@@ -11723,6 +11785,8 @@ var ChartStudioV5 = (() => {
         account: activeAccount,
         positionOverlayCount: positionOverlayLines.size,
         positionOverlays: readPositionOverlays().lines,
+        nativeDrawingCount: drawingCount(),
+        drawingTool: placementTool,
         displayTimeZone,
         volumeZoneStatus: volumeZones?.result.status ?? "DISABLED",
         volumeZoneCount: volumeZones?.result.zones.length ?? 0,
@@ -11760,6 +11824,7 @@ var ChartStudioV5 = (() => {
     }
     function destroy() {
       if (destroyed) return;
+      cancelDrawingTool(false);
       finishDrag(true);
       clearPositionOverlays();
       if (volumeZones) {
@@ -11916,6 +11981,8 @@ var ChartStudioV5 = (() => {
       clearAutoFibonacci,
       setPositionOverlays,
       readPositionOverlays,
+      setDrawingTool,
+      drawingToolState,
       inspect,
       destroy
     });

@@ -3,10 +3,10 @@
 (function(){
   "use strict";
   if(window.CHART_STUDIO_V5_PREVIEW_ENABLED!==true)return;
-  let button=null,panel=null,host=null,status=null,title=null,autoFibButton=null,autoFibStatus=null;
+  let button=null,panel=null,host=null,status=null,title=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,drawingStatus=null;
 
   let scope=null,latest=null,engine=null,bridge=null,active=false,loading=null,autoFibEnabled=false;
-  let generation=0,sequence=0,latestSequence=0,positionSequence=0,positionsSnapshot=null,positionsEnabled=true;
+  let generation=0,sequence=0,latestSequence=0,positionSequence=0,positionsSnapshot=null,positionsEnabled=true,drawingTool=null;
   const setStatus=value=>{if(status)status.textContent=value};
   const same=(a,b)=>!!a&&!!b&&a.account===b.account&&a.symbol===b.symbol&&a.timeframe===b.timeframe;
   function currentScope(){return scope?{...scope}:null}
@@ -30,8 +30,24 @@
     return loading;
   }
   function destroyRenderer(){
+    if(host)host.removeEventListener("chartstudio-v5-drawing-state",drawingState);
     try{engine?.destroy()}catch(_){}
-    engine=null;bridge=null;autoFibEnabled=false;if(autoFibButton){autoFibButton.setAttribute("aria-pressed","false");autoFibButton.textContent="Auto-Fibonacci einblenden";autoFibButton.disabled=!latest}if(autoFibStatus)autoFibStatus.textContent="";if(host)host.replaceChildren();
+    engine=null;bridge=null;autoFibEnabled=false;drawingTool=null;if(autoFibButton){autoFibButton.setAttribute("aria-pressed","false");autoFibButton.textContent="Auto-Fibonacci einblenden";autoFibButton.disabled=!latest}if(autoFibStatus)autoFibStatus.textContent="";updateDrawingButtons();if(drawingStatus)drawingStatus.textContent="Zeichenwerkzeug aus.";if(host)host.replaceChildren();
+  }
+  function updateDrawingButtons(){for(const [button,kind] of [[trendButton,"TREND"],[rayButton,"RAY"]])if(button){button.disabled=!engine||!latest;button.setAttribute("aria-pressed",drawingTool===kind?"true":"false")}}
+  function setDrawingTool(kind){
+    if(kind!==null&&kind!=="TREND"&&kind!=="RAY")return false;
+    if(!engine||(kind!==null&&!latest))return false;
+    drawingTool=kind;engine.setDrawingTool(kind);updateDrawingButtons();
+    if(drawingStatus)drawingStatus.textContent=kind?`${kind==="TREND"?"Trendlinie":"Strahl"}: ersten Anker wählen.`:"Zeichenwerkzeug aus.";
+    return true;
+  }
+  function drawingState(event){const detail=event?.detail;if(!detail)return;
+    if(detail.phase==="FIRST_ANCHOR"){if(drawingStatus)drawingStatus.textContent="Ersten Anker gesetzt · zweiten Anker wählen."}
+    else if(detail.phase==="SECOND_ANCHOR"){if(drawingStatus)drawingStatus.textContent="Zweiten Anker wählen."}
+    else if(detail.phase==="CREATED"){drawingTool=null;window.__chartStudioV5LastDrawingId=detail.id;window.__chartStudioV5LastDrawingKind=detail.kind;updateDrawingButtons();if(drawingStatus)drawingStatus.textContent="Zeichnung erstellt."}
+    else if(detail.phase==="CANCELLED"){drawingTool=null;updateDrawingButtons();if(drawingStatus)drawingStatus.textContent="Zeichenwerkzeug abgebrochen."}
+    else if(detail.phase==="ERROR"){if(drawingStatus)drawingStatus.textContent="Anker ungültig · gültige Kerze und Preis wählen."}
   }
   function timeframeSeconds(timeframe){return ({M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400,W1:604800})[timeframe]||null}
   function renderAutoFib(){
@@ -93,10 +109,12 @@
     if(!active||!scope||bridge||!window.ChartStudioV5?.createStudioV5||!window.ChartStudioV5Feed?.create)return;
     try{
       engine=window.ChartStudioV5.createStudioV5(host,scope.account,{symbol:scope.symbol,timeframe:scope.timeframe});
+      host.addEventListener("chartstudio-v5-drawing-state",drawingState);
       bridge=window.ChartStudioV5Feed.create(engine,scope);
       setStatus("Warte auf verifizierte MT5-Kerzen …");
       if(latest){const token=bridge.beginRead();const result=bridge.update(latest,token);
         if(autoFibButton)autoFibButton.disabled=!Number.isSafeInteger(latest.snapshotAsOfUtc);
+        updateDrawingButtons();
         if(result.applied)renderPositions();
         setStatus(result.applied?`${result.candleCount} verifizierte Kerzen · read-only · Kerzenfrische ungeprüft`:"V5-Daten abgelehnt: "+result.reason)}
     }catch(error){destroyRenderer();setStatus("V5-Vorschau nicht verfügbar: "+String(error?.message||error).slice(0,160))}
@@ -134,6 +152,7 @@
     if(!result.applied){clear("V5-Daten abgelehnt: "+result.reason);return result}
     renderPositions();
     if(autoFibButton)autoFibButton.disabled=false;
+    updateDrawingButtons();
     if(autoFibEnabled)renderAutoFib();
     setStatus(`${result.candleCount} verifizierte Kerzen · read-only · Kerzenfrische ungeprüft`);
     return result;
@@ -141,17 +160,22 @@
   function clear(message){
     latest=null;latestSequence=++sequence;
     clearAutoFib();clearPositions();try{bridge?.clear()}catch(_){}if(autoFibButton)autoFibButton.disabled=true;
+    setDrawingTool(null);updateDrawingButtons();
     setStatus(message||"MT5-Kerzen derzeit nicht verfügbar");
   }
-  window.ChartStudioV5Preview=Object.freeze({setScope,beginRead,update,clear,renderAutoFib,clearAutoFib,beginPositionRead,setPositions,showPositions,readPositions,clearPositions,readAutoFibonacci:()=>engine?.readAutoFibonacci?.()||null,inspect:()=>({active,scope:currentScope(),generation,status:status?.textContent||"",autoFibonacci:!!engine?.readAutoFibonacci?.(),positionOverlayCount:readPositions().count,positionsEnabled})});
+  window.ChartStudioV5Preview=Object.freeze({setScope,beginRead,update,clear,renderAutoFib,clearAutoFib,beginPositionRead,setPositions,showPositions,readPositions,clearPositions,setDrawingTool,readDrawing:id=>engine?.readDrawing?.(id)||null,readAutoFibonacci:()=>engine?.readAutoFibonacci?.()||null,inspect:()=>({active,scope:currentScope(),generation,status:status?.textContent||"",autoFibonacci:!!engine?.readAutoFibonacci?.(),positionOverlayCount:readPositions().count,nativeDrawingCount:engine?.inspect?.().nativeDrawingCount||0,drawingTool,positionsEnabled})});
   function boot(){
     button=document.getElementById("chart-v5-preview-btn");panel=document.getElementById("chart-v5-preview-panel");
     host=document.getElementById("chart-v5-preview-host");status=document.getElementById("chart-v5-preview-status");
     title=document.getElementById("chart-v5-preview-title");
     autoFibButton=document.getElementById("chart-v5-auto-fib-btn");autoFibStatus=document.getElementById("chart-v5-auto-fib-status");
+    trendButton=document.getElementById("chart-v5-trend-btn");rayButton=document.getElementById("chart-v5-ray-btn");drawingStatus=document.getElementById("chart-v5-drawing-status");
     if(!button||!panel||!host||!status)return;
     button.hidden=false;if(scope&&title)title.textContent=`Native v5 · ${scope.symbol} ${scope.timeframe} · ${scope.account}`;
     if(autoFibButton)autoFibButton.addEventListener("click",()=>{if(autoFibEnabled)clearAutoFib();else try{renderAutoFib()}catch(error){clearAutoFib();if(autoFibStatus)autoFibStatus.textContent="Auto-Fibonacci nicht verfügbar · "+String(error?.message||error).slice(0,120)}});
+    if(trendButton)trendButton.addEventListener("click",()=>setDrawingTool(drawingTool==="TREND"?null:"TREND"));
+    if(rayButton)rayButton.addEventListener("click",()=>setDrawingTool(drawingTool==="RAY"?null:"RAY"));
+    document.addEventListener("keydown",event=>{if(event.key==="Escape"&&drawingTool){setDrawingTool(null);if(drawingStatus)drawingStatus.textContent="Zeichenwerkzeug abgebrochen."}});
     button.addEventListener("click",async()=>{
       if(active){active=false;panel.hidden=true;button.setAttribute("aria-expanded","false");button.textContent="V5 Vorschau";clearPositions();destroyRenderer();return}
       active=true;panel.hidden=false;button.setAttribute("aria-expanded","true");button.textContent="V5 schließen";

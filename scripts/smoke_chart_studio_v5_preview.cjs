@@ -14,7 +14,8 @@ const html=enabled=>`<!doctype html><html><head><meta charset="utf-8"><meta name
 <button type="button" id="chart-v5-preview-btn" aria-controls="chart-v5-preview-panel" aria-expanded="false" hidden>V5 Vorschau</button>
 <section id="chart-v5-preview-panel" hidden><strong id="chart-v5-preview-title">Native v5</strong><div id="chart-v5-preview-status" role="status"></div>
 <button type="button" id="chart-v5-auto-fib-btn" aria-pressed="false" disabled>Auto-Fibonacci einblenden</button><output id="chart-v5-auto-fib-status" aria-live="polite"></output>
-<div id="chart-v5-preview-host"></div><p>Read only. Powered by <a href="https://www.tradingview.com/">TradingView Lightweight Charts™</a></p></section></body></html>`;
+<div id="chart-v5-drawing-tools" role="group" aria-label="Native v5 Zeichnungen"><button type="button" id="chart-v5-trend-btn" aria-pressed="false" disabled>Trendlinie</button><button type="button" id="chart-v5-ray-btn" aria-pressed="false" disabled>Strahl</button><output id="chart-v5-drawing-status" role="status" aria-live="polite">Zeichenwerkzeug aus.</output></div>
+<div id="chart-v5-preview-host"></div><p>Read only. Powered by <a href="https://www.tradingview.com/">TradingView Lightweight Charts™</a></p></section><script>document.addEventListener("DOMContentLoaded",()=>document.querySelector("#chart-v5-preview-host").addEventListener("chartstudio-v5-drawing-state",e=>window.__v5LastDrawing=e.detail));</script></body></html>`;
 
 const server=http.createServer((req,res)=>{
  const pathname=new URL(req.url,"http://localhost").pathname;
@@ -94,6 +95,39 @@ const server=http.createServer((req,res)=>{
   assert.equal(await page.locator("#chart-v5-auto-fib-btn").getAttribute("aria-pressed"),"true");
   await page.locator("#chart-v5-auto-fib-btn").click();
   assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.readAutoFibonacci()),null,"turning off Auto-Fibonacci removes its native lines");
+  assert.equal(await page.locator("#chart-v5-trend-btn").isEnabled(),true,"verified data enables native drawing tools");
+  await page.locator("#chart-v5-trend-btn").click();
+  assert.equal(await page.locator("#chart-v5-trend-btn").getAttribute("aria-pressed"),"true",`drawing tool activation; browser errors: ${errors.join(" | ")}; status: ${await page.locator("#chart-v5-drawing-status").textContent()}`);
+  assert.match(await page.locator("#chart-v5-drawing-status").textContent(),/ersten Anker/i);
+  const chartBox=await page.locator("#chart-v5-preview-host").boundingBox();
+  assert.ok(chartBox&&chartBox.width>300&&chartBox.height>200);
+  await page.mouse.click(chartBox.x+680,chartBox.y+100);
+  assert.match(await page.locator("#chart-v5-drawing-status").textContent(),/ungültig/i,"price-scale clicks are rejected as drawing anchors");
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),0);
+  await page.mouse.click(chartBox.x+180,chartBox.y+100);
+  assert.match(await page.locator("#chart-v5-drawing-status").textContent(),/zweiten Anker/);
+  await page.mouse.click(chartBox.x+340,chartBox.y+220);
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-drawing-status")?.textContent.includes("erstellt"),null,{timeout:5000});
+  const trend=await page.evaluate(()=>{
+   const id=window.__v5LastDrawing?.id;
+   return {event:window.__v5LastDrawing,drawing:id?window.ChartStudioV5Preview.readDrawing(id):null,count:window.ChartStudioV5Preview.inspect().nativeDrawingCount};
+  });
+  assert.equal(trend.event?.kind,"TREND");
+  assert.ok(trend.drawing?.id);
+  assert.notEqual(trend.drawing.startTime,trend.drawing.endTime,"anchors stay bound to distinct loaded candle times");
+  assert.ok(Number.isFinite(trend.drawing.startPrice)&&Number.isFinite(trend.drawing.endPrice));
+  assert.equal(trend.count,1,"interactive drawing participates in native drawing storage/count");
+  assert.equal(await page.locator("#chart-v5-trend-btn").getAttribute("aria-pressed"),"false","completed tool returns to cursor mode");
+  await page.locator("#chart-v5-ray-btn").click();
+  await page.mouse.click(chartBox.x+220,chartBox.y+130);
+  await page.mouse.click(chartBox.x+400,chartBox.y+250);
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-drawing-status")?.textContent.includes("erstellt"));
+  const ray=await page.evaluate(()=>({event:window.__v5LastDrawing,drawing:window.ChartStudioV5Preview.readDrawing(window.__v5LastDrawing?.id),count:window.ChartStudioV5Preview.inspect().nativeDrawingCount}));
+  assert.equal(ray.event?.kind,"RAY");assert.ok(ray.drawing?.id);assert.notEqual(ray.drawing.startTime,ray.drawing.endTime);assert.equal(ray.count,2,"native ray placement persists exactly once");
+  await page.locator("#chart-v5-ray-btn").click();
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#chart-v5-ray-btn").getAttribute("aria-pressed"),"false","Escape cancels a pending drawing tool");
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),2,"cancel does not persist an incomplete drawing");
   const v4After=await page.locator("#tv-chart").evaluate(el=>({visible:!!el.getClientRects().length,canvas:el.querySelector("canvas#v4-sentinel")?.width}));
   assert.deepEqual(v4After,v4Before,"v5 owns a separate host and leaves v4 mounted");
   assert.match(await page.locator("#chart-v5-preview-title").textContent(),/XAUUSD M15/);

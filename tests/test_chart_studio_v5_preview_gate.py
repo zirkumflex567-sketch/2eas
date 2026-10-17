@@ -8,6 +8,9 @@ def test_native_v5_preview_is_off_by_default_and_bundle_stays_lazy(monkeypatch):
     assert "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;" in html
     assert 'id="chart-v5-preview-btn"' in html
     assert 'id="chart-v5-preview-btn" aria-controls="chart-v5-preview-panel"' in html
+    assert 'id="chart-v5-trend-btn" aria-pressed="false" disabled' in html
+    assert 'id="chart-v5-ray-btn" aria-pressed="false" disabled' in html
+    assert 'id="chart-v5-drawing-status" role="status" aria-live="polite"' in html
     assert "<script src=\"static/chart-studio-v5.js\"" not in html
     assert "https://www.tradingview.com/" in html
 
