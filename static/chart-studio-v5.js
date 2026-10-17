@@ -7750,6 +7750,31 @@ var ChartStudioV5 = (() => {
       this.requestUpdate?.();
     }
   };
+  var BrokerDealMarkersPrimitive = class {
+    constructor(chart, series) { this.chart=chart; this.series=series; this.markers=[]; this.requestUpdate=null; }
+    attached(param) { this.requestUpdate=param.requestUpdate; }
+    detached() { this.requestUpdate=null; }
+    set(markers) { this.markers=markers.map((row)=>({...row})); this.requestUpdate?.(); }
+    paneViews() {
+      const chart=this.chart,series=this.series,markers=this.markers;
+      return [{zOrder:()=>"top",renderer:()=>({draw:(target)=>target.useMediaCoordinateSpace(({context})=>{
+        context.save();
+        for(const marker of markers){
+          if(!marker.plotted)continue;
+          const x=chart.timeScale().timeToCoordinate(marker.chartTimeSeconds),y=series.priceToCoordinate(marker.price);
+          if(x===null||y===null)continue;
+          const color=marker.side==="BUY"?"#49c6ff":"#ffb84d";
+          context.fillStyle=color;context.strokeStyle="#07131d";context.lineWidth=1.5;
+          context.beginPath();context.arc(x,y,6,0,Math.PI*2);context.fill();context.stroke();
+          context.fillStyle="#061018";context.font="bold 8px sans-serif";context.textAlign="center";context.textBaseline="middle";
+          context.fillText(({IN:"+",OUT:"−",INOUT:"↔",OUT_BY:"×"})[marker.entry],x,y);
+          context.fillStyle=color;context.font="bold 9px sans-serif";context.textAlign="left";context.textBaseline="middle";
+          context.fillText(`${marker.entry} #${marker.ticket}`,x+9,y-7);
+        }
+        context.restore();
+      })})}];
+    }
+  };
   var TimeMarkerPrimitive = class {
     constructor(id, time, color, visible = true) {
       this.id = id;
@@ -8709,6 +8734,24 @@ var ChartStudioV5 = (() => {
       wickUpColor: "#1bca99",
       wickDownColor: "#f16b8d"
     });
+    const brokerDealPrimitive = new BrokerDealMarkersPrimitive(chart,price);
+    price.attachPrimitive(brokerDealPrimitive);
+    let brokerDealMarkers=[];
+    function setBrokerDealMarkers(snapshot) {
+      guard();
+      const expected={account:activeAccount,symbol:drawingScope?.symbol??"",timeframe:drawingScope?.timeframe??""},received=snapshot?.scope;
+      if(!received||received.account!==expected.account||received.symbol!==expected.symbol||received.timeframe!==expected.timeframe)throw Error("Broker deal marker scope mismatch");
+      if(snapshot.source!=="MT5_VERIFIED"||snapshot.canExecute!==false||!Array.isArray(snapshot.markers)||snapshot.markers.length>500)throw Error("Invalid read-only broker deal marker snapshot");
+      const tickets=new Set(),candidate=[];
+      for(const row of snapshot.markers){
+        if(!row||typeof row.ticket!=="string"||!/^[1-9][0-9]{0,19}$/.test(row.ticket)||tickets.has(row.ticket)||row.account!==expected.account||row.symbol!==expected.symbol||row.timeframe!==expected.timeframe||
+          !["BUY","SELL"].includes(row.side)||!["IN","OUT","INOUT","OUT_BY"].includes(row.entry)||!Number.isFinite(row.price)||row.price<=0||!Number.isSafeInteger(row.fillTimeUtcMs)||row.fillTimeUtcMs<=0||row.chartTimeSeconds!==Math.floor(row.fillTimeUtcMs/1000)||typeof row.plotted!=="boolean"||typeof row.label!=="string"||row.label.length>100)throw Error("Invalid broker deal marker");
+        tickets.add(row.ticket);candidate.push({...row,plotted:barsByTime.has(row.chartTimeSeconds)});
+      }
+      brokerDealMarkers=candidate;brokerDealPrimitive.set(candidate);
+      return readBrokerDealMarkers();
+    }
+    function readBrokerDealMarkers(){guard();const markers=brokerDealMarkers.map((row)=>({...row}));return {plotted:markers.filter((row)=>row.plotted).length,unplotted:markers.filter((row)=>!row.plotted).length,markers};}
     const positionOverlayLines = /* @__PURE__ */ new Map();
     function clearPositionOverlays() {
       for (const item of positionOverlayLines.values()) price.removePriceLine(item.line);
@@ -9956,6 +9999,7 @@ var ChartStudioV5 = (() => {
       redoStack.length = 0;
       bars = next;
       barsByTime = new Map(bars.map((c2) => [c2.time, c2]));
+      brokerDealMarkers=brokerDealMarkers.map((row)=>({...row,plotted:barsByTime.has(row.chartTimeSeconds)}));brokerDealPrimitive.set(brokerDealMarkers);
       for (const series of averages.values()) series.setData([]);
       for (const series of paneLines.values()) series.setData([]);
       for (const group of oscillators.values()) for (const series of group.series.values()) series.setData([]);
@@ -11819,6 +11863,7 @@ var ChartStudioV5 = (() => {
         version: VERSION2,
         account: activeAccount,
         positionOverlayCount: positionOverlayLines.size,
+        brokerDealMarkerCount: brokerDealMarkers.filter((row)=>row.plotted).length,
         positionOverlays: readPositionOverlays().lines,
         nativeDrawingCount: drawingCount(),
         drawingTool: placementTool,
@@ -12017,6 +12062,8 @@ var ChartStudioV5 = (() => {
       clearAutoFibonacci,
       setPositionOverlays,
       readPositionOverlays,
+      setBrokerDealMarkers,
+      readBrokerDealMarkers,
       setDrawingTool,
       drawingToolState,
       verifyPersistence,

@@ -63,10 +63,49 @@ const server=http.createServer((req,res)=>{
    return window.ChartStudioV5Preview.update({accountId:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,source:"MT5_VERIFIED",canExecute:false,snapshotAsOfUtc:asOfUtc,candles},token);
   },{candles,asOfUtc});
   assert.deepEqual(first,{applied:true,candleCount:150});
+  const brokerMarkers=await page.evaluate(({candles})=>{
+   const scope={account:"titan",symbol:"XAUUSD",timeframe:"M15"},preview=window.ChartStudioV5Preview;
+   if(typeof preview.setBrokerDealMarkers!=="function")return {available:false};
+   const markers=[
+    {ticket:"91001",account:"titan",symbol:"XAUUSD",timeframe:"M15",side:"BUY",entry:"IN",price:4101,fillTimeUtcMs:candles[20].time*1000+250,chartTimeSeconds:candles[20].time,plotted:true,label:"BUY IN · #91001"},
+    {ticket:"91002",account:"titan",symbol:"XAUUSD",timeframe:"M15",side:"SELL",entry:"OUT",price:4112,fillTimeUtcMs:candles[30].time*1000+900,chartTimeSeconds:candles[30].time,plotted:true,label:"SELL OUT · #91002"},
+    {ticket:"91003",account:"titan",symbol:"XAUUSD",timeframe:"M15",side:"BUY",entry:"IN",price:4105,fillTimeUtcMs:(candles[0].time-900)*1000,chartTimeSeconds:candles[0].time-900,plotted:false,label:"BUY IN · #91003"}
+   ];
+   const accepted=preview.setBrokerDealMarkers({scope,source:"MT5_VERIFIED",canExecute:false,markers});
+   const state=preview.inspect().brokerDealMarkers;
+   const badScope=preview.setBrokerDealMarkers({scope:{...scope,account:"xau5m_m5"},source:"MT5_VERIFIED",canExecute:false,markers});
+   const badSource=preview.setBrokerDealMarkers({scope,source:"SYNTHETIC",canExecute:false,markers});
+   const executable=preview.setBrokerDealMarkers({scope,source:"MT5_VERIFIED",canExecute:true,markers});
+   const badPrice=preview.setBrokerDealMarkers({scope,source:"MT5_VERIFIED",canExecute:false,markers:markers.map((row,index)=>index===1?{...row,price:0}:row)});
+   const invalidRows=[
+    [{...markers[0],account:"xau5m_m5"}],
+    [{...markers[0],symbol:"XAUUSD.p"}],
+    [{...markers[0],timeframe:"M5"}],
+    [markers[0],{...markers[1],ticket:markers[0].ticket}],
+    [{...markers[0],fillTimeUtcMs:0}],
+    [{...markers[0],entry:"UNKNOWN"}]
+   ].map(rows=>preview.setBrokerDealMarkers({scope,source:"MT5_VERIFIED",canExecute:false,markers:rows}));
+   return {available:true,accepted,state,badScope,badSource,executable,badPrice,afterReject:preview.inspect().brokerDealMarkers,
+    invalidRows,positionCount:preview.readPositions().count};
+  },{candles});
+  assert.equal(brokerMarkers.available,true,"v5 preview exposes the separate broker-deal marker contract");
+  assert.deepEqual(brokerMarkers.accepted,{applied:true,plotted:2,unplotted:1});
+  assert.equal(brokerMarkers.state.plotted,2);assert.equal(brokerMarkers.state.unplotted,1);
+  assert.deepEqual(brokerMarkers.state.markers.map(row=>row.ticket),["91001","91002","91003"]);
+  assert.deepEqual(brokerMarkers.badScope,{applied:false,reason:"SCOPE_MISMATCH"});
+  assert.deepEqual(brokerMarkers.badSource,{applied:false,reason:"UNVERIFIED_SOURCE"});
+  assert.deepEqual(brokerMarkers.executable,{applied:false,reason:"UNVERIFIED_SOURCE"});
+  assert.deepEqual(brokerMarkers.badPrice,{applied:false,reason:"INVALID_MARKERS"});
+  assert.deepEqual(brokerMarkers.invalidRows,Array(6).fill({applied:false,reason:"INVALID_MARKERS"}));
+  assert.deepEqual(brokerMarkers.afterReject,brokerMarkers.state,"rejected snapshots leave accepted deal markers unchanged");
+  assert.equal(brokerMarkers.positionCount,0,"broker fill history does not fabricate open-position lines");
   const v4Before=await page.locator("#tv-chart").evaluate(el=>({visible:!!el.getClientRects().length,canvas:el.querySelector("canvas#v4-sentinel")?.width}));
   await page.locator("#chart-v5-preview-btn").click();
   await page.waitForFunction(()=>document.querySelector("#chart-v5-preview-status")?.textContent.includes("150 verifizierte Kerzen"));
   await page.waitForFunction(()=>[...document.querySelectorAll("#chart-v5-preview-host canvas")].some(canvas=>canvas.width>300&&canvas.height>200));
+  const liveDealReadback=await page.evaluate(()=>window.ChartStudioV5Preview.readBrokerDealMarkers());
+  assert.equal(liveDealReadback.plotted,2,"native v5 renderer retains both in-window historical fills");
+  assert.equal(liveDealReadback.unplotted,1,"native v5 renderer keeps an out-of-window fill unplotted");
   const positions=await page.evaluate(()=>{
    const scope={account:"titan",symbol:"XAUUSD",timeframe:"M15"},token=window.ChartStudioV5Preview.beginPositionRead();
    return window.ChartStudioV5Preview.setPositions({scope,source:"MT5_VERIFIED",canExecute:false,positions:[
@@ -76,6 +115,7 @@ const server=http.createServer((req,res)=>{
   });
   assert.deepEqual(positions,{applied:true,count:5},"verified position entry/SL/TP overlays render in v5");
   assert.equal((await page.evaluate(()=>window.ChartStudioV5Preview.readPositions())).count,5);
+  assert.equal((await page.evaluate(()=>window.ChartStudioV5Preview.readBrokerDealMarkers())).plotted,2,"rendering position lines preserves separate historical deal markers");
   const positionVisibility=await page.evaluate(()=>{
    const hidden=window.ChartStudioV5Preview.showPositions(false),hiddenCount=window.ChartStudioV5Preview.readPositions().count;
    const shown=window.ChartStudioV5Preview.showPositions(true),shownCount=window.ChartStudioV5Preview.readPositions().count;
@@ -223,6 +263,7 @@ const server=http.createServer((req,res)=>{
   assert.deepEqual(scopeSwitch.updated,{applied:true,candleCount:150});
   assert.equal(scopeSwitch.state.scope.account,"xau5m_m5");
   assert.equal(scopeSwitch.state.positionOverlayCount,0,"account changes clear prior account position lines");
+  assert.equal(scopeSwitch.state.brokerDealMarkerCount,0,"account changes clear prior account deal markers");
   assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.readAutoFibonacci()),null,"a scope switch clears Auto-Fibonacci along with the prior account's candles");
   const missingAsOf=await page.evaluate(candles=>{const scope={account:"xau5m_m5",symbol:"XAUUSD.p",timeframe:"M15"},token=window.ChartStudioV5Preview.beginRead();return window.ChartStudioV5Preview.update({accountId:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,source:"MT5_VERIFIED",canExecute:false,candles},token)},candles);
   assert.deepEqual(missingAsOf,{applied:false,reason:"INVALID_AS_OF"},"missing snapshot time fails closed");

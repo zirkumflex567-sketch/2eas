@@ -1396,8 +1396,9 @@ function updateBrokerDeals(accountId,deals,timeframe=s?.tf){
   if(deal?.account!==accountId||deal?.symbol!==chartSymbol()||deal?.source!=="MT5_VERIFIED"||deal?.canExecute!==false||deal?.status!=="EXECUTED"||!(["BUY","SELL"].includes(deal?.side))||!entries.has(deal?.entry)||!Number.isSafeInteger(fillTimeUtcMs)||fillTimeUtcMs<=0||!Number.isFinite(price)||price<=0||typeof ticket!=="string"||!/^[1-9][0-9]{0,19}$/.test(ticket))return [];
   const chartTimeSeconds=Math.floor(fillTimeUtcMs/1000);
   const plotted=bars.has(chartTimeSeconds);
-  return [{ticket,account:accountId,side:deal.side,entry:deal.entry,price,fillTimeUtcMs,chartTimeSeconds,plotted,label:deal.side+" "+deal.entry+" · #"+ticket}];
+  return [{ticket,account:accountId,symbol:chartSymbol(),timeframe:s.tf,side:deal.side,entry:deal.entry,price,fillTimeUtcMs,chartTimeSeconds,plotted,label:deal.side+" "+deal.entry+" · #"+ticket}];
  });
+ try{window.ChartStudioV5Preview?.setBrokerDealMarkers?.({scope:{account:s.account,symbol:chartSymbol(),timeframe:s.tf},source:"MT5_VERIFIED",canExecute:false,markers:s.brokerMarkers})}catch(_){}
  requestDraw();
  const counts=brokerMarkerCounts();window.ChartStudioBrokerPanel?.updateMarkerAvailability(counts);return counts;
 }
