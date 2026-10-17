@@ -26,5 +26,6 @@
 
 - [x] Run geometry, all drawing/Beta browser smokes, syntax checks, and `git diff --check`.
 - [x] Obtain an independent code review and resolve findings (left-of-pane clipping fixed; re-review no findings).
-- [ ] Update FR-014 evidence while retaining open style, native-v5, touch, and hardware/production gaps.
-- [ ] Commit and push only the exact changed paths to `main`; wait for CI and deploy through guarded runtime.
+- [x] Update FR-014 evidence while retaining open style, native-v5, touch, and hardware/production gaps.
+- [x] Commit and push only the exact changed paths to `main` (`9cc7396`); both Main CI workflows passed.
+- [x] Deploy through guarded runtime; local and htown tunnel agree on revision/digest with `restart_required=false`, then the four-demo GET-only chart smoke passed with 1,001 bars/account and no writes/errors/Blueberry calls.
