@@ -102,7 +102,8 @@ const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
           }
           return { width: canvas.width, height: canvas.height, rgbaBase64: btoa(binary) };
         }));
-      const candleInkPixels = canvasPixels.map(canvas => countCandleInkPixels(Buffer.from(canvas.rgbaBase64, "base64")));
+      const candleInkPixels = canvasPixels.map(canvas =>
+        countCandleInkPixels(Buffer.from(canvas.rgbaBase64, "base64"), canvas.width, canvas.height));
       const visibleCandlePixels = Math.max(0, ...candleInkPixels);
       assert.ok(visibleCandlePixels >= 40,
         `${account} canvas has verified candle data but no visible bullish/bearish candle paint (${visibleCandlePixels}px across ${canvasPixels.length} plot canvases)`);
