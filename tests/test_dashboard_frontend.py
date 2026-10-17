@@ -1320,7 +1320,7 @@ class DashboardFrontendTests(unittest.TestCase):
         self.assertEqual(self.errors, [])
     def test_permanent_bootstrap_503_keeps_unknown_nonchart_view_before_chart(self):
         self.page.route('**/api/accounts', lambda route: route.fulfill(status=503,json=dict(detail='permanent offline')))
-        self.context.add_init_script("window.addEventListener('DOMContentLoaded',()=>{window.earlyClearChartUnset = typeof candleSeries === 'undefined'; clearAccountView()})")
+        self.context.add_init_script("window.addEventListener('DOMContentLoaded',()=>{window.earlyClearChartUnset = typeof candleSeries === 'undefined'; clearAccountView()},{capture:true})")
         self.page.goto(self.url)
         expect(self.page.locator('#account-connection')).to_contain_text('OFFLINE')
         self.assertTrue(self.page.evaluate('earlyClearChartUnset'))
@@ -1334,6 +1334,19 @@ class DashboardFrontendTests(unittest.TestCase):
         expect(self.page.locator('#dd-reset-button')).to_be_disabled()
         self.assertFalse(self.page.evaluate('accountActionsReady()'))
         self.assertEqual(self.errors, []); self.assertEqual(self.mutations, [])
+    def test_bootstrap_does_not_wait_for_noncritical_page_load_resource(self):
+        blocked_requests = []
+        self.page.route('**/bootstrap-blocker.png', lambda route: blocked_requests.append(route))
+        self.context.add_init_script("document.addEventListener('DOMContentLoaded',()=>{const image=new Image();image.src='/bootstrap-blocker.png';document.body.append(image)})")
+        self.page.goto(self.url, wait_until='domcontentloaded')
+        try:
+            expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=10000)
+            self.assertTrue(blocked_requests)
+            self.assertNotEqual(self.page.evaluate('document.readyState'), 'complete')
+        finally:
+            for route in blocked_requests:
+                route.abort()
+        self.assertEqual(self.errors, [])
     def test_permanent_bootstrap_503_initial_view_never_claims_zero(self):
         self.page.route('**/api/accounts', lambda route: route.fulfill(status=503,json=dict(detail='permanent offline')))
         self.page.goto(self.url)

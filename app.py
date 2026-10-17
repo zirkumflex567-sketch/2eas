@@ -4838,7 +4838,10 @@ HTML_CONTENT = """<!DOCTYPE html>
         else { if (!accountIsFresh()) markStatusStale(); void updateStatus(); void refreshJournal(); }
       }
     });
-    window.onload = async () => {
+    let dashboardBootStarted = false;
+    const bootDashboard = async () => {
+      if (dashboardBootStarted) return;
+      dashboardBootStarted = true;
       clearAccountView(); // Unknown state also when the first accounts request fails.
       initTheme();
       const navMobile = document.getElementById('nav-mobile-link');
@@ -4860,6 +4863,11 @@ HTML_CONTENT = """<!DOCTYPE html>
       setInterval(loadCandles, 5000);   // 5s smooth candle update (no reset)
       setInterval(() => { void refreshJournal(); }, 30000); // independent, low-rate journal sync
     };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => { void bootDashboard(); }, { once: true });
+    } else {
+      void bootDashboard();
+    }
   </script>
   <!-- Visual-only extension: live MT5 and TradingView handlers remain untouched -->
   <script src="static/stone-cockpit.js"></script>
