@@ -28,6 +28,7 @@ var ChartStudioV5 = (() => {
     calculateIchimoku: () => calculateIchimoku,
     calculateLinearRegressionChannel: () => calculateLinearRegressionChannel,
     calculatePivotPoints: () => calculatePivotPoints,
+    calculateSessionVwap: () => calculateSessionVwap,
     calculateVolumeZones: () => calculateVolumeZones,
     createIncrementalOscillator: () => createIncrementalOscillator,
     createStudioV5: () => createStudioV5
@@ -7750,31 +7751,6 @@ var ChartStudioV5 = (() => {
       this.requestUpdate?.();
     }
   };
-  var BrokerDealMarkersPrimitive = class {
-    constructor(chart, series) { this.chart=chart; this.series=series; this.markers=[]; this.requestUpdate=null; }
-    attached(param) { this.requestUpdate=param.requestUpdate; }
-    detached() { this.requestUpdate=null; }
-    set(markers) { this.markers=markers.map((row)=>({...row})); this.requestUpdate?.(); }
-    paneViews() {
-      const chart=this.chart,series=this.series,markers=this.markers;
-      return [{zOrder:()=>"top",renderer:()=>({draw:(target)=>target.useMediaCoordinateSpace(({context})=>{
-        context.save();
-        for(const marker of markers){
-          if(!marker.plotted)continue;
-          const x=chart.timeScale().timeToCoordinate(marker.chartTimeSeconds),y=series.priceToCoordinate(marker.price);
-          if(x===null||y===null)continue;
-          const color=marker.side==="BUY"?"#49c6ff":"#ffb84d";
-          context.fillStyle=color;context.strokeStyle="#07131d";context.lineWidth=1.5;
-          context.beginPath();context.arc(x,y,6,0,Math.PI*2);context.fill();context.stroke();
-          context.fillStyle="#061018";context.font="bold 8px sans-serif";context.textAlign="center";context.textBaseline="middle";
-          context.fillText(({IN:"+",OUT:"−",INOUT:"↔",OUT_BY:"×"})[marker.entry],x,y);
-          context.fillStyle=color;context.font="bold 9px sans-serif";context.textAlign="left";context.textBaseline="middle";
-          context.fillText(`${marker.entry} #${marker.ticket}`,x+9,y-7);
-        }
-        context.restore();
-      })})}];
-    }
-  };
   var TimeMarkerPrimitive = class {
     constructor(id, time, color, visible = true) {
       this.id = id;
@@ -8472,6 +8448,54 @@ var ChartStudioV5 = (() => {
       this.requestUpdate?.();
     }
   };
+  var BrokerDealMarkersPrimitive = class {
+    constructor(chart, series) {
+      this.chart = chart;
+      this.series = series;
+      this.markers = [];
+      this.requestUpdate = null;
+    }
+    attached(param) {
+      this.requestUpdate = param.requestUpdate;
+    }
+    detached() {
+      this.requestUpdate = null;
+    }
+    set(markers) {
+      this.markers = markers.map((marker) => ({ ...marker }));
+      this.requestUpdate?.();
+    }
+    paneViews() {
+      const chart = this.chart, series = this.series, markers = this.markers;
+      return [{ zOrder: () => "top", renderer: () => ({ draw: (target) => target.useMediaCoordinateSpace(({ context }) => {
+        context.save();
+        for (const marker of markers) {
+          if (!marker.plotted) continue;
+          const x2 = chart.timeScale().timeToCoordinate(marker.chartTimeSeconds), y2 = series.priceToCoordinate(marker.price);
+          if (x2 === null || y2 === null) continue;
+          const color = marker.side === "BUY" ? "#49c6ff" : "#ffb84d";
+          context.fillStyle = color;
+          context.strokeStyle = "#07131d";
+          context.lineWidth = 1.5;
+          context.beginPath();
+          context.arc(x2, y2, 6, 0, Math.PI * 2);
+          context.fill();
+          context.stroke();
+          context.fillStyle = "#061018";
+          context.font = "bold 8px sans-serif";
+          context.textAlign = "center";
+          context.textBaseline = "middle";
+          context.fillText({ IN: "+", OUT: "\u2212", INOUT: "\u2194", OUT_BY: "\xD7" }[marker.entry], x2, y2);
+          context.fillStyle = color;
+          context.font = "bold 9px sans-serif";
+          context.textAlign = "left";
+          context.textBaseline = "middle";
+          context.fillText(`${marker.entry} #${marker.ticket}`, x2 + 9, y2 - 7);
+        }
+        context.restore();
+      }) }) }];
+    }
+  };
   var colorPattern = /^#[0-9a-fA-F]{6}$/;
   function validBar(c2) {
     return Number.isSafeInteger(c2.time) && c2.time > 0 && Number.isFinite(new Date(c2.time * 1e3).getTime()) && [c2.open, c2.high, c2.low, c2.close].every((n) => Number.isFinite(n) && n > 0) && (c2.tick_volume === void 0 || Number.isFinite(c2.tick_volume) && c2.tick_volume >= 0) && (c2.real_volume === void 0 || Number.isFinite(c2.real_volume) && c2.real_volume >= 0) && c2.high >= Math.max(c2.open, c2.close, c2.low) && c2.low <= Math.min(c2.open, c2.close, c2.high);
@@ -8584,6 +8608,43 @@ var ChartStudioV5 = (() => {
       }
     }
     return { upper, middle, lower };
+  }
+  function calculateSessionVwap(input, options = {}) {
+    const timeZone = options.timeZone ?? "UTC", sessionStart = options.sessionStart ?? "00:00";
+    if (typeof timeZone !== "string" || timeZone.length < 1 || timeZone.length > 64 || typeof sessionStart !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(sessionStart)) throw Error("Invalid VWAP session configuration");
+    let formatter;
+    try {
+      formatter = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+    } catch (_2) {
+      throw Error("Invalid VWAP timezone");
+    }
+    if (!Array.isArray(input)) throw Error("Invalid VWAP bars");
+    const points = [], sources = /* @__PURE__ */ new Set();
+    let session = null, sumPV = 0, sumVolume = 0;
+    for (const bar of input) {
+      if (!bar || !validBar(bar)) throw Error("Invalid VWAP candle");
+      const parts = Object.fromEntries(formatter.formatToParts(new Date(bar.time * 1e3)).map((part) => [part.type, part.value]));
+      const year = Number(parts.year), month = Number(parts.month), day = Number(parts.day), minute = Number(parts.hour) * 60 + Number(parts.minute);
+      const [startHour, startMinute] = sessionStart.split(":").map(Number), startMinutes = startHour * 60 + startMinute;
+      const sessionDate = new Date(Date.UTC(year, month - 1, day) - (minute < startMinutes ? 864e5 : 0));
+      const key = sessionDate.toISOString().slice(0, 10);
+      if (key !== session) {
+        session = key;
+        sumPV = 0;
+        sumVolume = 0;
+      }
+      const realVolume = bar.real_volume ?? 0, tickVolume = bar.tick_volume ?? 0;
+      const real = realVolume > 0, volume = real ? realVolume : tickVolume;
+      if (volume <= 0) continue;
+      const typical = (bar.high + bar.low + bar.close) / 3, weighted = typical * volume, nextPV = sumPV + weighted, nextVolume = sumVolume + volume;
+      if (!Number.isFinite(weighted) || !Number.isFinite(nextPV) || !Number.isFinite(nextVolume) || nextVolume <= 0) throw Error("Invalid VWAP volume weights");
+      sumPV = nextPV;
+      sumVolume = nextVolume;
+      sources.add(real ? "REAL_VOLUME" : "TICK_VOLUME_PROXY");
+      points.push({ time: bar.time, value: sumPV / sumVolume });
+    }
+    const volumeSource = sources.size === 0 ? "NO_VOLUME" : sources.size > 1 ? "MIXED" : sources.has("REAL_VOLUME") ? "REAL_VOLUME" : "TICK_VOLUME_PROXY";
+    return { points, volumeSource };
   }
   function keltnerData(bars, options) {
     const { period, atrPeriod, multiplier } = options;
@@ -8734,24 +8795,9 @@ var ChartStudioV5 = (() => {
       wickUpColor: "#1bca99",
       wickDownColor: "#f16b8d"
     });
-    const brokerDealPrimitive = new BrokerDealMarkersPrimitive(chart,price);
+    const brokerDealPrimitive = new BrokerDealMarkersPrimitive(chart, price);
     price.attachPrimitive(brokerDealPrimitive);
-    let brokerDealMarkers=[];
-    function setBrokerDealMarkers(snapshot) {
-      guard();
-      const expected={account:activeAccount,symbol:drawingScope?.symbol??"",timeframe:drawingScope?.timeframe??""},received=snapshot?.scope;
-      if(!received||received.account!==expected.account||received.symbol!==expected.symbol||received.timeframe!==expected.timeframe)throw Error("Broker deal marker scope mismatch");
-      if(snapshot.source!=="MT5_VERIFIED"||snapshot.canExecute!==false||!Array.isArray(snapshot.markers)||snapshot.markers.length>500)throw Error("Invalid read-only broker deal marker snapshot");
-      const tickets=new Set(),candidate=[];
-      for(const row of snapshot.markers){
-        if(!row||typeof row.ticket!=="string"||!/^[1-9][0-9]{0,19}$/.test(row.ticket)||tickets.has(row.ticket)||row.account!==expected.account||row.symbol!==expected.symbol||row.timeframe!==expected.timeframe||
-          !["BUY","SELL"].includes(row.side)||!["IN","OUT","INOUT","OUT_BY"].includes(row.entry)||!Number.isFinite(row.price)||row.price<=0||!Number.isSafeInteger(row.fillTimeUtcMs)||row.fillTimeUtcMs<=0||row.chartTimeSeconds!==Math.floor(row.fillTimeUtcMs/1000)||typeof row.plotted!=="boolean"||typeof row.label!=="string"||row.label.length>100)throw Error("Invalid broker deal marker");
-        tickets.add(row.ticket);candidate.push({...row,plotted:barsByTime.has(row.chartTimeSeconds)});
-      }
-      brokerDealMarkers=candidate;brokerDealPrimitive.set(candidate);
-      return readBrokerDealMarkers();
-    }
-    function readBrokerDealMarkers(){guard();const markers=brokerDealMarkers.map((row)=>({...row}));return {plotted:markers.filter((row)=>row.plotted).length,unplotted:markers.filter((row)=>!row.plotted).length,markers};}
+    let brokerDealMarkers = [];
     const positionOverlayLines = /* @__PURE__ */ new Map();
     function clearPositionOverlays() {
       for (const item of positionOverlayLines.values()) price.removePriceLine(item.line);
@@ -8793,6 +8839,26 @@ var ChartStudioV5 = (() => {
       guard();
       return { count: positionOverlayLines.size, lines: Array.from(positionOverlayLines.values(), (item) => ({ ...item.readback })) };
     }
+    function setBrokerDealMarkers(snapshot) {
+      guard();
+      const expected = { account: activeAccount, symbol: drawingScope?.symbol ?? "", timeframe: drawingScope?.timeframe ?? "" }, received = snapshot?.scope;
+      if (!received || received.account !== expected.account || received.symbol !== expected.symbol || received.timeframe !== expected.timeframe) throw Error("Broker deal marker scope mismatch");
+      if (snapshot.source !== "MT5_VERIFIED" || snapshot.canExecute !== false || !Array.isArray(snapshot.markers) || snapshot.markers.length > 500) throw Error("Invalid read-only broker deal marker snapshot");
+      const tickets = /* @__PURE__ */ new Set(), candidate = [];
+      for (const row of snapshot.markers) {
+        if (!row || typeof row.ticket !== "string" || !/^[1-9][0-9]{0,19}$/.test(row.ticket) || tickets.has(row.ticket) || row.account !== expected.account || row.symbol !== expected.symbol || row.timeframe !== expected.timeframe || row.side !== "BUY" && row.side !== "SELL" || !["IN", "OUT", "INOUT", "OUT_BY"].includes(row.entry) || !Number.isFinite(row.price) || row.price <= 0 || !Number.isSafeInteger(row.fillTimeUtcMs) || row.fillTimeUtcMs <= 0 || row.chartTimeSeconds !== Math.floor(row.fillTimeUtcMs / 1e3) || typeof row.plotted !== "boolean" || typeof row.label !== "string" || row.label.length > 100) throw Error("Invalid broker deal marker");
+        tickets.add(row.ticket);
+        candidate.push({ ...row, plotted: barsByTime.has(row.chartTimeSeconds) });
+      }
+      brokerDealMarkers = candidate;
+      brokerDealPrimitive.set(candidate);
+      return readBrokerDealMarkers();
+    }
+    function readBrokerDealMarkers() {
+      guard();
+      const markers = brokerDealMarkers.map((row) => ({ ...row }));
+      return { plotted: markers.filter((row) => row.plotted).length, unplotted: markers.filter((row) => !row.plotted).length, markers };
+    }
     const newLine = (opts) => chart.addSeries(ye, {
       color: opts.color,
       lineWidth: opts.lineWidth ?? 2,
@@ -8804,6 +8870,7 @@ var ChartStudioV5 = (() => {
     const averages = /* @__PURE__ */ new Map();
     const donchianOverlays = /* @__PURE__ */ new Map();
     const bollingerOverlays = /* @__PURE__ */ new Map();
+    const sessionVwapOverlays = /* @__PURE__ */ new Map();
     const keltnerOverlays = /* @__PURE__ */ new Map();
     const atrBandsOverlays = /* @__PURE__ */ new Map();
     const ichimokuOverlays = /* @__PURE__ */ new Map();
@@ -9220,11 +9287,15 @@ var ChartStudioV5 = (() => {
     const autoFibRatios = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1], autoFibColors = ["#eab308", "#f97316", "#22d3ee", "#f8fafc", "#a78bfa", "#22c55e", "#fb7185"];
     let autoFibonacci = null;
     let bars = [], barsByTime = /* @__PURE__ */ new Map(), activeAccount = accountId, destroyed = false;
-    const indicatorInstanceCount = () => averages.size + paneLines.size + oscillators.size + donchianOverlays.size + bollingerOverlays.size + keltnerOverlays.size + atrBandsOverlays.size + linearRegressionOverlays.size + supertrendOverlays.size + parabolicSarOverlays.size + ichimokuOverlays.size + pivotOverlays.size + (autoFibonacci ? 1 : 0);
+    const indicatorInstanceCount = () => averages.size + paneLines.size + oscillators.size + donchianOverlays.size + bollingerOverlays.size + sessionVwapOverlays.size + keltnerOverlays.size + atrBandsOverlays.size + linearRegressionOverlays.size + supertrendOverlays.size + parabolicSarOverlays.size + ichimokuOverlays.size + pivotOverlays.size + (autoFibonacci ? 1 : 0);
     function guard() {
       if (destroyed) throw Error("Chart was destroyed");
     }
     function persistenceKey(account = activeAccount) {
+      if (!drawingScope) return null;
+      return `2eas.chartstudio.v5.drawings:v5:${encodeURIComponent(account)}:${encodeURIComponent(drawingScope.symbol)}:${encodeURIComponent(drawingScope.timeframe)}`;
+    }
+    function previousPersistenceKey(account = activeAccount) {
       if (!drawingScope) return null;
       return `2eas.chartstudio.v5.drawings:v4:${encodeURIComponent(account)}:${encodeURIComponent(drawingScope.symbol)}:${encodeURIComponent(drawingScope.timeframe)}`;
     }
@@ -9269,6 +9340,7 @@ var ChartStudioV5 = (() => {
       const visibleRange = chart.timeScale().getVisibleLogicalRange();
       return {
         movingAverages: [...managedMovingAverages.values()].map(({ options }) => ({ ...options })),
+        sessionVwaps: [...sessionVwapOverlays.values()].map(({ options }) => ({ ...options })),
         supertrends: [...supertrendOverlays.values()].map((group) => ({ ...group.options })),
         parabolicSars: [...parabolicSarOverlays.values()].map((group) => ({ ...group.options })),
         oscillators: [...oscillators.values()].map((group) => ({ options: { ...group.options, settings: { ...group.options.settings } }, paneIndex: group.paneIndex })),
@@ -9303,7 +9375,7 @@ var ChartStudioV5 = (() => {
         }
         const drawings = drawingSnapshots();
         const envelope = () => JSON.stringify({
-          schemaVersion: 3,
+          schemaVersion: 4,
           account: activeAccount,
           symbol: drawingScope.symbol,
           timeframe: drawingScope.timeframe,
@@ -9371,9 +9443,14 @@ var ChartStudioV5 = (() => {
         persistenceError = "STORAGE_UNAVAILABLE";
         return;
       }
-      let raw, legacy = false;
+      let raw, legacy = false, currentSnapshot = false;
       try {
         raw = storage.getItem(key);
+        currentSnapshot = raw !== null;
+        if (raw === null) {
+          raw = storage.getItem(previousPersistenceKey());
+          legacy = raw !== null;
+        }
         if (raw === null) {
           raw = storage.getItem(legacyPersistenceKey());
           legacy = raw !== null;
@@ -9383,7 +9460,7 @@ var ChartStudioV5 = (() => {
         persistenceError = "STORAGE_READ_FAILED";
         return;
       }
-      lastPersistedSnapshot = legacy ? null : raw;
+      lastPersistedSnapshot = currentSnapshot ? raw : null;
       if (raw === null) {
         persistenceStatus = "READY";
         persistenceError = null;
@@ -9410,14 +9487,14 @@ var ChartStudioV5 = (() => {
       }
       const root = parsed;
       const schemaKeys = Object.keys(root).sort().join(",");
-      if (!root || Array.isArray(parsed) || !(/* @__PURE__ */ new Set(["account,drawings,schemaVersion,symbol,timeframe", "account,drawings,redoStack,schemaVersion,symbol,timeframe,undoStack", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,redoStack,schemaVersion,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,redoStack,schemaVersion,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible"])).has(schemaKeys) || root.schemaVersion !== 1 && root.schemaVersion !== 2 && root.schemaVersion !== 3 || ("supertrends" in root || "parabolicSars" in root) && root.schemaVersion !== 3 || root.account !== activeAccount || root.symbol !== drawingScope.symbol || root.timeframe !== drawingScope.timeframe || !Array.isArray(root.drawings) || root.drawings.length > maxNativeDrawings) {
+      if (!root || Array.isArray(parsed) || !(/* @__PURE__ */ new Set(["account,drawings,schemaVersion,symbol,timeframe", "account,drawings,redoStack,schemaVersion,symbol,timeframe,undoStack", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,redoStack,schemaVersion,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,redoStack,schemaVersion,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,sessionVwaps,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible"])).has(schemaKeys) || root.schemaVersion !== 1 && root.schemaVersion !== 2 && root.schemaVersion !== 3 && root.schemaVersion !== 4 || ("supertrends" in root || "parabolicSars" in root) && root.schemaVersion < 3 || "sessionVwaps" in root && root.schemaVersion !== 4 || root.account !== activeAccount || root.symbol !== drawingScope.symbol || root.timeframe !== drawingScope.timeframe || !Array.isArray(root.drawings) || root.drawings.length > maxNativeDrawings) {
         persistenceStatus = "UNAVAILABLE";
         persistenceError = "INVALID_OR_MISMATCHED_SNAPSHOT";
         return;
       }
-      const isV2 = root.schemaVersion === 2 || root.schemaVersion === 3, isV3 = root.schemaVersion === 3;
+      const isV2 = root.schemaVersion === 2 || root.schemaVersion === 3 || root.schemaVersion === 4, isV3 = root.schemaVersion === 3 || root.schemaVersion === 4, isV4 = root.schemaVersion === 4;
       const restoredUndo = [], restoredRedo = [];
-      let restoredAverages = [], restoredOscillators = [], restoredPaneLines = [], restoredSupertrends = [], restoredParabolicSars = [], restoredPaneHeights = [], restoredVolume = false, restoredVolumePane = null, restoredTimeZone = "UTC", restoredRange = null;
+      let restoredAverages = [], restoredOscillators = [], restoredPaneLines = [], restoredSupertrends = [], restoredParabolicSars = [], restoredSessionVwaps = [], restoredPaneHeights = [], restoredVolume = false, restoredVolumePane = null, restoredTimeZone = "UTC", restoredRange = null;
       if (isV3) {
         try {
           if (!Array.isArray(root.movingAverages) || root.movingAverages.length > 16 || !Array.isArray(root.oscillators) || root.oscillators.length > 8 || !Array.isArray(root.paneLines) || root.paneLines.length > 8 || root.supertrends !== void 0 && (!Array.isArray(root.supertrends) || root.supertrends.length > maxIndicatorInstances) || root.parabolicSars !== void 0 && (!Array.isArray(root.parabolicSars) || root.parabolicSars.length > maxIndicatorInstances) || !Array.isArray(root.paneHeights) || root.paneHeights.length < 1 || root.paneHeights.length > 10 || typeof root.volumeVisible !== "boolean" || root.volumePaneIndex !== null && (!Number.isInteger(root.volumePaneIndex) || Number(root.volumePaneIndex) < 1 || Number(root.volumePaneIndex) >= root.paneHeights.length) || root.volumeVisible !== (root.volumePaneIndex !== null) || typeof root.displayTimeZone !== "string") throw Error();
@@ -9463,7 +9540,17 @@ var ChartStudioV5 = (() => {
             if (!allowed.has(keys) || !validParabolicSar(options)) throw Error();
             return { ...options };
           });
-          if (restoredAverages.length + restoredOscillators.length + restoredPaneLines.length + restoredSupertrends.length + restoredParabolicSars.length > maxIndicatorInstances || (/* @__PURE__ */ new Set([...restoredAverages.map((item) => item.id), ...restoredOscillators.map((item) => item.options.id), ...restoredPaneLines.map((item) => item.options.id), ...restoredSupertrends.map((item) => item.id), ...restoredParabolicSars.map((item) => item.id)])).size !== restoredAverages.length + restoredOscillators.length + restoredPaneLines.length + restoredSupertrends.length + restoredParabolicSars.length) throw Error();
+          if (isV4 && (!Array.isArray(root.sessionVwaps) || root.sessionVwaps.length > maxIndicatorInstances)) throw Error();
+          restoredSessionVwaps = (root.sessionVwaps ?? []).map((raw2) => {
+            if (!raw2 || typeof raw2 !== "object" || Array.isArray(raw2)) throw Error();
+            const options = raw2;
+            const normalized = { ...options, timeZone: options.timeZone ?? "UTC", sessionStart: options.sessionStart ?? "00:00", visible: options.visible ?? true };
+            if (!validSessionVwapOptions(normalized)) throw Error();
+            calculateSessionVwap(bars, normalized);
+            return { ...normalized };
+          });
+          const restoredIds = [...restoredAverages.map((item) => item.id), ...restoredOscillators.map((item) => item.options.id), ...restoredPaneLines.map((item) => item.options.id), ...restoredSupertrends.map((item) => item.id), ...restoredParabolicSars.map((item) => item.id), ...restoredSessionVwaps.map((item) => item.id)];
+          if (restoredIds.length > maxIndicatorInstances || new Set(restoredIds).size !== restoredIds.length) throw Error();
           restoredPaneHeights = savedPaneHeights.map((value) => {
             if (!Number.isInteger(value) || Number(value) < 80 || Number(value) > 600) throw Error();
             return Number(value);
@@ -9625,9 +9712,9 @@ var ChartStudioV5 = (() => {
         return;
       }
       if (isV3) {
-        const drawingIds = snapshots.map((snapshot) => snapshot.options.id), indicatorIds = [...restoredAverages.map((item) => item.id), ...restoredOscillators.map((item) => item.options.id), ...restoredSupertrends.map((item) => item.id), ...restoredParabolicSars.map((item) => item.id)];
+        const drawingIds = snapshots.map((snapshot) => snapshot.options.id), indicatorIds = [...restoredAverages.map((item) => item.id), ...restoredOscillators.map((item) => item.options.id), ...restoredSupertrends.map((item) => item.id), ...restoredParabolicSars.map((item) => item.id), ...restoredSessionVwaps.map((item) => item.id)];
         const paneIds = /* @__PURE__ */ new Set([...restoredOscillators.map((item) => item.paneIndex), ...restoredPaneLines.map((item) => item.paneIndex), ...restoredVolumePane === null ? [] : [restoredVolumePane]]);
-        if ((/* @__PURE__ */ new Set([...drawingIds, ...indicatorIds])).size !== drawingIds.length + indicatorIds.length || paneIds.size !== restoredPaneHeights.length - 1 || Array.from({ length: restoredPaneHeights.length - 1 }, (_2, i) => i + 1).some((index) => !paneIds.has(index)) || restoredAverages.length + restoredOscillators.length + restoredPaneLines.length + restoredSupertrends.length + restoredParabolicSars.length > 0 && (averages.size > 0 || managedMovingAverages.size > 0 || oscillators.size > 0 || paneLines.size > 0 || donchianOverlays.size > 0 || keltnerOverlays.size + atrBandsOverlays.size > 0 || linearRegressionOverlays.size > 0 || supertrendOverlays.size > 0 || parabolicSarOverlays.size > 0)) {
+        if ((/* @__PURE__ */ new Set([...drawingIds, ...indicatorIds])).size !== drawingIds.length + indicatorIds.length || paneIds.size !== restoredPaneHeights.length - 1 || Array.from({ length: restoredPaneHeights.length - 1 }, (_2, i) => i + 1).some((index) => !paneIds.has(index)) || restoredAverages.length + restoredOscillators.length + restoredPaneLines.length + restoredSupertrends.length + restoredParabolicSars.length + restoredSessionVwaps.length > 0 && (averages.size > 0 || managedMovingAverages.size > 0 || oscillators.size > 0 || paneLines.size > 0 || donchianOverlays.size > 0 || keltnerOverlays.size + atrBandsOverlays.size > 0 || linearRegressionOverlays.size > 0 || supertrendOverlays.size > 0 || parabolicSarOverlays.size > 0 || sessionVwapOverlays.size > 0)) {
           persistenceStatus = "CONFLICT";
           persistenceError = "VIEW_ALREADY_PRESENT";
           return;
@@ -9650,6 +9737,7 @@ var ChartStudioV5 = (() => {
           for (const item of restoredOscillators) addOscillator(item.options);
           for (const options of restoredSupertrends) addSupertrend(options);
           for (const options of restoredParabolicSars) addParabolicSar(options);
+          for (const options of restoredSessionVwaps) addSessionVwap(options);
           for (const item of restoredPaneLines) {
             addPaneLine(item.options, item.data);
             const series = paneLines.get(item.options.id);
@@ -9706,6 +9794,8 @@ var ChartStudioV5 = (() => {
           chart.removeSeries(group.down);
         }
         parabolicSarOverlays.clear();
+        for (const group of sessionVwapOverlays.values()) chart.removeSeries(group.series);
+        sessionVwapOverlays.clear();
         for (const series of paneLines.values()) chart.removeSeries(series);
         paneLines.clear();
         if (volume) {
@@ -9719,7 +9809,7 @@ var ChartStudioV5 = (() => {
       } finally {
         hydratingDrawings = false;
       }
-      if (!isV3 || legacy) persistDrawings();
+      if (!isV4 || legacy) persistDrawings();
     }
     function selectDrawing(id) {
       selectDrawings(id === null ? [] : [id]);
@@ -9999,7 +10089,8 @@ var ChartStudioV5 = (() => {
       redoStack.length = 0;
       bars = next;
       barsByTime = new Map(bars.map((c2) => [c2.time, c2]));
-      brokerDealMarkers=brokerDealMarkers.map((row)=>({...row,plotted:barsByTime.has(row.chartTimeSeconds)}));brokerDealPrimitive.set(brokerDealMarkers);
+      brokerDealMarkers = brokerDealMarkers.map((row) => ({ ...row, plotted: barsByTime.has(row.chartTimeSeconds) }));
+      brokerDealPrimitive.set(brokerDealMarkers);
       for (const series of averages.values()) series.setData([]);
       for (const series of paneLines.values()) series.setData([]);
       for (const group of oscillators.values()) for (const series of group.series.values()) series.setData([]);
@@ -10016,6 +10107,7 @@ var ChartStudioV5 = (() => {
       refreshManagedMovingAverages();
       refreshDonchianOverlays();
       refreshBollingerOverlays();
+      refreshSessionVwapOverlays();
       refreshKeltnerOverlays();
       refreshAtrBandsOverlays();
       refreshLinearRegressionOverlays();
@@ -10118,7 +10210,7 @@ var ChartStudioV5 = (() => {
       guard();
       if (!opts || !/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id) || !colorPattern.test(opts.color)) throw Error("Invalid line options");
       if (indicatorInstanceCount() >= maxIndicatorInstances && !averages.has(opts.id)) throw Error("Indicator instance limit");
-      if (oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const values = validSeriesData(data);
       let series = averages.get(opts.id);
       if (!series) {
@@ -10162,11 +10254,74 @@ var ChartStudioV5 = (() => {
         readoutIndicators.set(id, { id, title: group.options.title ?? `Bollinger ${group.options.period}`, kind: "OVERLAY", values: new Map(values.middle.map((point2) => [point2.time, point2.value])) });
       }
     }
+    function sessionVwapTitle(options, source) {
+      const label = source === "REAL_VOLUME" ? "Real volume" : source === "TICK_VOLUME_PROXY" ? "Tick-volume proxy" : source === "MIXED" ? "Real/tick-volume mix" : "No usable volume";
+      return `${options.title ?? "Session VWAP"} ${options.sessionStart} ${options.timeZone} \xB7 ${label}`;
+    }
+    function validSessionVwapOptions(options) {
+      return !!options && typeof options === "object" && !Array.isArray(options) && Object.keys(options).every((key) => ["id", "color", "lineWidth", "visible", "title", "timeZone", "sessionStart"].includes(key)) && /^[-_a-zA-Z0-9]{1,32}$/.test(options.id) && colorPattern.test(options.color) && (options.lineWidth === void 0 || Number.isInteger(options.lineWidth) && options.lineWidth >= 1 && options.lineWidth <= 4) && (options.visible === void 0 || typeof options.visible === "boolean") && (options.title === void 0 || typeof options.title === "string" && options.title.length <= 80 && !/[\u0000-\u001f\u007f]/.test(options.title)) && typeof options.timeZone === "string" && options.timeZone.length > 0 && options.timeZone.length <= 64 && typeof options.sessionStart === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(options.sessionStart);
+    }
+    function refreshSessionVwapOverlays() {
+      for (const [id, group] of sessionVwapOverlays) {
+        const result = calculateSessionVwap(bars, group.options);
+        group.result = result;
+        group.series.setData(result.points);
+        group.series.applyOptions({ title: sessionVwapTitle(group.options, result.volumeSource) });
+        readoutIndicators.set(id, { id, title: sessionVwapTitle(group.options, result.volumeSource), kind: "OVERLAY", values: new Map(result.points.map((point2) => [point2.time, point2.value])) });
+      }
+    }
+    function addSessionVwap(options) {
+      guard();
+      const normalized = { ...options, timeZone: options.timeZone ?? "UTC", sessionStart: options.sessionStart ?? "00:00", visible: options.visible ?? true };
+      if (!validSessionVwapOptions(normalized)) throw Error("Invalid session VWAP configuration");
+      if (oscillators.has(normalized.id) || averages.has(normalized.id) || donchianOverlays.has(normalized.id) || bollingerOverlays.has(normalized.id) || keltnerOverlays.has(normalized.id) || atrBandsOverlays.has(normalized.id) || linearRegressionOverlays.has(normalized.id) || supertrendOverlays.has(normalized.id) || parabolicSarOverlays.has(normalized.id) || ichimokuOverlays.has(normalized.id) || pivotOverlays.has(normalized.id) || paneLines.has(normalized.id) || priceLevels.has(normalized.id) || timeMarkers.has(normalized.id) || textAnnotations.has(normalized.id) || trendLines.has(normalized.id) || rectangles.has(normalized.id) || rays.has(normalized.id) || fibonacci.has(normalized.id) || channels.has(normalized.id) || measurements.has(normalized.id)) throw Error("Duplicate chart object identity");
+      const existing = sessionVwapOverlays.get(normalized.id);
+      if (indicatorInstanceCount() >= maxIndicatorInstances && !existing) throw Error("Indicator instance limit");
+      if (!existing && (averages.has(normalized.id) || oscillators.has(normalized.id) || donchianOverlays.has(normalized.id) || bollingerOverlays.has(normalized.id) || keltnerOverlays.has(normalized.id) || atrBandsOverlays.has(normalized.id) || linearRegressionOverlays.has(normalized.id) || supertrendOverlays.has(normalized.id) || parabolicSarOverlays.has(normalized.id) || ichimokuOverlays.has(normalized.id) || pivotOverlays.has(normalized.id) || paneLines.has(normalized.id) || priceLevels.has(normalized.id) || timeMarkers.has(normalized.id) || textAnnotations.has(normalized.id) || trendLines.has(normalized.id) || rectangles.has(normalized.id) || rays.has(normalized.id) || fibonacci.has(normalized.id) || channels.has(normalized.id) || measurements.has(normalized.id))) throw Error("Duplicate chart object identity");
+      const result = calculateSessionVwap(bars, normalized), series = existing?.series ?? newLine({ id: normalized.id, color: normalized.color, lineWidth: normalized.lineWidth, visible: normalized.visible, title: sessionVwapTitle(normalized, result.volumeSource) });
+      series.applyOptions({ color: normalized.color, lineWidth: normalized.lineWidth ?? 2, visible: normalized.visible, title: sessionVwapTitle(normalized, result.volumeSource) });
+      series.setData(result.points);
+      sessionVwapOverlays.set(normalized.id, { options: normalized, series, result });
+      readoutIndicators.set(normalized.id, { id: normalized.id, title: sessionVwapTitle(normalized, result.volumeSource), kind: "OVERLAY", values: new Map(result.points.map((point2) => [point2.time, point2.value])) });
+      persistDrawings();
+      return { options: { ...normalized }, ...result };
+    }
+    function updateSessionVwap(id, patch) {
+      guard();
+      const existing = sessionVwapOverlays.get(id);
+      if (!existing) return false;
+      if (!patch || typeof patch !== "object" || Array.isArray(patch) || Object.keys(patch).some((key) => !["color", "lineWidth", "visible", "title", "timeZone", "sessionStart"].includes(key))) throw Error("Invalid session VWAP update");
+      const normalized = { ...existing.options, ...patch, id };
+      if (!validSessionVwapOptions(normalized)) throw Error("Invalid session VWAP configuration");
+      const result = calculateSessionVwap(bars, normalized), title = sessionVwapTitle(normalized, result.volumeSource);
+      existing.series.applyOptions({ color: normalized.color, lineWidth: normalized.lineWidth ?? 2, visible: normalized.visible ?? true, title });
+      existing.series.setData(result.points);
+      existing.options = normalized;
+      existing.result = result;
+      readoutIndicators.set(id, { id, title, kind: "OVERLAY", values: new Map(result.points.map((point2) => [point2.time, point2.value])) });
+      persistDrawings();
+      return { options: { ...normalized }, ...result };
+    }
+    function removeSessionVwap(id) {
+      guard();
+      const group = sessionVwapOverlays.get(id);
+      if (!group) return false;
+      chart.removeSeries(group.series);
+      sessionVwapOverlays.delete(id);
+      readoutIndicators.delete(id);
+      persistDrawings();
+      return true;
+    }
+    function sessionVwapOptions(id) {
+      guard();
+      const group = sessionVwapOverlays.get(id);
+      return group ? { ...group.options } : null;
+    }
     function addBollinger(options) {
       guard();
       const normalized = { ...options, period: options.period ?? 20, stdDev: options.stdDev ?? 2, visible: options.visible ?? true };
       if (!validBollingerOptions(normalized)) throw Error("Invalid Bollinger configuration");
-      if (oscillators.has(normalized.id) || averages.has(normalized.id) || donchianOverlays.has(normalized.id) || (keltnerOverlays.has(normalized.id) || atrBandsOverlays.has(normalized.id)) || linearRegressionOverlays.has(normalized.id) || supertrendOverlays.has(normalized.id) || parabolicSarOverlays.has(normalized.id) || (ichimokuOverlays.has(normalized.id) || pivotOverlays.has(normalized.id)) || paneLines.has(normalized.id) || priceLevels.has(normalized.id) || timeMarkers.has(normalized.id) || textAnnotations.has(normalized.id) || trendLines.has(normalized.id) || rectangles.has(normalized.id) || rays.has(normalized.id) || fibonacci.has(normalized.id) || channels.has(normalized.id) || measurements.has(normalized.id)) throw Error("Duplicate chart object identity");
+      if (oscillators.has(normalized.id) || averages.has(normalized.id) || donchianOverlays.has(normalized.id) || (keltnerOverlays.has(normalized.id) || atrBandsOverlays.has(normalized.id)) || linearRegressionOverlays.has(normalized.id) || supertrendOverlays.has(normalized.id) || parabolicSarOverlays.has(normalized.id) || (ichimokuOverlays.has(normalized.id) || pivotOverlays.has(normalized.id)) || paneLines.has(normalized.id) || priceLevels.has(normalized.id) || timeMarkers.has(normalized.id) || textAnnotations.has(normalized.id) || trendLines.has(normalized.id) || rectangles.has(normalized.id) || rays.has(normalized.id) || fibonacci.has(normalized.id) || channels.has(normalized.id) || measurements.has(normalized.id) || sessionVwapOverlays.has(normalized.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances && !bollingerOverlays.has(normalized.id)) throw Error("Indicator instance limit");
       const existing = bollingerOverlays.get(normalized.id);
       const series = existing?.series ?? [
@@ -10206,7 +10361,7 @@ var ChartStudioV5 = (() => {
     function addDonchian(options) {
       guard();
       if (!options || !/^[-_a-zA-Z0-9]{1,32}$/.test(options.id) || !colorPattern.test(options.color) || !Number.isInteger(options.period) || options.period < 2 || options.period > 200 || options.lineWidth !== void 0 && (!Number.isInteger(options.lineWidth) || options.lineWidth < 1 || options.lineWidth > 4) || options.visible !== void 0 && typeof options.visible !== "boolean") throw Error("Invalid Donchian configuration");
-      if (oscillators.has(options.id) || averages.has(options.id) || linearRegressionOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || measurements.has(options.id) || bollingerOverlays.has(options.id)) throw Error("Duplicate chart object identity");
+      if (oscillators.has(options.id) || averages.has(options.id) || linearRegressionOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || measurements.has(options.id) || bollingerOverlays.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances && !donchianOverlays.has(options.id)) throw Error("Indicator instance limit");
       const current = donchianOverlays.get(options.id), normalized = { ...options, visible: options.visible ?? true };
       const series = current?.series ?? [
@@ -10238,7 +10393,7 @@ var ChartStudioV5 = (() => {
     function addKeltner(options) {
       guard();
       if (!options || !/^[-_a-zA-Z0-9]{1,32}$/.test(options.id) || !colorPattern.test(options.color) || !Number.isInteger(options.period) || options.period < 2 || options.period > 200 || !Number.isInteger(options.atrPeriod) || options.atrPeriod < 2 || options.atrPeriod > 200 || !Number.isFinite(options.multiplier) || options.multiplier < 0.1 || options.multiplier > 10 || Math.abs(options.multiplier * 10 - Math.round(options.multiplier * 10)) > 1e-8 || options.lineWidth !== void 0 && (!Number.isInteger(options.lineWidth) || options.lineWidth < 1 || options.lineWidth > 4) || options.visible !== void 0 && typeof options.visible !== "boolean") throw Error("Invalid Keltner configuration");
-      if (oscillators.has(options.id) || averages.has(options.id) || donchianOverlays.has(options.id) || atrBandsOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || measurements.has(options.id) || bollingerOverlays.has(options.id)) throw Error("Duplicate chart object identity");
+      if (oscillators.has(options.id) || averages.has(options.id) || donchianOverlays.has(options.id) || atrBandsOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || measurements.has(options.id) || bollingerOverlays.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances && !(keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id))) throw Error("Indicator instance limit");
       const existing = keltnerOverlays.get(options.id), normalized = { ...options, visible: options.visible ?? true };
       const series = existing?.series ?? [
@@ -10276,7 +10431,7 @@ var ChartStudioV5 = (() => {
       guard();
       if (!validAtrBandsOptions(options)) throw Error("Invalid ATR Bands configuration");
       const id = options.id;
-      if (oscillators.has(id) || averages.has(id) || donchianOverlays.has(id) || bollingerOverlays.has(id) || keltnerOverlays.has(id) || linearRegressionOverlays.has(id) || supertrendOverlays.has(id) || parabolicSarOverlays.has(id) || paneLines.has(id) || priceLevels.has(id) || timeMarkers.has(id) || textAnnotations.has(id) || trendLines.has(id) || rectangles.has(id) || rays.has(id) || fibonacci.has(id) || channels.has(id) || measurements.has(id)) throw Error("Duplicate chart object identity");
+      if (oscillators.has(id) || averages.has(id) || donchianOverlays.has(id) || bollingerOverlays.has(id) || keltnerOverlays.has(id) || linearRegressionOverlays.has(id) || supertrendOverlays.has(id) || parabolicSarOverlays.has(id) || paneLines.has(id) || priceLevels.has(id) || timeMarkers.has(id) || textAnnotations.has(id) || trendLines.has(id) || rectangles.has(id) || rays.has(id) || fibonacci.has(id) || channels.has(id) || measurements.has(id) || sessionVwapOverlays.has(id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances && !atrBandsOverlays.has(id)) throw Error("Indicator instance limit");
       const existing = atrBandsOverlays.get(id), normalized = { ...options, period: options.period ?? 20, atrPeriod: options.atrPeriod ?? 14, multiplier: options.multiplier ?? 2, visible: options.visible ?? true }, title = options.title ?? "ATR Bands";
       const series = existing?.series ?? [
@@ -10326,7 +10481,7 @@ var ChartStudioV5 = (() => {
     function addLinearRegression(options) {
       guard();
       if (!validLinearRegressionOptions(options)) throw Error("Invalid Linear Regression configuration");
-      if (oscillators.has(options.id) || averages.has(options.id) || donchianOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || measurements.has(options.id) || bollingerOverlays.has(options.id)) throw Error("Duplicate chart object identity");
+      if (oscillators.has(options.id) || averages.has(options.id) || donchianOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || measurements.has(options.id) || bollingerOverlays.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances && !linearRegressionOverlays.has(options.id)) throw Error("Indicator instance limit");
       const existing = linearRegressionOverlays.get(options.id), normalized = { ...options, visible: options.visible ?? true };
       const series = existing?.series ?? [
@@ -10388,7 +10543,7 @@ var ChartStudioV5 = (() => {
     function addPivotPoints(options, sourceBars) {
       guard();
       if (!validPivotOptions(options, sourceBars)) throw Error("Invalid or mismatched verified Pivot Points scope");
-      if (averages.has(options.id) || donchianOverlays.has(options.id) || bollingerOverlays.has(options.id) || keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || ichimokuOverlays.has(options.id) || oscillators.has(options.id) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || measurements.has(options.id)) throw Error("Duplicate chart object identity");
+      if (averages.has(options.id) || donchianOverlays.has(options.id) || bollingerOverlays.has(options.id) || keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || ichimokuOverlays.has(options.id) || oscillators.has(options.id) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || measurements.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances && !pivotOverlays.has(options.id)) throw Error("Indicator instance limit");
       const existing = pivotOverlays.get(options.id), normalized = { ...options, visible: options.visible ?? true }, keys = ["p", "r1", "r2", "r3", "s1", "s2", "s3"], colors = [options.color, "#52cbea", "#41d89a", "#b58aff", "#f47789", "#ffae57", "#e6e6e6"];
       const series = existing?.series ?? /* @__PURE__ */ new Map();
@@ -10434,7 +10589,7 @@ var ChartStudioV5 = (() => {
       guard();
       if (!validIchimokuOptions(options)) throw Error("Invalid Ichimoku configuration");
       const id = options.id;
-      if (averages.has(id) || donchianOverlays.has(id) || bollingerOverlays.has(id) || keltnerOverlays.has(id) || atrBandsOverlays.has(id) || linearRegressionOverlays.has(id) || supertrendOverlays.has(id) || parabolicSarOverlays.has(id) || oscillators.has(id) || paneLines.has(id) || priceLevels.has(id) || timeMarkers.has(id) || textAnnotations.has(id) || trendLines.has(id) || rectangles.has(id) || rays.has(id) || fibonacci.has(id) || channels.has(id) || measurements.has(id)) throw Error("Duplicate chart object identity");
+      if (averages.has(id) || donchianOverlays.has(id) || bollingerOverlays.has(id) || keltnerOverlays.has(id) || atrBandsOverlays.has(id) || linearRegressionOverlays.has(id) || supertrendOverlays.has(id) || parabolicSarOverlays.has(id) || oscillators.has(id) || paneLines.has(id) || priceLevels.has(id) || timeMarkers.has(id) || textAnnotations.has(id) || trendLines.has(id) || rectangles.has(id) || rays.has(id) || fibonacci.has(id) || channels.has(id) || measurements.has(id) || sessionVwapOverlays.has(id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances && !ichimokuOverlays.has(id) && !pivotOverlays.has(id)) throw Error("Indicator instance limit");
       const existing = ichimokuOverlays.get(id), normalized = { ...options, tenkanPeriod: options.tenkanPeriod ?? 9, kijunPeriod: options.kijunPeriod ?? 26, senkouBPeriod: options.senkouBPeriod ?? 52, displacement: options.displacement ?? 26, visible: options.visible ?? true };
       const series = existing?.series ?? [
@@ -10520,7 +10675,7 @@ var ChartStudioV5 = (() => {
     function addSupertrend(options) {
       guard();
       if (!validSupertrendConfiguration(options)) throw Error("Invalid Supertrend configuration");
-      if (oscillators.has(options.id) || averages.has(options.id) || donchianOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || measurements.has(options.id) || bollingerOverlays.has(options.id)) throw Error("Duplicate chart object identity");
+      if (oscillators.has(options.id) || averages.has(options.id) || donchianOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || measurements.has(options.id) || bollingerOverlays.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances) throw Error("Indicator instance limit");
       const normalized = { ...options, visible: options.visible ?? true }, title = options.title ?? `Supertrend ${options.period} \xD7 ${options.multiplier}`;
       const up = newLine({ id: options.id + "-up", color: options.color, lineWidth: options.lineWidth ?? 2, visible: normalized.visible, title: title + " \xB7 Aufw\xE4rtstrend" });
@@ -10606,7 +10761,7 @@ var ChartStudioV5 = (() => {
     function addParabolicSar(options) {
       guard();
       if (!validParabolicSar(options)) throw Error("Invalid Parabolic SAR configuration");
-      if (averages.has(options.id) || managedMovingAverages.has(options.id) || oscillators.has(options.id) || paneLines.has(options.id) || donchianOverlays.has(options.id) || bollingerOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || linearRegressionOverlays.has(options.id) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || measurements.has(options.id)) throw Error("Duplicate chart object identity");
+      if (averages.has(options.id) || managedMovingAverages.has(options.id) || oscillators.has(options.id) || paneLines.has(options.id) || donchianOverlays.has(options.id) || bollingerOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || linearRegressionOverlays.has(options.id) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || measurements.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances) throw Error("Indicator instance limit");
       const normalized = { ...options, visible: options.visible ?? true }, title = options.title ?? "Parabolic SAR";
       const up = newLine({ id: options.id + "-up", color: options.color, lineWidth: options.lineWidth ?? 2, visible: normalized.visible, title: title + " \xB7 Aufw\xE4rtstrend" });
@@ -10704,7 +10859,7 @@ var ChartStudioV5 = (() => {
     function addPriceLevel(opts) {
       guard();
       validatePriceLevel(opts);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = priceLevels.get(opts.id);
       const options = { ...opts, visible: opts.visible ?? existing?.options.visible ?? true, locked: opts.locked ?? existing?.options.locked ?? false };
       if (existing) {
@@ -10750,7 +10905,7 @@ var ChartStudioV5 = (() => {
     function addTimeMarker(opts, requireLoadedTime = true) {
       guard();
       validateTimeMarker(opts, requireLoadedTime);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = timeMarkers.get(opts.id);
       const options = { ...opts, visible: opts.visible ?? existing?.options.visible ?? true, locked: opts.locked ?? existing?.options.locked ?? false };
       if (existing) {
@@ -10796,7 +10951,7 @@ var ChartStudioV5 = (() => {
     function addTextAnnotation(opts, requireLoadedTime = true) {
       guard();
       validateTextAnnotation(opts, requireLoadedTime);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = textAnnotations.get(opts.id);
       const options = { ...opts, visible: opts.visible ?? existing?.options.visible ?? true, locked: opts.locked ?? existing?.options.locked ?? false };
       if (existing) {
@@ -10840,7 +10995,7 @@ var ChartStudioV5 = (() => {
     function addTrendLine(opts, requireLoadedAnchors = true) {
       guard();
       validateTrendLine(opts, requireLoadedAnchors);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = trendLines.get(opts.id), options = { ...opts, visible: opts.visible ?? existing?.options.visible ?? true, locked: opts.locked ?? existing?.options.locked ?? false };
       if (existing) {
         const before = snapshotDrawing(opts.id);
@@ -10884,7 +11039,7 @@ var ChartStudioV5 = (() => {
     function addRectangle(opts, requireLoadedAnchors = true) {
       guard();
       validateRectangle(opts, requireLoadedAnchors);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = rectangles.get(opts.id), options = { ...opts, visible: opts.visible ?? existing?.options.visible ?? true, locked: opts.locked ?? existing?.options.locked ?? false };
       if (existing) {
         const before = snapshotDrawing(opts.id);
@@ -10924,7 +11079,7 @@ var ChartStudioV5 = (() => {
     function addRay(opts, requireLoadedAnchors = true) {
       guard();
       validateTrendLine(opts, requireLoadedAnchors);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = rays.get(opts.id), options = { ...opts, visible: opts.visible ?? existing?.options.visible ?? true, locked: opts.locked ?? existing?.options.locked ?? false };
       if (existing) {
         const before = snapshotDrawing(opts.id);
@@ -10980,7 +11135,7 @@ var ChartStudioV5 = (() => {
     function addFibonacci(opts, requireLoadedAnchors = true) {
       guard();
       const normalized = normalizeFibonacciOptions(opts, requireLoadedAnchors);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || bollingerOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = fibonacci.get(opts.id), options = { ...normalized, visible: normalized.visible ?? existing?.options.visible ?? true, locked: normalized.locked ?? existing?.options.locked ?? false };
       if (existing) {
         const before = snapshotDrawing(opts.id);
@@ -11040,7 +11195,7 @@ var ChartStudioV5 = (() => {
     function addMeasurement(opts) {
       guard();
       validateTrendLine(opts, true);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = measurements.get(opts.id), options = { ...opts, visible: opts.visible ?? existing?.options.visible ?? true, locked: opts.locked ?? existing?.options.locked ?? false };
       if (existing) {
         const before = snapshotDrawing(opts.id);
@@ -11086,7 +11241,7 @@ var ChartStudioV5 = (() => {
     function addChannel(opts, requireLoadedAnchors = true) {
       guard();
       validateChannel(opts, requireLoadedAnchors);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || bollingerOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = channels.get(opts.id), options = { ...opts, visible: opts.visible ?? existing?.options.visible ?? true, locked: opts.locked ?? existing?.options.locked ?? false };
       if (existing) {
         const before = snapshotDrawing(opts.id);
@@ -11486,7 +11641,7 @@ var ChartStudioV5 = (() => {
       if (!opts || !/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id) || !colorPattern.test(opts.color))
         throw Error("Invalid pane line");
       const values = validSeriesData(data);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances && !paneLines.has(opts.id)) throw Error("Indicator instance limit");
       if (paneLines.size + oscillators.size >= 8 && !paneLines.has(opts.id)) throw Error("Native pane limit");
       let series = paneLines.get(opts.id);
@@ -11563,7 +11718,7 @@ var ChartStudioV5 = (() => {
     function addOscillator(options) {
       guard();
       if (!options || !/^[-_a-zA-Z0-9]{1,32}$/.test(options.id) || !colorPattern.test(options.color) || !["rsi", "atr", "macd", "adx", "stochastic", "stochrsi", "cci", "momentum", "roc", "obv", "mfi"].includes(options.kind) || options.lineWidth !== void 0 && ![1, 2, 3, 4].includes(options.lineWidth)) throw Error("Invalid oscillator options");
-      if (supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || oscillators.has(options.id) || donchianOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || averages.has(options.id) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || measurements.has(options.id) || bollingerOverlays.has(options.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || oscillators.has(options.id) || donchianOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || averages.has(options.id) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || measurements.has(options.id) || bollingerOverlays.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances) throw Error("Indicator instance limit");
       if (paneLines.size + oscillators.size >= 8) throw Error("Native pane limit");
       const normalized = { ...options, settings: { ...options.settings } };
@@ -11704,6 +11859,8 @@ var ChartStudioV5 = (() => {
       if (prev && c2.time === prev.time) bars[bars.length - 1] = { ...c2 };
       else bars.push({ ...c2 });
       barsByTime.set(c2.time, { ...c2 });
+      brokerDealMarkers = brokerDealMarkers.map((row) => ({ ...row, plotted: barsByTime.has(row.chartTimeSeconds) }));
+      brokerDealPrimitive.set(brokerDealMarkers);
       for (const indicator of readoutIndicators.values()) {
         indicator.values.delete(c2.time);
         indicator.directions?.delete(c2.time);
@@ -11713,6 +11870,7 @@ var ChartStudioV5 = (() => {
       for (const [id, state] of managedMovingAverages) updateManagedMovingAverage(id, state);
       refreshDonchianOverlays();
       refreshBollingerOverlays();
+      refreshSessionVwapOverlays();
       refreshKeltnerOverlays();
       refreshAtrBandsOverlays();
       refreshLinearRegressionOverlays();
@@ -11771,6 +11929,8 @@ var ChartStudioV5 = (() => {
       guard();
       if (!/^[a-zA-Z0-9_-]{1,50}$/.test(next)) throw Error("Invalid account");
       clearPositionOverlays();
+      brokerDealMarkers = [];
+      brokerDealPrimitive.set([]);
       if (volumeZones) {
         price.detachPrimitive(volumeZones.primitive);
         volumeZones = null;
@@ -11815,6 +11975,8 @@ var ChartStudioV5 = (() => {
       donchianOverlays.clear();
       for (const group of bollingerOverlays.values()) for (const series of group.series) chart.removeSeries(series);
       bollingerOverlays.clear();
+      for (const group of sessionVwapOverlays.values()) chart.removeSeries(group.series);
+      sessionVwapOverlays.clear();
       for (const group of keltnerOverlays.values()) for (const series of group.series) chart.removeSeries(series);
       keltnerOverlays.clear();
       for (const group of atrBandsOverlays.values()) for (const series of group.series) chart.removeSeries(series);
@@ -11863,8 +12025,8 @@ var ChartStudioV5 = (() => {
         version: VERSION2,
         account: activeAccount,
         positionOverlayCount: positionOverlayLines.size,
-        brokerDealMarkerCount: brokerDealMarkers.filter((row)=>row.plotted).length,
         positionOverlays: readPositionOverlays().lines,
+        brokerDealMarkerCount: brokerDealMarkers.filter((row) => row.plotted).length,
         nativeDrawingCount: drawingCount(),
         drawingTool: placementTool,
         displayTimeZone,
@@ -11872,6 +12034,8 @@ var ChartStudioV5 = (() => {
         volumeZoneCount: volumeZones?.result.zones.length ?? 0,
         candleCount: bars.length,
         lastTime: bars[bars.length - 1]?.time ?? null,
+        sessionVwapCount: sessionVwapOverlays.size,
+        sessionVwapSeries: [...sessionVwapOverlays.entries()].map(([id, group]) => ({ id, options: { ...group.options }, points: group.result.points.map((point2) => ({ ...point2 })), volumeSource: group.result.volumeSource, visible: group.series.options().visible })),
         averageCount: averages.size,
         nativePaneLines: paneLines.size,
         oscillatorCount: oscillators.size,
@@ -11923,6 +12087,7 @@ var ChartStudioV5 = (() => {
       managedMovingAverages.clear();
       donchianOverlays.clear();
       bollingerOverlays.clear();
+      sessionVwapOverlays.clear();
       keltnerOverlays.clear();
       atrBandsOverlays.clear();
       ichimokuOverlays.clear();
@@ -11956,6 +12121,10 @@ var ChartStudioV5 = (() => {
       updateBollinger,
       removeBollinger,
       bollingerOptions,
+      addSessionVwap,
+      updateSessionVwap,
+      removeSessionVwap,
+      sessionVwapOptions,
       addKeltner,
       removeKeltner,
       addAtrBands,

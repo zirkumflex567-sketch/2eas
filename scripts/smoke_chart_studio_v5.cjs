@@ -283,11 +283,11 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.addPriceLevel({id:"portable-layout-price",price:107,color:"#44aadd"});
    const portableLayout=JSON.parse(engine.exportLayout());
    const legacyDrawings=JSON.parse(engine.exportDrawings());
-   const validSnapshot=JSON.parse(localStorage.getItem("2eas.chartstudio.v5.drawings:v4:view-persistence:XAUUSD:M15"));
+   const validSnapshot=JSON.parse(localStorage.getItem("2eas.chartstudio.v5.drawings:v5:view-persistence:XAUUSD:M15"));
    engine.destroy();engine=ChartStudioV5.createStudioV5(host,"view-persistence",scope);engine.setCandles(bars);
    const restored={ema:engine.movingAverageOptions("view-ema"),rsi:engine.oscillatorOptions("view-rsi"),macd:engine.oscillatorOptions("view-macd"),cci:engine.oscillatorOptions("view-cci"),obv:engine.oscillatorOptions("view-obv"),mfi:engine.oscillatorOptions("view-mfi"),layout:engine.oscillatorPaneLayout().map(pane=>({...pane,titles:[...pane.titles].sort()})),heights:engine.paneHeights(),volume:engine.inspect().volumeVisible,zone:engine.displayTimeZone(),range:engine.visibleLogicalRange(),status:engine.inspect().persistenceStatus,error:engine.inspect().persistenceError,paneLines:engine.inspect().nativePaneLines};
    engine.destroy();host.remove();
-   validSnapshot.account="invalidview";validSnapshot.displayTimeZone="Mars/Olympus_Mons";localStorage.setItem("2eas.chartstudio.v5.drawings:v4:invalidview:XAUUSD:M15",JSON.stringify(validSnapshot));
+   validSnapshot.account="invalidview";validSnapshot.displayTimeZone="Mars/Olympus_Mons";localStorage.setItem("2eas.chartstudio.v5.drawings:v5:invalidview:XAUUSD:M15",JSON.stringify(validSnapshot));
    const invalidHost=document.createElement("div");invalidHost.style.cssText="width:900px;height:520px;position:absolute;left:-1800px;top:0";document.body.append(invalidHost);
    const invalid=ChartStudioV5.createStudioV5(invalidHost,"invalidview",scope);invalid.setCandles(bars);const invalidView={status:invalid.inspect().persistenceStatus,error:invalid.inspect().persistenceError,drawings:invalid.inspect().nativePrimitives,averages:invalid.inspect().averageCount,oscillators:invalid.inspect().oscillatorCount,volume:invalid.inspect().volumeVisible};invalid.destroy();invalidHost.remove();
    const otherHost=document.createElement("div");otherHost.style.cssText="width:900px;height:520px;position:absolute;left:-1800px;top:0";document.body.append(otherHost);
@@ -340,7 +340,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const engine=ChartStudioV5.createStudioV5(host,"portable-conflict",{symbol:"XAUUSD",timeframe:"M15"});
    engine.setCandles(Array.from({length:30},(_,i)=>{const close=100+i;return {time:1700000000+i*900,open:close,high:close+1,low:close-1,close}}));
    engine.addPriceLevel({id:"conflict-price",price:110,color:"#22aadd"});
-   const key="2eas.chartstudio.v5.drawings:v4:portable-conflict:XAUUSD:M15",saved=localStorage.getItem(key);
+   const key="2eas.chartstudio.v5.drawings:v5:portable-conflict:XAUUSD:M15",saved=localStorage.getItem(key);
    localStorage.setItem(key,saved+" ");const available=engine.verifyPersistence(),state=engine.inspect();
    localStorage.setItem(key,saved);engine.destroy();host.remove();return {available,status:state.persistenceStatus,error:state.persistenceError};
   });
@@ -1552,7 +1552,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   const persistedBeforeReload=await page.evaluate(()=>({price:window.__v5Screenshot.readDrawing("visual-level"),priceSecond:window.__v5Screenshot.readDrawing("visual-level-second"),time:window.__v5Screenshot.readDrawing("visual-time"),timeSecond:window.__v5Screenshot.readDrawing("visual-time-second"),text:window.__v5Screenshot.readDrawing("visual-note"),trend:window.__v5Screenshot.readDrawing("visual-trend"),rectangle:window.__v5Screenshot.readDrawing("visual-zone"),channel:window.__v5Screenshot.readDrawing("visual-channel"),ray:window.__v5Screenshot.readDrawing("visual-ray"),fibo:window.__v5Screenshot.readDrawing("visual-fibo"),customFibo:window.__v5Screenshot.readDrawing("visual-fibo-custom")}));
   await page.evaluate(()=>{
    const rows=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2}});
-   const key="2eas.chartstudio.v5.drawings:v4:historycontract:XAUUSD:M15";localStorage.removeItem(key);
+   const key="2eas.chartstudio.v5.drawings:v5:historycontract:XAUUSD:M15";localStorage.removeItem(key);
    const host=document.createElement("div");host.style.cssText="width:800px;height:400px";document.body.append(host);
    const e=ChartStudioV5.createStudioV5(host,"historycontract",{symbol:"XAUUSD",timeframe:"M15"});e.setCandles(rows);
    e.addPriceLevel({id:"history-edit",price:4001,color:"#ffffff"});e.updatePriceLevel("history-edit",{price:4002});e.updatePriceLevel("history-edit",{price:4003});e.destroy();
@@ -1570,7 +1570,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const host=document.createElement("div");host.style.cssText="width:800px;height:400px";document.body.append(host);
    const e=ChartStudioV5.createStudioV5(host,"historycontract",{symbol:"XAUUSD",timeframe:"M15"});e.setCandles(rows);
    const before=e.readDrawing("history-edit"),undo=e.undo(),undone=e.readDrawing("history-edit"),undoAgain=e.undo(),undoneAgain=e.readDrawing("history-edit"),redo=e.redo(),redone=e.readDrawing("history-edit"),redoAgain=e.redo(),redoneAgain=e.readDrawing("history-edit");
-   e.setCandles(rows.slice(1));const afterBarsReplacement={undo:e.undo(),drawings:JSON.parse(localStorage.getItem("2eas.chartstudio.v5.drawings:v4:historycontract:XAUUSD:M15"))};e.destroy();host.remove();
+   e.setCandles(rows.slice(1));const afterBarsReplacement={undo:e.undo(),drawings:JSON.parse(localStorage.getItem("2eas.chartstudio.v5.drawings:v5:historycontract:XAUUSD:M15"))};e.destroy();host.remove();
    const createHost=document.createElement("div");createHost.style.cssText="width:800px;height:400px";document.body.append(createHost);
    const created=ChartStudioV5.createStudioV5(createHost,"historycreated",{symbol:"XAUUSD",timeframe:"M15"});created.setCandles(rows);
    const deleteUndo=created.undo(),restored=created.readDrawing("history-created"),createUndo=created.undo(),removed=created.readDrawing("history-created"),createRedo=created.redo(),createdAgain=created.readDrawing("history-created"),deleteRedo=created.redo(),deletedAgain=created.readDrawing("history-created");created.destroy();createHost.remove();
@@ -1621,16 +1621,16 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    e.destroy();
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",{symbol:"XAUUSD",timeframe:"H1"});e.setCandles(rows);
    const otherTimeframe=e.inspect().nativePrimitives;e.destroy();
-   const conflictKey="2eas.chartstudio.v5.drawings:v4:titan:EURUSD:M5";
+   const conflictKey="2eas.chartstudio.v5.drawings:v5:titan:EURUSD:M5";
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",{symbol:"EURUSD",timeframe:"M5"});e.setCandles(rows);
    e.addPriceLevel({id:"local-level",price:4000,color:"#ffffff"});
    const externalSnapshot=JSON.stringify({external:true});localStorage.setItem(conflictKey,externalSnapshot);
    e.updatePriceLevel("local-level",{price:4001});
    const conflict={status:e.inspect().persistenceStatus,stored:localStorage.getItem(conflictKey)};e.destroy();
-   const corruptKey="2eas.chartstudio.v5.drawings:v4:titan:GBPUSD:M5";localStorage.setItem(corruptKey,"not-json");
+   const corruptKey="2eas.chartstudio.v5.drawings:v5:titan:GBPUSD:M5";localStorage.setItem(corruptKey,"not-json");
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",{symbol:"GBPUSD",timeframe:"M5"});e.setCandles(rows);
    const corrupt={status:e.inspect().persistenceStatus,error:e.inspect().persistenceError,stored:localStorage.getItem(corruptKey)};e.destroy();
-   const unicodeOversizeKey="2eas.chartstudio.v5.drawings:v4:unicodeoversize:XAUUSD:M15",unicodeOversize=JSON.stringify({schemaVersion:1,account:"unicodeoversize",symbol:"XAUUSD",timeframe:"M15",drawings:[],padding:"é".repeat(270000)});localStorage.setItem(unicodeOversizeKey,unicodeOversize);
+   const unicodeOversizeKey="2eas.chartstudio.v5.drawings:v5:unicodeoversize:XAUUSD:M15",unicodeOversize=JSON.stringify({schemaVersion:1,account:"unicodeoversize",symbol:"XAUUSD",timeframe:"M15",drawings:[],padding:"é".repeat(270000)});localStorage.setItem(unicodeOversizeKey,unicodeOversize);
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"unicodeoversize",scope);e.setCandles(rows);
    const unicodeOversizeSnapshot={status:e.inspect().persistenceStatus,error:e.inspect().persistenceError,characters:unicodeOversize.length,bytes:new TextEncoder().encode(unicodeOversize).byteLength};e.destroy();
    const unicodeImportHost=document.createElement("div");unicodeImportHost.style.cssText="width:2px;height:2px;position:absolute;left:-2000px;top:0";document.body.append(unicodeImportHost);
@@ -1638,17 +1638,17 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const unicodeOversizeImport={error:unicodeImportError,characters:unicodeOversize.length,bytes:new TextEncoder().encode(unicodeOversize).byteLength};
    const legacyKey="2eas.chartstudio.v5.drawings:migrationtest:XAUUSD:M15",legacy=JSON.stringify({schemaVersion:1,account:"migrationtest",symbol:"XAUUSD",timeframe:"M15",drawings:[{kind:"PRICE",options:{id:"legacy-price",price:4001,color:"#ffffff",visible:true,locked:false}}]});localStorage.setItem(legacyKey,legacy);
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"migrationtest",scope);e.setCandles(rows);
-   const migrated={status:e.inspect().persistenceStatus,drawing:e.readDrawing("legacy-price"),stored:JSON.parse(localStorage.getItem(legacyKey)),current:JSON.parse(localStorage.getItem("2eas.chartstudio.v5.drawings:v4:migrationtest:XAUUSD:M15"))};e.destroy();
+   const migrated={status:e.inspect().persistenceStatus,drawing:e.readDrawing("legacy-price"),stored:JSON.parse(localStorage.getItem(legacyKey)),current:JSON.parse(localStorage.getItem("2eas.chartstudio.v5.drawings:v5:migrationtest:XAUUSD:M15"))};e.destroy();
    const legacyV2Key="2eas.chartstudio.v5.drawings:migrationv2:XAUUSD:M15",legacyV2=JSON.stringify({schemaVersion:2,account:"migrationv2",symbol:"XAUUSD",timeframe:"M15",drawings:[{kind:"PRICE",options:{id:"legacy-v2-price",price:4002,color:"#ffffff",visible:true,locked:false}}],undoStack:[],redoStack:[]});localStorage.setItem(legacyV2Key,legacyV2);
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"migrationv2",scope);e.setCandles(rows);
-   const migratedV2={status:e.inspect().persistenceStatus,drawing:e.readDrawing("legacy-v2-price"),stored:JSON.parse(localStorage.getItem(legacyV2Key)),current:JSON.parse(localStorage.getItem("2eas.chartstudio.v5.drawings:v4:migrationv2:XAUUSD:M15"))};e.destroy();
+   const migratedV2={status:e.inspect().persistenceStatus,drawing:e.readDrawing("legacy-v2-price"),stored:JSON.parse(localStorage.getItem(legacyV2Key)),current:JSON.parse(localStorage.getItem("2eas.chartstudio.v5.drawings:v5:migrationv2:XAUUSD:M15"))};e.destroy();
    const badHistoryKey="2eas.chartstudio.v5.drawings:badhistory:XAUUSD:M15",badHistory=JSON.stringify({schemaVersion:2,account:"badhistory",symbol:"XAUUSD",timeframe:"M15",drawings:[{kind:"PRICE",options:{id:"must-not-restore",price:4001,color:"#ffffff",visible:true,locked:false}}],undoStack:[{id:"wrong-id",before:null,after:{kind:"PRICE",options:{id:"other-id",price:4001,color:"#ffffff",visible:true,locked:false}}}],redoStack:[]});localStorage.setItem(badHistoryKey,badHistory);
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"badhistory",scope);e.setCandles(rows);
    const malformedHistory={status:e.inspect().persistenceStatus,error:e.inspect().persistenceError,count:e.inspect().nativePrimitives,stored:localStorage.getItem(badHistoryKey)};e.destroy();
-   const failedMigrationKey="2eas.chartstudio.v5.drawings:migrationfailure:XAUUSD:M15",failedMigration=JSON.stringify({schemaVersion:1,account:"migrationfailure",symbol:"XAUUSD",timeframe:"M15",drawings:[]}),failedMigrationTarget="2eas.chartstudio.v5.drawings:v4:migrationfailure:XAUUSD:M15";localStorage.setItem(failedMigrationKey,failedMigration);
+   const failedMigrationKey="2eas.chartstudio.v5.drawings:migrationfailure:XAUUSD:M15",failedMigration=JSON.stringify({schemaVersion:1,account:"migrationfailure",symbol:"XAUUSD",timeframe:"M15",drawings:[]}),failedMigrationTarget="2eas.chartstudio.v5.drawings:v5:migrationfailure:XAUUSD:M15";localStorage.setItem(failedMigrationKey,failedMigration);
    const originalSetItem=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key===failedMigrationTarget)throw Error("quota fixture");return originalSetItem.call(this,key,value)};
    let migrationFailure;try{e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"migrationfailure",scope);e.setCandles(rows);migrationFailure={status:e.inspect().persistenceStatus,error:e.inspect().persistenceError,stored:localStorage.getItem(failedMigrationKey)};e.destroy()}finally{Storage.prototype.setItem=originalSetItem}
-   const sizeKey="2eas.chartstudio.v5.drawings:v4:sizetest:XAUUSD:M15",sizeDrawings=Array.from({length:100},(_,i)=>({kind:"TEXT",options:{id:`size-${String(i).padStart(3,"0")}-abcdefghijklmnopqrstuv`,time:rows[10].time,price:4001,text:"a",color:"#ffffff",visible:true,locked:false}}));
+   const sizeKey="2eas.chartstudio.v5.drawings:v5:sizetest:XAUUSD:M15",sizeDrawings=Array.from({length:100},(_,i)=>({kind:"TEXT",options:{id:`size-${String(i).padStart(3,"0")}-abcdefghijklmnopqrstuv`,time:rows[10].time,price:4001,text:"a",color:"#ffffff",visible:true,locked:false}}));
    const fiboSnapshot={kind:"FIBO",options:{id:"history-filler",startTime:rows[10].time,startPrice:4001,endTime:rows[20].time,endPrice:4002,color:"#ffffff",visible:true,locked:false,levels:Array.from({length:16},(_,i)=>i*66.666666666)}};
    let sizeHistory=Array.from({length:100},()=>({id:"history-filler",before:fiboSnapshot,after:{...fiboSnapshot,options:{...fiboSnapshot.options,endPrice:4002.25}}}));
    const sizeEnvelope=()=>JSON.stringify({schemaVersion:2,account:"sizetest",symbol:"XAUUSD",timeframe:"M15",drawings:sizeDrawings,undoStack:sizeHistory,redoStack:[]});
@@ -1656,7 +1656,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const sizeSeed=sizeEnvelope();localStorage.setItem(sizeKey,sizeSeed);
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"sizetest",scope);e.setCandles(rows);e.updateTextAnnotation(sizeDrawings[0].options.id,{text:"Z".repeat(40)});
    const sizeBound={seedBytes:new TextEncoder().encode(sizeSeed).byteLength,storedBytes:new TextEncoder().encode(localStorage.getItem(sizeKey)).byteLength,historyCount:JSON.parse(localStorage.getItem(sizeKey)).undoStack.length,drawingCount:e.inspect().nativePrimitives,drawing:e.readDrawing(sizeDrawings[0].options.id)};e.destroy();
-   const capacityHistoryKey="2eas.chartstudio.v5.drawings:v4:capacityhistory:XAUUSD:M15",capacityLevels=Array.from({length:16},(_,i)=>-999.1234567890123+i*133.2345678912345);
+   const capacityHistoryKey="2eas.chartstudio.v5.drawings:v5:capacityhistory:XAUUSD:M15",capacityLevels=Array.from({length:16},(_,i)=>-999.1234567890123+i*133.2345678912345);
    const capacityOptions=(id,color)=>({id,startTime:rows[10].time,startPrice:4001,endTime:rows[20].time,endPrice:4002,color,visible:true,locked:false,levels:capacityLevels});
    const capacityDrawings=Array.from({length:1000},(_,i)=>({kind:"FIBO",options:capacityOptions(`capacity-fibo-${String(i).padStart(18,"0")}`,"#000000")}));
    const capacityHistory=Array.from({length:100},(_,i)=>{const id=`capacity-fibo-${String(i).padStart(18,"0")}`;return {id,before:{kind:"FIBO",options:capacityOptions(id,"#000000")},after:{kind:"FIBO",options:capacityOptions(id,"#ffffff")}}});
@@ -1704,13 +1704,13 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(persistenceProbe.migrated.status,"READY");
   assert.equal(persistenceProbe.migrated.drawing.price,4001);
   assert.equal(persistenceProbe.migrated.stored.schemaVersion,1);
-  assert.equal(persistenceProbe.migrated.current.schemaVersion,3);
+  assert.equal(persistenceProbe.migrated.current.schemaVersion,4);
   assert.deepEqual(persistenceProbe.migrated.current.undoStack,[]);
   assert.deepEqual(persistenceProbe.migrated.current.redoStack,[]);
   assert.equal(persistenceProbe.migratedV2.status,"READY");
   assert.equal(persistenceProbe.migratedV2.drawing.price,4002);
   assert.equal(persistenceProbe.migratedV2.stored.schemaVersion,2);
-  assert.equal(persistenceProbe.migratedV2.current.schemaVersion,3);
+  assert.equal(persistenceProbe.migratedV2.current.schemaVersion,4);
   assert.equal(persistenceProbe.malformedHistory.status,"UNAVAILABLE");
   assert.equal(persistenceProbe.malformedHistory.count,0);
   assert.equal(persistenceProbe.malformedHistory.stored,persistenceProbe.badHistory);
@@ -1794,7 +1794,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const conflictTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"conflicttest",scope);conflictTarget.setCandles(rows);conflictTarget.addPriceLevel({id:"existing",price:4000,color:"#ffffff"});
    let conflictError="";try{conflictTarget.importDrawings(source)}catch(error){conflictError=error.message}const conflictCount=conflictTarget.inspect().nativePrimitives;conflictTarget.destroy();
    const storageConflictTarget=ChartStudioV5.createStudioV5(document.getElementById("chart"),"storageconflict",scope);storageConflictTarget.setCandles(rows);
-   const conflictKey="2eas.chartstudio.v5.drawings:v4:storageconflict:XAUUSD:M15",external=JSON.stringify({external:true});localStorage.setItem(conflictKey,external);
+   const conflictKey="2eas.chartstudio.v5.drawings:v5:storageconflict:XAUUSD:M15",external=JSON.stringify({external:true});localStorage.setItem(conflictKey,external);
    let storageConflictError="";try{storageConflictTarget.importDrawings(source)}catch(error){storageConflictError=error.message}
    const storageConflict={error:storageConflictError,status:storageConflictTarget.inspect().persistenceStatus,count:storageConflictTarget.inspect().nativePrimitives,stored:localStorage.getItem(conflictKey)};storageConflictTarget.destroy();
    const wrongScope=ChartStudioV5.createStudioV5(document.getElementById("chart"),"goldm15",{symbol:"EURUSD",timeframe:"M15"});wrongScope.setCandles(rows);

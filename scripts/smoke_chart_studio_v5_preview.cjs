@@ -181,6 +181,7 @@ const server=http.createServer((req,res)=>{
   assert.equal(Object.hasOwn(portableLayout,"account"),false,"downloaded layout omits account identity");
   assert.equal(JSON.stringify(portableLayout).includes('"positionOverlays"'),false,"download excludes broker position overlays");
   portableLayout.view.movingAverages=[{id:"portable-ema",type:"EMA",period:20,color:"#22aadd"}];
+  portableLayout.view.sessionVwaps=[{id:"portable-vwap",color:"#55d7ee",timeZone:"Europe/Berlin",sessionStart:"09:30",title:"Portable VWAP"}];
   portableLayout.view.oscillators=[{options:{id:"portable-rsi",kind:"rsi",settings:{period:14},color:"#a995ff",title:"Portable RSI"},paneIndex:1}];
   portableLayout.view.paneLines=[{options:{id:"portable-signal",color:"#f7c774",lineWidth:2,title:"Portable signal"},data:candles.slice(0,40).map((bar,index)=>({time:bar.time,value:50+Math.sin(index/5)*10})),paneIndex:1}];
   portableLayout.view.paneHeights=[400,150,140];
@@ -190,7 +191,7 @@ const server=http.createServer((req,res)=>{
   const importProbe=await page.evaluate(async serialized=>{
     const preview=window.ChartStudioV5Preview;
     const before=preview.exportLayout();
-    const key="2eas.chartstudio.v5.drawings:v4:titan:XAUUSD:M15",storageBefore=localStorage.getItem(key);
+    const key="2eas.chartstudio.v5.drawings:v5:titan:XAUUSD:M15",storageBefore=localStorage.getItem(key);
     const merged=preview.importLayout(serialized,"merge");
     const mergedAgain=preview.importLayout(serialized,"merge");
     const afterMerge=JSON.parse(preview.exportLayout());
@@ -214,6 +215,8 @@ const server=http.createServer((req,res)=>{
   assert.equal(importProbe.afterMerge.drawings.length,6,"merge retains current drawings and adds imported drawings");
   assert.equal(new Set(importProbe.afterMerge.drawings.map(row=>row.options.id)).size,6,"merge remaps colliding drawing IDs");
   assert.equal(importProbe.afterMerge.view.movingAverages.length,2,"merge combines managed averages");
+  assert.equal(importProbe.afterMerge.view.sessionVwaps.length,2,"merge combines session VWAP settings");
+  assert.equal(new Set(importProbe.afterMerge.view.sessionVwaps.map(item=>item.id)).size,2,"merge remaps colliding session VWAP IDs");
   assert.equal(new Set(importProbe.afterMerge.view.movingAverages.map(item=>item.id)).size,2,"merge remaps colliding indicator IDs");
   assert.equal(importProbe.afterMerge.view.oscillators.length,2,"merge imports native oscillator panes");
   assert.equal(importProbe.afterMerge.view.paneLines.length,2,"merge imports custom pane series");
@@ -241,9 +244,10 @@ const server=http.createServer((req,res)=>{
   await page.locator("#chart-v5-layout-import-file").setInputFiles({name:"portable-layout.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify(portableLayout))});
   await page.waitForFunction(()=>document.querySelector("#chart-v5-preview-status")?.textContent.includes("Layout ersetzt"));
   assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),2,"confirmed replace restores the imported layout after renderer remount");
-  const storedImport=await page.evaluate(()=>{const key="2eas.chartstudio.v5.drawings:v4:titan:XAUUSD:M15";return JSON.parse(localStorage.getItem(key))});
+  const storedImport=await page.evaluate(()=>{const key="2eas.chartstudio.v5.drawings:v5:titan:XAUUSD:M15";return JSON.parse(localStorage.getItem(key))});
   assert.equal(storedImport.account,"titan","portable import binds the saved snapshot to the active account");
-  assert.equal(storedImport.schemaVersion,3,"portable import reuses the validated local persistence schema");
+  assert.equal(storedImport.schemaVersion,4,"portable import reuses the validated local persistence schema");
+  assert.equal(storedImport.sessionVwaps.length,1,"confirmed replacement restores the imported VWAP settings");
   const v4After=await page.locator("#tv-chart").evaluate(el=>({visible:!!el.getClientRects().length,canvas:el.querySelector("canvas#v4-sentinel")?.width}));
   assert.deepEqual(v4After,v4Before,"v5 owns a separate host and leaves v4 mounted");
   assert.match(await page.locator("#chart-v5-preview-title").textContent(),/XAUUSD M15/);

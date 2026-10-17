@@ -91,11 +91,37 @@ const { chromium } = require("playwright");
       const removed = limited.removeSessionVwap("limited-vwap");
       const cleared = limited.inspect().sessionVwapCount === 0;
       limited.destroy(); limitHost.remove();
+      const persistenceHost = document.createElement("div"); persistenceHost.style.cssText = "width:800px;height:420px;position:fixed;left:-2000px;top:0"; document.body.append(persistenceHost);
+      const persistScope = { symbol: "XAUUSD", timeframe: "M15" };
+      let persisted = ChartStudioV5.createStudioV5(persistenceHost, "vwap-persist-account", persistScope);
+      persisted.setCandles(bars);
+      persisted.addSessionVwap({ id: "persisted-vwap", color: "#55d7ee", timeZone: "Europe/Berlin", sessionStart: "09:30", title: "London VWAP" });
+      const savedRaw = localStorage.getItem("2eas.chartstudio.v5.drawings:v5:vwap-persist-account:XAUUSD:M15");
+      const saved = savedRaw ? JSON.parse(savedRaw) : null;
+      persisted.destroy();
+      persisted = ChartStudioV5.createStudioV5(persistenceHost, "vwap-persist-account", persistScope);
+      persisted.setCandles(bars);
+      const restoredOptions = persisted.sessionVwapOptions("persisted-vwap");
+      const restoredCount = persisted.inspect().sessionVwapCount;
+      const otherAccount = ChartStudioV5.createStudioV5(persistenceHost, "different-vwap-account", persistScope);
+      otherAccount.setCandles(bars);
+      const otherAccountCount = otherAccount.inspect().sessionVwapCount;
+      const migrationAccount = "vwap-schema-migration", oldKey = `2eas.chartstudio.v5.drawings:v4:${migrationAccount}:XAUUSD:M15`, newKey = `2eas.chartstudio.v5.drawings:v5:${migrationAccount}:XAUUSD:M15`;
+      const oldSnapshot = { ...saved, schemaVersion: 3, account: migrationAccount }; delete oldSnapshot.sessionVwaps;
+      const oldSnapshotRaw = JSON.stringify(oldSnapshot); localStorage.setItem(oldKey, oldSnapshotRaw);
+      const migration = ChartStudioV5.createStudioV5(persistenceHost, migrationAccount, persistScope);
+      migration.setCandles(bars);
+      const migratedSnapshotRaw = localStorage.getItem(newKey), preservedOldSnapshot = localStorage.getItem(oldKey) === oldSnapshotRaw;
+      const migratedSchemaVersion = migratedSnapshotRaw ? JSON.parse(migratedSnapshotRaw).schemaVersion : null;
+      const migrationStatus = migration.inspect().persistenceStatus, migrationError = migration.inspect().persistenceError;
+      migration.destroy(); otherAccount.destroy(); persisted.destroy(); persistenceHost.remove();
       return { added, initialCount: initial.sessionVwapCount, initialSource: initial.sessionVwapSeries[0]?.volumeSource,
         initialReadout, formingCount: formingState.sessionVwapCount, formingPoints: formingState.sessionVwapSeries[0]?.points,
         formingExpected, appendedCount: appendedState.sessionVwapCount, appendedPoints: appendedState.sessionVwapSeries[0]?.points, appendedExpected,
         invalidRejected, atomicInvalid: JSON.stringify(beforeRejectedUpdate.sessionVwapSeries) === JSON.stringify(afterRejectedUpdate.sessionVwapSeries),
-        changed: !!changed, changedOptions, accountCleared, capRejected, acceptedAfterRemoval, limitCount, removed, cleared };
+        changed: !!changed, changedOptions, accountCleared, capRejected, acceptedAfterRemoval, limitCount, removed, cleared,
+        savedSchemaVersion: saved?.schemaVersion, savedVwaps: saved?.sessionVwaps, restoredOptions, restoredCount, otherAccountCount,
+        migratedSchemaVersion, preservedOldSnapshot, migrationStatus, migrationError };
     });
     assert.equal(overlay.initialCount, 1, "session VWAP creates one native line");
     assert.equal(overlay.initialSource, "MIXED");
@@ -114,6 +140,13 @@ const { chromium } = require("playwright");
     assert.equal(overlay.limitCount, 1);
     assert.equal(overlay.removed, true);
     assert.equal(overlay.cleared, true);
+    assert.equal(overlay.savedSchemaVersion, 4, "VWAP profile storage advances to schema v4");
+    assert.deepEqual(overlay.savedVwaps, [{ id: "persisted-vwap", color: "#55d7ee", title: "London VWAP", visible: true, timeZone: "Europe/Berlin", sessionStart: "09:30" }]);
+    assert.deepEqual(overlay.restoredOptions, overlay.savedVwaps[0], "native v5 session VWAP survives scoped reload");
+    assert.equal(overlay.restoredCount, 1);
+    assert.equal(overlay.otherAccountCount, 0, "VWAP settings do not cross account scope");
+    assert.equal(overlay.migratedSchemaVersion, 4, "prior v4-key schema-v3 snapshots migrate to the new key");
+    assert.equal(overlay.preservedOldSnapshot, true, "migration leaves the rollback snapshot untouched");
     assert.deepEqual(errors, [], "native v5 VWAP smoke has no browser errors");
     console.log("PASS native v5 session VWAP calculation:", JSON.stringify({
       points: result.actual.points.length, volumeSource: result.actual.volumeSource,

@@ -51,7 +51,7 @@
     }catch(error){setStatus("Layoutexport nicht verfügbar: "+String(error?.message||error).slice(0,120));return false}
   }
   const portableKeys="drawings,schemaVersion,symbol,timeframe,view";
-  const viewKeys="displayTimeZone,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,supertrends,visibleRange,volumePaneIndex,volumeVisible";
+  const viewKeys="displayTimeZone,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,sessionVwaps,supertrends,visibleRange,volumePaneIndex,volumeVisible";
   function parseLayout(serialized){
     if(typeof serialized!=="string"||new TextEncoder().encode(serialized).length>512*1024)throw new Error("Layoutdatei ungültig oder zu groß");
     let layout;try{layout=JSON.parse(serialized)}catch(_){throw new Error("Layout-JSON ist ungültig")}
@@ -70,6 +70,7 @@
     for(const item of layout.view.paneLines)add(item?.options);
     for(const item of layout.view.supertrends)add(item);
     for(const item of layout.view.parabolicSars)add(item);
+    for(const item of layout.view.sessionVwaps)add(item);
     return ids;
   }
   function mergeLayouts(target,source){
@@ -102,10 +103,11 @@
     for(const item of incoming.view.paneLines){rename(item.options);merged.view.paneLines.push(item)}
     for(const item of incoming.view.supertrends){rename(item);merged.view.supertrends.push(item)}
     for(const item of incoming.view.parabolicSars){rename(item);merged.view.parabolicSars.push(item)}
+    for(const item of incoming.view.sessionVwaps){rename(item);merged.view.sessionVwaps.push(item)}
     merged.view.visibleRange=target.view.visibleRange;merged.view.displayTimeZone=target.view.displayTimeZone;
     return merged;
   }
-  function storedLayout(layout){return JSON.stringify({schemaVersion:3,account:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,
+  function storedLayout(layout){return JSON.stringify({schemaVersion:4,account:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,
     drawings:layout.drawings,undoStack:[],redoStack:[],...layout.view})}
   function validateLayoutSnapshot(serialized){
     const frame=document.createElement("iframe");frame.style.cssText="position:absolute;left:-10000px;top:0;width:920px;height:540px;opacity:0;pointer-events:none";document.body.append(frame);
@@ -123,7 +125,7 @@
       return JSON.parse(candidate.exportLayout());
     }finally{try{candidate?.destroy()}catch(_){}frame.remove()}
   }
-  function layoutStorageKey(){return `2eas.chartstudio.v5.drawings:v4:${encodeURIComponent(scope.account)}:${encodeURIComponent(scope.symbol)}:${encodeURIComponent(scope.timeframe)}`}
+  function layoutStorageKey(){return `2eas.chartstudio.v5.drawings:v5:${encodeURIComponent(scope.account)}:${encodeURIComponent(scope.symbol)}:${encodeURIComponent(scope.timeframe)}`}
   function importLayout(serialized,mode="merge"){
     if(!engine||!scope||!latest)throw new Error("Layoutimport benötigt verifizierte Chartdaten");
     if(mode!=="merge"&&mode!=="replace")throw new Error("Unbekannter Importmodus");
