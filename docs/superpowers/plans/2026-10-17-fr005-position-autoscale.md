@@ -16,11 +16,11 @@
 ### Task 2: Connect validated positions and test the UI
 
 - [x] Expose only the validated active Beta position-price extent and refresh chart autoscale after verified snapshot/scope changes, including invalid snapshots.
-- [ ] Extend live Chromium coverage to assert the stop handle is inside the pane, drag changes the local draft, stale preview stays fail-closed, and broker positions remain unchanged.
+- [x] Extend live Chromium coverage to assert the stop handle is inside the pane, drag changes the local draft, stale preview stays fail-closed, and broker positions remain unchanged (live on `titan_m5`, 17.10.2026).
 - [x] Make the API live smoke accept either a fully validated fresh 200 preview or the exact safe `503 QUOTE_NOT_FRESH` outcome; live API smoke confirmed the stale-safe branch on `titan_m5`.
 
 ### Task 3: Verify and release
 
-- [ ] Run unit, Beta, position preview and relevant regression suites; get an independent review.
-- [ ] Update FR-005/FR-006 and this plan with actual live quote state and outcomes.
+- [x] Run unit, Beta, position preview and relevant regression suites; get an independent review (position preview 151 passed/1 skipped; Beta Chromium passed; independent review finding fixed).
+- [x] Update FR-005/FR-006 and this plan with actual live quote state and outcomes.
 - [ ] Commit/push to main after CI, then deploy via guarded runtime and repeat the four-demo read-only smoke.
