@@ -106,6 +106,33 @@ def test_prepare_creates_identity_bound_capture_variant_only_under_output(tmp_pa
         shutil.rmtree(target.parent, ignore_errors=True)
 
 
+def test_prepare_records_every_closed_bar_entry_filter_without_changing_trade_gates(tmp_path):
+    target = ROOT / "output" / "test-evidence-build" / "xau5m_m5"
+    shutil.rmtree(target.parent, ignore_errors=True)
+    try:
+        preset = _compatible_preset(tmp_path)
+        result = BUILD.prepare_variant(ROOT, "xau5m_m5", target.parent, preset_path=preset)
+        source = result.source.read_text(encoding="utf-8-sig")
+
+        assert source.count('CSEnqueueDecision("ENTRY_FILTER"') == 4
+        for reason in (
+            "LOCKOUT_DAILY_DRAWDOWN",
+            "LOCKOUT_TOTAL_DRAWDOWN",
+            "LOCKOUT_PROFIT_TARGET",
+            "OUTSIDE_TRADING_WINDOW",
+            "MAX_OPEN_POSITIONS",
+            "MIN_BARS_BETWEEN_ENTRIES",
+        ):
+            assert f'"{reason}"' in source
+        assert "if(is_new_m15_bar && IsWithinTradingWindow(dt))" in source
+        assert "if(open_count < InpMaxOpenPositions)" in source
+        assert "current_m15_time > m_last_entry_time + (InpMinBarsBetweenEntries * PeriodSeconds(m_calc_timeframe))" in source
+        assert source.count("CheckSignalAndTrade();") == 1
+        assert source.count("CSEnqueueDecision(\"SIGNAL\"") == 1
+    finally:
+        shutil.rmtree(target.parent, ignore_errors=True)
+
+
 @pytest.mark.parametrize("alias", ["blueberry", "titan", "xau5m_500", "goldm15", "unknown"])
 def test_prepare_rejects_non_instrumentable_accounts(tmp_path, alias):
     with pytest.raises(ValueError, match="not allowlisted"):

@@ -236,6 +236,107 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
         raise ValueError("expected unique closed-bar signal insertion point")
     source_text = source_text.replace(signal_anchor, signal_anchor + "\n" + signal_capture, 1)
 
+    lockout_anchor = '''   if(m_daily_lockout || m_total_lockout || m_target_reached)
+   {
+      UpdateDashboard(dt);
+      return;
+   }'''
+    lockout_capture = '''   if(m_daily_lockout || m_total_lockout || m_target_reached)
+   {
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+      if(is_new_m15_bar && current_m15_time>0)
+        {
+         string cs_filter_reason=m_daily_lockout ? "LOCKOUT_DAILY_DRAWDOWN" :
+            (m_total_lockout ? "LOCKOUT_TOTAL_DRAWDOWN" : "LOCKOUT_PROFIT_TARGET");
+         string cs_features=CSFeature("current_equity",CSNumber(current_equity,2),"account_currency","M15")+","+
+            CSFeature("current_balance",CSNumber(current_balance,2),"account_currency","M15");
+         string cs_predicates=CSPredicate("daily_lockout",CSBoolNumber(m_daily_lockout),"EQ","0",
+            m_daily_lockout ? "BLOCK" : "PASS","LOCKOUT_DAILY_DRAWDOWN")+","+
+            CSPredicate("total_lockout",CSBoolNumber(m_total_lockout),"EQ","0",
+            m_total_lockout ? "BLOCK" : "PASS","LOCKOUT_TOTAL_DRAWDOWN")+","+
+            CSPredicate("profit_target_reached",CSBoolNumber(m_target_reached),"EQ","0",
+            m_target_reached ? "BLOCK" : "PASS","LOCKOUT_PROFIT_TARGET")+","+
+            CSPredicate("entry_eligible","0","EQ","1","BLOCK",cs_filter_reason);
+         CSEnqueueDecision("ENTRY_FILTER","BLOCK",current_m15_time-PeriodSeconds(PERIOD_M15),
+                           cs_features,cs_predicates);
+        }
+#endif
+      UpdateDashboard(dt);
+      return;
+   }'''
+    if source_text.count(lockout_anchor) != 1:
+        raise ValueError("expected unique post-guard entry lockout gate")
+    source_text = source_text.replace(lockout_anchor, lockout_capture, 1)
+
+    entry_gate_anchor = '''   if(is_new_m15_bar && IsWithinTradingWindow(dt))
+   {
+      int open_count = CountOpenPositions();
+      if(open_count < InpMaxOpenPositions)
+      {
+         if(current_m15_time > m_last_entry_time + (InpMinBarsBetweenEntries * PeriodSeconds(m_calc_timeframe)))
+         {
+            CheckSignalAndTrade();
+         }
+      }
+   }'''
+    entry_gate_capture = '''   if(is_new_m15_bar && IsWithinTradingWindow(dt))
+   {
+      int open_count = CountOpenPositions();
+      if(open_count < InpMaxOpenPositions)
+      {
+         if(current_m15_time > m_last_entry_time + (InpMinBarsBetweenEntries * PeriodSeconds(m_calc_timeframe)))
+         {
+            CheckSignalAndTrade();
+         }
+         else
+         {
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+            if(current_m15_time>0)
+              {
+               long cs_elapsed=(long)(current_m15_time-m_last_entry_time);
+               long cs_required=(long)(InpMinBarsBetweenEntries*PeriodSeconds(m_calc_timeframe));
+               string cs_features=CSFeature("elapsed_since_last_entry_seconds",CSNumber((double)cs_elapsed,0),"seconds","M15")+","+
+                  CSFeature("minimum_entry_interval_seconds",CSNumber((double)cs_required,0),"seconds","M15");
+               string cs_predicates=CSPredicate("minimum_entry_interval_elapsed",CSNumber((double)cs_elapsed,0),"GT",
+                  CSNumber((double)cs_required,0),"BLOCK","MIN_BARS_BETWEEN_ENTRIES");
+               CSEnqueueDecision("ENTRY_FILTER","BLOCK",current_m15_time-PeriodSeconds(PERIOD_M15),
+                                 cs_features,cs_predicates);
+              }
+#endif
+         }
+      }
+      else
+      {
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+         if(current_m15_time>0)
+           {
+            string cs_features=CSFeature("open_positions",CSNumber((double)open_count,0),"count","M15")+","+
+               CSFeature("maximum_open_positions",CSNumber((double)InpMaxOpenPositions,0),"count","M15");
+            string cs_predicates=CSPredicate("open_positions_below_limit",CSNumber((double)open_count,0),"GE",
+               CSNumber((double)InpMaxOpenPositions,0),"BLOCK","MAX_OPEN_POSITIONS");
+            CSEnqueueDecision("ENTRY_FILTER","BLOCK",current_m15_time-PeriodSeconds(PERIOD_M15),
+                              cs_features,cs_predicates);
+           }
+#endif
+      }
+   }
+   else if(is_new_m15_bar)
+   {
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+      if(current_m15_time>0)
+        {
+         int cs_server_minute=dt.hour*60+dt.min;
+         string cs_features=CSFeature("broker_server_minute_of_day",CSNumber((double)cs_server_minute,0),"minute_of_day","M15");
+         string cs_predicates=CSPredicate("inside_trading_window","0","EQ","1","BLOCK","OUTSIDE_TRADING_WINDOW");
+         CSEnqueueDecision("ENTRY_FILTER","BLOCK",current_m15_time-PeriodSeconds(PERIOD_M15),
+                           cs_features,cs_predicates);
+        }
+#endif
+   }'''
+    if source_text.count(entry_gate_anchor) != 1:
+        raise ValueError("expected unique closed-bar entry filter gate")
+    source_text = source_text.replace(entry_gate_anchor, entry_gate_capture, 1)
+
     for direction, method in (("BUY", "Buy"), ("SELL", "Sell")):
         call = f"if(m_trade.{method}(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment))"
         replacement = f'''#ifdef CS_EVIDENCE_CAPTURE_ENABLED
