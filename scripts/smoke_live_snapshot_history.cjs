@@ -54,6 +54,7 @@ const forbiddenAccounts = new Set(["blueberry"]);
         await assertEventually(async () => assert.equal(await panel.locator("#cs-evidence-list li").count(), 0));
       }
 
+      await panel.locator("#cs-evidence-kind").selectOption("SNAPSHOT");
       await panel.locator("#cs-evidence-load").click();
       await page.waitForFunction(() => {
         const status = document.querySelector("#cs-evidence-status")?.textContent || "";
@@ -129,7 +130,22 @@ const forbiddenAccounts = new Set(["blueberry"]);
       const requested = mtfReads.filter(read => read.account === account && read.before === snapshotBefore);
       assert.equal(requested.length, 5, `${account}: historical check must read exactly five frames`);
       assert.ok(requested.every(read => read.method === "GET" && read.symbol === snapshotSymbol), `${account}: MTF history escaped the recorded snapshot scope or UTC cutoff: ${JSON.stringify({snapshotSymbol,asOfUtc:snapshot.payload.asOfUtc,requested})}`);
-      observations.push({ account, snapshots: count, entries, exits, frozenBars: candleCount, mtfAsOfUtc: snapshot.payload.asOfUtc, mtf: rowsMtf });
+      await panel.locator("#cs-evidence-kind").selectOption("DECISION");
+      await panel.locator("#cs-evidence-load").click();
+      await page.waitForFunction(() => {
+        const status = document.querySelector("#cs-evidence-status")?.textContent || "";
+        return !status.includes("Aufzeichnungen werden gelesen");
+      }, null, { timeout: 20000 });
+      const decisionStatus = await panel.locator("#cs-evidence-status").textContent();
+      assert.match(decisionStatus, /Verfügbarkeit: NOT_RECORDED/,
+        `${account}: old demo history must remain explicitly unrecorded (${decisionStatus})`);
+      assert.match(await panel.locator("#cs-evidence-list li").first().textContent(),
+        /NOT_RECORDED · Keine Aufzeichnung im gewählten Zeitraum; daraus folgt keine Aussage über ältere Zeiträume\./,
+        `${account}: inspector must not invent historical decision reasons`);
+      assert.ok(apiRequests.some(request => request.path.endsWith("/decisions")
+        && request.account === account && request.method === "GET"), `${account}: missing scoped decision-history read`);
+      observations.push({ account, snapshots: count, entries, exits, frozenBars: candleCount,
+        historicalDecisions: "NOT_RECORDED", mtfAsOfUtc: snapshot.payload.asOfUtc, mtf: rowsMtf });
     }
 
     assert.ok(apiRequests.some(request => request.path.endsWith("/snapshots") && request.method === "GET"),
