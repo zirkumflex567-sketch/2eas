@@ -16,6 +16,8 @@ export type AverageOptions = {id:string;color:string;lineWidth?:1|2|3|4;visible?
 export type MovingAverageOptions = AverageOptions&{type:"EMA"|"SMA"|"WMA"|"RMA"|"SMMA";period:number;source?:"close"|"open"|"high"|"low"|"hl2"|"hlc3"|"ohlc4";displayShift?:number};
 export type DonchianOptions = AverageOptions&{period:number};
 export type BollingerOptions = AverageOptions&{period?:number;stdDev?:number};
+export type SessionVwapOptions = AverageOptions&{timeZone?:string;sessionStart?:string};
+export type SessionVwapResult = {points:AveragePoint[];volumeSource:"REAL_VOLUME"|"TICK_VOLUME_PROXY"|"MIXED"|"NO_VOLUME"};
 export type KeltnerOptions = AverageOptions&{period:number;atrPeriod:number;multiplier:number};
 export type AtrBandsOptions = AverageOptions&{period?:number;atrPeriod?:number;multiplier?:number};
 export type LinearRegressionOptions = AverageOptions&{period:number;multiplier:number};
@@ -591,6 +593,34 @@ export function calculateBollingerBands(input:readonly Candle[],period:number,st
  }
  return {upper,middle,lower};
 }
+export function calculateSessionVwap(input:readonly Candle[],options:Pick<SessionVwapOptions,"timeZone"|"sessionStart">={}):SessionVwapResult{
+ const timeZone=options.timeZone??"UTC",sessionStart=options.sessionStart??"00:00";
+ if(typeof timeZone!=="string"||timeZone.length<1||timeZone.length>64||
+  typeof sessionStart!=="string"||!/^([01]\d|2[0-3]):[0-5]\d$/.test(sessionStart))throw Error("Invalid VWAP session configuration");
+ let formatter:Intl.DateTimeFormat;
+ try{formatter=new Intl.DateTimeFormat("en-CA",{timeZone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"})}
+ catch(_){throw Error("Invalid VWAP timezone")}
+ if(!Array.isArray(input))throw Error("Invalid VWAP bars");
+ const points:AveragePoint[]=[],sources=new Set<"REAL_VOLUME"|"TICK_VOLUME_PROXY">();let session:string|null=null,sumPV=0,sumVolume=0;
+ for(const bar of input){
+  if(!bar||!validBar(bar))throw Error("Invalid VWAP candle");
+  const parts=Object.fromEntries(formatter.formatToParts(new Date(bar.time*1000)).map(part=>[part.type,part.value]));
+  const year=Number(parts.year),month=Number(parts.month),day=Number(parts.day),minute=Number(parts.hour)*60+Number(parts.minute);
+  const [startHour,startMinute]=sessionStart.split(":").map(Number),startMinutes=startHour*60+startMinute;
+  const sessionDate=new Date(Date.UTC(year,month-1,day)-(minute<startMinutes?86400000:0));
+  const key=sessionDate.toISOString().slice(0,10);
+  if(key!==session){session=key;sumPV=0;sumVolume=0}
+  const realVolume=bar.real_volume??0,tickVolume=bar.tick_volume??0;
+  const real=realVolume>0,volume=real?realVolume:tickVolume;
+  if(volume<=0)continue;
+  const typical=(bar.high+bar.low+bar.close)/3,weighted=typical*volume,nextPV=sumPV+weighted,nextVolume=sumVolume+volume;
+  if(!Number.isFinite(weighted)||!Number.isFinite(nextPV)||!Number.isFinite(nextVolume)||nextVolume<=0)throw Error("Invalid VWAP volume weights");
+  sumPV=nextPV;sumVolume=nextVolume;sources.add(real?"REAL_VOLUME":"TICK_VOLUME_PROXY");
+  points.push({time:bar.time,value:sumPV/sumVolume});
+ }
+ const volumeSource=sources.size===0?"NO_VOLUME":sources.size>1?"MIXED":sources.has("REAL_VOLUME")?"REAL_VOLUME":"TICK_VOLUME_PROXY";
+ return {points,volumeSource};
+}
 function keltnerData(bars:readonly Candle[],options:KeltnerOptions){
  const {period,atrPeriod,multiplier}=options;
  if(!Number.isInteger(period)||period<2||period>200||!Number.isInteger(atrPeriod)||atrPeriod<2||atrPeriod>200||
@@ -724,6 +754,9 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  type ResolvedBollingerOptions=Omit<BollingerOptions,"period"|"stdDev">&{period:number;stdDev:number};
  type BollingerGroup={options:ResolvedBollingerOptions;series:[LineApi,LineApi,LineApi];values:{upper:AveragePoint[];middle:AveragePoint[];lower:AveragePoint[]}};
  const bollingerOverlays=new Map<string,BollingerGroup>();
+ type ResolvedSessionVwapOptions=Omit<SessionVwapOptions,"timeZone"|"sessionStart">&{timeZone:string;sessionStart:string};
+ type SessionVwapGroup={options:ResolvedSessionVwapOptions;series:LineApi;result:SessionVwapResult};
+ const sessionVwapOverlays=new Map<string,SessionVwapGroup>();
  type KeltnerGroup={options:KeltnerOptions;series:[LineApi,LineApi,LineApi]};
  const keltnerOverlays=new Map<string,KeltnerGroup>();
  type ResolvedAtrBandsOptions=Omit<AtrBandsOptions,"period"|"atrPeriod"|"multiplier">&{period:number;atrPeriod:number;multiplier:number};
@@ -1032,7 +1065,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  const autoFibRatios=[0,.236,.382,.5,.618,.786,1] as const,autoFibColors=["#eab308","#f97316","#22d3ee","#f8fafc","#a78bfa","#22c55e","#fb7185"];
  let autoFibonacci:{options:AutoFibonacciOptions;asOf:VolumeZonesAsOf;result:AutoFibonacciValues;series:ReturnType<typeof createPaneLine>[]}|null=null;
  let bars:Candle[]=[],barsByTime=new Map<number,Candle>(),activeAccount=accountId,destroyed=false;
- const indicatorInstanceCount=()=>averages.size+paneLines.size+oscillators.size+donchianOverlays.size+bollingerOverlays.size+keltnerOverlays.size+atrBandsOverlays.size+linearRegressionOverlays.size+supertrendOverlays.size+parabolicSarOverlays.size+ichimokuOverlays.size+pivotOverlays.size+(autoFibonacci?1:0);
+ const indicatorInstanceCount=()=>averages.size+paneLines.size+oscillators.size+donchianOverlays.size+bollingerOverlays.size+sessionVwapOverlays.size+keltnerOverlays.size+atrBandsOverlays.size+linearRegressionOverlays.size+supertrendOverlays.size+parabolicSarOverlays.size+ichimokuOverlays.size+pivotOverlays.size+(autoFibonacci?1:0);
  function guard(){if(destroyed)throw Error("Chart was destroyed")}
  function persistenceKey(account=activeAccount){
   if(!drawingScope)return null;
@@ -1462,7 +1495,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   for(const group of oscillators.values())for(const series of group.series.values())series.setData([] as never);
   for(const group of supertrendOverlays.values()){group.up.setData([]);group.down.setData([])}
   for(const group of parabolicSarOverlays.values()){group.up.setData([]);group.down.setData([])}
-  readoutIndicators.clear();price.setData(bars);refreshManagedMovingAverages();refreshDonchianOverlays();refreshBollingerOverlays();refreshKeltnerOverlays();refreshAtrBandsOverlays();refreshLinearRegressionOverlays();
+  readoutIndicators.clear();price.setData(bars);refreshManagedMovingAverages();refreshDonchianOverlays();refreshBollingerOverlays();refreshSessionVwapOverlays();refreshKeltnerOverlays();refreshAtrBandsOverlays();refreshLinearRegressionOverlays();
   refreshSupertrendOverlays();refreshParabolicSar();refreshIchimokuOverlays();refreshPivotOverlays();refreshOscillators();refreshVolumeZones();refreshAutoFibonacci();
   if(volume)volume.setData(volumeRows());
   hydrateDrawings();
@@ -1544,6 +1577,54 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    group.values=values;readoutIndicators.set(id,{id,title:group.options.title??`Bollinger ${group.options.period}`,kind:"OVERLAY",values:new Map(values.middle.map(point=>[point.time,point.value]))});
   }
  }
+ function sessionVwapTitle(options:ResolvedSessionVwapOptions,source:SessionVwapResult["volumeSource"]){
+  const label=source==="REAL_VOLUME"?"Real volume":source==="TICK_VOLUME_PROXY"?"Tick-volume proxy":source==="MIXED"?"Real/tick-volume mix":"No usable volume";
+  return `${options.title??"Session VWAP"} ${options.sessionStart} ${options.timeZone} · ${label}`;
+ }
+ function validSessionVwapOptions(options:ResolvedSessionVwapOptions){
+  return !!options&&typeof options==="object"&&!Array.isArray(options)&&
+   Object.keys(options).every(key=>["id","color","lineWidth","visible","title","timeZone","sessionStart"].includes(key))&&
+   /^[-_a-zA-Z0-9]{1,32}$/.test(options.id)&&colorPattern.test(options.color)&&
+   (options.lineWidth===undefined||(Number.isInteger(options.lineWidth)&&options.lineWidth>=1&&options.lineWidth<=4))&&
+   (options.visible===undefined||typeof options.visible==="boolean")&&
+   (options.title===undefined||(typeof options.title==="string"&&options.title.length<=80&&!/[\u0000-\u001f\u007f]/.test(options.title)))&&
+   typeof options.timeZone==="string"&&options.timeZone.length>0&&options.timeZone.length<=64&&
+   typeof options.sessionStart==="string"&&/^([01]\d|2[0-3]):[0-5]\d$/.test(options.sessionStart);
+ }
+ function refreshSessionVwapOverlays(){
+  for(const [id,group] of sessionVwapOverlays){
+   const result=calculateSessionVwap(bars,group.options);group.result=result;
+   group.series.setData(result.points);group.series.applyOptions({title:sessionVwapTitle(group.options,result.volumeSource)});
+   readoutIndicators.set(id,{id,title:sessionVwapTitle(group.options,result.volumeSource),kind:"OVERLAY",values:new Map(result.points.map(point=>[point.time,point.value]))});
+  }
+ }
+ function addSessionVwap(options:SessionVwapOptions){
+  guard();const normalized={...options,timeZone:options.timeZone??"UTC",sessionStart:options.sessionStart??"00:00",visible:options.visible??true} as ResolvedSessionVwapOptions;
+  if(!validSessionVwapOptions(normalized))throw Error("Invalid session VWAP configuration");
+  if(oscillators.has(normalized.id)||averages.has(normalized.id)||donchianOverlays.has(normalized.id)||bollingerOverlays.has(normalized.id)||
+   keltnerOverlays.has(normalized.id)||atrBandsOverlays.has(normalized.id)||linearRegressionOverlays.has(normalized.id)||supertrendOverlays.has(normalized.id)||
+   parabolicSarOverlays.has(normalized.id)||ichimokuOverlays.has(normalized.id)||pivotOverlays.has(normalized.id)||paneLines.has(normalized.id)||
+   priceLevels.has(normalized.id)||timeMarkers.has(normalized.id)||textAnnotations.has(normalized.id)||trendLines.has(normalized.id)||
+   rectangles.has(normalized.id)||rays.has(normalized.id)||fibonacci.has(normalized.id)||channels.has(normalized.id)||measurements.has(normalized.id))throw Error("Duplicate chart object identity");
+  const existing=sessionVwapOverlays.get(normalized.id);
+  if(indicatorInstanceCount()>=maxIndicatorInstances&&!existing)throw Error("Indicator instance limit");
+  const result=calculateSessionVwap(bars,normalized),series=existing?.series??newLine({id:normalized.id,color:normalized.color,lineWidth:normalized.lineWidth,visible:normalized.visible,title:sessionVwapTitle(normalized,result.volumeSource)});
+  series.applyOptions({color:normalized.color,lineWidth:normalized.lineWidth??2,visible:normalized.visible,title:sessionVwapTitle(normalized,result.volumeSource)});
+  series.setData(result.points);sessionVwapOverlays.set(normalized.id,{options:normalized,series,result});
+  readoutIndicators.set(normalized.id,{id:normalized.id,title:sessionVwapTitle(normalized,result.volumeSource),kind:"OVERLAY",values:new Map(result.points.map(point=>[point.time,point.value]))});
+  return {options:{...normalized},...result};
+ }
+ function updateSessionVwap(id:string,patch:Partial<Omit<SessionVwapOptions,"id">>){
+  guard();const existing=sessionVwapOverlays.get(id);if(!existing)return false;
+  if(!patch||typeof patch!=="object"||Array.isArray(patch)||Object.keys(patch).some(key=>!["color","lineWidth","visible","title","timeZone","sessionStart"].includes(key)))throw Error("Invalid session VWAP update");
+  const normalized={...existing.options,...patch,id} as ResolvedSessionVwapOptions;if(!validSessionVwapOptions(normalized))throw Error("Invalid session VWAP configuration");
+  const result=calculateSessionVwap(bars,normalized),title=sessionVwapTitle(normalized,result.volumeSource);
+  existing.series.applyOptions({color:normalized.color,lineWidth:normalized.lineWidth??2,visible:normalized.visible??true,title});
+  existing.series.setData(result.points);existing.options=normalized;existing.result=result;
+  readoutIndicators.set(id,{id,title,kind:"OVERLAY",values:new Map(result.points.map(point=>[point.time,point.value]))});return {options:{...normalized},...result};
+ }
+ function removeSessionVwap(id:string){guard();const group=sessionVwapOverlays.get(id);if(!group)return false;chart.removeSeries(group.series);sessionVwapOverlays.delete(id);readoutIndicators.delete(id);return true}
+ function sessionVwapOptions(id:string){guard();const group=sessionVwapOverlays.get(id);return group?{...group.options}:null}
  function addBollinger(options:BollingerOptions){
   guard();const normalized={...options,period:options.period??20,stdDev:options.stdDev??2,visible:options.visible??true};
   if(!validBollingerOptions(normalized))throw Error("Invalid Bollinger configuration");
@@ -2416,7 +2497,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   for(const indicator of readoutIndicators.values()){indicator.values.delete(c.time);indicator.directions?.delete(c.time)}
   price.update(c);if(volume)volume.update(volumeRows()[bars.length-1]);
   for(const [id,state] of managedMovingAverages)updateManagedMovingAverage(id,state);
-  refreshDonchianOverlays();refreshBollingerOverlays();refreshKeltnerOverlays();refreshAtrBandsOverlays();refreshLinearRegressionOverlays();refreshIchimokuOverlays();refreshPivotOverlays();
+  refreshDonchianOverlays();refreshBollingerOverlays();refreshSessionVwapOverlays();refreshKeltnerOverlays();refreshAtrBandsOverlays();refreshLinearRegressionOverlays();refreshIchimokuOverlays();refreshPivotOverlays();
   refreshVolumeZones();refreshAutoFibonacci();for(const group of supertrendOverlays.values())updateSupertrendLast(group,c,bars.length-1,replacing&&group.lastTime===c.time);
   for(const group of parabolicSarOverlays.values())updateParabolicSarLast(group,c,bars.length-1,replacing&&group.lastTime===c.time);
   refreshOscillators(true);
@@ -2467,6 +2548,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   donchianOverlays.clear();
   for(const group of bollingerOverlays.values())for(const series of group.series)chart.removeSeries(series);
   bollingerOverlays.clear();
+  for(const group of sessionVwapOverlays.values())chart.removeSeries(group.series);
+  sessionVwapOverlays.clear();
   for(const group of keltnerOverlays.values())for(const series of group.series)chart.removeSeries(series);
   keltnerOverlays.clear();
   for(const group of atrBandsOverlays.values())for(const series of group.series)chart.removeSeries(series);
@@ -2490,10 +2573,11 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  function inspect(){guard();return {version:VERSION,account:activeAccount,positionOverlayCount:positionOverlayLines.size,positionOverlays:readPositionOverlays().lines,nativeDrawingCount:drawingCount(),drawingTool:placementTool,
   displayTimeZone,volumeZoneStatus:volumeZones?.result.status??"DISABLED",volumeZoneCount:volumeZones?.result.zones.length??0,
   candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
+  sessionVwapCount:sessionVwapOverlays.size,sessionVwapSeries:[...sessionVwapOverlays.entries()].map(([id,group])=>({id,options:{...group.options},points:group.result.points.map(point=>({...point})),volumeSource:group.result.volumeSource,visible:group.series.options().visible})),
     averageCount:averages.size,nativePaneLines:paneLines.size,oscillatorCount:oscillators.size,supertrendCount:supertrendOverlays.size,parabolicSarCount:parabolicSarOverlays.size,ichimokuCount:ichimokuOverlays.size,pivotCount:pivotOverlays.size,pivotSeries:[...pivotOverlays.entries()].map(([id,group])=>({id,options:{...group.options,sourceWindow:{...group.options.sourceWindow}},lines:Object.fromEntries((["p","r1","r2","r3","s1","s2","s3"] as const).map(key=>[key,group.values.lines[key].map(point=>({...point}))])),visible:Array.from(group.series.values(),series=>series.options().visible)})),ichimokuSeries:[...ichimokuOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:Object.fromEntries((["tenkan","kijun","senkouA","senkouB","chikou"] as const).map(key=>[key,group.values[key].map(point=>({...point}))])),visible:group.series.map(series=>series.options().visible)})),bollingerCount:bollingerOverlays.size,bollingerSeries:[...bollingerOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),atrBandsCount:atrBandsOverlays.size,atrBandsSeries:[...atrBandsOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),linearRegressionCount:linearRegressionOverlays.size,linearRegressionLineCount:[...linearRegressionOverlays.values()].reduce((count,group)=>count+group.series.length,0),linearRegressionSeries:[...linearRegressionOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),oscillatorPaneCount:new Set(Array.from(oscillators.values(),group=>{const series=group.series.values().next().value;return series?chart.panes().findIndex(pane=>pane.getSeries().includes(series)):-1}).filter(index=>index>=0)).size,nativePrimitives:drawingCount(),selectedDrawingId,selectedDrawingIds:[...selectedDrawingIds],hoveredDrawingId,
   paneCount:chart.panes().length,volumeVisible:!!volume,persistenceStatus,persistenceError}}
- function destroy(){if(destroyed)return;cancelDrawingTool(false);finishDrag(true);clearPositionOverlays();if(volumeZones){price.detachPrimitive(volumeZones.primitive);volumeZones=null}destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();managedMovingAverages.clear();donchianOverlays.clear();bollingerOverlays.clear();keltnerOverlays.clear();atrBandsOverlays.clear();ichimokuOverlays.clear();pivotOverlays.clear();linearRegressionOverlays.clear();supertrendOverlays.clear();parabolicSarOverlays.clear();paneLines.clear();oscillators.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();measurements.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
-  return Object.freeze({setCandles,addAverage,addMovingAverage,addDonchian,removeDonchian,addBollinger,updateBollinger,removeBollinger,bollingerOptions,addKeltner,removeKeltner,addAtrBands,updateAtrBands,removeAtrBands,atrBandsOptions,addLinearRegression,updateLinearRegression,removeLinearRegression,linearRegressionOptions,addIchimoku,updateIchimoku,removeIchimoku,ichimokuOptions,addPivotPoints,updatePivotPoints,pivotOptions,removePivotPoints,addSupertrend,updateSupertrend,removeSupertrend,supertrendOptions,addParabolicSar,updateParabolicSar,removeParabolicSar,parabolicSarOptions,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,deleteSelectedDrawings,addPriceLevel,updatePriceLevel,removePriceLevel,
+ function destroy(){if(destroyed)return;cancelDrawingTool(false);finishDrag(true);clearPositionOverlays();if(volumeZones){price.detachPrimitive(volumeZones.primitive);volumeZones=null}destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();managedMovingAverages.clear();donchianOverlays.clear();bollingerOverlays.clear();sessionVwapOverlays.clear();keltnerOverlays.clear();atrBandsOverlays.clear();ichimokuOverlays.clear();pivotOverlays.clear();linearRegressionOverlays.clear();supertrendOverlays.clear();parabolicSarOverlays.clear();paneLines.clear();oscillators.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();measurements.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
+  return Object.freeze({setCandles,addAverage,addMovingAverage,addDonchian,removeDonchian,addBollinger,updateBollinger,removeBollinger,bollingerOptions,addSessionVwap,updateSessionVwap,removeSessionVwap,sessionVwapOptions,addKeltner,removeKeltner,addAtrBands,updateAtrBands,removeAtrBands,atrBandsOptions,addLinearRegression,updateLinearRegression,removeLinearRegression,linearRegressionOptions,addIchimoku,updateIchimoku,removeIchimoku,ichimokuOptions,addPivotPoints,updatePivotPoints,pivotOptions,removePivotPoints,addSupertrend,updateSupertrend,removeSupertrend,supertrendOptions,addParabolicSar,updateParabolicSar,removeParabolicSar,parabolicSarOptions,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,deleteSelectedDrawings,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,drawingPosition,drawingAnchorPosition,readDrawing,exportDrawings,exportLayout,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,duplicateSelectedDrawings,
   addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,addOscillator,updateOscillator,removeOscillator,moveOscillator,oscillatorOptions,oscillatorPaneLayout,resizePane,paneHeights,showVolume,visibleLogicalRange,setVisibleLogicalRange,setDisplayTimeZone,displayTimeZone:()=>displayTimeZone,formatTimeLabel:formatDisplayTime,formatCrosshairTime,readDataWindow,
   updateLast,changeAccount,averageOptions,setVolumeZones,readVolumeZones,clearVolumeZones,setAutoFibonacci,readAutoFibonacci,clearAutoFibonacci,setPositionOverlays,readPositionOverlays,setDrawingTool,drawingToolState,verifyPersistence,inspect,destroy});
