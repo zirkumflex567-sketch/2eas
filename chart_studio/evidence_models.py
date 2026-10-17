@@ -51,6 +51,18 @@ def integer(value):
     return value
 
 
+def broker_epoch_millis(value):
+    if type(value) is not int or not 1 <= value <= 9_999_999_999_999:
+        _fail()
+    return value
+
+
+def broker_utc_offset_seconds(value):
+    if type(value) is not int or not -86400 <= value <= 86400:
+        _fail()
+    return value
+
+
 def choice(*values):
     def validate(value):
         if not isinstance(value, str) or value not in values:
@@ -268,7 +280,8 @@ def _execution_quote(value, *, symbol, request_time):
     result = _object(value, dict(symbol=broker_symbol, bid=decimal_string, ask=decimal_string,
         tickSize=decimal_string, quoteTimeUtc=utc_timestamp, source=choice('MT5_VERIFIED'),
         canExecute=lambda v: False if v is False else _fail()),
-        dict(tickValuePerLot=nullable(decimal_string), currency=nullable(lambda v: _pattern(v, r'[A-Z]{3,12}'))))
+        dict(tickValuePerLot=nullable(decimal_string), currency=nullable(lambda v: _pattern(v, r'[A-Z]{3,12}')),
+             brokerTimeEpochMs=broker_epoch_millis, brokerUtcOffsetSeconds=broker_utc_offset_seconds))
     if (result['symbol'] != symbol or Decimal(result['bid']) <= 0 or Decimal(result['ask']) <= 0 or
             Decimal(result['ask']) < Decimal(result['bid']) or Decimal(result['tickSize']) <= 0):
         _fail()
@@ -276,6 +289,13 @@ def _execution_quote(value, *, symbol, request_time):
         _fail()
     if result.get('tickValuePerLot') is not None and result.get('currency') is None:
         _fail()
+    if ('brokerTimeEpochMs' in result) != ('brokerUtcOffsetSeconds' in result):
+        _fail()
+    if 'brokerTimeEpochMs' in result:
+        normalized_second = result['brokerTimeEpochMs'] // 1000 - result['brokerUtcOffsetSeconds']
+        quote_second = utc_microseconds(result['quoteTimeUtc']) // 1_000_000
+        if normalized_second != quote_second:
+            _fail()
     _ordered(result['quoteTimeUtc'], request_time)
     return result
 

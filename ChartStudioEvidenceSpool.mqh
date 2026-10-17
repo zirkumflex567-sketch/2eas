@@ -92,6 +92,14 @@ string CSUtcFromMillis(const long value)
    return CSUtc(seconds);
   }
 
+string CSUtcFromBrokerMillis(const long value,const int broker_utc_offset_seconds)
+  {
+   if(value<=0 || broker_utc_offset_seconds < -86400 || broker_utc_offset_seconds > 86400)
+      return "";
+   datetime seconds=(datetime)(value/1000-broker_utc_offset_seconds);
+   return CSUtc(seconds);
+  }
+
 string CSNumber(double value,int digits=10)
   {
    if(!MathIsValidNumber(value))
@@ -183,7 +191,8 @@ string CSOrderAttemptJson(const string attempt_id,const string side,const double
                           const double requested_volume,const double bid,const double ask,
                           const double tick_size,const double tick_value,const string currency,
                           const string quote_time_utc,const string request_time_utc,
-                          const string ack_time_utc,const uint broker_retcode,const ulong broker_ticket)
+                          const string ack_time_utc,const uint broker_retcode,const ulong broker_ticket,
+                          const long broker_time_epoch_millis=0,const int broker_utc_offset_seconds=0)
   {
    string value="{\"orderAttemptId\":"+CSJsonQuote(attempt_id)+
       ",\"side\":"+CSJsonQuote(side)+
@@ -198,6 +207,9 @@ string CSOrderAttemptJson(const string attempt_id,const string side,const double
       ",\"tickSize\":"+CSJsonQuote(CSNumber(tick_size,10))+
       ",\"quoteTimeUtc\":"+CSJsonQuote(quote_time_utc)+
       ",\"source\":\"MT5_VERIFIED\",\"canExecute\":false";
+   if(broker_time_epoch_millis>0)
+      value+=",\"brokerTimeEpochMs\":"+IntegerToString(broker_time_epoch_millis)+
+             ",\"brokerUtcOffsetSeconds\":"+IntegerToString(broker_utc_offset_seconds);
    if(tick_value>0.0 && currency!="")
       value+=",\"tickValuePerLot\":"+CSJsonQuote(CSNumber(tick_value,8))+
              ",\"currency\":"+CSJsonQuote(currency);

@@ -132,7 +132,9 @@ def _neutralize_account_risk_logs(source_text: str) -> str:
 
 def _instrument_source(source_text: str, account_alias: str, producer: str,
                        terminal_hash: str, source_hash: str, expected_parameter_hash: str, login: int,
-                       server: str, terminal_path: str) -> str:
+                       server: str, terminal_path: str, broker_utc_offset_seconds: int) -> str:
+    if type(broker_utc_offset_seconds) is not int or not -86400 <= broker_utc_offset_seconds <= 86400:
+        raise ValueError("invalid configured broker UTC offset")
     source_text = _neutralize_account_risk_logs(source_text)
     trade_include = '#include <Trade\\PositionInfo.mqh>'
     definitions = [
@@ -145,6 +147,7 @@ def _instrument_source(source_text: str, account_alias: str, producer: str,
         f"#define CS_EVIDENCE_EXPECTED_LOGIN {int(login)}",
         f"#define CS_EVIDENCE_EXPECTED_SERVER {_mql_string(server)}",
         f"#define CS_EVIDENCE_EXPECTED_TERMINAL_PATH {_mql_string(terminal_path)}",
+        f"#define CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS {broker_utc_offset_seconds}",
         "string CSParameterSetCanonical();",
         'string CSParameterSetHash="";',
         '#include "ChartStudioEvidenceSpool.mqh"',
@@ -344,7 +347,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
             bool cs_quote_ok=SymbolInfoTick(_Symbol,cs_tick) && cs_tick.time_msc>0 &&
                              cs_tick.bid>0.0 && cs_tick.ask>=cs_tick.bid;
             double cs_bid=cs_tick.bid,cs_ask=cs_tick.ask;
-            string cs_quote_time=CSUtcFromMillis(cs_tick.time_msc);
+            string cs_quote_time=CSUtcFromBrokerMillis(cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS);
             datetime cs_request_utc=TimeGMT();
             string cs_request_time=CSUtc(cs_request_utc);
             double cs_tick_size=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
@@ -366,7 +369,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
               {{
                string cs_attempt=CSOrderAttemptJson(cs_attempt_id,"{direction}",entry_price,lot_size,
                   cs_bid,cs_ask,cs_tick_size,cs_tick_value,cs_currency,cs_quote_time,
-                  cs_request_time,CSUtc(cs_ack_utc),cs_order_retcode,cs_order_ticket);
+                  cs_request_time,CSUtc(cs_ack_utc),cs_order_retcode,cs_order_ticket,
+                  cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS);
                CSEnqueueDecision("ORDER_ATTEMPT",cs_attempt_outcome,rates[0].time,
                   features,cs_attempt_predicate,cs_attempt,cs_attempt_id,cs_order_ticket,cs_request_time);
               }}
@@ -510,7 +514,7 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_pa
     term_root = str(terminal.parent)
     generated = _instrument_source(
         source_text, alias, producer, ctx.terminal_identity_hash, source_hash, expected_parameter_hash,
-        int(spec["login"]), spec["server"], term_root,
+        int(spec["login"]), spec["server"], term_root, spec["broker_utc_offset_seconds"],
     )
 
     variant_dir = output_root_input / alias

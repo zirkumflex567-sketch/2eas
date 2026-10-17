@@ -99,6 +99,23 @@ def test_same_second_quote_is_serialized_at_request_precision():
     e['orderAttempt']['quoteSnapshot']['quoteTimeUtc']='2026-01-02T03:04:05Z'
     validate(envelope(e))
 
+def test_execution_quote_broker_epoch_requires_explicit_consistent_offset():
+    e=execution_decision()
+    quote=e['orderAttempt']['quoteSnapshot']
+    quote['brokerTimeEpochMs']=api().utc_microseconds(quote['quoteTimeUtc'])//1000+10800*1000
+    quote['brokerUtcOffsetSeconds']=10800
+    validated=validate(envelope(e))['payload']['orderAttempt']['quoteSnapshot']
+    assert validated['brokerTimeEpochMs']==quote['brokerTimeEpochMs']
+    assert validated['brokerUtcOffsetSeconds']==10800
+    for removed in ('brokerTimeEpochMs','brokerUtcOffsetSeconds'):
+        bad=execution_decision()
+        bad['orderAttempt']['quoteSnapshot'].update(quote)
+        del bad['orderAttempt']['quoteSnapshot'][removed]
+        reject(envelope(bad))
+    bad=execution_decision()
+    bad['orderAttempt']['quoteSnapshot'].update(quote,brokerUtcOffsetSeconds=7200)
+    reject(envelope(bad))
+
 def test_typed_guard_chart_view_limits():
     e=envelope();e['payload']['guardSnapshot']=dict(state='UNKNOWN',sourceRevision=None,checks=[])
     validate(e)

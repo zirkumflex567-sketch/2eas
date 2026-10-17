@@ -44,6 +44,17 @@ def configured_demo_terminal_fixtures(tmp_path, monkeypatch):
         monkeypatch.setitem(account_gateway.ACCOUNTS[alias], "terminal", str(terminal))
 
 
+def test_titan_candidate_uses_explicit_broker_offset_for_quote_utc_and_provenance():
+    source = (ROOT / BUILD.SOURCE_NAME).read_text(encoding="utf-8-sig")
+    generated = BUILD._instrument_source(
+        source, "xau5m_m5", "titan_test", "a" * 64, "b" * 64, "c" * 64,
+        53090070, "ICMarketsEU-Demo", r"C:\demo\terminal64.exe", 10800,
+    )
+    assert "#define CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS 10800" in generated
+    assert "CSUtcFromBrokerMillis(cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS)" in generated
+    assert "cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS" in generated
+
+
 @pytest.mark.parametrize("alias", ["xau5m_m5", "titan_m5"])
 def test_prepare_creates_identity_bound_capture_variant_only_under_output(tmp_path, alias):
     target = ROOT / "output" / "test-evidence-build" / alias
@@ -60,6 +71,9 @@ def test_prepare_creates_identity_bound_capture_variant_only_under_output(tmp_pa
         assert "CS_EVIDENCE_EXPECTED_LOGIN" in source
         assert "CS_EVIDENCE_EXPECTED_SERVER" in source
         assert "CS_EVIDENCE_EXPECTED_TERMINAL_PATH" in source
+        assert "#define CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS 0" in source
+        assert "CSUtcFromBrokerMillis(cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS)" in source
+        assert "cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS" in source
         assert (result.source.parent / "ChartStudioEvidenceSpool.mqh").is_file()
         assert result.manifest.is_file()
         manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
@@ -83,7 +97,7 @@ def test_prepare_creates_identity_bound_capture_variant_only_under_output(tmp_pa
         assert source.count("if(cs_order_sent)") == 2
         for observed_field in (
             "SymbolInfoTick(_Symbol,cs_tick)",
-            "CSUtcFromMillis(cs_tick.time_msc)",
+            "CSUtcFromBrokerMillis(cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS)",
             "SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE)",
             "SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE)",
             "SymbolInfoString(_Symbol,SYMBOL_CURRENCY_PROFIT)",

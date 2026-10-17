@@ -23,6 +23,7 @@ def test_goldm15_candidate_captures_computed_signal_values_without_changing_trad
         login=53090070,
         server="ICMarketsEU-Demo",
         terminal_path=r"C:\demo\terminal64.exe",
+        broker_utc_offset_seconds=10800,
     )
 
     assert '#define CS_EVIDENCE_CAPTURE' in generated
@@ -30,10 +31,18 @@ def test_goldm15_candidate_captures_computed_signal_values_without_changing_trad
     assert '#define CS_EVIDENCE_STRATEGY_ID "goldm15_reconstruction"' in generated
     assert '#define CS_EVIDENCE_STRATEGY_VERSION "1.22"' in generated
     assert "CS_EVIDENCE_EXPECTED_LOGIN 53090070" in generated
+    assert "CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS 10800" in generated
     assert 'CSEnqueueDecision(cs_has_position ? "EXIT_SIGNAL" : "SIGNAL"' in generated
     assert 'CSFeature("fast_rsi"' in generated
     assert 'CSPredicate("buy_fast_rsi"' in generated
     assert 'CSPredicate("sell_trend_rsi"' in generated
+    assert 'CSOrderAttemptJson(cs_attempt_id' in generated
+    assert 'CSUtcFromBrokerMillis(tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS)' in generated
+    assert 'tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS' in generated
+    assert 'CSEnqueueDecision("ORDER_ATTEMPT"' in generated
+    assert 'SymbolInfoString(_Symbol,SYMBOL_CURRENCY_PROFIT)' in generated
+    assert 'CSFeature("requested_lots"' in generated
+    assert 'cs_tick_size>0.0 &&\n         cs_retcode>0' in generated
     assert "signal_timeframe!=PERIOD_M15" in generated
     assert "CSParameterSetHash!=CS_EVIDENCE_EXPECTED_PARAMETER_SET_HASH" in generated
     assert generated.count("trade.Buy(lots,_Symbol,0.0,NormalizeDouble(stop,_Digits),0.0,comment)") == 1
@@ -56,6 +65,26 @@ def test_goldm15_candidate_refuses_unexpected_source_anchors():
             login=53090070,
             server="ICMarketsEU-Demo",
             terminal_path=r"C:\demo\terminal64.exe",
+            broker_utc_offset_seconds=10800,
+        )
+
+
+def test_goldm15_candidate_refuses_changed_order_submission_anchor():
+    source = (ROOT / "goldm15" / "GoldM15_Reconstruction.mq5").read_text(encoding="utf-8-sig")
+    changed = source.replace("trade.Buy(lots,_Symbol,0.0,NormalizeDouble(stop,_Digits),0.0,comment)",
+                             "trade.Buy(lots,_Symbol,0.0,NormalizeDouble(stop,_Digits),0.0,comment); // changed")
+    with pytest.raises(ValueError, match="unique GoldM15 market-order submission"):
+        BUILD._instrument_source(
+            changed,
+            account_alias="goldm15",
+            producer="goldm15_demo",
+            terminal_hash="a" * 64,
+            source_hash="b" * 64,
+            expected_parameter_hash="c" * 64,
+            login=53090070,
+            server="ICMarketsEU-Demo",
+            terminal_path=r"C:\demo\terminal64.exe",
+            broker_utc_offset_seconds=10800,
         )
 
 

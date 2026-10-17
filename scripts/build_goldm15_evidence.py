@@ -41,7 +41,7 @@ EXPECTED_HASHES = {
     "goldm15/GoldM15_RiskCore.mqh": "096d2b4d98da67001b381028c615ad5612135482f7d58cb585574a293968335a",
     "goldm15/GoldM15_News.mqh": "54cf4dd2884d90fb2040b3e78ac246b22d1e8b5a168318ee75814431c2da70b6",
     "goldm15/GoldM15_Reconstruction.set": "e6c517dd9e5fc26a4d257506a493163d43bbc52a3b1032479eb8aed89d6efa40",
-    "ChartStudioEvidenceSpool.mqh": "8b5656ed7c80700ca937403632aeb936c94ddd9f01452fb96286c0d6daeea083",
+    "ChartStudioEvidenceSpool.mqh": "5d02aadcb05019b4407ed061a65a2ddf6b9cdb801bab99169460f7abaac2f454",
 }
 PRESET_NAME = "GoldM15_Reconstruction.set"
 PRODUCER = "goldm15_demo"
@@ -54,9 +54,12 @@ def _source_digest(content: bytes) -> str:
 
 def _instrument_source(source_text: str, *, account_alias: str, producer: str,
                        terminal_hash: str, source_hash: str, expected_parameter_hash: str,
-                       login: int, server: str, terminal_path: str) -> str:
+                       login: int, server: str, terminal_path: str,
+                       broker_utc_offset_seconds: int) -> str:
     if account_alias not in ALLOWED_ACCOUNTS:
         raise ValueError("account is not allowlisted")
+    if type(broker_utc_offset_seconds) is not int or not -86400 <= broker_utc_offset_seconds <= 86400:
+        raise ValueError("invalid configured broker UTC offset")
     source_text = source_text.replace("\r\n", "\n")
     include_anchor = '#include "GoldM15_Risk.mqh"'
     if source_text.count(include_anchor) != 1:
@@ -75,6 +78,7 @@ def _instrument_source(source_text: str, *, account_alias: str, producer: str,
         f"#define CS_EVIDENCE_EXPECTED_LOGIN {int(login)}",
         f"#define CS_EVIDENCE_EXPECTED_SERVER {_mql_string(server)}",
         f"#define CS_EVIDENCE_EXPECTED_TERMINAL_PATH {_mql_string(terminal_path)}",
+        f"#define CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS {broker_utc_offset_seconds}",
         "string CSParameterSetCanonical();",
         'string CSParameterSetHash="";',
         '#include "ChartStudioEvidenceSpool.mqh"',
@@ -151,6 +155,48 @@ def _instrument_source(source_text: str, *, account_alias: str, producer: str,
     if source_text.count(timer_anchor) != 1:
         raise ValueError("expected unique GoldM15 timer handler")
     source_text = source_text.replace(timer_anchor, timer_capture, 1)
+
+    order_anchor = '''      bool sent=side==1 ? trade.Buy(lots,_Symbol,0.0,NormalizeDouble(stop,_Digits),0.0,comment)
+                       : trade.Sell(lots,_Symbol,0.0,NormalizeDouble(stop,_Digits),0.0,comment);
+      uint result=trade.ResultRetcode();'''
+    order_capture = '''#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+      string cs_attempt_id=CS_EVIDENCE_PRODUCER_ID+"_"+
+                           IntegerToString((long)GetTickCount64())+"_"+IntegerToString(i+1);
+      datetime cs_request_utc=TimeGMT();
+      string cs_request_time=CSUtc(cs_request_utc);
+      string cs_quote_time=CSUtcFromBrokerMillis(tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS);
+      double cs_tick_size=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+      double cs_tick_value=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
+      string cs_currency=SymbolInfoString(_Symbol,SYMBOL_CURRENCY_PROFIT);
+#endif
+      bool sent=side==1 ? trade.Buy(lots,_Symbol,0.0,NormalizeDouble(stop,_Digits),0.0,comment)
+                       : trade.Sell(lots,_Symbol,0.0,NormalizeDouble(stop,_Digits),0.0,comment);
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+      uint cs_retcode=trade.ResultRetcode();
+      datetime cs_ack_utc=TimeGMT();
+      ulong cs_order_ticket=trade.ResultOrder();
+      bool cs_accepted=sent && GoldAcceptedResult(cs_retcode);
+      string cs_outcome=cs_accepted ? "PASS" : "BLOCK";
+      string cs_predicates=CSPredicate("broker_request",CSBoolNumber(cs_accepted),"EQ","1",
+                                       cs_outcome,cs_accepted ? "BROKER_ACCEPTED" : "BROKER_REJECTED");
+      string cs_features=CSFeature("requested_lots",CSNumber(lots,8),"lots",EnumToString(signal_timeframe))+","+
+         CSFeature("intended_price",CSNumber(execution,_Digits),"price",EnumToString(signal_timeframe))+","+
+         CSFeature("protective_stop",CSNumber(stop,_Digits),"price",EnumToString(signal_timeframe))+","+
+         CSFeature("system_id",IntegerToString(i+1),"count",EnumToString(signal_timeframe));
+      string cs_attempt="";
+      if(tick.time_msc>0 && tick.bid>0.0 && tick.ask>=tick.bid && cs_tick_size>0.0 &&
+         cs_retcode>0 && cs_quote_time!="")
+         cs_attempt=CSOrderAttemptJson(cs_attempt_id,side==1 ? "BUY" : "SELL",execution,lots,
+            tick.bid,tick.ask,cs_tick_size,cs_tick_value,cs_currency,cs_quote_time,
+            cs_request_time,CSUtc(cs_ack_utc),cs_retcode,cs_order_ticket,
+            tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS);
+      CSEnqueueDecision("ORDER_ATTEMPT",cs_outcome,iTime(_Symbol,signal_timeframe,1),
+         cs_features,cs_predicates,cs_attempt,cs_attempt_id,cs_order_ticket,cs_request_time);
+#endif
+      uint result=trade.ResultRetcode();'''
+    if source_text.count(order_anchor) != 1:
+        raise ValueError("expected unique GoldM15 market-order submission")
+    source_text = source_text.replace(order_anchor, order_capture, 1)
     return source_text
 
 
@@ -232,6 +278,7 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_pa
         login=int(spec["login"]),
         server=spec["server"],
         terminal_path=str(terminal_root),
+        broker_utc_offset_seconds=spec["broker_utc_offset_seconds"],
     )
     variant_source = variant_dir / f"{EA_NAME}.mq5"
     helper_output = variant_dir / "ChartStudioEvidenceSpool.mqh"
