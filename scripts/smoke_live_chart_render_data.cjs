@@ -90,7 +90,7 @@ const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
       const apiLast = [...api.candles].sort((a, b) => Number(a.time) - Number(b.time)).at(-1);
       assert.equal(rendered.at(-1).time, apiLast.time, `${account} renderer receives the newest verified candle`);
       assert.equal(rendered.at(-1).close, apiLast.close, `${account} rendered close equals the broker feed`);
-      await page.waitForTimeout(100);
+      await page.waitForTimeout(1500);
       const canvasPixels = await page.evaluate(() => [...document.querySelectorAll("#tv-chart canvas")]
         .filter(canvas => canvas.width >= 300 && canvas.height >= 200)
         .map(canvas => {
@@ -107,6 +107,16 @@ const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
       const visibleCandlePixels = Math.max(0, ...candleInkPixels);
       assert.ok(visibleCandlePixels >= 40,
         `${account} canvas has verified candle data but no visible bullish/bearish candle paint (${visibleCandlePixels}px across ${canvasPixels.length} plot canvases)`);
+      assert.equal(await page.locator("#chart-crosshair-data-window").isVisible(), true,
+        `${account} main chart keeps its read-only OHLC data window visible outside Chart Studio Beta`);
+      assert.equal(await page.locator("#chart-crosshair-scope").textContent(), `${api.symbol} · ${api.timeframe}`);
+      await page.locator("#tv-chart").scrollIntoViewIfNeeded();
+      const chartBox = await page.locator("#tv-chart").boundingBox();
+      assert.ok(chartBox, `${account} chart has a visible browser rectangle`);
+      await page.mouse.move(chartBox.x + chartBox.width / 2, chartBox.y + chartBox.height / 2);
+      await page.waitForFunction(() => /^\d+(?:\.\d+)?$/.test(document.querySelector("#chart-crosshair-close")?.textContent || ""));
+      assert.match(await page.locator("#chart-crosshair-time").textContent(), /UTC$/,
+        `${account} production data window labels its candle time as UTC`);
       let preview = "NOT_RUN";
       if (index === 0) {
         const previewEnabled = await page.evaluate(() => window.CHART_STUDIO_V5_PREVIEW_ENABLED === true);
