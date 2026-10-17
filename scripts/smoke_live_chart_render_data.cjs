@@ -89,22 +89,29 @@ const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
       const apiLast = [...api.candles].sort((a, b) => Number(a.time) - Number(b.time)).at(-1);
       assert.equal(rendered.at(-1).time, apiLast.time, `${account} renderer receives the newest verified candle`);
       assert.equal(rendered.at(-1).close, apiLast.close, `${account} rendered close equals the broker feed`);
-      let preview = false;
+      let preview = "NOT_RUN";
       if (index === 0) {
-        await page.locator("#chart-v5-preview-btn").waitFor({state:"visible"});
-        await page.locator("#chart-v5-preview-btn").click();
-        await page.waitForFunction(() => document.querySelector("#chart-v5-preview-status")?.textContent.includes("1001 verifizierte Kerzen"));
-        await page.waitForFunction(() => [...document.querySelectorAll("#chart-v5-preview-host canvas")].some(canvas => canvas.width > 300 && canvas.height > 200));
-        await page.locator("#chart-v5-auto-fib-btn").click();
-        const fib = await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci());
-        assert.equal(fib.result.source, "MT5_VERIFIED");
-        assert.equal(fib.asOf.timeUtc, api.snapshotAsOfUtc);
-        assert.equal(fib.result.timeframe, api.timeframe);
-        assert.equal(fib.series.length, 7);
-        assert.ok(fib.series.every(line => line.visible === true));
-        await page.locator("#chart-v5-auto-fib-btn").click();
-        assert.equal(await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci()), null);
-        preview = true;
+        const previewEnabled = await page.evaluate(() => window.CHART_STUDIO_V5_PREVIEW_ENABLED === true);
+        const previewButton = page.locator("#chart-v5-preview-btn");
+        if (previewEnabled) {
+          await previewButton.waitFor({state:"visible"});
+          await previewButton.click();
+          await page.waitForFunction(() => document.querySelector("#chart-v5-preview-status")?.textContent.includes("1001 verifizierte Kerzen"));
+          await page.waitForFunction(() => [...document.querySelectorAll("#chart-v5-preview-host canvas")].some(canvas => canvas.width > 300 && canvas.height > 200));
+          await page.locator("#chart-v5-auto-fib-btn").click();
+          const fib = await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci());
+          assert.equal(fib.result.source, "MT5_VERIFIED");
+          assert.equal(fib.asOf.timeUtc, api.snapshotAsOfUtc);
+          assert.equal(fib.result.timeframe, api.timeframe);
+          assert.equal(fib.series.length, 7);
+          assert.ok(fib.series.every(line => line.visible === true));
+          await page.locator("#chart-v5-auto-fib-btn").click();
+          assert.equal(await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci()), null);
+          preview = "PASSED";
+        } else {
+          assert.equal(await previewButton.isHidden(), true, "the gated native-v5 preview remains unavailable while disabled");
+          preview = "GATED_OFF";
+        }
       }
       results.push({ account, symbol: api.symbol, timeframe: api.timeframe, renderedBars: rendered.length, latestClose: rendered.at(-1).close, nativeV5AutoFibonacciPreview: preview });
     }
