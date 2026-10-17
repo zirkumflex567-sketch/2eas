@@ -2207,7 +2207,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             <strong id="chart-v5-preview-title">Native v5 · nur verifizierte MT5-Kerzen</strong>
             <span id="chart-v5-preview-status" role="status" aria-live="polite">Vorschau noch nicht geöffnet.</span>
           </div>
-          <div class="mb-2 flex flex-wrap items-center gap-2 text-xs"><button type="button" id="chart-v5-auto-fib-btn" aria-pressed="false" disabled class="px-2 py-1 rounded border border-amber-400/40 bg-amber-900/20 text-amber-200 font-bold">Auto-Fibonacci einblenden</button><output id="chart-v5-auto-fib-status" aria-live="polite" class="text-slate-300"></output></div>
+          <div class="mb-2 flex flex-wrap items-center gap-2 text-xs"><button type="button" id="chart-v5-auto-fib-btn" aria-pressed="false" disabled class="px-2 py-1 rounded border border-amber-400/40 bg-amber-900/20 text-amber-200 font-bold">Auto-Fibonacci einblenden</button><output id="chart-v5-auto-fib-status" aria-live="polite" class="text-slate-300"></output><output id="chart-v5-position-status" aria-live="polite" class="text-cyan-200">Positionen laden erst beim Öffnen der Vorschau.</output></div>
           <div id="chart-v5-preview-host" class="w-full rounded border border-slate-700" style="height: 460px; min-width: 260px;"></div>
           <p class="mt-2 text-[10px] text-slate-400">Read-only-Vorschau mit verifizierten MT5-Kerzen; Auto-Fibonacci wird erst nach bestätigtem Swing gezeigt. Hauptchart und Werkzeuge bleiben auf v4. Powered by <a class="text-cyan-300 underline" href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">TradingView Lightweight Charts™</a>. <a class="text-cyan-300 underline" href="static/chart-studio-v5-NOTICE.txt">NOTICE</a> · <a class="text-cyan-300 underline" href="static/chart-studio-v5-LICENSE.txt">Apache-2.0</a> · <a class="text-cyan-300 underline" href="static/chart-studio-v5-THIRD-PARTY-LICENSES.txt">Drittanbieter-Lizenzen</a>.</p>
         </section>
@@ -2589,6 +2589,9 @@ HTML_CONTENT = """<!DOCTYPE html>
       localStorage.setItem('chart_show_positions', String(showChartPositions));
       updateChartPositionsButtonUI();
       updateChartPositionLines(lastKnownPositions);
+      window.ChartStudioV5Preview?.showPositions(showChartPositions);
+      if (showChartPositions) refreshV5PreviewPositions(true);
+      else setV5PositionStatus('Positionen ausgeblendet');
     }
 
     let showPriceLevelLegend = localStorage.getItem('chart_show_price_levels') !== 'false';
@@ -3414,6 +3417,54 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
     }
 
+    const v5PositionDemoAccounts = new Set(['titan','xau5m_m5','titan_m5','xau5m_500']);
+    let v5PositionReadInFlight = null;
+    let v5PositionReadKey = '';
+    let v5PositionReadAt = 0;
+    function setV5PositionStatus(message) {
+      const output = document.getElementById('chart-v5-position-status');
+      if (output) output.textContent = message;
+    }
+    async function refreshV5PreviewPositions(force = false) {
+      const preview = window.ChartStudioV5Preview;
+      const state = preview?.inspect?.();
+      if (!state?.active || !state.scope) return;
+      const scope = {account:activeAccount,symbol:activeChartSymbol,timeframe:activeTimeframe};
+      if (state.scope.account !== scope.account || state.scope.symbol !== scope.symbol || state.scope.timeframe !== scope.timeframe) return;
+      const candles = candleHistory?.latest;
+      if (!candles || candles.accountId !== scope.account || candles.symbol !== scope.symbol || candles.timeframe !== scope.timeframe) return;
+      if (!showChartPositions) { preview.clearPositions(); setV5PositionStatus('Positionen ausgeblendet'); return; }
+      if (!v5PositionDemoAccounts.has(scope.account)) {
+        preview.clearPositions(); setV5PositionStatus('Positionsvorschau nur für freigegebene Demokonten'); return;
+      }
+      const key = `${scope.account}/${scope.symbol}/${scope.timeframe}`;
+      if (v5PositionReadInFlight === key || (!force && v5PositionReadKey === key && Date.now() - v5PositionReadAt < 5000)) return;
+      const accountGenerationAtStart = accountGeneration;
+      const token = preview.beginPositionRead();
+      v5PositionReadInFlight = key; v5PositionReadKey = key; v5PositionReadAt = Date.now();
+      setV5PositionStatus('Lese Positionen von MT5 …');
+      try {
+        const data = await accountFetch('/api/chart/v1/positions?symbol=' + encodeURIComponent(scope.symbol));
+        if (accountGenerationAtStart !== accountGeneration || scope.account !== activeAccount || scope.symbol !== activeChartSymbol || scope.timeframe !== activeTimeframe) return;
+        if (data.account !== scope.account || data.symbol !== scope.symbol || data.source !== 'MT5_VERIFIED' || data.canExecute !== false || !Array.isArray(data.positions)) {
+          preview.clearPositions(); setV5PositionStatus('Positionen nicht verifiziert · Overlay entfernt'); return;
+        }
+        const result = preview.setPositions({scope,source:data.source,canExecute:data.canExecute,positions:data.positions},token);
+        if (!result.applied) {
+          setV5PositionStatus(!showChartPositions ? 'Positionen ausgeblendet' : 'Positionen nicht verfügbar · ' + result.reason);
+          return;
+        }
+        setV5PositionStatus(`${data.positions.length} MT5-Positionen · read-only`);
+      } catch (error) {
+        if (accountGenerationAtStart !== accountGeneration || scope.account !== activeAccount || scope.symbol !== activeChartSymbol || scope.timeframe !== activeTimeframe) return;
+        preview.clearPositions();
+        setV5PositionStatus('Positionen nicht verfügbar · ' + String(error?.message || 'MT5-Read fehlgeschlagen').slice(0,100));
+      } finally {
+        if (v5PositionReadInFlight === key) v5PositionReadInFlight = null;
+      }
+    }
+    window.addEventListener('chart-studio-v5-preview-opened', () => refreshV5PreviewPositions(true));
+
     // --- SMOOTH CANDLES LOAD (NO JUMPING & PRESERVES ZOOM) ---
     function candleHistoryScope(account, symbol, timeframe) {
       return account + '/' + symbol + '/' + timeframe;
@@ -3545,6 +3596,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (!candleHistory.pages.length) candleHistory.hasMore = data.page?.hasMore === true;
         const renderData = mergeCandleHistory(data);
         v5Preview?.update({...data,candles:renderData.candles},v5Request);
+        if (v5Preview?.inspect?.().active) refreshV5PreviewPositions(true);
 
         currentCandlesCount = renderData.candles.length;
         const latest = renderData.candles[renderData.candles.length - 1];
@@ -3803,6 +3855,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
         // Render Positions
         renderPositions(data.positions);
+        refreshV5PreviewPositions(false);
         if (Array.isArray(data.positions) && data.positions.length > 0 && journalEntriesByAccount[data.account.id]) {
           let journalChanged = false;
           for (const pos of data.positions) {

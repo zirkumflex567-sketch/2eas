@@ -79,10 +79,26 @@ const FLAG_OFF = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;";
       assert.equal(await page.evaluate(() => window.CHART_STUDIO_V5_PREVIEW_ENABLED), true,
         "only the headless acceptance response enables the optional preview");
       await page.locator("#chart-v5-preview-btn").waitFor({ state: "visible" });
+      const positionResponsePromise = page.waitForResponse(response => {
+        const url = new URL(response.url());
+        return url.pathname === "/api/chart/v1/positions" && url.searchParams.get("account") === expected.account;
+      }, { timeout: 5000 });
       await page.locator("#chart-v5-preview-btn").click();
+      const positionResponse = await positionResponsePromise;
+      assert.equal(positionResponse.status(), 200, `${expected.account}: MT5 position read`);
+      const positions = await positionResponse.json();
+      assert.equal(positions.account, expected.account);
+      assert.equal(positions.symbol, expected.symbol);
+      assert.equal(positions.source, "MT5_VERIFIED");
+      assert.equal(positions.canExecute, false);
+      assert.ok(Array.isArray(positions.positions));
+      const expectedOverlayLines = positions.positions.reduce((count, row) => count + 1 +
+        (Number(row.sl) > 0 ? 1 : 0) + (Number(row.tp) > 0 ? 1 : 0), 0);
       await page.waitForFunction(count =>
         document.querySelector("#chart-v5-preview-status")?.textContent.includes(`${count} verifizierte Kerzen`),
       snapshot.candles.length);
+      await page.waitForFunction(count => window.ChartStudioV5Preview?.inspect()?.positionOverlayCount === count,
+        expectedOverlayLines);
       await page.waitForFunction(() => [...document.querySelectorAll("#chart-v5-preview-host canvas")]
         .some(canvas => canvas.width > 300 && canvas.height > 200));
       const state = await page.evaluate(() => ({
@@ -113,6 +129,8 @@ const FLAG_OFF = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;";
         candles: snapshot.candles.length,
         v4Mounted: true,
         v5Canvas: state.v5Canvases.find(canvas => canvas.width > 300 && canvas.height > 200),
+        positionCount: positions.positions.length,
+        positionOverlayLines: state.preview.positionOverlayCount,
         apiRequests: apiRequests.length,
         staleRiskResponses: apiResponses.filter(item => item.status === 503),
       });

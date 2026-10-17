@@ -61,6 +61,27 @@ const server=http.createServer((req,res)=>{
   await page.locator("#chart-v5-preview-btn").click();
   await page.waitForFunction(()=>document.querySelector("#chart-v5-preview-status")?.textContent.includes("150 verifizierte Kerzen"));
   await page.waitForFunction(()=>[...document.querySelectorAll("#chart-v5-preview-host canvas")].some(canvas=>canvas.width>300&&canvas.height>200));
+  const positions=await page.evaluate(()=>{
+   const scope={account:"titan",symbol:"XAUUSD",timeframe:"M15"},token=window.ChartStudioV5Preview.beginPositionRead();
+   return window.ChartStudioV5Preview.setPositions({scope,source:"MT5_VERIFIED",canExecute:false,positions:[
+    {ticket:"71001",side:"BUY",priceOpen:4161,sl:4158,tp:4168},
+    {ticket:"71002",side:"SELL",priceOpen:4165,sl:4169,tp:null},
+   ]},token);
+  });
+  assert.deepEqual(positions,{applied:true,count:5},"verified position entry/SL/TP overlays render in v5");
+  assert.equal((await page.evaluate(()=>window.ChartStudioV5Preview.readPositions())).count,5);
+  const positionVisibility=await page.evaluate(()=>{
+   const hidden=window.ChartStudioV5Preview.showPositions(false),hiddenCount=window.ChartStudioV5Preview.readPositions().count;
+   const shown=window.ChartStudioV5Preview.showPositions(true),shownCount=window.ChartStudioV5Preview.readPositions().count;
+   return {hidden,hiddenCount,shown,shownCount};
+  });
+  assert.deepEqual(positionVisibility,{hidden:true,hiddenCount:0,shown:true,shownCount:5},"the existing positions toggle controls v5 overlays without losing the verified snapshot");
+  const rejectedPositions=await page.evaluate(()=>{
+   const token=window.ChartStudioV5Preview.beginPositionRead();
+   return window.ChartStudioV5Preview.setPositions({scope:{account:"titan",symbol:"XAUUSD",timeframe:"M15"},source:"MT5_VERIFIED",canExecute:true,positions:[]},token);
+  });
+  assert.deepEqual(rejectedPositions,{applied:false,reason:"UNVERIFIED_SOURCE"},"executable position responses are never rendered");
+  assert.equal((await page.evaluate(()=>window.ChartStudioV5Preview.readPositions())).count,0,"unverified position data clears stale overlays");
   assert.equal(await page.locator("#chart-v5-auto-fib-btn").isEnabled(),true,"verified candle snapshot enables Auto-Fibonacci");
   await page.locator("#chart-v5-auto-fib-btn").click();
   const autoFib=await page.evaluate(()=>window.ChartStudioV5Preview.readAutoFibonacci());
@@ -79,15 +100,19 @@ const server=http.createServer((req,res)=>{
 
   const scopeSwitch=await page.evaluate(({candles,asOfUtc})=>{
    const stale=window.ChartStudioV5Preview.beginRead();
+   const stalePositions=window.ChartStudioV5Preview.beginPositionRead();
    window.ChartStudioV5Preview.setScope({account:"xau5m_m5",symbol:"XAUUSD.p",timeframe:"M15"});
    const staleResult=window.ChartStudioV5Preview.update({accountId:"titan",symbol:"XAUUSD",timeframe:"M15",source:"MT5_VERIFIED",canExecute:false,candles},stale);
+   const stalePositionResult=window.ChartStudioV5Preview.setPositions({scope:{account:"titan",symbol:"XAUUSD",timeframe:"M15"},source:"MT5_VERIFIED",canExecute:false,positions:[{ticket:"71001",side:"BUY",priceOpen:4161}]},stalePositions);
    const current=window.ChartStudioV5Preview.beginRead();
    const updated=window.ChartStudioV5Preview.update({accountId:"xau5m_m5",symbol:"XAUUSD.p",timeframe:"M15",source:"MT5_VERIFIED",canExecute:false,snapshotAsOfUtc:asOfUtc,candles},current);
-   return {staleResult,updated,state:window.ChartStudioV5Preview.inspect()};
+   return {staleResult,stalePositionResult,updated,state:window.ChartStudioV5Preview.inspect()};
   },{candles,asOfUtc});
   assert.deepEqual(scopeSwitch.staleResult,{applied:false,reason:"STALE_SCOPE"});
+  assert.deepEqual(scopeSwitch.stalePositionResult,{applied:false,reason:"STALE_SCOPE"},"late position reads cannot cross account changes");
   assert.deepEqual(scopeSwitch.updated,{applied:true,candleCount:150});
   assert.equal(scopeSwitch.state.scope.account,"xau5m_m5");
+  assert.equal(scopeSwitch.state.positionOverlayCount,0,"account changes clear prior account position lines");
   assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.readAutoFibonacci()),null,"a scope switch clears Auto-Fibonacci along with the prior account's candles");
   const missingAsOf=await page.evaluate(candles=>{const scope={account:"xau5m_m5",symbol:"XAUUSD.p",timeframe:"M15"},token=window.ChartStudioV5Preview.beginRead();return window.ChartStudioV5Preview.update({accountId:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,source:"MT5_VERIFIED",canExecute:false,candles},token)},candles);
   assert.deepEqual(missingAsOf,{applied:false,reason:"INVALID_AS_OF"},"missing snapshot time fails closed");
