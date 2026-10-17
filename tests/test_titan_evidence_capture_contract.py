@@ -65,6 +65,16 @@ def test_market_and_transaction_callbacks_enqueue_only_while_timer_flushes_disk(
     assert "CSQueueOverflowCount>=CSQueueOverflowNextLog" in _function(spool, "CSFlushEvidenceQueue")
 
 
+def test_failed_segment_write_removes_its_unimportable_temporary_file():
+    spool = SPOOL.read_text(encoding="utf-8-sig")
+    write = _function(spool, "CSWriteReadySegment")
+
+    assert write.count("FileDelete(temp,FILE_COMMON)") == 2
+    assert write.index("FileClose(handle);") < write.index("if(!complete)")
+    assert "if(!complete)\n     {\n      FileDelete(temp,FILE_COMMON);\n      return false;\n     }" in write
+    assert "if(!FileMove(temp,FILE_COMMON,ready,FILE_COMMON))\n     {\n      FileDelete(temp,FILE_COMMON);\n      return false;\n     }" in write
+
+
 def test_capture_records_strategy_features_and_closed_bar_predicates():
     ea = EA.read_text(encoding="utf-8-sig")
     decision = _function(ea, "CheckSignalAndTrade")

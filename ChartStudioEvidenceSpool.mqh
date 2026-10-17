@@ -350,8 +350,16 @@ bool CSWriteReadySegment(const string line,const ulong sequence)
    bool complete=(written==StringLen(line)+1 && FileSize(handle)<=CS_SEGMENT_MAX_BYTES);
    FileClose(handle);
    if(!complete)
+     {
+      FileDelete(temp,FILE_COMMON);
       return false;
-   return FileMove(temp,FILE_COMMON,ready,FILE_COMMON);
+     }
+   if(!FileMove(temp,FILE_COMMON,ready,FILE_COMMON))
+     {
+      FileDelete(temp,FILE_COMMON);
+      return false;
+     }
+   return true;
   }
 
 void CSFlushEvidenceQueue()
