@@ -107,12 +107,24 @@ const { chromium } = require("playwright");
     assert.equal(await page.evaluate(() => window.__extensionSeries.length), 1);
     assert.equal(posts.length, 1);
     assert.match(await page.locator("[data-extension-status]").textContent(), /120 Werte.*CALLER_SUPPLIED_BARS.*nicht ausführbar.*nur aktuelle Sitzung/);
+    const catalog=page.locator(".cs-catalog");
+    await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("Close copy");
+    const extensionEntry=catalog.locator('.cs-catalog-entry[data-indicator="extension-close-copy"]');
+    assert.equal(await extensionEntry.count(),1,"a verified signed extension appears in the searchable indicator catalog");
+    assert.match(await extensionEntry.textContent(),/Close copy.*Benutzerdefiniert.*1\.0\.0.*Sitzung/);
+    const catalogPreview=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith("/api/chart/v1/indicator-extensions/preview")&&response.request().method()==="POST");
+    await extensionEntry.getByRole("button",{name:"Vorschau"}).click();
+    assert.equal((await catalogPreview).ok(),true);
+    assert.equal(posts.length,2,"catalog preview reuses the verified package preview route");
+    await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("");
     assert.equal(await page.evaluate(() => JSON.stringify({local:Object.keys(localStorage).sort(),session:Object.keys(sessionStorage).sort()})), storageBefore,
       "private keys, extension packages, and preview output remain session-only");
 
     await page.evaluate(() => ChartStudioBeta.account("xau5m_m5"));
-    assert.equal(await page.evaluate(() => window.__extensionSeriesRemoved), 1,
+    assert.equal(await page.evaluate(() => window.__extensionSeriesRemoved), 2,
       "account switch removes the rendered extension from the price chart");
+    assert.equal(await page.locator('.cs-catalog-entry[data-indicator="extension-close-copy"]').count(),0,
+      "session extension is removed from the catalog when chart scope changes");
     assert.match(await page.locator("[data-extension-status]").textContent(), /Konten- oder Zeitrahmenwechsel/);
     assert.deepEqual(errors, []);
     console.log("PASS signed extension browser preview: verified-result rendering, demo account isolation, session-only state");

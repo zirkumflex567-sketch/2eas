@@ -184,6 +184,11 @@
     let packageText = "";
     let series = null;
     let generation = 0;
+    let removeCatalogExtension = null;
+
+    const removeCatalogEntry=()=>{
+      if(removeCatalogExtension){removeCatalogExtension();removeCatalogExtension=null;}
+    };
 
     const removeSeries = () => {
       if (series) {
@@ -194,6 +199,7 @@
     const invalidateScope = () => {
       generation += 1;
       removeSeries();
+      removeCatalogEntry();
       status.textContent = "Konten- oder Zeitrahmenwechsel · Vorschau gelöscht; erneut berechnen.";
     };
 
@@ -238,8 +244,10 @@
     });
 
     fileInput.addEventListener("change", async () => {
+      generation += 1;
       packageText = "";
       removeSeries();
+      removeCatalogEntry();
       const file = fileInput.files?.[0];
       if (!file) {
         status.textContent = "Keine Datei ausgewählt.";
@@ -265,6 +273,7 @@
       generation += 1;
       const requestGeneration = generation;
       removeSeries();
+      removeCatalogEntry();
       if (!packageText) {
         status.textContent = "Zuerst eine JSON-Paketdatei auswählen.";
         return;
@@ -309,6 +318,9 @@
         }
         if (data.source !== "CALLER_SUPPLIED_BARS" || data.canExecute !== false ||
             data.account !== context.account || data.symbol !== context.symbol || data.timeframe !== context.timeframe ||
+            !data.indicator || typeof data.indicator.id !== "string" || !identifierPattern.test(data.indicator.id) ||
+            typeof data.indicator.version !== "string" || !/^(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$/.test(data.indicator.version) ||
+            typeof data.indicator.name !== "string" || !data.indicator.name.trim() || [...data.indicator.name].length > 48 || !validUnicode(data.indicator.name) || /[\u0000-\u001f\u007f]/.test(data.indicator.name) ||
             !Array.isArray(data.series) || data.series.length !== bars.length ||
             !data.series.every((point, index) => point.time === Number(bars[index].time) &&
               (point.value === null || (typeof point.value === "number" && Number.isFinite(point.value))))) {
@@ -327,6 +339,10 @@
           color: "#f3c56a", lineWidth: 2, lastValueVisible: false, priceLineVisible: false
         });
         series.setData(points);
+        if(typeof root.ChartStudioCatalog?.addSessionExtension==="function"){
+          removeCatalogExtension=root.ChartStudioCatalog.addSessionExtension(
+            data.indicator,()=>previewButton.click());
+        }
         status.textContent = `${data.indicator.name} · signiert und verifiziert · ${points.length} Werte · ${context.timeframe} · ${data.source} · nicht ausführbar · nur aktuelle Sitzung.`;
       } catch (_) {
         if (generation === requestGeneration) status.textContent = "Vorschau fehlgeschlagen · Chartdaten oder Serverantwort nicht verfügbar.";

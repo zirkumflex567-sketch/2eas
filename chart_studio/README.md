@@ -126,14 +126,17 @@ signing keys in this setting or the repository.
 The Beta also lets a user create a canonical package manifest and sign it
 locally with a selected PKCS#8 Ed25519 private key, then download the signed
 JSON package. The key is used only in browser memory, never sent to the server,
-and the file input is cleared after use. The browser smoke generates a temporary
+and the file input is cleared after use. After the server verifies a signed package,
+it appears in the searchable native indicator catalog for the current session;
+selecting it repeats the same read-only preview. Scope changes and selecting a new
+file remove the catalog entry and chart line. The browser smoke generates a temporary
 keypair and verifies the exported package through the Python server verifier,
 including fractional and scientific-notation numbers. Server preview still
 requires a separately provisioned host trust key.
 
-Production trust-key provisioning/rotation, live-key package acceptance, native
-indicator-catalog integration, independent sandbox security review, and
-target-hardware profiling remain open under FR-024.
+Production trust-key provisioning/rotation, live-key package acceptance,
+independent sandbox security review, and target-hardware profiling remain open
+under FR-024.
 
 ## Immutable evidence Phase 0
 

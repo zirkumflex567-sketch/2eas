@@ -29,8 +29,15 @@ const entries=Object.freeze([
  {id:"vwap",name:"VWAP (UTC)",group:"Volumen",desc:"UTC-VWAP, bei Tickvolumen nur Proxy",type:"toggle",kind:"vwap"},
  {id:"footprint",name:"Footprint (echte Ausführungen)",group:"Orderflow",desc:"M1/M5/M15 · MT5-Ausführungsseite mit positivem Last und volume_real; sonst UNAVAILABLE",type:"footprint",kind:"footprint"}
 ]);
+const sessionExtensions=new Map(),catalogRenderers=new Set();
 function search(query){const q=String(query||"").trim().toLocaleLowerCase("de");
- return entries.filter(e=>(e.name+" "+e.id+" "+e.group+" "+e.desc).toLocaleLowerCase("de").includes(q));}
+ return [...entries,...sessionExtensions.values()].filter(e=>(e.name+" "+e.id+" "+e.group+" "+e.desc).toLocaleLowerCase("de").includes(q));}
+function addSessionExtension({id,name,version}={},onPreview){
+ if(typeof id!=="string"||!/^[a-z][a-z0-9-]{0,47}$/.test(id)||typeof name!=="string"||!name.trim()||[...name].length>48||/[\u0000-\u001f\u007f]/.test(name)||typeof version!=="string"||!/^(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$/.test(version)||typeof onPreview!=="function")return null;
+ const key="extension-"+id,entry=Object.freeze({id:key,name,group:"Benutzerdefiniert",desc:"Signiert · "+version+" · nur Sitzung",type:"extension",onPreview});
+ sessionExtensions.set(key,entry);catalogRenderers.forEach(render=>render());
+ return ()=>{if(sessionExtensions.get(key)!==entry)return false;sessionExtensions.delete(key);catalogRenderers.forEach(render=>render());return true};
+}
 function decimalParts(value,{signed=false,positive=false}={}){
  if(typeof value!=="string"||value.length>64)return null;
  const pattern=signed?/^-?(?:0|[1-9]\d*)(?:\.\d{1,28})?$/:/^(?:0|[1-9]\d*)(?:\.\d{1,28})?$/;
@@ -121,9 +128,10 @@ function mount({panel,getContext}={}){
    const info=document.createElement("span");const name=document.createElement("strong");
    name.textContent=e.name;const detail=document.createElement("small");
    detail.textContent=e.group+" · "+e.desc;info.append(name,detail);
-   const button=document.createElement("button");button.type="button";button.textContent=e.type==="footprint"?"Prüfen":e.type==="toggle"?"Anzeigen":"Hinzufügen";
-   button.setAttribute("aria-label",e.type==="footprint"?"Footprint-Daten prüfen":e.name+" hinzufügen");
+   const button=document.createElement("button");button.type="button";button.textContent=e.type==="extension"?"Vorschau":e.type==="footprint"?"Prüfen":e.type==="toggle"?"Anzeigen":"Hinzufügen";
+   button.setAttribute("aria-label",e.type==="extension"?"Vorschau":e.type==="footprint"?"Footprint-Daten prüfen":e.name+" hinzufügen");
    button.addEventListener("click",()=>{
+    if(e.type==="extension"){e.onPreview();status.textContent=e.name+" wird mit dem verifizierten Paket erneut read-only berechnet.";return;}
     if(e.type==="footprint"){inspectFootprint();return;}
     let ok=false;
     if(e.type==="average")ok=window.ChartStudioAverages?.add(e.kind,e.kind==="EMA"?21:20)===true;
@@ -138,7 +146,7 @@ function mount({panel,getContext}={}){
   if(!filtered.length){const no=document.createElement("p");no.textContent="Kein passender Indikator.";list.append(no)}
  };
  input.addEventListener("input",render);
- panel.prepend(root);render();return true;
+ panel.prepend(root);catalogRenderers.add(render);render();return true;
 }
-window.ChartStudioCatalog=Object.freeze({mount,search,entries});
+window.ChartStudioCatalog=Object.freeze({mount,search,entries,addSessionExtension});
 })();
