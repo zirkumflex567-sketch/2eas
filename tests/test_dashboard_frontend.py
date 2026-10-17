@@ -331,6 +331,18 @@ class DashboardFrontendTests(unittest.TestCase):
     def load(self):
         self.page.goto(self.url)
         expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=10000)
+
+    def test_account_fetch_accepts_string_account_provenance(self):
+        self.load()
+        result = self.page.evaluate("""async () => {
+          try {
+            return await (await accountFetch('/api/chart/v1/positions?symbol=XAUUSD')).json();
+          } catch (error) {
+            return {error: error.message};
+          }
+        }""")
+        self.assertNotIn('error', result)
+        self.assertEqual(result['account'], 'titan')
     def test_account_deep_link_precedes_saved_account_and_scopes_startup_reads(self):
         self.page.add_init_script("""() => {
           localStorage.setItem('gold_dashboard_account','goldm15');

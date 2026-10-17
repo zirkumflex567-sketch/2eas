@@ -2722,7 +2722,8 @@ HTML_CONTENT = """<!DOCTYPE html>
         error.sourceFresh = detail && typeof detail === 'object' ? detail.source_fresh : null;
         throw error;
       }
-      if (body.account && body.account.id !== account) throw new Error('Antwort gehört zu einem anderen Konto.');
+      const responseAccount = typeof body.account === 'string' ? body.account : body.account?.id;
+      if (body.account && responseAccount !== account) throw new Error('Antwort gehört zu einem anderen Konto.');
       return {ok:response.ok,json: async () => body};
     }
 
