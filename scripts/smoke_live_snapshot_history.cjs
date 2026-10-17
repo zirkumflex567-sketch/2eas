@@ -25,7 +25,7 @@ const forbiddenAccounts = new Set(["blueberry"]);
       const url = new URL(request.url());
       if (!url.pathname.includes("/api/")) return;
       const account = url.searchParams.get("account");
-      apiRequests.push({ method: request.method(), account, path: url.pathname });
+      apiRequests.push({ method: request.method(), account, path: url.pathname, revision: url.searchParams.get("revision") });
       if (url.pathname === "/api/candles") mtfReads.push({ method: request.method(), account, symbol: url.searchParams.get("symbol"), timeframe: url.searchParams.get("tf"), before: url.searchParams.get("before") });
       if (request.method() !== "GET") mutations.push({ method: request.method(), path: url.pathname });
       if (account && forbiddenAccounts.has(account)) {
@@ -114,7 +114,8 @@ const forbiddenAccounts = new Set(["blueberry"]);
       const replayStatus = await rows.first().locator(".cs-evidence-snapshot-replay-status").textContent();
       assert.match(replayStatus, /RECORDED · \d+ eingefrorene Bars/, `${account}: actual referenced-event replay failed (${replayStatus})`);
       assert.ok(apiRequests.some(request => request.path.endsWith(`/lifecycle/${encodeURIComponent(lifecycleRefs[0].id)}`)
-        && request.account === account && request.method === "GET"), `${account}: replay did not read its exact lifecycle record`);
+        && request.account === account && request.method === "GET"
+        && request.revision === String(lifecycleRefs[0].dataRevision)), `${account}: replay did not read its exact lifecycle record and revision`);
       const snapshot = records[0], snapshotSymbol = snapshot.payload.chartView.symbol;
       assert.equal(await rows.first().locator("button.cs-evidence-snapshot-mtf").count(), 1, `${account}: missing historical MTF action`);
       await rows.first().locator("button.cs-evidence-snapshot-mtf").click();
