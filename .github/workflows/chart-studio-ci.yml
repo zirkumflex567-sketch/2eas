@@ -48,6 +48,8 @@ jobs:
           node --check static/chart-studio-replay.js
           node --check static/chart-studio-fib.js
           node scripts/test_chart_studio_fib.cjs
+          node --check static/chart-studio-position-autoscale.js
+          node scripts/test_chart_studio_position_autoscale.cjs
           node --check static/chart-studio-export.js
           node --check static/chart-studio-beta.js
           node --check static/chart-studio-main-data-window.js

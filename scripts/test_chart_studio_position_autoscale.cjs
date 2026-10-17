@@ -14,5 +14,5 @@ assert.equal(merge(base, null), base);
 assert.deepEqual(JSON.parse(JSON.stringify(merge(null, { min: 90, max: 120 }))), { priceRange: { minValue: 90, maxValue: 120 } });
 assert.equal(merge(base, { min: NaN, max: 120 }), base);
 assert.equal(merge(base, { min: 120, max: 90 }), base);
-console.log("verified position autoscale range contract passed");
 assert.equal(merge(base, { min: 110, max: 1e12 }), base);
+console.log("verified position autoscale range contract passed");
