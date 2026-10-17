@@ -50,5 +50,5 @@
 
 - [x] Run Node contracts, `node --check`, focused multi-chart Chromium smoke including named-layout and favorite lifecycle, request cancellation and 480px checkbox/canvas checks, full Beta smoke, Python dashboard frontend tests (74 tests/38 subtests), and `git diff --check`.
 - [x] Confirm the added smoke makes only scoped GET requests for `titan`, makes no broker mutation, verifies favorite symbols, and blocks the Blueberry workspace before fetch.
-- [ ] Review, check on `main`, restart local and htown `/stt`, and repeat all-four-demo read-only acceptance with this code revision.
-- [ ] Update FR-018 evidence after deployment; native v5 parity, touch/DPI and cross-device/hardware acceptance remain open for their own verification.
+- [x] Review, check on `main`, restart local and htown `/stt`, and repeat all-four-demo read-only acceptance with this code revision. Commit `252c548409b7b8780ccbd0af9e619e0a5ec1ac61` passed both Chart Studio and Performance/UX workflows. Guarded runtime restart reports matching startup/disk revision and digest with `restart_required=false`; the htown `/stt` runtime tunnel reports the same. On `titan`, `xau5m_m5`, `titan_m5`, and `xau5m_500`, both panes each loaded 300 `MT5_VERIFIED` XAU M15 candles; 77 API requests were GET-only, with no errors and no Blueberry requests.
+- [x] Update FR-018 evidence after deployment; native v5 parity, touch/DPI and cross-device/hardware acceptance remain open for their own verification.
