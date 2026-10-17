@@ -16,7 +16,7 @@ Show broker-verified historical deal fills in the native v5 chart preview, with 
 
 1. Extend the browser contract to prove valid broker markers appear only on exact loaded candles and preserve the existing position snapshot independently.
 2. Prove account/symbol/timeframe mismatch, invalid tickets/prices/times, unverified/executable data and malformed marker collections fail atomically without changing the last accepted snapshot; verify clear/scope-change behavior and zero network or mutation requests.
-3. Implement the smallest read-only bridge and v5 renderer support; run focused Chromium, existing v5 renderer/preview, broker-panel, and four-demo read-only regressions.
+3. Implement the smallest read-only bridge and v5 renderer support; run focused Chromium, existing v5 renderer/preview, broker-panel, and four-demo read-only regressions. `scripts/smoke_live_v5_deal_markers.cjs` exercises the real Broker Panel deal-history GET through Beta validation into v5, while blocking non-GET and non-allowlisted account API requests.
 4. Update `OPEN_TASKS.md` with the verified code-level scope and leave hardware, full history coverage and production-v5 migration open.
 
 ## Boundaries
