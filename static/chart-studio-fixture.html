@@ -4,7 +4,7 @@
 <style>body{background:#071521;color:white;margin:12px;font-family:system-ui}.glass-card{background:#142e3b;border:1px solid #66818b;border-radius:10px;padding:12px;width:min(100%,1080px);box-sizing:border-box}#tv-chart{width:100%;height:520px}.frame{width:100%;height:520px;position:relative}button{cursor:pointer}</style>
 <link rel="stylesheet" href="stone-asset-skin.css"></head>
 <body><div class="glass-card"><div><strong>XAUUSD M15 DEMO · READ ONLY</strong> <button id="stone-chart-expand-btn">GROSS</button></div>
-<div class="frame"><div id="tv-chart"></div></div></div>
+<div class="frame"><div id="tv-chart"></div></div><section id="chart-crosshair-data-window" aria-label="Kerzendaten am Fadenkreuz" style="display:flex;gap:1rem;flex-wrap:wrap;padding:10px;border-top:1px solid #66818b;font:12px ui-monospace,monospace"><strong>Kerze <span id="chart-crosshair-scope">XAUUSD · M15</span></strong><span>Zeit <b id="chart-crosshair-time">—</b></span><span>O <b id="chart-crosshair-open">—</b></span><span>H <b id="chart-crosshair-high">—</b></span><span>L <b id="chart-crosshair-low">—</b></span><span>C <b id="chart-crosshair-close">—</b></span></section></div>
 <script src="lightweight-charts.js"></script>
 <script src="stone-chart-effects.js"></script>
 <script src="chart-studio-data-signature.js"></script>
@@ -29,6 +29,7 @@
   <script src="chart-studio-mtf-panel.js"></script>
   <link rel="stylesheet" href="chart-studio-multi-chart.css">
   <script src="chart-studio-multi-chart.js"></script>
+<script src="chart-studio-main-data-window.js"></script>
   <script src="chart-studio-beta.js"></script>
 <script>
 const host=document.getElementById("tv-chart");
@@ -64,6 +65,7 @@ chart.timeScale().fitContent();
 window.StoneChartFX.attach({chart,host,candleSeries,emaSeries:emas});
 window.StoneChartFX.update({candles,emas:emas.map((_,j)=>candles.map(c=>({time:c.time,value:c.close-2+j}))),context:"fixture/titan/M15"});
 ChartStudioBeta.mount({chart,host,candleSeries,emaSeries:emas,account:"titan",timeframe:"M15"});
+window.__mainDataWindow=ChartStudioMainDataWindow.mount({chart,host,candleSeries,symbol:"XAUUSD",timeframe:"M15"});
 ChartStudioBeta.updateCandles(candles);
 ChartStudioBeta.updatePositions("titan",[
 {ticket:101,type:"BUY",open_price:4110,sl_price:4104,tp_price:4122,profit_usd:33,volume:.1}

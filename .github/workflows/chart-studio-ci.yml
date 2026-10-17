@@ -50,6 +50,7 @@ jobs:
           node scripts/test_chart_studio_fib.cjs
           node --check static/chart-studio-export.js
           node --check static/chart-studio-beta.js
+          node --check static/chart-studio-main-data-window.js
           node --check static/chart-studio-indicator-extensions.js
           node --check static/chart-studio-server-sync.js
           node tests/test_chart_studio_device_sync_crypto.cjs

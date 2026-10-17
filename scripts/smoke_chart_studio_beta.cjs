@@ -415,6 +415,8 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await page.waitForTimeout(40);
   await page.evaluate(()=>chart.timeScale().fitContent());
   assert.equal(await page.locator("#cs-beta-panel").isVisible(),true);
+  assert.equal(await page.locator("#chart-crosshair-data-window").count(),1,"FR-008 exposes a production data window outside the optional Beta panel");
+  assert.equal(await page.locator("#chart-crosshair-scope").textContent(),"XAUUSD · M15");
   assert.equal(await page.locator("#cs-data-window").count(),1,"FR-008 exposes the chart data window");
   assert.match(await page.locator("#cs-data-window-source").textContent(),/Chart-Feed/);
   await page.locator("#tv-chart").scrollIntoViewIfNeeded();
@@ -422,6 +424,12 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   const hoverPoint=await page.evaluate(()=>{const row=window.__chartSmokeCandles[80];return {x:chart.timeScale().timeToCoordinate(row.time),y:candleSeries.priceToCoordinate(row.close),open:row.open.toFixed(2),close:row.close.toFixed(2)}});
   await page.mouse.move(chartBox.x+hoverPoint.x,chartBox.y+hoverPoint.y);
   await page.waitForFunction(value=>document.querySelector("#cs-data-window-close")?.textContent===value,hoverPoint.close);
+  await page.waitForFunction(value=>document.querySelector("#chart-crosshair-close")?.textContent===value,hoverPoint.close);
+  assert.match(await page.locator("#chart-crosshair-time").textContent(),/UTC/);
+  await page.evaluate(()=>window.__mainDataWindow.setScope("titan","H1"));
+  assert.equal(await page.locator("#chart-crosshair-close").textContent(),"—","Changing the chart scope clears stale production OHLC");
+  assert.equal(await page.locator("#chart-crosshair-scope").textContent(),"titan · H1");
+  await page.evaluate(()=>window.__mainDataWindow.setScope("XAUUSD","M15"));
   await page.locator("#tv-chart").scrollIntoViewIfNeeded();
   chartBox=await page.locator("#tv-chart").boundingBox();
   assert.equal(await page.locator("#cs-data-window-open").textContent(),hoverPoint.open);
@@ -792,7 +800,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   pivotWrongSymbol=false;await pivotToggle.uncheck();
   await page.locator('.cs-indicator-control input[data-kind="rsi"][type="checkbox"]').check();
   await page.waitForSelector('.cs-indicator-pane[data-indicator="rsi"]',{state:"visible"});
-  await page.evaluate(()=>{const bar=window.__chartSmokeCandles.at(-1);window.__chartCrosshairSubscribers[0]({time:bar.time,seriesData:new Map([[candleSeries,bar]])})});
+  await page.evaluate(()=>{const bar=window.__chartSmokeCandles.at(-1),event={time:bar.time,seriesData:new Map([[candleSeries,bar]])};for(const listener of [...window.__chartCrosshairSubscribers])listener(event)});
   await page.waitForFunction(()=>document.querySelector("#cs-data-window-indicators")?.textContent.includes("RSI"));
   assert.match(await page.locator("#cs-data-window-indicators").textContent(),/RSI\s+\d/);
   await page.evaluate(()=>ChartStudioAverages.add("EMA",3));

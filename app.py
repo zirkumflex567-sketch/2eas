@@ -1818,6 +1818,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="static/chart-studio-mtf-panel.js"></script>
   <link rel="stylesheet" href="static/chart-studio-multi-chart.css">
   <script src="static/chart-studio-multi-chart.js"></script>
+  <script src="static/chart-studio-main-data-window.js"></script>
   <script src="static/chart-studio-beta.js"></script>
   <script>window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;</script>
   <script src="static/chart-studio-v5-feed.js"></script>
@@ -2202,6 +2203,11 @@ HTML_CONTENT = """<!DOCTYPE html>
             <div id="chart-load-status" role="status" aria-live="polite" hidden></div>
           </div>
         </div>
+        <section id="chart-crosshair-data-window" aria-label="Kerzendaten am Fadenkreuz" class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-cyan-400/20 bg-slate-950/50 px-3 py-2 font-mono text-xs text-slate-200">
+          <strong class="text-cyan-200">Kerze <span id="chart-crosshair-scope">XAUUSD · M15</span></strong>
+          <span>Zeit <b id="chart-crosshair-time">—</b></span><span>O <b id="chart-crosshair-open">—</b></span>
+          <span>H <b id="chart-crosshair-high">—</b></span><span>L <b id="chart-crosshair-low">—</b></span><span>C <b id="chart-crosshair-close">—</b></span>
+        </section>
         <section id="chart-v5-preview-panel" hidden class="mt-3 rounded-lg border border-cyan-400/30 bg-slate-950/70 p-3" aria-label="Lightweight Charts v5 read-only preview">
           <div class="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
             <strong id="chart-v5-preview-title">Native v5 · nur verifizierte MT5-Kerzen</strong>
@@ -2631,6 +2637,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       if (activeTimeframe === tf) return;
       activeTimeframe = tf;
       updateChartScopeLabel();
+      window.__chartStudioMainDataWindow?.setScope(activeChartSymbol, activeTimeframe);
       clearChartFX();
       try { window.ChartStudioBeta?.timeframe(tf); } catch (_) {}
 
@@ -2791,6 +2798,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       const meta = accounts[account];
       activeChartSymbol = meta.symbol || 'XAUUSD';
       activeTimeframe = meta.timeframe || 'M15';
+      window.__chartStudioMainDataWindow?.setScope(activeChartSymbol, activeTimeframe);
       if (!document.getElementById('chart-multi-panel')?.hidden) mountMultiChartWorkspace();
       try {
         window.ChartStudioBeta?.account(account, activeChartSymbol);
@@ -3082,6 +3090,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       try { window.StoneChartFX?.attach({chart, host:container, candleSeries, emaSeries:[ema9Series,ema20Series,ema50Series,ema200Series]}); } catch (_) {}
       try { window.StoneCelebration?.applyChartSettings(); } catch (_) {}
       try { window.ChartStudioBeta?.mount({chart,host:container,candleSeries,emaSeries:[ema20Series,ema50Series,ema200Series],account:activeAccount,timeframe:activeTimeframe}); } catch (err) { console.warn("Chart Studio Beta konnte nicht gestartet werden:",err); }
+      try { window.__chartStudioMainDataWindow = window.ChartStudioMainDataWindow?.mount({chart,host:container,candleSeries,symbol:activeChartSymbol,timeframe:activeTimeframe}); } catch (err) { console.warn("Hauptchart-Datenfenster konnte nicht gestartet werden:",err); }
       chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
         if (range && range.from <= 2) void loadOlderCandles();
       });
