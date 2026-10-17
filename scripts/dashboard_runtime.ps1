@@ -5,7 +5,7 @@ param(
     [Parameter(Mandatory=$true)][string]$Repo,
     [Parameter(Mandatory=$true)][string]$Python,
     [Parameter(Mandatory=$true)][ValidateRange(1,65535)][int]$Port,
-    [string]$PrivateEnvJson,
+    [string]$PrivateEnvJson = (Join-Path $env:USERPROFILE '.dashboard-env.json'),
     [ValidateRange(1,60)][int]$StartupTimeoutSeconds = 30
 )
 Set-StrictMode -Version Latest

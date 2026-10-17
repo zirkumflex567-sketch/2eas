@@ -275,7 +275,8 @@ HTTPServer(('127.0.0.1', int(os.environ['DASHBOARD_PORT'])), Handler).serve_fore
 '''
 
 
-def run_control(repo, port, action, env_file=None, shell='powershell.exe', script=None):
+def run_control(repo, port, action, env_file=None, shell='powershell.exe', script=None,
+                environment=None, use_default_private_env=False):
     script = script or ROOT / 'scripts' / 'dashboard_runtime.ps1'
     assert script.exists(), 'guarded restart script is required'
     args = [shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script),
@@ -283,12 +284,16 @@ def run_control(repo, port, action, env_file=None, shell='powershell.exe', scrip
             '-StartupTimeoutSeconds', '8']
     if env_file:
         args += ['-PrivateEnvJson', str(env_file)]
+    elif not use_default_private_env:
+        # Preserve tests that intentionally exercise a secretless local fixture;
+        # the dedicated default-path test omits this argument explicitly.
+        args += ['-PrivateEnvJson', '']
     # Windows background children can inherit subprocess pipe handles even with
     # their own log redirection. File capture keeps operator exit independent.
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         # This includes repeated Git/PowerShell preflight in addition to the
         # bounded 8s application startup wait, and may run beside the full suite.
-        result = subprocess.run(args, stdout=stdout, stderr=stderr, timeout=120)
+        result = subprocess.run(args, env=environment, stdout=stdout, stderr=stderr, timeout=120)
         stdout.seek(0)
         stderr.seek(0)
         return subprocess.CompletedProcess(args, result.returncode,
@@ -370,6 +375,40 @@ def test_powershell_cross_shell_runtime_timestamp_and_private_environment(checko
         env_file.unlink(missing_ok=True)
         for result in results:
             assert secret not in result.stdout + result.stderr
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Windows PowerShell operational workflow')
+def test_powershell_start_and_restart_use_default_private_environment(checkout, tmp_path):
+    runtime_module()
+    (checkout / 'app.py').write_text(MOCK_APP)
+    shutil.copyfile(ROOT / 'dashboard_runtime.py', checkout / 'dashboard_runtime.py')
+    (checkout / '.gitignore').write_text('*.log\n')
+    git(checkout, 'add', 'app.py', 'dashboard_runtime.py', '.gitignore')
+    git(checkout, 'commit', '-qm', 'mock runtime')
+    with socket.socket() as reservation:
+        reservation.bind(('127.0.0.1', 0))
+        port = reservation.getsockname()[1]
+    profile = tmp_path.parent / (tmp_path.name + '-private-profile')
+    profile.mkdir()
+    private_env = profile / '.dashboard-env.json'
+    private_env.write_text('{"CHART_STUDIO_DEVICE_SYNC_ENABLED":"1"}')
+    environment = os.environ.copy()
+    environment['USERPROFILE'] = str(profile)
+    def device_sync_enabled():
+        with urlopen(f'http://127.0.0.1:{port}/fixture/device-sync-proof', timeout=3) as response:
+            return json.load(response)['deviceSyncEnabled']
+    try:
+        started = run_control(checkout, port, 'Start', environment=environment, use_default_private_env=True)
+        assert started.returncode == 0, started.stdout + started.stderr
+        first = mock_endpoint(port)
+        assert device_sync_enabled() is True
+        restarted = run_control(checkout, port, 'Restart', environment=environment, use_default_private_env=True)
+        assert restarted.returncode == 0, restarted.stdout + restarted.stderr
+        second = mock_endpoint(port)
+        assert second['pid'] != first['pid']
+        assert device_sync_enabled() is True
+    finally:
+        cleanup_mock_processes(checkout)
 
 
 @pytest.mark.skipif(os.name != 'nt', reason='Windows PowerShell operational workflow')

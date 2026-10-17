@@ -135,6 +135,11 @@ examples are operator commands; they are not executed by this change:
 .\scripts\dashboard_runtime.ps1 -Action Restart -Repo 'C:\path\dashboard' -Python 'C:\Python314\python.exe' -Port 8056 -PrivateEnvJson 'C:\protected\dashboard-env.json'
 ```
 
+When `-PrivateEnvJson` is omitted, the direct runtime command uses
+`$env:USERPROFILE\.dashboard-env.json`, matching the guarded wrapper. `Start`
+and `Restart` refuse to proceed if that default file is missing; pass an explicit
+external path to override it.
+
 The private file must be outside the resolved checkout and protected by local
 ACLs. It is a JSON object with unique keys and string values. Permitted keys are
 the five proxy/control variables documented above,
