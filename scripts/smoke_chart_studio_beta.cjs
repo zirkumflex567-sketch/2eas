@@ -421,10 +421,11 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.match(await page.locator("#cs-data-window-source").textContent(),/Chart-Feed/);
   await page.locator("#tv-chart").scrollIntoViewIfNeeded();
   let chartBox=await page.locator("#tv-chart").boundingBox();
-  const hoverPoint=await page.evaluate(()=>{const row=window.__chartSmokeCandles[80];return {x:chart.timeScale().timeToCoordinate(row.time),y:candleSeries.priceToCoordinate(row.close),open:row.open.toFixed(2),close:row.close.toFixed(2)}});
+  const hoverPoint=await page.evaluate(()=>{const row=window.__chartSmokeCandles[80];return {x:chart.timeScale().timeToCoordinate(row.time),y:candleSeries.priceToCoordinate(row.close),open:row.open.toFixed(2),close:row.close.toFixed(2),ema20:(row.close-2).toFixed(2)}});
   await page.mouse.move(chartBox.x+hoverPoint.x,chartBox.y+hoverPoint.y);
   await page.waitForFunction(value=>document.querySelector("#cs-data-window-close")?.textContent===value,hoverPoint.close);
   await page.waitForFunction(value=>document.querySelector("#chart-crosshair-close")?.textContent===value,hoverPoint.close);
+  assert.equal(await page.locator("#chart-crosshair-ema20").textContent(),hoverPoint.ema20,"The production data window reads the visible EMA from the same candle");
   assert.match(await page.locator("#chart-crosshair-time").textContent(),/UTC/);
   await page.evaluate(()=>window.__mainDataWindow.setScope("titan","H1"));
   assert.equal(await page.locator("#chart-crosshair-close").textContent(),"—","Changing the chart scope clears stale production OHLC");

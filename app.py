@@ -2207,6 +2207,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           <strong class="text-cyan-200">Kerze <span id="chart-crosshair-scope">XAUUSD · M15</span></strong>
           <span>Zeit <b id="chart-crosshair-time">—</b></span><span>O <b id="chart-crosshair-open">—</b></span>
           <span>H <b id="chart-crosshair-high">—</b></span><span>L <b id="chart-crosshair-low">—</b></span><span>C <b id="chart-crosshair-close">—</b></span>
+          <span>EMA20 <b id="chart-crosshair-ema20">—</b></span><span>EMA50 <b id="chart-crosshair-ema50">—</b></span><span>EMA200 <b id="chart-crosshair-ema200">—</b></span>
         </section>
         <section id="chart-v5-preview-panel" hidden class="mt-3 rounded-lg border border-cyan-400/30 bg-slate-950/70 p-3" aria-label="Lightweight Charts v5 read-only preview">
           <div class="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -3090,7 +3091,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       try { window.StoneChartFX?.attach({chart, host:container, candleSeries, emaSeries:[ema9Series,ema20Series,ema50Series,ema200Series]}); } catch (_) {}
       try { window.StoneCelebration?.applyChartSettings(); } catch (_) {}
       try { window.ChartStudioBeta?.mount({chart,host:container,candleSeries,emaSeries:[ema20Series,ema50Series,ema200Series],account:activeAccount,timeframe:activeTimeframe}); } catch (err) { console.warn("Chart Studio Beta konnte nicht gestartet werden:",err); }
-      try { window.__chartStudioMainDataWindow = window.ChartStudioMainDataWindow?.mount({chart,host:container,candleSeries,symbol:activeChartSymbol,timeframe:activeTimeframe}); } catch (err) { console.warn("Hauptchart-Datenfenster konnte nicht gestartet werden:",err); }
+      try { window.__chartStudioMainDataWindow = window.ChartStudioMainDataWindow?.mount({chart,host:container,candleSeries,emaSeries:[{label:"EMA20",series:ema20Series},{label:"EMA50",series:ema50Series},{label:"EMA200",series:ema200Series}],symbol:activeChartSymbol,timeframe:activeTimeframe}); } catch (err) { console.warn("Hauptchart-Datenfenster konnte nicht gestartet werden:",err); }
       chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
         if (range && range.from <= 2) void loadOlderCandles();
       });

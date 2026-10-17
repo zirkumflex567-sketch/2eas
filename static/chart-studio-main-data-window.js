@@ -8,12 +8,16 @@
     }
     return null;
   };
-  const mount = ({ chart, host, candleSeries, symbol = "XAUUSD", timeframe = "M15" } = {}) => {
+  const mount = ({ chart, host, candleSeries, emaSeries = [], symbol = "XAUUSD", timeframe = "M15" } = {}) => {
     const panel = document.getElementById("chart-crosshair-data-window");
     if (!panel || !chart || !host || !candleSeries || typeof chart.subscribeCrosshairMove !== "function") return false;
     const value = id => panel.querySelector(`#chart-crosshair-${id}`);
     let activeSymbol = String(symbol), activeTimeframe = String(timeframe), mountedChart = chart;
-    const clear = () => { for (const key of ["time", "open", "high", "low", "close"]) value(key).textContent = "—"; };
+    const averages = Array.isArray(emaSeries) ? emaSeries.filter(item => item && typeof item.label === "string" && item.series) : [];
+    const clear = () => {
+      for (const key of ["time", "open", "high", "low", "close"]) value(key).textContent = "—";
+      for (const average of averages) { const node = value(average.label.toLowerCase()); if (node) node.textContent = "—"; }
+    };
     const onCrosshair = param => {
       const bar = param?.seriesData?.get?.(candleSeries), time = validTime(param?.time);
       const ohlc = [bar?.open, bar?.high, bar?.low, bar?.close].map(Number);
@@ -21,6 +25,10 @@
       value("scope").textContent = `${activeSymbol} · ${activeTimeframe}`;
       value("time").textContent = new Intl.DateTimeFormat("de-DE", { timeZone: "UTC", dateStyle: "medium", timeStyle: "medium" }).format(new Date(time * 1000)) + " UTC";
       ["open", "high", "low", "close"].forEach((key, index) => { value(key).textContent = formatPrice(ohlc[index]); });
+      for (const average of averages) {
+        const node = value(average.label.toLowerCase()), price = Number(param.seriesData?.get?.(average.series)?.value);
+        if (node) node.textContent = Number.isFinite(price) && price > 0 ? formatPrice(price) : "—";
+      }
     };
     chart.subscribeCrosshairMove(onCrosshair);
     return Object.freeze({

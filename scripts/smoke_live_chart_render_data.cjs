@@ -117,6 +117,9 @@ const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
       await page.waitForFunction(() => /^\d+(?:\.\d+)?$/.test(document.querySelector("#chart-crosshair-close")?.textContent || ""));
       assert.match(await page.locator("#chart-crosshair-time").textContent(), /UTC$/,
         `${account} production data window labels its candle time as UTC`);
+      for (const period of [20, 50, 200]) {
+        await page.waitForFunction(id => /^\d+(?:\.\d+)?$/.test(document.querySelector(id)?.textContent || ""), `#chart-crosshair-ema${period}`);
+      }
       let preview = "NOT_RUN";
       if (index === 0) {
         const previewEnabled = await page.evaluate(() => window.CHART_STUDIO_V5_PREVIEW_ENABLED === true);
