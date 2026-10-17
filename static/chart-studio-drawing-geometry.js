@@ -3,7 +3,7 @@
  */
 (()=>{
 "use strict";
-const COUNTS=Object.freeze({horizontal:1,vertical:1,text:1,trend:2,rect:2,fib:2,ray:2,ruler:2,channel:3});
+const COUNTS=Object.freeze({horizontal:1,vertical:1,text:1,trend:2,rect:2,fib:2,fibfan:2,ray:2,ruler:2,channel:3});
 function expected(kind){return Object.hasOwn(COUNTS,kind)?COUNTS[kind]:0}
 function validPoint(p){
  return !!p&&Number.isInteger(p.time)&&p.time>0&&p.time<=7258118400&&
@@ -20,6 +20,19 @@ function clipRay(a,b,limit){
  const dir=b.x>=a.x?1:-1,target=dir>0?limit:0;
  const slope=(b.y-a.y)/(b.x-a.x);
  return [a,{x:target,y:a.y+slope*(target-a.x)}];
+}
+function fibonacciFanRays(start,end,limit,ratios=[.382,.5,.618]){
+ if(!start||!end||![start.x,start.y,end.x,end.y,limit].every(Number.isFinite)||limit<=0||
+  !Array.isArray(ratios)||!ratios.length||ratios.length>16)return null;
+ let previous=0;
+ const result=[];
+ for(const ratio of ratios){
+  if(!Number.isFinite(ratio)||ratio<=previous||ratio>=1)return null;
+  const target={x:end.x,y:start.y+(end.y-start.y)*ratio};
+  const points=clipRay(start,target,limit);if(!points)return null;
+  result.push({ratio,points});previous=ratio;
+ }
+ return result;
 }
 function parallelChannel(a,b,c){
  if(!a||!b||!c||![a.x,a.y,b.x,b.y,c.x,c.y].every(Number.isFinite))return null;
@@ -61,6 +74,6 @@ function nearestSnap(anchor,bars,toX,toY,maxPixels=12){
  return result;
 }
 window.ChartStudioDrawingGeometry=Object.freeze({
- counts:COUNTS,expected,validPoint,validDrawing,clipRay,parallelChannel,measure,nearestSnap
+ counts:COUNTS,expected,validPoint,validDrawing,clipRay,fibonacciFanRays,parallelChannel,measure,nearestSnap
 });
 })();

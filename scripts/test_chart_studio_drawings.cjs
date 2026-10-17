@@ -8,9 +8,10 @@ assert.equal(g.expected("vertical"),1);
 assert.equal(g.expected("text"),1);
 assert.equal(g.expected("channel"),3);
 assert.equal(g.expected("ruler"),2);
+assert.equal(g.expected("fibfan"),2);
 assert.equal(g.expected("__proto__"),0);
 const a={time:1700000000,price:4100},b={time:1700000900,price:4120},c={time:1700001800,price:4160};
-for(const kind of ["trend","rect","fib","ray","ruler"])
+for(const kind of ["trend","rect","fib","fibfan","ray","ruler"])
  assert.equal(g.validDrawing({kind,anchors:[a,b]}),true);
 assert.equal(g.validDrawing({kind:"channel",anchors:[a,b,c]}),true);
 assert.equal(g.validDrawing({kind:"vertical",anchors:[a]}),true);
@@ -25,6 +26,12 @@ assert.equal(ray[1].x,600);assert.equal(ray[1].y,-50);
 const back=g.clipRay({x:400,y:100},{x:300,y:200},600);
 assert.equal(back[1].x,0);assert.equal(back[1].y,500);
 assert.equal(g.clipRay({x:4,y:4},{x:10,y:10},-2),null);
+const fan=g.fibonacciFanRays({x:100,y:200},{x:300,y:100},600,[.382,.5,.618]);
+assert.deepEqual(JSON.parse(JSON.stringify(fan.map(line=>line.ratio))),[.382,.5,.618]);
+for(const [index,y] of [104.5,75,45.5].entries())assert.ok(Math.abs(fan[index].points[1].y-y)<1e-9);
+assert.ok(fan.every(line=>line.points[0].x===100&&line.points[0].y===200&&line.points[1].x===600));
+assert.equal(g.fibonacciFanRays({x:100,y:200},{x:300,y:100},600,[.5,.5]),null);
+assert.equal(g.fibonacciFanRays({x:100,y:200},{x:300,y:100},600,[1.2]),null);
 const ch=g.parallelChannel({x:10,y:10},{x:30,y:20},{x:20,y:40});
 assert.equal(ch.shift,25);
 assert.equal(ch.second[0].y,35);assert.equal(ch.second[1].y,45);

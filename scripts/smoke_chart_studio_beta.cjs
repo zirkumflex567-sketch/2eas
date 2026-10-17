@@ -1148,6 +1148,23 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),4);
   await page.locator('[data-cmd="undo"]').click();
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),5);
+  await addDrawing("fibfan",[[.24,.36],[.48,.57]]);
+  const fan=await page.evaluate(()=>({
+    drawing:ChartStudioBeta.getState().drawings.at(-1),
+    saved:JSON.parse(localStorage.getItem("2eas:studio:beta:titan:draw:XAUUSD")).at(-1),
+    painted:(()=>{const canvas=document.querySelector("canvas.cs-beta-canvas"),pixels=canvas.getContext("2d").getImageData(0,0,canvas.width,canvas.height).data;let count=0;for(let i=3;i<pixels.length;i+=4)if(pixels[i])count++;return count})()
+  }));
+  assert.equal(fan.drawing.kind,"fibfan");
+  assert.equal(fan.drawing.anchors.length,2);
+  assert.deepEqual(fan.saved,fan.drawing,"Fibonacci Fan persists in the scoped drawing document");
+  assert.ok(fan.painted>0,"Fibonacci Fan rays paint on the chart overlay");
+  await page.locator('[data-cmd="undo"]').click();
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),5);
+  await page.locator('[data-cmd="redo"]').click();
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.at(-1).kind),"fibfan");
+  await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
+  await page.evaluate(()=>ChartStudioBeta.account("titan"));
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.at(-1).kind),"fibfan","Fibonacci Fan survives account view reload without crossing account scope");
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
   await page.waitForFunction(()=>document.querySelector("#cs-portfolio-summary")?.textContent.includes("goldm15"));
   assert.match(await page.locator("#cs-portfolio-summary").textContent(),/0\.08/);
@@ -1169,7 +1186,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.match(await page.locator("#cs-portfolio-summary").textContent(),/goldm15/);
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
   await page.waitForFunction(()=>ChartStudioBeta.getState().portfolio?.account==="titan");
-  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),5);
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),6);
   page.once("dialog", dialog=>dialog.accept("GoldSetup"));
   await page.locator('[data-cmd="save-profile"]').click();
   assert.equal(await page.locator("#cs-beta-profile").inputValue(),"GoldSetup");
@@ -1190,6 +1207,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.deepEqual([portableLayout.format,portableLayout.schemaVersion,portableLayout.symbol,portableLayout.timeframe],
     ["2eas-chart-layout:v2",2,"XAUUSD","M15"],"portable schema records exact chart scope but no account");
   assert.equal(Object.hasOwn(portableLayout,"account"),false,"portable layout does not identify the source account");
+  assert.ok(portableLayout.document.drawings.some(drawing=>drawing.kind==="fibfan"),"portable transfer includes Fibonacci Fan drawings");
   const transferBaseline=await page.evaluate(()=>JSON.stringify({document:ChartStudioBeta.exportDocument(),localStorage:Object.keys(localStorage).sort().map(key=>[key,localStorage.getItem(key)])}));
   const rejectedTransfer=await page.evaluate(async layout=>{
     const badScope={...layout,symbol:"EURUSD"};
@@ -1241,6 +1259,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await page.evaluate(layout=>ChartStudioBeta.importPortableLayout(JSON.stringify(layout),{mode:"merge"}),portableLayout);
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().account),"xau5m_m5","portable import stays bound to the destination account");
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),portableLayout.document.drawings.length,"account-free layout imports into a different account with the same chart scope");
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.some(drawing=>drawing.kind==="fibfan")),true,"portable layout transfer restores the Fibonacci Fan");
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
   const m15LayoutStorageKey="2eas:studio:beta:titan:profiles:XAUUSD:M15";
   const savedM15Layout=await page.evaluate(key=>JSON.parse(localStorage.getItem(key)||"{}").GoldRenamed,m15LayoutStorageKey);
