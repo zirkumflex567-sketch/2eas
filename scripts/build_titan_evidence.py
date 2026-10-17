@@ -238,11 +238,40 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 
     for direction, method in (("BUY", "Buy"), ("SELL", "Sell")):
         call = f"if(m_trade.{method}(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment))"
-        replacement = f'''bool cs_order_sent=m_trade.{method}(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment);
+        replacement = f'''#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+            MqlTick cs_tick={{}};
+            bool cs_quote_ok=SymbolInfoTick(_Symbol,cs_tick) && cs_tick.time_msc>0 &&
+                             cs_tick.bid>0.0 && cs_tick.ask>=cs_tick.bid;
+            double cs_bid=cs_tick.bid,cs_ask=cs_tick.ask;
+            string cs_quote_time=CSUtcFromMillis(cs_tick.time_msc);
+            datetime cs_request_utc=TimeGMT();
+            string cs_request_time=CSUtc(cs_request_utc);
+            double cs_tick_size=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+            double cs_tick_value=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
+            string cs_currency=SymbolInfoString(_Symbol,SYMBOL_CURRENCY_PROFIT);
+#endif
+            bool cs_order_sent=m_trade.{method}(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment);
 #ifdef CS_EVIDENCE_CAPTURE_ENABLED
-            CSEnqueueDecision("ORDER_ATTEMPT",cs_order_sent ? "PASS" : "BLOCK",rates[0].time,
-               features,CSPredicate("broker_order",cs_order_sent ? "1" : "0","EQ","1",
-                  cs_order_sent ? "PASS" : "BLOCK","BROKER_RESULT"));
+            uint cs_order_retcode=m_trade.ResultRetcode();
+            datetime cs_ack_utc=TimeGMT();
+            ulong cs_order_ticket=cs_order_sent ? m_trade.ResultOrder() : 0;
+            string cs_attempt_id=CS_EVIDENCE_PRODUCER_ID+"_"+
+                                 IntegerToString((long)GetTickCount64())+"_"+
+                                 IntegerToString((long)(CSEventCounter+1));
+            string cs_attempt_outcome=cs_order_sent ? "PASS" : "BLOCK";
+            string cs_attempt_predicate=CSPredicate("broker_order",cs_order_sent ? "1" : "0","EQ","1",
+                                                     cs_attempt_outcome,"BROKER_RESULT");
+            if(cs_quote_ok && cs_tick_size>0.0)
+              {{
+               string cs_attempt=CSOrderAttemptJson(cs_attempt_id,"{direction}",entry_price,lot_size,
+                  cs_bid,cs_ask,cs_tick_size,cs_tick_value,cs_currency,cs_quote_time,
+                  cs_request_time,CSUtc(cs_ack_utc),cs_order_retcode,cs_order_ticket);
+               CSEnqueueDecision("ORDER_ATTEMPT",cs_attempt_outcome,rates[0].time,
+                  features,cs_attempt_predicate,cs_attempt,cs_attempt_id,cs_order_ticket,cs_request_time);
+              }}
+            else
+               CSEnqueueDecision("ORDER_ATTEMPT",cs_attempt_outcome,rates[0].time,
+                  features,cs_attempt_predicate,"",cs_attempt_id,cs_order_ticket,cs_request_time);
 #endif
             if(cs_order_sent)'''
         if source_text.count(call) != 1:

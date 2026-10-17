@@ -74,6 +74,30 @@ def test_missing_intent_or_quote_never_falls_back_to_candle_close_or_current_quo
     assert all(row["signedSlippagePrice"] is None for row in rows)
 
 
+def test_fill_ticket_without_historical_reference_keeps_observed_vwap_only():
+    missing_reference = attempt()
+    payload = missing_reference["payload"]
+    payload["orderAttemptId"] = payload["orderAttempt"]["orderAttemptId"]
+    payload["brokerTicket"] = payload["orderAttempt"]["brokerTicket"]
+    del payload["orderAttempt"]
+
+    result = analyze_execution_quality(
+        [missing_reference],
+        [deal("501", "100.3", "1"), deal("502", "100.2", "1")],
+        account_id="titan", symbol="XAUUSD", minimum_samples=1,
+    )
+
+    row = result["orders"][0]
+    assert row["status"] == "REFERENCE_UNAVAILABLE"
+    assert row["brokerTicket"] == "91"
+    assert row["fillCount"] == 2
+    assert row["filledVolume"] == "2"
+    assert row["weightedFillPrice"] == "100.25"
+    assert row["signedSlippagePrice"] is None
+    assert result["summary"]["sampleCount"] == 0
+    assert result["summary"]["matchedDealCount"] == 2
+
+
 def test_quote_must_be_verified_and_no_later_than_order_attempt():
     bad_source = attempt(quote={"symbol": "XAUUSD", "bid": "99.9", "ask": "100.1", "tickSize": "0.1",
                                 "quoteTimeUtc": "2026-10-16T10:00:00Z", "source": "RECONSTRUCTED", "canExecute": False})

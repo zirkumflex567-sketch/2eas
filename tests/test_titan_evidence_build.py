@@ -77,6 +77,23 @@ def test_prepare_creates_identity_bound_capture_variant_only_under_output(tmp_pa
         assert source.count("m_trade.Buy(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment)") == 1
         assert source.count("m_trade.Sell(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment)") == 1
         assert 'CSEnqueueDecision("SIGNAL"' in source
+        assert source.count("CSOrderAttemptJson(cs_attempt_id") == 2
+        assert source.count("bool cs_order_sent=m_trade.") == 2
+        assert source.count('CSEnqueueDecision("ORDER_ATTEMPT"') == 4
+        assert source.count("if(cs_order_sent)") == 2
+        for observed_field in (
+            "SymbolInfoTick(_Symbol,cs_tick)",
+            "CSUtcFromMillis(cs_tick.time_msc)",
+            "SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE)",
+            "SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE)",
+            "SymbolInfoString(_Symbol,SYMBOL_CURRENCY_PROFIT)",
+            "m_trade.ResultRetcode()",
+            "m_trade.ResultOrder()",
+            "CSUtc(cs_ack_utc)",
+            "cs_request_time",
+        ):
+            assert observed_field in source
+        assert "entry_accepted" not in source
         assert "BLUEBERRY RISK BREACH" not in source
         assert source.count("RISK GUARD BREACH [%s | %s | %s]") == 2
         assert "AccountInfoString(ACCOUNT_SERVER), _Symbol, EnumToString(Period())" in source

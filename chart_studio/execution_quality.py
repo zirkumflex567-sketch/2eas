@@ -109,6 +109,20 @@ def _deal(row, account_id, symbol):
             "price": price, "volume": volume, "cash": cash}
 
 
+def _attempt_ticket(item):
+    payload = item["payload"]
+    nested = payload.get("orderAttempt")
+    ticket = nested.get("brokerTicket") if isinstance(nested, dict) else None
+    return ticket or payload.get("brokerTicket")
+
+
+def _attempt_identifier(item):
+    payload = item["payload"]
+    nested = payload.get("orderAttempt")
+    identifier = nested.get("orderAttemptId") if isinstance(nested, dict) else None
+    return identifier or payload.get("orderAttemptId") or item.get("id")
+
+
 def _linear_percentile(values, percentile):
     ordered = sorted(values)
     if len(ordered) == 1:
@@ -144,7 +158,8 @@ def analyze_execution_quality(decision_events, lifecycle_events, *, account_id, 
             nested = payload.get("orderAttempt")
             attempt_id = (nested.get("orderAttemptId") if isinstance(nested, dict) else
                           payload.get("orderAttemptId"))
-            signature = json.dumps([payload.get("symbol"), payload.get("decisionTimeUtc"), nested],
+            signature = json.dumps([payload.get("symbol"), payload.get("decisionTimeUtc"),
+                                    payload.get("orderAttemptId"), payload.get("brokerTicket"), nested],
                                    sort_keys=True, separators=(",", ":"), ensure_ascii=True)
             if isinstance(attempt_id, str):
                 previous = attempt_by_id.get(attempt_id)
@@ -189,7 +204,7 @@ def analyze_execution_quality(decision_events, lifecycle_events, *, account_id, 
         if ref:
             attempts_by_ticket[ref["brokerTicket"]].append(item)
     ambiguous_tickets = {ticket for ticket, rows in attempts_by_ticket.items()
-                         if len({row["reference"]["attemptId"] for row in rows}) > 1}
+                         if len({_attempt_identifier(row) for row in rows}) > 1}
 
     orders, seen_deals, slippage_samples = [], set(), []
     group_samples = defaultdict(list)
@@ -206,13 +221,37 @@ def analyze_execution_quality(decision_events, lifecycle_events, *, account_id, 
                            "estimatedAdverseCost": None, "brokerCashCosts": None})
             continue
         if ref is None:
-            order_ticket = item["payload"].get("orderAttempt", {}).get("brokerTicket")
-            matched = next((rows for ticket, rows in deals_by_ticket.items()
-                            if isinstance(order_ticket, str) and ticket == order_ticket), {})
-            orders.append({"orderAttemptId": item["payload"].get("orderAttempt", {}).get("orderAttemptId"),
+            order_ticket = _attempt_ticket(item)
+            attempt_id = _attempt_identifier(item)
+            if isinstance(order_ticket, str) and order_ticket in ambiguous_tickets:
+                orders.append({"orderAttemptId": attempt_id, "brokerTicket": order_ticket,
+                               "status": "AMBIGUOUS_ORDER_ATTEMPT", "fillCount": 0,
+                               "filledVolume": None, "weightedFillPrice": None,
+                               "signedSlippagePrice": None, "signedSlippageTicks": None,
+                               "spreadPrice": None, "estimatedAdverseCost": None,
+                               "brokerCashCosts": None})
+                continue
+            if isinstance(order_ticket, str) and order_ticket in conflicts:
+                orders.append({"orderAttemptId": attempt_id, "brokerTicket": order_ticket,
+                               "status": "HISTORY_CONFLICT", "fillCount": 0,
+                               "filledVolume": None, "weightedFillPrice": None,
+                               "signedSlippagePrice": None, "signedSlippageTicks": None,
+                               "spreadPrice": None, "estimatedAdverseCost": None,
+                               "brokerCashCosts": None})
+                continue
+            matched = list(deals_by_ticket.get(order_ticket, {}).values()) if order_ticket else []
+            volume = sum((row["volume"] for row in matched), Decimal(0))
+            fill = (sum((row["price"] * row["volume"] for row in matched), Decimal(0)) / volume
+                    if volume > 0 else None)
+            for row in matched:
+                seen_deals.add(row["dealTicket"])
+            orders.append({"orderAttemptId": attempt_id,
                            "brokerTicket": order_ticket if isinstance(order_ticket, str) else None,
-                           "status": "REFERENCE_UNAVAILABLE" if not matched else "REFERENCE_UNAVAILABLE",
-                           "fillCount": len(matched), "weightedFillPrice": None, "signedSlippagePrice": None,
+                           "status": "REFERENCE_UNAVAILABLE",
+                           "fillCount": len(matched),
+                           "filledVolume": _str(volume) if volume > 0 else None,
+                           "weightedFillPrice": _str(fill) if fill is not None else None,
+                           "signedSlippagePrice": None,
                            "signedSlippageTicks": None, "spreadPrice": None, "estimatedAdverseCost": None,
                            "brokerCashCosts": None})
             continue

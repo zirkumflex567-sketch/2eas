@@ -13,6 +13,12 @@
 5. Add a Chart Studio read-only inspector view with per-order evidence and sample counts. Keep mismatched account/symbol/tickets, partial history and absent quotes as `UNKNOWN`/`UNAVAILABLE`.
 6. Instrument supported source EAs only after contract tests prove telemetry is observational and failure-isolated. No binary is installed or chart EA reloaded as part of this slice; Marketplace EX5 remains unsupported for intent telemetry.
 
+## Progress (17 October 2026)
+
+- Fixed repeatable 50-input Titan candidate generation so each original `CTrade::Buy/Sell` call still runs exactly once and its original boolean still controls the existing strategy branch, while the event now captures exact side, intended price, volume, MT5 quote/tick provenance, request/ack times, broker retcode, attempt id and returned order ticket. Quote-invalid attempts are retained without inventing quote data.
+- Fixed execution-quality readback for a top-level order ticket without a valid historical intent reference: exact-ticket MT5 fills now expose observed count, volume and VWAP while slippage remains unavailable and aggregates exclude the sample.
+- Added regression tests; focused evidence/analyzer suite: 198 passed. Both isolated demo candidates compile with 0 errors/0 warnings in terminal-local MetaEditors. Source/include, terminal, preset and candidate artifacts remain isolated under ignored `output/`; nothing was copied into a terminal or attached/reloaded. Fresh Decision records are still not observed, so EA-runtime acceptance remains open.
+
 ## Acceptance
 
 - Tests cover BUY and SELL adverse/favorable signs, spread exactly once, partial-fill VWAP, cash cost separation, exact stable-ID matches, duplicate fees, stale/missing quote, absent intended price, cross-account mismatch, malformed revisions and minimum sample gates.
