@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { chromium } = require("playwright");
+const { countCandleInkPixels } = require("./chart_render_pixels.cjs");
 
 const base = process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056";
 const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
@@ -89,6 +90,22 @@ const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
       const apiLast = [...api.candles].sort((a, b) => Number(a.time) - Number(b.time)).at(-1);
       assert.equal(rendered.at(-1).time, apiLast.time, `${account} renderer receives the newest verified candle`);
       assert.equal(rendered.at(-1).close, apiLast.close, `${account} rendered close equals the broker feed`);
+      await page.waitForTimeout(100);
+      const canvasPixels = await page.evaluate(() => [...document.querySelectorAll("#tv-chart canvas")]
+        .filter(canvas => canvas.width >= 300 && canvas.height >= 200)
+        .map(canvas => {
+          const rgba = canvas.getContext("2d", { willReadFrequently: true })
+            .getImageData(0, 0, canvas.width, canvas.height).data;
+          let binary = "";
+          for (let offset = 0; offset < rgba.length; offset += 0x8000) {
+            binary += String.fromCharCode(...rgba.subarray(offset, offset + 0x8000));
+          }
+          return { width: canvas.width, height: canvas.height, rgbaBase64: btoa(binary) };
+        }));
+      const candleInkPixels = canvasPixels.map(canvas => countCandleInkPixels(Buffer.from(canvas.rgbaBase64, "base64")));
+      const visibleCandlePixels = Math.max(0, ...candleInkPixels);
+      assert.ok(visibleCandlePixels >= 40,
+        `${account} canvas has verified candle data but no visible bullish/bearish candle paint (${visibleCandlePixels}px across ${canvasPixels.length} plot canvases)`);
       let preview = "NOT_RUN";
       if (index === 0) {
         const previewEnabled = await page.evaluate(() => window.CHART_STUDIO_V5_PREVIEW_ENABLED === true);
@@ -113,7 +130,8 @@ const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
           preview = "GATED_OFF";
         }
       }
-      results.push({ account, symbol: api.symbol, timeframe: api.timeframe, renderedBars: rendered.length, latestClose: rendered.at(-1).close, nativeV5AutoFibonacciPreview: preview });
+      results.push({ account, symbol: api.symbol, timeframe: api.timeframe, renderedBars: rendered.length,
+        visibleCandlePixels, latestClose: rendered.at(-1).close, nativeV5AutoFibonacciPreview: preview });
     }
 
     assert.deepEqual(errors, []);
