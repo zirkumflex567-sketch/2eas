@@ -198,7 +198,8 @@ def test_preview_calls_only_bound_service_and_returns_no_store(monkeypatch):
     service = PreviewService()
     install_trade_ticket_routes(app, gateway, preview_registry=registry,
                                 preview_service=service)
-    response = TestClient(app).post(
+    client = TestClient(app)
+    response = client.post(
         PREVIEW_PATH, json=PREVIEW_PAYLOAD,
         headers={'Authorization': 'Bearer unit-test-control-token'},
     )
@@ -208,3 +209,10 @@ def test_preview_calls_only_bound_service_and_returns_no_store(monkeypatch):
     assert service.call[0].orderType == 'BUY_LIMIT'
     assert service.call[1][2] == 'trade'
     assert service.call[2]
+
+    # The same preview-only wiring must leave the commit route hard-disabled.
+    commit_response = _post(client, PAYLOAD)
+    assert commit_response.status_code == 503
+    assert commit_response.json()['detail']['code'] == 'TRADE_TICKET_DISABLED'
+    assert app.state.trade_ticket_preview_capable is True
+    assert app.state.trade_ticket_write_capable is False

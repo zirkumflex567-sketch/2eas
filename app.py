@@ -35,6 +35,7 @@ from chart_studio.read_api import install_read_routes, Symbol
 from chart_studio.preview_api import install_preview_routes
 from chart_studio.position_commit_api import install_position_commit_routes
 from chart_studio.trade_ticket_api import install_trade_ticket_routes
+from chart_studio.trade_ticket import TradeTicketPreviewRegistry, TradeTicketPreviewService
 from chart_studio.evidence_api import install_evidence_routes
 from chart_studio.indicator_extension_api import install_indicator_extension_routes
 from dashboard_security import install_control_security
@@ -63,7 +64,14 @@ install_runtime(app, BASE_DIR)
 install_read_routes(app, mt5)
 install_preview_routes(app, mt5)
 install_position_commit_routes(app, mt5, enabled=False)
-install_trade_ticket_routes(app, mt5, enabled=False)
+_trade_ticket_previews = TradeTicketPreviewRegistry()
+_trade_ticket_preview_service = TradeTicketPreviewService(
+    mt5, _trade_ticket_previews, guard_provider=None,
+)
+install_trade_ticket_routes(
+    app, mt5, enabled=False, preview_registry=_trade_ticket_previews,
+    preview_service=_trade_ticket_preview_service,
+)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / 'static')), name="static")
 
