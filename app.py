@@ -3445,7 +3445,8 @@ HTML_CONTENT = """<!DOCTYPE html>
       v5PositionReadInFlight = key; v5PositionReadKey = key; v5PositionReadAt = Date.now();
       setV5PositionStatus('Lese Positionen von MT5 …');
       try {
-        const data = await accountFetch('/api/chart/v1/positions?symbol=' + encodeURIComponent(scope.symbol));
+        const response = await accountFetch('/api/chart/v1/positions?symbol=' + encodeURIComponent(scope.symbol));
+        const data = await response.json();
         if (accountGenerationAtStart !== accountGeneration || scope.account !== activeAccount || scope.symbol !== activeChartSymbol || scope.timeframe !== activeTimeframe) return;
         if (data.account !== scope.account || data.symbol !== scope.symbol || data.source !== 'MT5_VERIFIED' || data.canExecute !== false || !Array.isArray(data.positions)) {
           preview.clearPositions(); setV5PositionStatus('Positionen nicht verifiziert · Overlay entfernt'); return;
