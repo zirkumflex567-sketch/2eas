@@ -129,11 +129,18 @@ body.theme-stone .account-tab {
 }
 body.theme-stone .account-tab[aria-pressed="true"] {
   border-image-source: url("stone-assets/ready/38_tab_selected_cyan.webp") !important;
-  color: var(--stone-color-accent); filter: drop-shadow(0 0 6px rgba(66,216,249,.35));
+  color: var(--stone-color-accent);
+  filter: none;
 }
 body.theme-stone nav.stone-asset-nav .account-tab:not([aria-pressed="true"]) strong {
   color: #dbe7eb !important;
   background: var(--stone-color-inset-surface) !important;
+  border-radius: 3px;
+  padding: 2px 4px;
+}
+body.theme-stone nav.stone-asset-nav .account-tab[aria-pressed="true"] strong {
+  color: var(--stone-color-label-text) !important;
+  background: var(--stone-color-label-surface) !important;
   border-radius: 3px;
   padding: 2px 4px;
 }

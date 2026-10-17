@@ -121,6 +121,7 @@ def probe_incomplete_text_target(page, selector, threshold=4.5):
         locator.evaluate('el=>el.scrollIntoView({block:"center",inline:"nearest",behavior:"instant"})')
         page.mouse.move(0, 0)
         info = locator.evaluate('''el => {
+          if (el.closest('[aria-hidden="true"]')) return {ariaHidden:true};
           const unsupported = new Set();
           const elements = [el, ...el.querySelectorAll('*')];
           const pseudos = elements.flatMap(node => ['::before','::after'].map(pseudo => getComputedStyle(node,pseudo).content));
@@ -143,6 +144,8 @@ def probe_incomplete_text_target(page, selector, threshold=4.5):
           }
           return {unsupported:[...unsupported],textNodes,rect:el.getBoundingClientRect().toJSON()};
         }''')
+        if info.get('ariaHidden'):
+            return {'classification': 'non-text', 'reason': 'target is hidden from assistive technology with aria-hidden'}
         if not info['textNodes']:
             return {'classification': 'non-text', 'reason': 'no rendered ordinary DOM text node'}
         if info['unsupported']:
@@ -826,6 +829,33 @@ class DashboardFrontendTests(unittest.TestCase):
                 failed_measurements = [item for item in pixel_audit[theme]
                     if item.get('probe', {}).get('result') == 'fail']
                 self.assertEqual(failed_measurements, [], f'project 4.5:1 threshold failures: {failed_measurements}')
+    def test_contrast_probe_classifies_aria_hidden_decoration_as_non_text(self):
+        self.load()
+        self.page.evaluate('''() => {
+          const target=document.createElement('span');
+          target.id='contrast-probe-aria-hidden';target.setAttribute('aria-hidden','true');
+          target.textContent='Decorative Rune';
+          target.style.cssText='position:fixed;left:20px;top:20px;padding:4px;color:#fff;background:#000;font:20px Arial';
+          document.body.append(target);
+        }''')
+        result = probe_incomplete_text_target(self.page, '#contrast-probe-aria-hidden')
+        self.assertEqual(result['classification'], 'non-text', result)
+        self.assertIn('aria-hidden', result['reason'])
+        self.assertEqual(self.mutations, [])
+    def test_stone_active_account_tab_text_has_measurable_contrast(self):
+        self.load()
+        self.page.locator('.stone-theme-dock [data-mode="stone"]').click()
+        selectors = [
+            'button[data-account="titan"] > .gap-1\\.5.justify-between.items-center > strong',
+            'button[data-account="titan"] > .gap-1\\.5.justify-between.items-center > .bg-slate-700',
+            'button[data-account="titan"] > small',
+        ]
+        for selector in selectors:
+            with self.subTest(selector=selector):
+                result = probe_incomplete_text_target(self.page, selector)
+                self.assertEqual(result['classification'], 'measured', result)
+                self.assertEqual(result['result'], 'pass', result)
+        self.assertEqual(self.mutations, [])
     def test_contrast_text_fill_probe_preserves_currentcolor_pseudo_background(self):
         self.load()
         self.page.set_content('<!doctype html><html><body style="margin:0;background:#fff"></body></html>')
