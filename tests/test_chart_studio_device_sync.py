@@ -176,3 +176,45 @@ def test_sync_write_rejects_foreign_origin_and_non_same_site(sync_client):
         Origin="https://[")).status_code == 403
     assert client.put(url, json=body, headers=proxy_headers(
         **{"Sec-Fetch-Site": "cross-site"})).status_code == 403
+
+
+def test_two_authenticated_devices_share_revisions_and_detect_concurrent_edits(sync_client):
+    app, first_device = sync_client
+    second_device = TestClient(app.app, base_url="https://" + HOST,
+                               client=("127.0.0.1", 54323))
+    url = "/api/chart/v1/device-sync/bundle_1234567890123456"
+    scope = "?account=titan&symbol=XAUUSD"
+    try:
+        initial = first_device.put(url, json={
+            "account": "titan", "symbol": "XAUUSD", "expectedRevision": 0,
+            **ENVELOPE,
+        }, headers=proxy_headers())
+        assert initial.status_code == 200
+        assert initial.json()["revision"] == 1
+
+        remote = second_device.get(url + scope, headers=proxy_headers())
+        assert remote.status_code == 200
+        assert remote.json()["revision"] == 1
+        assert remote.json()["ciphertext"] == ENVELOPE["ciphertext"]
+
+        newer_ciphertext = "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI"
+        second = second_device.put(url, json={
+            "account": "titan", "symbol": "XAUUSD", "expectedRevision": 1,
+            **{**ENVELOPE, "ciphertext": newer_ciphertext},
+        }, headers=proxy_headers())
+        assert second.status_code == 200
+        assert second.json()["revision"] == 2
+
+        stale = first_device.put(url, json={
+            "account": "titan", "symbol": "XAUUSD", "expectedRevision": 1,
+            **ENVELOPE,
+        }, headers=proxy_headers())
+        assert stale.status_code == 409
+        assert stale.json()["detail"]["currentRevision"] == 2
+
+        latest = first_device.get(url + scope, headers=proxy_headers())
+        assert latest.status_code == 200
+        assert latest.json()["revision"] == 2
+        assert latest.json()["ciphertext"] == newer_ciphertext
+    finally:
+        second_device.close()

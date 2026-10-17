@@ -64,4 +64,4 @@ This subplan implements FR-025 only. FR-024's constrained signed indicator exten
 - [x] Run focused sync tests, related workspace/proxy/security suites, and frontend functional checks.
 - [x] Review exact diff for plaintext leakage, ownership spoofing, revision races, and silent overwrite; fix offline base-revision overwrite and asynchronous scope-switch races.
 - [x] Document the runtime flag, proxy role mapping, recovery-key handling, rollback/history behavior, the pre-upgrade legacy export, and any deployment acceptance not yet completed.
-- [x] Update FR-025 only to the evidence actually obtained; keep it partially open for `/stt` acceptance, cross-device authenticated testing, global drawing sharing and independent security/hardware review.
+- [x] Update FR-025 only to the evidence actually obtained; a new API contract test uses two separately instantiated authenticated device clients to verify shared encrypted revisions and stale-write conflict detection. Keep FR-025 partially open for `/stt` acceptance, live authenticated cross-device testing, global drawing sharing and independent security/hardware review.
