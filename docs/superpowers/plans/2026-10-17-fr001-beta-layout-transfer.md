@@ -23,4 +23,4 @@
 - [x] Implement strict schema-v2 export/import, validated merge/replace behavior, and accessible Beta controls.
 - [x] Run the full Beta Chromium browser test, v5 adapter and preview smokes, encrypted-device-sync browser contract, JavaScript syntax, and repository diff checks.
 - [x] Record only the verified Beta behavior in `OPEN_TASKS.md`; keep production-v5 cutover, physical hardware, and cross-user conflict resolution open.
-- [ ] Commit the reviewed change on `main` and deploy after required GitHub checks pass.
+- [x] Commit the reviewed change on `main` and deploy after required GitHub checks pass. The implementation is `ae3bc99` on `origin/main`; subsequent passing Main CI (`4306865`, Chart Studio `39071123611`, Performance/UX `39071123603`) and the verified `/stt` runtime revision `4306865` include it. Production-v5 cutover, physical hardware, and cross-user conflict resolution remain open as recorded in `docs/OPEN_TASKS.md`.
