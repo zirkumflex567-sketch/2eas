@@ -211,6 +211,9 @@ def test_append_detects_direct_byte_edit_to_unrelated_hash(private_root):
         handle.write(b'0' if original_hash[0] != '0' else b'1')
         handle.flush()
         os.fsync(handle.fileno())
+    # Make the stat-based invalidation deterministic on filesystems whose
+    # write timestamp can match the timestamp sampled immediately before it.
+    os.utime(s.path, ns=(before.st_atime_ns, before.st_mtime_ns + 1_000_000_000))
     assert s.path.stat().st_mtime_ns != before.st_mtime_ns
     with sqlite3.connect(s.path) as db:
         assert db.execute('SELECT sha256 FROM records WHERE id=?', ('event_1',)).fetchone()[0] != original_hash
