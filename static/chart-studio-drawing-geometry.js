@@ -3,7 +3,7 @@
  */
 (()=>{
 "use strict";
-const COUNTS=Object.freeze({horizontal:1,vertical:1,text:1,trend:2,rect:2,fib:2,fibfan:2,fibtime:2,ray:2,ruler:2,channel:3});
+const COUNTS=Object.freeze({horizontal:1,vertical:1,text:1,trend:2,rect:2,fib:2,fibfan:2,fibtime:2,fibtrend:3,ray:2,ruler:2,channel:3});
 function expected(kind){return Object.hasOwn(COUNTS,kind)?COUNTS[kind]:0}
 function validPoint(p){
  return !!p&&Number.isInteger(p.time)&&p.time>0&&p.time<=7258118400&&
@@ -12,7 +12,8 @@ function validPoint(p){
 function validDrawing(o){
  return !!o&&typeof o.kind==="string"&&expected(o.kind)>0&&
  Array.isArray(o.anchors)&&o.anchors.length===expected(o.kind)&&
- o.anchors.every(validPoint)&&!(o.kind==="fibtime"&&o.anchors[0].time===o.anchors[1].time);
+ o.anchors.every(validPoint)&&!(o.kind==="fibtime"&&o.anchors[0].time===o.anchors[1].time)&&
+ !(o.kind==="fibtrend"&&new Set(o.anchors.map(anchor=>anchor.time)).size!==3);
 }
 function clipRay(a,b,limit){
  if(!a||!b||![a.x,a.y,b.x,b.y,limit].every(Number.isFinite)||limit<=0)return null;
@@ -44,6 +45,19 @@ function fibonacciTimeZones(start,end,limit,factors=[0,1,2,3,5,8,13,21,34,55]){
   const x=start.x+(end.x-start.x)*factor;
   if(x>=0&&x<=limit)result.push({factor,x});
   previous=factor;
+ }
+ return result;
+}
+function fibonacciTrendExtensions(start,end,retrace,width,height,ratios=[0,.382,.5,.618,1,1.618,2.618]){
+ if(!start||!end||!retrace||![start.x,start.y,end.x,end.y,retrace.x,retrace.y,width,height].every(Number.isFinite)||
+  width<=0||height<=0||Math.abs(end.y-start.y)<1e-7||retrace.x>width||
+  !Array.isArray(ratios)||!ratios.length||ratios.length>32)return null;
+ let previous=-1;const result=[];
+ for(const ratio of ratios){
+  if(!Number.isFinite(ratio)||ratio<0||ratio<=previous||ratio>1000)return null;
+  const y=retrace.y+(end.y-start.y)*ratio;
+  if(y>=0&&y<=height)result.push({ratio,points:[{x:Math.max(0,retrace.x),y},{x:width,y}]});
+  previous=ratio;
  }
  return result;
 }
@@ -87,6 +101,6 @@ function nearestSnap(anchor,bars,toX,toY,maxPixels=12){
  return result;
 }
 window.ChartStudioDrawingGeometry=Object.freeze({
- counts:COUNTS,expected,validPoint,validDrawing,clipRay,fibonacciFanRays,fibonacciTimeZones,parallelChannel,measure,nearestSnap
+ counts:COUNTS,expected,validPoint,validDrawing,clipRay,fibonacciFanRays,fibonacciTimeZones,fibonacciTrendExtensions,parallelChannel,measure,nearestSnap
 });
 })();

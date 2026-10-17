@@ -10,10 +10,12 @@ assert.equal(g.expected("channel"),3);
 assert.equal(g.expected("ruler"),2);
 assert.equal(g.expected("fibfan"),2);
 assert.equal(g.expected("fibtime"),2);
+assert.equal(g.expected("fibtrend"),3);
 assert.equal(g.expected("__proto__"),0);
 const a={time:1700000000,price:4100},b={time:1700000900,price:4120},c={time:1700001800,price:4160};
 for(const kind of ["trend","rect","fib","fibfan","fibtime","ray","ruler"])
  assert.equal(g.validDrawing({kind,anchors:[a,b]}),true);
+assert.equal(g.validDrawing({kind:"fibtrend",anchors:[a,b,c]}),true);
 assert.equal(g.validDrawing({kind:"channel",anchors:[a,b,c]}),true);
 assert.equal(g.validDrawing({kind:"fibtime",anchors:[a,{...a,price:a.price+1}]}),false);
 assert.equal(g.validDrawing({kind:"vertical",anchors:[a]}),true);
@@ -40,6 +42,23 @@ assert.deepEqual(JSON.parse(JSON.stringify(timeZones)),[
 ]);
 assert.equal(g.fibonacciTimeZones({x:100,y:20},{x:200,y:40},600,[0,2,1]),null);
 assert.equal(g.fibonacciTimeZones({x:100,y:20},{x:200,y:40},600,[0,1001]),null);
+const fibTrend=g.fibonacciTrendExtensions({x:100,y:200},{x:200,y:100},{x:300,y:150},500,300);
+assert.deepEqual(JSON.parse(JSON.stringify(fibTrend)),[
+ {ratio:0,points:[{x:300,y:150},{x:500,y:150}]},
+ {ratio:.382,points:[{x:300,y:111.8},{x:500,y:111.8}]},
+ {ratio:.5,points:[{x:300,y:100},{x:500,y:100}]},
+ {ratio:.618,points:[{x:300,y:88.2},{x:500,y:88.2}]},
+ {ratio:1,points:[{x:300,y:50},{x:500,y:50}]}
+]);
+assert.deepEqual(JSON.parse(JSON.stringify(g.fibonacciTrendExtensions({x:100,y:100},{x:200,y:200},{x:300,y:150},500,250,[0,1]))),[
+ {ratio:0,points:[{x:300,y:150},{x:500,y:150}]},
+ {ratio:1,points:[{x:300,y:250},{x:500,y:250}]}
+]);
+assert.deepEqual(JSON.parse(JSON.stringify(g.fibonacciTrendExtensions({x:100,y:200},{x:200,y:100},{x:-20,y:150},500,300,[0]))),[
+ {ratio:0,points:[{x:0,y:150},{x:500,y:150}]}
+]);
+assert.equal(g.fibonacciTrendExtensions({x:100,y:200},{x:200,y:100},{x:501,y:150},500,300,[0]),null);
+assert.equal(g.fibonacciTrendExtensions({x:100,y:200},{x:200,y:100},{x:300,y:150},500,300,[.5,.5]),null);
 const ch=g.parallelChannel({x:10,y:10},{x:30,y:20},{x:20,y:40});
 assert.equal(ch.shift,25);
 assert.equal(ch.second[0].y,35);assert.equal(ch.second[1].y,45);

@@ -1192,10 +1192,45 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await page.mouse.up();
   const afterSameBarEdit=await page.evaluate(()=>ChartStudioBeta.getState().drawings.at(-1));
   assert.notEqual(afterSameBarEdit.anchors[0].time,afterSameBarEdit.anchors[1].time,"editing cannot collapse the two time-zone anchors onto one candle");
+  const beforeSameBarTrendFib=await page.evaluate(()=>ChartStudioBeta.getState().drawings.length);
+  await addDrawing("fibtrend",[[.26,.30],[.39,.45],[.26,.65]]);
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),beforeSameBarTrendFib,"three-anchor Fibonacci rejects duplicate candle times");
+  await addDrawing("fibtrend",[[.24,.33],[.40,.44],[.54,.38]]);
+  await page.waitForTimeout(50);
+  const paintedTrendFibLevels=await page.evaluate(()=>{
+    const drawing=ChartStudioBeta.getState().drawings.at(-1),canvas=document.querySelector("canvas.cs-beta-canvas"),ctx=canvas.getContext("2d");
+    const points=drawing.anchors.map(anchor=>({x:chart.timeScale().timeToCoordinate(anchor.time),y:candleSeries.priceToCoordinate(anchor.price)}));
+    const levels=ChartStudioDrawingGeometry.fibonacciTrendExtensions(...points,canvas.width,canvas.height);
+    const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    return levels?.filter(level=>{
+      const y=Math.round(level.points[0].y);
+      for(let yy=Math.max(0,y-2);yy<=Math.min(canvas.height-1,y+2);yy++)for(let x=Math.ceil(level.points[0].x);x<canvas.width;x++){
+        const i=(yy*canvas.width+x)*4;if(pixels[i+2]>pixels[i+1]&&pixels[i+1]>pixels[i])return true;
+      }
+      return false;
+    }).length||0;
+  });
+  assert.ok(paintedTrendFibLevels>=2,"Trend-Based Fibonacci extensions paint projected horizontal levels at geometry-derived prices");
+  const trendFib=await page.evaluate(()=>ChartStudioBeta.getState().drawings.at(-1));
+  assert.equal(trendFib.kind,"fibtrend");
+  assert.equal(trendFib.anchors.length,3);
+  assert.equal(JSON.parse(await page.evaluate(()=>localStorage.getItem("2eas:studio:beta:titan:draw:XAUUSD"))).at(-1).kind,"fibtrend");
+  await page.locator('[data-cmd="undo"]').click();
+  await page.locator('[data-cmd="redo"]').click();
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.at(-1).kind),"fibtrend");
+  await page.locator('[data-tool="edit"]').click();
+  const trendFibHandles=await page.evaluate(()=>ChartStudioBeta.getState().drawings.at(-1).anchors.map(anchor=>({x:chart.timeScale().timeToCoordinate(anchor.time),y:candleSeries.priceToCoordinate(anchor.price)})));
+  const trendFibEditBox=await page.locator("canvas.cs-beta-canvas").boundingBox();
+  await page.mouse.move(trendFibEditBox.x+trendFibHandles[2].x,trendFibEditBox.y+trendFibHandles[2].y);
+  await page.mouse.down();
+  await page.mouse.move(trendFibEditBox.x+trendFibHandles[0].x,trendFibEditBox.y+trendFibHandles[0].y,{steps:5});
+  await page.mouse.up();
+  const afterDuplicateTrendFibEdit=await page.evaluate(()=>ChartStudioBeta.getState().drawings.at(-1));
+  assert.equal(new Set(afterDuplicateTrendFibEdit.anchors.map(anchor=>anchor.time)).size,3,"editing cannot collapse Trend-Based Fibonacci anchors onto one candle");
   await page.locator('[data-tool="cursor"]').click();
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
-  assert.deepEqual(await page.evaluate(()=>ChartStudioBeta.getState().drawings.slice(-2).map(drawing=>drawing.kind)),["fibfan","fibtime"],"Fibonacci tools survive account view reload without crossing account scope");
+  assert.deepEqual(await page.evaluate(()=>ChartStudioBeta.getState().drawings.slice(-3).map(drawing=>drawing.kind)),["fibfan","fibtime","fibtrend"],"Fibonacci tools survive account view reload without crossing account scope");
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
   await page.waitForFunction(()=>document.querySelector("#cs-portfolio-summary")?.textContent.includes("goldm15"));
   assert.match(await page.locator("#cs-portfolio-summary").textContent(),/0\.08/);
@@ -1217,7 +1252,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.match(await page.locator("#cs-portfolio-summary").textContent(),/goldm15/);
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
   await page.waitForFunction(()=>ChartStudioBeta.getState().portfolio?.account==="titan");
-  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),7);
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),8);
   page.once("dialog", dialog=>dialog.accept("GoldSetup"));
   await page.locator('[data-cmd="save-profile"]').click();
   assert.equal(await page.locator("#cs-beta-profile").inputValue(),"GoldSetup");
@@ -1240,6 +1275,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.equal(Object.hasOwn(portableLayout,"account"),false,"portable layout does not identify the source account");
   assert.ok(portableLayout.document.drawings.some(drawing=>drawing.kind==="fibfan"),"portable transfer includes Fibonacci Fan drawings");
   assert.ok(portableLayout.document.drawings.some(drawing=>drawing.kind==="fibtime"),"portable transfer includes Fibonacci Time-Zones drawings");
+  assert.ok(portableLayout.document.drawings.some(drawing=>drawing.kind==="fibtrend"),"portable transfer includes Trend-Based Fibonacci drawings");
   const transferBaseline=await page.evaluate(()=>JSON.stringify({document:ChartStudioBeta.exportDocument(),localStorage:Object.keys(localStorage).sort().map(key=>[key,localStorage.getItem(key)])}));
   const rejectedTransfer=await page.evaluate(async layout=>{
     const badScope={...layout,symbol:"EURUSD"};
@@ -1293,6 +1329,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),portableLayout.document.drawings.length,"account-free layout imports into a different account with the same chart scope");
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.some(drawing=>drawing.kind==="fibfan")),true,"portable layout transfer restores the Fibonacci Fan");
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.some(drawing=>drawing.kind==="fibtime")),true,"portable layout transfer restores Fibonacci Time-Zones");
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.some(drawing=>drawing.kind==="fibtrend")),true,"portable layout transfer restores Trend-Based Fibonacci");
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
   const m15LayoutStorageKey="2eas:studio:beta:titan:profiles:XAUUSD:M15";
   const savedM15Layout=await page.evaluate(key=>JSON.parse(localStorage.getItem(key)||"{}").GoldRenamed,m15LayoutStorageKey);
