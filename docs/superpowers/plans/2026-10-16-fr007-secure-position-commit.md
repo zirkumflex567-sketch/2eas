@@ -55,6 +55,7 @@
 ### Task 3: Add durable idempotency, broker readback and audit
 
 - [x] Cover atomic key reservation, identical duplicate, conflicting key reuse, competing reservations, broker rejection, ambiguous timeout, readback mismatch and restart-safe `UNKNOWN` recovery in fake/store tests.
+- [x] Treat an exception raised by `order_send` as an ambiguous broker outcome: persist and return `UNKNOWN/BROKER_TIMEOUT`; retry with the same key replays the result without a second send. The regression test exercises this through the role-bound route with fake MT5.
 - [x] Implement the private SQLite store outside the checkout, wire it to the injected service and persist reservations/audit; unsafe checkout paths and broad POSIX directory permissions are rejected. It remains unconfigured in production.
 - [x] After accepted retcode, fetch the authoritative position and report `SAVED` only when exact requested levels and a new revision are read back; otherwise record `UNKNOWN`/`BROKER_REJECTED` without retry.
 - [x] Verify browser draft-abort evidence: the Beta smoke and headless live-demo flow confirm account and timeframe changes clear the draft; network trace had zero POSTs. The simulated EA trailing-revision race is covered by `test_commit_rejects_trailing_revision_race_without_sending`; real-EA/hardware race acceptance remains open.

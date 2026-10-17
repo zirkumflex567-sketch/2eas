@@ -193,7 +193,13 @@ class PositionCommitService:
                                'tp': float(final['tp']) if final['tp'] is not None else 0.0}
                     gateway.verify_identity(self.mt5, spec)
                     sent = True
-                    response = self.mt5.order_send(request)
+                    try:
+                        response = self.mt5.order_send(request)
+                    except Exception:
+                        # Once the request crossed the broker boundary, a client-side
+                        # exception cannot prove that MT5 rejected it. Persist an
+                        # ambiguous terminal result and require read-only reconciliation.
+                        return self._finish(principal, key, 'UNKNOWN', code='BROKER_TIMEOUT')
                     if response is None:
                         result = self._finish(principal, key, 'UNKNOWN', code='BROKER_TIMEOUT')
                         reserved = False

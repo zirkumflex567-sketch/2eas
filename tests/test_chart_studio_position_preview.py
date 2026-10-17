@@ -534,6 +534,8 @@ def _prepare_commit_service(client, fake, tmp_path, guard=None, *, order_check_r
     sent = []
     def send(request):
         sent.append(dict(request))
+        if broker_response == 'raises':
+            raise TimeoutError('simulated MT5 response timeout')
         if broker_response == 'none':
             return None
         if apply_readback:
@@ -745,6 +747,7 @@ def test_commit_order_check_rejection_never_sends(api, tmp_path):
 
 @pytest.mark.parametrize('broker_response,apply_readback,expected', [
     ('none', True, 'UNKNOWN'),
+    ('raises', True, 'UNKNOWN'),
     ('done', False, 'UNKNOWN'),
     ('reject', True, 'BROKER_REJECTED'),
 ])
