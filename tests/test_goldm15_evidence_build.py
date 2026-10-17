@@ -67,6 +67,12 @@ def test_shared_spool_defaults_to_titan_but_allows_explicit_strategy_identity():
     assert 'CSJsonQuote(CS_EVIDENCE_STRATEGY_VERSION)' in helper
 
 
+def test_mql_hash_is_stable_across_windows_and_unix_line_endings():
+    expected = hashlib.sha256(b"line one\nline two\n").hexdigest()
+    assert BUILD._source_digest(b"line one\nline two\n") == expected
+    assert BUILD._source_digest(b"line one\r\nline two\r\n") == expected
+
+
 @pytest.mark.parametrize("alias", ["blueberry", "titan", "xau5m_m5", "unknown"])
 def test_goldm15_builder_rejects_other_account_aliases(alias, tmp_path):
     with pytest.raises(ValueError, match="not allowlisted"):

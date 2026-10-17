@@ -48,6 +48,10 @@ PRODUCER = "goldm15_demo"
 EA_NAME = "GoldM15_EvidenceCapture"
 
 
+def _source_digest(content: bytes) -> str:
+    return hashlib.sha256(content.replace(b"\r\n", b"\n")).hexdigest()
+
+
 def _instrument_source(source_text: str, *, account_alias: str, producer: str,
                        terminal_hash: str, source_hash: str, expected_parameter_hash: str,
                        login: int, server: str, terminal_path: str) -> str:
@@ -178,7 +182,7 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_pa
     expected_parameter_hash = _expected_parameter_hash(source_text, preset_values)
     spool = root / "ChartStudioEvidenceSpool.mqh"
     spool_bytes = spool.read_bytes()
-    if hashlib.sha256(spool_bytes).hexdigest() != EXPECTED_HASHES["ChartStudioEvidenceSpool.mqh"]:
+    if _source_digest(spool_bytes) != EXPECTED_HASHES["ChartStudioEvidenceSpool.mqh"]:
         raise ValueError("shared evidence spool helper changed from reviewed baseline")
     source_and_include_hash = hashlib.sha256(
         b"\0".join([(root / p).read_bytes() for p in all_paths] + [spool_bytes])
@@ -250,7 +254,7 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_pa
         "producerId": producer,
         "terminalIdentityHash": context.terminal_identity_hash,
         "sourceAndIncludeSha256": source_and_include_hash,
-        "spoolHelperSha256": hashlib.sha256(spool_bytes).hexdigest(),
+        "spoolHelperSha256": _source_digest(spool_bytes),
         "supportingSources": {str(path): EXPECTED_HASHES[path.as_posix()] for path in HELPERS},
         "sourceSha256": source_hash,
         "presetName": Path(preset_path).name,
