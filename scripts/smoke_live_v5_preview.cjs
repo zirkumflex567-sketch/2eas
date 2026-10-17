@@ -97,6 +97,9 @@ const FLAG_OFF = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;";
       await page.waitForFunction(count =>
         document.querySelector("#chart-v5-preview-status")?.textContent.includes(`${count} verifizierte Kerzen`),
       snapshot.candles.length);
+      await page.waitForFunction(count =>
+        document.querySelector("#tv-chart")?.__candleSeries?.data?.().length === count,
+      snapshot.candles.length);
       await page.waitForFunction(count => window.ChartStudioV5Preview?.inspect()?.positionOverlayCount === count,
         expectedOverlayLines);
       await page.waitForFunction(() => [...document.querySelectorAll("#chart-v5-preview-host canvas")]
@@ -104,6 +107,7 @@ const FLAG_OFF = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;";
       const state = await page.evaluate(() => ({
         preview: window.ChartStudioV5Preview.inspect(),
         v4CanvasCount: document.querySelectorAll("#tv-chart canvas").length,
+        v4CandleCount: document.querySelector("#tv-chart")?.__candleSeries?.data?.().length ?? 0,
         v5Canvases: [...document.querySelectorAll("#chart-v5-preview-host canvas")]
           .map(canvas => ({ width: canvas.width, height: canvas.height })),
       }));
@@ -113,12 +117,15 @@ const FLAG_OFF = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;";
       });
       assert.match(state.preview.status, new RegExp(`${snapshot.candles.length} verifizierte Kerzen`));
       assert.ok(state.v4CanvasCount > 0, "the production v4 chart remains mounted");
+      assert.equal(state.v4CandleCount, snapshot.candles.length,
+        `${expected.account}: the production v4 chart must contain the verified candle feed`);
       assert.ok(state.v5Canvases.some(canvas => canvas.width > 300 && canvas.height > 200));
       assert.ok(apiRequests.length > 0);
       assert.ok(apiRequests.every(item => item.method === "GET" &&
         (item.account === null || ALLOWLIST.has(item.account))));
       assert.deepEqual(errors, [], `${expected.account}: browser errors`);
       if (expected.account === "titan") {
+        await page.locator("#tv-chart").screenshot({ path: path.join(OUTPUT_DIR, "titan-v4-main.png") });
         await page.locator("#chart-v5-preview-host").screenshot({ path: path.join(OUTPUT_DIR, "titan-v5-preview.png") });
       }
       results.push({
@@ -128,6 +135,7 @@ const FLAG_OFF = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;";
         source: snapshot.source,
         candles: snapshot.candles.length,
         v4Mounted: true,
+        v4CandleCount: state.v4CandleCount,
         v5Canvas: state.v5Canvases.find(canvas => canvas.width > 300 && canvas.height > 200),
         positionCount: positions.positions.length,
         positionOverlayLines: state.preview.positionOverlayCount,
