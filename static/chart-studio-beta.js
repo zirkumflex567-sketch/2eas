@@ -259,6 +259,95 @@ function importWorkspaceDocument(document){
  requestDraw();updateMessage("Serverlayout geladen. Brokerpositionen, What-if und aktiver Timeframe bleiben unverändert.");
  return true;
 }
+const PORTABLE_LAYOUT_LIMIT=512*1024;
+function portableForbiddenKeys(value){
+ const forbidden=new Set(["account","accountid","login","brokerpositions","openpositions","pendingorders","positiondraft","orderticket","tradeticket","dealmarkers","orderid","positionid","dealid","ticket","orders"]);
+ const visit=item=>{if(Array.isArray(item)){item.forEach(visit);return}if(!item||typeof item!=="object")return;for(const [key,child] of Object.entries(item)){const normalized=key.toLowerCase();if(forbidden.has(normalized)||(normalized==="positions"&&typeof child!=="boolean"))throw Error("Layoutdatei enthält Konto-, Broker- oder Positionsdaten.");visit(child)}};
+ visit(value);
+}
+function validatePortableLayout(raw){
+ if(typeof raw==="string"&&new TextEncoder().encode(raw).byteLength>PORTABLE_LAYOUT_LIMIT)throw Error("Layoutdatei überschreitet 512 KiB.");
+ let envelope;try{envelope=typeof raw==="string"?JSON.parse(raw):raw}catch{throw Error("Layoutdatei ist kein gültiges JSON.")}
+ const exact=(value,keys)=>value&&typeof value==="object"&&!Array.isArray(value)&&Object.keys(value).sort().join(",")===[...keys].sort().join(",");
+ if(!exact(envelope,["format","schemaVersion","symbol","timeframe","document"])||envelope.format!=="2eas-chart-layout:v2"||envelope.schemaVersion!==2)throw Error("Layoutdatei verwendet kein unterstütztes schema-v2-Format.");
+ if(envelope.symbol!==chartSymbol()||envelope.timeframe!==(s.tf||"M15"))throw Error("Layout-Symbol oder Timeframe stimmt nicht mit dem aktiven Chart überein.");
+ const bytes=new TextEncoder().encode(JSON.stringify(envelope)).byteLength;if(bytes>PORTABLE_LAYOUT_LIMIT)throw Error("Layoutdatei überschreitet 512 KiB.");
+ portableForbiddenKeys(envelope);
+ const doc=envelope.document,docKeys=["schemaVersion","symbol","drawings","options","indicators","movingAverages","chartAppearance","oscillatorInstances","chartType","timeframe"];
+ if(!exact(doc,docKeys)||doc.schemaVersion!==1||doc.symbol!==envelope.symbol||doc.timeframe!==envelope.timeframe||!Array.isArray(doc.drawings)||doc.drawings.length>MAX_DRAWINGS)throw Error("Layout enthält ein ungültiges Chartdokument.");
+ const drawings=safeDraw(doc.drawings);if(drawings.length!==doc.drawings.length)throw Error("Layout enthält ungültige oder doppelte Zeichnungen.");
+ if(!doc.options||typeof doc.options!=="object"||Array.isArray(doc.options)||Object.keys(doc.options).some(key=>!Object.hasOwn(optsDefault(),key)))throw Error("Layout enthält ungültige Chartoptionen.");
+ if(Object.keys(doc.options).length!==Object.keys(optsDefault()).length)throw Error("Layout enthält unvollständige Chartoptionen.");
+ for(const key of ["ema20","ema50","ema200","sma20","sma50","bb","bbFill","positions"])if(typeof doc.options[key]!=="boolean")throw Error("Layout enthält ungültige Chartoptionen.");
+ if(!Number.isInteger(doc.options.bbPeriod)||doc.options.bbPeriod<2||doc.options.bbPeriod>300||typeof doc.options.bbStdDev!=="number"||!Number.isFinite(doc.options.bbStdDev)||doc.options.bbStdDev<.1||doc.options.bbStdDev>10)throw Error("Layout enthält ungültige Bollinger-Einstellungen.");
+ if(!doc.indicators||typeof doc.indicators!=="object"||Array.isArray(doc.indicators)||!Array.isArray(doc.movingAverages)||!doc.chartAppearance||typeof doc.chartAppearance!=="object"||Array.isArray(doc.chartAppearance)||!Array.isArray(doc.oscillatorInstances))throw Error("Layout enthält ungültige Indikator- oder Darstellungseinstellungen.");
+ const knownIndicators=window.ChartStudioIndicators?.settings?.()||{},indicatorRegistry=window.ChartStudioIndicators?.registry||{},indicatorKeys=new Set(Object.keys(knownIndicators));
+ if(Object.keys(doc.indicators).length!==indicatorKeys.size||Object.keys(doc.indicators).some(key=>!indicatorKeys.has(key)||!doc.indicators[key]||typeof doc.indicators[key]!=="object"||Array.isArray(doc.indicators[key])))throw Error("Layout enthält unvollständige oder unbekannte Indikatoreinstellungen.");
+ for(const [kind,settings] of Object.entries(doc.indicators)){
+  const schema=knownIndicators[kind],expectedKeys=Object.keys(schema).filter(key=>!(kind==="pivots"&&key==="sourceWindow")),actualKeys=Object.keys(settings).filter(key=>!(kind==="pivots"&&key==="sourceWindow"));
+  if(actualKeys.sort().join(",")!==expectedKeys.sort().join(",")||Object.keys(settings).some(key=>key!=="sourceWindow"&&!Object.hasOwn(schema,key)))throw Error("Layout enthält unbekannte Einstellungen für "+kind+".");
+  for(const [key,value] of Object.entries(settings)){
+   if(key==="sourceWindow"&&kind==="pivots"){
+    if(value===null)continue;
+    if(!value||typeof value!=="object"||Array.isArray(value)||Object.keys(value).sort().join(",")!=="from,to"||!Number.isSafeInteger(value.from)||!Number.isSafeInteger(value.to)||value.from<=0||value.to<value.from||settings.algorithmVersion!=="classic-floor-v1"||settings.source!=="MT5_VERIFIED")throw Error("Layout enthält ungültige Pivot-Quellen.");continue;
+   }
+   const expected=schema[key];if(typeof value!==typeof expected||typeof value==="number"&&!Number.isFinite(value))throw Error("Layout enthält ungültige Einstellungen für "+kind+".");
+   if(typeof value==="number"){
+    const minimum=key==="multiplier" ? 0.1 : key==="step"||key==="maxStep" ? 0.01 : key==="smoothK"||key==="smoothD" ? 1 : key==="displacement" ? 0 : 2;
+    const maximum=key==="multiplier" ? 10 : key==="step"||key==="maxStep" ? 0.5 : key==="slow" ? 300 : key==="smoothK"||key==="smoothD" ? 100 : key==="displacement" ? 200 : ["period","atrPeriod","tenkanPeriod","kijunPeriod","senkouBPeriod","signal","fast"].includes(key) ? indicatorRegistry[kind]?.max||200 : 300;
+    const multiplierStep=key==="multiplier"&&Math.abs(value*10-Math.round(value*10))>1e-8,stepPrecision=["step","maxStep"].includes(key)&&Math.abs(value*100-Math.round(value*100))>1e-8;
+    if(value<minimum||value>maximum||["period","atrPeriod","fast","slow","signal","smoothK","smoothD","displacement","tenkanPeriod","kijunPeriod","senkouBPeriod"].includes(key)&&!Number.isInteger(value)||multiplierStep||stepPrecision)throw Error("Layout enthält Werte außerhalb der Grenzen für "+kind+".");
+   }else if(typeof value==="string"){
+    if(["upColor","downColor"].includes(key)&&!/^#[0-9a-fA-F]{6}$/.test(value))throw Error("Layout enthält ungültige Farben für "+kind+".");
+    if(key==="timeZone"){try{new Intl.DateTimeFormat("en-US",{timeZone:value})}catch{throw Error("Layout enthält eine ungültige Zeitzone.")}}
+    if(key==="sessionStart"&&!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))throw Error("Layout enthält eine ungültige Sessionzeit.");
+    if(key==="basis"&&!(["D1","W1"].includes(value)))throw Error("Layout enthält eine ungültige Pivotbasis.");
+    if(key==="theme"&&!(["inherit","dark","light"].includes(value))||key==="scale"&&!(["normal","logarithmic"].includes(value)))throw Error("Layout enthält ungültige Darstellungswerte.");
+    if(!["upColor","downColor","timeZone","sessionStart","basis","theme","scale"].includes(key)&&value!==expected)throw Error("Layout enthält unbekannte Quellenwerte für "+kind+".");
+   }
+  }
+  if(kind==="macd"&&settings.fast>=settings.slow||kind==="sar"&&(settings.step>settings.maxStep||settings.step>.1))throw Error("Layout enthält widersprüchliche Parameter für "+kind+".");
+ }
+ if(!window.ChartStudioAverages?.normalizeList||!window.ChartStudioAverages.normalizeList(doc.movingAverages)||window.ChartStudioAverages.normalizeList(doc.movingAverages).length!==doc.movingAverages.length)throw Error("Layout enthält ungültige gleitende Durchschnitte.");
+ if(!window.ChartStudioOscillators?.normalizeList||!window.ChartStudioOscillators.normalizeList(doc.oscillatorInstances)||window.ChartStudioOscillators.normalizeList(doc.oscillatorInstances).length!==doc.oscillatorInstances.length)throw Error("Layout enthält ungültige Oszillator-Panes.");
+ if(!window.ChartStudioAppearance?.normalize?.(doc.chartAppearance)||!window.ChartStudioChartTypes?.valid?.(doc.chartType))throw Error("Layout enthält eine ungültige Chartdarstellung.");
+ return {symbol:envelope.symbol,timeframe:envelope.timeframe,document:{...json(doc),drawings}};
+}
+function exportPortableLayout(){
+ const document=exportWorkspaceDocument();if(!document)throw Error("Chart ist noch nicht bereit.");
+ return JSON.stringify({format:"2eas-chart-layout:v2",schemaVersion:2,symbol:chartSymbol(),timeframe:s.tf||"M15",document:{...document,symbol:chartSymbol()}},null,2);
+}
+function mergePortableDrawings(current,incoming){
+ const drawings=json(current),used=new Set(drawings.map(item=>item.id));let remapped=0;
+ for(const source of incoming){const item=json(source);if(used.has(item.id)){let id;do{id="merge_"+crypto.randomUUID().replace(/-/g,"").slice(0,16)}while(used.has(id));item.id=id;remapped++}used.add(item.id);drawings.push(item)}
+ return {drawings,remapped};
+}
+function importPortableLayout(raw,{mode="merge"}={}){
+ if(!s)throw Error("Chart ist noch nicht bereit.");if(mode!=="merge"&&mode!=="replace")throw Error("Unbekannter Layout-Importmodus.");
+ const validated=validatePortableLayout(raw),current={...exportWorkspaceDocument(),symbol:chartSymbol()};let candidate=validated.document,importedDrawings=candidate.drawings.length,remappedIds=0;
+ if(mode==="replace"&&!window.confirm("Aktuelles Beta-Layout vollständig durch die Layoutdatei ersetzen?"))throw Error("Layoutimport abgebrochen.");
+ if(mode==="merge"){const merged=mergePortableDrawings(current.drawings,candidate.drawings);candidate={...candidate,drawings:merged.drawings};remappedIds=merged.remapped;}
+ const localStorageBefore=Object.keys(localStorage).map(key=>[key,localStorage.getItem(key)]);
+ try{if(!importWorkspaceDocument(candidate))throw Error("Layout konnte nicht angewendet werden.")}
+ catch(error){
+  const preserve=new Set(localStorageBefore.map(([key])=>key));for(const key of Object.keys(localStorage))if(!preserve.has(key))localStorage.removeItem(key);
+  for(const [key,value] of localStorageBefore)localStorage.setItem(key,value);
+  try{importWorkspaceDocument(current)}catch(_){updateMessage("Layoutimport fehlgeschlagen; Wiederherstellung prüfen.")}
+  throw Error("Layout konnte nicht vollständig angewendet werden; vorherige Ansicht wurde wiederhergestellt. "+(error?.message||""));
+ }
+ return {importedDrawings,remappedIds,mode};
+}
+function downloadPortableLayout(){
+ try{const blob=new Blob([exportPortableLayout()],{type:"application/json"}),url=URL.createObjectURL(blob),link=document.createElement("a");
+  link.href=url;link.download="2eas-chart-layout-"+chartSymbol()+"-"+(s.tf||"M15")+".json";document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),0);updateMessage("Vollständiges, kontofreies Chartlayout exportiert.")
+ }catch(error){updateMessage("Layoutexport fehlgeschlagen: "+error.message)}
+}
+async function applyPortableFile(input,mode){
+ const file=input?.files?.[0];if(!file){updateMessage("Zuerst eine Layoutdatei auswählen.");return}
+ try{if(file.size>PORTABLE_LAYOUT_LIMIT)throw Error("Layoutdatei überschreitet 512 KiB.");const result=importPortableLayout(await file.text(),{mode});
+  updateMessage(mode==="merge"?`${result.importedDrawings} Zeichnungen zusammengeführt · ${result.remappedIds} IDs angepasst.`:`Layout mit ${result.importedDrawings} Zeichnungen ersetzt.`)
+ }catch(error){updateMessage("Layoutimport abgewiesen: "+error.message)}finally{input.value="";input.dataset.mode=""}
+}
 function deleteProfile(){
  const name=s.panel.querySelector("#cs-beta-profile")?.value;
  if(!name||!window.confirm("Layout '"+name+"' dauerhaft lokal löschen?"))return;
@@ -1356,6 +1445,10 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
    '<button type="button" data-cmd="copy-profile">Kopieren</button>'+
    '<button type="button" data-cmd="rename-profile">Umbenennen</button>'+
   '<button type="button" data-cmd="reset-profile">Zurücksetzen</button>'+
+ '<button type="button" data-cmd="export-portable-layout">Layoutdatei exportieren</button>'+
+ '<label>Layoutdatei <input type="file" id="cs-beta-layout-file" accept="application/json,.json" aria-label="Layoutdatei auswählen"></label>'+
+ '<button type="button" data-cmd="merge-portable-layout">Zusammenführen</button>'+
+ '<button type="button" data-cmd="replace-portable-layout">Ersetzen</button>'+
  '<button type="button" data-cmd="delete-profile">Löschen</button></div>'+
  '<p id="cs-beta-message" role="status" aria-live="polite">Dies ist die sichere Beta-Chartansicht. Alle Brokerpositionen sind nur lesbar.</p>'+
  '<details class="cs-ticket"><summary>Neues Pending-Ticket · Chartpreis → Entwurf</summary><p>LIMIT/STOP-Entwurf für <strong id="cs-ticket-scope">XAUUSD · M15</strong>. Chartklick übernimmt nur den Einstiegspreis. Kein Klick und keine Vorschau sendet eine Order.</p><form id="cs-ticket-form"><label>Ordertyp <select name="orderType"><option>BUY_LIMIT</option><option>SELL_LIMIT</option><option>BUY_STOP</option><option>SELL_STOP</option></select></label><label>Lots <input name="volumeLots" type="number" min="0.01" step="0.01" value="0.01" required></label><label>Einstieg <input name="entryPrice" type="number" min="0.00000001" step="any" required></label><label>SL <input name="slPrice" type="number" min="0.00000001" step="any" required></label><label>TP <input name="tpPrice" type="number" min="0.00000001" step="any" required></label><button type="button" id="cs-ticket-chart-price">Einstieg am Chart wählen</button><button type="submit">Broker-Preview laden</button></form><output id="cs-ticket-result" role="status" aria-live="polite">Entwurf lokal · noch keine Brokerprüfung.</output><section id="cs-ticket-confirm" hidden><h4>Explizite Demo-Bestätigung</h4><p id="cs-ticket-risk"></p><label>Bestätigungstext exakt eingeben <input id="cs-ticket-confirm-text" autocomplete="off"></label><label><input type="checkbox" id="cs-ticket-confirm-check"> Ich bestätige dieses Ticket für das angezeigte Demo-Konto.</label><button type="button" id="cs-ticket-commit" disabled>Pending-Order senden</button><p>Die Schaltfläche bleibt gesperrt, solange Preview, Guard, Konto oder ausdrückliche Bestätigung fehlen.</p></section></details>'+
@@ -1503,6 +1596,12 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
     .catch(err=>updateMessage("PNG-Export nicht verfügbar: "+err.message));
    return;
   }
+  if(b.dataset.cmd==="export-portable-layout"){downloadPortableLayout();return}
+  if(b.dataset.cmd==="merge-portable-layout"||b.dataset.cmd==="replace-portable-layout"){
+   const input=panel.querySelector("#cs-beta-layout-file");if(!input){updateMessage("Layoutdatei-Auswahl ist nicht verfügbar.");return}
+   const mode=b.dataset.cmd==="merge-portable-layout"?"merge":"replace";if(input.files?.length){void applyPortableFile(input,mode);return}
+   input.dataset.mode=mode;input.click();return;
+  }
   if(b.dataset.cmd==="save-profile")saveProfile();
   if(b.dataset.cmd==="load-profile")loadProfile();
    if(b.dataset.cmd==="copy-profile")copyProfile();
@@ -1520,6 +1619,9 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   if(b.dataset.cmd==="clear"&&window.confirm("Zeichnungen für dieses Konto löschen?")){snapshot();s.draw=[];s.selected=null;persist()}
   if(b.dataset.cmd==="export"){const data=JSON.stringify({schemaVersion:1,account:s.account,symbol:chartSymbol(),timeframe:s.tf||"M15",drawings:s.draw},null,2);
    navigator.clipboard?.writeText(data).then(()=>updateMessage("JSON kopiert.")).catch(()=>updateMessage("Kopieren nicht möglich."))}
+ });
+ panel.querySelector("#cs-beta-layout-file")?.addEventListener("change",event=>{
+  const input=event.currentTarget;if(input.dataset.mode)void applyPortableFile(input,input.dataset.mode);else if(input.files?.length)updateMessage("Layoutdatei ausgewählt. Wähle Zusammenführen oder Ersetzen.");
  });
  const form=panel.querySelector("#cs-scenario-form");
  const output=panel.querySelector("#cs-scenario-result");
@@ -1678,6 +1780,6 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();
 }
-window.ChartStudioBeta=Object.freeze({mount,account,symbol,timeframe,refreshMtfAt:refreshMtfAtSnapshot,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,coordinates:Object.freeze({create:createChartCoordinates}),preferences:Object.freeze({normalizeFavorites,normalizeShortcuts,resolveShortcut}),getLiveMAs,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,symbol:s.symbol,timeframe:s.tf,favorites:json(s.favorites),shortcuts:json(effectiveShortcuts(s.shortcuts)),coordinateApiVersion:s.coordinates.apiVersion,drawings:json(s.draw),options:json(s.opts),marketStructure:s.marketStructure?.getSummary?.()||null,brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),portfolio:s.portfolio?json(s.portfolio):null,positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,ticketDraft:s.ticketDraft?((draft)=>({account:draft.account,symbol:draft.symbol,timeframe:draft.timeframe,orderType:draft.orderType,volumeLots:draft.volumeLots,entryPrice:draft.entryPrice,slPrice:draft.slPrice,tpPrice:draft.tpPrice,preview:draft.preview?{status:draft.preview.status,canCommit:draft.preview.canCommit}:null}))(s.ticketDraft.read()):null,
+window.ChartStudioBeta=Object.freeze({mount,account,symbol,timeframe,refreshMtfAt:refreshMtfAtSnapshot,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,exportPortableLayout,importPortableLayout,coordinates:Object.freeze({create:createChartCoordinates}),preferences:Object.freeze({normalizeFavorites,normalizeShortcuts,resolveShortcut}),getLiveMAs,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,symbol:s.symbol,timeframe:s.tf,favorites:json(s.favorites),shortcuts:json(effectiveShortcuts(s.shortcuts)),coordinateApiVersion:s.coordinates.apiVersion,drawings:json(s.draw),options:json(s.opts),marketStructure:s.marketStructure?.getSummary?.()||null,brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),portfolio:s.portfolio?json(s.portfolio):null,positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,ticketDraft:s.ticketDraft?((draft)=>({account:draft.account,symbol:draft.symbol,timeframe:draft.timeframe,orderType:draft.orderType,volumeLots:draft.volumeLots,entryPrice:draft.entryPrice,slPrice:draft.slPrice,tpPrice:draft.tpPrice,preview:draft.preview?{status:draft.preview.status,canCommit:draft.preview.canCommit}:null}))(s.ticketDraft.read()):null,
  scenario:s.scenario?json(s.scenario):null,tool:s.tool,magnet:s.magnet,selected:s.selected}:null});
 })();

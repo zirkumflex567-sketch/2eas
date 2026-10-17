@@ -1163,6 +1163,64 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await page.locator('[data-cmd="load-profile"]').click();
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().options.sma20),true);
   assert.equal(await page.evaluate(()=>ChartStudioIndicators.settings().rsi.enabled),true);
+  assert.equal(await page.evaluate(()=>typeof ChartStudioBeta.exportPortableLayout),"function","the active Beta chart exposes full portable-layout export");
+  assert.equal(await page.evaluate(()=>typeof ChartStudioBeta.importPortableLayout),"function","the active Beta chart exposes validated portable-layout import");
+  const portableLayout=await page.evaluate(()=>JSON.parse(ChartStudioBeta.exportPortableLayout()));
+  assert.deepEqual([portableLayout.format,portableLayout.schemaVersion,portableLayout.symbol,portableLayout.timeframe],
+    ["2eas-chart-layout:v2",2,"XAUUSD","M15"],"portable schema records exact chart scope but no account");
+  assert.equal(Object.hasOwn(portableLayout,"account"),false,"portable layout does not identify the source account");
+  const transferBaseline=await page.evaluate(()=>JSON.stringify({document:ChartStudioBeta.exportDocument(),localStorage:Object.keys(localStorage).sort().map(key=>[key,localStorage.getItem(key)])}));
+  const rejectedTransfer=await page.evaluate(async layout=>{
+    const badScope={...layout,symbol:"EURUSD"};
+    const badTimeframe={...layout,timeframe:"M5"};
+    const badDrawing={...layout,document:{...layout.document,drawings:[{kind:"text",anchors:[],label:"bad"}]}};
+    const badIndicator=JSON.parse(JSON.stringify(layout));badIndicator.document.indicators.rsi.period=999;
+    const accountBound={...layout,account:"titan"};
+    const tooLarge=" ".repeat(524289);
+    const results=[];
+    for(const candidate of [badScope,badTimeframe,badDrawing,badIndicator,accountBound])try{await ChartStudioBeta.importPortableLayout(JSON.stringify(candidate),{mode:"merge"});results.push("accepted")}catch(error){results.push(error.message)}
+    try{await ChartStudioBeta.importPortableLayout(tooLarge,{mode:"merge"});results.push("accepted")}catch(error){results.push(error.message)}
+    return {results,state:JSON.stringify({document:ChartStudioBeta.exportDocument(),localStorage:Object.keys(localStorage).sort().map(key=>[key,localStorage.getItem(key)])})};
+  },portableLayout);
+  assert.ok(rejectedTransfer.results.every(result=>result!=="accepted"),"bad symbol/timeframe, invalid drawing/indicator, account-bound and oversized files are rejected");
+  assert.equal(rejectedTransfer.state,transferBaseline,"rejected portable layouts do not partially change chart state or storage");
+  const mergedPortable=await page.evaluate(async layout=>{
+    const source={...layout,document:{...layout.document,drawings:[layout.document.drawings[0],{...layout.document.drawings[0],id:"portable-unique"}]}};
+    const result=await ChartStudioBeta.importPortableLayout(JSON.stringify(source),{mode:"merge"});
+    return {result,drawings:ChartStudioBeta.getState().drawings};
+  },portableLayout);
+  assert.equal(mergedPortable.result.importedDrawings,2,"merge imports each validated source drawing");
+  assert.equal(new Set(mergedPortable.drawings.map(drawing=>drawing.id)).size,mergedPortable.drawings.length,"merge remaps colliding drawing ids");
+  const layoutDownloadPromise=page.waitForEvent("download");await page.locator('[data-cmd="export-portable-layout"]').click();
+  const portableDownload=await layoutDownloadPromise,downloadedLayout=JSON.parse(await require("node:fs/promises").readFile(await portableDownload.path(),"utf8"));
+  assert.equal(portableDownload.suggestedFilename(),"2eas-chart-layout-XAUUSD-M15.json","Beta exports a portable layout file with a scope-based filename");
+  assert.equal(Object.hasOwn(downloadedLayout,"account"),false,"downloaded portable layout excludes account identity");
+  assert.equal(JSON.stringify(downloadedLayout).toLowerCase().includes("account"),false,"no nested account identity leaks into the portable file");
+  assert.ok(downloadedLayout.document.indicators&&downloadedLayout.document.movingAverages&&downloadedLayout.document.oscillatorInstances,"download contains full indicator and chart view settings");
+  const beforeFileMerge=await page.evaluate(()=>ChartStudioBeta.getState().drawings.length);
+  await page.locator("#cs-beta-layout-file").setInputFiles({name:"portable.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify(portableLayout))});
+  assert.match(await page.locator("#cs-beta-message").textContent(),/Zusammenführen oder Ersetzen/);
+  await page.locator('[data-cmd="merge-portable-layout"]').click();
+  await page.waitForFunction(({before,incoming})=>ChartStudioBeta.getState().drawings.length===before+incoming,{before:beforeFileMerge,incoming:portableLayout.document.drawings.length});
+  const beforeReplace=await page.evaluate(()=>JSON.stringify(ChartStudioBeta.exportDocument()));
+  page.once("dialog",dialog=>dialog.dismiss());
+  const cancelledReplace=await page.evaluate(async layout=>{try{await ChartStudioBeta.importPortableLayout(JSON.stringify(layout),{mode:"replace"});return "accepted"}catch(error){return error.message}},portableLayout);
+  assert.match(cancelledReplace,/abgebrochen|cancel/i,"replace requires an explicit confirmation that can be cancelled");
+  assert.equal(await page.evaluate(()=>JSON.stringify(ChartStudioBeta.exportDocument())),beforeReplace,"cancelled replace leaves the active layout untouched");
+  page.once("dialog",dialog=>dialog.accept());
+  const replacedPortable=await page.evaluate(async layout=>{
+    const result=await ChartStudioBeta.importPortableLayout(JSON.stringify(layout),{mode:"replace"});
+    return {result,document:ChartStudioBeta.exportDocument()};
+  },portableLayout);
+  assert.equal(replacedPortable.result.importedDrawings,portableLayout.document.drawings.length,"confirmed replace installs the complete imported drawing set");
+  assert.deepEqual(replacedPortable.document.drawings,portableLayout.document.drawings,"confirmed replace restores source drawing IDs and content");
+  await page.evaluate(document=>ChartStudioBeta.importDocument(document),JSON.parse(beforeReplace));
+  await page.evaluate(()=>ChartStudioBeta.account("xau5m_m5"));
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().account),"xau5m_m5");
+  await page.evaluate(layout=>ChartStudioBeta.importPortableLayout(JSON.stringify(layout),{mode:"merge"}),portableLayout);
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().account),"xau5m_m5","portable import stays bound to the destination account");
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),portableLayout.document.drawings.length,"account-free layout imports into a different account with the same chart scope");
+  await page.evaluate(()=>ChartStudioBeta.account("titan"));
   const m15LayoutStorageKey="2eas:studio:beta:titan:profiles:XAUUSD:M15";
   const savedM15Layout=await page.evaluate(key=>JSON.parse(localStorage.getItem(key)||"{}").GoldRenamed,m15LayoutStorageKey);
   assert.deepEqual([savedM15Layout?.symbol,savedM15Layout?.timeframe],["XAUUSD","M15"],"Saved layouts carry their explicit chart scope");

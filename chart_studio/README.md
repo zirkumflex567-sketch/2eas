@@ -73,6 +73,22 @@ Routes: `GET /api/chart/v1/capabilities`,
 `GET /api/chart/v1/quotes`,
 `POST /api/chart/v1/scenarios/preview`.
 
+## Portable Beta chart layouts
+
+The active Beta panel can download and import a full chart layout as a
+`2eas-chart-layout:v2` JSON file. It contains the chart symbol and timeframe,
+drawings, chart options, indicator and moving-average settings, oscillator
+instances, chart appearance, and chart type. It does not contain an account
+identifier, broker positions, tickets, or order data. Files are limited to
+512 KiB and must match the active chart's exact symbol and timeframe.
+
+`Zusammenführen` appends drawings, remaps colliding drawing IDs, and applies
+the file's chart and indicator settings. `Ersetzen` requires a browser
+confirmation and installs the whole imported view. Rejected files and a
+cancelled replacement leave the active view and its saved settings unchanged.
+This is a local chart transfer; server multi-user conflict resolution and the
+native-v5 production cutover remain separate work.
+
 ## Signed indicator extension sandbox (internal engine)
 
 `chart_studio.indicator_extensions` accepts canonical JSON packages signed with
