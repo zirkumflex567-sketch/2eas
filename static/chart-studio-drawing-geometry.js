@@ -3,7 +3,7 @@
  */
 (()=>{
 "use strict";
-const COUNTS=Object.freeze({horizontal:1,vertical:1,text:1,trend:2,rect:2,fib:2,fibfan:2,ray:2,ruler:2,channel:3});
+const COUNTS=Object.freeze({horizontal:1,vertical:1,text:1,trend:2,rect:2,fib:2,fibfan:2,fibtime:2,ray:2,ruler:2,channel:3});
 function expected(kind){return Object.hasOwn(COUNTS,kind)?COUNTS[kind]:0}
 function validPoint(p){
  return !!p&&Number.isInteger(p.time)&&p.time>0&&p.time<=7258118400&&
@@ -12,7 +12,7 @@ function validPoint(p){
 function validDrawing(o){
  return !!o&&typeof o.kind==="string"&&expected(o.kind)>0&&
  Array.isArray(o.anchors)&&o.anchors.length===expected(o.kind)&&
- o.anchors.every(validPoint);
+ o.anchors.every(validPoint)&&!(o.kind==="fibtime"&&o.anchors[0].time===o.anchors[1].time);
 }
 function clipRay(a,b,limit){
  if(!a||!b||![a.x,a.y,b.x,b.y,limit].every(Number.isFinite)||limit<=0)return null;
@@ -31,6 +31,19 @@ function fibonacciFanRays(start,end,limit,ratios=[.382,.5,.618]){
   const target={x:end.x,y:start.y+(end.y-start.y)*ratio};
   const points=clipRay(start,target,limit);if(!points)return null;
   result.push({ratio,points});previous=ratio;
+ }
+ return result;
+}
+function fibonacciTimeZones(start,end,limit,factors=[0,1,2,3,5,8,13,21,34,55]){
+ if(!start||!end||![start.x,start.y,end.x,end.y,limit].every(Number.isFinite)||limit<=0||
+  Math.abs(end.x-start.x)<1e-7||!Array.isArray(factors)||!factors.length||factors.length>32||factors[0]!==0)return null;
+ let previous=-1;
+ const result=[];
+ for(const factor of factors){
+  if(!Number.isInteger(factor)||factor<=previous||factor>1000)return null;
+  const x=start.x+(end.x-start.x)*factor;
+  if(x>=0&&x<=limit)result.push({factor,x});
+  previous=factor;
  }
  return result;
 }
@@ -74,6 +87,6 @@ function nearestSnap(anchor,bars,toX,toY,maxPixels=12){
  return result;
 }
 window.ChartStudioDrawingGeometry=Object.freeze({
- counts:COUNTS,expected,validPoint,validDrawing,clipRay,fibonacciFanRays,parallelChannel,measure,nearestSnap
+ counts:COUNTS,expected,validPoint,validDrawing,clipRay,fibonacciFanRays,fibonacciTimeZones,parallelChannel,measure,nearestSnap
 });
 })();

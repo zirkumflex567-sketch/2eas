@@ -3,8 +3,8 @@
    No broker write calls or chart trading mutations in this module. */
 (()=>{
 "use strict";
-const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","vertical","text","trend","rect","fib","fibfan","ray","ruler","channel","plan","position-draft","ticket-price"];
-const preferenceTools=["cursor","edit","horizontal","vertical","text","trend","rect","ray","channel","fib","fibfan","ruler"];
+const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","vertical","text","trend","rect","fib","fibfan","fibtime","ray","ruler","channel","plan","position-draft","ticket-price"];
+const preferenceTools=["cursor","edit","horizontal","vertical","text","trend","rect","ray","channel","fib","fibfan","fibtime","ruler"];
 const defaultShortcuts=Object.freeze({cursor:"v",edit:"e",horizontal:"h",vertical:"",text:"",trend:"t",rect:"r",ray:"",channel:"c",fib:"f",ruler:"m"});
 function normalizeFavorites(raw){
  if(!Array.isArray(raw))return [];
@@ -145,7 +145,7 @@ function effectiveShortcuts(raw){
 }
 function renderToolPreferences(){
  if(!s?.panel)return;
- const labels={cursor:"Navigation",edit:"Griffe bearbeiten",horizontal:"Preislinie",vertical:"Zeitlinie",text:"Text",trend:"Trendlinie",rect:"Zone",ray:"Strahl",channel:"Parallelkanal",fib:"Fibonacci",fibfan:"Fibonacci-Fächer",ruler:"Preis-/Zeitmessung"};
+ const labels={cursor:"Navigation",edit:"Griffe bearbeiten",horizontal:"Preislinie",vertical:"Zeitlinie",text:"Text",trend:"Trendlinie",rect:"Zone",ray:"Strahl",channel:"Parallelkanal",fib:"Fibonacci",fibfan:"Fibonacci-Fächer",fibtime:"Fibonacci-Zeitzonen",ruler:"Preis-/Zeitmessung"};
  const favorites=s.panel.querySelector("#cs-favorite-tools");
  if(favorites){favorites.replaceChildren();for(const tool of s.favorites){const button=document.createElement("button");button.type="button";button.dataset.tool=tool;button.textContent=labels[tool];favorites.append(button)}
   if(!s.favorites.length){const empty=document.createElement("span");empty.textContent="Noch keine Favoriten ausgewählt.";favorites.append(empty)}}
@@ -982,6 +982,10 @@ function drawObject(ctx,o,d){
   const rays=window.ChartStudioDrawingGeometry?.fibonacciFanRays(a,b,d.w);
   if(rays)for(const ray of rays){ctx.strokeStyle=ray.ratio===.5?"#f7c874":"#8da8f9";ctx.beginPath();ctx.moveTo(ray.points[0].x,ray.points[0].y);ctx.lineTo(ray.points[1].x,ray.points[1].y);ctx.stroke();ctx.fillStyle="#f7f8ff";ctx.font="11px monospace";ctx.fillText((ray.ratio*100).toLocaleString("de-DE")+"%",Math.max(3,Math.min(d.w-38,ray.points[1].x-38)),ray.points[1].y-3)}
  }
+ if(b&&o.kind==="fibtime"){
+  const zones=window.ChartStudioDrawingGeometry?.fibonacciTimeZones(a,b,d.w);
+  if(zones)for(const zone of zones){ctx.strokeStyle=zone.factor===0||zone.factor===1?"#f7c874":"#8da8f9";ctx.setLineDash(zone.factor>1?[3,4]:[]);ctx.beginPath();ctx.moveTo(zone.x,0);ctx.lineTo(zone.x,d.h);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle="#f7f8ff";ctx.font="11px monospace";ctx.fillText(String(zone.factor),Math.max(2,Math.min(d.w-18,zone.x+3)),12)}
+ }
  if(s.tool==="edit"&&!o.locked)for(const p of o.anchors.map(project).filter(Boolean)){ctx.fillStyle="#f3faff";ctx.fillRect(p.x-5,p.y-5,10,10);ctx.strokeRect(p.x-5,p.y-5,10,10)}
 
  if(b&&o.kind==="ray"){
@@ -1200,6 +1204,7 @@ function pointerdown(e){
  const required=window.ChartStudioDrawingGeometry?.expected(s.tool)||2;
  if(!s.pending.length){s.begin=p;s.pending=[p];s.preview=p;updateMessage("Nächsten Anker setzen · Esc bricht ab.");}
  else{
+  if(s.tool==="fibtime"&&s.pending[0].time===p.time){updateMessage("Fibonacci-Zeitzonen brauchen zwei verschiedene Kerzen.");requestDraw();e.preventDefault();return}
   s.pending.push(p);
   if(s.pending.length>=required){
    snapshot();s.draw.push({kind:s.tool,anchors:s.pending.map(point=>({...point})),
@@ -1230,7 +1235,11 @@ function pointermove(e){
   if(next.side==="BUY"&&((next.slPrice!=null&&next.slPrice>=next.entryPrice)||(next.tpPrice!=null&&next.tpPrice<=next.entryPrice))||next.side==="SELL"&&((next.slPrice!=null&&next.slPrice<=next.entryPrice)||(next.tpPrice!=null&&next.tpPrice>=next.entryPrice)))return;
   s.positionDraft=next;window.ChartStudioBrokerPanel?.updateDraftPrice(s.positionDraftDrag,value);requestDraw();return;
  }
- if(s.drag){s.draw[s.drag.i].anchors[s.drag.j]=p;requestDraw()}
+ if(s.drag){
+  const drawing=s.draw[s.drag.i],other=drawing?.kind==="fibtime"?drawing.anchors.find((_,index)=>index!==s.drag.j):null;
+  if(other&&other.time===p.time){updateMessage("Fibonacci-Zeitzonen brauchen zwei verschiedene Kerzen.");return}
+  drawing.anchors[s.drag.j]=p;requestDraw()
+ }
  else if(s.pending.length){s.preview=p;requestDraw()}
 }
 function pointerup(e){
@@ -1430,7 +1439,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  maQuick.append(maOpen,maPeriod,maAdd,maHint);
  toggle.insertAdjacentElement("afterend",maQuick);
  const panel=document.createElement("section");panel.id="cs-beta-panel";panel.className="cs-beta-panel";panel.hidden=true;
- const toolLabels=[["cursor","Navigation"],["edit","Griffe bearbeiten"],["horizontal","Preislinie"],["vertical","Zeitlinie"],["text","Text"],["trend","Trendlinie"],["ray","Strahl"],["rect","Zone"],["channel","Parallelkanal"],["fib","Fibonacci"],["fibfan","Fibonacci-Fächer"],["ruler","Preis-/Zeitmessung"]];
+ const toolLabels=[["cursor","Navigation"],["edit","Griffe bearbeiten"],["horizontal","Preislinie"],["vertical","Zeitlinie"],["text","Text"],["trend","Trendlinie"],["ray","Strahl"],["rect","Zone"],["channel","Parallelkanal"],["fib","Fibonacci"],["fibfan","Fibonacci-Fächer"],["fibtime","Fibonacci-Zeitzonen"],["ruler","Preis-/Zeitmessung"]];
  const optLabels=[["ema20","EMA20"],["ema50","EMA50"],["ema200","EMA200"],["sma20","SMA20"],["sma50","SMA50"],["bb","Bollinger20"],["positions","Positionen & SL/TP"]];
  panel.innerHTML=
   '<div class="cs-beta-head"><strong>CHART STUDIO · EXPERIMENTELL</strong><span>Keine Handelsausführung</span></div>'+

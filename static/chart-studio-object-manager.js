@@ -5,7 +5,7 @@
 (()=>{
 "use strict";
 const NAMES=Object.freeze({
- horizontal:"Preislinie",vertical:"Zeitlinie",text:"Text",trend:"Trendlinie",rect:"Rechteck",fib:"Fibonacci",fibfan:"Fibonacci-Fächer",
+ horizontal:"Preislinie",vertical:"Zeitlinie",text:"Text",trend:"Trendlinie",rect:"Rechteck",fib:"Fibonacci",fibfan:"Fibonacci-Fächer",fibtime:"Fibonacci-Zeitzonen",
  ray:"Strahl",ruler:"Messung",channel:"Parallelkanal"
 });
 const MAX_DRAWINGS=1000;
