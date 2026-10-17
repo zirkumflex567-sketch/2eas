@@ -20,7 +20,7 @@ const {createHash}=require("node:crypto");
   const page=await browser.newPage({viewport:{width:1280,height:850},deviceScaleFactor:1.5});
   const consoleErrors=[],brokerMutationRequests=[];page.on("pageerror",e=>consoleErrors.push(e.message));
   let alertPollingEnabled=false,alertQuotePrice=4100.125,alertQuoteRequests=[],quoteReadRequests=[];
-let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,invalidStopGeometry=false,trailingStop=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,deferTitanPositions=false,releaseTitanPositions=null,holdScope=null,heldScopeResolvers=[],completedHeldScopeResponses=0,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,multiPositionRows=false,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badOrderShape=false,badDealRow=false,symbolCatalogTruncated=false,symbolCatalogInvalidRows=0,hideFavoriteSymbol=false,evidenceRequests=[],executionQualityRequests=[],mfeRequests=[],historicalMtfRequests=[],lifecycleFixtureEnabled=false;
+let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,invalidStopGeometry=false,trailingStop=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,deferTitanPositions=false,releaseTitanPositions=null,holdScope=null,heldScopeResolvers=[],completedHeldScopeResponses=0,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,multiPositionRows=false,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badOrderShape=false,badDealRow=false,symbolCatalogTruncated=false,symbolCatalogInvalidRows=0,hideFavoriteSymbol=false,evidenceRequests=[],captureStatusRequests=[],executionQualityRequests=[],mfeRequests=[],historicalMtfRequests=[],lifecycleFixtureEnabled=false;
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
   const confirmTfReads=[],regimeRequests=[],pivotRequests=[];let historicalMtfEnabled=false,confirmTfHistoryAvailable=false,pivotWrongSymbol=false;
   const calendarRequests=[];
@@ -87,6 +87,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   });
   await page.route("**/api/chart/v1/decisions**",async route=>{
     const url=new URL(route.request().url());
+    if(url.pathname.endsWith("/capture/status")){const account=url.searchParams.get("account");captureStatusRequests.push({path:url.pathname,method:route.request().method(),account});return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({schemaVersion:1,account,canExecute:false,status:{code:account==="titan"?"IDLE":"NOT_CONFIGURED",imported:0,importedTotal:0,gapCount:0,gapObserved:false,storeLostCount:0,recordingState:account==="titan"?"RECORDED":"NOT_RECORDED"}})})}
     if(url.pathname.endsWith("/execution-quality")){executionQualityRequests.push({path:url.pathname,params:Object.fromEntries(url.searchParams)});return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({schemaVersion:1,account:url.searchParams.get("account"),symbol:url.searchParams.get("symbol"),canExecute:false,evidenceCounts:{decisions:1,lifecycle:1},orders:[{orderAttemptId:"attempt_1",status:"AVAILABLE",weightedFillPrice:"4100.3",spreadPrice:"0.2",signedSlippagePrice:"0.1",signedSlippageTicks:"10",estimatedAdverseCost:{amount:"1",currency:"USD"}}],summary:{sampleCount:1,percentiles:{p50:"0.1",p95:"0.1"},groups:[{strategyId:"titan",sessionId:"UNKNOWN",regimeId:"UNKNOWN",sampleCount:1,spreadPricePercentiles:{p50:"0.2"},estimatedAdverseCost:{sum:"1",currency:"USD"}}]}})})}
     evidenceRequests.push({path:url.pathname,params:Object.fromEntries(url.searchParams)});
     const first={schemaVersion:1,type:"DECISION",id:"event_1",accountId:url.searchParams.get("account"),dataRevision:1,provenance:"RECORDED",payload:{eventId:"event_1",symbol:"XAUUSD",strategyId:"fixture_strategy",decisionTimeUtc:"2026-10-14T11:00:00Z",timeframe:"M5",stage:"SIGNAL",outcome:"PASS",reasonCodes:["<img src=x onerror=alert(1)>"]}};
@@ -95,7 +96,9 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(body)});
   });
   await page.route("**/api/chart/v1/lifecycle**",async route=>{
-    const url=new URL(route.request().url());evidenceRequests.push({path:url.pathname,params:Object.fromEntries(url.searchParams)});
+    const url=new URL(route.request().url());
+    if(url.pathname.endsWith("/capture/status")){const account=url.searchParams.get("account");captureStatusRequests.push({path:url.pathname,method:route.request().method(),account});const status=account==="xau5m_500"?{code:"NOT_STARTED",coverage:"UNKNOWN"}:{code:"OK",coverage:"ROLLING_WINDOW",appended:0,duplicates:0,rejected:0,storeLostCount:0,gapObserved:false,windowStartUtc:"2026-10-17T00:00:00Z"};return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({schemaVersion:1,account,status})})}
+    evidenceRequests.push({path:url.pathname,params:Object.fromEntries(url.searchParams)});
     const accountId=url.searchParams.get("account"),record={schemaVersion:1,type:"LIFECYCLE",id:"mt5_deal_93001",accountId,dataRevision:1,provenance:"RECORDED",payload:{id:"mt5_deal_93001",accountId,positionIdentifier:"92990",eventType:"ENTRY",source:"MT5_DEAL",asOfUtc:"2026-10-15T15:30:00Z",actor:"BROKER",dataQuality:"OBSERVED",dealTicket:"93001",orderTicket:"92999",dealEntry:"IN",dealSide:"BUY",price:"4101.25",volume:"0.03",commission:"-0.12",fee:"0",swap:"0",profit:"0",capturedAtUtc:"2026-10-15T15:31:00Z"}};
     if(url.pathname.endsWith("/mt5_deal_93001")){const event={...record,payload:{...record.payload,asOfUtc:"2026-10-14T12:30:00Z",capturedAtUtc:"2026-10-14T12:31:00Z"}};await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({schemaVersion:1,accountId,canExecute:false,record:event})});return}
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({schemaVersion:1,accountId,availability:lifecycleFixtureEnabled?"RECORDED":"NOT_RECORDED",storeState:lifecycleFixtureEnabled?"INITIALIZED":"NOT_INITIALIZED",coverage:lifecycleFixtureEnabled?"ROLLING_WINDOW":"UNKNOWN",gaps:0,canExecute:false,records:lifecycleFixtureEnabled?[record]:[],hasMore:false,nextCursor:null})});
@@ -227,6 +230,22 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().coordinateApiVersion),4,
    "The production Beta mount remains explicitly bound to the vendored v4 chart");
   await page.locator("#cs-evidence-panel > summary").click();
+  await page.locator("#cs-evidence-capture-status").click();
+  await page.waitForFunction(()=>document.querySelector("#cs-evidence-capture-status-result")?.textContent.includes("Lifecycle: OK · ROLLING_WINDOW"));
+  const captureStatusText=await page.locator("#cs-evidence-capture-status-result").textContent();
+  assert.match(captureStatusText,/Decision-Recorder: IDLE · aktiv, wartet auf neue Events/);
+  assert.match(captureStatusText,/IDLE · aktiv, wartet auf neue Events · 0 importiert · RECORDED/);
+  assert.match(captureStatusText,/Lifecycle: OK · ROLLING_WINDOW · 0 neue/);
+  assert.deepEqual(captureStatusRequests,[{path:"/api/chart/v1/decisions/capture/status",method:"GET",account:"titan"},{path:"/api/chart/v1/lifecycle/capture/status",method:"GET",account:"titan"}]);
+  await page.evaluate(()=>ChartStudioBeta.account("xau5m_500"));
+  await page.locator("#cs-evidence-capture-status").click();
+  await page.waitForFunction(()=>document.querySelector("#cs-evidence-capture-status-result")?.textContent.includes("Decision-Recorder: NOT_CONFIGURED"));
+  assert.match(await page.locator("#cs-evidence-capture-status-result").textContent(),/keine EA-Source eingebunden/);
+  assert.match(await page.locator("#cs-evidence-capture-status-result").textContent(),/Lifecycle: NOT_STARTED · UNKNOWN/);
+  assert.deepEqual(captureStatusRequests.slice(2),[{path:"/api/chart/v1/decisions/capture/status",method:"GET",account:"xau5m_500"},{path:"/api/chart/v1/lifecycle/capture/status",method:"GET",account:"xau5m_500"}]);
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.isEvidenceCaptureDemo("blueberry")),false,"The protected account is outside the recorder-status allowlist");
+  assert.equal(captureStatusRequests.length,4,"Recorder diagnostics never query the protected account");
+  await page.evaluate(()=>ChartStudioBeta.account("titan"));
   await page.locator("#cs-execution-quality-load").click();
   await page.waitForFunction(()=>document.querySelector("#cs-execution-quality-status")?.textContent.includes("attempt_1"));
   const executionQualityText=await page.locator("#cs-execution-quality-status").textContent();
