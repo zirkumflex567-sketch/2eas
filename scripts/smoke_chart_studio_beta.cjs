@@ -24,13 +24,14 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
   const confirmTfReads=[],regimeRequests=[],pivotRequests=[];let historicalMtfEnabled=false,confirmTfHistoryAvailable=false,pivotWrongSymbol=false;
   const calendarRequests=[];
-  let calendarRevisionPhase=0;
+  let calendarRevisionPhase=0,calendarMissingSnapshot=false;
   await page.route("**/api/chart/v1/regimes?*",async route=>{
     const url=new URL(route.request().url()),params=Object.fromEntries(url.searchParams);regimeRequests.push({method:route.request().method(),params});
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:params.account,symbol:params.symbol,source:"MT5_VERIFIED",canExecute:false,frame:{symbol:params.symbol,timeframe:params.timeframe},asOfUtc:params.at,revision:"market-regime-v1",features:{atr14:1.5,adx14:28},thresholds:{trend:{entryAdx:25}},regimeTags:{trend:"UP",volatility:"HIGH",eventRisk:"UNKNOWN",newsRisk:"UNKNOWN"},confidence:{score:1,meaning:"Datenqualität und Regelabdeckung, keine Wahrscheinlichkeit."},qualityFlags:["CALENDAR_UNAVAILABLE"]})});
   });
   await page.route("**/api/chart/v1/calendar?*",async route=>{
     const url=new URL(route.request().url());calendarRequests.push({method:route.request().method(),params:Object.fromEntries(url.searchParams)});
+    if(calendarMissingSnapshot){await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),source:"MT5_VERIFIED",canExecute:false,status:"UNAVAILABLE",reason:"SNAPSHOT_MISSING_OR_INVALID",coverage:{status:"UNKNOWN"},events:[]})});return}
     const events=calendarRevisionPhase===0?[{id:"42",revision:2,name:"CPI",currency:"USD",importance:"HIGH",timeServer:"2026-10-16T14:30:00",timeMode:"DATETIME",status:"SCHEDULED"},{id:"43",revision:1,name:"Employment",currency:"USD",importance:"MODERATE",timeServer:"2026-10-17T00:00:00",timeMode:"DATE",status:"SCHEDULED"}]:[{id:"42",revision:3,name:"CPI",currency:"USD",importance:"HIGH",timeServer:"2026-10-16T15:00:00",timeMode:"DATETIME",status:"SCHEDULED"},{id:"44",revision:1,name:"PMI",currency:"USD",importance:"MODERATE",timeServer:"2026-10-18T09:00:00",timeMode:"DATETIME",status:"SCHEDULED"}];
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),source:"MT5_VERIFIED",canExecute:false,status:"AVAILABLE",timeBasis:"BROKER_SERVER",capturedAtUtc:"2026-10-16T10:00:00Z",coverage:{status:"COMPLETE"},events,cancellationSemantics:"NOT_EXPOSED_BY_MT5_CALENDAR",missingEventsMean:"UNKNOWN"})});
   });
@@ -198,6 +199,17 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await page.locator('[data-testid="economic-calendar"] button').click();
   await thirdCalendar;
   assert.match(await page.locator('[data-testid="economic-calendar"]').textContent(),/Nicht mehr im MT5-Feed \(Status UNKNOWN\): Employment/);
+  calendarMissingSnapshot=true;
+  await page.evaluate(()=>ChartStudioBeta.account("xau5m_m5","XAUUSD.p"));
+  await page.waitForFunction(()=>ChartStudioBeta.getState().marketStructure?.scope.account==="xau5m_m5");
+  await page.waitForFunction(()=>document.querySelector('[data-testid="economic-calendar"]')?.textContent.includes("Bridge"));
+  const setupHelp=await page.locator('[data-testid="economic-calendar"]').textContent();
+  assert.match(setupHelp,/separaten XAUUSD-M15-Chart/);assert.match(setupHelp,/xau5m_m5\.set/);assert.match(setupHelp,/Event-\/News-Risk bleibt UNKNOWN/);
+  await page.evaluate(()=>ChartStudioBeta.account("goldm15","XAUUSD"));
+  await page.waitForFunction(()=>ChartStudioBeta.getState().marketStructure?.scope.account==="goldm15");
+  await page.waitForFunction(()=>document.querySelector('[data-testid="economic-calendar"]')?.textContent.includes("Event-/News-Risk bleibt UNKNOWN"));
+  assert.doesNotMatch(await page.locator('[data-testid="economic-calendar"]').textContent(),/Bridge|xau5m_m5\.set/,"Setup instructions stay within the explicitly supported demo aliases");
+  await page.evaluate(()=>ChartStudioBeta.account("titan","XAUUSD"));
   await page.locator('[aria-label="Sweep ConfirmTF"]').selectOption("3600");
   await page.waitForFunction(()=>document.querySelector('[data-testid="market-structure"] > div > p[role="status"]')?.textContent.includes("keine geschlossenen ConfirmTF-Kerzen"));
   assert.match(await page.locator('[data-testid="market-structure"] > div > p[role="status"]').textContent(),/ConfirmTF UNKNOWN · keine geschlossenen ConfirmTF-Kerzen/,
