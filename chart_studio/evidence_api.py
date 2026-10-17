@@ -215,6 +215,12 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
             return error(422, 'INVALID_ACCOUNT')
         if account not in models.gateway.ACCOUNTS:
             return error(400, 'UNKNOWN_ACCOUNT')
+        account_policy = models.gateway.ACCOUNTS[account]
+        if account_policy.get('is_demo') is not True or account_policy.get('challenge_protection') is True:
+            return JSONResponse({'schemaVersion':1,
+                                 'detail':{'code':'DEMO_ACCOUNT_REQUIRED','canExecute':False,
+                                           'coverage':'UNKNOWN'}},
+                                status_code=403, headers={'Cache-Control':'no-store'})
         context = models.AccountContext.from_config(account)
         cursor = None
         def failure(status, code):
@@ -491,3 +497,7 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
     @app.get(paths[2]+'/{record_id}')
     def snapshot(record_id: str, request: Request):
         return serve(request,'SNAPSHOT',record_id)
+
+    @app.get(paths[1]+'/{record_id}')
+    def lifecycle_record(record_id: str, request: Request):
+        return serve(request,'LIFECYCLE',record_id)

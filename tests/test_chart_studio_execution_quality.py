@@ -255,3 +255,50 @@ def test_execution_quality_api_requires_exact_bounded_query():
         "toUtc": "2026-03-01T00:00:00Z"})
     assert response.status_code == 422
     assert store.calls == []
+
+
+def test_snapshot_replay_can_read_exact_account_scoped_lifecycle_revision():
+    record = {
+        "schemaVersion": 1, "type": "LIFECYCLE", "id": "mt5_deal_501",
+        "accountId": "titan", "dataRevision": 3, "provenance": "RECORDED",
+        "payload": {"id": "mt5_deal_501", "accountId": "titan", "dealTicket": "501",
+                    "positionIdentifier": "7001", "symbol": "XAUUSD",
+                    "asOfUtc": "2026-10-16T10:00:00.000000Z"},
+    }
+
+    class RevisionStore(Store):
+        def read(self, context, *, kind, **kwargs):
+            self.calls.append((context.account_id, kind, kwargs))
+            rows = self.rows.get(kind, [])
+            if "record_id" in kwargs:
+                rows = [row for row in rows if row.get("id") == kwargs["record_id"]
+                        and row.get("accountId") == context.account_id
+                        and row.get("dataRevision") == kwargs.get("revision")]
+            return {"schemaVersion": 1, "accountId": context.account_id,
+                    "canExecute": False, "records": rows, "hasMore": False,
+                    "generation": "generation-1", "pinnedMaxSeq": 10}
+
+    store = RevisionStore({"LIFECYCLE": [record]})
+    response = client(store).get("/api/chart/v1/lifecycle/mt5_deal_501", params={
+        "account": "titan", "revision": "3"})
+
+    assert response.status_code == 200
+    assert response.json()["schemaVersion"] == 1
+    assert response.json()["accountId"] == "titan"
+    assert response.json()["canExecute"] is False
+    assert response.json()["record"] == record
+    assert store.calls == [("titan", "LIFECYCLE", {"record_id": "mt5_deal_501", "revision": 3})]
+    assert client(store).post("/api/chart/v1/lifecycle/mt5_deal_501").status_code == 405
+
+    wrong_revision = client(store).get("/api/chart/v1/lifecycle/mt5_deal_501", params={
+        "account": "titan", "revision": "2"})
+    assert wrong_revision.status_code == 404
+    wrong_account = client(store).get("/api/chart/v1/lifecycle/mt5_deal_501", params={
+        "account": "titan_m5", "revision": "3"})
+    assert wrong_account.status_code == 404
+
+    protected_store = RevisionStore({"LIFECYCLE": [record]})
+    protected = client(protected_store).get("/api/chart/v1/lifecycle/mt5_deal_501", params={
+        "account": "blueberry", "revision": "3"})
+    assert protected.status_code == 403
+    assert protected_store.calls == []

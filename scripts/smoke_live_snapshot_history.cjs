@@ -104,6 +104,17 @@ const forbiddenAccounts = new Set(["blueberry"]);
         assert.equal(await rows.first().locator(".cs-evidence-chart-caption").textContent(), caption);
         assert.equal(await rows.first().locator("canvas.cs-evidence-chart").count(), 1);
       }
+      const lifecycleRefs = records[0].payload.lifecycleEventIds || [];
+      assert.ok(lifecycleRefs.length > 0, `${account}: snapshot replay needs an exact lifecycle reference`);
+      await rows.first().locator("button.cs-evidence-snapshot-replay").click();
+      await page.waitForFunction(() => {
+        const status = document.querySelector(".cs-evidence-snapshot-replay-status")?.textContent || "";
+        return status.includes("RECORDED ·") || status.includes("Replay nicht verfügbar");
+      });
+      const replayStatus = await rows.first().locator(".cs-evidence-snapshot-replay-status").textContent();
+      assert.match(replayStatus, /RECORDED · \d+ eingefrorene Bars/, `${account}: actual referenced-event replay failed (${replayStatus})`);
+      assert.ok(apiRequests.some(request => request.path.endsWith(`/lifecycle/${encodeURIComponent(lifecycleRefs[0].id)}`)
+        && request.account === account && request.method === "GET"), `${account}: replay did not read its exact lifecycle record`);
       const snapshot = records[0], snapshotSymbol = snapshot.payload.chartView.symbol;
       assert.equal(await rows.first().locator("button.cs-evidence-snapshot-mtf").count(), 1, `${account}: missing historical MTF action`);
       await rows.first().locator("button.cs-evidence-snapshot-mtf").click();
