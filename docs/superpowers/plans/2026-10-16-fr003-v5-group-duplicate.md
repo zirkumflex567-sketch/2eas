@@ -21,7 +21,7 @@ Duplicate every selected native v5 drawing from the keyboard or adapter API. Pre
 - [x] Run `npm --prefix chart_studio_v5 run build`.
 - [x] Run `node scripts/smoke_chart_studio_v5.cjs` including AT-025 capacity evidence.
 - [x] Commit and push the change on `main` as `7d942db`.
-- [ ] Wait for both GitHub workflows on this exact commit; deploy the clean exact-main revision and verify local/htown runtime identity.
+- [x] `7d942db` is included in `main`; both required GitHub workflows succeeded on current `f64d379` (`39009248466`, `39009248518`). Local and htown runtime report the same `f64d379d7da47de6269084ff026c2835cce4f432` revision and application digest `a839388c9bde125ca4e5dd5f6beaeffe3a76fdf67c28024f0cfd764a32fa491d`; `restart_required=false`, htown is clean on `main`. The isolated v5 bundle is served with identical SHA-256 locally and on htown. Production v4, persistence integration, target hardware/touch and remaining FR-003 acceptance remain open.
 
 ## Limits
 

@@ -36,4 +36,4 @@
 
 - [x] Run focused Chromium parity, the complete native v5 smoke, TypeScript check/build, Beta tests, workspace tests, and `git diff --check`.
 - [x] Update FR-002: native v5 parity moves to done; production cutover, hardware and duration acceptance remain open.
-- [ ] Commit and push on `main`, fast-forward htown, guarded-restart the local main runtime, and verify runtime/static identity. Do not run backtests, Strategy Tester, broker writes, or Blueberry requests.
+- [x] `be97db9` is included in `main`; both required GitHub workflows passed on current `f64d379` (`39009248466`, `39009248518`). Guarded local runtime and htown `/stt` match revision `f64d379d7da47de6269084ff026c2835cce4f432`, digest `a839388c9bde125ca4e5dd5f6beaeffe3a76fdf67c28024f0cfd764a32fa491d`, `applicationCodeDirty=false` and `restart_required=false`. Served `chart-studio-v5.js` SHA-256 is `be19fa1318ba85e27498e7d9d080a5f9292493b4d182534be1fedb993d7384bd` locally and on htown. The OLS implementation remains preview-only; production cutover, target hardware and duration acceptance remain open. No backtest, broker write or Blueberry request.
