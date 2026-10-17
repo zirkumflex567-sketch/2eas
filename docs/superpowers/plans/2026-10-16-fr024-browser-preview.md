@@ -31,5 +31,6 @@ No trust map means fail closed. Do not invent or persist a production signer key
 - [x] Route contracts went RED because `chart_studio.indicator_extension_api` was missing.
 - [x] Implement bounded request streaming, duplicate-key rejection, strict XAU/demo scope, environment-injected public-key trust, signed-package verification, bounded calculation, and caller-supplied provenance response.
 - [x] Add a Beta file-import control, current-chart overlay, stale-response/scope guard, and account/symbol/timeframe cleanup. Packages and outputs remain session-only.
+- [x] Add local PKCS#8 Ed25519 package signing and download; prove interoperability by verifying the browser-exported canonical package with the Python server verifier using a generated test keypair. Private key material is never posted or persisted.
 - [x] Focused API/interpreter suite: 32 passed. Chromium extension UI smoke: passed. Full dashboard frontend/security plus extension suite: 181 passed, 38 subtests, 4 existing FastAPI deprecation warnings. Full Beta Chromium smoke: passed with zero broker writes.
-- [ ] Independent review, GitHub Actions, Main deployment, real trusted-key provisioning, and a real signed-package read-only demo acceptance.
+- [ ] Independent security review, production trusted-key provisioning/rotation, acceptance with a real live-trusted-key package, native indicator catalog integration, target-hardware profiling, current-commit GitHub Actions, and Main deployment.

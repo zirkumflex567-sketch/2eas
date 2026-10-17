@@ -1,7 +1,8 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { spawn } = require("node:child_process");
+const { generateKeyPairSync } = require("node:crypto");
+const { spawn, spawnSync } = require("node:child_process");
 const { chromium } = require("playwright");
 
 (async () => {
@@ -14,6 +15,12 @@ const { chromium } = require("playwright");
     const page = await browser.newPage({ viewport: { width: 1280, height: 850 } });
     const errors = [];
     const posts = [];
+    const apiRequests=[];
+    const keyPair=generateKeyPairSync("ed25519");
+    const privateKey=keyPair.privateKey.export({type:"pkcs8",format:"der"});
+    const publicKey=keyPair.publicKey.export({type:"spki",format:"der"}).subarray(-32).toString("base64");
+    const signingKeyId="browser-test";
+    page.on("request",request=>{if(new URL(request.url()).pathname.startsWith("/api/"))apiRequests.push({method:request.method(),url:request.url(),body:request.postData()||""})});
     page.on("pageerror", error => errors.push(error.message));
     await page.route("**/api/chart/v1/indicator-extensions/preview", async route => {
       assert.equal(route.request().method(), "POST");
@@ -25,6 +32,17 @@ const { chromium } = require("playwright");
       assert.equal(body.bars.length, 120);
       assert.equal(body.bars[0].time, 1700000000);
       assert.deepEqual(body.parameters, {});
+      assert.ok(!body.package.includes(privateKey.toString("base64")),"private key bytes never reach the API");
+      const verifyCode=[
+        "import base64,json,sys",
+        "from chart_studio.indicator_extensions import parse_signed_package",
+        "parsed=parse_signed_package(sys.stdin.buffer.read(),trusted_keys={"+JSON.stringify(signingKeyId)+":base64.b64decode("+JSON.stringify(publicKey)+")})",
+        "print(json.dumps(parsed['manifest'],ensure_ascii=False,sort_keys=True,separators=(',',':')))",
+      ].join("; ");
+      const verification=spawnSync(process.env.PYTHON||"python",["-c",verifyCode],
+        {cwd:process.cwd(),input:Buffer.from(body.package),encoding:"utf8"});
+      assert.equal(verification.status,0,verification.stderr||"browser-exported signature verifies in Python");
+      assert.equal(JSON.parse(verification.stdout).id,"close-copy");
       await route.fulfill({ status: 200, contentType: "application/json", headers: { "cache-control": "no-store" },
         body: JSON.stringify({
           account: "titan", symbol: "XAUUSD", timeframe: "M15",
@@ -38,6 +56,35 @@ const { chromium } = require("playwright");
     await page.waitForFunction(() => window.__chartSmokeReady === true);
     await page.locator("#cs-beta-toggle").click();
     await page.locator(".cs-indicator-extension-panel > summary").click();
+    await page.locator(".cs-indicator-extension-export > summary").click();
+    const storageBefore=await page.evaluate(()=>JSON.stringify({local:Object.keys(localStorage).sort(),session:Object.keys(sessionStorage).sort()}));
+    await page.locator("[data-extension-manifest]").fill(JSON.stringify({
+      id:"close-copy",version:"1.0.0",name:"Close copy",parameters:[
+        {id:"scale",min:0.00001,max:0.0002,default:0.00011,step:0.00001}
+      ],expression:{op:"add",left:{op:"mul",left:{source:"close"},right:{parameter:"scale"}},right:{constant:0.00001}}
+    }));
+    await page.locator("[data-extension-key-id]").fill(signingKeyId);
+    await page.locator("[data-extension-signing-key]").setInputFiles({name:"invalid.pk8",mimeType:"application/octet-stream",buffer:Buffer.from("not a pkcs8 key")});
+    await page.locator("[data-extension-export]").click();
+    await page.waitForFunction(()=>document.querySelector("[data-extension-export-status]")?.textContent.includes("INVALID_PKCS8"));
+    assert.deepEqual(apiRequests.filter(request=>request.method!=="GET"),[],"invalid signing key is rejected locally");
+    assert.deepEqual(await page.evaluate(()=>JSON.stringify({local:Object.keys(localStorage).sort(),session:Object.keys(sessionStorage).sort()})),storageBefore,
+      "a rejected private key is not stored");
+    await page.locator("[data-extension-signing-key]").setInputFiles({name:"publisher.pk8",mimeType:"application/octet-stream",buffer:privateKey});
+    const downloadPromise=page.waitForEvent("download");
+    await page.locator("[data-extension-export]").click();
+    const download=await downloadPromise;
+    const downloadStream=await download.createReadStream();
+    const packageChunks=[];
+    for await(const chunk of downloadStream)packageChunks.push(chunk);
+    const exportedBytes=Buffer.concat(packageChunks);
+    const exportedPackage=JSON.parse(exportedBytes.toString("utf8"));
+    assert.equal(exportedPackage.schemaVersion,1);
+    assert.equal(exportedPackage.keyId,signingKeyId);
+    assert.equal(exportedPackage.manifest.id,"close-copy");
+    assert.deepEqual(apiRequests.filter(request=>request.method!=="GET"),[],"local signing makes no API write or upload");
+    assert.ok(apiRequests.every(request=>!request.body.includes(privateKey.toString("base64"))),"private key bytes never appear in API request bodies");
+    assert.equal(await page.locator("[data-extension-signing-key]").inputValue(),"");
     await page.evaluate(() => {
       const chart = window.__chart;
       const add = chart.addLineSeries.bind(chart);
@@ -54,16 +101,14 @@ const { chromium } = require("playwright");
         return remove(series);
       };
     });
-    const storageBefore = await page.evaluate(() => JSON.stringify(Object.keys(localStorage).sort()));
-    const file = Buffer.from(JSON.stringify({ schemaVersion: 1, keyId: "fixture", signature: "signature", manifest: {} }));
-    await page.locator("[data-extension-file]").setInputFiles({ name: "close-copy.json", mimeType: "application/json", buffer: file });
+    await page.locator("[data-extension-file]").setInputFiles({ name: "close-copy.json", mimeType: "application/json", buffer: exportedBytes });
     await page.locator("[data-extension-preview]").click();
     await page.waitForFunction(() => document.querySelector("[data-extension-status]")?.textContent.includes("signiert und verifiziert"));
     assert.equal(await page.evaluate(() => window.__extensionSeries.length), 1);
     assert.equal(posts.length, 1);
     assert.match(await page.locator("[data-extension-status]").textContent(), /120 Werte.*CALLER_SUPPLIED_BARS.*nicht ausführbar.*nur aktuelle Sitzung/);
-    assert.equal(await page.evaluate(() => JSON.stringify(Object.keys(localStorage).sort())), storageBefore,
-      "extension packages and preview output remain session-only");
+    assert.equal(await page.evaluate(() => JSON.stringify({local:Object.keys(localStorage).sort(),session:Object.keys(sessionStorage).sort()})), storageBefore,
+      "private keys, extension packages, and preview output remain session-only");
 
     await page.evaluate(() => ChartStudioBeta.account("xau5m_m5"));
     assert.equal(await page.evaluate(() => window.__extensionSeriesRemoved), 1,

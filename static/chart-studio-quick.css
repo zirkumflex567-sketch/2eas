@@ -207,3 +207,9 @@
 .cs-indicator-extension-panel button{padding:8px 12px;border:1px solid rgba(83,205,230,.45);border-radius:8px;color:#e7f7fb;background:#102b38}
 .cs-indicator-extension-panel button:hover{background:#174050}
 .cs-indicator-extension-panel [data-extension-status]{min-height:1.5em;color:#b9d1da}
+.cs-indicator-extension-export{margin-top:14px;padding:10px;border-top:1px solid rgba(83,205,230,.2)}
+.cs-indicator-extension-export>summary{cursor:pointer;color:#d7edf3;font-weight:650}
+.cs-indicator-extension-export textarea{box-sizing:border-box;width:min(100%,760px);min-height:180px;padding:10px;border:1px solid rgba(83,205,230,.35);border-radius:8px;color:#e7f7fb;background:#071620;font:12px/1.45 ui-monospace,Consolas,monospace;resize:vertical}
+.cs-indicator-extension-export input[type=text]{max-width:360px;padding:8px;border:1px solid rgba(83,205,230,.35);border-radius:7px;color:#e7f7fb;background:#071620}
+.cs-indicator-extension-export p{max-width:900px;line-height:1.5;color:#b9d1da}
+.cs-indicator-extension-export button:disabled{opacity:.6;cursor:wait}
