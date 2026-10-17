@@ -45,6 +45,20 @@ class ControlSecurityTests(unittest.TestCase):
                                    headers={'Authorization': 'Bearer real-app-test-token'})
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()['detail']['code'], 'COMMIT_DISABLED')
+        self.assertFalse(app.app.state.trade_ticket_write_capable)
+        ticket_payload = {
+            'schemaVersion': 1, 'account': 'titan', 'symbol': 'XAUUSD',
+            'previewId': 'a-valid-server-issued-ticket-preview-id-123456',
+            'userConfirmed': True, 'confirmationText': 'titan XAUUSD BUY 0.01',
+            'idempotencyKey': 'b98d71dc-bd22-4a68-8d45-935a5e4b1cf1',
+        }
+        with patch.dict('os.environ', {'DASHBOARD_CONTROL_TOKEN': 'real-app-test-token'}):
+            ticket_response = client.post(
+                '/api/chart/v1/trade-ticket/commit', json=ticket_payload,
+                headers={'Authorization': 'Bearer real-app-test-token'},
+            )
+        self.assertEqual(ticket_response.status_code, 503)
+        self.assertEqual(ticket_response.json()['detail']['code'], 'TRADE_TICKET_DISABLED')
 
     def test_authenticated_browser_mutation_is_allowed(self):
         response = self.client.get('/api/control_session')
