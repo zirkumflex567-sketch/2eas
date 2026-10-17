@@ -34,4 +34,4 @@
 
 - [x] Run TypeScript check/build, full v5 Chromium smoke, Beta market-structure/Beta regression tests, and `git diff --check`.
 - [x] Record remaining profile/workspace, production, hardware and load gates.
-- [ ] Commit/push to `main`, wait for CI, restart the guarded local runtime, fast-forward htown and verify `/stt` revision/digest and read-only demo behavior on four authorized demos only.
+- [x] Commit `93bb7f2` is on `main`; the current `/stt` runtime on local and htown was verified at `1eaabf8` with matching digest and clean code state. Main CI passed. A read-only four-demo calculation used 149 verified candles per demo; quotes were stale and every detected zone used the labeled tick-volume proxy. Native v5 stays preview-only; workspace/profile integration, production cutover, target hardware and load remain open.

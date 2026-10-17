@@ -14,4 +14,4 @@
 - [x] Implement versioned source-aware zone detection and preserve volume on cleaned bars.
 - [x] Add account/symbol/timeframe-scoped controls and translucent OHLC zone rendering.
 - [x] Verify formula and Chromium UI contracts, syntax, diff, and regression smokes.
-- [ ] Record remaining v5 overlay, workspace, production, hardware, and load gates; push `main` and update guarded local runtime plus htown `/stt`.
+- [x] Beta overlay shipped. Native v5 overlay remains isolated preview-only; workspace/profile integration, production cutover, target hardware, and load remain open. Main runtime and htown `/stt` were verified on `1eaabf8`; four-demo read-only zone calculations used stale quotes and tick-volume proxy data.
