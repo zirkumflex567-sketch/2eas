@@ -36,4 +36,5 @@
 - [x] Normalize GoldM15 and Titan candidate quote times from the configured broker offset and serialize raw broker time provenance.
 - [x] Capture the existing GoldM15 buy/sell request's intended values and returned broker result without changing its conditions or request expressions.
 - [x] Run the focused recorder/model regression (128 passed) and compile a fresh isolated GoldM15 candidate with MetaEditor 6230 (0 errors, 0 warnings; artifact remains under ignored `output/`).
-- [ ] Install/attach on an authorized demo only after current chart identity is verified, then obtain and import fresh decision/order-attempt evidence. No funded account or Strategy Tester.
+- [x] Compile the Titan `titan_m5` variant against its configured 500-dollar demo terminal/source/preset and place it under a separate `ChartStudioEvidence-titan_m5` Experts directory; the existing EA/chart was not replaced or reloaded.
+- [ ] Attach either candidate only after current chart identity is verified, then obtain and import fresh decision/order-attempt evidence. The Titan candidate currently reports zero imported Decisions and is not attached. No funded account or Strategy Tester.
