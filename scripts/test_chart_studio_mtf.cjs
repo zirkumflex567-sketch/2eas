@@ -12,6 +12,20 @@ function bars(tf,count=280,direction=1){
   return {time:first+i*step,open:close-1,high:close+3,low:close-2,close,tick_volume:45};
  });
 }
+function sessionBars(tf,count=280){
+ const step=M.SECONDS[tf],rows=[];let time=Date.UTC(2025,0,1,tf==="D1"?21:0)/1000;
+ while(rows.length<count){
+  const date=new Date(time*1000),day=date.getUTCDay(),hour=date.getUTCHours();
+  const weekendClosed=tf==="D1"?day===5||day===6:day===5&&hour>=21||day===6||day===0&&hour<22;
+  const dailyClosed=tf!=="D1"&&day>=1&&day<=4&&hour===21;
+  if(!weekendClosed&&!dailyClosed){
+   const close=1800+rows.length*.3;
+   rows.push({time,open:close-.2,high:close+.4,low:close-.3,close});
+  }
+  time+=step;
+ }
+ return rows;
+}
 for(const tf of ["D1","H4","H1","M15","M5"]){
  const up=M.frame(bars(tf),tf,asOf);
  assert.equal(up.status,"READY",tf);assert.equal(up.bias,"UP",tf);
@@ -34,16 +48,33 @@ const friday=Date.UTC(2025,0,3,12)/1000,mondayAfterWeek=friday+10*86400;
 const oldWeek=[-3,-2,-1].map(hours=>({time:friday+hours*3600,open:1,high:3,low:.5,close:2}));
 const holidayGap=M.frame([...oldWeek,{time:mondayAfterWeek,open:2,high:3,low:1,close:2}],"H1",mondayAfterWeek+3600);
 assert.equal(holidayGap.status,"UNKNOWN");assert.equal(holidayGap.reason,"DATA_GAP","multiweek Friday-to-Monday gaps must not be treated as weekends");
-const normalWeekend=M.frame([{time:friday+9*3600,open:1,high:3,low:.5,close:2},{time:friday+57*3600,open:2,high:3,low:1,close:2}],"H1",friday+58*3600);
-assert.equal(normalWeekend.status,"INSUFFICIENT","plausible FX weekend closure should not look like a weekday data gap");
+const normalWeekend=M.frame([{time:friday+9*3600,open:1,high:3,low:.5,close:2},{time:friday+57*3600,open:2,high:3,low:1,close:2}],"H1",friday+58*3600,"XAUUSD");
+assert.equal(normalWeekend.status,"INSUFFICIENT","plausible XAU weekend closure should not look like a weekday data gap");
+const nonGoldWeekend=M.frame([{time:friday+9*3600,open:1,high:3,low:.5,close:2},{time:friday+57*3600,open:2,high:3,low:1,close:2}],"H1",friday+58*3600,"EURUSD");
+assert.equal(nonGoldWeekend.status,"UNKNOWN","XAU session heuristics must not certify another symbol");
+assert.equal(nonGoldWeekend.reason,"DATA_GAP");
+const thursdayDaily=Date.UTC(2025,0,2,21)/1000,afterLongClosure=thursdayDaily+4*86400;
+const longDailyClosure=M.frame([{time:thursdayDaily,open:1,high:3,low:.5,close:2},{time:afterLongClosure,open:2,high:3,low:1,close:2}],"D1",afterLongClosure+86400,"XAUUSD");
+assert.equal(longDailyClosure.status,"UNKNOWN","a four-day holiday closure must not be certified as a normal weekend");
+assert.equal(longDailyClosure.reason,"DATA_GAP");
+const weekdayMaintenance=Date.UTC(2025,0,7,20)/1000;
+const foreignDailyMaintenance=M.frame([{time:weekdayMaintenance,open:1,high:3,low:.5,close:2},{time:weekdayMaintenance+2*3600,open:2,high:3,low:1,close:2}],"H1",weekdayMaintenance+3*3600,"EURUSD");
+assert.equal(foreignDailyMaintenance.status,"UNKNOWN","gold maintenance heuristics must not certify another symbol");
+assert.equal(foreignDailyMaintenance.reason,"DATA_GAP");
 const fridayClose=Date.UTC(2025,0,3,21)/1000;
 const weekendReadyBars=Array.from({length:279},(_,i)=>{const close=1800+i*.3;return {time:fridayClose-(278-i)*3600,open:close-.2,high:close+.4,low:close-.3,close};});
 const mondayOpen=fridayClose+51*3600, mondayClose=1800+279*.3;
 weekendReadyBars.push({time:mondayOpen,open:mondayClose-.2,high:mondayClose+.4,low:mondayClose-.3,close:mondayClose});
-const weekendReady=M.frame(weekendReadyBars,"H1",mondayOpen+3600);
+const weekendReady=M.frame(weekendReadyBars,"H1",mondayOpen+3600,"XAUUSD");
 assert.equal(weekendReady.status,"READY");
 assert.equal(weekendReady.dataQuality,"SESSION_HEURISTIC","accepted weekend gaps must not be reported as fully verified coverage");
 assert.equal(weekendReady.reason,"CLOSED_BAR_EMA_ALIGNMENT");
+for(const tf of ["D1","H1","M15","M5"]){
+ const closedSessions=sessionBars(tf),sessionAsOf=closedSessions.at(-1).time+M.SECONDS[tf];
+ const sessionResult=M.frame(closedSessions,tf,sessionAsOf,"XAUUSD");
+ assert.equal(sessionResult.status,"READY",tf+" legitimate MT5 session closure must not poison complete coverage");
+ assert.equal(sessionResult.dataQuality,"SESSION_HEURISTIC",tf+" tolerated session closure must remain unverified");
+}
 const base=M.frame(input.H4,"H4",asOf),future={time:asOf,open:1000000,high:1000010,low:999990,close:1000005};
 const protectedFrame=M.frame([...input.H4,future],"H4",asOf);
 assert.equal(protectedFrame.sourceTime,base.sourceTime);assert.equal(protectedFrame.ema200,base.ema200);

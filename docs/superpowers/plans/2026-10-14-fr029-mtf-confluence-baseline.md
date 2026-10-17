@@ -63,3 +63,11 @@
 - [x] Keep the bounded weekend-gap tolerance and all suspicious-gap `UNKNOWN` behavior; flag accepted heuristic closures as `SESSION_HEURISTIC`.
 - [x] Render the heuristic in the MTF row as unverified broker-session coverage; verify the label and read-only request behavior in Chromium.
 - [x] Run the MTF Node and Chromium contracts and preserve the authoritative broker-session schedule as an open dependency.
+
+
+### Follow-up: observed XAU session closures (17 October 2026)
+
+- [x] Live read-only MT5 history on the four authorized demos showed daily maintenance gaps ending at 22:00 UTC (H1 20:00→22:00, M15 20:45→22:00, M5 20:55→22:00) and D1 Thursday→Sunday weekend gaps. The previous engine mislabeled these observed closures as `DATA_GAP`.
+- [x] Add narrowly bounded UTC-pattern heuristics for those exact XAUUSD daily bar edges and D1 Thursday→Sunday gaps; scope them to XAUUSD and broker suffix variants only, preserve `SESSION_HEURISTIC` in the UI as unverified broker-session coverage, and leave unrelated symbols or multi-day gaps UNKNOWN.
+- [x] Unit and Chromium contracts now cover all four supported affected frames, the displayed unverified label, and rejection of unrelated/multi-week gaps.
+- [x] Re-run live snapshot/MTF history on all four demos: M15 and M5 are `READY` with `SESSION_HEURISTIC`; D1/H4/H1 remain `UNKNOWN` on holidays/other unverified gaps (including the 76-hour 02→05 April H4 interval, 96-hour 22→26 December D1 interval, and 4-hour 7 September H1 interval). All reads were GET-only; there were no browser errors, mutations or Blueberry requests. Authoritative broker-session and holiday schedules remain an explicit dependency.

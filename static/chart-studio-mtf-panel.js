@@ -37,14 +37,14 @@ function mount({panel,account,symbol,timeframe}){
     if(!response.ok)throw new Error("HTTP "+response.status);
     const data=await response.json();
     if(data.accountId!==capturedScope.account||data.symbol!==capturedScope.symbol||data.timeframe!==tf||data.source!=="MT5_VERIFIED"||data.canExecute!==false||!Array.isArray(data.candles))throw new Error("Provenienz-/Scope-Prüfung fehlgeschlagen");
-    window.ChartStudioMTF.frame(data.candles,tf,asOfUtc);input[tf]=data.candles;
+    window.ChartStudioMTF.frame(data.candles,tf,asOfUtc,capturedScope.symbol);input[tf]=data.candles;
    }catch(error){if(error.name!=="AbortError"||timedOut){sourceErrors.push(`${tf}: ${timedOut?"timeout":error.message}`);input[tf]=undefined}}
   }));
   clearTimeout(timeout);
   if(requestGeneration!==generation||local.signal.aborted&&!timedOut)return false;
-  const result=window.ChartStudioMTF.calculate(input,asOfUtc);rows.replaceChildren();
+  const result=window.ChartStudioMTF.calculate(input,asOfUtc,capturedScope.symbol);rows.replaceChildren();
   for(const tf of FRAMES){const f=result.frames[tf],tr=document.createElement("tr"),time=f.sourceTime?new Date(f.sourceTime*1000).toISOString():"—";
-   const qualityWarning=f.dataQuality==="SESSION_HEURISTIC"?" · SESSION_HEURISTIC: Broker-Sitzung ungeprüft (Wochenendlücke heuristisch toleriert)":"";
+   const qualityWarning=f.dataQuality==="SESSION_HEURISTIC"?" · SESSION_HEURISTIC: Broker-Sitzung ungeprüft (Sessionlücke heuristisch toleriert)":"";
    tr.innerHTML=`<th>${tf}</th><td>${esc(f.status)} · ${esc(f.reason)}${esc(qualityWarning)}</td><td>${esc(f.bias)}</td><td>${f.status==="READY"?[f.ema20,f.ema50,f.ema200].map(x=>Number(x).toPrecision(7)).join(" / "):"—"}</td><td>${esc(time)}</td><td>${f.closedBars}</td>`;rows.append(tr);
   }
   status.textContent=sourceErrors.length?`Unvollständige Quellenantwort (${sourceErrors.join("; ")}); betroffene Zeile bleibt UNKNOWN.`:`Abfrage abgeschlossen · as-of ${asOfOverride??new Date(asOfMs).toISOString()} · ${result.ready}/5 Zeitrahmen mit ausreichender Historie.`;return true;
