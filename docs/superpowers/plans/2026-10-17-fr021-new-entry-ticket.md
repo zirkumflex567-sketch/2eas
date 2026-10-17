@@ -39,19 +39,23 @@ Task 2 has fake-MT5 service coverage. A direct read-only probe against all four 
 - [x] Re-read quote/account/EA guard and symbol rules under the gateway lock; preflight with `order_check`; then send once.
 - [x] Verify exact pending order or resulting deal/position by broker readback; handle reject, timeout, restart and duplicate cases without resending.
 
-Task 3 currently has fake-MT5 tests only. The app does not install this commit service and no demo order was sent. Independent review, UI wiring and the separate release gate remain mandatory.
+Task 3 currently has fake-MT5 tests only. The app does not install this commit service and no demo order was sent. The front-end now targets the distinct service contract, but production wiring and the separate release gate remain mandatory.
 
 ### Task 4: Chart transfer and explicit confirmation UI
 
-- [ ] Add a separate ticket draft UI. Importing the chart price copies it into editable ticket fields without calling the broker.
-- [ ] Show scope, order type, lots, stop-risk, margin, quote freshness and guard state; require a deliberate confirmation screen plus trade-role session before calling the distinct commit route.
-- [ ] On scope change, stale data, failed confirmation or unavailable guard, clear/disable the draft and explain why.
+- [x] Add a separate ticket draft UI. Importing the chart price copies it into editable ticket fields without calling the broker.
+- [x] Show scope, order type, lots, stop-risk, margin, quote freshness and guard state; require a deliberate confirmation screen plus trade-role session before calling the distinct commit route.
+- [x] On scope change, stale data, failed confirmation or unavailable guard, clear/disable the draft and explain why.
+
+The headless Chromium contract proves chart-price transfer is draft-only; the send control requires a current committable preview, trade-session request headers, exact typed confirmation, and a separate commit request. Scope changes clear draft and preview state. The dedicated smoke intercepts all APIs and uses a fixture preview: it does not perform a broker write. Main still does not install live ticket services, and the earlier read-only quote probe returned stale quotes on all four demo terminals.
 
 ### Task 5: Review and release gate
 
-- [ ] Complete denial/race/idempotency/audit tests and independent review of all write paths and proxy controls.
-- [ ] Demonstrate production wiring remains disabled and preserve rollback evidence.
+- [x] Complete denial/race/idempotency/audit tests and independent review of all write paths and proxy controls.
+- [x] Demonstrate production wiring remains disabled and preserve rollback evidence.
 - [ ] Only after presenting the exact reviewed candidate, demo account/order list and rollback evidence may a separate user release approval enable controlled demo write/readback acceptance.
+
+Fake-MT5 denial/race/idempotency/audit tests pass and the disabled production wiring is verified. The UI security review found no ticket-write bypass; live service installation, fresh-quote acceptance, candidate-specific release approval, and any controlled demo write/readback test remain open.
 
 ## Verification
 

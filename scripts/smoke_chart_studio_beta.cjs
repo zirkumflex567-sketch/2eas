@@ -1196,10 +1196,10 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await page.locator(".cs-scenario summary").click();
   await page.locator("#cs-scenario-save-a").click();
   assert.match(await page.locator("#cs-scenario-ab-status").textContent(),/erst eine erfolgreiche Broker-Vorschau/);
-  await page.locator('[name="volumeLots"]').fill("0.1");
+  await page.locator('#cs-scenario-form [name="volumeLots"]').fill("0.1");
   await page.locator('[name="feesPerLot"]').fill("3");
   await page.locator('[name="slippageTicks"]').fill("2");
-  await page.locator('[name="entryPrice"]').fill("4100");
+  await page.locator('#cs-scenario-form [name="entryPrice"]').fill("4100");
   await page.locator('#cs-scenario-form [name="slPrice"]').fill("4090");
   await page.locator('#cs-scenario-form [name="tpPrice"]').fill("4120");
   await page.locator('#cs-scenario-form button[type="submit"]').click();
@@ -1207,11 +1207,11 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.match(await page.locator("#cs-scenario-portfolio-impact").textContent(),/135\.5 USD · Brutto additiv/);
   assert.match(await page.locator("#cs-scenario-portfolio-impact").textContent(),/Projektion XAUUSD · Long 0\.2 · Short 0\.02 · Netto 0\.18 Lots/);
   assert.match(await page.locator("#cs-scenario-portfolio-impact").textContent(),/Korrelation deskriptiv · EURUSD\.a ↔ XAUUSD 0\.75 · n=128/);
-  await page.locator('[name="side"]').selectOption("SELL");
+  await page.locator('#cs-scenario-form [name="side"]').selectOption("SELL");
   await page.locator('#cs-scenario-form button[type="submit"]').click();
   await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER"));
   assert.match(await page.locator("#cs-scenario-portfolio-impact").textContent(),/Projektion XAUUSD · Long 0\.1 · Short 0\.12 · Netto -0\.02 Lots/);
-  await page.locator('[name="side"]').selectOption("BUY");
+  await page.locator('#cs-scenario-form [name="side"]').selectOption("BUY");
   await page.locator('#cs-scenario-form button[type="submit"]').click();
   await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER"));
   portfolioRiskUnavailable=true;await page.locator("#cs-portfolio-refresh").click();
@@ -1268,7 +1268,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.equal(scenarioPayloads.at(-1).slippageTicks,2,"Dragging a budget-sized draft preserves slippage ticks");
   await page.locator('[data-cmd="drag-plan"]').click();
   await page.locator('[name="lotMode"]').selectOption("FIXED");
-  await page.locator('[name="volumeLots"]').fill("0.1");
+  await page.locator('#cs-scenario-form [name="volumeLots"]').fill("0.1");
   await page.locator('[name="feesPerLot"]').fill("0");
   await page.locator('[name="slippageTicks"]').fill("0");
   await page.locator('#cs-scenario-form button[type="submit"]').click();
@@ -1321,7 +1321,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   badQuote=false;
   await page.locator("#cs-scenario-save-a").click();
   assert.match(await page.locator("#cs-scenario-ab-status").textContent(),/erst eine erfolgreiche Broker-Vorschau/);
-  await page.locator('[name="entryPrice"]').fill("4100");
+  await page.locator('#cs-scenario-form [name="entryPrice"]').fill("4100");
   await page.locator('#cs-scenario-form button[type="submit"]').click();
   await page.waitForFunction(()=>document.querySelector("#cs-scenario-result").textContent.includes("KEINE ORDER"));
   // Drag only a VIRTUAL plan stop: the scenario API remains read-only.

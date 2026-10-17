@@ -3,7 +3,7 @@
    No broker write calls or chart trading mutations in this module. */
 (()=>{
 "use strict";
-const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","vertical","text","trend","rect","fib","ray","ruler","channel","plan","position-draft"];
+const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","vertical","text","trend","rect","fib","ray","ruler","channel","plan","position-draft","ticket-price"];
 const preferenceTools=["cursor","edit","horizontal","vertical","text","trend","rect","ray","channel","fib","ruler"];
 const defaultShortcuts=Object.freeze({cursor:"v",edit:"e",horizontal:"h",vertical:"",text:"",trend:"t",rect:"r",ray:"",channel:"c",fib:"f",ruler:"m"});
 function normalizeFavorites(raw){
@@ -34,7 +34,7 @@ function resolveShortcut(event,raw){
 const MAX_DRAWINGS=1000;
 const MAX_EVIDENCE_ROWS=500;
 const ratios=[0,.236,.382,.5,.618,.786,1];
-let s=null,requestId=0,scenarioGeneration=0,portfolioGeneration=0,planTimer=null;
+let s=null,requestId=0,scenarioGeneration=0,portfolioGeneration=0,ticketGeneration=0,planTimer=null;
 function createChartCoordinates({apiVersion,chart,series,scope}){
  if(![4,5].includes(apiVersion)||!chart||typeof chart.timeScale!=="function"||
   typeof chart.subscribeCrosshairMove!=="function"||typeof chart.unsubscribeCrosshairMove!=="function"||
@@ -680,12 +680,28 @@ function setTool(kind){
  if(!s||!kinds.includes(kind))return;
  if(s.tool==="plan"&&kind!=="plan")cancelPlanPreview();
  s.tool=kind;s.begin=null;s.preview=null;s.pending=[];s.drag=null;s.selected=null;
- s.canvas.style.pointerEvents=kind==="cursor"?"none":"auto";
+ // The skin pins pointer-events:none!important so the chart remains interactive.
+ // Opt-in tools must deliberately override that rule on this isolated overlay.
+ s.canvas.style.setProperty("pointer-events",kind==="cursor"?"none":"auto","important");
  s.canvas.style.cursor=kind==="edit"?"grab":kind==="plan"||kind==="position-draft"?"ns-resize":"crosshair";
  s.panel.querySelector('[data-cmd="drag-plan"]')?.setAttribute("aria-pressed",String(kind==="plan"));
  s.panel.querySelectorAll("[data-tool]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.tool===kind)));
  window.ChartStudioObjectManager?.render();
  updateMessage(kind==="cursor"?"Navigation":kind==="edit"?"Griff anklicken und ziehen":kind==="horizontal"?"Preislinie: einmal klicken":kind==="vertical"?"Zeitlinie: einmal klicken":kind==="plan"?"PLAN: SL oder TP am Chart ziehen · nur Broker-Vorschau":kind==="position-draft"?"Positionsentwurf: SL- oder TP-Griff ziehen · Vorschau bleibt read-only":"Zwei Anker setzen · Esc abbrechen");
+ requestDraw();
+}
+function syncTicketDraftScope(){
+ if(!s?.ticketDraft)return;
+ const before=s.ticketDraft.read();
+ s.ticketDraft.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});ticketGeneration++;
+ if((before.account!==s.account||before.symbol!==chartSymbol()||before.timeframe!==s.tf)&&s.tool==="ticket-price")setTool("cursor");
+ const form=s.panel.querySelector("#cs-ticket-form"),state=s.ticketDraft.read();
+ if(form)for(const key of ["orderType","volumeLots","entryPrice","slPrice","tpPrice"])form.elements.namedItem(key).value=state[key];
+ const confirm=s.panel.querySelector("#cs-ticket-confirm");if(confirm)confirm.hidden=true;
+ const typed=s.panel.querySelector("#cs-ticket-confirm-text"),checked=s.panel.querySelector("#cs-ticket-confirm-check"),send=s.panel.querySelector("#cs-ticket-commit");
+ if(typed)typed.value="";if(checked)checked.checked=false;if(send)send.disabled=true;
+ const label=s.panel.querySelector("#cs-ticket-scope");if(label)label.textContent=state.symbol+" · "+state.timeframe+" · "+state.account;
+ const output=s.panel.querySelector("#cs-ticket-result");if(output)output.textContent="Konto/Symbol/Zeitrahmen geändert · alter Entwurf und Preview verworfen.";
  requestDraw();
 }
 function showOpts(){
@@ -992,6 +1008,13 @@ function drawPinnedDataWindow(ctx,d){
  if(!Number.isFinite(x)||!Number.isFinite(y))return;
  ctx.save();ctx.strokeStyle="#ffd166";ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,d.h);ctx.moveTo(0,y);ctx.lineTo(d.w,y);ctx.stroke();ctx.restore();
 }
+function drawTicketEntry(ctx,d){
+ const value=Number(s?.ticketDraft?.read().entryPrice);if(!Number.isFinite(value)||value<=0)return;
+ const y=s.coordinates.priceToY(value);if(!Number.isFinite(y)||y<0||y>d.h)return;
+ ctx.save();ctx.strokeStyle="#f4bd67";ctx.fillStyle="#f4bd67";ctx.lineWidth=1.5;ctx.setLineDash([7,4]);
+ ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(d.w,y);ctx.stroke();ctx.setLineDash([]);
+ ctx.font="700 11px monospace";ctx.fillText("TICKET DRAFT · "+value.toFixed(3)+" · NO ORDER",8,Math.max(14,y-5));ctx.restore();
+}
 function render(){
  if(!s)return;const d=dims();if(!d)return;
  const c=s.canvas,ratio=Math.min(2,window.devicePixelRatio||1);
@@ -1004,6 +1027,7 @@ function render(){
  drawPositionDraft(ctx,d);
  drawBrokerDeals(ctx,d);
  if(s.scenario)drawScenario(ctx,d);
+ drawTicketEntry(ctx,d);
  for(let i=0;i<s.draw.length;i++)drawObject(ctx,{...s.draw[i],selected:i===s.selected},d);
  if(s.pending.length&&s.preview)drawObject(ctx,{kind:s.tool,anchors:[...s.pending,s.preview],preview:true},d);
  drawPinnedDataWindow(ctx,d);
@@ -1050,7 +1074,13 @@ function findPositionDraftGrip(y){
 function closestHandle(x,y){for(let i=s.draw.length-1;i>=0;i--){if(s.draw[i].locked||s.draw[i].visible===false)continue;for(let j=0;j<s.draw[i].anchors.length;j++){const p=project(s.draw[i].anchors[j]);if(p&&Math.hypot(p.x-x,p.y-y)<11)return {i,j}}}return null}
 function pointerdown(e){
  if(!s||s.tool==="cursor"||e.button!==0)return;
- const {x,y}=xy(e),raw=unproject(x,y);if(!raw)return;
+ const {x,y}=xy(e);
+ if(s.tool==="ticket-price"){
+  const price=s.coordinates.yToPrice(y),digits=s.marketQuote?.source==="MT5_VERIFIED"&&s.marketQuote.freshness==="FRESH"?s.marketQuote.digits:2;
+  if(s.ticketDraft?.setChartEntry(price,digits)){s.ticketRender?.();s.panel.querySelector("#cs-ticket-result").textContent="Chartpreis als editierbarer Einstieg übernommen · NO ORDER"}
+  setTool("cursor");e.preventDefault();return;
+ }
+ const raw=unproject(x,y);if(!raw)return;
  const p=s.tool==="plan"||s.tool==="position-draft"?raw:snapAnchor(raw);
  if(s.tool==="position-draft"){
   const grip=findPositionDraftGrip(y);if(!grip){updateMessage("Positionsentwurf: SL- oder TP-Griff anklicken.");return}
@@ -1137,7 +1167,7 @@ function symbol(value){
  if(!s||!valid)return false;if(value===chartSymbol())return true;
  s.extensions?.clear();cancelPlanPreview();window.ChartStudioBrokerPanel?.invalidateDraft("Chartsymbol geändert · Positionsentwurf verworfen.");
  if(s.tool==="position-draft"||s.tool==="plan")setTool("cursor");
- s.symbol=value;window.ChartStudioIndicators?.setScope(s.account,value,s.tf);window.ChartStudioServerSync?.scope(s.account,value);s.marketQuote=null;s.coordinates.setScope({account:s.account,symbol:value,timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.magnet=get(magnetKey(),false)===true;
+ s.symbol=value;syncTicketDraftScope();window.ChartStudioIndicators?.setScope(s.account,value,s.tf);window.ChartStudioServerSync?.scope(s.account,value);s.marketQuote=null;s.coordinates.setScope({account:s.account,symbol:value,timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.magnet=get(magnetKey(),false)===true;
  s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
  s.candles=[];s.candleSignature=null;s.positions=[];s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.brokerMarkers=[];window.ChartStudioReplay?.switchContext(s.account,s.tf,value);
  s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.undo=[];s.redo=[];
@@ -1151,7 +1181,7 @@ function symbol(value){
  refreshProfiles();showOpts();updateSeries();window.ChartStudioObjectManager?.render();requestDraw();
  window.dispatchEvent(new CustomEvent("chartstudio:symbol-change",{detail:{account:s.account,symbol:value,timeframe:s.tf}}));return true;
 }
-function account(id,preferredSymbol,deferPortfolio=false){if(!s)return;cancelPlanPreview();if(s.account!==id)s.extensions?.clear();s.account=id;if(typeof preferredSymbol==="string"&&/^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$/.test(preferredSymbol))s.symbol=preferredSymbol;const scenarioSymbol=s.panel.querySelector("#cs-scenario-symbol");if(scenarioSymbol)scenarioSymbol.textContent=chartSymbol();s.favorites=normalizeFavorites(get(favoritesKey(),[]));s.shortcuts=normalizeShortcuts(get(shortcutsKey(),{}));renderToolPreferences();s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});clearEvidence();s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioLoading=false;s.portfolioError="";if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
+function account(id,preferredSymbol,deferPortfolio=false){if(!s)return;cancelPlanPreview();if(s.account!==id)s.extensions?.clear();s.account=id;if(typeof preferredSymbol==="string"&&/^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$/.test(preferredSymbol))s.symbol=preferredSymbol;syncTicketDraftScope();const scenarioSymbol=s.panel.querySelector("#cs-scenario-symbol");if(scenarioSymbol)scenarioSymbol.textContent=chartSymbol();s.favorites=normalizeFavorites(get(favoritesKey(),[]));s.shortcuts=normalizeShortcuts(get(shortcutsKey(),{}));renderToolPreferences();s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});clearEvidence();s.verifiedPositions=[];s.positionContext=null;s.positionDraft=null;s.positionDraftDrag=null;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioLoading=false;s.portfolioError="";if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
  s.lastScenarioPreview=null;s.marketQuote=null;clearScenarioDraft("Konto geändert · neue Quote und Preise eingeben; Gebühren/Risikobudget neu bestätigen.",true);clearDataWindowPin();
   s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
   const fibInput=s.panel.querySelector("#cs-fib-levels");if(fibInput)fibInput.value=window.ChartStudioFib?.display(s.fibLevels)||"";
@@ -1170,7 +1200,7 @@ function account(id,preferredSymbol,deferPortfolio=false){if(!s)return;cancelPla
  renderScenarioSnapshots();if(!deferPortfolio)loadPortfolio(id,chartSymbol());
  const scenarioStatus=s.panel.querySelector("#cs-scenario-ab-status");if(scenarioStatus)scenarioStatus.textContent="A/B-Snapshots für "+id+" · lokal · nur verifizierte Vorschauen.";
  showOpts();refreshProfiles();updateSeries();window.ChartStudioObjectManager?.render();requestDraw()}
-function timeframe(tf){if(s){s.extensions?.clear();cancelPlanPreview();if(s.positionDraft)window.ChartStudioBrokerPanel?.invalidateDraft("Timeframe geändert · Positionsentwurf verworfen.");s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.tf=tf;window.ChartStudioIndicators?.setScope(s.account,chartSymbol(),tf);s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});window.ChartStudioBrokerPanel?.setTimeframe(tf);s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");refreshProfiles();
+function timeframe(tf){if(s){s.extensions?.clear();cancelPlanPreview();if(s.positionDraft)window.ChartStudioBrokerPanel?.invalidateDraft("Timeframe geändert · Positionsentwurf verworfen.");s.positionDraft=null;s.positionDraftDrag=null;if(s.tool==="position-draft")setTool("cursor");s.tf=tf;syncTicketDraftScope();window.ChartStudioIndicators?.setScope(s.account,chartSymbol(),tf);s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});window.ChartStudioBrokerPanel?.setTimeframe(tf);s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.begin=null;s.preview=null;s.pending=[];s.selected=null;s.drag=null;if(s.tool==="plan")setTool("cursor");refreshProfiles();
  clearDataWindowPin();
  window.ChartStudioIndicators?.updateBars([]);
   window.ChartStudioOscillators?.updateBars([]);
@@ -1328,6 +1358,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
   '<button type="button" data-cmd="reset-profile">Zurücksetzen</button>'+
  '<button type="button" data-cmd="delete-profile">Löschen</button></div>'+
  '<p id="cs-beta-message" role="status" aria-live="polite">Dies ist die sichere Beta-Chartansicht. Alle Brokerpositionen sind nur lesbar.</p>'+
+ '<details class="cs-ticket"><summary>Neues Pending-Ticket · Chartpreis → Entwurf</summary><p>LIMIT/STOP-Entwurf für <strong id="cs-ticket-scope">XAUUSD · M15</strong>. Chartklick übernimmt nur den Einstiegspreis. Kein Klick und keine Vorschau sendet eine Order.</p><form id="cs-ticket-form"><label>Ordertyp <select name="orderType"><option>BUY_LIMIT</option><option>SELL_LIMIT</option><option>BUY_STOP</option><option>SELL_STOP</option></select></label><label>Lots <input name="volumeLots" type="number" min="0.01" step="0.01" value="0.01" required></label><label>Einstieg <input name="entryPrice" type="number" min="0.00000001" step="any" required></label><label>SL <input name="slPrice" type="number" min="0.00000001" step="any" required></label><label>TP <input name="tpPrice" type="number" min="0.00000001" step="any" required></label><button type="button" id="cs-ticket-chart-price">Einstieg am Chart wählen</button><button type="submit">Broker-Preview laden</button></form><output id="cs-ticket-result" role="status" aria-live="polite">Entwurf lokal · noch keine Brokerprüfung.</output><section id="cs-ticket-confirm" hidden><h4>Explizite Demo-Bestätigung</h4><p id="cs-ticket-risk"></p><label>Bestätigungstext exakt eingeben <input id="cs-ticket-confirm-text" autocomplete="off"></label><label><input type="checkbox" id="cs-ticket-confirm-check"> Ich bestätige dieses Ticket für das angezeigte Demo-Konto.</label><button type="button" id="cs-ticket-commit" disabled>Pending-Order senden</button><p>Die Schaltfläche bleibt gesperrt, solange Preview, Guard, Konto oder ausdrückliche Bestätigung fehlen.</p></section></details>'+
   '<p id="cs-scenario-scope" role="status" hidden></p><details class="cs-scenario"><summary>What-if <span id="cs-scenario-symbol">XAUUSD</span> · Broker-Risiko &amp; Margin (kein Orderversand)</summary>'+
  '<section aria-label="MT5 Portfolio-Exposure"><h4>Portfolio-Exposure · MT5</h4><button type="button" id="cs-portfolio-refresh">Portfolio aktualisieren</button><div id="cs-portfolio-summary" aria-live="polite"><p>Portfolio wird geladen …</p></div></section>'+
  '<form id="cs-scenario-form">'+
@@ -1352,7 +1383,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  host.style.position="relative";host.appendChild(canvas);
  const coordinates=createChartCoordinates({apiVersion:4,chart,series:candleSeries,scope:{account:accountId,symbol:"XAUUSD",timeframe:tf}});
  s={chart,coordinates,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
-  account:accountId,favorites:normalizeFavorites(get(accountId+":favorite-tools",[])),shortcuts:normalizeShortcuts(get(accountId+":tool-shortcuts",{})),symbol:"XAUUSD",tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,positionDraft:null,positionDraftDrag:null,verifiedPositions:[],positionContext:null,
+  account:accountId,favorites:normalizeFavorites(get(accountId+":favorite-tools",[])),shortcuts:normalizeShortcuts(get(accountId+":tool-shortcuts",{})),symbol:"XAUUSD",tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,positionDraft:null,positionDraftDrag:null,verifiedPositions:[],positionContext:null,ticketDraft:window.ChartStudioTicketDraft?.create({account:accountId,symbol:"XAUUSD",timeframe:tf})||null,
   lastScenarioPreview:null,portfolio:null,portfolioCapturedAtUtc:null,portfolioLoading:false,portfolioError:"",dataWindow:{snapshot:null,pinned:false},marketQuote:null,
   draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],brokerMarkers:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null,fibLevels:[...ratios],evidence:{rows:[],cursor:null,query:null,meta:null,loading:false,error:"",generation:0}};
  panel.querySelector("#cs-data-window-pin").addEventListener("click",()=>setDataWindowPin(!s.dataWindow.pinned));
@@ -1494,6 +1525,55 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  const output=panel.querySelector("#cs-scenario-result");
  function scope(){return window.location.pathname.startsWith("/stt")?"/stt":""}
  const fields={};for(const name of ["side","volumeLots","lotMode","riskBudget","riskPercent","feesPerLot","slippageTicks","entryPrice","slPrice","tpPrice"])fields[name]=form.elements.namedItem(name);
+ const ticketForm=panel.querySelector("#cs-ticket-form"),ticketOutput=panel.querySelector("#cs-ticket-result");
+ function renderTicketDraft(){
+  if(!s?.ticketDraft)return;const draft=s.ticketDraft.read(),inputs=ticketForm?.elements;
+  if(inputs){for(const key of ["orderType","volumeLots","entryPrice","slPrice","tpPrice"]){const field=inputs.namedItem(key);if(field&&field.value!==draft[key])field.value=draft[key]}}
+  const scopeLabel=panel.querySelector("#cs-ticket-scope");if(scopeLabel)scopeLabel.textContent=draft.symbol+" · "+draft.timeframe+" · "+draft.account;
+  const confirm=panel.querySelector("#cs-ticket-confirm");if(confirm)confirm.hidden=draft.preview?.canCommit!==true;
+  const typed=panel.querySelector("#cs-ticket-confirm-text"),checked=panel.querySelector("#cs-ticket-confirm-check"),send=panel.querySelector("#cs-ticket-commit");
+  if(draft.preview?.canCommit!==true){if(typed)typed.value="";if(checked)checked.checked=false}
+  if(draft.preview?.canCommit===true){panel.querySelector("#cs-ticket-risk").textContent="Guard ALLOW · Quote "+(draft.preview.quote?.ageSeconds??"?")+"s · Stop "+(draft.preview.brokerRisk?.pnlAtSl??"?")+" "+(draft.preview.brokerRisk?.currency??"")+" · Margin "+(draft.preview.brokerRisk?.margin??"?")+" · Preview schickt keine Order.";typed.placeholder=s.ticketDraft.confirmationText()}
+  if(send)send.disabled=!s.ticketDraft.canCommit(checked?.checked,typed?.value);
+ }
+ s.ticketRender=renderTicketDraft;
+ async function ticketPost(path,payload,expectedScope){
+  const root=scope(),sessionResponse=await fetch(root+"/api/control_session",{cache:"no-store",credentials:"same-origin"}),session=await sessionResponse.json();
+  if(!sessionResponse.ok||!session.control_enabled||typeof session.csrf_token!=="string"||!session.csrf_token)throw Error("Trade-Kontrollsitzung nicht verfügbar.");
+  if(!s||ticketScopeKey()!==expectedScope)throw new DOMException("Ticket-Scope geändert","AbortError");
+  const response=await fetch(root+path,{method:"POST",cache:"no-store",credentials:"same-origin",headers:{"Content-Type":"application/json","X-Dashboard-CSRF":session.csrf_token},body:JSON.stringify(payload)}),data=await response.json();
+  if(!s||ticketScopeKey()!==expectedScope)throw new DOMException("Ticket-Scope geändert","AbortError");
+  if(!response.ok)throw Error(data?.detail?.code||data?.detail?.message||"Broker-Ticket nicht verfügbar.");
+  return data;
+ }
+ function ticketScopeKey(){return s?[s.account,chartSymbol(),s.tf].join("|"):""}
+ renderTicketDraft();
+ ticketForm.addEventListener("input",e=>{
+  const field=e.target;if(!field.name)return;
+  try{s.ticketDraft.set(field.name,field.value);ticketGeneration++;panel.querySelector("#cs-ticket-confirm-check").checked=false;panel.querySelector("#cs-ticket-confirm-text").value="";ticketOutput.textContent="Ticket geändert · neue read-only Preview erforderlich.";renderTicketDraft();requestDraw()}
+  catch(err){ticketOutput.textContent="Entwurf ungültig · "+err.message}
+ });
+ panel.querySelector("#cs-ticket-chart-price").addEventListener("click",()=>{setTool("ticket-price");ticketOutput.textContent="Jetzt einen Preis im Chart anklicken. Er wird nur in den editierbaren Einstieg übernommen."});
+ ticketForm.addEventListener("submit",async e=>{
+  e.preventDefault();const nonce=++ticketGeneration,scopeKey=ticketScopeKey();ticketOutput.textContent="Frische MT5-Quote, Symbolregeln, Risiko und Margin werden read-only geprüft …";
+  panel.querySelector("#cs-ticket-confirm").hidden=true;panel.querySelector("#cs-ticket-confirm-check").checked=false;panel.querySelector("#cs-ticket-confirm-text").value="";
+  try{const payload=s.ticketDraft.payload(),result=await ticketPost("/api/chart/v1/trade-ticket/preview",payload,scopeKey);
+   if(nonce!==ticketGeneration)return;s.ticketDraft.setPreview(result);renderTicketDraft();
+   ticketOutput.textContent="Preview "+result.status+" · Guard "+(result.guard?.state||"UNKNOWN")+" · Quote "+(result.quote?.ageSeconds??"?")+"s · Stop "+(result.brokerRisk?.pnlAtSl??"UNAVAILABLE")+" "+(result.brokerRisk?.currency||"")+" · Ziel "+(result.brokerRisk?.pnlAtTp??"UNAVAILABLE")+" · Margin "+(result.brokerRisk?.margin??"UNAVAILABLE")+" · canExecute=false"+(result.canCommit?" · Bestätigung erforderlich":" · Senden gesperrt");
+  }catch(err){if(nonce===ticketGeneration&&err.name!=="AbortError"){s.ticketDraft.clear();renderTicketDraft();ticketOutput.textContent="Preview nicht verfügbar · "+err.message+" · keine Order";requestDraw()}}
+ });
+ const ticketConfirmText=panel.querySelector("#cs-ticket-confirm-text"),ticketConfirmCheck=panel.querySelector("#cs-ticket-confirm-check");
+ ticketConfirmText.addEventListener("input",renderTicketDraft);ticketConfirmCheck.addEventListener("change",renderTicketDraft);
+ panel.querySelector("#cs-ticket-commit").addEventListener("click",async()=>{
+  const draft=s.ticketDraft.read(),preview=draft.preview;
+  if(!s.ticketDraft.canCommit(ticketConfirmCheck.checked,ticketConfirmText.value)||!preview?.previewId)return;
+  const nonce=++ticketGeneration,scopeKey=ticketScopeKey(),button=panel.querySelector("#cs-ticket-commit");button.disabled=true;ticketOutput.textContent="Einmaliger Broker-Commit wird geprüft …";
+  try{const result=await ticketPost("/api/chart/v1/trade-ticket/commit",{schemaVersion:1,account:draft.account,symbol:draft.symbol,previewId:preview.previewId,userConfirmed:true,confirmationText:ticketConfirmText.value,idempotencyKey:crypto.randomUUID()},scopeKey);
+   if(nonce!==ticketGeneration)return;
+   if(result.status==="PLACED"&&result.verified===true){ticketOutput.textContent="PENDING ORDER VERIFIZIERT · Ticket "+result.orderTicket+" · Broker-Readback bestätigt.";s.ticketDraft.clear();ticketForm.reset();requestDraw()}
+   else{ticketOutput.textContent="Brokerstatus "+(result.status||"UNKNOWN")+" · nicht erneut senden; Ticket/Journal read-only prüfen.";s.ticketDraft.clear();ticketForm.reset();requestDraw()}
+  }catch(err){if(nonce===ticketGeneration&&err.name!=="AbortError"){s.ticketDraft.clear();ticketForm.reset();renderTicketDraft();ticketOutput.textContent="Commit nicht bestätigt · "+err.message+" · vor erneutem Versuch Status read-only prüfen.";requestDraw()}}
+ });
  form.addEventListener("input",()=>{scenarioGeneration++;s.lastScenarioPreview=null;renderPortfolioImpact(null)});
  fields.lotMode.addEventListener("change",()=>{
   fields.volumeLots.disabled=fields.lotMode.value!=="FIXED";
@@ -1598,6 +1678,6 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();
 }
-window.ChartStudioBeta=Object.freeze({mount,account,symbol,timeframe,refreshMtfAt:refreshMtfAtSnapshot,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,coordinates:Object.freeze({create:createChartCoordinates}),preferences:Object.freeze({normalizeFavorites,normalizeShortcuts,resolveShortcut}),getLiveMAs,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,symbol:s.symbol,timeframe:s.tf,favorites:json(s.favorites),shortcuts:json(effectiveShortcuts(s.shortcuts)),coordinateApiVersion:s.coordinates.apiVersion,drawings:json(s.draw),options:json(s.opts),marketStructure:s.marketStructure?.getSummary?.()||null,brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),portfolio:s.portfolio?json(s.portfolio):null,positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,
+window.ChartStudioBeta=Object.freeze({mount,account,symbol,timeframe,refreshMtfAt:refreshMtfAtSnapshot,updateCandles,updatePositions,updateVerifiedPositions,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,coordinates:Object.freeze({create:createChartCoordinates}),preferences:Object.freeze({normalizeFavorites,normalizeShortcuts,resolveShortcut}),getLiveMAs,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,symbol:s.symbol,timeframe:s.tf,favorites:json(s.favorites),shortcuts:json(effectiveShortcuts(s.shortcuts)),coordinateApiVersion:s.coordinates.apiVersion,drawings:json(s.draw),options:json(s.opts),marketStructure:s.marketStructure?.getSummary?.()||null,brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),portfolio:s.portfolio?json(s.portfolio):null,positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,ticketDraft:s.ticketDraft?((draft)=>({account:draft.account,symbol:draft.symbol,timeframe:draft.timeframe,orderType:draft.orderType,volumeLots:draft.volumeLots,entryPrice:draft.entryPrice,slPrice:draft.slPrice,tpPrice:draft.tpPrice,preview:draft.preview?{status:draft.preview.status,canCommit:draft.preview.canCommit}:null}))(s.ticketDraft.read()):null,
  scenario:s.scenario?json(s.scenario):null,tool:s.tool,magnet:s.magnet,selected:s.selected}:null});
 })();

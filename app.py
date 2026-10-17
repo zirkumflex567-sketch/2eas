@@ -1805,6 +1805,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="static/chart-studio-fib.js"></script>
   <script src="static/chart-studio-export.js"></script>
   <script src="static/chart-studio-broker-panel.js"></script>
+  <script src="static/chart-studio-ticket-draft.js"></script>
   <script src="static/chart-studio-mtf.js"></script>
   <script src="static/chart-studio-mtf-panel.js"></script>
   <link rel="stylesheet" href="static/chart-studio-multi-chart.css">

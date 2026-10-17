@@ -102,6 +102,18 @@
 #cs-beta-panel .cs-ma-instance input:not([type="checkbox"]),
 #cs-beta-panel .cs-ma-instance select{min-width:0;flex:1 1 65px}
 #cs-beta-panel .cs-scenario form{display:flex;flex-wrap:wrap;gap:8px}
+#cs-beta-panel .cs-ticket{margin-top:10px;padding:10px;border:1px solid rgba(244,189,103,.55);border-radius:9px;background:linear-gradient(115deg,rgba(21,42,52,.96),rgba(10,24,32,.96))}
+#cs-beta-panel .cs-ticket summary{cursor:pointer;color:#f4bd67;font-weight:800;min-height:28px}
+#cs-beta-panel .cs-ticket form{display:flex;flex-wrap:wrap;align-items:flex-end;gap:9px;margin-top:9px}
+#cs-beta-panel .cs-ticket label{display:flex;flex-direction:column;gap:4px;min-width:90px;flex:1 1 110px;color:#d8e8eb;font-size:12px}
+#cs-beta-panel .cs-ticket input,#cs-beta-panel .cs-ticket select{width:100%;min-width:0;padding:7px;color:#f5f9ff;background:#091822;border:1px solid #49636b;border-radius:6px}
+#cs-beta-panel .cs-ticket button{min-height:34px;padding:7px 11px;color:#f6dfbb;background:#302b22;border:1px solid #aa844c;border-radius:7px;font-weight:700}
+#cs-beta-panel .cs-ticket button:disabled{opacity:.5;cursor:not-allowed}
+#cs-beta-panel #cs-ticket-result{display:block;margin:9px 0;line-height:1.55;color:#d5e7e9}
+#cs-beta-panel #cs-ticket-confirm{margin-top:10px;padding:12px;border:1px solid #cf775e;border-radius:8px;background:rgba(60,28,25,.42)}
+#cs-beta-panel #cs-ticket-confirm label{display:flex;flex-direction:row;align-items:center;margin:8px 0}
+#cs-beta-panel #cs-ticket-confirm label input[type=checkbox]{width:auto;min-width:20px}
+#cs-beta-panel #cs-ticket-risk{color:#ffd3a2;font-family:ui-monospace,Consolas,monospace;font-size:12px}
 #cs-beta-panel .cs-scenario label{min-width:0;flex:1 1 120px}
 #cs-beta-panel .cs-scenario label input,#cs-beta-panel .cs-scenario label select{width:100%}
 #cs-beta-panel .cs-scenario-ab-actions{display:flex;flex-wrap:wrap;gap:7px;margin:9px 0}
