@@ -9209,6 +9209,19 @@ var ChartStudioV5 = (() => {
         ...[...measurements.values()].map(({ options }) => ({ kind: "MEASURE", options: { ...options } }))
       ];
     }
+    function exportLayout() {
+      guard();
+      if (!drawingScope) throw Error("Layout export requires symbol/timeframe scope");
+      const serialized = JSON.stringify({
+        schemaVersion: 2,
+        symbol: drawingScope.symbol,
+        timeframe: drawingScope.timeframe,
+        drawings: drawingSnapshots(),
+        view: viewSnapshots()
+      });
+      if (utf8ByteLength(serialized) > persistenceLimit) throw Error("Layout export exceeds size limit");
+      return serialized;
+    }
     function viewSnapshots() {
       const visibleRange = chart.timeScale().getVisibleLogicalRange();
       return {
@@ -11939,6 +11952,7 @@ var ChartStudioV5 = (() => {
       drawingAnchorPosition,
       readDrawing,
       exportDrawings,
+      exportLayout,
       importDrawings,
       setDrawingVisible,
       setDrawingLocked,

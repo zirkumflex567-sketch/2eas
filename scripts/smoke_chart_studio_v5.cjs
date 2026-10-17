@@ -278,6 +278,9 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.addOscillator({id:"view-cci",kind:"cci",settings:{period:20},color:"#a995ff",title:"CCI saved"});
    engine.addPaneLine({id:"view-signal",color:"#f7c774",lineWidth:3,title:"Saved signal"},bars.slice(14).map((bar,i)=>({time:bar.time,value:40+Math.sin(i/5)*10})));engine.showVolume(true);engine.resizePane(1,190);engine.setDisplayTimeZone("Europe/Berlin");engine.setVisibleLogicalRange({from:12,to:42});
    const expected={ema:engine.movingAverageOptions("view-ema"),rsi:engine.oscillatorOptions("view-rsi"),macd:engine.oscillatorOptions("view-macd"),cci:engine.oscillatorOptions("view-cci"),layout:engine.oscillatorPaneLayout().map(pane=>({...pane,titles:[...pane.titles].sort()})),heights:engine.paneHeights(),volume:engine.inspect().volumeVisible,zone:engine.displayTimeZone(),range:engine.visibleLogicalRange(),paneLines:engine.inspect().nativePaneLines};
+   engine.addPriceLevel({id:"portable-layout-price",price:107,color:"#44aadd"});
+   const portableLayout=JSON.parse(engine.exportLayout());
+   const legacyDrawings=JSON.parse(engine.exportDrawings());
    const validSnapshot=JSON.parse(localStorage.getItem("2eas.chartstudio.v5.drawings:v4:view-persistence:XAUUSD:M15"));
    engine.destroy();engine=ChartStudioV5.createStudioV5(host,"view-persistence",scope);engine.setCandles(bars);
    const restored={ema:engine.movingAverageOptions("view-ema"),rsi:engine.oscillatorOptions("view-rsi"),macd:engine.oscillatorOptions("view-macd"),cci:engine.oscillatorOptions("view-cci"),layout:engine.oscillatorPaneLayout().map(pane=>({...pane,titles:[...pane.titles].sort()})),heights:engine.paneHeights(),volume:engine.inspect().volumeVisible,zone:engine.displayTimeZone(),range:engine.visibleLogicalRange(),status:engine.inspect().persistenceStatus,error:engine.inspect().persistenceError,paneLines:engine.inspect().nativePaneLines};
@@ -290,7 +293,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const symbolHost=document.createElement("div");symbolHost.style.cssText="width:900px;height:520px;position:absolute;left:-1800px;top:0";document.body.append(symbolHost);
    const otherSymbol=ChartStudioV5.createStudioV5(symbolHost,"view-persistence",{symbol:"XAUUSD.p",timeframe:"M15"});otherSymbol.setCandles(bars);const otherSymbolScope=otherSymbol.inspect().averageCount+otherSymbol.inspect().oscillatorCount;otherSymbol.destroy();
    const otherAccount=ChartStudioV5.createStudioV5(symbolHost,"view-persistence-other",{symbol:"XAUUSD",timeframe:"M15"});otherAccount.setCandles(bars);const otherAccountScope=otherAccount.inspect().averageCount+otherAccount.inspect().oscillatorCount;otherAccount.destroy();symbolHost.remove();
-   return {expected,restored,otherScope,otherSymbolScope,otherAccountScope,invalidView};
+   return {expected,restored,otherScope,otherSymbolScope,otherAccountScope,invalidView,portableLayout,legacyDrawings};
   });
   assert.deepEqual(viewPersistenceProbe.restored.ema,viewPersistenceProbe.expected.ema);
   assert.deepEqual(viewPersistenceProbe.restored.rsi,viewPersistenceProbe.expected.rsi);
@@ -306,6 +309,28 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(viewPersistenceProbe.otherScope,{count:0,volume:false,zone:"UTC"});
   assert.equal(viewPersistenceProbe.otherSymbolScope,0,"CCI does not leak into another symbol view");
   assert.equal(viewPersistenceProbe.otherAccountScope,0,"CCI does not leak into another account view");
+  assert.equal(viewPersistenceProbe.portableLayout.schemaVersion,2,"portable full-view export has its own versioned envelope");
+  assert.deepEqual(Object.keys(viewPersistenceProbe.portableLayout).sort(),["drawings","schemaVersion","symbol","timeframe","view"]);
+  assert.equal(viewPersistenceProbe.portableLayout.symbol,"XAUUSD");
+  assert.equal(viewPersistenceProbe.portableLayout.timeframe,"M15");
+  assert.equal(Object.hasOwn(viewPersistenceProbe.portableLayout,"account"),false,"portable export omits account identity");
+  assert.equal(viewPersistenceProbe.portableLayout.drawings.some(item=>item.options.id==="portable-layout-price"),true);
+  assert.deepEqual(viewPersistenceProbe.portableLayout.view.movingAverages,[viewPersistenceProbe.expected.ema]);
+  assert.deepEqual(viewPersistenceProbe.portableLayout.view.oscillators.map(item=>item.options.id).sort(),["view-cci","view-macd","view-rsi"]);
+  assert.equal(viewPersistenceProbe.portableLayout.view.volumeVisible,true);
+  assert.equal(viewPersistenceProbe.portableLayout.view.displayTimeZone,"Europe/Berlin");
+  assert.ok(viewPersistenceProbe.portableLayout.view.paneHeights.length>1);
+  assert.ok(viewPersistenceProbe.portableLayout.view.paneLines.some(item=>item.options.id==="view-signal"));
+  assert.equal(viewPersistenceProbe.legacyDrawings.schemaVersion,1,"drawings-only JSON export remains backward compatible");
+  const layoutLimitProbe=await page.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:640px;height:320px;position:absolute;left:-1800px;top:0";document.body.append(host);
+   const bars=Array.from({length:20000},(_,i)=>{const close=100+i/10000;return {time:1700000000+i*900,open:close,high:close+1,low:close-1,close}});
+   const engine=ChartStudioV5.createStudioV5(host,"layout-export-limit",{symbol:"XAUUSD",timeframe:"M15"});engine.setCandles(bars);
+   engine.addPaneLine({id:"large-portable-line",color:"#f7c774",lineWidth:1,title:"Large"},bars.map(bar=>({time:bar.time,value:bar.close})));
+   let error="";try{engine.exportLayout()}catch(caught){error=caught.message}
+   engine.destroy();host.remove();return error;
+  });
+  assert.equal(layoutLimitProbe,"Layout export exceeds size limit","portable full-view export enforces the shared 512 KiB bound");
   assert.deepEqual(viewPersistenceProbe.invalidView,{status:"UNAVAILABLE",error:"INVALID_VIEW_STATE",drawings:0,averages:0,oscillators:0,volume:false},"invalid v3 state is rejected before any renderer mutation");
   const paneResizeSetup=await page.evaluate(async()=>{
    const host=document.createElement("div");host.style.cssText="width:900px;height:420px";document.body.append(host);

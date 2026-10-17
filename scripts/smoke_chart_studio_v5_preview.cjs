@@ -13,7 +13,7 @@ const html=enabled=>`<!doctype html><html><head><meta charset="utf-8"><meta name
 <div id="tv-chart"><canvas id="v4-sentinel" width="500" height="300"></canvas></div>
 <button type="button" id="chart-v5-preview-btn" aria-controls="chart-v5-preview-panel" aria-expanded="false" hidden>V5 Vorschau</button>
 <section id="chart-v5-preview-panel" hidden><strong id="chart-v5-preview-title">Native v5</strong><div id="chart-v5-preview-status" role="status"></div>
-<button type="button" id="chart-v5-auto-fib-btn" aria-pressed="false" disabled>Auto-Fibonacci einblenden</button><output id="chart-v5-auto-fib-status" aria-live="polite"></output>
+<button type="button" id="chart-v5-auto-fib-btn" aria-pressed="false" disabled>Auto-Fibonacci einblenden</button><output id="chart-v5-auto-fib-status" aria-live="polite"></output><button type="button" id="chart-v5-layout-export-btn" disabled>Layout exportieren</button>
 <div id="chart-v5-drawing-tools" role="group" aria-label="Native v5 Zeichnungen"><button type="button" id="chart-v5-trend-btn" aria-pressed="false" disabled>Trendlinie</button><button type="button" id="chart-v5-ray-btn" aria-pressed="false" disabled>Strahl</button><output id="chart-v5-drawing-status" role="status" aria-live="polite">Zeichenwerkzeug aus.</output></div>
 <div id="chart-v5-preview-host"></div><p>Read only. Powered by <a href="https://www.tradingview.com/">TradingView Lightweight Charts™</a></p></section><script>document.addEventListener("DOMContentLoaded",()=>document.querySelector("#chart-v5-preview-host").addEventListener("chartstudio-v5-drawing-state",e=>window.__v5LastDrawing=e.detail));</script></body></html>`;
 
@@ -41,12 +41,14 @@ const server=http.createServer((req,res)=>{
   assert.equal(await off.evaluate(()=>window.ChartStudioV5Preview),undefined);
   await off.close();
 
-  const page=await browser.newPage({viewport:{width:1200,height:900}});
+  const context=await browser.newContext({viewport:{width:1200,height:900},acceptDownloads:true});
+  const page=await context.newPage();
   const requests=[],errors=[];
   page.on("request",request=>requests.push({url:request.url(),method:request.method()}));
   page.on("pageerror",error=>errors.push(error.message));
   await page.goto(base+"/stt/?enabled=1");
   await page.locator("#chart-v5-preview-btn").waitFor({state:"visible"});
+  assert.equal(await page.locator("#chart-v5-layout-export-btn").isDisabled(),true,"layout export stays disabled before verified chart data exists");
   const candles=Array.from({length:150},(_,i)=>({time:1792108800+i*900,open:4100+i*.1,high:4102+i*.1,low:4098+i*.1,close:4101+i*.1,tick_volume:20+i,real_volume:0}));
   const swings=[[10,8],[9,7],[12,4],[14,8],[15,9],[20,12],[18,10],[17,11],[16,10]];
   swings.forEach(([high,low],index)=>{const i=141+index,base=4150; candles[i]={...candles[i],open:base+(high+low)/2,high:base+high,low:base+low,close:base+(high+low)/2}});
@@ -124,6 +126,17 @@ const server=http.createServer((req,res)=>{
   await page.waitForFunction(()=>document.querySelector("#chart-v5-drawing-status")?.textContent.includes("erstellt"));
   const ray=await page.evaluate(()=>({event:window.__v5LastDrawing,drawing:window.ChartStudioV5Preview.readDrawing(window.__v5LastDrawing?.id),count:window.ChartStudioV5Preview.inspect().nativeDrawingCount}));
   assert.equal(ray.event?.kind,"RAY");assert.ok(ray.drawing?.id);assert.notEqual(ray.drawing.startTime,ray.drawing.endTime);assert.equal(ray.count,2,"native ray placement persists exactly once");
+  assert.equal(await page.locator("#chart-v5-layout-export-btn").isEnabled(),true,"verified chart enables portable layout export");
+  const downloadPromise=page.waitForEvent("download");
+  await page.locator("#chart-v5-layout-export-btn").click();
+  const layoutDownload=await downloadPromise,layoutPath=await layoutDownload.path();
+  assert.equal(layoutDownload.suggestedFilename(),"chart-studio-layout-XAUUSD-M15.json");
+  const portableLayout=JSON.parse(require("node:fs").readFileSync(layoutPath,"utf8"));
+  assert.deepEqual(Object.keys(portableLayout).sort(),["drawings","schemaVersion","symbol","timeframe","view"]);
+  assert.equal(portableLayout.schemaVersion,2);assert.equal(portableLayout.drawings.length,2);
+  assert.equal(portableLayout.symbol,"XAUUSD");assert.equal(portableLayout.timeframe,"M15");
+  assert.equal(Object.hasOwn(portableLayout,"account"),false,"downloaded layout omits account identity");
+  assert.equal(JSON.stringify(portableLayout).includes('"positionOverlays"'),false,"download excludes broker position overlays");
   await page.locator("#chart-v5-ray-btn").click();
   await page.keyboard.press("Escape");
   assert.equal(await page.locator("#chart-v5-ray-btn").getAttribute("aria-pressed"),"false","Escape cancels a pending drawing tool");
