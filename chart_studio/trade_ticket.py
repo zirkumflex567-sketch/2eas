@@ -316,3 +316,249 @@ class TradeTicketPreviewService:
             raise self._error(422, exc.code) from exc
         except Exception as exc:
             raise self._error(503, 'BROKER_DATA_UNAVAILABLE') from exc
+
+
+class TradeTicketCommitService:
+    """One-shot pending-order commit with durable idempotency and readback."""
+
+    def __init__(self, mt5, preview_registry, audit_store, guard_provider, *, now=None):
+        self.mt5 = mt5
+        self.previews = preview_registry
+        self.store = audit_store
+        self.guard = guard_provider
+        self.clock = now or time.time
+
+    @staticmethod
+    def _error(status, code):
+        return HTTPException(status, {'code': code, 'canExecute': False,
+                                      'canCommit': False,
+                                      'guard': {'state': 'UNKNOWN', 'source': 'NONE'}})
+
+    def _guard(self, spec, request, account_info=None):
+        evaluator = getattr(self.guard, 'evaluate', None)
+        if not callable(evaluator):
+            raise self._error(503, 'GUARD_UNAVAILABLE')
+        try:
+            decision = evaluator(spec=spec, accountInfo=account_info,
+                                 action='NEW_PENDING_ENTRY',
+                                 riskIncreasing=True, symbol=request['symbol'],
+                                 order=request)
+        except Exception as exc:
+            raise self._error(503, 'GUARD_UNAVAILABLE') from exc
+        if (not isinstance(decision, dict) or decision.get('state') != 'ALLOW' or
+                decision.get('hardLock') is not False or
+                not isinstance(decision.get('source'), str) or
+                decision['source'] in ('', 'NONE')):
+            raise self._error(403, 'GUARD_BLOCKED')
+        return decision
+
+    def _snapshot(self, spec, payload):
+        info = reads.require_symbol(self.mt5, payload.symbol)
+        reads.symbol_model(info, spec)
+        observed = self.clock()
+        quote = reads.quote_model(self.mt5.symbol_info_tick(payload.symbol), spec, now=observed)
+        age = observed * 1000 - quote['quoteTimeUtcMs']
+        if quote.get('freshness') != 'FRESH' or not -1000 <= age <= 5000:
+            raise self._error(503, 'QUOTE_NOT_FRESH')
+        quote['ageMs'] = age
+        return info, quote
+
+    def _finish(self, principal, key, status, *, code=None, retcode=None,
+                order_ticket=None, verified=False):
+        result = {'status': status, 'verified': verified}
+        if code is not None:
+            result['code'] = code
+        if type(retcode) is int:
+            result['brokerRetcode'] = retcode
+        if order_ticket is not None:
+            result['orderTicket'] = str(order_ticket)
+        return self.store.finish(principal, key, result)
+
+    @staticmethod
+    def _same_number(left, right):
+        try:
+            a, b = Decimal(str(left)), Decimal(str(right))
+            return a.is_finite() and b.is_finite() and a == b
+        except Exception:
+            return False
+
+    def commit(self, payload, identity, peer):
+        if (not isinstance(identity, tuple) or len(identity) != 3 or
+                any(not isinstance(part, str) or not part.strip() for part in identity) or
+                identity[2] != 'trade' or not isinstance(peer, str) or not peer.strip() or
+                payload.userConfirmed is not True):
+            raise self._error(403, 'IDENTITY_REQUIRED')
+        config = gateway.ACCOUNTS.get(payload.account)
+        if (payload.account not in {'titan', 'xau5m_m5', 'titan_m5', 'xau5m_500'} or
+                not isinstance(config, dict) or config.get('is_demo') is not True or
+                config.get('symbol') != payload.symbol):
+            raise self._error(403, 'DEMO_ACCOUNT_REQUIRED')
+        principal = identity[0] + ':' + identity[1]
+        key = payload.idempotencyKey
+        store_payload = {'account': payload.account, 'symbol': payload.symbol,
+                         'previewId': payload.previewId,
+                         'confirmationText': payload.confirmationText}
+        try:
+            reservation = self.store.reserve(principal, key, store_payload)
+        except Exception as exc:
+            raise self._error(503, 'BROKER_DATA_UNAVAILABLE') from exc
+        if reservation.state == 'CONFLICT':
+            raise self._error(409, 'PREVIEW_MISMATCH')
+        if reservation.state != 'NEW':
+            return reservation.result or {'status': reservation.state,
+                                          'canCommit': False, 'canExecute': False}
+        reserved, sent = True, False
+        try:
+            with gateway.traced_session(self.mt5, payload.account) as spec:
+                account_info = gateway.verify_identity(self.mt5, spec)
+                scope = {'identity': identity, 'peer': peer, 'account': payload.account,
+                         'login': str(spec['login']), 'server': spec['server'],
+                         'terminal': spec['terminal'], 'symbol': payload.symbol}
+                _, quote = self._snapshot(spec, payload)
+                try:
+                    proposal = self.previews.consume(payload.previewId, scope)
+                except HTTPException as exc:
+                    raise self._error(410, 'PREVIEW_EXPIRED') from exc
+                proposal_guard = proposal.get('guard') if isinstance(proposal, dict) else None
+                if (not isinstance(proposal, dict) or proposal.get('scope') != scope or
+                        proposal.get('account') != payload.account or
+                        proposal.get('symbol') != payload.symbol or
+                        not isinstance(proposal_guard, dict) or
+                        proposal_guard.get('state') != 'ALLOW' or
+                        not isinstance(proposal_guard.get('source'), str) or
+                        proposal_guard['source'] in ('', 'NONE')):
+                    raise self._error(409, 'PREVIEW_MISMATCH')
+                order = proposal.get('request')
+                if not isinstance(order, dict) or order.get('symbol') != payload.symbol:
+                    raise self._error(409, 'PREVIEW_MISMATCH')
+                reverse_types = {getattr(self.mt5, 'ORDER_TYPE_' + name, None): name
+                                 for name in ('BUY_LIMIT', 'SELL_LIMIT', 'BUY_STOP', 'SELL_STOP')}
+                order_type = reverse_types.get(order.get('type'))
+                if order_type is None:
+                    raise self._error(409, 'PREVIEW_MISMATCH')
+                volume = order.get('volume')
+                if (not isinstance(volume, (int, float)) or isinstance(volume, bool) or
+                        not math.isfinite(volume)):
+                    raise self._error(409, 'PREVIEW_MISMATCH')
+                confirmation = f"{payload.account} {payload.symbol} {order_type} {format(Decimal(str(volume)).normalize(), 'f')}"
+                if payload.confirmationText != confirmation:
+                    raise self._error(422, 'PREVIEW_MISMATCH')
+
+                def current_request():
+                    current_account = gateway.verify_identity(self.mt5, spec)
+                    info, fresh = self._snapshot(spec, payload)
+                    built = build_pending_order_request(
+                        self.mt5, info, symbol=payload.symbol, order_type=order_type,
+                        volume=volume, entry=order.get('price'), stop=order.get('sl'),
+                        target=order.get('tp'), bid=fresh['bid'], ask=fresh['ask'])
+                    action = getattr(self.mt5, 'ORDER_TYPE_' + built['side'], None)
+                    calculator = getattr(self.mt5, 'order_calc_margin', None)
+                    profit_calc = getattr(self.mt5, 'order_calc_profit', None)
+                    if type(action) is not int or not callable(calculator) or not callable(profit_calc):
+                        raise self._error(503, 'BROKER_CALCULATION_UNAVAILABLE')
+                    stop_pnl = profit_calc(action, payload.symbol,
+                                           built['request']['volume'],
+                                           built['request']['price'], built['request']['sl'])
+                    target_pnl = profit_calc(action, payload.symbol,
+                                             built['request']['volume'],
+                                             built['request']['price'], built['request']['tp'])
+                    margin = calculator(action, payload.symbol,
+                                        built['request']['volume'], built['request']['price'])
+                    free = reads.required(current_account, 'margin_free')
+                    if (isinstance(margin, bool) or not isinstance(margin, (int, float)) or
+                            not math.isfinite(margin) or margin < 0 or
+                            isinstance(stop_pnl, bool) or not isinstance(stop_pnl, (int, float)) or
+                            not math.isfinite(stop_pnl) or stop_pnl >= 0 or
+                            isinstance(target_pnl, bool) or not isinstance(target_pnl, (int, float)) or
+                            not math.isfinite(target_pnl) or target_pnl <= 0 or
+                            isinstance(free, bool) or not isinstance(free, (int, float)) or
+                            not math.isfinite(free) or margin > free):
+                        raise self._error(422, 'INSUFFICIENT_FREE_MARGIN')
+                    self._guard(spec, built['request'], current_account)
+                    return built['request']
+
+                request = current_request()
+                check = getattr(self.mt5, 'order_check', None)
+                if not callable(check):
+                    raise self._error(503, 'BROKER_DATA_UNAVAILABLE')
+                checked = check(dict(request))
+                if checked is None or type(getattr(checked, 'retcode', None)) is not int or checked.retcode != 0:
+                    retcode = getattr(checked, 'retcode', None)
+                    self._finish(principal, key, 'BROKER_REJECTED', code='ORDER_CHECK_REJECTED',
+                                 retcode=retcode if type(retcode) is int else None)
+                    reserved = False
+                    raise self._error(422, 'ORDER_CHECK_REJECTED')
+                request = current_request()
+                account_info = gateway.verify_identity(self.mt5, spec)
+                send = getattr(self.mt5, 'order_send', None)
+                if not callable(send):
+                    raise self._error(503, 'BROKER_DATA_UNAVAILABLE')
+                sent = True
+                try:
+                    response = send(request)
+                except Exception:
+                    result = self._finish(principal, key, 'UNKNOWN', code='BROKER_TIMEOUT')
+                    reserved = False
+                    return result
+                retcode = getattr(response, 'retcode', None)
+                placed = getattr(self.mt5, 'TRADE_RETCODE_PLACED', None)
+                ticket = getattr(response, 'order', None)
+                if type(retcode) is not int or retcode != placed or type(ticket) is not int or ticket <= 0:
+                    ambiguous = {getattr(self.mt5, name, None) for name in
+                                 ('TRADE_RETCODE_TIMEOUT', 'TRADE_RETCODE_CONNECTION')}
+                    status = 'UNKNOWN' if type(retcode) is not int or retcode in ambiguous else 'BROKER_REJECTED'
+                    result = self._finish(principal, key, status,
+                                          code='BROKER_TIMEOUT' if status == 'UNKNOWN' else 'BROKER_REJECTED',
+                                          retcode=retcode if type(retcode) is int else None)
+                    reserved = False
+                    return result
+                get_orders = getattr(self.mt5, 'orders_get', None)
+                try:
+                    rows = get_orders(ticket=ticket) if callable(get_orders) else None
+                    rows = list(rows) if rows is not None else []
+                except Exception:
+                    rows = []
+                matching = [row for row in rows if getattr(row, 'ticket', None) == ticket]
+                if len(matching) != 1:
+                    result = self._finish(principal, key, 'UNKNOWN', code='READBACK_MISMATCH',
+                                          retcode=retcode)
+                    reserved = False
+                    return result
+                row = matching[0]
+                valid = (getattr(row, 'symbol', None) == payload.symbol and
+                         getattr(row, 'type', None) == request['type'] and
+                         self._same_number(getattr(row, 'volume_current', None), request['volume']) and
+                         self._same_number(getattr(row, 'price_open', None), request['price']) and
+                         self._same_number(getattr(row, 'sl', None), request['sl']) and
+                         self._same_number(getattr(row, 'tp', None), request['tp']))
+                if not valid:
+                    result = self._finish(principal, key, 'UNKNOWN', code='READBACK_MISMATCH',
+                                          retcode=retcode)
+                    reserved = False
+                    return result
+                result = self._finish(principal, key, 'PLACED', retcode=retcode,
+                                      order_ticket=ticket, verified=True)
+                reserved = False
+                return result
+        except HTTPException as exc:
+            if reserved:
+                detail = exc.detail if isinstance(exc.detail, dict) else {}
+                code = detail.get('code')
+                allowed = {'PREVIEW_EXPIRED', 'PREVIEW_MISMATCH', 'DEMO_ACCOUNT_REQUIRED',
+                           'QUOTE_NOT_FRESH', 'GEOMETRY_INVALID', 'GUARD_BLOCKED',
+                           'GUARD_UNAVAILABLE', 'BROKER_DATA_UNAVAILABLE',
+                           'INSUFFICIENT_FREE_MARGIN', 'ORDER_CHECK_REJECTED'}
+                try:
+                    self._finish(principal, key, 'UNKNOWN' if sent else 'BROKER_REJECTED',
+                                 code='BROKER_TIMEOUT' if sent else code if code in allowed else 'BROKER_DATA_UNAVAILABLE')
+                except Exception:
+                    pass
+            raise
+        except Exception as exc:
+            if reserved:
+                try:
+                    self._finish(principal, key, 'UNKNOWN' if sent else 'BROKER_REJECTED',
+                                 code='BROKER_TIMEOUT' if sent else 'BROKER_DATA_UNAVAILABLE')
+                except Exception:
+                    pass
+            raise self._error(503, 'BROKER_DATA_UNAVAILABLE') from exc

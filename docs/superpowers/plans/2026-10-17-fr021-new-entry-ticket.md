@@ -31,13 +31,15 @@
 - [x] Resolve the exact verified demo session; read fresh quote and symbol rules; validate pending-order geometry and broker lot/margin.
 - [x] Bind proposal and guard evidence into a short-lived one-time server token; reject stale quotes, changed account/symbol, invalid price, unknown guard and unsupported broker modes.
 
-Task 2 currently has fake-MT5 service coverage only. The production app does not install this service, and all trade-ticket routes remain disabled there. A read-only demo acceptance still needs a deliberately enabled isolated preview harness; this is not a write-release approval.
+Task 2 has fake-MT5 service coverage. A direct read-only probe against all four allowed demo terminals returned `QUOTE_NOT_FRESH`; no risk/margin calculation could proceed. The production app does not install this service, and all trade-ticket routes remain disabled there. Repeat live preview acceptance when broker quotes are fresh; this is not a write-release approval.
 
 ### Task 3: Durable single-send commit
 
-- [ ] Implement independent proposal consumption, idempotency and append-only audit storage.
-- [ ] Re-read quote/account/EA guard and symbol rules under the gateway lock; preflight with `order_check`; then send once.
-- [ ] Verify exact pending order or resulting deal/position by broker readback; handle reject, timeout, restart and duplicate cases without resending.
+- [x] Implement independent proposal consumption, idempotency and append-only audit storage.
+- [x] Re-read quote/account/EA guard and symbol rules under the gateway lock; preflight with `order_check`; then send once.
+- [x] Verify exact pending order or resulting deal/position by broker readback; handle reject, timeout, restart and duplicate cases without resending.
+
+Task 3 currently has fake-MT5 tests only. The app does not install this commit service and no demo order was sent. Independent review, UI wiring and the separate release gate remain mandatory.
 
 ### Task 4: Chart transfer and explicit confirmation UI
 
