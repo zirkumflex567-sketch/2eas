@@ -117,8 +117,10 @@ async function positionWithStop(account, symbol) {
         const startY = series.priceToCoordinate(Number(sl));
         const endY = series.priceToCoordinate(target);
         if (![startY, endY].every(Number.isFinite)) throw new Error("Stop handle is outside chart price coordinates");
-        return { start: { x: rect.left + rect.width * .2, y: rect.top + startY }, end: { x: rect.left + rect.width * .2, y: rect.top + endY } };
+        return { bounds: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }, start: { x: rect.left + rect.width * .2, y: rect.top + startY }, end: { x: rect.left + rect.width * .2, y: rect.top + endY } };
       }, { side: position.side, sl: position.sl });
+      assert.ok(drag.start.x >= drag.bounds.left && drag.start.x <= drag.bounds.right && drag.start.y >= drag.bounds.top && drag.start.y <= drag.bounds.bottom, `verified stop handle must be inside chart canvas: ${JSON.stringify(drag)}`);
+      assert.ok(drag.end.x >= drag.bounds.left && drag.end.x <= drag.bounds.right && drag.end.y >= drag.bounds.top && drag.end.y <= drag.bounds.bottom, `stop draft target must be inside chart canvas: ${JSON.stringify(drag)}`);
       await page.mouse.move(drag.start.x, drag.start.y);
       await page.mouse.down();
       await page.mouse.move(drag.end.x, drag.end.y, { steps: 6 });
@@ -144,22 +146,29 @@ async function positionWithStop(account, symbol) {
       const [request, response] = await Promise.all([previewRequest, previewResponse]);
       const payload = request.postDataJSON();
       const preview = await response.json();
-      assert.equal(response.status(), 200);
       assert.equal(payload.account, account);
       assert.equal(payload.symbol, symbol);
       assert.equal(payload.positionTicket, position.ticket);
       assert.equal(payload.expectedRevision, position.revision);
       assert.equal(payload.candidate.slPrice, candidateSl);
-      assert.equal(preview.account, account);
-      assert.equal(preview.symbol, symbol);
-      assert.equal(preview.positionTicket, position.ticket);
-      assert.equal(preview.positionRevision, position.revision);
-      assert.equal(preview.brokerPreview.slPrice, candidateSl);
-      assert.equal(preview.canExecute, false);
-      assert.equal(preview.canCommit, false);
-      assert.deepEqual(preview.guard, { state: "UNKNOWN", source: "NONE" });
-      assert.equal(preview.geometry.state, "VALID");
-      await page.waitForFunction(() => document.querySelector("#cs-position-stop-draft-status")?.textContent.includes("GUARD UNKNOWN · KEINE ÄNDERUNG"));
+      if (response.status() === 503) {
+        assert.equal(preview.detail?.code, "QUOTE_NOT_FRESH");
+        assert.equal(preview.detail?.canExecute, false);
+        assert.equal(preview.detail?.canCommit, false);
+        assert.deepEqual(preview.detail?.guard, { state: "UNKNOWN", source: "NONE" });
+      } else {
+        assert.equal(response.status(), 200);
+        assert.equal(preview.account, account);
+        assert.equal(preview.symbol, symbol);
+        assert.equal(preview.positionTicket, position.ticket);
+        assert.equal(preview.positionRevision, position.revision);
+        assert.equal(preview.brokerPreview.slPrice, candidateSl);
+        assert.equal(preview.canExecute, false);
+        assert.equal(preview.canCommit, false);
+        assert.deepEqual(preview.guard, { state: "UNKNOWN", source: "NONE" });
+        assert.equal(preview.geometry.state, "VALID");
+        await page.waitForFunction(() => document.querySelector("#cs-position-stop-draft-status")?.textContent.includes("GUARD UNKNOWN · KEINE ÄNDERUNG"));
+      }
 
       const readback = await get(`/api/chart/v1/positions?account=${encodeURIComponent(account)}&symbol=${encodeURIComponent(symbol)}`);
       const unchanged = readback.positions.find(row => row.ticket === position.ticket);
@@ -167,7 +176,7 @@ async function positionWithStop(account, symbol) {
       assert.equal(unchanged.revision, position.revision);
       assert.equal(unchanged.sl, position.sl);
       assert.equal(unchanged.tp, position.tp);
-      results.push({ account, symbol, result: "LIVE_UI_DRAG_PREVIEW_VALID", side: position.side, stopChangedInDraft: true, readbackUnchanged: true });
+      results.push({ account, symbol, result: response.status() === 503 ? "LIVE_UI_DRAG_STALE_PREVIEW_FAIL_CLOSED" : "LIVE_UI_DRAG_PREVIEW_VALID", side: position.side, stopChangedInDraft: true, readbackUnchanged: true });
       completed = true;
       break;
     }

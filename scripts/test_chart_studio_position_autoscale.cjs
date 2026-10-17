@@ -1,0 +1,18 @@
+"use strict";
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync("static/chart-studio-position-autoscale.js", "utf8");
+const context = { window: {} };
+vm.runInNewContext(source, context, { filename: "chart-studio-position-autoscale.js" });
+const merge = context.window.ChartStudioPositionAutoscale.merge;
+const base = { priceRange: { minValue: 100, maxValue: 110 }, margins: { above: 0.1 } };
+const merged = merge(base, { min: 95, max: 115 });
+assert.deepEqual(JSON.parse(JSON.stringify(merged)), { priceRange: { minValue: 95, maxValue: 115 }, margins: { above: 0.1 } });
+assert.deepEqual(base, { priceRange: { minValue: 100, maxValue: 110 }, margins: { above: 0.1 } });
+assert.equal(merge(base, null), base);
+assert.deepEqual(JSON.parse(JSON.stringify(merge(null, { min: 90, max: 120 }))), { priceRange: { minValue: 90, maxValue: 120 } });
+assert.equal(merge(base, { min: NaN, max: 120 }), base);
+assert.equal(merge(base, { min: 120, max: 90 }), base);
+console.log("verified position autoscale range contract passed");
+assert.equal(merge(base, { min: 110, max: 1e12 }), base);

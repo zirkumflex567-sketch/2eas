@@ -1819,6 +1819,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <link rel="stylesheet" href="static/chart-studio-multi-chart.css">
   <script src="static/chart-studio-multi-chart.js"></script>
   <script src="static/chart-studio-main-data-window.js"></script>
+  <script src="static/chart-studio-position-autoscale.js"></script>
   <script src="static/chart-studio-beta.js"></script>
   <script>window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;</script>
   <script src="static/chart-studio-v5-feed.js"></script>
@@ -3074,10 +3075,17 @@ HTML_CONTENT = """<!DOCTYPE html>
         },
       });
 
+      const positionAutoscaleProvider = original => window.ChartStudioPositionAutoscale?.merge(
+        original(), window.ChartStudioBeta?.getVerifiedPositionPriceExtent?.() || null,
+      ) ?? original();
       candleSeries = chart.addCandlestickSeries({
         upColor: '#10b981', downColor: '#f43f5e',
         borderDownColor: '#f43f5e', borderUpColor: '#10b981',
         wickDownColor: '#f43f5e', wickUpColor: '#10b981',
+        autoscaleInfoProvider: positionAutoscaleProvider,
+      });
+      window.ChartStudioMainChartAutoscale = Object.freeze({
+        refresh: () => candleSeries?.applyOptions({ autoscaleInfoProvider: positionAutoscaleProvider }),
       });
 
       // Intermittent glow is rendered only on the transparent FX canvas.

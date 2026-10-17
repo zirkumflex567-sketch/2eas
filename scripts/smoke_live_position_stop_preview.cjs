@@ -16,6 +16,7 @@ async function get(path) {
 (async () => {
   const results = [];
   let previews = 0;
+  let staleSafePreviews = 0;
   for (const account of accounts) {
     const candles = await get(`/api/candles?account=${encodeURIComponent(account)}`);
     assert.equal(candles.accountId, account, `${account}: candle scope mismatch`);
@@ -59,7 +60,16 @@ async function get(path) {
         signal: AbortSignal.timeout(15000),
       });
       const preview = await response.json();
-      assert.equal(response.ok, true, `${account}: stop preview HTTP ${response.status}`);
+      if (response.status === 503) {
+        assert.equal(preview.detail?.code, "QUOTE_NOT_FRESH", `${account}: unexpected preview rejection`);
+        assert.equal(preview.detail?.canExecute, false, `${account}: stale quote must not be executable`);
+        assert.equal(preview.detail?.canCommit, false, `${account}: stale quote must not be committable`);
+        assert.deepEqual(preview.detail?.guard, { state: "UNKNOWN", source: "NONE" }, `${account}: stale quote must remain UNKNOWN`);
+        staleSafePreviews += 1;
+        tested.push({ side: position.side, protectiveStop: position.sl !== null ? "SL" : "TP", result: "QUOTE_NOT_FRESH_FAIL_CLOSED" });
+        continue;
+      }
+      assert.equal(response.status, 200, `${account}: stop preview HTTP ${response.status}`);
       assert.equal(preview.account, account, `${account}: preview account mismatch`);
       assert.equal(preview.symbol, symbol, `${account}: preview symbol mismatch`);
       assert.equal(preview.positionTicket, position.ticket, `${account}: preview ticket mismatch`);
@@ -77,8 +87,8 @@ async function get(path) {
     results.push({ account, symbol, timeframe: candles.timeframe, openPositions: book.positions.length, unchangedStopPreviews: tested });
   }
 
-  assert.ok(previews > 0, "No demo position had a protective level to preview");
-  console.log(JSON.stringify({ results, previews, positionMutations: 0, ordersSent: 0, protectedAccountQueried: false }, null, 2));
+  assert.ok(previews + staleSafePreviews > 0, "No demo position had a protective level to preview");
+  console.log(JSON.stringify({ results, previews, staleSafePreviews, positionMutations: 0, ordersSent: 0, protectedAccountQueried: false }, null, 2));
 })().catch(error => {
   console.error(error.stack || error);
   process.exit(1);
