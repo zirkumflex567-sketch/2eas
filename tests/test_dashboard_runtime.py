@@ -140,6 +140,33 @@ def test_private_environment_v5_preview_flag_accepts_only_binary_values(checkout
         private.unlink(missing_ok=True)
 
 
+def test_private_environment_trusted_indicator_keys_require_bounded_canonical_ed25519_map(checkout, tmp_path):
+    import base64
+
+    private = tmp_path.parent / (tmp_path.name + '-indicator-trust.json')
+    try:
+        public_key = base64.b64encode(bytes(range(32))).decode('ascii')
+        private.write_text(json.dumps({'CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON':
+                                       json.dumps({'demo-key-1': public_key})}))
+        runtime_module().validate_environment_file(checkout, private)
+
+        invalid_values = [
+            '', '{}', '[]', '{"demo-key-1":"not-base64"}',
+            json.dumps({'bad key': public_key}),
+            json.dumps({'demo-key-1': 7}),
+            json.dumps({'demo-key-1': base64.b64encode(b'too short').decode('ascii')}),
+            json.dumps({f'demo-key-{index}': public_key for index in range(17)}),
+            'x' * 16_385,
+            '{"demo-key-1":"' + public_key + '","demo-key-1":"' + public_key + '"}',
+        ]
+        for value in invalid_values:
+            private.write_text(json.dumps({'CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON': value}))
+            with pytest.raises(ValueError, match='Invalid private environment'):
+                runtime_module().validate_environment_file(checkout, private)
+    finally:
+        private.unlink(missing_ok=True)
+
+
 def test_checkout_identity_distinguishes_identical_worktrees(checkout, tmp_path):
     module = runtime_module()
     other = tmp_path / 'other'
@@ -265,6 +292,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/fixture/v5-preview-proof':
             self.wfile.write(json.dumps({'v5PreviewEnabled': os.environ.get('CHART_STUDIO_V5_PREVIEW_ENABLED') == '1'}).encode())
             return
+        if self.path == '/fixture/indicator-trust-proof':
+            keys = json.loads(os.environ.get('CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON', '{}'))
+            self.wfile.write(json.dumps({'indicatorTrustLoaded': list(keys) == ['fixture-key']}).encode())
+            return
         if self.path == '/fixture/env-proof':
             matches = hashlib.sha256(os.environ.get('DASHBOARD_CONTROL_TOKEN', '').encode()).hexdigest() == 'b0a9b0c0a1a43b72218766d72d6e64d8ad0b7a677db3ab8e3a1e0c03539a761a'
             self.wfile.write(json.dumps({'privateEnvironmentMatches': matches}).encode())
@@ -334,10 +365,13 @@ def test_powershell_cross_shell_runtime_timestamp_and_private_environment(checko
     port = prepare_mock_checkout(checkout)
     env_file = tmp_path.parent / (tmp_path.name + '-cross-shell-private.json')
     secret = 'fixture-secret-never-emit'
+    import base64
+    indicator_trust = json.dumps({'fixture-key': base64.b64encode(bytes(range(32))).decode('ascii')})
     env_file.write_text(json.dumps({'DASHBOARD_CONTROL_TOKEN': secret,
                                     'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS': 'titan,xau5m_m5',
                                     'CHART_STUDIO_DEVICE_SYNC_ENABLED': '1',
-                                    'CHART_STUDIO_V5_PREVIEW_ENABLED': '1'}))
+                                    'CHART_STUDIO_V5_PREVIEW_ENABLED': '1',
+                                    'CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON': indicator_trust}))
     results = []
     try:
         started = run_control(checkout, port, 'Start', env_file)
@@ -348,6 +382,7 @@ def test_powershell_cross_shell_runtime_timestamp_and_private_environment(checko
         assert mock_endpoint(port, '/fixture/demo-allowlist-proof') == {'demoAllowlistMatches': True}
         assert mock_endpoint(port, '/fixture/device-sync-proof') == {'deviceSyncEnabled': True}
         assert mock_endpoint(port, '/fixture/v5-preview-proof') == {'v5PreviewEnabled': True}
+        assert mock_endpoint(port, '/fixture/indicator-trust-proof') == {'indicatorTrustLoaded': True}
         status = run_control(checkout, port, 'Status', shell=PWSH)
         results.append(status)
         assert status.returncode == 0, status.stdout + status.stderr
@@ -365,6 +400,7 @@ def test_powershell_cross_shell_runtime_timestamp_and_private_environment(checko
         assert mock_endpoint(port, '/fixture/demo-allowlist-proof') == {'demoAllowlistMatches': True}
         assert mock_endpoint(port, '/fixture/device-sync-proof') == {'deviceSyncEnabled': True}
         assert mock_endpoint(port, '/fixture/v5-preview-proof') == {'v5PreviewEnabled': True}
+        assert mock_endpoint(port, '/fixture/indicator-trust-proof') == {'indicatorTrustLoaded': True}
         for shell in ('powershell.exe', PWSH):
             status = run_control(checkout, port, 'Status', shell=shell)
             results.append(status)

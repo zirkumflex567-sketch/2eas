@@ -46,7 +46,7 @@ def _trusted_keys_from_environment():
     try:
         value = json.loads(raw, object_pairs_hook=_pairs_no_duplicates,
                            parse_constant=_reject_json_constant)
-    except (ValueError, json.JSONDecodeError, RecursionError):
+    except (HTTPException, ValueError, json.JSONDecodeError, RecursionError):
         return None
     return value if isinstance(value, dict) and value else None
 

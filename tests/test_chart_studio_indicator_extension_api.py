@@ -58,6 +58,19 @@ def client(trusted_keys):
     return TestClient(app)
 
 
+def test_environment_trust_provider_reads_bounded_unique_host_map(monkeypatch):
+    trusted = {"runtime-key": base64.b64encode(bytes(range(32))).decode("ascii")}
+    monkeypatch.setenv("CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON", json.dumps(trusted))
+    assert api()._trusted_keys_from_environment() == trusted
+
+    monkeypatch.setenv("CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON",
+                       '{"runtime-key":"' + trusted["runtime-key"] + '","runtime-key":"' + trusted["runtime-key"] + '"}')
+    assert api()._trusted_keys_from_environment() is None
+
+    monkeypatch.setenv("CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON", "x" * 16_385)
+    assert api()._trusted_keys_from_environment() is None
+
+
 def test_preview_verifies_package_and_returns_aligned_caller_supplied_series_without_storage():
     package, trusted, _ = signed_package()
     response = client(trusted).post(

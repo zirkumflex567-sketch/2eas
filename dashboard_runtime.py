@@ -4,6 +4,7 @@ The startup snapshot describes bytes on disk when this process is initialized.
 It is immutable; current disk inspection never overwrites the running identity.
 """
 import argparse
+import base64
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -30,7 +31,8 @@ _ENV_KEYS = {'DASHBOARD_ALLOWED_HOSTS', 'DASHBOARD_PROXY_SECRET', 'DASHBOARD_PRO
              'CHART_STUDIO_STORAGE_TOKEN', 'CHART_STUDIO_STORAGE_ENABLED', 'CHART_STUDIO_DB',
              'CHART_STUDIO_EVIDENCE_ROOT', 'CHART_STUDIO_EVIDENCE_DB',
              'CHART_STUDIO_EVIDENCE_SPOOL_ROOT', 'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS',
-             'CHART_STUDIO_DEVICE_SYNC_ENABLED', 'CHART_STUDIO_V5_PREVIEW_ENABLED'}
+             'CHART_STUDIO_DEVICE_SYNC_ENABLED', 'CHART_STUDIO_V5_PREVIEW_ENABLED',
+             'CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON'}
 
 
 def _path_is_within(path, root):
@@ -118,6 +120,21 @@ def validate_environment_file(root, private_path):
         v5_preview_enabled = values.get('CHART_STUDIO_V5_PREVIEW_ENABLED', '0')
         if v5_preview_enabled not in ('0', '1'):
             raise ValueError('invalid v5 preview gate')
+        if 'CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON' in values:
+            raw_keys = values['CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON']
+            if not raw_keys or len(raw_keys) > 16_384:
+                raise ValueError('invalid indicator trust map size')
+            trusted_keys = json.loads(raw_keys, object_pairs_hook=unique)
+            if not isinstance(trusted_keys, dict) or not trusted_keys or len(trusted_keys) > 16:
+                raise ValueError('invalid indicator trust map')
+            for key_id, encoded_key in trusted_keys.items():
+                if (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}', key_id) or
+                        not isinstance(encoded_key, str)):
+                    raise ValueError('invalid indicator trust entry')
+                public_key = base64.b64decode(encoded_key, validate=True)
+                if (len(public_key) != 32 or
+                        base64.b64encode(public_key).decode('ascii') != encoded_key):
+                    raise ValueError('invalid indicator public key')
     except (OSError, ValueError, TypeError):
         raise ValueError('Invalid private environment') from None
 

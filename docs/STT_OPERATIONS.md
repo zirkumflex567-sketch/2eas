@@ -143,8 +143,13 @@ external path to override it.
 The private file must be outside the resolved checkout and protected by local
 ACLs. It is a JSON object with unique keys and string values. Permitted keys are
 the five proxy/control variables documented above,
-`DASHBOARD_QUOTE_MAX_AGE_SECONDS`, `CHART_STUDIO_STORAGE_TOKEN`,
-`CHART_STUDIO_STORAGE_ENABLED`, and `CHART_STUDIO_DB`. Secret values/passwords
+`DASHBOARD_QUOTE_MAX_AGE_SECONDS`, chart storage/evidence settings,
+`CHART_STUDIO_DEVICE_SYNC_ENABLED`, `CHART_STUDIO_V5_PREVIEW_ENABLED`, and
+`CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON`. The indicator trust variable is a
+JSON object mapping 1–16 key IDs to canonical Base64 Ed25519 public keys (32
+decoded bytes); private signing keys must never be placed in this file. The
+launcher rejects duplicate IDs, malformed/noncanonical keys, and oversized maps
+before it stops an existing process. Secret values/passwords
 must never be placed in shell arguments or Git. The private file can be omitted
 for default local configuration. Controlled dashboard/chart variables are cleared
 in the child environment before applying this file; protected settings must be
