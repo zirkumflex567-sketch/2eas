@@ -23,4 +23,4 @@
 
 - [x] Run unit, Beta, position preview and relevant regression suites; get an independent review (position preview 151 passed/1 skipped; Beta Chromium passed; independent review finding fixed).
 - [x] Update FR-005/FR-006 and this plan with actual live quote state and outcomes.
-- [ ] Commit/push to main after CI, then deploy via guarded runtime and repeat the four-demo read-only smoke.
+- [x] Commit/push to main after CI, deploy via guarded runtime and repeat the four-demo read-only smoke. Verified by main `861758a` and the four-demo read-only acceptance recorded under FR-005 in `docs/OPEN_TASKS.md`; stale-quote previews remained `503 QUOTE_NOT_FRESH` with unchanged broker readback and no writes.
