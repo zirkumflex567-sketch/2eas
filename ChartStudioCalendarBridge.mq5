@@ -12,12 +12,18 @@ string account_alias="";
 
 string JsonEscape(const string value)
   {
-   string out=value;
-   StringReplace(out,"\\","\\\\");
-   StringReplace(out,"\"","\\\"");
-   StringReplace(out,"\r","\\r");
-   StringReplace(out,"\n","\\n");
-   StringReplace(out,"\t","\\t");
+   string out="";
+   for(int i=0;i<StringLen(value);i++)
+     {
+      ushort character=StringGetCharacter(value,i);
+      if(character=='\\') out+="\\\\";
+      else if(character=='\"') out+="\\\"";
+      else if(character=='\r') out+="\\r";
+      else if(character=='\n') out+="\\n";
+      else if(character=='\t') out+="\\t";
+      else if(character<0x20) out+=StringFormat("\\u%04X",(int)character);
+      else out+=ShortToString(character);
+     }
    return out;
   }
 

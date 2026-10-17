@@ -33,3 +33,12 @@ def test_bridge_source_keeps_the_calendar_preset_allowlist_demo_only():
     assert "OrderSend(" not in source
     assert ".Buy(" not in source
     assert ".Sell(" not in source
+
+
+def test_bridge_json_escape_encodes_every_json_control_character():
+    source = (ROOT / "ChartStudioCalendarBridge.mq5").read_text(encoding="utf-8")
+    escape = source.split("string JsonEscape(", 1)[1].split("\nstring ServerStamp(", 1)[0]
+    assert "StringGetCharacter(value,i)" in escape
+    assert 'character<0x20' in escape
+    assert 'StringFormat("\\\\u%04X",(int)character)' in escape
+    assert 'ShortToString(character)' in escape
