@@ -9,7 +9,7 @@
 - [x] Chromium contract: Titan `IDLE` and `RECORDED` (distinct recorder readiness and stored-evidence state), unconfigured EA source `NOT_CONFIGURED`, lifecycle `OK/ROLLING_WINDOW`, and lifecycle `NOT_STARTED/UNKNOWN` render distinctly.
 - [x] Blueberry alias is rejected by the status allowlist; fixture observed no request.
 - [x] Beta Chromium smoke passes with no broker mutations.
-- [x] Live four-demo Chromium acceptance: two exact capture-status GETs per alias, 56 total API reads, 0 mutations, 0 browser errors, no Blueberry query.
+- [x] Live four-demo Chromium acceptance: two exact capture-status GETs per alias, 8 exact recorder-status GETs, 0 mutations, 0 browser errors, no Blueberry query.
 - [x] Broker lifecycle-status regression: 26 tests pass.
 
 **Current evidence:** `titan` and `xau5m_500` have no decision source (`NOT_CONFIGURED`); `xau5m_m5` and `titan_m5` report `IDLE/NOT_RECORDED`. Lifecycle polling is `OK/ROLLING_WINDOW` on all four demos, with no new rows in the last poll. Decision-event capture and actual marketplace strategy attribution remain open; this UI reports status but does not manufacture decisions.
