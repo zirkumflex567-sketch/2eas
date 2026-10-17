@@ -18,7 +18,8 @@ from fastapi.responses import JSONResponse
 from starlette._utils import get_route_path
 
 CONTROL_PATHS = frozenset({'/api/modify_position', '/api/close_position', '/api/reset_drawdown',
-                           '/api/chart/v1/position/commit-stop', '/api/chart/v1/trade-ticket/commit'})
+                           '/api/chart/v1/position/commit-stop', '/api/chart/v1/trade-ticket/preview',
+                           '/api/chart/v1/trade-ticket/commit'})
 COOKIE = 'dashboard_control_session'
 TTL_SECONDS = 3600
 MAX_SESSIONS = 128

@@ -59,6 +59,19 @@ class ControlSecurityTests(unittest.TestCase):
             )
         self.assertEqual(ticket_response.status_code, 503)
         self.assertEqual(ticket_response.json()['detail']['code'], 'TRADE_TICKET_DISABLED')
+        self.assertFalse(app.app.state.trade_ticket_preview_capable)
+        preview_payload = {
+            'schemaVersion': 1, 'account': 'titan', 'symbol': 'XAUUSD',
+            'orderType': 'BUY_LIMIT', 'volumeLots': 0.01,
+            'entryPrice': 4000.0, 'slPrice': 3990.0, 'tpPrice': 4020.0,
+        }
+        with patch.dict('os.environ', {'DASHBOARD_CONTROL_TOKEN': 'real-app-test-token'}):
+            preview_response = client.post(
+                '/api/chart/v1/trade-ticket/preview', json=preview_payload,
+                headers={'Authorization': 'Bearer real-app-test-token'},
+            )
+        self.assertEqual(preview_response.status_code, 503)
+        self.assertEqual(preview_response.json()['detail']['code'], 'TRADE_TICKET_PREVIEW_DISABLED')
 
     def test_authenticated_browser_mutation_is_allowed(self):
         response = self.client.get('/api/control_session')

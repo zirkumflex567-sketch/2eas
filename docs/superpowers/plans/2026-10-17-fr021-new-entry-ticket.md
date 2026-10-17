@@ -28,8 +28,10 @@
 
 ### Task 2: Fresh, scope-bound proposal preview
 
-- [ ] Resolve the exact verified demo session; read fresh quote and symbol rules; validate pending-order geometry and broker lot/margin.
-- [ ] Bind proposal and guard evidence into a short-lived one-time server token; reject stale quotes, changed account/symbol, invalid price, unknown guard and unsupported broker modes.
+- [x] Resolve the exact verified demo session; read fresh quote and symbol rules; validate pending-order geometry and broker lot/margin.
+- [x] Bind proposal and guard evidence into a short-lived one-time server token; reject stale quotes, changed account/symbol, invalid price, unknown guard and unsupported broker modes.
+
+Task 2 currently has fake-MT5 service coverage only. The production app does not install this service, and all trade-ticket routes remain disabled there. A read-only demo acceptance still needs a deliberately enabled isolated preview harness; this is not a write-release approval.
 
 ### Task 3: Durable single-send commit
 
