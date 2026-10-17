@@ -439,8 +439,17 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
         if (set(params) != {'account'} or len(params.getlist('account')) != 1 or
                 not isinstance(account, str) or not re.fullmatch('[a-z0-9_-]{1,32}', account)):
             return error(422, 'INVALID_REQUEST')
-        if service is None or account not in service.accounts:
+        spec = models.gateway.ACCOUNTS.get(account)
+        if spec is None:
             return error(400, 'UNKNOWN_ACCOUNT')
+        if spec.get('is_demo') is not True or spec.get('challenge_protection') is True:
+            return error(400, 'UNKNOWN_ACCOUNT')
+        if service is None or account not in service.accounts:
+            if app.state.evidence_deal_capture_status.get('service', {}).get('code') == 'CONFIG_INVALID':
+                return error(503, 'CAPTURE_UNAVAILABLE', account)
+            return JSONResponse({'schemaVersion': 1, 'account': account,
+                                 'status': {'code': 'NOT_CONFIGURED', 'coverage': 'UNKNOWN'}},
+                                headers={'Cache-Control': 'no-store'})
         status = app.state.evidence_deal_capture_status.get(account, {})
         allowed = ('code', 'coverage', 'appended', 'duplicates', 'rejected',
                    'storeLostCount', 'gapObserved', 'windowStartUtc','snapshotCoverage',

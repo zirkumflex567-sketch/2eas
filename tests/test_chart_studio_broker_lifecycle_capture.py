@@ -375,6 +375,40 @@ def test_capture_status_is_authenticated_and_limited_to_configured_demos(monkeyp
     assert forbidden.status_code == 400
 
 
+def test_lifecycle_capture_status_distinguishes_unconfigured_demo_from_unknown_account(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from chart_studio.evidence_api import install_evidence_routes
+    from dashboard_security import install_control_security
+    monkeypatch.delenv('CHART_STUDIO_EVIDENCE_SPOOL_ROOT', raising=False)
+    monkeypatch.setenv('CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS', 'titan,xau5m_m5')
+
+    class Store:
+        root = Path('private-test-root')
+
+        def gaps(self, _account=None):
+            return []
+
+    app = FastAPI()
+    install_control_security(app)
+    install_evidence_routes(app, store=Store(), mt5=object())
+    client = TestClient(app)
+
+    unconfigured_demo = client.get(
+        '/api/chart/v1/lifecycle/capture/status', params={'account': 'goldm15'})
+    assert unconfigured_demo.status_code == 200
+    assert unconfigured_demo.json() == {
+        'schemaVersion': 1,
+        'account': 'goldm15',
+        'status': {'code': 'NOT_CONFIGURED', 'coverage': 'UNKNOWN'},
+    }
+
+    unknown = client.get(
+        '/api/chart/v1/lifecycle/capture/status', params={'account': 'not-a-real-account'})
+    assert unknown.status_code == 400
+    assert unknown.json()['detail']['code'] == 'UNKNOWN_ACCOUNT'
+
+
 def test_decision_capture_status_is_authenticated_demo_scoped_and_redacted(monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
