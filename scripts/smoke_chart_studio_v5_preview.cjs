@@ -13,7 +13,7 @@ const html=enabled=>`<!doctype html><html><head><meta charset="utf-8"><meta name
 <div id="tv-chart"><canvas id="v4-sentinel" width="500" height="300"></canvas></div>
 <button type="button" id="chart-v5-preview-btn" aria-controls="chart-v5-preview-panel" aria-expanded="false" hidden>V5 Vorschau</button>
 <section id="chart-v5-preview-panel" hidden><strong id="chart-v5-preview-title">Native v5</strong><div id="chart-v5-preview-status" role="status"></div>
-<button type="button" id="chart-v5-auto-fib-btn" aria-pressed="false" disabled>Auto-Fibonacci einblenden</button><output id="chart-v5-auto-fib-status" aria-live="polite"></output><button type="button" id="chart-v5-layout-export-btn" disabled>Layout exportieren</button>
+<button type="button" id="chart-v5-auto-fib-btn" aria-pressed="false" disabled>Auto-Fibonacci einblenden</button><output id="chart-v5-auto-fib-status" aria-live="polite"></output><button type="button" id="chart-v5-layout-export-btn" disabled>Layout exportieren</button><button type="button" id="chart-v5-layout-import-btn" disabled>Layout zusammenführen</button><button type="button" id="chart-v5-layout-replace-btn" disabled>Layout ersetzen</button><input id="chart-v5-layout-import-file" type="file" accept="application/json,.json" hidden>
 <div id="chart-v5-drawing-tools" role="group" aria-label="Native v5 Zeichnungen"><button type="button" id="chart-v5-trend-btn" aria-pressed="false" disabled>Trendlinie</button><button type="button" id="chart-v5-ray-btn" aria-pressed="false" disabled>Strahl</button><output id="chart-v5-drawing-status" role="status" aria-live="polite">Zeichenwerkzeug aus.</output></div>
 <div id="chart-v5-preview-host"></div><p>Read only. Powered by <a href="https://www.tradingview.com/">TradingView Lightweight Charts™</a></p></section><script>document.addEventListener("DOMContentLoaded",()=>document.querySelector("#chart-v5-preview-host").addEventListener("chartstudio-v5-drawing-state",e=>window.__v5LastDrawing=e.detail));</script></body></html>`;
 
@@ -44,11 +44,14 @@ const server=http.createServer((req,res)=>{
   const context=await browser.newContext({viewport:{width:1200,height:900},acceptDownloads:true});
   const page=await context.newPage();
   const requests=[],errors=[];
+  page.on("dialog",dialog=>dialog.accept());
   page.on("request",request=>requests.push({url:request.url(),method:request.method()}));
   page.on("pageerror",error=>errors.push(error.message));
   await page.goto(base+"/stt/?enabled=1");
   await page.locator("#chart-v5-preview-btn").waitFor({state:"visible"});
   assert.equal(await page.locator("#chart-v5-layout-export-btn").isDisabled(),true,"layout export stays disabled before verified chart data exists");
+  assert.equal(await page.locator("#chart-v5-layout-import-btn").isDisabled(),true,"layout import stays disabled before verified chart data exists");
+  assert.equal(await page.locator("#chart-v5-layout-replace-btn").isDisabled(),true,"layout replacement stays disabled before verified chart data exists");
   const candles=Array.from({length:150},(_,i)=>({time:1792108800+i*900,open:4100+i*.1,high:4102+i*.1,low:4098+i*.1,close:4101+i*.1,tick_volume:20+i,real_volume:0}));
   const swings=[[10,8],[9,7],[12,4],[14,8],[15,9],[20,12],[18,10],[17,11],[16,10]];
   swings.forEach(([high,low],index)=>{const i=141+index,base=4150; candles[i]={...candles[i],open:base+(high+low)/2,high:base+high,low:base+low,close:base+(high+low)/2}});
@@ -137,10 +140,70 @@ const server=http.createServer((req,res)=>{
   assert.equal(portableLayout.symbol,"XAUUSD");assert.equal(portableLayout.timeframe,"M15");
   assert.equal(Object.hasOwn(portableLayout,"account"),false,"downloaded layout omits account identity");
   assert.equal(JSON.stringify(portableLayout).includes('"positionOverlays"'),false,"download excludes broker position overlays");
+  portableLayout.view.movingAverages=[{id:"portable-ema",type:"EMA",period:20,color:"#22aadd"}];
+  portableLayout.view.oscillators=[{options:{id:"portable-rsi",kind:"rsi",settings:{period:14},color:"#a995ff",title:"Portable RSI"},paneIndex:1}];
+  portableLayout.view.paneLines=[{options:{id:"portable-signal",color:"#f7c774",lineWidth:2,title:"Portable signal"},data:candles.slice(0,40).map((bar,index)=>({time:bar.time,value:50+Math.sin(index/5)*10})),paneIndex:1}];
+  portableLayout.view.paneHeights=[400,150,140];
+  portableLayout.view.volumeVisible=true;portableLayout.view.volumePaneIndex=2;
+  assert.equal(await page.locator("#chart-v5-layout-import-btn").isEnabled(),true,"verified chart enables portable layout import");
+  assert.equal(await page.locator("#chart-v5-layout-replace-btn").isEnabled(),true,"verified chart enables confirmed layout replacement");
+  const importProbe=await page.evaluate(async serialized=>{
+    const preview=window.ChartStudioV5Preview;
+    const before=preview.exportLayout();
+    const key="2eas.chartstudio.v5.drawings:v4:titan:XAUUSD:M15",storageBefore=localStorage.getItem(key);
+    const merged=preview.importLayout(serialized,"merge");
+    const mergedAgain=preview.importLayout(serialized,"merge");
+    const afterMerge=JSON.parse(preview.exportLayout());
+    const storageAfterValid=localStorage.getItem(key);
+    const originalConfirm=window.confirm;window.confirm=()=>false;let cancelled="";
+    try{preview.importLayout(serialized,"replace")}catch(error){cancelled=error.message}finally{window.confirm=originalConfirm}
+    let mismatch="";try{preview.importLayout(JSON.stringify({...JSON.parse(serialized),symbol:"OTHER"}),"merge")}catch(error){mismatch=error.message}
+    let timeframeMismatch="";try{preview.importLayout(JSON.stringify({...JSON.parse(serialized),timeframe:"M5"}),"merge")}catch(error){timeframeMismatch=error.message}
+    let account="";try{preview.importLayout(JSON.stringify({...JSON.parse(serialized),account:"blueberry"}),"merge")}catch(error){account=error.message}
+    let invalid="";const malformed=JSON.parse(serialized);malformed.view.paneHeights=[-10];try{preview.importLayout(JSON.stringify(malformed),"merge")}catch(error){invalid=error.message}
+    let oversized="";try{preview.importLayout(" ".repeat(512*1024+1),"merge")}catch(error){oversized=error.message}
+    const originalFeed=window.ChartStudioV5Feed;let corrupted=false,rollback="";
+    window.ChartStudioV5Feed={...originalFeed,create:(...args)=>{const bridge=originalFeed.create(...args);return {...bridge,update:(snapshot,token)=>{if(!corrupted){corrupted=true;localStorage.setItem(key,"{")}return bridge.update(snapshot,token)}}}};
+    try{preview.importLayout(serialized,"replace")}catch(error){rollback=error.message}finally{window.ChartStudioV5Feed=originalFeed}
+    const afterRollback=preview.exportLayout(),rollbackState=preview.inspect();
+    const afterRejected=preview.exportLayout();
+    return {merged,mergedAgain,afterMerge,before,afterRejected,mismatch,timeframeMismatch,account,invalid,oversized,storageBefore,storageAfterValid,storageAfter:localStorage.getItem(key),rollback,afterRollback,rollbackState,cancelled};
+  },JSON.stringify(portableLayout));
+  assert.equal(importProbe.merged.importedDrawings,2,"merge imports the complete native drawing set");
+  assert.equal(importProbe.mergedAgain.importedDrawings,2,"a second merge imports the layout again");
+  assert.equal(importProbe.afterMerge.drawings.length,6,"merge retains current drawings and adds imported drawings");
+  assert.equal(new Set(importProbe.afterMerge.drawings.map(row=>row.options.id)).size,6,"merge remaps colliding drawing IDs");
+  assert.equal(importProbe.afterMerge.view.movingAverages.length,2,"merge combines managed averages");
+  assert.equal(new Set(importProbe.afterMerge.view.movingAverages.map(item=>item.id)).size,2,"merge remaps colliding indicator IDs");
+  assert.equal(importProbe.afterMerge.view.oscillators.length,2,"merge imports native oscillator panes");
+  assert.equal(importProbe.afterMerge.view.paneLines.length,2,"merge imports custom pane series");
+  assert.deepEqual(new Set(importProbe.afterMerge.view.oscillators.map(item=>item.paneIndex)),new Set([1,2]),"repeated merge appends indicators to separate panes before volume");
+  assert.equal(importProbe.afterMerge.view.paneHeights.length,4,"merge preserves existing pane geometry and appends source panes");
+  assert.equal(importProbe.afterMerge.view.volumeVisible,true,"merge carries the imported volume pane");
+  assert.equal(importProbe.afterMerge.view.volumePaneIndex,3,"repeated merge keeps the shared volume pane after imported indicators");
+  assert.match(importProbe.mismatch,/scope/i,"mismatched portable layouts are rejected");
+  assert.match(importProbe.timeframeMismatch,/scope/i,"timeframe-mismatched portable layouts are rejected");
+  assert.ok(importProbe.account.length>0,"layout files containing account identity are rejected");
+  assert.ok(importProbe.invalid.length>0,"invalid view configuration is rejected before mutation");
+  assert.ok(importProbe.oversized.length>0,"files exceeding 512 KiB are rejected");
+  assert.match(importProbe.cancelled,/abgebrochen/i,"unconfirmed replace is rejected by the import API");
+  assert.match(importProbe.rollback,/nicht wiederhergestellt/i,"renderer failure is reported after failed apply");
+  assert.equal(importProbe.afterRollback,JSON.stringify(importProbe.afterMerge),"failed apply restores the previous rendered layout");
+  assert.equal(importProbe.rollbackState.status.includes("V5-Daten abgelehnt"),false,"renderer recovers the verified candle feed after rollback");
+  assert.equal(importProbe.afterRejected,JSON.stringify(importProbe.afterMerge),"rejected layouts leave the active renderer unchanged");
+  assert.notEqual(importProbe.storageAfterValid,importProbe.storageBefore,"successful merges persist in the active account scope");
+  assert.equal(importProbe.storageAfter,importProbe.storageAfterValid,"rejected layouts leave the scoped local snapshot unchanged");
   await page.locator("#chart-v5-ray-btn").click();
   await page.keyboard.press("Escape");
   assert.equal(await page.locator("#chart-v5-ray-btn").getAttribute("aria-pressed"),"false","Escape cancels a pending drawing tool");
-  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),2,"cancel does not persist an incomplete drawing");
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),6,"cancel does not persist an incomplete drawing");
+  await page.locator("#chart-v5-layout-replace-btn").click();
+  await page.locator("#chart-v5-layout-import-file").setInputFiles({name:"portable-layout.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify(portableLayout))});
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-preview-status")?.textContent.includes("Layout ersetzt"));
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),2,"confirmed replace restores the imported layout after renderer remount");
+  const storedImport=await page.evaluate(()=>{const key="2eas.chartstudio.v5.drawings:v4:titan:XAUUSD:M15";return JSON.parse(localStorage.getItem(key))});
+  assert.equal(storedImport.account,"titan","portable import binds the saved snapshot to the active account");
+  assert.equal(storedImport.schemaVersion,3,"portable import reuses the validated local persistence schema");
   const v4After=await page.locator("#tv-chart").evaluate(el=>({visible:!!el.getClientRects().length,canvas:el.querySelector("canvas#v4-sentinel")?.width}));
   assert.deepEqual(v4After,v4Before,"v5 owns a separate host and leaves v4 mounted");
   assert.match(await page.locator("#chart-v5-preview-title").textContent(),/XAUUSD M15/);

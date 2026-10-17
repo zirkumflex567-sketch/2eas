@@ -3,10 +3,10 @@
 (function(){
   "use strict";
   if(window.CHART_STUDIO_V5_PREVIEW_ENABLED!==true)return;
-  let button=null,panel=null,host=null,status=null,title=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,drawingStatus=null,layoutButton=null;
+  let button=null,panel=null,host=null,status=null,title=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,drawingStatus=null,layoutButton=null,layoutImportButton=null,layoutReplaceButton=null,layoutImportFile=null;
 
   let scope=null,latest=null,engine=null,bridge=null,active=false,loading=null,autoFibEnabled=false;
-  let generation=0,sequence=0,latestSequence=0,positionSequence=0,positionsSnapshot=null,positionsEnabled=true,drawingTool=null;
+  let generation=0,sequence=0,latestSequence=0,positionSequence=0,positionsSnapshot=null,positionsEnabled=true,drawingTool=null,pendingImportMode=null;
   const setStatus=value=>{if(status)status.textContent=value};
   const same=(a,b)=>!!a&&!!b&&a.account===b.account&&a.symbol===b.symbol&&a.timeframe===b.timeframe;
   function currentScope(){return scope?{...scope}:null}
@@ -34,7 +34,7 @@
     try{engine?.destroy()}catch(_){}
     engine=null;bridge=null;autoFibEnabled=false;drawingTool=null;if(autoFibButton){autoFibButton.setAttribute("aria-pressed","false");autoFibButton.textContent="Auto-Fibonacci einblenden";autoFibButton.disabled=!latest}if(autoFibStatus)autoFibStatus.textContent="";updateDrawingButtons();if(drawingStatus)drawingStatus.textContent="Zeichenwerkzeug aus.";if(host)host.replaceChildren();
   }
-  function updateDrawingButtons(){for(const [button,kind] of [[trendButton,"TREND"],[rayButton,"RAY"]])if(button){button.disabled=!engine||!latest;button.setAttribute("aria-pressed",drawingTool===kind?"true":"false")}if(layoutButton)layoutButton.disabled=!engine||!latest}
+  function updateDrawingButtons(){for(const [button,kind] of [[trendButton,"TREND"],[rayButton,"RAY"]])if(button){button.disabled=!engine||!latest;button.setAttribute("aria-pressed",drawingTool===kind?"true":"false")}for(const item of [layoutButton,layoutImportButton,layoutReplaceButton])if(item)item.disabled=!engine||!latest}
   function exportLayout(){
     if(!engine||!scope)return null;
     const serialized=engine.exportLayout(),layout=JSON.parse(serialized);
@@ -49,6 +49,113 @@
       link.href=url;link.download=`chart-studio-layout-${symbol}-${scope.timeframe}.json`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),0);
       setStatus("Layoutdatei heruntergeladen · ohne Konto- und Brokerzustand");return true;
     }catch(error){setStatus("Layoutexport nicht verfügbar: "+String(error?.message||error).slice(0,120));return false}
+  }
+  const portableKeys="drawings,schemaVersion,symbol,timeframe,view";
+  const viewKeys="displayTimeZone,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,supertrends,visibleRange,volumePaneIndex,volumeVisible";
+  function parseLayout(serialized){
+    if(typeof serialized!=="string"||new TextEncoder().encode(serialized).length>512*1024)throw new Error("Layoutdatei ungültig oder zu groß");
+    let layout;try{layout=JSON.parse(serialized)}catch(_){throw new Error("Layout-JSON ist ungültig")}
+    if(!layout||typeof layout!=="object"||Array.isArray(layout)||Object.keys(layout).sort().join(",")!==portableKeys||layout.schemaVersion!==2||
+       typeof layout.symbol!=="string"||typeof layout.timeframe!=="string"||!Array.isArray(layout.drawings)||!layout.view||typeof layout.view!=="object"||Array.isArray(layout.view)||
+       Object.keys(layout.view).sort().join(",")!==viewKeys)throw new Error("Nicht unterstütztes Layoutformat");
+    if(!scope||layout.symbol!==scope.symbol||layout.timeframe!==scope.timeframe)throw new Error("Layoutscope stimmt nicht mit dem aktiven Chart überein");
+    return layout;
+  }
+  function layoutIds(layout){
+    const ids=new Set();
+    const add=options=>{if(options&&typeof options.id==="string")ids.add(options.id)};
+    for(const item of layout.drawings)add(item?.options);
+    for(const item of layout.view.movingAverages)add(item);
+    for(const item of layout.view.oscillators)add(item?.options);
+    for(const item of layout.view.paneLines)add(item?.options);
+    for(const item of layout.view.supertrends)add(item);
+    for(const item of layout.view.parabolicSars)add(item);
+    return ids;
+  }
+  function mergeLayouts(target,source){
+    const merged=JSON.parse(JSON.stringify(target)),incoming=JSON.parse(JSON.stringify(source)),used=layoutIds(merged);
+    const rename=options=>{
+      if(!options||typeof options.id!=="string")return;
+      const original=options.id;if(!used.has(original)){used.add(original);return}
+      for(let suffix=1;suffix<10000;suffix++){
+        const id=`${original.slice(0,20)}-imported-${suffix}`;
+        if(!used.has(id)){options.id=id;used.add(id);return}
+      }
+      throw new Error("Layout enthält zu viele kollidierende IDs");
+    };
+    const targetPaneMap=new Map([[0,0]]),sourcePaneMap=new Map([[0,0]]),heights=[merged.view.paneHeights[0]];
+    for(let index=1;index<merged.view.paneHeights.length;index++)if(index!==merged.view.volumePaneIndex){targetPaneMap.set(index,heights.length);heights.push(merged.view.paneHeights[index])}
+    for(let index=1;index<incoming.view.paneHeights.length;index++)if(index!==incoming.view.volumePaneIndex){sourcePaneMap.set(index,heights.length);heights.push(incoming.view.paneHeights[index])}
+    const volumeVisible=merged.view.volumeVisible||incoming.view.volumeVisible;
+    const volumeHeight=merged.view.volumeVisible?merged.view.paneHeights[merged.view.volumePaneIndex]:incoming.view.paneHeights[incoming.view.volumePaneIndex];
+    const volumePaneIndex=volumeVisible?heights.length:null;if(volumeVisible)heights.push(volumeHeight);
+    if(merged.view.volumeVisible)targetPaneMap.set(merged.view.volumePaneIndex,volumePaneIndex);
+    if(incoming.view.volumeVisible)sourcePaneMap.set(incoming.view.volumePaneIndex,volumePaneIndex);
+    for(const item of merged.view.oscillators)item.paneIndex=targetPaneMap.get(item.paneIndex);
+    for(const item of merged.view.paneLines)item.paneIndex=targetPaneMap.get(item.paneIndex);
+    for(const item of incoming.view.oscillators)item.paneIndex=sourcePaneMap.get(item.paneIndex);
+    for(const item of incoming.view.paneLines)item.paneIndex=sourcePaneMap.get(item.paneIndex);
+    merged.view.paneHeights=heights;merged.view.volumeVisible=volumeVisible;merged.view.volumePaneIndex=volumePaneIndex;
+    for(const item of incoming.drawings){rename(item.options);merged.drawings.push(item)}
+    for(const item of incoming.view.movingAverages){rename(item);merged.view.movingAverages.push(item)}
+    for(const item of incoming.view.oscillators){rename(item.options);merged.view.oscillators.push(item)}
+    for(const item of incoming.view.paneLines){rename(item.options);merged.view.paneLines.push(item)}
+    for(const item of incoming.view.supertrends){rename(item);merged.view.supertrends.push(item)}
+    for(const item of incoming.view.parabolicSars){rename(item);merged.view.parabolicSars.push(item)}
+    merged.view.visibleRange=target.view.visibleRange;merged.view.displayTimeZone=target.view.displayTimeZone;
+    return merged;
+  }
+  function storedLayout(layout){return JSON.stringify({schemaVersion:3,account:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,
+    drawings:layout.drawings,undoStack:[],redoStack:[],...layout.view})}
+  function validateLayoutSnapshot(serialized){
+    const frame=document.createElement("iframe");frame.style.cssText="position:absolute;left:-10000px;top:0;width:920px;height:540px;opacity:0;pointer-events:none";document.body.append(frame);
+    let candidate=null;
+    try{
+      const child=frame.contentWindow,doc=frame.contentDocument,records=new Map([[layoutStorageKey(),serialized]]),memoryStorage={
+        getItem:key=>records.has(key)?records.get(key):null,setItem:(key,value)=>records.set(String(key),String(value)),removeItem:key=>records.delete(key),clear:()=>records.clear(),key:index=>[...records.keys()][index]??null,get length(){return records.size}
+      };
+      Object.defineProperty(child,"localStorage",{configurable:true,value:memoryStorage});
+      const candidateHost=doc.createElement("div");candidateHost.style.cssText="width:900px;height:520px";doc.body.append(candidateHost);
+      candidate=window.ChartStudioV5.createStudioV5(candidateHost,scope.account,{symbol:scope.symbol,timeframe:scope.timeframe});
+      candidate.setCandles(latest.candles);
+      const state=candidate.inspect();
+      if(state.persistenceStatus!=="READY"||state.persistenceError!==null)throw new Error(`Layoutinhalt oder Chartlimits sind ungültig (${state.persistenceStatus}/${state.persistenceError})`);
+      return JSON.parse(candidate.exportLayout());
+    }finally{try{candidate?.destroy()}catch(_){}frame.remove()}
+  }
+  function layoutStorageKey(){return `2eas.chartstudio.v5.drawings:v4:${encodeURIComponent(scope.account)}:${encodeURIComponent(scope.symbol)}:${encodeURIComponent(scope.timeframe)}`}
+  function importLayout(serialized,mode="merge"){
+    if(!engine||!scope||!latest)throw new Error("Layoutimport benötigt verifizierte Chartdaten");
+    if(mode!=="merge"&&mode!=="replace")throw new Error("Unbekannter Importmodus");
+    if(mode==="replace"&&!window.confirm("Das aktuelle lokale Layout dieses Kontos, Symbols und Zeitrahmens ersetzen?"))throw new Error("Import abgebrochen");
+    if(!engine.verifyPersistence())throw new Error("Lokaler Layoutspeicher ist nicht bereit oder wurde parallel geändert");
+    const storage=window.localStorage,key=layoutStorageKey(),previous=storage.getItem(key);
+    const importedFile=parseLayout(serialized),imported=validateLayoutSnapshot(storedLayout(importedFile)),current=JSON.parse(engine.exportLayout());
+    const next=mode==="merge"?mergeLayouts(current,imported):imported;
+    const candidate=mode==="merge"?validateLayoutSnapshot(storedLayout(next)):imported;
+    if(previous!==storage.getItem(key))throw new Error("Layout wurde parallel geändert; Import abgebrochen");
+    const normalized=storedLayout(candidate);
+    try{
+      storage.setItem(key,normalized);destroyRenderer();mountRenderer();
+      const state=engine?.inspect();
+      if(!state||state.persistenceStatus!=="READY"||state.persistenceError!==null)throw new Error(`Layout konnte nicht wiederhergestellt werden (${state?.persistenceStatus||"NO_ENGINE"}/${state?.persistenceError||"NO_ERROR"})`);
+      return {mode,importedDrawings:imported.drawings.length,drawings:state.nativeDrawingCount};
+    }catch(error){
+      let rollbackFailed=false;
+      try{if(storage.getItem(key)!==previous){if(previous===null)storage.removeItem(key);else storage.setItem(key,previous)}}catch(_){rollbackFailed=true}
+      destroyRenderer();mountRenderer();
+      const restored=engine?.inspect();
+      if(rollbackFailed||!restored||restored.persistenceStatus!=="READY"||restored.persistenceError!==null)throw new Error("Import fehlgeschlagen; das vorherige lokale Layout konnte nicht wiederhergestellt werden");
+      throw error;
+    }
+  }
+  function chooseLayoutFile(mode){if(!engine||!latest||!layoutImportFile)return false;pendingImportMode=mode;layoutImportFile.value="";layoutImportFile.click();return true}
+  async function readLayoutFile(){
+    const file=layoutImportFile?.files?.[0],mode=pendingImportMode;pendingImportMode=null;if(!file)return;
+    try{
+      if(file.size>512*1024)throw new Error("Layoutdatei ist größer als 512 KiB");
+      const result=importLayout(await file.text(),mode);setStatus(`Layout ${result.mode==="merge"?"zusammengeführt":"ersetzt"} · ${result.drawings} Zeichnungen · lokal gespeichert`);
+    }catch(error){setStatus("Layoutimport abgelehnt: "+String(error?.message||error).slice(0,140))}
   }
   function setDrawingTool(kind){
     if(kind!==null&&kind!=="TREND"&&kind!=="RAY")return false;
@@ -178,7 +285,7 @@
     setDrawingTool(null);updateDrawingButtons();
     setStatus(message||"MT5-Kerzen derzeit nicht verfügbar");
   }
-  window.ChartStudioV5Preview=Object.freeze({setScope,beginRead,update,clear,renderAutoFib,clearAutoFib,beginPositionRead,setPositions,showPositions,readPositions,clearPositions,setDrawingTool,exportLayout,readDrawing:id=>engine?.readDrawing?.(id)||null,readAutoFibonacci:()=>engine?.readAutoFibonacci?.()||null,inspect:()=>({active,scope:currentScope(),generation,status:status?.textContent||"",autoFibonacci:!!engine?.readAutoFibonacci?.(),positionOverlayCount:readPositions().count,nativeDrawingCount:engine?.inspect?.().nativeDrawingCount||0,drawingTool,positionsEnabled})});
+  window.ChartStudioV5Preview=Object.freeze({setScope,beginRead,update,clear,renderAutoFib,clearAutoFib,beginPositionRead,setPositions,showPositions,readPositions,clearPositions,setDrawingTool,exportLayout,importLayout,readDrawing:id=>engine?.readDrawing?.(id)||null,readAutoFibonacci:()=>engine?.readAutoFibonacci?.()||null,inspect:()=>({active,scope:currentScope(),generation,status:status?.textContent||"",autoFibonacci:!!engine?.readAutoFibonacci?.(),positionOverlayCount:readPositions().count,nativeDrawingCount:engine?.inspect?.().nativeDrawingCount||0,drawingTool,positionsEnabled})});
   function boot(){
     button=document.getElementById("chart-v5-preview-btn");panel=document.getElementById("chart-v5-preview-panel");
     host=document.getElementById("chart-v5-preview-host");status=document.getElementById("chart-v5-preview-status");
@@ -190,7 +297,11 @@
     if(autoFibButton)autoFibButton.addEventListener("click",()=>{if(autoFibEnabled)clearAutoFib();else try{renderAutoFib()}catch(error){clearAutoFib();if(autoFibStatus)autoFibStatus.textContent="Auto-Fibonacci nicht verfügbar · "+String(error?.message||error).slice(0,120)}});
     if(trendButton)trendButton.addEventListener("click",()=>setDrawingTool(drawingTool==="TREND"?null:"TREND"));
     if(rayButton)rayButton.addEventListener("click",()=>setDrawingTool(drawingTool==="RAY"?null:"RAY"));
+    layoutImportButton=document.getElementById("chart-v5-layout-import-btn");layoutReplaceButton=document.getElementById("chart-v5-layout-replace-btn");layoutImportFile=document.getElementById("chart-v5-layout-import-file");
     if(layoutButton)layoutButton.addEventListener("click",downloadLayout);
+    if(layoutImportButton)layoutImportButton.addEventListener("click",()=>chooseLayoutFile("merge"));
+    if(layoutReplaceButton)layoutReplaceButton.addEventListener("click",()=>chooseLayoutFile("replace"));
+    if(layoutImportFile)layoutImportFile.addEventListener("change",readLayoutFile);
     document.addEventListener("keydown",event=>{if(event.key==="Escape"&&drawingTool){setDrawingTool(null);if(drawingStatus)drawingStatus.textContent="Zeichenwerkzeug abgebrochen."}});
     button.addEventListener("click",async()=>{
       if(active){active=false;panel.hidden=true;button.setAttribute("aria-expanded","false");button.textContent="V5 Vorschau";clearPositions();destroyRenderer();return}

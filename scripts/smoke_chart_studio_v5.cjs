@@ -276,14 +276,16 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.addOscillator({id:"view-rsi",kind:"rsi",settings:{period:14},color:"#bb66dd",title:"RSI saved"});
    engine.addOscillator({id:"view-macd",kind:"macd",settings:{fast:12,slow:26,signal:9},color:"#66bbdd",title:"MACD saved"});
    engine.addOscillator({id:"view-cci",kind:"cci",settings:{period:20},color:"#a995ff",title:"CCI saved"});
+   engine.addOscillator({id:"view-obv",kind:"obv",settings:{},color:"#55deaa",title:"OBV saved"});
+   engine.addOscillator({id:"view-mfi",kind:"mfi",settings:{period:14},color:"#e9bc72",title:"MFI saved"});
    engine.addPaneLine({id:"view-signal",color:"#f7c774",lineWidth:3,title:"Saved signal"},bars.slice(14).map((bar,i)=>({time:bar.time,value:40+Math.sin(i/5)*10})));engine.showVolume(true);engine.resizePane(1,190);engine.setDisplayTimeZone("Europe/Berlin");engine.setVisibleLogicalRange({from:12,to:42});
-   const expected={ema:engine.movingAverageOptions("view-ema"),rsi:engine.oscillatorOptions("view-rsi"),macd:engine.oscillatorOptions("view-macd"),cci:engine.oscillatorOptions("view-cci"),layout:engine.oscillatorPaneLayout().map(pane=>({...pane,titles:[...pane.titles].sort()})),heights:engine.paneHeights(),volume:engine.inspect().volumeVisible,zone:engine.displayTimeZone(),range:engine.visibleLogicalRange(),paneLines:engine.inspect().nativePaneLines};
+   const expected={ema:engine.movingAverageOptions("view-ema"),rsi:engine.oscillatorOptions("view-rsi"),macd:engine.oscillatorOptions("view-macd"),cci:engine.oscillatorOptions("view-cci"),obv:engine.oscillatorOptions("view-obv"),mfi:engine.oscillatorOptions("view-mfi"),layout:engine.oscillatorPaneLayout().map(pane=>({...pane,titles:[...pane.titles].sort()})),heights:engine.paneHeights(),volume:engine.inspect().volumeVisible,zone:engine.displayTimeZone(),range:engine.visibleLogicalRange(),paneLines:engine.inspect().nativePaneLines};
    engine.addPriceLevel({id:"portable-layout-price",price:107,color:"#44aadd"});
    const portableLayout=JSON.parse(engine.exportLayout());
    const legacyDrawings=JSON.parse(engine.exportDrawings());
    const validSnapshot=JSON.parse(localStorage.getItem("2eas.chartstudio.v5.drawings:v4:view-persistence:XAUUSD:M15"));
    engine.destroy();engine=ChartStudioV5.createStudioV5(host,"view-persistence",scope);engine.setCandles(bars);
-   const restored={ema:engine.movingAverageOptions("view-ema"),rsi:engine.oscillatorOptions("view-rsi"),macd:engine.oscillatorOptions("view-macd"),cci:engine.oscillatorOptions("view-cci"),layout:engine.oscillatorPaneLayout().map(pane=>({...pane,titles:[...pane.titles].sort()})),heights:engine.paneHeights(),volume:engine.inspect().volumeVisible,zone:engine.displayTimeZone(),range:engine.visibleLogicalRange(),status:engine.inspect().persistenceStatus,error:engine.inspect().persistenceError,paneLines:engine.inspect().nativePaneLines};
+   const restored={ema:engine.movingAverageOptions("view-ema"),rsi:engine.oscillatorOptions("view-rsi"),macd:engine.oscillatorOptions("view-macd"),cci:engine.oscillatorOptions("view-cci"),obv:engine.oscillatorOptions("view-obv"),mfi:engine.oscillatorOptions("view-mfi"),layout:engine.oscillatorPaneLayout().map(pane=>({...pane,titles:[...pane.titles].sort()})),heights:engine.paneHeights(),volume:engine.inspect().volumeVisible,zone:engine.displayTimeZone(),range:engine.visibleLogicalRange(),status:engine.inspect().persistenceStatus,error:engine.inspect().persistenceError,paneLines:engine.inspect().nativePaneLines};
    engine.destroy();host.remove();
    validSnapshot.account="invalidview";validSnapshot.displayTimeZone="Mars/Olympus_Mons";localStorage.setItem("2eas.chartstudio.v5.drawings:v4:invalidview:XAUUSD:M15",JSON.stringify(validSnapshot));
    const invalidHost=document.createElement("div");invalidHost.style.cssText="width:900px;height:520px;position:absolute;left:-1800px;top:0";document.body.append(invalidHost);
@@ -299,6 +301,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(viewPersistenceProbe.restored.rsi,viewPersistenceProbe.expected.rsi);
   assert.deepEqual(viewPersistenceProbe.restored.macd,viewPersistenceProbe.expected.macd);
   assert.deepEqual(viewPersistenceProbe.restored.cci,viewPersistenceProbe.expected.cci,"CCI settings restore within account, symbol and timeframe scope");
+  assert.deepEqual(viewPersistenceProbe.restored.obv,viewPersistenceProbe.expected.obv,"OBV settings restore within account, symbol and timeframe scope");
+  assert.deepEqual(viewPersistenceProbe.restored.mfi,viewPersistenceProbe.expected.mfi,"MFI settings restore within account, symbol and timeframe scope");
   assert.deepEqual(viewPersistenceProbe.restored.layout,viewPersistenceProbe.expected.layout);
   assert.deepEqual(viewPersistenceProbe.restored.heights,viewPersistenceProbe.expected.heights);
   assert.equal(viewPersistenceProbe.restored.volume,true);
@@ -316,7 +320,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(Object.hasOwn(viewPersistenceProbe.portableLayout,"account"),false,"portable export omits account identity");
   assert.equal(viewPersistenceProbe.portableLayout.drawings.some(item=>item.options.id==="portable-layout-price"),true);
   assert.deepEqual(viewPersistenceProbe.portableLayout.view.movingAverages,[viewPersistenceProbe.expected.ema]);
-  assert.deepEqual(viewPersistenceProbe.portableLayout.view.oscillators.map(item=>item.options.id).sort(),["view-cci","view-macd","view-rsi"]);
+  assert.deepEqual(viewPersistenceProbe.portableLayout.view.oscillators.map(item=>item.options.id).sort(),["view-cci","view-macd","view-mfi","view-obv","view-rsi"]);
   assert.equal(viewPersistenceProbe.portableLayout.view.volumeVisible,true);
   assert.equal(viewPersistenceProbe.portableLayout.view.displayTimeZone,"Europe/Berlin");
   assert.ok(viewPersistenceProbe.portableLayout.view.paneHeights.length>1);
@@ -331,6 +335,16 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.destroy();host.remove();return error;
   });
   assert.equal(layoutLimitProbe,"Layout export exceeds size limit","portable full-view export enforces the shared 512 KiB bound");
+  const storageConflictProbe=await page.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:640px;height:320px;position:absolute;left:-1800px;top:0";document.body.append(host);
+   const engine=ChartStudioV5.createStudioV5(host,"portable-conflict",{symbol:"XAUUSD",timeframe:"M15"});
+   engine.setCandles(Array.from({length:30},(_,i)=>{const close=100+i;return {time:1700000000+i*900,open:close,high:close+1,low:close-1,close}}));
+   engine.addPriceLevel({id:"conflict-price",price:110,color:"#22aadd"});
+   const key="2eas.chartstudio.v5.drawings:v4:portable-conflict:XAUUSD:M15",saved=localStorage.getItem(key);
+   localStorage.setItem(key,saved+" ");const available=engine.verifyPersistence(),state=engine.inspect();
+   localStorage.setItem(key,saved);engine.destroy();host.remove();return {available,status:state.persistenceStatus,error:state.persistenceError};
+  });
+  assert.deepEqual(storageConflictProbe,{available:false,status:"CONFLICT",error:"EXTERNAL_CHANGE"},"layout writes fail closed after another tab changes the scoped snapshot");
   assert.deepEqual(viewPersistenceProbe.invalidView,{status:"UNAVAILABLE",error:"INVALID_VIEW_STATE",drawings:0,averages:0,oscillators:0,volume:false},"invalid v3 state is rejected before any renderer mutation");
   const paneResizeSetup=await page.evaluate(async()=>{
    const host=document.createElement("div");host.style.cssText="width:900px;height:420px";document.body.append(host);

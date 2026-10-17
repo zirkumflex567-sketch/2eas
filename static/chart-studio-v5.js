@@ -9292,6 +9292,28 @@ var ChartStudioV5 = (() => {
         persistenceError = "STORAGE_WRITE_FAILED";
       }
     }
+    function verifyPersistence() {
+      guard();
+      if (!drawingScope || !drawingsHydrated || persistenceStatus !== "READY") return false;
+      const storage = localStorageApi(), key = persistenceKey();
+      if (!storage || !key) {
+        persistenceStatus = "UNAVAILABLE";
+        persistenceError = "STORAGE_UNAVAILABLE";
+        return false;
+      }
+      try {
+        if (storage.getItem(key) !== lastPersistedSnapshot) {
+          persistenceStatus = "CONFLICT";
+          persistenceError = "EXTERNAL_CHANGE";
+          return false;
+        }
+        return true;
+      } catch (_2) {
+        persistenceStatus = "UNAVAILABLE";
+        persistenceError = "STORAGE_READ_FAILED";
+        return false;
+      }
+    }
     function hydrateDrawings() {
       if (!drawingScope) {
         drawingsHydrated = true;
@@ -9360,7 +9382,7 @@ var ChartStudioV5 = (() => {
           restoredAverages = root.movingAverages.map((raw2) => {
             if (!raw2 || typeof raw2 !== "object" || Array.isArray(raw2)) throw Error();
             const options = raw2;
-            const keys = Object.keys(options).sort().join(","), allowed = /* @__PURE__ */ new Set(["color,displayShift,id,period,source,title,type", "color,displayShift,id,lineWidth,period,source,title,type", "color,displayShift,id,period,source,title,type,visible", "color,displayShift,id,lineWidth,period,source,title,type,visible", "color,id,period,source,type", "color,id,lineWidth,period,source,type", "color,id,period,source,type,visible", "color,id,lineWidth,period,source,type,visible", "color,id,period,type", "color,id,lineWidth,period,type", "color,id,period,type,visible", "color,id,lineWidth,period,type,visible"]);
+            const keys = Object.keys(options).sort().join(","), allowed = /* @__PURE__ */ new Set(["color,displayShift,id,period,source,type", "color,displayShift,id,lineWidth,period,source,type", "color,displayShift,id,period,source,type,visible", "color,displayShift,id,lineWidth,period,source,type,visible", "color,displayShift,id,period,source,title,type", "color,displayShift,id,lineWidth,period,source,title,type", "color,displayShift,id,period,source,title,type,visible", "color,displayShift,id,lineWidth,period,source,title,type,visible", "color,id,period,source,type", "color,id,lineWidth,period,source,type", "color,id,period,source,type,visible", "color,id,lineWidth,period,source,type,visible", "color,id,period,type", "color,id,lineWidth,period,type", "color,id,period,type,visible", "color,id,lineWidth,period,type,visible"]);
             if (!allowed.has(keys) || typeof options.id !== "string" || !/^[-_a-zA-Z0-9]{1,32}$/.test(options.id) || typeof options.color !== "string" || !colorPattern.test(options.color) || options.lineWidth !== void 0 && ![1, 2, 3, 4].includes(options.lineWidth) || options.visible !== void 0 && typeof options.visible !== "boolean" || options.title !== void 0 && (typeof options.title !== "string" || options.title.length > 80 || /[\u0000-\u001f\u007f]/.test(options.title))) throw Error();
             const value = { ...options, source: options.source ?? "close", displayShift: options.displayShift ?? 0 };
             movingAverageData(bars, value);
@@ -9371,7 +9393,7 @@ var ChartStudioV5 = (() => {
             const entry = raw2;
             if (Object.keys(entry).sort().join(",") !== "options,paneIndex" || !entry.options || typeof entry.options !== "object" || Array.isArray(entry.options) || !Number.isInteger(entry.paneIndex)) throw Error();
             const options = entry.options, keys = Object.keys(options).sort().join(","), allowed = /* @__PURE__ */ new Set(["color,id,kind,settings", "color,id,kind,lineWidth,settings", "color,id,kind,settings,title", "color,id,kind,lineWidth,settings,title", "color,id,kind,settings,visible", "color,id,kind,lineWidth,settings,visible", "color,id,kind,settings,title,visible", "color,id,kind,lineWidth,settings,title,visible"]);
-            if (!allowed.has(keys) || typeof options.id !== "string" || !/^[-_a-zA-Z0-9]{1,32}$/.test(options.id) || typeof options.color !== "string" || !colorPattern.test(options.color) || !["rsi", "atr", "macd", "adx", "stochastic", "stochrsi", "cci", "momentum", "roc"].includes(options.kind) || options.lineWidth !== void 0 && ![1, 2, 3, 4].includes(options.lineWidth) || options.visible !== void 0 && typeof options.visible !== "boolean" || options.title !== void 0 && (typeof options.title !== "string" || options.title.length > 80 || /[\u0000-\u001f\u007f]/.test(options.title)) || !Number.isInteger(entry.paneIndex) || Number(entry.paneIndex) < 1 || Number(entry.paneIndex) >= savedPaneHeights.length) throw Error();
+            if (!allowed.has(keys) || typeof options.id !== "string" || !/^[-_a-zA-Z0-9]{1,32}$/.test(options.id) || typeof options.color !== "string" || !colorPattern.test(options.color) || !["rsi", "atr", "macd", "adx", "stochastic", "stochrsi", "cci", "momentum", "roc", "obv", "mfi"].includes(options.kind) || options.lineWidth !== void 0 && ![1, 2, 3, 4].includes(options.lineWidth) || options.visible !== void 0 && typeof options.visible !== "boolean" || options.title !== void 0 && (typeof options.title !== "string" || options.title.length > 80 || /[\u0000-\u001f\u007f]/.test(options.title)) || !Number.isInteger(entry.paneIndex) || Number(entry.paneIndex) < 1 || Number(entry.paneIndex) >= savedPaneHeights.length) throw Error();
             const oscillatorOptions2 = options;
             calculateOscillator(bars, oscillatorOptions2.kind, oscillatorOptions2.settings);
             return { options: { ...oscillatorOptions2, settings: { ...oscillatorOptions2.settings } }, paneIndex: Number(entry.paneIndex) };
@@ -11997,6 +12019,7 @@ var ChartStudioV5 = (() => {
       readPositionOverlays,
       setDrawingTool,
       drawingToolState,
+      verifyPersistence,
       inspect,
       destroy
     });

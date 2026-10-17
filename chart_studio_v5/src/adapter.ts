@@ -1092,6 +1092,16 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    storage.setItem(key,serialized);lastPersistedSnapshot=serialized;persistenceStatus="READY";persistenceError=null;
   }catch(_){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_WRITE_FAILED"}
  }
+ function verifyPersistence():boolean{
+  guard();
+  if(!drawingScope||!drawingsHydrated||persistenceStatus!=="READY")return false;
+  const storage=localStorageApi(),key=persistenceKey();
+  if(!storage||!key){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_UNAVAILABLE";return false}
+  try{
+   if(storage.getItem(key)!==lastPersistedSnapshot){persistenceStatus="CONFLICT";persistenceError="EXTERNAL_CHANGE";return false}
+   return true;
+  }catch(_){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_READ_FAILED";return false}
+ }
  function hydrateDrawings(){
   if(!drawingScope){drawingsHydrated=true;persistenceStatus="DISABLED";return}
   if(drawingsHydrated)return;
@@ -1125,7 +1135,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
     const savedPaneHeights=root.paneHeights as unknown[];
     restoredAverages=root.movingAverages.map(raw=>{
      if(!raw||typeof raw!=="object"||Array.isArray(raw))throw Error();const options=raw as Record<string,unknown>;
-     const keys=Object.keys(options).sort().join(","),allowed=new Set(["color,displayShift,id,period,source,title,type","color,displayShift,id,lineWidth,period,source,title,type","color,displayShift,id,period,source,title,type,visible","color,displayShift,id,lineWidth,period,source,title,type,visible","color,id,period,source,type","color,id,lineWidth,period,source,type","color,id,period,source,type,visible","color,id,lineWidth,period,source,type,visible","color,id,period,type","color,id,lineWidth,period,type","color,id,period,type,visible","color,id,lineWidth,period,type,visible"]);
+     const keys=Object.keys(options).sort().join(","),allowed=new Set(["color,displayShift,id,period,source,type","color,displayShift,id,lineWidth,period,source,type","color,displayShift,id,period,source,type,visible","color,displayShift,id,lineWidth,period,source,type,visible","color,displayShift,id,period,source,title,type","color,displayShift,id,lineWidth,period,source,title,type","color,displayShift,id,period,source,title,type,visible","color,displayShift,id,lineWidth,period,source,title,type,visible","color,id,period,source,type","color,id,lineWidth,period,source,type","color,id,period,source,type,visible","color,id,lineWidth,period,source,type,visible","color,id,period,type","color,id,lineWidth,period,type","color,id,period,type,visible","color,id,lineWidth,period,type,visible"]);
      if(!allowed.has(keys)||typeof options.id!=="string"||!/^[-_a-zA-Z0-9]{1,32}$/.test(options.id)||typeof options.color!=="string"||!colorPattern.test(options.color)||
         (options.lineWidth!==undefined&&![1,2,3,4].includes(options.lineWidth as number))||(options.visible!==undefined&&typeof options.visible!=="boolean")||
         (options.title!==undefined&&(typeof options.title!=="string"||options.title.length>80||/[\u0000-\u001f\u007f]/.test(options.title))))throw Error();
@@ -1137,7 +1147,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
      if(Object.keys(entry).sort().join(",")!=="options,paneIndex"||!entry.options||typeof entry.options!=="object"||Array.isArray(entry.options)||!Number.isInteger(entry.paneIndex))throw Error();
      const options=entry.options as Record<string,unknown>,keys=Object.keys(options).sort().join(","),allowed=new Set(["color,id,kind,settings","color,id,kind,lineWidth,settings","color,id,kind,settings,title","color,id,kind,lineWidth,settings,title","color,id,kind,settings,visible","color,id,kind,lineWidth,settings,visible","color,id,kind,settings,title,visible","color,id,kind,lineWidth,settings,title,visible"]);
      if(!allowed.has(keys)||typeof options.id!=="string"||!/^[-_a-zA-Z0-9]{1,32}$/.test(options.id)||typeof options.color!=="string"||!colorPattern.test(options.color)||
-        !(["rsi","atr","macd","adx","stochastic","stochrsi","cci","momentum","roc"] as unknown[]).includes(options.kind)||(options.lineWidth!==undefined&&![1,2,3,4].includes(options.lineWidth as number))||
+        !(["rsi","atr","macd","adx","stochastic","stochrsi","cci","momentum","roc","obv","mfi"] as unknown[]).includes(options.kind)||(options.lineWidth!==undefined&&![1,2,3,4].includes(options.lineWidth as number))||
         (options.visible!==undefined&&typeof options.visible!=="boolean")||(options.title!==undefined&&(typeof options.title!=="string"||options.title.length>80||/[\u0000-\u001f\u007f]/.test(options.title)))||
         !Number.isInteger(entry.paneIndex)||Number(entry.paneIndex)<1||Number(entry.paneIndex)>=savedPaneHeights.length)throw Error();
      const oscillatorOptions=options as unknown as OscillatorOptions;calculateOscillator(bars,oscillatorOptions.kind,oscillatorOptions.settings);
@@ -2486,5 +2496,5 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   return Object.freeze({setCandles,addAverage,addMovingAverage,addDonchian,removeDonchian,addBollinger,updateBollinger,removeBollinger,bollingerOptions,addKeltner,removeKeltner,addAtrBands,updateAtrBands,removeAtrBands,atrBandsOptions,addLinearRegression,updateLinearRegression,removeLinearRegression,linearRegressionOptions,addIchimoku,updateIchimoku,removeIchimoku,ichimokuOptions,addPivotPoints,updatePivotPoints,pivotOptions,removePivotPoints,addSupertrend,updateSupertrend,removeSupertrend,supertrendOptions,addParabolicSar,updateParabolicSar,removeParabolicSar,parabolicSarOptions,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,deleteSelectedDrawings,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,drawingPosition,drawingAnchorPosition,readDrawing,exportDrawings,exportLayout,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,duplicateSelectedDrawings,
   addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,addOscillator,updateOscillator,removeOscillator,moveOscillator,oscillatorOptions,oscillatorPaneLayout,resizePane,paneHeights,showVolume,visibleLogicalRange,setVisibleLogicalRange,setDisplayTimeZone,displayTimeZone:()=>displayTimeZone,formatTimeLabel:formatDisplayTime,formatCrosshairTime,readDataWindow,
-  updateLast,changeAccount,averageOptions,setVolumeZones,readVolumeZones,clearVolumeZones,setAutoFibonacci,readAutoFibonacci,clearAutoFibonacci,setPositionOverlays,readPositionOverlays,setDrawingTool,drawingToolState,inspect,destroy});
+  updateLast,changeAccount,averageOptions,setVolumeZones,readVolumeZones,clearVolumeZones,setAutoFibonacci,readAutoFibonacci,clearAutoFibonacci,setPositionOverlays,readPositionOverlays,setDrawingTool,drawingToolState,verifyPersistence,inspect,destroy});
 }
