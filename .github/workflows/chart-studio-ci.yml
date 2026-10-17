@@ -56,6 +56,7 @@ jobs:
           node --check tests/test_chart_studio_device_sync_frontend.cjs
           node --check scripts/test_chart_studio_indicator_extension_ui.cjs
           node --check scripts/smoke_live_snapshot_history.cjs
+          node --check scripts/smoke_live_account_race.cjs
           node --check static/chart-studio-data-signature.js
           node scripts/test_chart_studio_data_signature.cjs
           node --check static/chart-studio-object-manager.js
