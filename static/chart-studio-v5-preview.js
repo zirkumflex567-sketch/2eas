@@ -3,7 +3,7 @@
 (function(){
   "use strict";
   if(window.CHART_STUDIO_V5_PREVIEW_ENABLED!==true)return;
-  let button=null,panel=null,host=null,status=null,title=null,dataWindow=null,dataWindowPinButton=null,liveQuote=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,priceButton=null,timeButton=null,rectButton=null,fiboButton=null,measureButton=null,channelButton=null,textButton=null,textInput=null,drawingStatus=null,layoutButton=null,layoutImportButton=null,layoutReplaceButton=null,layoutImportFile=null;
+  let button=null,panel=null,host=null,status=null,title=null,dataWindow=null,dataWindowPinButton=null,liveQuote=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,priceButton=null,timeButton=null,rectButton=null,fiboButton=null,measureButton=null,channelButton=null,riskRewardButton=null,textButton=null,textInput=null,drawingStatus=null,layoutButton=null,layoutImportButton=null,layoutReplaceButton=null,layoutImportFile=null;
 
   let scope=null,latest=null,engine=null,bridge=null,indicatorBridge=null,oscillatorBridge=null,active=false,loading=null,autoFibEnabled=false,dataWindowHover=null,dataWindowPinned=null,dataWindowCrosshairActive=false;
   let generation=0,sequence=0,latestSequence=0,positionSequence=0,positionsSnapshot=null,brokerDealMarkersSnapshot=null,positionsEnabled=true,drawingTool=null,pendingImportMode=null,quoteTimer=null,quoteRequest=0;
@@ -118,7 +118,7 @@
     try{engine?.destroy()}catch(_){}
     engine=null;bridge=null;autoFibEnabled=false;drawingTool=null;if(autoFibButton){autoFibButton.setAttribute("aria-pressed","false");autoFibButton.textContent="Auto-Fibonacci einblenden";autoFibButton.disabled=!latest}if(autoFibStatus)autoFibStatus.textContent="";updateDrawingButtons();if(drawingStatus)drawingStatus.textContent="Zeichenwerkzeug aus.";if(host)host.replaceChildren();
   }
-  function updateDrawingButtons(){for(const [button,kind] of [[trendButton,"TREND"],[rayButton,"RAY"],[priceButton,"PRICE"],[timeButton,"TIME"],[rectButton,"RECT"],[fiboButton,"FIBO"],[measureButton,"MEASURE"],[channelButton,"CHANNEL"],[textButton,"TEXT"]])if(button){button.disabled=!engine||!latest||(kind==="TEXT"&&!/^[\x20-\x7E]{1,40}$/.test(textInput?.value||""));button.setAttribute("aria-pressed",drawingTool===kind?"true":"false")}for(const item of [layoutButton,layoutImportButton,layoutReplaceButton])if(item)item.disabled=!engine||!latest}
+  function updateDrawingButtons(){for(const [button,kind] of [[trendButton,"TREND"],[rayButton,"RAY"],[priceButton,"PRICE"],[timeButton,"TIME"],[rectButton,"RECT"],[fiboButton,"FIBO"],[measureButton,"MEASURE"],[channelButton,"CHANNEL"],[riskRewardButton,"RISK_REWARD"],[textButton,"TEXT"]])if(button){button.disabled=!engine||!latest||(kind==="TEXT"&&!/^[\x20-\x7E]{1,40}$/.test(textInput?.value||""));button.setAttribute("aria-pressed",drawingTool===kind?"true":"false")}for(const item of [layoutButton,layoutImportButton,layoutReplaceButton])if(item)item.disabled=!engine||!latest}
   function exportLayout(){
     if(!engine||!scope)return null;
     const serialized=engine.exportLayout(),layout=JSON.parse(serialized);
@@ -244,16 +244,16 @@
     }catch(error){setStatus("Layoutimport abgelehnt: "+String(error?.message||error).slice(0,140))}
   }
   function setDrawingTool(kind){
-    if(kind!==null&&!["TREND","RAY","PRICE","TIME","RECT","FIBO","MEASURE","CHANNEL","TEXT"].includes(kind))return false;
+    if(kind!==null&&!["TREND","RAY","PRICE","TIME","RECT","FIBO","MEASURE","CHANNEL","RISK_REWARD","TEXT"].includes(kind))return false;
     if(!engine||(kind!==null&&!latest))return false;
     if(kind==="TEXT"&&!/^[\x20-\x7E]{1,40}$/.test(textInput?.value||"")){if(drawingStatus)drawingStatus.textContent="Text muss 1–40 druckbare ASCII-Zeichen enthalten.";return false}
     drawingTool=kind;engine.setDrawingTool(kind,kind==="TEXT"?textInput.value:undefined);updateDrawingButtons();
-    if(drawingStatus)drawingStatus.textContent=kind?`${({TREND:"Trendlinie",RAY:"Strahl",PRICE:"Preislinie",TIME:"Zeitlinie",RECT:"Rechteck",FIBO:"Fibonacci",MEASURE:"Messung",CHANNEL:"Kanal",TEXT:"Text"})[kind]}: ${kind==="PRICE"||kind==="TIME"||kind==="TEXT"?"Kerze wählen.":"ersten Anker wählen."}`:"Zeichenwerkzeug aus.";
+    if(drawingStatus)drawingStatus.textContent=kind?`${({TREND:"Trendlinie",RAY:"Strahl",PRICE:"Preislinie",TIME:"Zeitlinie",RECT:"Rechteck",FIBO:"Fibonacci",MEASURE:"Messung",CHANNEL:"Kanal",RISK_REWARD:"Risiko/Ertrag",TEXT:"Text"})[kind]}: ${kind==="PRICE"||kind==="TIME"||kind==="TEXT"?"Kerze wählen.":"ersten Anker wählen."}`:"Zeichenwerkzeug aus.";
     return true;
   }
   function drawingState(event){const detail=event?.detail;if(!detail)return;
     if(detail.phase==="FIRST_ANCHOR"){if(drawingStatus)drawingStatus.textContent="Ersten Anker gesetzt · zweiten Anker wählen."}
-    else if(detail.phase==="SECOND_ANCHOR"){if(drawingStatus)drawingStatus.textContent=detail.kind==="CHANNEL"?"Dritten Kanalanker wählen.":"Zweiten Anker wählen."}
+    else if(detail.phase==="SECOND_ANCHOR"){if(drawingStatus)drawingStatus.textContent=detail.kind==="CHANNEL"?"Dritten Kanalanker wählen.":detail.kind==="RISK_REWARD"?"Dritten Anker für das Ziel wählen.":"Zweiten Anker wählen."}
     else if(detail.phase==="CREATED"){drawingTool=null;window.__chartStudioV5LastDrawingId=detail.id;window.__chartStudioV5LastDrawingKind=detail.kind;updateDrawingButtons();if(drawingStatus)drawingStatus.textContent="Zeichnung erstellt."}
     else if(detail.phase==="CANCELLED"){drawingTool=null;updateDrawingButtons();if(drawingStatus)drawingStatus.textContent="Zeichenwerkzeug abgebrochen."}
     else if(detail.phase==="ERROR"){if(drawingStatus)drawingStatus.textContent="Anker ungültig · gültige Kerze und Preis wählen."}
@@ -411,13 +411,13 @@
     setDrawingTool(null);updateDrawingButtons();
     setStatus(message||"MT5-Kerzen derzeit nicht verfügbar");
   }
-  window.ChartStudioV5Preview=Object.freeze({setScope,beginRead,update,clear,renderAutoFib,clearAutoFib,beginPositionRead,setPositions,showPositions,readPositions,clearPositions,setBrokerDealMarkers,readBrokerDealMarkers,setDrawingTool,syncMovingAverages,syncOscillators,readMovingAverage:id=>engine?.movingAverageOptions?.("preview-ma-"+id)||null,readOscillator:id=>oscillatorBridge?.read(id)||null,exportLayout,importLayout,readDrawing:id=>engine?.readDrawing?.(id)||null,readAutoFibonacci:()=>engine?.readAutoFibonacci?.()||null,inspect:()=>({active,scope:currentScope(),generation,status:status?.textContent||"",autoFibonacci:!!engine?.readAutoFibonacci?.(),customMovingAverageCount:indicatorBridge?.inspect?.().count||0,customOscillatorCount:oscillatorBridge?.inspect?.().count||0,positionOverlayCount:readPositions().count,brokerDealMarkerCount:readBrokerDealMarkers().plotted,nativeDrawingCount:engine?.inspect?.().nativeDrawingCount||0,drawingTool,positionsEnabled,dataWindowPinned:!!dataWindowPinned,brokerDealMarkers:readBrokerDealMarkers()})});
+  window.ChartStudioV5Preview=Object.freeze({setScope,beginRead,update,clear,renderAutoFib,clearAutoFib,beginPositionRead,setPositions,showPositions,readPositions,clearPositions,setBrokerDealMarkers,readBrokerDealMarkers,setDrawingTool,syncMovingAverages,syncOscillators,readMovingAverage:id=>engine?.movingAverageOptions?.("preview-ma-"+id)||null,readOscillator:id=>oscillatorBridge?.read(id)||null,exportLayout,importLayout,readDrawing:id=>engine?.readDrawing?.(id)||null,drawingAnchorPosition:(id,anchor)=>engine?.drawingAnchorPosition?.(id,anchor)||null,readAutoFibonacci:()=>engine?.readAutoFibonacci?.()||null,inspect:()=>({active,scope:currentScope(),generation,status:status?.textContent||"",autoFibonacci:!!engine?.readAutoFibonacci?.(),customMovingAverageCount:indicatorBridge?.inspect?.().count||0,customOscillatorCount:oscillatorBridge?.inspect?.().count||0,positionOverlayCount:readPositions().count,brokerDealMarkerCount:readBrokerDealMarkers().plotted,nativeDrawingCount:engine?.inspect?.().nativeDrawingCount||0,persistenceStatus:engine?.inspect?.().persistenceStatus||null,persistenceError:engine?.inspect?.().persistenceError||null,drawingTool,positionsEnabled,dataWindowPinned:!!dataWindowPinned,brokerDealMarkers:readBrokerDealMarkers()})});
   function boot(){
     button=document.getElementById("chart-v5-preview-btn");panel=document.getElementById("chart-v5-preview-panel");
     host=document.getElementById("chart-v5-preview-host");status=document.getElementById("chart-v5-preview-status");dataWindow=document.getElementById("chart-v5-data-window");dataWindowPinButton=document.getElementById("chart-v5-data-window-pin");liveQuote=document.getElementById("chart-v5-live-quote");
     title=document.getElementById("chart-v5-preview-title");
     autoFibButton=document.getElementById("chart-v5-auto-fib-btn");autoFibStatus=document.getElementById("chart-v5-auto-fib-status");
-    trendButton=document.getElementById("chart-v5-trend-btn");rayButton=document.getElementById("chart-v5-ray-btn");priceButton=document.getElementById("chart-v5-price-btn");timeButton=document.getElementById("chart-v5-time-btn");rectButton=document.getElementById("chart-v5-rect-btn");fiboButton=document.getElementById("chart-v5-fibo-btn");measureButton=document.getElementById("chart-v5-measure-btn");channelButton=document.getElementById("chart-v5-channel-btn");textButton=document.getElementById("chart-v5-text-btn");textInput=document.getElementById("chart-v5-text-input");drawingStatus=document.getElementById("chart-v5-drawing-status");layoutButton=document.getElementById("chart-v5-layout-export-btn");
+    trendButton=document.getElementById("chart-v5-trend-btn");rayButton=document.getElementById("chart-v5-ray-btn");priceButton=document.getElementById("chart-v5-price-btn");timeButton=document.getElementById("chart-v5-time-btn");rectButton=document.getElementById("chart-v5-rect-btn");fiboButton=document.getElementById("chart-v5-fibo-btn");measureButton=document.getElementById("chart-v5-measure-btn");channelButton=document.getElementById("chart-v5-channel-btn");riskRewardButton=document.getElementById("chart-v5-risk-reward-btn");textButton=document.getElementById("chart-v5-text-btn");textInput=document.getElementById("chart-v5-text-input");drawingStatus=document.getElementById("chart-v5-drawing-status");layoutButton=document.getElementById("chart-v5-layout-export-btn");
     if(!button||!panel||!host||!status)return;
     window.addEventListener("chart-studio-averages-change",onAverageConfigsChanged);
     window.addEventListener("chart-studio-indicators-change",onOscillatorConfigsChanged);
@@ -434,6 +434,7 @@
     if(fiboButton)fiboButton.addEventListener("click",()=>setDrawingTool(drawingTool==="FIBO"?null:"FIBO"));
     if(measureButton)measureButton.addEventListener("click",()=>setDrawingTool(drawingTool==="MEASURE"?null:"MEASURE"));
     if(channelButton)channelButton.addEventListener("click",()=>setDrawingTool(drawingTool==="CHANNEL"?null:"CHANNEL"));
+    if(riskRewardButton)riskRewardButton.addEventListener("click",()=>setDrawingTool(drawingTool==="RISK_REWARD"?null:"RISK_REWARD"));
     if(textButton)textButton.addEventListener("click",()=>setDrawingTool(drawingTool==="TEXT"?null:"TEXT"));
     if(textInput)textInput.addEventListener("input",updateDrawingButtons);
     layoutImportButton=document.getElementById("chart-v5-layout-import-btn");layoutReplaceButton=document.getElementById("chart-v5-layout-replace-btn");layoutImportFile=document.getElementById("chart-v5-layout-import-file");
