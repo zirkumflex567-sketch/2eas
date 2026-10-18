@@ -15,7 +15,7 @@ const html=enabled=>`<!doctype html><html><head><meta charset="utf-8"><meta name
 <section id="chart-v5-preview-panel" hidden><strong id="chart-v5-preview-title">Native v5</strong><div id="chart-v5-preview-status" role="status"></div>
 <button type="button" id="chart-v5-auto-fib-btn" aria-pressed="false" disabled>Auto-Fibonacci einblenden</button><output id="chart-v5-auto-fib-status" aria-live="polite"></output><button type="button" id="chart-v5-layout-export-btn" disabled>Layout exportieren</button><button type="button" id="chart-v5-layout-import-btn" disabled>Layout zusammenführen</button><button type="button" id="chart-v5-layout-replace-btn" disabled>Layout ersetzen</button><input id="chart-v5-layout-import-file" type="file" accept="application/json,.json" hidden>
 <div id="chart-v5-drawing-tools" role="group" aria-label="Native v5 Zeichnungen"><button type="button" id="chart-v5-trend-btn" aria-pressed="false" disabled>Trendlinie</button><button type="button" id="chart-v5-ray-btn" aria-pressed="false" disabled>Strahl</button><button type="button" id="chart-v5-price-btn" aria-pressed="false" disabled>Preislinie</button><button type="button" id="chart-v5-time-btn" aria-pressed="false" disabled>Zeitlinie</button><button type="button" id="chart-v5-rect-btn" aria-pressed="false" disabled>Rechteck</button><button type="button" id="chart-v5-fibo-btn" aria-pressed="false" disabled>Fibonacci</button><button type="button" id="chart-v5-measure-btn" aria-pressed="false" disabled>Messung</button><button type="button" id="chart-v5-channel-btn" aria-pressed="false" disabled>Kanal</button><input id="chart-v5-text-input" aria-label="Textbeschriftung" maxlength="40" value="Fixture note"><button type="button" id="chart-v5-text-btn" aria-pressed="false" disabled>Text</button><output id="chart-v5-drawing-status" role="status" aria-live="polite">Zeichenwerkzeug aus.</output></div>
-<div id="chart-v5-preview-host"></div><output id="chart-v5-data-window" aria-label="Kerzendaten am Fadenkreuz">Fadenkreuz auf eine Kerze bewegen.</output><p>Read only. Powered by <a href="https://www.tradingview.com/">TradingView Lightweight Charts™</a></p></section><script>document.addEventListener("DOMContentLoaded",()=>{const host=document.querySelector("#chart-v5-preview-host");host.addEventListener("chartstudio-v5-drawing-state",e=>window.__v5LastDrawing=e.detail);host.addEventListener("chartstudio-v5-data-window",e=>{window.__v5DataWindow=e.detail;const data=e.detail;document.querySelector("#chart-v5-data-window").textContent=data?data.source+" "+data.timeUtc+" O "+data.ohlc.open+" H "+data.ohlc.high+" L "+data.ohlc.low+" C "+data.ohlc.close+" "+data.volume.source:"Kein exakter Kerzenanker"})});</script></body></html>`;
+<div id="chart-v5-preview-host"></div><output id="chart-v5-data-window" aria-label="Kerzendaten am Fadenkreuz">Fadenkreuz auf eine Kerze bewegen.</output><button type="button" id="chart-v5-data-window-pin" aria-pressed="false">Kerze fixieren</button><p>Read only. Powered by <a href="https://www.tradingview.com/">TradingView Lightweight Charts™</a></p></section><script>document.addEventListener("DOMContentLoaded",()=>{const host=document.querySelector("#chart-v5-preview-host");host.addEventListener("chartstudio-v5-drawing-state",e=>window.__v5LastDrawing=e.detail);host.addEventListener("chartstudio-v5-data-window",e=>window.__v5DataWindow=e.detail)});</script></body></html>`;
 
 const server=http.createServer((req,res)=>{
  const pathname=new URL(req.url,"http://localhost").pathname;
@@ -311,6 +311,25 @@ const server=http.createServer((req,res)=>{
   assert.equal(dataWindow.ohlc.open,candles.find(row=>row.time===dataWindow.time).open);
   assert.equal(dataWindow.volume.source,"TICK_VOLUME_PROXY");
   assert.match(await page.locator("#chart-v5-data-window").textContent(),/CHART_FEED .* O .* H .* L .* C .* TICK_VOLUME_PROXY/);
+  await page.locator("#chart-v5-data-window-pin").click();
+  assert.equal(await page.locator("#chart-v5-data-window-pin").getAttribute("aria-pressed"),"true");
+  await page.mouse.move(10,10);
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().dataWindowPinned),true);
+  assert.match(await page.locator("#chart-v5-data-window").textContent(),/FIXIERT/);
+  assert.match(await page.locator("#chart-v5-data-window").textContent(),new RegExp(dataWindow.timeUtc.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")));
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#chart-v5-data-window-pin").getAttribute("aria-pressed"),"false");
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().dataWindowPinned),false);
+  await page.locator("#chart-v5-data-window-pin").click();
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().dataWindowPinned),true);
+  const pinAfterAccountChange=await page.evaluate(()=>{
+   const preview=window.ChartStudioV5Preview;
+   preview.setScope({account:"titan",symbol:"XAUUSD",timeframe:"M15"});
+   const cleared=preview.inspect().dataWindowPinned;
+   preview.setScope({account:"xau5m_m5",symbol:"XAUUSD.p",timeframe:"M15"});
+   return cleared;
+  });
+  assert.equal(pinAfterAccountChange,false,"account/symbol scope changes clear the pinned candle readout");
   const missingAsOf=await page.evaluate(candles=>{const scope={account:"xau5m_m5",symbol:"XAUUSD.p",timeframe:"M15"},token=window.ChartStudioV5Preview.beginRead();return window.ChartStudioV5Preview.update({accountId:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,source:"MT5_VERIFIED",canExecute:false,candles},token)},candles);
   assert.deepEqual(missingAsOf,{applied:false,reason:"INVALID_AS_OF"},"missing snapshot time fails closed");
   await page.waitForFunction(()=>document.querySelector("#chart-v5-preview-title")?.textContent.includes("XAUUSD.p M15 · xau5m_m5"));

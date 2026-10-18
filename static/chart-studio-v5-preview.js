@@ -3,20 +3,34 @@
 (function(){
   "use strict";
   if(window.CHART_STUDIO_V5_PREVIEW_ENABLED!==true)return;
-  let button=null,panel=null,host=null,status=null,title=null,dataWindow=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,priceButton=null,timeButton=null,rectButton=null,fiboButton=null,measureButton=null,channelButton=null,textButton=null,textInput=null,drawingStatus=null,layoutButton=null,layoutImportButton=null,layoutReplaceButton=null,layoutImportFile=null;
+  let button=null,panel=null,host=null,status=null,title=null,dataWindow=null,dataWindowPinButton=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,priceButton=null,timeButton=null,rectButton=null,fiboButton=null,measureButton=null,channelButton=null,textButton=null,textInput=null,drawingStatus=null,layoutButton=null,layoutImportButton=null,layoutReplaceButton=null,layoutImportFile=null;
 
-  let scope=null,latest=null,engine=null,bridge=null,active=false,loading=null,autoFibEnabled=false;
+  let scope=null,latest=null,engine=null,bridge=null,active=false,loading=null,autoFibEnabled=false,dataWindowHover=null,dataWindowPinned=null,dataWindowCrosshairActive=false;
   let generation=0,sequence=0,latestSequence=0,positionSequence=0,positionsSnapshot=null,brokerDealMarkersSnapshot=null,positionsEnabled=true,drawingTool=null,pendingImportMode=null;
   const setStatus=value=>{if(status)status.textContent=value};
   function renderDataWindow(event){
     if(!dataWindow)return;
-    const value=event.detail;
+    if(event.detail===null)dataWindowCrosshairActive=false;
+    else{dataWindowHover=event.detail;dataWindowCrosshairActive=true}
+    const value=dataWindowPinned||(dataWindowCrosshairActive?dataWindowHover:null);
+    if(dataWindowPinButton){dataWindowPinButton.disabled=!dataWindowPinned&&dataWindowHover?.state!=="AVAILABLE";dataWindowPinButton.setAttribute("aria-pressed",dataWindowPinned?"true":"false");dataWindowPinButton.textContent=dataWindowPinned?"Fixierung lösen":"Kerze fixieren"}
     if(!value){dataWindow.textContent="Fadenkreuz auf eine Kerze bewegen.";return}
     if(value.state!=="AVAILABLE"||!value.ohlc){dataWindow.textContent=`Kerze nicht verfügbar · ${value.reason||value.state||"UNKNOWN"}`;return}
     const {open,high,low,close}=value.ohlc,volume=value.volume;
     const indicators=(value.indicators||[]).map(item=>`${item.title}: ${item.value===null?item.state:item.value}${item.direction?" "+item.direction:""}`);
-    dataWindow.textContent=[`${value.source} · ${value.timeUtc}`,`O ${open} · H ${high} · L ${low} · C ${close}`,
+    dataWindow.textContent=[`${dataWindowPinned?"FIXIERT · ":""}${value.source} · ${value.timeUtc}`,`O ${open} · H ${high} · L ${low} · C ${close}`,
       `Volumen ${volume?.value??"—"} · ${volume?.source||"UNAVAILABLE"}`,...indicators].join(" | ");
+  }
+  function toggleDataWindowPin(){
+    if(dataWindowPinned)dataWindowPinned=null;
+    else if(dataWindowHover?.state==="AVAILABLE")dataWindowPinned=dataWindowHover;
+    renderDataWindow({detail:null});
+  }
+  function refreshPinnedDataWindow(){
+    if(!dataWindowPinned)return;
+    try{const refreshed=engine?.readDataWindow?.(dataWindowPinned.time);dataWindowPinned=refreshed?.state==="AVAILABLE"?refreshed:null}
+    catch(_){dataWindowPinned=null}
+    renderDataWindow({detail:null});
   }
   const same=(a,b)=>!!a&&!!b&&a.account===b.account&&a.symbol===b.symbol&&a.timeframe===b.timeframe;
   function currentScope(){return scope?{...scope}:null}
@@ -41,6 +55,7 @@
   }
   function destroyRenderer(){
     if(host)host.removeEventListener("chartstudio-v5-drawing-state",drawingState);
+    dataWindowHover=null;dataWindowPinned=null;dataWindowCrosshairActive=false;
     renderDataWindow({detail:null});
     try{engine?.destroy()}catch(_){}
     engine=null;bridge=null;autoFibEnabled=false;drawingTool=null;if(autoFibButton){autoFibButton.setAttribute("aria-pressed","false");autoFibButton.textContent="Auto-Fibonacci einblenden";autoFibButton.disabled=!latest}if(autoFibStatus)autoFibStatus.textContent="";updateDrawingButtons();if(drawingStatus)drawingStatus.textContent="Zeichenwerkzeug aus.";if(host)host.replaceChildren();
@@ -281,7 +296,7 @@
       if(latest){const token=bridge.beginRead();const result=bridge.update(latest,token);
         if(autoFibButton)autoFibButton.disabled=!Number.isSafeInteger(latest.snapshotAsOfUtc);
         updateDrawingButtons();
-        if(result.applied){renderPositions();renderBrokerDealMarkers()}
+        if(result.applied){refreshPinnedDataWindow();renderPositions();renderBrokerDealMarkers()}
         setStatus(result.applied?`${result.candleCount} verifizierte Kerzen · read-only · Kerzenfrische ungeprüft`:"V5-Daten abgelehnt: "+result.reason)}
     }catch(error){destroyRenderer();setStatus("V5-Vorschau nicht verfügbar: "+String(error?.message||error).slice(0,160))}
   }
@@ -316,6 +331,7 @@
     if(!bridge)return {applied:false,reason:"ENGINE_UNAVAILABLE"};
     const result=bridge.update(latest,bridge.beginRead());
     if(!result.applied){clear("V5-Daten abgelehnt: "+result.reason);return result}
+    refreshPinnedDataWindow();
     renderPositions();renderBrokerDealMarkers();
     if(autoFibButton)autoFibButton.disabled=false;
     updateDrawingButtons();
@@ -324,20 +340,21 @@
     return result;
   }
   function clear(message){
-    latest=null;latestSequence=++sequence;brokerDealMarkersSnapshot=null;try{engine?.setBrokerDealMarkers({scope:{...scope},source:"MT5_VERIFIED",canExecute:false,markers:[]})}catch(_){}
+    latest=null;latestSequence=++sequence;brokerDealMarkersSnapshot=null;dataWindowHover=null;dataWindowPinned=null;dataWindowCrosshairActive=false;renderDataWindow({detail:null});try{engine?.setBrokerDealMarkers({scope:{...scope},source:"MT5_VERIFIED",canExecute:false,markers:[]})}catch(_){}
     clearAutoFib();clearPositions();try{bridge?.clear()}catch(_){}if(autoFibButton)autoFibButton.disabled=true;
     setDrawingTool(null);updateDrawingButtons();
     setStatus(message||"MT5-Kerzen derzeit nicht verfügbar");
   }
-  window.ChartStudioV5Preview=Object.freeze({setScope,beginRead,update,clear,renderAutoFib,clearAutoFib,beginPositionRead,setPositions,showPositions,readPositions,clearPositions,setBrokerDealMarkers,readBrokerDealMarkers,setDrawingTool,exportLayout,importLayout,readDrawing:id=>engine?.readDrawing?.(id)||null,readAutoFibonacci:()=>engine?.readAutoFibonacci?.()||null,inspect:()=>({active,scope:currentScope(),generation,status:status?.textContent||"",autoFibonacci:!!engine?.readAutoFibonacci?.(),positionOverlayCount:readPositions().count,brokerDealMarkerCount:readBrokerDealMarkers().plotted,nativeDrawingCount:engine?.inspect?.().nativeDrawingCount||0,drawingTool,positionsEnabled,brokerDealMarkers:readBrokerDealMarkers()})});
+  window.ChartStudioV5Preview=Object.freeze({setScope,beginRead,update,clear,renderAutoFib,clearAutoFib,beginPositionRead,setPositions,showPositions,readPositions,clearPositions,setBrokerDealMarkers,readBrokerDealMarkers,setDrawingTool,exportLayout,importLayout,readDrawing:id=>engine?.readDrawing?.(id)||null,readAutoFibonacci:()=>engine?.readAutoFibonacci?.()||null,inspect:()=>({active,scope:currentScope(),generation,status:status?.textContent||"",autoFibonacci:!!engine?.readAutoFibonacci?.(),positionOverlayCount:readPositions().count,brokerDealMarkerCount:readBrokerDealMarkers().plotted,nativeDrawingCount:engine?.inspect?.().nativeDrawingCount||0,drawingTool,positionsEnabled,dataWindowPinned:!!dataWindowPinned,brokerDealMarkers:readBrokerDealMarkers()})});
   function boot(){
     button=document.getElementById("chart-v5-preview-btn");panel=document.getElementById("chart-v5-preview-panel");
-    host=document.getElementById("chart-v5-preview-host");status=document.getElementById("chart-v5-preview-status");dataWindow=document.getElementById("chart-v5-data-window");
+    host=document.getElementById("chart-v5-preview-host");status=document.getElementById("chart-v5-preview-status");dataWindow=document.getElementById("chart-v5-data-window");dataWindowPinButton=document.getElementById("chart-v5-data-window-pin");
     title=document.getElementById("chart-v5-preview-title");
     autoFibButton=document.getElementById("chart-v5-auto-fib-btn");autoFibStatus=document.getElementById("chart-v5-auto-fib-status");
     trendButton=document.getElementById("chart-v5-trend-btn");rayButton=document.getElementById("chart-v5-ray-btn");priceButton=document.getElementById("chart-v5-price-btn");timeButton=document.getElementById("chart-v5-time-btn");rectButton=document.getElementById("chart-v5-rect-btn");fiboButton=document.getElementById("chart-v5-fibo-btn");measureButton=document.getElementById("chart-v5-measure-btn");channelButton=document.getElementById("chart-v5-channel-btn");textButton=document.getElementById("chart-v5-text-btn");textInput=document.getElementById("chart-v5-text-input");drawingStatus=document.getElementById("chart-v5-drawing-status");layoutButton=document.getElementById("chart-v5-layout-export-btn");
     if(!button||!panel||!host||!status)return;
     host.addEventListener("chartstudio-v5-data-window",renderDataWindow);
+    if(dataWindowPinButton){dataWindowPinButton.disabled=true;dataWindowPinButton.addEventListener("click",toggleDataWindowPin)}
     button.hidden=false;if(scope&&title)title.textContent=`Native v5 · ${scope.symbol} ${scope.timeframe} · ${scope.account}`;
     if(autoFibButton)autoFibButton.addEventListener("click",()=>{if(autoFibEnabled)clearAutoFib();else try{renderAutoFib()}catch(error){clearAutoFib();if(autoFibStatus)autoFibStatus.textContent="Auto-Fibonacci nicht verfügbar · "+String(error?.message||error).slice(0,120)}});
     if(trendButton)trendButton.addEventListener("click",()=>setDrawingTool(drawingTool==="TREND"?null:"TREND"));
@@ -355,7 +372,7 @@
     if(layoutImportButton)layoutImportButton.addEventListener("click",()=>chooseLayoutFile("merge"));
     if(layoutReplaceButton)layoutReplaceButton.addEventListener("click",()=>chooseLayoutFile("replace"));
     if(layoutImportFile)layoutImportFile.addEventListener("change",readLayoutFile);
-    document.addEventListener("keydown",event=>{if(event.key==="Escape"&&drawingTool){setDrawingTool(null);if(drawingStatus)drawingStatus.textContent="Zeichenwerkzeug abgebrochen."}});
+    document.addEventListener("keydown",event=>{if(event.key!=="Escape")return;if(dataWindowPinned){dataWindowPinned=null;renderDataWindow({detail:null});event.preventDefault();return}if(drawingTool){setDrawingTool(null);if(drawingStatus)drawingStatus.textContent="Zeichenwerkzeug abgebrochen."}});
     button.addEventListener("click",async()=>{
       if(active){active=false;panel.hidden=true;button.setAttribute("aria-expanded","false");button.textContent="V5 Vorschau";clearPositions();destroyRenderer();return}
       active=true;panel.hidden=false;button.setAttribute("aria-expanded","true");button.textContent="V5 schließen";
