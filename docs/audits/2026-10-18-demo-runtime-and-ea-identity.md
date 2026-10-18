@@ -32,3 +32,9 @@ The `xau5m_m5` PU Prime 250 demo log records two historical events on 15 October
 A GET-only status read for `goldm15` returns Decision Recorder `IDLE` / `NOT_RECORDED` and Lifecycle `NOT_CONFIGURED`. The private `CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS` allowlist still contains only the four other demo aliases. An attempt to add `goldm15` to the user's private environment file was rejected by automatic policy review, so that file remains unchanged. No workaround was used.
 
 The challenge-guard regression slice passes (**12 tests**), the installer/builder/recorder focused suite passes (**199 tests**), and both main CI workflows are green. Backtests remain deferred.
+
+## GoldM15 live-feed correction — `c0c0f24`
+
+The initial GoldM15 `/api/candles` request failed because MT5 rejected `copy_rates_from_pos(..., 5000)` with `(-2, "Terminal: Invalid params")`. Direct read-only calls to the connected GoldM15 demo verified that 4,999 bars succeed and 5,000 fail. Both GoldM15 history readers now request 4,999. Two regression tests reproduced the 5,000-bar rejection before the fix and pass after it; the focused backend/broker/multi-account suite passes (**291 tests**, four existing FastAPI deprecation warnings).
+
+After guarded restart, local Main and htown's SSH reverse-tunnel returned **1,001 `MT5_VERIFIED` XAUUSD M15 candles** for `goldm15`, with `canExecute=false`. Both runtime identity responses report startup/disk revision `c0c0f24937e6010181cbcc6626cb4e28e0fe7c28`, digest `7fe48ea9e3e9cf703cefd7ea79483d3df6fc462c1a81e4de826f5c2dfeefc468`, `applicationCodeDirty=false`, and `restart_required=false`. htown remains on clean `main`; nginx is active and `sudo -n nginx -t` passes. The GoldM15 status endpoint still returns 503 because its quote is more than 42 hours old; it reports `risk_status=unknown` and fails closed. This is not a fresh-quote or risk acceptance. No chart/EA attach, broker write, Blueberry access, or backtest occurred.
