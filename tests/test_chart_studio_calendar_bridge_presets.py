@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PRESET_DIR = ROOT / "presets" / "chart-studio-calendar-bridge"
-ALIASES = ("titan", "xau5m_m5", "titan_m5", "xau5m_500")
+ALIASES = ("titan", "xau5m_m5", "titan_m5", "xau5m_500", "goldm15")
 
 
 def test_calendar_bridge_has_one_exact_preset_for_each_authorized_demo():
@@ -30,9 +30,17 @@ def test_bridge_source_keeps_the_calendar_preset_allowlist_demo_only():
     for alias in ALIASES:
         assert f'account_alias=="{alias}"' in source
     assert 'account_alias=="blueberry"' not in source
+    assert 'expected_login=53090070' in source
+    assert 'expected_server="ICMarketsEU-Demo"' in source
     assert "OrderSend(" not in source
     assert ".Buy(" not in source
     assert ".Sell(" not in source
+
+
+def test_calendar_setup_ui_maps_goldm15_to_its_account_bound_preset():
+    source = (ROOT / "static" / "chart-studio-market-structure.js").read_text(encoding="utf-8")
+    assert 'goldm15:"goldm15.set"' in source
+    assert 'blueberry:"' not in source
 
 
 def test_bridge_json_escape_encodes_every_json_control_character():

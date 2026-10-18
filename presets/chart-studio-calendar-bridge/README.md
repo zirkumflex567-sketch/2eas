@@ -1,7 +1,7 @@
 # Chart Studio MT5 calendar bridge
 
 These presets bind the read-only `ChartStudioCalendarBridge` EA to one of the
-four authorized demo aliases. In MT5, open a separate XAUUSD M15 chart (use the
+five authorized demo aliases. In MT5, open a separate XAUUSD M15 chart (use the
 broker's exact XAUUSD symbol), attach `ChartStudioCalendarBridge`, then use the
 matching `.set` file on the EA's **Inputs** tab. Do not attach it to a chart
 that already runs a trading EA; the bridge refreshes every 60 seconds and only
@@ -13,6 +13,7 @@ writes `MQL5/Files/chart_studio_calendar.json`.
 | `xau5m_m5` | `xau5m_m5.set` |
 | `titan_m5` | `titan_m5.set` |
 | `xau5m_500` | `xau5m_500.set` |
+| `goldm15` | `goldm15.set` |
 
 The EA verifies its configured alias against the broker login and server and
 refuses to write on a mismatch. Blueberry is intentionally absent. Do not

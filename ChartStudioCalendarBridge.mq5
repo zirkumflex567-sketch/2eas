@@ -70,6 +70,8 @@ bool ResolveIdentity()
      { expected_login=700184986; expected_server="PUPrime-Demo"; }
    else if(account_alias=="xau5m_500")
      { expected_login=700194822; expected_server="PUPrime-Demo"; }
+   else if(account_alias=="goldm15")
+     { expected_login=53090070; expected_server="ICMarketsEU-Demo"; }
    else return false;
    return ((long)AccountInfoInteger(ACCOUNT_LOGIN)==expected_login &&
            AccountInfoString(ACCOUNT_SERVER)==expected_server);

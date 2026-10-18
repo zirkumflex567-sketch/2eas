@@ -4,7 +4,7 @@ const assert=require("node:assert/strict");
 const {chromium}=require("playwright");
 
 const base=process.env.CHART_STUDIO_BASE_URL||"http://127.0.0.1:8056";
-const aliases=["titan","xau5m_m5","titan_m5","xau5m_500"];
+const aliases=["titan","xau5m_m5","titan_m5","xau5m_500","goldm15"];
 const presets=Object.fromEntries(aliases.map(alias=>[alias,alias+".set"]));
 
 (async()=>{
@@ -18,7 +18,7 @@ const presets=Object.fromEntries(aliases.map(alias=>[alias,alias+".set"]));
    if(!url.pathname.startsWith("/api/"))return;
    assert.equal(request.method(),"GET","live calendar setup smoke must stay read-only");
    const account=url.searchParams.get("account");
-   if(account!==null)assert.ok(aliases.includes(account),"request escaped the four authorized demo aliases: "+account);
+   if(account!==null)assert.ok(aliases.includes(account),"request escaped the five authorized demo aliases: "+account);
    apiRequests.push({path:url.pathname,account,symbol:url.searchParams.get("symbol")});
   });
   await page.goto(base+"/?account=titan",{waitUntil:"domcontentloaded"});

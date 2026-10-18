@@ -212,7 +212,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await page.evaluate(()=>ChartStudioBeta.account("goldm15","XAUUSD"));
   await page.waitForFunction(()=>ChartStudioBeta.getState().marketStructure?.scope.account==="goldm15");
   await page.waitForFunction(()=>document.querySelector('[data-testid="economic-calendar"]')?.textContent.includes("Event-/News-Risk bleibt UNKNOWN"));
-  assert.doesNotMatch(await page.locator('[data-testid="economic-calendar"]').textContent(),/Bridge|xau5m_m5\.set/,"Setup instructions stay within the explicitly supported demo aliases");
+  assert.match(await page.locator('[data-testid="economic-calendar"]').textContent(),/presets\/chart-studio-calendar-bridge\/goldm15\.set/,"GoldM15 setup instructions use its account-bound bridge preset");
   await page.evaluate(()=>ChartStudioBeta.account("titan","XAUUSD"));
   await page.locator('[aria-label="Sweep ConfirmTF"]').selectOption("3600");
   await page.waitForFunction(()=>document.querySelector('[data-testid="market-structure"] > div > p[role="status"]')?.textContent.includes("keine geschlossenen ConfirmTF-Kerzen"));

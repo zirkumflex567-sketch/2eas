@@ -2,7 +2,7 @@
 "use strict";
 const MAX_BARS=100000,MAX_SESSIONS=20,MAX_RESULTS=3000,PROXY="STRUCTURE_LIQUIDITY_HYPOTHESIS";
 const CONFIRM_TIMEFRAMES=new Set([60,300,900,1800,3600,14400,86400]);
-const CALENDAR_BRIDGE_PRESETS=Object.freeze({titan:"titan.set",xau5m_m5:"xau5m_m5.set",titan_m5:"titan_m5.set",xau5m_500:"xau5m_500.set"});
+const CALENDAR_BRIDGE_PRESETS=Object.freeze({titan:"titan.set",xau5m_m5:"xau5m_m5.set",titan_m5:"titan_m5.set",xau5m_500:"xau5m_500.set",goldm15:"goldm15.set"});
 const PRESETS=Object.freeze([
  {id:"asia",label:"Asia · Tokio",timeZone:"Asia/Tokyo",start:"09:00",end:"18:00"},
  {id:"frankfurt",label:"Frankfurt",timeZone:"Europe/Berlin",start:"08:00",end:"17:00"},
