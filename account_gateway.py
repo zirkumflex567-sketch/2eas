@@ -54,7 +54,7 @@ ACCOUNTS = {
                     portable=True, version='v1.21 GUARDED', capacity=3, broker_utc_offset_seconds=10800,
                     symbol='XAUUSD', timeframe='M15', initial_balance=10000.0, leverage='1:10',
                     account_type='DEMO', is_demo=True, badge='DEMO 10k',
-                    challenge_protection=False, hidden=True),
+                    challenge_protection=False),
 }
 ACCOUNTS['titan_500_2'] = ACCOUNTS['xau5m_500']  # Compatibility alias
 ACCOUNTS['xau5m_m15'] = ACCOUNTS['xau5m_m5']  # Compatibility alias

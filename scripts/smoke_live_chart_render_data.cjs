@@ -75,27 +75,33 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
     for (let index = 0; index < accounts.length; index += 1) {
       const account = accounts[index];
       let candleResponse;
+      const waitForCandleResponse = id => page.waitForResponse(response => {
+        const url = new URL(response.url());
+        return url.pathname === "/api/candles"
+          && url.searchParams.get("account") === id
+          && url.searchParams.get("count") === "1001";
+      }, {timeout:15000}).then(response => ({response}), error => ({error}));
       if (index === 0) {
-        candleResponse = page.waitForResponse(response => {
-          const url = new URL(response.url());
-          return url.pathname === "/api/candles"
-            && url.searchParams.get("account") === account
-            && url.searchParams.get("count") === "1001";
-        });
+        candleResponse = waitForCandleResponse(account);
         await page.goto(`${base}/?account=${account}`, { waitUntil: "domcontentloaded" });
       } else {
         await page.evaluate(id => { window.__chartExpectedAccount = id; }, account);
-        candleResponse = page.waitForResponse(response => {
-          const url = new URL(response.url());
-          return url.pathname === "/api/candles"
-            && url.searchParams.get("account") === account
-            && url.searchParams.get("count") === "1001";
-        });
+        candleResponse = waitForCandleResponse(account);
         await page.locator(`#account-switcher [data-account="${account}"]`).click();
         await page.locator(`#account-switcher [data-account="${account}"][aria-pressed="true"]`).waitFor();
       }
 
-      const response = await candleResponse;
+      const responseResult = await candleResponse;
+      if (responseResult.error) {
+        const state = await page.evaluate(() => ({
+          activeAccount: typeof activeAccount === "string" ? activeAccount : null,
+          selectedTabs: [...document.querySelectorAll("#account-switcher [aria-pressed='true']")].map(tab => tab.dataset.account),
+          connection: document.querySelector("#account-connection")?.textContent?.trim() || null,
+        }));
+        console.error(JSON.stringify({ waitingFor: account, state, accountRequests: requests.slice(-20), blockedApiRequests }, null, 2));
+        throw responseResult.error;
+      }
+      const response = responseResult.response;
       assert.ok(response.ok(), `${account} candle request returned ${response.status()}`);
       const api = await response.json();
       levelSnapshots.set(account, [...(levelSnapshots.get(account) || []), api]);
