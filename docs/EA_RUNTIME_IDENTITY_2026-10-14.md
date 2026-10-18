@@ -223,3 +223,13 @@ Lokaler Main-Chart-Smoke und `/stt`-Tunnelstatus sind in `OPEN_TASKS.md` für de
 | `xau5m_500` | `.mt5-puprime-700194822` | PUPrime-Demo · `XAUUSD.p/M15` | Goldsymbol/M15. |
 
 Das belegt nur den jeweils aktiven Fenstertitel im Terminal, nicht weitere Charttabs, EA-Anhang, in-memory-EX5-Hash, geladenes Preset oder Attach-Zeitpunkt. Die drei nicht-Marketplace-Demo-Charts bleiben ohne vollständige Chart-/EA-/Presetidentität für Producer-Instrumentierung; Marketplace bleibt closed-source. Blueberry wurde weder abgefragt noch in diese Prozessauswertung aufgenommen. Keine Chart-, EA-, Preset- oder Brokeränderung, keine Order und kein Backtest.
+
+## Verifizierte Demo-Terminalzuordnung und aktuelle Read-only-Quote (2026-10-18)
+
+Nach der erneuten Nutzerfreigabe aller Nicht-Blueberry-Demos wurden ausschließlich `titan`, `xau5m_m5`, `titan_m5`, `xau5m_500` sowie das separate Demo `goldm15` über die vorhandene Gateway-Zuordnung lesend verbunden. Für alle fünf stimmten Brokerlogin/-server mit der Alias-Konfiguration und der erwartete Terminalpfad; die Konto-ID wurde nicht ausgegeben. Die vier bekannten Demos zeigen XAUUSD/XAUUSD.p und M15 in der Dashboard-Konfiguration; `goldm15` ist ein separates XAUUSD/M15-Demo.
+
+Die letzte MT5-Tickzeit aller vier Dashboard-Demos war `2026-10-16T23:56:59Z` (beim Check rund 25,8 Stunden alt), also `STALE`; es gab keine frische Quote für einen EA-Reload oder eine Handelsabnahme. Der positionslesende Abruf fand 0 Goldpositionen auf `titan`, `xau5m_m5` und `xau5m_500`, sowie 2 auf `titan_m5`. Daher blieb der laufende Titan-Chart mit Positionen unangetastet.
+
+Auf Dateiebene sind die neuesten verfügbaren Expert-Logs `20261015.log` für `titan` und `xau5m_500`, `20261016.log` für `xau5m_m5` und `titan_m5`, sowie `20261017.log` für `goldm15`. Die letzten passenden Initialisierungszeilen zeigen Titan auf dem ICMarkets-Demo, den Recorder `titan_puprime250` auf `xau5m_m5`, den Recorder `titan_puprime500` auf `titan_m5`, Titan-Aktivität auf dem zweiten PU-Prime-$500-Demo und `GoldM15_Reconstruction` als Kandidat auf `goldm15`. Das sind historische Logbelege; sie beweisen weder die aktuell sichtbare Chartbindung noch die aktuell im Speicher geladene EX5-/Preset-Identität. Für die beiden Marketplace-EAs bleibt die `.mq5`-Quelle nicht verfügbar.
+
+Kein UI-/Computer-Use, keine Blueberry-Anfrage, kein Chart-/EA-/Presetwechsel, keine Order und kein Backtest. Die Entscheidung zu Live-Recorder-Events bleibt bis zu einer frischen Quote und einer sicheren Chart-Neuinitialisierung offen.
