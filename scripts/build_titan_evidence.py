@@ -530,6 +530,70 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
         if source_text.count(call) != 1:
             raise ValueError(f"expected unique {method} order call")
         source_text = source_text.replace(call, replacement, 1)
+
+    close_reasons = (
+        "DAILY_DRAWDOWN", "TOTAL_DRAWDOWN", "PROFIT_TARGET",
+        "WEEKEND_FRIDAY", "WEEKEND", "DYNAMIC_RUNNER",
+    )
+    close_call = "CloseAllPositionsForMagic();"
+    if source_text.count(close_call) != len(close_reasons):
+        raise ValueError("expected six unique Titan risk and basket close call sites")
+    for reason in close_reasons:
+        source_text = source_text.replace(close_call, f'CloseAllPositionsForMagic("{reason}");', 1)
+
+    close_function = "void CloseAllPositionsForMagic()"
+    if source_text.count(close_function) != 1:
+        raise ValueError("expected unique Titan risk-close helper")
+    source_text = source_text.replace(
+        close_function,
+        "void CloseAllPositionsForMagic(const string cs_reason)",
+        1,
+    )
+    close_anchor = "            m_trade.PositionClose(m_position.Ticket());"
+    close_capture = '''#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+            ulong ticket=m_position.Ticket();
+            ENUM_POSITION_TYPE cs_position_type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+            double cs_close_volume=PositionGetDouble(POSITION_VOLUME);
+            string cs_close_side=cs_position_type==POSITION_TYPE_BUY ? "SELL" : "BUY";
+            MqlTick cs_close_tick={};
+            bool cs_close_quote_ok=SymbolInfoTick(_Symbol,cs_close_tick) && cs_close_tick.time_msc>0 &&
+                                   cs_close_tick.bid>0.0 && cs_close_tick.ask>=cs_close_tick.bid;
+            double cs_close_bid=cs_close_tick.bid,cs_close_ask=cs_close_tick.ask;
+            double cs_close_price=cs_position_type==POSITION_TYPE_BUY ? cs_close_bid : cs_close_ask;
+            string cs_close_quote_time=CSUtcFromBrokerMillis(cs_close_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS);
+            double cs_close_tick_size=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+            double cs_close_tick_value=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
+            string cs_close_currency=SymbolInfoString(_Symbol,SYMBOL_CURRENCY_PROFIT);
+            datetime cs_close_request_utc=TimeGMT();
+            string cs_close_request_time=CSUtc(cs_close_request_utc);
+            bool cs_close_sent=m_trade.PositionClose(ticket);
+            uint cs_close_retcode=m_trade.ResultRetcode();
+            datetime cs_close_ack_utc=TimeGMT();
+            ulong cs_order_ticket=cs_close_sent ? m_trade.ResultOrder() : 0;
+            string cs_attempt_id=CS_EVIDENCE_PRODUCER_ID+"_risk_"+
+                                 IntegerToString((long)GetTickCount64())+"_"+
+                                 IntegerToString((long)(CSEventCounter+1));
+            string cs_close_outcome=cs_close_sent ? "PASS" : "BLOCK";
+            string cs_close_predicate=CSPredicate("risk_guard_close",cs_close_sent ? "1" : "0","EQ","1",
+                                                   cs_close_outcome,cs_reason);
+            datetime cs_close_bar_time=iTime(_Symbol,PERIOD_M15,1);
+            string cs_attempt="";
+            if(cs_close_quote_ok && cs_close_tick_size>0.0 && cs_close_volume>0.0 && cs_close_price>0.0)
+               cs_attempt=CSOrderAttemptJson(cs_attempt_id,cs_close_side,cs_close_price,cs_close_volume,
+                  cs_close_bid,cs_close_ask,cs_close_tick_size,cs_close_tick_value,cs_close_currency,
+                  cs_close_quote_time,cs_close_request_time,CSUtc(cs_close_ack_utc),cs_close_retcode,
+                  cs_order_ticket,cs_close_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS);
+            if(cs_close_bar_time>0)
+               CSEnqueueDecision("ORDER_ATTEMPT",cs_close_outcome,cs_close_bar_time,"",cs_close_predicate,
+                  cs_attempt,cs_attempt_id,cs_order_ticket,cs_close_request_time);
+            if(cs_order_ticket>0 && cs_close_bar_time>0)
+               CSRegisterOrderAttempt(cs_order_ticket,cs_attempt_id,cs_close_bar_time);
+#else
+            m_trade.PositionClose(m_position.Ticket());
+#endif'''
+    if source_text.count(close_anchor) != 1:
+        raise ValueError("expected unique Titan position close in risk helper")
+    source_text = source_text.replace(close_anchor, close_capture, 1)
     return source_text
 
 

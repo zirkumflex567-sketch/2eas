@@ -101,6 +101,31 @@ def test_titan_candidate_observes_owned_position_stop_changes_without_trade_side
     assert not re.search(r"\b(m_trade\.(?:Buy|Sell|PositionModify|PositionClose)|OrderSend|FileOpen|FileWrite|FileFlush)\s*\(", handler)
 
 
+def test_titan_candidate_records_each_risk_close_attempt_without_changing_guard_flow():
+    source = (ROOT / BUILD.SOURCE_NAME).read_text(encoding="utf-8-sig")
+    generated = BUILD._instrument_source(
+        source, "titan_m5", "titan_test", "a" * 64, "b" * 64, "c" * 64,
+        700184986, "PUPrime-Demo", r"C:\\demo\\terminal64.exe", 10800,
+    )
+
+    for reason in (
+        "DAILY_DRAWDOWN", "TOTAL_DRAWDOWN", "PROFIT_TARGET",
+        "WEEKEND_FRIDAY", "WEEKEND", "DYNAMIC_RUNNER",
+    ):
+        assert f'CloseAllPositionsForMagic("{reason}")' in generated
+    assert generated.count("CloseAllPositionsForMagic(\"DYNAMIC_RUNNER\")") == 1
+    assert "void CloseAllPositionsForMagic(const string cs_reason)" in generated
+    assert "CSOrderAttemptJson(cs_attempt_id,cs_close_side" in generated
+    assert 'CSEnqueueDecision("ORDER_ATTEMPT",cs_close_outcome' in generated
+    assert 'CSRegisterOrderAttempt(cs_order_ticket,cs_attempt_id,cs_close_bar_time)' in generated
+    assert generated.count("m_trade.PositionClose(m_position.Ticket());") == 1
+    assert "#else\n            m_trade.PositionClose(m_position.Ticket());\n#endif" in generated
+    assert "bool cs_close_sent=m_trade.PositionClose(ticket);" in generated
+    assert 'cs_close_sent ? "PASS" : "BLOCK"' in generated
+    assert 'CSPredicate("risk_guard_close",cs_close_sent ? "1" : "0"' in generated
+    assert "TRADE_ACTION" not in generated
+
+
 @pytest.mark.parametrize("alias", ["xau5m_m5", "titan_m5"])
 def test_prepare_creates_identity_bound_capture_variant_only_under_output(tmp_path, alias):
     target = ROOT / "output" / "test-evidence-build" / alias
@@ -137,9 +162,9 @@ def test_prepare_creates_identity_bound_capture_variant_only_under_output(tmp_pa
         assert source.count("m_trade.Buy(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment)") == 1
         assert source.count("m_trade.Sell(lot_size, _Symbol, entry_price, sl_price, tp_price, InpTradeComment)") == 1
         assert 'CSEnqueueDecision("SIGNAL"' in source
-        assert source.count("CSOrderAttemptJson(cs_attempt_id") == 2
+        assert source.count("CSOrderAttemptJson(cs_attempt_id") == 3
         assert source.count("bool cs_order_sent=m_trade.") == 2
-        assert source.count('CSEnqueueDecision("ORDER_ATTEMPT"') == 4
+        assert source.count('CSEnqueueDecision("ORDER_ATTEMPT"') == 5
         assert source.count("if(cs_order_sent)") == 2
         for observed_field in (
             "SymbolInfoTick(_Symbol,cs_tick)",
