@@ -179,6 +179,8 @@ def _instrument_source(source_text: str, account_alias: str, producer: str,
       CSRecorderReady=false;
       CSRecorderDisabled=true;
      }
+   if(CSRecorderReady)
+      CSSeedOpenPositionSnapshots();
 #endif
 
 '''
@@ -196,10 +198,154 @@ void OnTimer()
    CSFlushEvidenceQueue();
   }
 
+#define CS_ORDER_CORRELATION_CAPACITY 64
+ulong CSOrderTickets[CS_ORDER_CORRELATION_CAPACITY];
+string CSOrderAttemptIds[CS_ORDER_CORRELATION_CAPACITY];
+datetime CSOrderSignalBars[CS_ORDER_CORRELATION_CAPACITY];
+int CSOrderCorrelationNext=0;
+
+void CSRegisterOrderAttempt(const ulong order_ticket,const string attempt_id,const datetime signal_bar)
+  {
+   if(order_ticket==0 || attempt_id=="" || signal_bar<=0)
+      return;
+   int slot=CSOrderCorrelationNext%CS_ORDER_CORRELATION_CAPACITY;
+   CSOrderTickets[slot]=order_ticket;
+   CSOrderAttemptIds[slot]=attempt_id;
+   CSOrderSignalBars[slot]=signal_bar;
+   CSOrderCorrelationNext++;
+  }
+
+bool CSFindOrderAttempt(const ulong order_ticket,string &attempt_id,datetime &signal_bar)
+  {
+   if(order_ticket==0)
+      return false;
+   for(int i=0;i<CS_ORDER_CORRELATION_CAPACITY;i++)
+      if(CSOrderTickets[i]==order_ticket && CSOrderAttemptIds[i]!="")
+        {
+         attempt_id=CSOrderAttemptIds[i];
+         signal_bar=CSOrderSignalBars[i];
+         return signal_bar>0;
+        }
+   return false;
+  }
+
+#define CS_POSITION_CORRELATION_CAPACITY 64
+ulong CSPositionTickets[CS_POSITION_CORRELATION_CAPACITY];
+string CSPositionAttemptIds[CS_POSITION_CORRELATION_CAPACITY];
+datetime CSPositionSignalBars[CS_POSITION_CORRELATION_CAPACITY];
+double CSPositionStopLoss[CS_POSITION_CORRELATION_CAPACITY];
+double CSPositionTakeProfit[CS_POSITION_CORRELATION_CAPACITY];
+double CSPositionVolumes[CS_POSITION_CORRELATION_CAPACITY];
+int CSPositionCorrelationNext=0;
+
+void CSRegisterPosition(const ulong position_ticket,const string attempt_id,const datetime signal_bar,
+                        const double stop_loss,const double take_profit,const double volume)
+  {
+   if(position_ticket==0 || signal_bar<=0)
+      return;
+   int slot=-1;
+   for(int i=0;i<CS_POSITION_CORRELATION_CAPACITY;i++)
+      if(CSPositionTickets[i]==position_ticket)
+        {
+         slot=i;
+         break;
+        }
+   if(slot<0)
+     {
+      slot=CSPositionCorrelationNext%CS_POSITION_CORRELATION_CAPACITY;
+      CSPositionCorrelationNext++;
+     }
+   CSPositionTickets[slot]=position_ticket;
+   CSPositionAttemptIds[slot]=attempt_id;
+   CSPositionSignalBars[slot]=signal_bar;
+   CSPositionStopLoss[slot]=stop_loss;
+   CSPositionTakeProfit[slot]=take_profit;
+   CSPositionVolumes[slot]=volume;
+  }
+
+bool CSFindPosition(const ulong position_ticket,string &attempt_id,datetime &signal_bar,
+                    double &stop_loss,double &take_profit,double &volume)
+  {
+   if(position_ticket==0)
+      return false;
+   for(int i=0;i<CS_POSITION_CORRELATION_CAPACITY;i++)
+      if(CSPositionTickets[i]==position_ticket)
+        {
+         attempt_id=CSPositionAttemptIds[i];
+         signal_bar=CSPositionSignalBars[i];
+         stop_loss=CSPositionStopLoss[i];
+         take_profit=CSPositionTakeProfit[i];
+         volume=CSPositionVolumes[i];
+         return signal_bar>0;
+        }
+   return false;
+  }
+
+void CSSeedOpenPositionSnapshots()
+  {
+   datetime signal_bar=iTime(_Symbol,PERIOD_M15,1);
+   if(signal_bar<=0)
+      return;
+   for(int i=PositionsTotal()-1;i>=0;i--)
+      if(m_position.SelectByIndex(i) && m_position.Symbol()==_Symbol && m_position.Magic()==InpMagicNumber)
+         CSRegisterPosition(m_position.Ticket(),"",signal_bar,m_position.StopLoss(),
+                            m_position.TakeProfit(),m_position.Volume());
+  }
+
 void OnTradeTransaction(const MqlTradeTransaction &trans,
                         const MqlTradeRequest &request,
                         const MqlTradeResult &result)
   {
+   if(!CSRecorderReady || CSRecorderDisabled || trans.symbol!=_Symbol)
+      return;
+   if(trans.type==TRADE_TRANSACTION_DEAL_ADD)
+     {
+      if(trans.order==0 || trans.deal==0 || trans.position==0 || trans.volume<=0.0 || trans.price<=0.0)
+         return;
+      string cs_attempt_id="";
+      datetime cs_signal_bar=0;
+      if(!CSFindOrderAttempt(trans.order,cs_attempt_id,cs_signal_bar))
+         return;
+      datetime cs_observed_utc=TimeGMT();
+      string cs_event_time=CSUtc(cs_observed_utc);
+      string cs_features=CSFeature("deal_volume",CSNumber(trans.volume,8),"lots","M15")+","+
+         CSFeature("deal_price",CSNumber(trans.price,m_symbol.Digits()),"price","M15")+","+
+         CSFeature("deal_type_code",IntegerToString((int)trans.deal_type),"enum","M15")+","+
+         CSFeature("transaction_type_code",IntegerToString((int)trans.type),"enum","M15")+","+
+         CSFeature("deal_stop_loss",CSNumber(trans.price_sl,m_symbol.Digits()),"price","M15")+","+
+         CSFeature("deal_take_profit",CSNumber(trans.price_tp,m_symbol.Digits()),"price","M15");
+      string cs_predicates=CSPredicate("broker_deal_observed","1","EQ","1","PASS","TRADE_TRANSACTION_DEAL_ADD");
+      CSEnqueueDecision("BROKER_RESULT","PASS",cs_signal_bar,cs_features,cs_predicates,"",
+                        cs_attempt_id,trans.order,cs_event_time,trans.deal,trans.position);
+      CSRegisterPosition(trans.position,cs_attempt_id,cs_signal_bar,trans.price_sl,trans.price_tp,trans.volume);
+      return;
+     }
+   if(trans.type!=TRADE_TRANSACTION_POSITION || trans.position==0)
+      return;
+   string cs_attempt_id="";
+   datetime cs_signal_bar=0;
+   double cs_sl_before=0.0,cs_tp_before=0.0,cs_volume_before=0.0;
+   if(!CSFindPosition(trans.position,cs_attempt_id,cs_signal_bar,cs_sl_before,cs_tp_before,cs_volume_before))
+      return;
+   double cs_volume_after=trans.volume>0.0 ? trans.volume : cs_volume_before;
+   bool cs_sl_changed=trans.price_sl!=cs_sl_before;
+   bool cs_tp_changed=trans.price_tp!=cs_tp_before;
+   bool cs_volume_changed=cs_volume_after!=cs_volume_before;
+   if(!cs_sl_changed && !cs_tp_changed && !cs_volume_changed)
+      return;
+   string cs_features=CSFeature("sl_before",CSNumber(cs_sl_before,m_symbol.Digits()),"price","M15")+","+
+      CSFeature("sl_after",CSNumber(trans.price_sl,m_symbol.Digits()),"price","M15")+","+
+      CSFeature("tp_before",CSNumber(cs_tp_before,m_symbol.Digits()),"price","M15")+","+
+      CSFeature("tp_after",CSNumber(trans.price_tp,m_symbol.Digits()),"price","M15")+","+
+      CSFeature("volume_before",CSNumber(cs_volume_before,8),"lots","M15")+","+
+      CSFeature("volume_after",CSNumber(cs_volume_after,8),"lots","M15");
+   string cs_reason=cs_sl_changed && cs_tp_changed ? "SL_AND_TP_CHANGED" :
+      (cs_sl_changed ? "SL_CHANGED" : (cs_tp_changed ? "TP_CHANGED" : "POSITION_VOLUME_CHANGED"));
+   string cs_predicates=CSPredicate("position_state_changed","1","EQ","1","PASS",cs_reason);
+   datetime cs_observed_utc=TimeGMT();
+   CSEnqueueDecision("BROKER_RESULT","PASS",cs_signal_bar,cs_features,cs_predicates,"",
+                     cs_attempt_id,0,CSUtc(cs_observed_utc),0,trans.position);
+   CSRegisterPosition(trans.position,cs_attempt_id,cs_signal_bar,trans.price_sl,trans.price_tp,cs_volume_after);
   }
 
 '''
@@ -377,6 +523,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
             else
                CSEnqueueDecision("ORDER_ATTEMPT",cs_attempt_outcome,rates[0].time,
                   features,cs_attempt_predicate,"",cs_attempt_id,cs_order_ticket,cs_request_time);
+            if(cs_order_ticket>0)
+               CSRegisterOrderAttempt(cs_order_ticket,cs_attempt_id,rates[0].time);
 #endif
             if(cs_order_sent)'''
         if source_text.count(call) != 1:

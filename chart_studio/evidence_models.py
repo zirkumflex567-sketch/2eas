@@ -324,6 +324,7 @@ def decision_event(value, *, context):
         featureVector=_list(feature,128,'id'), predicates=_list(predicate,128,'ruleId'), stage=choice(*'CANDIDATE SIGNAL ENTRY_FILTER RISK_GUARD ORDER_ATTEMPT BROKER_RESULT'.split()),
         outcome=choice(*OUTCOMES), dataProvenance=choice('recorded','reconstructed'), dataRevision=integer, capturedAtUtc=utc_timestamp, correlationId=identifier),
         dict(subsystemId=identifier,strategyId=identifier,sourceQuoteTimeUtc=utc_timestamp,guardSnapshot=_guard,orderAttemptId=identifier,brokerTicket=ticket,
+             brokerDealTicket=ticket,brokerPositionTicket=ticket,
              orderAttempt=lambda v: _execution_attempt(v, symbol=value.get('symbol'))))
     if result['terminalIdentityHash'] != context.terminal_identity_hash:
         _fail()

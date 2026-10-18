@@ -146,7 +146,8 @@ void CSEnqueueEnvelope(const string envelope)
 void CSEnqueueDecision(const string stage,const string outcome,const datetime bar_open_server,
                       const string feature_vector,const string predicates,
                       const string order_attempt_json="",const string order_attempt_id="",
-                      const ulong broker_ticket=0,const string request_time_utc="")
+                      const ulong broker_ticket=0,const string request_time_utc="",
+                      const ulong broker_deal_ticket=0,const ulong broker_position_ticket=0)
   {
 #ifdef CS_EVIDENCE_CAPTURE_ENABLED
    if(!CSRecorderReady || CSRecorderDisabled)
@@ -175,6 +176,8 @@ void CSEnqueueDecision(const string stage,const string outcome,const datetime ba
       "],\"stage\":"+CSJsonQuote(stage)+",\"outcome\":"+CSJsonQuote(outcome)+
       (order_attempt_id!="" ? ",\"orderAttemptId\":"+CSJsonQuote(order_attempt_id) : "")+
       (broker_ticket>0 ? ",\"brokerTicket\":"+CSJsonQuote(IntegerToString((long)broker_ticket)) : "")+
+      (broker_deal_ticket>0 ? ",\"brokerDealTicket\":"+CSJsonQuote(IntegerToString((long)broker_deal_ticket)) : "")+
+      (broker_position_ticket>0 ? ",\"brokerPositionTicket\":"+CSJsonQuote(IntegerToString((long)broker_position_ticket)) : "")+
       (order_attempt_json!="" ? ",\"orderAttempt\":"+order_attempt_json : "")+
       ",\"dataProvenance\":\"recorded\",\"dataRevision\":1,\"capturedAtUtc\":"+
       CSJsonQuote(CSUtc(now_utc))+",\"correlationId\":"+CSJsonQuote(correlation)+"}";

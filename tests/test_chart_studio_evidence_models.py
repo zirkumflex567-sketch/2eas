@@ -94,6 +94,14 @@ def test_execution_attempt_reference_is_strict_and_quote_precedes_request():
     for field,value in [('source','RECONSTRUCTED'),('canExecute',True),('ask','99'),('quoteTimeUtc','2026-01-02T03:04:06Z'),('symbol','EURUSD')]:
         bad=execution_decision();bad['orderAttempt']['quoteSnapshot'][field]=value;reject(envelope(bad))
 
+def test_broker_result_can_bind_large_deal_and_position_tickets():
+    payload=decision()
+    payload.update(stage='BROKER_RESULT',brokerTicket='9223372036854775807',
+        brokerDealTicket='19223372036854775807',brokerPositionTicket='89223372036854775807')
+    validate(envelope(payload))
+    for field in ('brokerTicket','brokerDealTicket','brokerPositionTicket'):
+        bad=copy.deepcopy(payload);bad[field]='0';reject(envelope(bad))
+
 def test_same_second_quote_is_serialized_at_request_precision():
     e=execution_decision()
     e['orderAttempt']['quoteSnapshot']['quoteTimeUtc']='2026-01-02T03:04:05Z'

@@ -55,6 +55,52 @@ def test_titan_candidate_uses_explicit_broker_offset_for_quote_utc_and_provenanc
     assert "cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS" in generated
 
 
+def test_titan_candidate_correlates_real_deal_transactions_to_order_attempts():
+    source = (ROOT / BUILD.SOURCE_NAME).read_text(encoding="utf-8-sig")
+    generated = BUILD._instrument_source(
+        source, "titan_m5", "titan_test", "a" * 64, "b" * 64, "c" * 64,
+        700184986, "PUPrime-Demo", r"C:\\demo\\terminal64.exe", 10800,
+    )
+    match = re.search(r"void OnTradeTransaction\([^)]*\)\s*\{(.*?)^  \}", generated, re.S | re.M)
+    assert match, "generated EA must have an observable trade-transaction handler"
+    handler = match.group(1)
+
+    assert "TRADE_TRANSACTION_DEAL_ADD" in handler
+    assert "CSFindOrderAttempt(trans.order" in handler
+    assert 'CSEnqueueDecision("BROKER_RESULT"' in handler
+    assert "trans.deal,trans.position" in handler
+    assert 'CSFeature("deal_ticket"' not in handler
+    assert 'CSFeature("position_ticket"' not in handler
+    for observed in ("trans.deal", "trans.order", "trans.position", "trans.volume", "trans.price", "trans.deal_type", "trans.type", "trans.price_sl", "trans.price_tp"):
+        assert observed in handler
+    assert "datetime cs_observed_utc=TimeGMT();" in handler
+    assert "CSUtc(cs_observed_utc)" in handler
+    assert "time_msc" not in handler
+    assert "CSRegisterOrderAttempt(" in generated
+    assert "HistoryDealGet" not in handler
+    assert not re.search(r"\b(FileOpen|FileWrite|FileWriteString|FileFlush|FileMove|Sleep)\s*\(", handler)
+
+
+def test_titan_candidate_observes_owned_position_stop_changes_without_trade_side_effects():
+    source = (ROOT / BUILD.SOURCE_NAME).read_text(encoding="utf-8-sig")
+    generated = BUILD._instrument_source(
+        source, "titan_m5", "titan_test", "a" * 64, "b" * 64, "c" * 64,
+        700184986, "PUPrime-Demo", r"C:\\demo\\terminal64.exe", 10800,
+    )
+    match = re.search(r"void OnTradeTransaction\([^)]*\)\s*\{(.*?)^  \}", generated, re.S | re.M)
+    assert match, "generated EA must observe position transactions"
+    handler = match.group(1)
+
+    assert "TRADE_TRANSACTION_POSITION" in handler
+    assert "CSFindPosition(trans.position" in handler
+    assert "sl_before" in handler and "sl_after" in handler
+    assert "tp_before" in handler and "tp_after" in handler
+    assert "CSEnqueueDecision(\"BROKER_RESULT\"" in handler
+    assert "CSSeedOpenPositionSnapshots();" in generated
+    assert "CSRegisterPosition(" in generated
+    assert not re.search(r"\b(m_trade\.(?:Buy|Sell|PositionModify|PositionClose)|OrderSend|FileOpen|FileWrite|FileFlush)\s*\(", handler)
+
+
 @pytest.mark.parametrize("alias", ["xau5m_m5", "titan_m5"])
 def test_prepare_creates_identity_bound_capture_variant_only_under_output(tmp_path, alias):
     target = ROOT / "output" / "test-evidence-build" / alias
