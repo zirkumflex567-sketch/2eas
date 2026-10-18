@@ -8913,6 +8913,20 @@ var ChartStudioV5 = (() => {
         return;
       }
       const anchor = { time, price: value };
+      const tool = placementTool;
+      if (tool === "PRICE" || tool === "TIME") {
+        const id2 = `preview-${tool.toLowerCase()}-${++placementSequence}`;
+        try {
+          if (tool === "PRICE") addPriceLevel({ id: id2, price: anchor.price, color: "#49c6ff" });
+          else addTimeMarker({ id: id2, time: anchor.time, color: "#ffb84d" });
+          placementTool = null;
+          placementAnchor = null;
+          host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state", { detail: { kind: tool, phase: "CREATED", id: id2 } }));
+        } catch (_2) {
+          drawingState("ERROR");
+        }
+        return;
+      }
       if (!placementAnchor) {
         placementAnchor = anchor;
         drawingState("FIRST_ANCHOR");
@@ -8922,14 +8936,16 @@ var ChartStudioV5 = (() => {
         drawingState("ERROR");
         return;
       }
-      const id = `preview-${placementTool.toLowerCase()}-${++placementSequence}`;
+      const id = `preview-${tool.toLowerCase()}-${++placementSequence}`;
       try {
-        const options = { id, startTime: placementAnchor.time, startPrice: placementAnchor.price, endTime: anchor.time, endPrice: anchor.price, color: placementTool === "TREND" ? "#49c6ff" : "#ffb84d" };
-        if (placementTool === "TREND") addTrendLine(options);
-        else addRay(options);
+        const options = { id, startTime: placementAnchor.time, startPrice: placementAnchor.price, endTime: anchor.time, endPrice: anchor.price, color: tool === "TREND" || tool === "RECT" ? "#49c6ff" : "#ffb84d" };
+        if (tool === "TREND") addTrendLine(options);
+        else if (tool === "RAY") addRay(options);
+        else if (tool === "RECT") addRectangle({ ...options, fill: true });
+        else addFibonacci(options);
         placementTool = null;
         placementAnchor = null;
-        host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state", { detail: { kind: options.id.startsWith("preview-trend") ? "TREND" : "RAY", phase: "CREATED", id } }));
+        host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state", { detail: { kind: tool, phase: "CREATED", id } }));
       } catch (_2) {
         drawingState("ERROR");
       }
@@ -12009,7 +12025,7 @@ var ChartStudioV5 = (() => {
     }
     function setDrawingTool(tool) {
       guard();
-      if (tool !== null && tool !== "TREND" && tool !== "RAY") throw Error("Invalid drawing tool");
+      if (tool !== null && !["TREND", "RAY", "PRICE", "TIME", "RECT", "FIBO"].includes(tool)) throw Error("Invalid drawing tool");
       cancelDrawingTool(false);
       placementTool = tool;
       placementAnchor = null;

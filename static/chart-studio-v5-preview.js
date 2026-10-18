@@ -3,7 +3,7 @@
 (function(){
   "use strict";
   if(window.CHART_STUDIO_V5_PREVIEW_ENABLED!==true)return;
-  let button=null,panel=null,host=null,status=null,title=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,drawingStatus=null,layoutButton=null,layoutImportButton=null,layoutReplaceButton=null,layoutImportFile=null;
+  let button=null,panel=null,host=null,status=null,title=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,priceButton=null,timeButton=null,rectButton=null,fiboButton=null,drawingStatus=null,layoutButton=null,layoutImportButton=null,layoutReplaceButton=null,layoutImportFile=null;
 
   let scope=null,latest=null,engine=null,bridge=null,active=false,loading=null,autoFibEnabled=false;
   let generation=0,sequence=0,latestSequence=0,positionSequence=0,positionsSnapshot=null,brokerDealMarkersSnapshot=null,positionsEnabled=true,drawingTool=null,pendingImportMode=null;
@@ -34,7 +34,7 @@
     try{engine?.destroy()}catch(_){}
     engine=null;bridge=null;autoFibEnabled=false;drawingTool=null;if(autoFibButton){autoFibButton.setAttribute("aria-pressed","false");autoFibButton.textContent="Auto-Fibonacci einblenden";autoFibButton.disabled=!latest}if(autoFibStatus)autoFibStatus.textContent="";updateDrawingButtons();if(drawingStatus)drawingStatus.textContent="Zeichenwerkzeug aus.";if(host)host.replaceChildren();
   }
-  function updateDrawingButtons(){for(const [button,kind] of [[trendButton,"TREND"],[rayButton,"RAY"]])if(button){button.disabled=!engine||!latest;button.setAttribute("aria-pressed",drawingTool===kind?"true":"false")}for(const item of [layoutButton,layoutImportButton,layoutReplaceButton])if(item)item.disabled=!engine||!latest}
+  function updateDrawingButtons(){for(const [button,kind] of [[trendButton,"TREND"],[rayButton,"RAY"],[priceButton,"PRICE"],[timeButton,"TIME"],[rectButton,"RECT"],[fiboButton,"FIBO"]])if(button){button.disabled=!engine||!latest;button.setAttribute("aria-pressed",drawingTool===kind?"true":"false")}for(const item of [layoutButton,layoutImportButton,layoutReplaceButton])if(item)item.disabled=!engine||!latest}
   function exportLayout(){
     if(!engine||!scope)return null;
     const serialized=engine.exportLayout(),layout=JSON.parse(serialized);
@@ -160,10 +160,10 @@
     }catch(error){setStatus("Layoutimport abgelehnt: "+String(error?.message||error).slice(0,140))}
   }
   function setDrawingTool(kind){
-    if(kind!==null&&kind!=="TREND"&&kind!=="RAY")return false;
+    if(kind!==null&&!["TREND","RAY","PRICE","TIME","RECT","FIBO"].includes(kind))return false;
     if(!engine||(kind!==null&&!latest))return false;
     drawingTool=kind;engine.setDrawingTool(kind);updateDrawingButtons();
-    if(drawingStatus)drawingStatus.textContent=kind?`${kind==="TREND"?"Trendlinie":"Strahl"}: ersten Anker wählen.`:"Zeichenwerkzeug aus.";
+    if(drawingStatus)drawingStatus.textContent=kind?`${({TREND:"Trendlinie",RAY:"Strahl",PRICE:"Preislinie",TIME:"Zeitlinie",RECT:"Rechteck",FIBO:"Fibonacci"})[kind]}: ${kind==="PRICE"||kind==="TIME"?"Kerze wählen.":"ersten Anker wählen."}`:"Zeichenwerkzeug aus.";
     return true;
   }
   function drawingState(event){const detail=event?.detail;if(!detail)return;
@@ -323,12 +323,16 @@
     host=document.getElementById("chart-v5-preview-host");status=document.getElementById("chart-v5-preview-status");
     title=document.getElementById("chart-v5-preview-title");
     autoFibButton=document.getElementById("chart-v5-auto-fib-btn");autoFibStatus=document.getElementById("chart-v5-auto-fib-status");
-    trendButton=document.getElementById("chart-v5-trend-btn");rayButton=document.getElementById("chart-v5-ray-btn");drawingStatus=document.getElementById("chart-v5-drawing-status");layoutButton=document.getElementById("chart-v5-layout-export-btn");
+    trendButton=document.getElementById("chart-v5-trend-btn");rayButton=document.getElementById("chart-v5-ray-btn");priceButton=document.getElementById("chart-v5-price-btn");timeButton=document.getElementById("chart-v5-time-btn");rectButton=document.getElementById("chart-v5-rect-btn");fiboButton=document.getElementById("chart-v5-fibo-btn");drawingStatus=document.getElementById("chart-v5-drawing-status");layoutButton=document.getElementById("chart-v5-layout-export-btn");
     if(!button||!panel||!host||!status)return;
     button.hidden=false;if(scope&&title)title.textContent=`Native v5 · ${scope.symbol} ${scope.timeframe} · ${scope.account}`;
     if(autoFibButton)autoFibButton.addEventListener("click",()=>{if(autoFibEnabled)clearAutoFib();else try{renderAutoFib()}catch(error){clearAutoFib();if(autoFibStatus)autoFibStatus.textContent="Auto-Fibonacci nicht verfügbar · "+String(error?.message||error).slice(0,120)}});
     if(trendButton)trendButton.addEventListener("click",()=>setDrawingTool(drawingTool==="TREND"?null:"TREND"));
     if(rayButton)rayButton.addEventListener("click",()=>setDrawingTool(drawingTool==="RAY"?null:"RAY"));
+    if(priceButton)priceButton.addEventListener("click",()=>setDrawingTool(drawingTool==="PRICE"?null:"PRICE"));
+    if(timeButton)timeButton.addEventListener("click",()=>setDrawingTool(drawingTool==="TIME"?null:"TIME"));
+    if(rectButton)rectButton.addEventListener("click",()=>setDrawingTool(drawingTool==="RECT"?null:"RECT"));
+    if(fiboButton)fiboButton.addEventListener("click",()=>setDrawingTool(drawingTool==="FIBO"?null:"FIBO"));
     layoutImportButton=document.getElementById("chart-v5-layout-import-btn");layoutReplaceButton=document.getElementById("chart-v5-layout-replace-btn");layoutImportFile=document.getElementById("chart-v5-layout-import-file");
     if(layoutButton)layoutButton.addEventListener("click",downloadLayout);
     if(layoutImportButton)layoutImportButton.addEventListener("click",()=>chooseLayoutFile("merge"));

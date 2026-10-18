@@ -832,7 +832,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  const fibonacci=new Map<string,{primitive:FibonacciPrimitive;options:FibonacciOptions}>();
  const channels=new Map<string,{primitive:ChannelPrimitive;options:ChannelOptions}>();
  const measurements=new Map<string,{primitive:MeasurementPrimitive;options:MeasurementOptions}>();
- type PlacementTool="TREND"|"RAY";
+ type PlacementTool="TREND"|"RAY"|"PRICE"|"TIME"|"RECT"|"FIBO";
  let placementTool:PlacementTool|null=null,placementAnchor:{time:UTCTimestamp;price:number}|null=null,placementSequence=0;
  const drawingState=(phase:"FIRST_ANCHOR"|"SECOND_ANCHOR"|"CREATED"|"CANCELLED"|"ERROR",id?:string)=>host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state",{detail:{kind:placementTool,phase,...(id?{id}:{})}}));
  const cancelDrawingTool=(notify=true)=>{if(!placementTool)return;placementTool=null;placementAnchor=null;if(notify)drawingState("CANCELLED")};
@@ -843,13 +843,26 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const value=price.coordinateToPrice(y);
   if(value===null||!Number.isFinite(value)||value<=0){drawingState("ERROR");return}
   const anchor={time:time as UTCTimestamp,price:value};
+  const tool=placementTool;
+  if(tool==="PRICE"||tool==="TIME"){
+   const id=`preview-${tool.toLowerCase()}-${++placementSequence}`;
+   try{
+    if(tool==="PRICE")addPriceLevel({id,price:anchor.price,color:"#49c6ff"});
+    else addTimeMarker({id,time:anchor.time,color:"#ffb84d"});
+    placementTool=null;placementAnchor=null;host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state",{detail:{kind:tool,phase:"CREATED",id}}));
+   }catch(_){drawingState("ERROR")}
+   return;
+  }
   if(!placementAnchor){placementAnchor=anchor;drawingState("FIRST_ANCHOR");return}
   if(placementAnchor.time===anchor.time){drawingState("ERROR");return}
-  const id=`preview-${placementTool.toLowerCase()}-${++placementSequence}`;
+  const id=`preview-${tool.toLowerCase()}-${++placementSequence}`;
   try{
-   const options={id,startTime:placementAnchor.time,startPrice:placementAnchor.price,endTime:anchor.time,endPrice:anchor.price,color:placementTool==="TREND"?"#49c6ff":"#ffb84d"};
-   if(placementTool==="TREND")addTrendLine(options);else addRay(options);
-   placementTool=null;placementAnchor=null;host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state",{detail:{kind:options.id.startsWith("preview-trend")?"TREND":"RAY",phase:"CREATED",id}}));
+   const options={id,startTime:placementAnchor.time,startPrice:placementAnchor.price,endTime:anchor.time,endPrice:anchor.price,color:tool==="TREND"||tool==="RECT"?"#49c6ff":"#ffb84d"};
+   if(tool==="TREND")addTrendLine(options);
+   else if(tool==="RAY")addRay(options);
+   else if(tool==="RECT")addRectangle({...options,fill:true});
+   else addFibonacci(options);
+   placementTool=null;placementAnchor=null;host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state",{detail:{kind:tool,phase:"CREATED",id}}));
   }catch(_){drawingState("ERROR")}
  }
  const maxNativeDrawings=1000,maxIndicatorInstances=20;
@@ -2626,7 +2639,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   for(const line of paneLines.values())chart.removeSeries(line);
   paneLines.clear();readoutIndicators.clear();if(volume)volume.setData([]);
  }
- function setDrawingTool(tool:PlacementTool|null){guard();if(tool!==null&&tool!=="TREND"&&tool!=="RAY")throw Error("Invalid drawing tool");cancelDrawingTool(false);placementTool=tool;placementAnchor=null;if(tool)drawingState("SECOND_ANCHOR");return true}
+ function setDrawingTool(tool:PlacementTool|null){guard();if(tool!==null&&!["TREND","RAY","PRICE","TIME","RECT","FIBO"].includes(tool))throw Error("Invalid drawing tool");cancelDrawingTool(false);placementTool=tool;placementAnchor=null;if(tool)drawingState("SECOND_ANCHOR");return true}
  function drawingToolState(){return {tool:placementTool,hasFirstAnchor:!!placementAnchor}}
  function inspect(){guard();return {version:VERSION,account:activeAccount,positionOverlayCount:positionOverlayLines.size,positionOverlays:readPositionOverlays().lines,brokerDealMarkerCount:brokerDealMarkers.filter(row=>row.plotted).length,nativeDrawingCount:drawingCount(),drawingTool:placementTool,
   displayTimeZone,volumeZoneStatus:volumeZones?.result.status??"DISABLED",volumeZoneCount:volumeZones?.result.zones.length??0,
