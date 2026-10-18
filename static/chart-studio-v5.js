@@ -8973,6 +8973,13 @@ var ChartStudioV5 = (() => {
     const selectedDrawingIds = /* @__PURE__ */ new Set();
     let activeDrag = null;
     chart.subscribeCrosshairMove((param) => {
+      const time = param.time;
+      let dataWindow = null;
+      if (typeof time === "number") try {
+        dataWindow = readDataWindow(time);
+      } catch {
+      }
+      host.dispatchEvent(new CustomEvent("chartstudio-v5-data-window", { detail: dataWindow }));
       const objectId = param.hoveredInfo?.objectId;
       hoveredDrawingId = typeof objectId === "string" && (priceLevels.has(objectId) || timeMarkers.has(objectId) || textAnnotations.has(objectId) || trendLines.has(objectId) || rectangles.has(objectId) || rays.has(objectId) || fibonacci.has(objectId) || measurements.has(objectId)) ? objectId : null;
     });
