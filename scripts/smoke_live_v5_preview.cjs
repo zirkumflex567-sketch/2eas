@@ -102,6 +102,40 @@ const FLAG_OFF = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;";
       snapshot.candles.length);
       await page.waitForFunction(count => window.ChartStudioV5Preview?.inspect()?.positionOverlayCount === count,
         expectedOverlayLines);
+      const positionOverlay = await page.evaluate(() => window.ChartStudioV5Preview.readPositions());
+      const expectedZones = positions.positions.reduce((count, row) => count +
+        (Number(row.sl) > 0 ? 1 : 0) + (Number(row.tp) > 0 ? 1 : 0), 0);
+      const marginModes = { 0: "NETTING", 1: "EXCHANGE", 2: "HEDGING" };
+      assert.equal(positionOverlay.positionCount, positions.positions.length,
+        `${expected.account}: native v5 readback retains each broker position as a separate ticket`);
+      assert.equal(positionOverlay.zoneCount, expectedZones,
+        `${expected.account}: native v5 exposes exactly the broker-provided SL/TP zones`);
+      assert.equal(positionOverlay.currency, positions.currency);
+      assert.equal(positionOverlay.marginMode, marginModes[positions.marginMode]);
+      for (const source of positions.positions) {
+        const rendered = positionOverlay.positions.find(row => row.ticket === source.ticket);
+        assert.ok(rendered, `${expected.account}: position ${source.ticket} is present in native v5 readback`);
+        assert.equal(rendered.side, source.side);
+        assert.equal(rendered.volume, Number(source.volume));
+        assert.equal(rendered.entryPrice, Number(source.priceOpen));
+        assert.equal(rendered.stopLoss, source.sl === null ? null : Number(source.sl));
+        assert.equal(rendered.takeProfit, source.tp === null ? null : Number(source.tp));
+        assert.equal(rendered.currency, source.currency);
+        assert.equal(rendered.profit, Number(source.profit));
+        assert.equal(rendered.swap, Number(source.swap));
+        assert.match(rendered.label, new RegExp(`${source.side} ${Number(source.volume).toFixed(2)}L #${source.ticket}`));
+        assert.match(rendered.label, new RegExp(`P/L ${Number(source.profit).toFixed(2)} ${source.currency} · Swap ${Number(source.swap).toFixed(2)} ${source.currency}`));
+        if (source.usdConversion?.state === "AVAILABLE") {
+          assert.equal(rendered.usdProfit, Number(source.usdConversion.amountsUsd.profit));
+          assert.equal(rendered.usdSwap, Number(source.usdConversion.amountsUsd.swap));
+          assert.match(rendered.label, new RegExp(`USD P/L ${Number(source.usdConversion.amountsUsd.profit).toFixed(2)} · Swap ${Number(source.usdConversion.amountsUsd.swap).toFixed(2)}`));
+        } else {
+          assert.equal(rendered.usdProfit, null);
+          assert.equal(rendered.usdSwap, null);
+          assert.doesNotMatch(rendered.label, /USD P\/L/,
+            `${expected.account}: no USD value may appear without a verified conversion`);
+        }
+      }
       await page.waitForFunction(() => [...document.querySelectorAll("#chart-v5-preview-host canvas")]
         .some(canvas => canvas.width > 300 && canvas.height > 200));
       const state = await page.evaluate(() => ({
