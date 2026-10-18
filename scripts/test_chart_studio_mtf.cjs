@@ -144,6 +144,41 @@ assert.throws(()=>M.validateRuleSet(Object.assign(Object.create({tainted:true}),
 const partialEval=M.evaluateRuleSet(profile,{...all,frames:{...all.frames,H4:{...all.frames.H4,status:"UNKNOWN",bias:"UNKNOWN",reason:"DATA_GAP",sourceTime:all.frames.H4.sourceTime}}},{accountId:"acct-1",symbol:"XAUUSD",asOfUtc:asOf});
 assert.equal(partialEval.status,"INCOMPLETE");assert.equal(partialEval.criteria.H4.status,"UNKNOWN");
 assert.equal(partialEval.criteria.H4.reason,"DATA_GAP");assert.equal(partialEval.criteria.H4.sourceTime,all.frames.H4.sourceTime);
+const slopeProfile={schemaVersion:2,ruleVersion:"2.0.0",revision:1,profileId:"profile-2",accountId:"acct-1",symbol:"XAUUSD",
+ predicates:{D1:"ANY",H4:"ANY",H1:"ANY",M15:"ANY",M5:"ANY"},
+ slopePredicates:{D1:"RISING",H4:"FLAT",H1:"ANY",M15:"ANY",M5:"RISING"},slopeFlatThresholdPercent:0.01,
+ updatedAtUtc:"2025-01-08T12:00:00.000Z"};
+assert.equal(M.validateRuleSet(slopeProfile),true,"version-2 profiles strictly validate EMA-slope criteria and tolerance");
+const createdSlopeProfile=M.createRuleSet({revision:1,profileId:"profile-2",accountId:"acct-1",symbol:"XAUUSD",predicates:slopeProfile.predicates,slopePredicates:slopeProfile.slopePredicates,slopeFlatThresholdPercent:0.01,updatedAtUtc:slopeProfile.updatedAtUtc});
+assert.equal(createdSlopeProfile.schemaVersion,2);assert.equal(createdSlopeProfile.slopePredicates.H4,"FLAT");
+const upgradedProfile={...profile,schemaVersion:2,ruleVersion:"2.0.0",revision:2,slopePredicates:{D1:"ANY",H4:"ANY",H1:"ANY",M15:"ANY",M5:"ANY"},slopeFlatThresholdPercent:0};
+assert.equal(M.validateRuleSetTransition(profile,upgradedProfile),true,"a saved v1 profile upgrades in place without changing identity or scope");
+assert.throws(()=>M.validateRuleSetTransition(upgradedProfile,profile),/backwards/i);
+const slopeObserved={...all,frames:{...all.frames,H4:{...all.frames.H4,ema20SlopePercent:0.005}}};
+const slopeEvaluation=M.evaluateRuleSet(slopeProfile,slopeObserved,{accountId:"acct-1",symbol:"XAUUSD",asOfUtc:asOf});
+assert.equal(slopeEvaluation.slopeCriteria.D1.classification,"RISING");
+assert.ok(slopeEvaluation.slopeCriteria.D1.actual>0);
+assert.equal(slopeEvaluation.slopeCriteria.D1.status,"MATCH");
+assert.equal(slopeEvaluation.slopeCriteria.D1.sourceTime,all.frames.D1.sourceTime);
+assert.equal(slopeEvaluation.slopeCriteria.H4.classification,"FLAT");
+assert.equal(slopeEvaluation.slopeCriteria.H4.status,"MATCH");
+assert.equal(slopeEvaluation.status,"SATISFIED");
+const slopePartial=M.evaluateRuleSet(slopeProfile,{...all,frames:{...all.frames,D1:{...all.frames.D1,ema20SlopePercent:0.005},H4:{...all.frames.H4,ema20SlopePercent:0.005}}},{accountId:"acct-1",symbol:"XAUUSD",asOfUtc:asOf});
+assert.equal(slopePartial.slopeCriteria.D1.status,"PARTIAL");assert.equal(slopePartial.status,"PARTIAL");
+const slopeBoundary=M.evaluateRuleSet(slopeProfile,{...all,frames:{...all.frames,H4:{...all.frames.H4,ema20SlopePercent:0.01}}},{accountId:"acct-1",symbol:"XAUUSD",asOfUtc:asOf});
+assert.equal(slopeBoundary.slopeCriteria.H4.classification,"FLAT","the configured neutral tolerance is inclusive");
+const aboveSlopeBand=M.evaluateRuleSet(slopeProfile,{...all,frames:{...all.frames,H4:{...all.frames.H4,ema20SlopePercent:0.01001}}},{accountId:"acct-1",symbol:"XAUUSD",asOfUtc:asOf});
+assert.equal(aboveSlopeBand.slopeCriteria.H4.classification,"RISING","slopes above the neutral tolerance retain direction");
+const slopeWrong=M.evaluateRuleSet({...slopeProfile,slopePredicates:{...slopeProfile.slopePredicates,D1:"FALLING"}},all,{accountId:"acct-1",symbol:"XAUUSD",asOfUtc:asOf});
+assert.equal(slopeWrong.slopeCriteria.D1.status,"CONTRADICTED");
+assert.equal(slopeWrong.status,"CONTRADICTORY");
+const slopeMissing=M.evaluateRuleSet(slopeProfile,{...all,frames:{...all.frames,H4:{...all.frames.H4,status:"UNKNOWN",reason:"DATA_GAP",sourceTime:all.frames.H4.sourceTime,ema20SlopePercent:null}}},{accountId:"acct-1",symbol:"XAUUSD",asOfUtc:asOf});
+assert.equal(slopeMissing.slopeCriteria.H4.status,"UNKNOWN");assert.equal(slopeMissing.slopeCriteria.H4.reason,"DATA_GAP");
+const slopeAbsent=M.evaluateRuleSet(slopeProfile,{...all,frames:{...all.frames,H4:{...all.frames.H4,ema20SlopePercent:null}}},{accountId:"acct-1",symbol:"XAUUSD",asOfUtc:asOf});
+assert.equal(slopeAbsent.slopeCriteria.H4.status,"UNKNOWN");assert.equal(slopeAbsent.slopeCriteria.H4.reason,"EMA20_SLOPE_UNAVAILABLE");
+assert.throws(()=>M.validateRuleSet({...slopeProfile,slopePredicates:{...slopeProfile.slopePredicates,H4:"SIDEWAYS"}}),/slope predicate/i);
+assert.throws(()=>M.validateRuleSet({...slopeProfile,slopeFlatThresholdPercent:5.01}),/threshold/i);
+assert.throws(()=>M.validateRuleSet({...slopeProfile,extra:true}),/key/i);
 const historicalDecision=asOf-86400;
 const historicalBaseInput={...input,H4:input.H4.filter(c=>c.time<historicalDecision)};
 const historicalInput={...historicalBaseInput,H4:[...historicalBaseInput.H4,{time:historicalDecision-1000,open:1,high:2,low:.5,close:1.5},{time:asOf,open:1,high:2,low:.5,close:1.5}]};

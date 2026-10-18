@@ -53,6 +53,16 @@
 - [x] Run MTF contracts/smoke, Beta smoke, JavaScript syntax checks and `git diff --check`.
 - [x] Record only the completed EMA-rule slice in `OPEN_TASKS`; leave EMA slope, volatility, confirmed structures, setup semantics, EA-specific profiles, decision import, historical navigation, authoritative session coverage and full AT-041/042 open.
 
+### Task 4: Versioned EMA20-slope expectations
+
+**Files:** `static/chart-studio-mtf.js`, `static/chart-studio-mtf-panel.js`, `static/chart-studio-quick.css`, `scripts/test_chart_studio_mtf.cjs`, `scripts/smoke_chart_studio_mtf.cjs`
+
+- [x] Add strict rule-schema v2 with per-frame `ANY`/`RISING`/`FALLING`/`FLAT` expectations and a bounded, explicit one-closed-bar neutral tolerance; include each slope criterion in the existing explainable aggregate without a numeric score.
+- [x] Keep v1 bias profiles readable and fail-closed; on an explicit save, write a v2 copy under the v2 storage key, preserve the v1 recovery copy, and require a monotonically increasing profile revision.
+- [x] Render expected/observed EMA20 slope, threshold classification, per-criterion status, source time and UNKNOWN reason in the local editor result; keep all broker requests GET-only.
+- [x] Run red/green MTF unit and Chromium smokes plus the wider Beta UI smoke; cover neutral-band boundaries, directional contradiction, missing source, invalid/empty thresholds, revision behavior and v1 upgrade preservation.
+- [x] Keep the slope algorithm explicitly `ONE_CLOSED_BAR_PERCENT_WITH_FLAT_THRESHOLD_V1`; the profile is manual context, not an EA rule or trade signal.
+
 ## Acceptance boundary
 
-This makes a generic user-authored EMA-baseline profile inspectable. It does not reproduce any Titan, GoldM15 or Marketplace EA's internal rules, prove current chart attachment, authorize broker writes, or close FR-029/AT-041/042. User-provided or independently attested strategy rules and live event/history acceptance remain separate evidence requirements.
+This makes a generic user-authored EMA-bias/slope profile inspectable. It does not reproduce any Titan, GoldM15 or Marketplace EA's internal rules, prove current chart attachment, authorize broker writes, or close FR-029/AT-041/042. User-provided or independently attested strategy rules, confirmed structure/setup semantics and live event/history acceptance remain separate evidence requirements.

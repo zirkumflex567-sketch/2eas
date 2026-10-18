@@ -6,7 +6,9 @@ const FRAMES=Object.freeze(Object.keys(SECONDS));
 const WARMUP_BARS=250;
 const EMA_CALCULATION_VERSION="EMA20_50_200_FIRST_CLOSED_CLOSE_V1";
 const RULE_STATUSES=Object.freeze(["ANY","UP","DOWN","NEUTRAL"]);
-const PROFILE_KEYS=Object.freeze(["schemaVersion","ruleVersion","revision","profileId","accountId","symbol","predicates","updatedAtUtc"]);
+const SLOPE_STATUSES=Object.freeze(["ANY","RISING","FALLING","FLAT"]);
+const PROFILE_KEYS_V1=Object.freeze(["schemaVersion","ruleVersion","revision","profileId","accountId","symbol","predicates","updatedAtUtc"]);
+const PROFILE_KEYS_V2=Object.freeze([...PROFILE_KEYS_V1,"slopePredicates","slopeFlatThresholdPercent"]);
 function isGoldSymbol(symbol){return typeof symbol==="string"&&/^XAUUSD(?:[._-][A-Z0-9]+)*$/i.test(symbol);}
 function assertAsOf(value){if(!Number.isFinite(value)||value<=0)throw new TypeError("Invalid as-of timestamp");}
 function validCandle(c){
@@ -105,47 +107,68 @@ function isPlainObject(value){if(value===null||typeof value!=="object"||Array.is
 function exactKeys(value,keys,label){if(!isPlainObject(value))throw new TypeError(label+" must be a plain object");const actual=Object.keys(value).sort(),expected=[...keys].sort();if(actual.length!==expected.length||actual.some((k,i)=>k!==expected[i]))throw new TypeError(label+" has missing or extra keys");}
 function validIsoUtc(value){if(typeof value!=="string"||!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/.test(value))return false;const ms=Date.parse(value);if(!Number.isFinite(ms))return false;const normalized=value.includes(".")?value.replace(/\.(\d{1,3})Z$/,(_,digits)=>"."+digits.padEnd(3,"0")+"Z"):value.replace(/Z$/,".000Z");return new Date(ms).toISOString()===normalized;}
 function validateRuleSet(profile){
- exactKeys(profile,PROFILE_KEYS,"Rule set");
- if(profile.schemaVersion!==1)throw new TypeError("Invalid schema version");
- if(typeof profile.ruleVersion!=="string"||!/^\d+\.\d+\.\d+$/.test(profile.ruleVersion))throw new TypeError("Invalid rule version");
+ if(!isPlainObject(profile))throw new TypeError("Rule set must be a plain object");
+ if(profile.schemaVersion===1)exactKeys(profile,PROFILE_KEYS_V1,"Rule set");
+ else if(profile.schemaVersion===2)exactKeys(profile,PROFILE_KEYS_V2,"Rule set");
+ else throw new TypeError("Invalid schema version");
+ if(typeof profile.ruleVersion!=="string"||!new RegExp("^"+profile.schemaVersion+"\\.\\d+\\.\\d+$").test(profile.ruleVersion))throw new TypeError("Invalid rule version");
  if(!Number.isSafeInteger(profile.revision)||profile.revision<=0)throw new TypeError("Invalid revision");
  for(const key of ["profileId","accountId","symbol"])if(typeof profile[key]!=="string"||!profile[key].trim())throw new TypeError("Invalid "+key);
  exactKeys(profile.predicates,FRAMES,"Predicates");
  for(const tf of FRAMES)if(!RULE_STATUSES.includes(profile.predicates[tf]))throw new TypeError("Invalid predicate for "+tf);
+ if(profile.schemaVersion===2){
+  exactKeys(profile.slopePredicates,FRAMES,"Slope predicates");
+  for(const tf of FRAMES)if(!SLOPE_STATUSES.includes(profile.slopePredicates[tf]))throw new TypeError("Invalid slope predicate for "+tf);
+  if(!Number.isFinite(profile.slopeFlatThresholdPercent)||profile.slopeFlatThresholdPercent<0||profile.slopeFlatThresholdPercent>5)throw new TypeError("Invalid slope flat threshold");
+ }
  if(!validIsoUtc(profile.updatedAtUtc))throw new TypeError("Invalid updatedAtUtc timestamp");
  return true;
 }
 function validateRuleSetTransition(current,candidate){
  validateRuleSet(current);validateRuleSet(candidate);
  if(candidate.profileId!==current.profileId||candidate.accountId!==current.accountId||candidate.symbol!==current.symbol)throw new TypeError("Rule set transition scope/profile mismatch");
+ if(candidate.schemaVersion<current.schemaVersion)throw new TypeError("Rule set schema version cannot move backwards");
  if(candidate.revision<=current.revision)throw new TypeError("Revision must increase monotonically");
  return true;
 }
 function createRuleSet(args){
  if(!isPlainObject(args))throw new TypeError("Rule set arguments must be a plain object");
  if(args.revision!==1)throw new TypeError("Initial revision must be 1");
- const profile={schemaVersion:1,ruleVersion:"1.0.0",revision:args.revision,profileId:args.profileId,accountId:args.accountId,symbol:args.symbol,predicates:args.predicates,updatedAtUtc:args.updatedAtUtc};
- validateRuleSet(profile);return Object.freeze({...profile,predicates:Object.freeze({...profile.predicates})});
+ const version2=args.slopePredicates!==undefined||args.slopeFlatThresholdPercent!==undefined;
+ const profile=version2?{schemaVersion:2,ruleVersion:"2.0.0",revision:args.revision,profileId:args.profileId,accountId:args.accountId,symbol:args.symbol,predicates:args.predicates,
+  slopePredicates:args.slopePredicates,slopeFlatThresholdPercent:args.slopeFlatThresholdPercent,updatedAtUtc:args.updatedAtUtc}:
+  {schemaVersion:1,ruleVersion:"1.0.0",revision:args.revision,profileId:args.profileId,accountId:args.accountId,symbol:args.symbol,predicates:args.predicates,updatedAtUtc:args.updatedAtUtc};
+ validateRuleSet(profile);return Object.freeze({...profile,predicates:Object.freeze({...profile.predicates}),...(version2?{slopePredicates:Object.freeze({...profile.slopePredicates})}:{})});
 }
 function evaluateRuleSet(profile,features,context){
  validateRuleSet(profile);exactKeys(context,["accountId","symbol","asOfUtc"],"Evaluation context");
  if(context.accountId!==profile.accountId)throw new TypeError("Account mismatch");if(context.symbol!==profile.symbol)throw new TypeError("Symbol mismatch");
  assertAsOf(context.asOfUtc);if(!isPlainObject(features)||!isPlainObject(features.frames))throw new TypeError("Invalid feature result");
  if(features.asOfUtc!==context.asOfUtc||!isPlainObject(features.featureSnapshot)||features.featureSnapshot.decisionTimeUtc!==context.asOfUtc)throw new TypeError("Evaluation as-of does not match feature decision as-of");
- const criteria={};let required=0,unknown=0,contradicted=0,matched=0;
+ const criteria={},slopeCriteria={};let required=0,unknown=0,contradicted=0,matched=0;
  for(const tf of FRAMES){const expected=profile.predicates[tf],frameResult=features.frames[tf];
-  if(expected==="ANY"){criteria[tf]={status:"NOT_REQUIRED",expected,actual:frameResult?.bias??"UNKNOWN",reason:null,sourceTime:frameResult?.sourceTime??null};continue;}
-  required++;const ready=frameResult&&frameResult.status==="READY"&&["UP","DOWN","NEUTRAL"].includes(frameResult.bias);
-  if(!ready){unknown++;criteria[tf]={status:"UNKNOWN",expected,actual:"UNKNOWN",reason:frameResult?.reason||"SOURCE_UNAVAILABLE",sourceTime:frameResult?.sourceTime??null};continue;}
-  const status=frameResult.bias===expected?"MATCH":frameResult.bias==="NEUTRAL"&&expected!=="NEUTRAL"?"PARTIAL":"CONTRADICTED";
+  if(expected==="ANY")criteria[tf]={status:"NOT_REQUIRED",expected,actual:frameResult?.bias??"UNKNOWN",reason:null,sourceTime:frameResult?.sourceTime??null};
+  else{
+   required++;const ready=frameResult&&frameResult.status==="READY"&&["UP","DOWN","NEUTRAL"].includes(frameResult.bias);
+   if(!ready){unknown++;criteria[tf]={status:"UNKNOWN",expected,actual:"UNKNOWN",reason:frameResult?.reason||"SOURCE_UNAVAILABLE",sourceTime:frameResult?.sourceTime??null};}
+   else{const status=frameResult.bias===expected?"MATCH":frameResult.bias==="NEUTRAL"&&expected!=="NEUTRAL"?"PARTIAL":"CONTRADICTED";
+    if(status==="MATCH")matched++;else if(status==="CONTRADICTED")contradicted++;
+    criteria[tf]={status,expected,actual:frameResult.bias,reason:null,sourceTime:frameResult.sourceTime??null};}
+  }
+  const slopeExpected=profile.schemaVersion===2?profile.slopePredicates[tf]:"ANY",slope=frameResult?.ema20SlopePercent;
+  if(slopeExpected==="ANY"){slopeCriteria[tf]={status:"NOT_REQUIRED",expected:slopeExpected,actual:Number.isFinite(slope)?slope:"UNKNOWN",classification:"NOT_REQUIRED",thresholdPercent:profile.schemaVersion===2?profile.slopeFlatThresholdPercent:0,reason:null,sourceTime:frameResult?.sourceTime??null};continue;}
+  required++;const slopeReady=frameResult?.status==="READY"&&Number.isFinite(slope);
+  if(!slopeReady){unknown++;const reason=frameResult?.status==="READY"?"EMA20_SLOPE_UNAVAILABLE":frameResult?.reason||"SOURCE_UNAVAILABLE";slopeCriteria[tf]={status:"UNKNOWN",expected:slopeExpected,actual:"UNKNOWN",classification:"UNKNOWN",thresholdPercent:profile.slopeFlatThresholdPercent,reason,sourceTime:frameResult?.sourceTime??null};continue;}
+  const threshold=profile.slopeFlatThresholdPercent,actual=Math.abs(slope)<=threshold?"FLAT":slope>0?"RISING":"FALLING";
+  const status=actual===slopeExpected?"MATCH":actual==="FLAT"&&slopeExpected!=="FLAT"?"PARTIAL":"CONTRADICTED";
   if(status==="MATCH")matched++;else if(status==="CONTRADICTED")contradicted++;
-  criteria[tf]={status,expected,actual:frameResult.bias,reason:null,sourceTime:frameResult.sourceTime??null};
+  slopeCriteria[tf]={status,expected:slopeExpected,actual:slope,classification:actual,thresholdPercent:threshold,reason:actual==="FLAT"?"WITHIN_FLAT_THRESHOLD":null,sourceTime:frameResult.sourceTime??null};
  }
  const aggregate=required===0?"UNCONFIGURED":unknown>0?"INCOMPLETE":contradicted>0?"CONTRADICTORY":matched===required?"SATISFIED":"PARTIAL";
  const snapshot=features.featureSnapshot||null;
- return {schemaVersion:1,profile:{...profile,predicates:{...profile.predicates}},revision:profile.revision,profileId:profile.profileId,ruleVersion:profile.ruleVersion,
-  algorithmVersion:EMA_CALCULATION_VERSION,asOfUtc:context.asOfUtc,sourceTime:snapshot?.frames?Object.fromEntries(FRAMES.map(tf=>[tf,snapshot.frames[tf].sourceTime])):null,
-  status:aggregate,criteria};
+ return {schemaVersion:profile.schemaVersion,profile:{...profile,predicates:{...profile.predicates},...(profile.schemaVersion===2?{slopePredicates:{...profile.slopePredicates}}:{})},revision:profile.revision,profileId:profile.profileId,ruleVersion:profile.ruleVersion,
+  algorithmVersion:EMA_CALCULATION_VERSION,slopeAlgorithmVersion:"ONE_CLOSED_BAR_PERCENT_WITH_FLAT_THRESHOLD_V1",asOfUtc:context.asOfUtc,sourceTime:snapshot?.frames?Object.fromEntries(FRAMES.map(tf=>[tf,snapshot.frames[tf].sourceTime])):null,
+  status:aggregate,criteria,slopeCriteria};
 }
 window.ChartStudioMTF=Object.freeze({SECONDS,FRAMES,WARMUP_BARS,frame,calculate,validateRuleSet,validateRuleSetTransition,createRuleSet,evaluateRuleSet});
 })();

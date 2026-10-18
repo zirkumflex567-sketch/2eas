@@ -1,10 +1,11 @@
 /* Read-only MTF panel with manually stored, account+symbol scoped criteria. */
 (()=>{
 "use strict";
-const FRAMES=window.ChartStudioMTF?.FRAMES||["D1","H4","H1","M15","M5"],CHOICES=["ANY","UP","DOWN","NEUTRAL"];
+const FRAMES=window.ChartStudioMTF?.FRAMES||["D1","H4","H1","M15","M5"],CHOICES=["ANY","UP","DOWN","NEUTRAL"],SLOPE_CHOICES=["ANY","RISING","FALLING","FLAT"];
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const endpoint=()=>window.location.pathname.startsWith("/stt")?"/stt":"";
-const keyFor=scope=>`chart-studio-mtf-rules:v1:${encodeURIComponent(scope.account)}:${encodeURIComponent(scope.symbol.toUpperCase())}`;
+const keyFor=scope=>`chart-studio-mtf-rules:v2:${encodeURIComponent(scope.account)}:${encodeURIComponent(scope.symbol.toUpperCase())}`;
+const legacyKeyFor=scope=>`chart-studio-mtf-rules:v1:${encodeURIComponent(scope.account)}:${encodeURIComponent(scope.symbol.toUpperCase())}`;
 function parseStrictUtc(value){
  const match=typeof value==="string"&&/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|\+00:00)$/.exec(value);if(!match)return NaN;
  const ms=Date.parse(value);if(!Number.isFinite(ms))return NaN;const date=new Date(ms);
@@ -18,22 +19,22 @@ function mount({panel,account,symbol,timeframe}){
   '<button type="button" data-mtf-refresh>Aktualisieren</button></div>'+
   '<p data-mtf-status role="status" aria-live="polite">Noch nicht geladen. Nach Stichtag werden ausschließlich bereits geschlossene Kerzen verwendet.</p>'+
   '<div class="cs-mtf-table-wrap"><table><thead><tr><th>TF</th><th>Status / Grund</th><th>Richtung</th><th>EMA 20 / 50 / 200 · EMA20 Δ vs. vorherige geschlossene Kerze (%)</th><th>Volatilität · market-regime-v1</th><th>Letzte geschlossene Kerze (UTC)</th><th>Bars</th></tr></thead><tbody data-mtf-rows></tbody></table></div>'+
-  '<details data-mtf-rule-editor><summary>Manuelle EMA-Kontextregeln</summary><p>Manueller EMA-Kontext, keine EA-Regel und keine Strategie. Lokal in diesem Browser für Konto und Symbol gespeichert.</p><div data-mtf-rule-fields></div><button type="button" data-mtf-save>Regeln lokal speichern</button><p data-mtf-rule-status role="status" aria-live="polite"></p><div class="cs-mtf-rule-result" data-mtf-rule-result aria-live="polite"></div></details>'+
+  '<details data-mtf-rule-editor><summary>Manuelle EMA-Kontextregeln</summary><p>Manueller EMA-Kontext, keine EA-Regel und keine Strategie. Bias und EMA20-Steigung beziehen sich nur auf abgeschlossene Bars und werden lokal pro Konto und Symbol gespeichert.</p><div data-mtf-rule-fields></div><label>Neutraltoleranz EMA20-Steigung (%) <input type="number" min="0" max="5" step="0.001" value="0" data-mtf-slope-threshold></label><button type="button" data-mtf-save>Regeln lokal speichern</button><p data-mtf-rule-status role="status" aria-live="polite"></p><div class="cs-mtf-rule-result" data-mtf-rule-result aria-live="polite"></div></details>'+
   '<p>Quelle: MT5 Verified. EMA-Ausrichtung ist Kontext, kein Handelssignal. Es wird kein Gesamtscore berechnet.</p>';
  panel.prepend(section);
  const rows=section.querySelector("[data-mtf-rows]"),status=section.querySelector("[data-mtf-status]"),asof=section.querySelector("[data-mtf-asof]"),ruleStatus=section.querySelector("[data-mtf-rule-status]"),resultBox=section.querySelector("[data-mtf-rule-result]"),fields=section.querySelector("[data-mtf-rule-fields]");
- fields.innerHTML=FRAMES.map(tf=>`<label>${tf} <select aria-label="${tf}" data-mtf-rule="${tf}">${CHOICES.map(c=>`<option value="${c}">${c==="ANY"?"Keine Anforderung (ANY)":c}</option>`).join("")}</select></label>`).join(" ");
+ fields.innerHTML=FRAMES.map(tf=>`<fieldset><legend>${tf}</legend><label>EMA-Bias <select aria-label="${tf}" data-mtf-rule="${tf}">${CHOICES.map(c=>`<option value="${c}">${c==="ANY"?"Keine Anforderung (ANY)":c}</option>`).join("")}</select></label> <label>EMA20-Steigung <select aria-label="${tf} EMA20-Steigung" data-mtf-slope-rule="${tf}">${SLOPE_CHOICES.map(c=>`<option value="${c}">${c==="ANY"?"Keine Anforderung (ANY)":c}</option>`).join("")}</select></label></fieldset>`).join(" ");
  let scope={account,symbol,timeframe},generation=0,controller=null,currentProfile=null,featureCache=null,profileLoadError=false;
  function clear(message="Kontext geändert. Aktualisieren, um den neuen Scope zu laden."){
   generation++;controller?.abort();controller=null;featureCache=null;rows.replaceChildren();for(const tf of FRAMES){const tr=document.createElement("tr");tr.innerHTML=`<th>${tf}</th><td>UNKNOWN · nicht geladen</td><td>UNKNOWN</td><td>—</td><td>UNKNOWN · nicht geladen</td><td>—</td><td>0</td>`;rows.append(tr)}status.textContent=message;resultBox.replaceChildren();
  }
  function readProfile(){
-  currentProfile=null;profileLoadError=false;for(const s of fields.querySelectorAll("select"))s.value="ANY";const k=keyFor(scope);
-  try{const raw=localStorage.getItem(k);if(raw===null){ruleStatus.textContent="UNCONFIGURED · keine lokalen Regeln gespeichert.";for(const s of fields.querySelectorAll("select"))s.value="ANY";renderRuleResult();return;}
+  currentProfile=null;profileLoadError=false;for(const s of fields.querySelectorAll("select"))s.value="ANY";section.querySelector("[data-mtf-slope-threshold]").value="0";const k=keyFor(scope);
+  try{let raw=localStorage.getItem(k);if(raw===null)raw=localStorage.getItem(legacyKeyFor(scope));if(raw===null){ruleStatus.textContent="UNCONFIGURED · keine lokalen Regeln gespeichert.";for(const s of fields.querySelectorAll("select"))s.value="ANY";renderRuleResult();return;}
    let parsed;try{parsed=JSON.parse(raw)}catch(_){throw Error("Ungültiges gespeichertes JSON; unverändert belassen.")}
    try{window.ChartStudioMTF.validateRuleSet(parsed)}catch(error){throw Error("Ungültiges gespeichertes Profil: "+error.message)}
    if(parsed.accountId!==scope.account||parsed.symbol.toUpperCase()!==scope.symbol.toUpperCase())throw Error("Profil-Scope stimmt nicht überein; unverändert belassen.");
-   currentProfile=parsed;for(const tf of FRAMES)fields.querySelector(`[data-mtf-rule="${tf}"]`).value=parsed.predicates[tf];ruleStatus.textContent=`Lokales Profil geladen · Revision ${parsed.revision}.`;renderRuleResult();
+   currentProfile=parsed;for(const tf of FRAMES){fields.querySelector(`[data-mtf-rule="${tf}"]`).value=parsed.predicates[tf];fields.querySelector(`[data-mtf-slope-rule="${tf}"]`).value=parsed.schemaVersion===2?parsed.slopePredicates[tf]:"ANY";}section.querySelector("[data-mtf-slope-threshold]").value=String(parsed.schemaVersion===2?parsed.slopeFlatThresholdPercent:0);ruleStatus.textContent=`Lokales Profil geladen · Revision ${parsed.revision}${parsed.schemaVersion===1?" · Schema v1; Speichern aktualisiert auf v2":""}.`;renderRuleResult();
   }catch(error){profileLoadError=true;ruleStatus.textContent="Profil ungültig oder Speicher nicht lesbar · "+error.message;resultBox.textContent="UNKNOWN · Profil konnte nicht gelesen werden.";}
  }
  function renderRuleResult(){
@@ -41,7 +42,7 @@ function mount({panel,account,symbol,timeframe}){
   if(!featureCache||featureCache.account!==scope.account||featureCache.symbol!==scope.symbol||!Number.isFinite(featureCache.asOfUtc)){resultBox.textContent="Regeln gespeichert · Feature-Daten für diesen Scope und Stichtag noch nicht geladen.";return;}
   try{const evaluated=window.ChartStudioMTF.evaluateRuleSet(currentProfile,featureCache.features,{accountId:scope.account,symbol:scope.symbol,asOfUtc:featureCache.asOfUtc});
    resultBox.replaceChildren();const heading=document.createElement("p");heading.textContent=`Aggregate: ${evaluated.status} · Revision ${evaluated.revision} · as-of ${new Date(evaluated.asOfUtc*1000).toISOString()}`;resultBox.append(heading);
-   const table=document.createElement("table");table.innerHTML='<thead><tr><th>TF</th><th>Expected</th><th>Actual</th><th>Status</th><th>Reason</th><th>Source time</th></tr></thead><tbody></tbody>';for(const tf of FRAMES){const c=evaluated.criteria[tf],tr=document.createElement("tr");tr.innerHTML=`<th>${tf}</th><td>${esc(c.expected)}</td><td>${esc(c.actual)}</td><td>${esc(c.status)}</td><td>${esc(c.reason||"—")}</td><td>${esc(c.sourceTime?new Date(c.sourceTime*1000).toISOString():"—")}</td>`;table.querySelector("tbody").append(tr)}resultBox.append(table);
+   const table=document.createElement("table");table.innerHTML='<thead><tr><th>TF</th><th>Bias erwartet</th><th>Bias Ist</th><th>Bias-Status</th><th>Steigung erwartet</th><th>EMA20 Δ (%)</th><th>Steigung Ist</th><th>Steigungsstatus</th><th>Quellzeit</th></tr></thead><tbody></tbody>';for(const tf of FRAMES){const c=evaluated.criteria[tf],s=evaluated.slopeCriteria[tf],delta=Number.isFinite(s.actual)?`${s.actual>=0?"+":""}${s.actual.toFixed(5)}%`:"UNKNOWN",tr=document.createElement("tr");tr.innerHTML=`<th>${tf}</th><td>${esc(c.expected)}</td><td>${esc(c.actual)}</td><td>${esc(c.status)}</td><td>${esc(s.expected)}</td><td>${esc(delta)}</td><td>${esc(s.classification)}</td><td>${esc(s.status)}${s.reason?` · ${esc(s.reason)}`:""}</td><td>${esc(c.sourceTime?new Date(c.sourceTime*1000).toISOString():"—")}</td>`;table.querySelector("tbody").append(tr)}resultBox.append(table);
   }catch(error){resultBox.textContent="UNKNOWN · Regelbewertung nicht verfügbar: "+error.message;}
  }
  function setContext(next){if(!next||next.account===scope.account&&next.symbol===scope.symbol&&next.timeframe===scope.timeframe)return;const dataScopeChanged=next.account!==scope.account||next.symbol!==scope.symbol;scope={...next};clear();if(dataScopeChanged)readProfile();}
@@ -89,10 +90,12 @@ function mount({panel,account,symbol,timeframe}){
  section.querySelector("[data-mtf-refresh]").addEventListener("click",()=>void refresh());
  section.querySelector("[data-mtf-save]").addEventListener("click",()=>{
   const k=keyFor(scope);try{
-   let stored=null;const raw=localStorage.getItem(k);if(raw!==null){try{stored=JSON.parse(raw)}catch(_){throw Error("Ungültiges gespeichertes JSON; Speichern abgebrochen.")};try{window.ChartStudioMTF.validateRuleSet(stored)}catch(error){throw Error("Ungültiges gespeichertes Profil; Speichern abgebrochen: "+error.message)};if(stored.accountId!==scope.account||stored.symbol.toUpperCase()!==scope.symbol.toUpperCase())throw Error("Profil-Scope stimmt nicht überein; Speichern abgebrochen.");}
-   const predicates=Object.fromEntries(FRAMES.map(tf=>[tf,fields.querySelector(`[data-mtf-rule="${tf}"]`).value]));
-   if(stored&&FRAMES.every(tf=>stored.predicates[tf]===predicates[tf])){currentProfile=stored;profileLoadError=false;ruleStatus.textContent=`Keine Änderungen · Revision ${stored.revision}.`;renderRuleResult();return;}
-   const candidate=stored?{...stored,revision:stored.revision+1,predicates,updatedAtUtc:new Date().toISOString()}:{schemaVersion:1,ruleVersion:"1.0.0",revision:1,profileId:window.crypto?.randomUUID?.()||`mtf-${Date.now()}-${Math.random().toString(36).slice(2)}`,accountId:scope.account,symbol:scope.symbol,predicates,updatedAtUtc:new Date().toISOString()};
+   let stored=null,storedKey=k,raw=localStorage.getItem(k);if(raw===null){storedKey=legacyKeyFor(scope);raw=localStorage.getItem(storedKey);}if(raw!==null){try{stored=JSON.parse(raw)}catch(_){throw Error("Ungültiges gespeichertes JSON; Speichern abgebrochen.")};try{window.ChartStudioMTF.validateRuleSet(stored)}catch(error){throw Error("Ungültiges gespeichertes Profil; Speichern abgebrochen: "+error.message)};if(stored.accountId!==scope.account||stored.symbol.toUpperCase()!==scope.symbol.toUpperCase())throw Error("Profil-Scope stimmt nicht überein; Speichern abgebrochen.");}
+   const predicates=Object.fromEntries(FRAMES.map(tf=>[tf,fields.querySelector(`[data-mtf-rule="${tf}"]`).value])),slopePredicates=Object.fromEntries(FRAMES.map(tf=>[tf,fields.querySelector(`[data-mtf-slope-rule="${tf}"]`).value])),thresholdInput=section.querySelector("[data-mtf-slope-threshold]").value;
+   if(typeof thresholdInput!=="string"||!thresholdInput.trim())throw Error("EMA20-Steigungstoleranz ungültig.");
+   const slopeFlatThresholdPercent=Number(thresholdInput);
+   if(stored&&stored.schemaVersion===2&&FRAMES.every(tf=>stored.predicates[tf]===predicates[tf]&&stored.slopePredicates[tf]===slopePredicates[tf])&&stored.slopeFlatThresholdPercent===slopeFlatThresholdPercent){if(storedKey!==k)localStorage.setItem(k,JSON.stringify(stored));currentProfile=stored;profileLoadError=false;ruleStatus.textContent=`Keine Änderungen · Revision ${stored.revision}.`;renderRuleResult();return;}
+   const candidate=stored?{...stored,schemaVersion:2,ruleVersion:"2.0.0",revision:stored.revision+1,predicates,slopePredicates,slopeFlatThresholdPercent,updatedAtUtc:new Date().toISOString()}:{schemaVersion:2,ruleVersion:"2.0.0",revision:1,profileId:window.crypto?.randomUUID?.()||`mtf-${Date.now()}-${Math.random().toString(36).slice(2)}`,accountId:scope.account,symbol:scope.symbol,predicates,slopePredicates,slopeFlatThresholdPercent,updatedAtUtc:new Date().toISOString()};
    window.ChartStudioMTF.validateRuleSet(candidate);if(stored)window.ChartStudioMTF.validateRuleSetTransition(stored,candidate);localStorage.setItem(k,JSON.stringify(candidate));currentProfile=candidate;profileLoadError=false;ruleStatus.textContent=`Regeln lokal gespeichert · Revision ${candidate.revision}.`;renderRuleResult();
   }catch(error){ruleStatus.textContent="Speichern fehlgeschlagen · "+error.message;}
  });
