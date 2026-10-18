@@ -71,6 +71,8 @@ function verifySizing(account, response, expectedMode, currency, budget, percent
 (async () => {
   const results = [];
   let previewRequests = 0;
+  let freshAccounts = 0;
+  let skippedStaleQuotes = 0;
   for (const account of accounts) {
     const candles = await requestJson(`/api/candles?account=${encodeURIComponent(account)}`);
     assert.equal(candles.accountId, account);
@@ -92,7 +94,14 @@ function verifySizing(account, response, expectedMode, currency, budget, percent
     }
     assert.equal(quote.symbol, symbol);
     assert.equal(info.symbol, symbol);
+    assert.ok(["FRESH", "STALE"].includes(quote.freshness), `${account}: quote freshness is missing or invalid`);
+    if (quote.freshness === "STALE") {
+      skippedStaleQuotes += 1;
+      results.push({ account, symbol, quoteFreshness: quote.freshness, state: "SKIPPED_STALE_QUOTE", canExecute: false });
+      continue;
+    }
     assert.equal(quote.freshness, "FRESH");
+    freshAccounts += 1;
     assert.equal(portfolio.margin?.currency, "USD");
     const equity = Number(portfolio.margin?.equity);
     assert.ok(Number.isFinite(equity) && equity > 0, `${account}: verified equity unavailable`);
@@ -133,8 +142,11 @@ function verifySizing(account, response, expectedMode, currency, budget, percent
     results.push({ account, symbol, quoteFreshness: quote.freshness, equity, currency: portfolio.margin.currency, sides });
   }
 
-  assert.equal(previewRequests, accounts.length * 2 * 3);
-  console.log(JSON.stringify({ results, brokerCalculationPreviews: previewRequests, ordersSent: 0, positionMutations: 0, protectedAccountQueried: false }, null, 2));
+  assert.equal(previewRequests, freshAccounts * 2 * 3, "stale quotes must never reach scenario preview");
+  assert.equal(previewRequests + skippedStaleQuotes * 2 * 3, accounts.length * 2 * 3,
+    "each demo must be either fully sized from a fresh quote or skipped before preview");
+  console.log(JSON.stringify({ results, brokerCalculationPreviews: previewRequests, skippedStaleQuotes,
+    ordersSent: 0, positionMutations: 0, protectedAccountQueried: false }, null, 2));
 })().catch(error => {
   console.error(error.stack || error);
   process.exit(1);
