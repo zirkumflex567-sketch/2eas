@@ -21,7 +21,7 @@
 - [x] Run focused tests and confirm they fail because the builder is absent.
 - [x] Implement a deterministic source transformer and isolated output builder, reusing the established spool contract.
 - [x] Compile the generated source with MetaEditor 6230 and inspect the generated diff against the original for unchanged trade gates and calls.
-- [x] Record only source/build evidence in the ledger. Do not install, attach, trade, use Strategy Tester, or claim live captures.
+- [x] Record source/build evidence in the ledger without claiming live captures. The first isolated package stayed uninstalled; after the user's explicit authorization to use every non-Blueberry demo, a fresh verified candidate was later copied into a new side-by-side Experts folder without replacing, attaching, or reloading the existing EA.
 
 ### Task 2: Order-attempt and broker-clock evidence
 
@@ -37,4 +37,5 @@
 - [x] Capture the existing GoldM15 buy/sell request's intended values and returned broker result without changing its conditions or request expressions.
 - [x] Run the focused recorder/model regression (128 passed) and compile a fresh isolated GoldM15 candidate with MetaEditor 6230 (0 errors, 0 warnings; artifact remains under ignored `output/`).
 - [x] Compile the Titan `titan_m5` variant against its configured 500-dollar demo terminal/source/preset and place it under a separate `ChartStudioEvidence-titan_m5` Experts directory; the existing EA/chart was not replaced or reloaded.
-- [ ] Attach either candidate only after current chart identity is verified, then obtain and import fresh decision/order-attempt evidence. The Titan candidate currently reports zero imported Decisions and is not attached. No funded account or Strategy Tester.
+- [x] Freshly compile and install the GoldM15 evidence candidate side-by-side in the explicitly allowed `goldm15` demo without touching the existing EA/chart. Verify manifest/EX5 SHA-256 and copied package bytes; do not attach until current chart/preset identity and a fresh quote are verified.
+- [ ] Attach a candidate only after current chart identity is verified, then obtain and import fresh decision/order-attempt evidence. Titan remains `IDLE/NOT_RECORDED`; GoldM15 is `INSTALLED_SIDE_BY_SIDE_NOT_ATTACHED`. The current Gold quote is stale. No funded account or Strategy Tester.
