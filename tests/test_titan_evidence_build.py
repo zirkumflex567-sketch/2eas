@@ -365,6 +365,24 @@ def test_compile_accepts_only_a_fresh_artifact_with_zero_error_log(tmp_path, mon
     assert not artifact.exists()
 
 
+def test_compile_candidate_attests_artifact_hash_and_clean_compile_result(tmp_path, monkeypatch):
+    source = tmp_path / "variant.mq5"
+    source.write_text("// candidate", encoding="utf-8")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({"accountAlias": "titan_m5"}), encoding="utf-8")
+    artifact = source.with_suffix(".ex5")
+    artifact.write_bytes(b"known compiled artifact")
+    variant = BUILD.BuildVariant(source, manifest_path, tmp_path / "MetaEditor64.exe", tmp_path / "MQL5", tmp_path / "compile.log")
+    monkeypatch.setattr(BUILD, "compile_variant", lambda _variant: artifact)
+
+    assert BUILD.compile_candidate(variant) == artifact
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["artifactSha256"] == hashlib.sha256(artifact.read_bytes()).hexdigest()
+    assert manifest["compileResult"] == "0 errors, 0 warnings"
+    assert manifest["accountAlias"] == "titan_m5"
+
+
 def test_cli_reports_incompatible_preset_as_a_refusal_without_traceback(monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["build_titan_evidence.py", "xau5m_m5", "--preset", "demo.set"])
     monkeypatch.setattr(BUILD, "prepare_variant", lambda *args, **kwargs: (_ for _ in ()).throw(

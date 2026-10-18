@@ -602,6 +602,18 @@ def compile_variant(variant: BuildVariant) -> Path:
     return artifact
 
 
+def compile_candidate(variant: BuildVariant) -> Path:
+    """Compile a candidate and bind its exact artifact hash to the build manifest."""
+    artifact = compile_variant(variant)
+    if _is_link_or_junction(variant.manifest) or _is_link_or_junction(artifact):
+        raise ValueError("candidate manifest and artifact cannot be links")
+    manifest = json.loads(variant.manifest.read_text(encoding="utf-8"))
+    manifest["artifactSha256"] = hashlib.sha256(artifact.read_bytes()).hexdigest()
+    manifest["compileResult"] = "0 errors, 0 warnings"
+    _atomic_write(variant.manifest, (json.dumps(manifest, indent=2) + "\n").encode("utf-8"))
+    return artifact
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("account", choices=sorted(ALLOWED_ACCOUNTS))
@@ -614,7 +626,7 @@ def main() -> int:
         if args.prepare_only:
             print(f"Prepared {variant.source}; manifest {variant.manifest}")
             return 0
-        artifact = compile_variant(variant)
+        artifact = compile_candidate(variant)
         print(f"Compiled candidate {artifact}; manifest {variant.manifest}")
         return 0
     except (OSError, RuntimeError, ValueError) as exc:
