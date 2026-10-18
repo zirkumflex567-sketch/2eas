@@ -1314,6 +1314,28 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   },portableLayout);
   assert.ok(rejectedTransfer.results.every(result=>result!=="accepted"),"bad symbol/timeframe, invalid drawing/indicator, account-bound and oversized files are rejected");
   assert.equal(rejectedTransfer.state,transferBaseline,"rejected portable layouts do not partially change chart state or storage");
+  const legacyDrawingsExport=await page.evaluate(layout=>({schemaVersion:1,account:ChartStudioBeta.getState().account,
+    symbol:layout.symbol,timeframe:layout.timeframe,drawings:[layout.document.drawings[0]]}),portableLayout);
+  const legacyImport=await page.evaluate(async document=>{
+    try{return {result:await ChartStudioBeta.importPortableLayout(JSON.stringify(document),{mode:"merge"}),error:null}}
+    catch(error){return {result:null,error:error.message}}
+  },legacyDrawingsExport);
+  assert.equal(legacyImport.error,null,"legacy account-scoped drawing exports migrate into the current Beta layout");
+  assert.equal(legacyImport.result.importedDrawings,1,"legacy migration preserves its validated drawing count");
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().account),"titan","legacy layout migration stays on the active account");
+  const legacyAfterImport=await page.evaluate(()=>({drawings:ChartStudioBeta.getState().drawings,options:ChartStudioBeta.getState().options}));
+  assert.ok(legacyAfterImport.drawings.some(drawing=>drawing.kind===legacyDrawingsExport.drawings[0].kind),"legacy drawing is restored");
+  assert.deepEqual(legacyAfterImport.options,portableLayout.document.options,"legacy drawing-only migration preserves current chart settings");
+  const legacyBaseline=await page.evaluate(()=>JSON.stringify({document:ChartStudioBeta.exportDocument(),storage:Object.keys(localStorage).sort().map(key=>[key,localStorage.getItem(key)])}));
+  const rejectedLegacy=await page.evaluate(async document=>{
+    const candidates=[{...document,account:"blueberry"},{...document,symbol:"EURUSD"},
+      {...document,timeframe:"M5"},{...document,extra:true},{...document,drawings:[{kind:"text",anchors:[],label:"invalid"}]}];
+    const results=[];
+    for(const candidate of candidates)try{await ChartStudioBeta.importPortableLayout(JSON.stringify(candidate),{mode:"replace"});results.push("accepted")}catch(error){results.push(error.message)}
+    return {results,state:JSON.stringify({document:ChartStudioBeta.exportDocument(),storage:Object.keys(localStorage).sort().map(key=>[key,localStorage.getItem(key)])})};
+  },legacyDrawingsExport);
+  assert.ok(rejectedLegacy.results.every(result=>result!=="accepted"),"legacy import rejects another account, wrong chart scope and malformed content");
+  assert.equal(rejectedLegacy.state,legacyBaseline,"rejected legacy imports do not mutate chart state or storage");
   const mergedPortable=await page.evaluate(async layout=>{
     const source={...layout,document:{...layout.document,drawings:[layout.document.drawings[0],{...layout.document.drawings[0],id:"portable-unique"}]}};
     const result=await ChartStudioBeta.importPortableLayout(JSON.stringify(source),{mode:"merge"});

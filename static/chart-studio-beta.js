@@ -281,6 +281,14 @@ function validatePortableLayout(raw){
  if(typeof raw==="string"&&new TextEncoder().encode(raw).byteLength>PORTABLE_LAYOUT_LIMIT)throw Error("Layoutdatei überschreitet 512 KiB.");
  let envelope;try{envelope=typeof raw==="string"?JSON.parse(raw):raw}catch{throw Error("Layoutdatei ist kein gültiges JSON.")}
  const exact=(value,keys)=>value&&typeof value==="object"&&!Array.isArray(value)&&Object.keys(value).sort().join(",")===[...keys].sort().join(",");
+ if(envelope?.schemaVersion===1&&exact(envelope,["schemaVersion","account","symbol","timeframe","drawings"])){
+  if(envelope.account!==s.account)throw Error("Ältere Zeichnungsdatei gehört zu einem anderen Konto.");
+  if(envelope.symbol!==chartSymbol()||envelope.timeframe!==(s.tf||"M15"))throw Error("Layout-Symbol oder Timeframe stimmt nicht mit dem aktiven Chart überein.");
+  if(!Array.isArray(envelope.drawings)||envelope.drawings.length>MAX_DRAWINGS)throw Error("Ältere Zeichnungsdatei enthält eine ungültige Zeichnungsliste.");
+  const current=exportWorkspaceDocument();if(!current)throw Error("Chart ist noch nicht bereit.");
+  envelope={format:"2eas-chart-layout:v2",schemaVersion:2,symbol:chartSymbol(),timeframe:s.tf||"M15",
+   document:{...current,symbol:chartSymbol(),timeframe:s.tf||"M15",drawings:envelope.drawings}};
+ }
  if(!exact(envelope,["format","schemaVersion","symbol","timeframe","document"])||envelope.format!=="2eas-chart-layout:v2"||envelope.schemaVersion!==2)throw Error("Layoutdatei verwendet kein unterstütztes schema-v2-Format.");
  if(envelope.symbol!==chartSymbol()||envelope.timeframe!==(s.tf||"M15"))throw Error("Layout-Symbol oder Timeframe stimmt nicht mit dem aktiven Chart überein.");
  const bytes=new TextEncoder().encode(JSON.stringify(envelope)).byteLength;if(bytes>PORTABLE_LAYOUT_LIMIT)throw Error("Layoutdatei überschreitet 512 KiB.");
