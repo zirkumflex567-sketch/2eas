@@ -49,8 +49,8 @@
 - [x] Run the new Chromium smoke, native v5 TypeScript check/build, existing v5 preview/drawing smokes, Beta smoke, and focused frontend tests.
 - [x] Run `git diff --check` and review every changed path for network/write routes.
 - [x] Run the full Python regression suite (1,468 passed, 1 skipped, 445 subtests passed; four existing FastAPI deprecation warnings).
-- [ ] Record this slice as partial FR-002/FR-001 evidence; do not mark v5 production parity, hardware acceptance, or FR-002 complete.
-- [ ] Commit and push to `main` only after checks pass; guarded local and htown `/stt` rollout remains governed by the existing runtime workflow.
+- [x] Record this slice as partial FR-002/FR-001 evidence in `docs/OPEN_TASKS.md`; v5 production parity, hardware acceptance, and FR-002 remain explicitly incomplete.
+- [x] Commit and push to `main` after checks pass. The implementation is in `0323794`; the follow-up Main CI on `44533e8` passed, and the local indicator-feed Chromium smoke plus TypeScript check/build passed again on `cd69c8e`. Guarded local and htown `/stt` rollout remains governed by the existing runtime workflow.
 
 ## Release gates
 
