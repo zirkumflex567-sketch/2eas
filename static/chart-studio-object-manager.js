@@ -51,16 +51,20 @@ function render(){
    "aria-label":"Objekt nach hinten "+name},"↓");
   const duplicate=make("button",{type:"button","data-action":"duplicate","data-index":i,
    "aria-label":"Duplizieren "+name},"Kopie");
+  const shared=state.getIsShared?.(i)===true;
+  const share=make("button",{type:"button","data-action":shared?"unshare":"share","data-index":i,
+   "aria-label":shared?"Nur für dieses Konto teilen":"Für alle Konten dieses Symbols teilen"},
+   shared?"Nur dieses Konto":"Für alle Konten teilen");
   const del=make("button",{type:"button","data-action":"remove","data-index":i,
    "aria-label":"Löschen "+name},"✕");
   up.disabled=i===items.length-1;down.disabled=i===0;
-  duplicate.disabled=items.length>=MAX_DRAWINGS;
-  row.append(picker,label,toggle,lock,up,down,duplicate,del);
+  duplicate.disabled=state.getCanDuplicate?state.getCanDuplicate(i)!==true:items.length>=MAX_DRAWINGS;
+  row.append(picker,label,toggle,lock,up,down,duplicate,share,del);
   fragment.append(row);
  }
  state.list.append(fragment);
 }
-function mount({panel,getItems,getSelected,operate}){
+function mount({panel,getItems,getSelected,getIsShared,getCanDuplicate,operate}){
  if(state||!panel||typeof getItems!=="function"||
   typeof getSelected!=="function"||typeof operate!=="function")return;
  const root=make("details",{className:"cs-object-manager"});
@@ -69,7 +73,7 @@ function mount({panel,getItems,getSelected,operate}){
  const hint=make("p",{},"Anklicken, umbenennen, sperren, ein-/ausblenden, duplizieren oder sortieren. Alles rückgängig machbar.");
  const list=make("div",{className:"cs-object-list"});
  summary.append(count);root.append(summary,hint,list);panel.append(root);
- state={root,list,count,getItems,getSelected,operate};
+ state={root,list,count,getItems,getSelected,getIsShared,getCanDuplicate,operate};
  root.addEventListener("toggle",()=>{if(root.open)render()});
  list.addEventListener("click",event=>{
   const b=event.target.closest("button[data-action]");if(!b)return;

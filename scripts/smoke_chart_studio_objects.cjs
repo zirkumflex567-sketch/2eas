@@ -33,6 +33,59 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process");
   await manager.locator(".cs-object-row").first().waitFor({state:"visible"});
   assert.equal(await manager.locator(".cs-object-row").count(),2);
   assert.ok((await manager.locator(".cs-object-count").textContent()).includes("2"));
+  const share=manager.locator('.cs-object-row[data-index="0"] button[data-action="share"]');
+  assert.equal(await share.count(),1,"each account-local market drawing must have an explicit share action");
+  await share.click();
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),2,
+   "shared drawings remain visible in the active account's chart");
+  assert.equal((await page.evaluate(()=>ChartStudioBeta.exportDocument())).drawings.length,1,
+   "account workspace exports must not duplicate symbol-wide drawings");
+  await page.locator('[data-cmd="undo"]').click();
+  assert.equal((await page.evaluate(()=>ChartStudioBeta.exportDocument())).drawings.length,2,
+   "undo restores the original account scope of a shared drawing");
+  assert.equal(await manager.locator('.cs-object-row button[data-action="share"]').count(),2);
+  await page.locator('[data-cmd="redo"]').click();
+  assert.equal((await page.evaluate(()=>ChartStudioBeta.exportDocument())).drawings.length,1,
+   "redo restores the explicitly shared scope");
+  await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),1,
+   "symbol-wide drawings stay visible after changing accounts");
+  assert.equal(await manager.locator('.cs-object-row button[data-action="unshare"]').count(),1,
+   "the shared drawing remains identifiable after changing accounts");
+  const sharedBefore=await page.evaluate(()=>ChartStudioBeta.getState().drawings[0]);
+  const collidingLocal={schemaVersion:1,drawings:[{id:sharedBefore.id,kind:"horizontal",
+   anchors:[{time:1700000000,price:4200}]}]};
+  assert.equal(await page.evaluate(doc=>ChartStudioBeta.importDocument(doc),collidingLocal),true);
+  const collisionResult=await page.evaluate(()=>({drawings:ChartStudioBeta.getState().drawings,
+   local:ChartStudioBeta.exportDocument().drawings}));
+  assert.equal(collisionResult.drawings.length,2,"local and shared drawings survive colliding imported IDs");
+  assert.deepEqual(collisionResult.drawings.find(d=>d.id===sharedBefore.id),sharedBefore,
+   "an imported local ID collision must not replace the shared geometry");
+  assert.notEqual(collisionResult.local[0].id,sharedBefore.id,
+   "colliding account-local IDs are remapped away from the stable shared ID");
+  const fullLocal={schemaVersion:1,drawings:Array.from({length:1000},(_,i)=>({id:"cap_"+String(i).padStart(4,"0"),
+   kind:"horizontal",anchors:[{time:1700000000+i,price:4000+i/10}]}))};
+  assert.equal(await page.evaluate(doc=>ChartStudioBeta.importDocument(doc),fullLocal),true);
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),1001,
+   "the 1,000 local drawing capacity must not hide a shared drawing");
+  assert.equal(await manager.locator('.cs-object-row button[data-action="unshare"]').count(),1,
+   "shared drawings remain reachable in the object manager at local capacity");
+  assert.equal(await manager.locator('.cs-object-row[data-index="0"] button[data-action="duplicate"]').isDisabled(),true,
+   "account-local duplicates stop at their own 1,000-item limit");
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.importDocument({schemaVersion:1,drawings:[]})),true);
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),1,
+   "replacing local drawings preserves the independent shared layer");
+  await page.evaluate(()=>ChartStudioBeta.account("titan"));
+  const unshare=manager.locator('.cs-object-row[data-index="1"] button[data-action="unshare"]');
+  assert.equal(await unshare.count(),1,"shared drawings must have an explicit return-to-account action");
+  await unshare.click();
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),2);
+  assert.equal((await page.evaluate(()=>ChartStudioBeta.exportDocument())).drawings.length,2,
+   "unsharing returns the drawing to the active account's local layout");
+  await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().drawings.length),0,
+   "unsharing returns a drawing only to the account that performed the action");
+  await page.evaluate(()=>ChartStudioBeta.account("titan"));
   await page.evaluate(()=>{
    const bars=Array.from({length:5000},(_,index)=>{
    const close=4000+Math.sin(index/17)*9+index*.001;

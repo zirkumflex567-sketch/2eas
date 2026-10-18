@@ -31,7 +31,7 @@ function resolveShortcut(event,raw){
  }
  const key=event.key.toLowerCase();return preferenceTools.find(tool=>shortcuts[tool]===key)||null;
 }
-const MAX_DRAWINGS=1000;
+const MAX_DRAWINGS=1000,MAX_VISIBLE_DRAWINGS=2000;
 const MAX_EVIDENCE_ROWS=500;
 const ratios=[0,.236,.382,.5,.618,.786,1];
 let s=null,requestId=0,scenarioGeneration=0,portfolioGeneration=0,ticketGeneration=0,planTimer=null;
@@ -133,7 +133,19 @@ function cleanOptions(raw){const out=optsDefault();if(!raw||typeof raw!=="object
  if(Number.isInteger(raw.bbPeriod)&&raw.bbPeriod>=2&&raw.bbPeriod<=300)out.bbPeriod=raw.bbPeriod;
  if(typeof raw.bbStdDev==="number"&&Number.isFinite(raw.bbStdDev)&&raw.bbStdDev>=.1&&raw.bbStdDev<=10)out.bbStdDev=raw.bbStdDev;return out}
 const chartSymbol=()=>s?.symbol||"XAUUSD";
-const drawKey=()=>s.account+":draw:"+chartSymbol(),optKey=()=>s.account+":opts:"+chartSymbol();
+const drawKey=()=>s.account+":draw:"+chartSymbol(),globalDrawKey=()=>"symbol-global:draw:"+chartSymbol(),optKey=()=>s.account+":opts:"+chartSymbol();
+function loadDrawings(){
+ const local=safeDraw(get(drawKey(),[])),global=safeDraw(get(globalDrawKey(),[])),globalIds=new Set(global.map(d=>d.id));
+ const uniqueLocal=local.map(d=>{if(!globalIds.has(d.id))return d;const copy={...d};delete copy.id;return copy});
+ s.draw=safeDraw([...uniqueLocal,...global],MAX_VISIBLE_DRAWINGS);s.globalDrawingIds=new Set(global.map(d=>d.id));
+}
+function localDrawings(){return (s?.draw||[]).filter(d=>!s.globalDrawingIds?.has(d.id))}
+function canAddLocalDrawing(){if(localDrawings().length<MAX_DRAWINGS)return true;updateMessage("Maximal 1.000 kontolokale Zeichnungen.");return false}
+function combineWithGlobal(localItems){
+ const global=s.draw.filter(d=>s.globalDrawingIds?.has(d.id)),ids=new Set(global.map(d=>d.id));
+ const local=safeDraw(localItems).map(d=>{if(!ids.has(d.id))return d;const copy={...d};delete copy.id;return copy});
+ return safeDraw([...local,...global],MAX_VISIBLE_DRAWINGS);
+}
 const favoritesKey=()=>s.account+":favorite-tools",shortcutsKey=()=>s.account+":tool-shortcuts";
 function effectiveShortcuts(raw){
  const result={...defaultShortcuts},custom=normalizeShortcuts(raw);
@@ -179,7 +191,7 @@ function saveProfile(){
  if(!name)return;const trimmed=name.trim().slice(0,40);if(!trimmed)return;
  const all=profiles();if(Object.keys(all).length>=15&&!all[trimmed]){updateMessage("Maximal 15 lokale Layouts.");return}
  if(all[trimmed]&&!window.confirm("Gespeichertes Layout überschreiben?"))return;
- all[trimmed]={schemaVersion:1,symbol:chartSymbol(),timeframe:s.tf||"M15",draw:json(s.draw),opts:json(s.opts),
+ all[trimmed]={schemaVersion:1,symbol:chartSymbol(),timeframe:s.tf||"M15",draw:json(localDrawings()),opts:json(s.opts),
   indicators:window.ChartStudioIndicators?.settings()||null,
    movingAverages:window.ChartStudioAverages?.getConfigs()||[],
    chartAppearance:window.ChartStudioAppearance?.settings()||{},
@@ -213,7 +225,7 @@ function renameProfile(){
 function resetChart(){
  if(!window.confirm("Aktuelle Chartansicht auf Standard zurücksetzen? Gespeicherte Layouts bleiben erhalten."))return;
  setTool("cursor");
- snapshot();s.draw=[];s.selected=null;s.opts=optsDefault();persist();save(optKey(),s.opts);showOpts();updateSeries();
+ snapshot();s.draw=s.draw.filter(d=>s.globalDrawingIds?.has(d.id));s.selected=null;s.opts=optsDefault();persist();save(optKey(),s.opts);showOpts();updateSeries();
  window.ChartStudioIndicators?.applySettings({});
  window.ChartStudioAverages?.applySettings([]);
  window.ChartStudioAppearance?.applySettings({});
@@ -223,7 +235,7 @@ function resetChart(){
 }
 function loadProfile(){
  const name=s.panel.querySelector("#cs-beta-profile")?.value;const item=profiles()[name];
- if(!item)return;if(item.schemaVersion!==1||item.symbol!==chartSymbol()||item.timeframe!==(s.tf||"M15")){updateMessage("Layout gehört zu einem anderen Symbol oder Timeframe.");return}snapshot();s.draw=safeDraw(item.draw);s.selected=null;
+ if(!item)return;if(item.schemaVersion!==1||item.symbol!==chartSymbol()||item.timeframe!==(s.tf||"M15")){updateMessage("Layout gehört zu einem anderen Symbol oder Timeframe.");return}snapshot();s.draw=combineWithGlobal(item.draw);s.selected=null;
  s.opts=cleanOptions(item.opts);persist();save(optKey(),s.opts);showOpts();updateSeries();
  if(item.indicators)window.ChartStudioIndicators?.applySettings(item.indicators);
  window.ChartStudioAverages?.applySettings(item.movingAverages||[]);
@@ -235,7 +247,7 @@ function loadProfile(){
 }
 function exportWorkspaceDocument(){
  if(!s)return null;
- return {schemaVersion:1,drawings:json(s.draw),options:json(s.opts),
+ return {schemaVersion:1,drawings:json(localDrawings()),options:json(s.opts),
   indicators:window.ChartStudioIndicators?.settings()||{},
    movingAverages:window.ChartStudioAverages?.getConfigs()||[],
   chartAppearance:window.ChartStudioAppearance?.settings()||{},
@@ -249,7 +261,7 @@ function importWorkspaceDocument(document){
  // Do not import scenarios, order tickets, account identity or executable text.
  const drawings=safeDraw(document.drawings);
  if(drawings.length!==document.drawings.length)return false;
- snapshot();s.draw=drawings;s.selected=null;s.opts=cleanOptions(document.options);
+ snapshot();s.draw=combineWithGlobal(drawings);s.selected=null;s.opts=cleanOptions(document.options);
  persist();save(optKey(),s.opts);showOpts();updateSeries();
  window.ChartStudioIndicators?.applySettings(document.indicators||{});
  window.ChartStudioAverages?.applySettings(document.movingAverages||[]);
@@ -769,12 +781,12 @@ async function loadPortfolio(account,symbol=chartSymbol()){
 }
 function sma(c,n){const out=[];let sum=0;for(let i=0;i<c.length;i++){sum+=Number(c[i].close);if(i>=n)sum-=Number(c[i-n].close);if(i>=n-1)out.push({time:c[i].time,value:sum/n})}return out}
 function bollinger(c,n=20,k=2){const hi=[],midline=[],lo=[];if(!Number.isInteger(n)||n<1||!Number.isFinite(k)||k<0)return {upper:hi,middle:midline,lower:lo};let sum=0,sq=0;for(let i=0;i<c.length;i++){let v=Number(c[i].close);sum+=v;sq+=v*v;if(i>=n){v=Number(c[i-n].close);sum-=v;sq-=v*v}if(i>=n-1){const mid=sum/n,sd=Math.sqrt(Math.max(0,sq/n-mid*mid));midline.push({time:c[i].time,value:mid});hi.push({time:c[i].time,value:mid+k*sd});lo.push({time:c[i].time,value:mid-k*sd})}}return {upper:hi,middle:midline,lower:lo}}
-function safeDraw(list){
+function safeDraw(list,limit=MAX_DRAWINGS){
  if(!Array.isArray(list))return [];
  const reserved=new Set(list.filter(o=>o&&typeof o.id==="string"&&/^[A-Za-z0-9_-]{1,32}$/.test(o.id)).map(o=>o.id));
  const used=new Set(),allowed=new Set(["kind","anchors","id","label","visible","locked","levels"]);
  let serial=1;const result=[];
- for(const o of list.slice(0,MAX_DRAWINGS)){
+ for(const o of list.slice(0,limit)){
   if(!window.ChartStudioDrawingGeometry?.validDrawing(o)||
    Object.keys(o).some(k=>!allowed.has(k)))continue;
   if(o.id!==undefined&&(typeof o.id!=="string"||
@@ -797,10 +809,12 @@ function safeDraw(list){
  }
  return result;
 }
-function snapshot(){s.undo.push(json(s.draw));if(s.undo.length>50)s.undo.shift();s.redo=[]}
-function persist(){s.draw=safeDraw(s.draw);save(drawKey(),s.draw);window.ChartStudioObjectManager?.render();requestDraw()}
-function undo(){if(!s?.undo.length)return;s.redo.push(json(s.draw));s.draw=s.undo.pop();s.selected=null;persist()}
-function redo(){if(!s?.redo.length)return;s.undo.push(json(s.draw));s.draw=s.redo.pop();s.selected=null;persist()}
+function drawingSnapshot(){return {draw:json(s.draw),globalIds:[...(s.globalDrawingIds||[])]}}
+function restoreDrawingSnapshot(value){if(Array.isArray(value)){s.draw=safeDraw(value);return}if(value&&Array.isArray(value.draw)&&Array.isArray(value.globalIds)){s.draw=safeDraw(value.draw);s.globalDrawingIds=new Set(value.globalIds.filter(id=>s.draw.some(d=>d.id===id)))}}
+function snapshot(){s.undo.push(drawingSnapshot());if(s.undo.length>50)s.undo.shift();s.redo=[]}
+function persist(){s.draw=safeDraw(s.draw,MAX_VISIBLE_DRAWINGS);const shared=s.draw.filter(d=>s.globalDrawingIds?.has(d.id)),local=s.draw.filter(d=>!s.globalDrawingIds?.has(d.id));s.globalDrawingIds=new Set(shared.map(d=>d.id));save(drawKey(),safeDraw(local));save(globalDrawKey(),safeDraw(shared));window.ChartStudioObjectManager?.render();requestDraw()}
+function undo(){if(!s?.undo.length)return;s.redo.push(drawingSnapshot());restoreDrawingSnapshot(s.undo.pop());s.selected=null;persist()}
+function redo(){if(!s?.redo.length)return;s.undo.push(drawingSnapshot());restoreDrawingSnapshot(s.redo.pop());s.selected=null;persist()}
 function setTool(kind){
  if(!s||!kinds.includes(kind))return;
  if(s.tool==="plan"&&kind!=="plan")cancelPlanPreview();
@@ -963,6 +977,13 @@ function operateObject(i,action,value){
   setTool("edit");s.selected=i;window.ChartStudioObjectManager?.render();requestDraw();return true;
  }
  const obj=s.draw[i];
+ if(action==="share"||action==="unshare"){
+  if(action==="share"&&s.draw.filter(d=>s.globalDrawingIds?.has(d.id)).length>=MAX_DRAWINGS){updateMessage("Maximal 1.000 symbolweit geteilte Zeichnungen.");return false}
+  if(action==="unshare"&&localDrawings().length>=MAX_DRAWINGS){updateMessage("Dieses Konto hat bereits 1.000 lokale Zeichnungen.");return false}
+  snapshot();
+  if(action==="share")s.globalDrawingIds.add(obj.id);else s.globalDrawingIds.delete(obj.id);
+  persist();updateMessage(action==="share"?"Zeichnung für alle Konten dieses Symbols geteilt.":"Zeichnung wieder auf dieses Konto beschränkt.");return true;
+ }
  if(obj.locked&&!["visibility","lock","duplicate"].includes(action)){
   updateMessage("Zeichnung gesperrt: zum Bearbeiten erst entsperren.");return false;
  }
@@ -974,7 +995,7 @@ function operateObject(i,action,value){
   updateMessage("Textannotation benötigt mindestens ein druckbares Zeichen.");
   window.ChartStudioObjectManager?.render();return false;
  }
- if(action==="duplicate"&&s.draw.length>=MAX_DRAWINGS){updateMessage("Maximal 1.000 Objekte.");return false}
+ if(action==="duplicate"&&localDrawings().length>=MAX_DRAWINGS){updateMessage("Maximal 1.000 kontolokale Objekte.");return false}
  if(action==="up"&&i===s.draw.length-1)return false;
  if(action==="down"&&i===0)return false;
  if(!["rename","visibility","lock","duplicate","remove","up","down"].includes(action))return false;
@@ -1220,6 +1241,7 @@ function pointerdown(e){
  }
  const raw=unproject(x,y);if(!raw)return;
  const p=s.tool==="plan"||s.tool==="position-draft"?raw:snapAnchor(raw);
+ if(!["cursor","edit","plan","position-draft"].includes(s.tool)&&!canAddLocalDrawing())return;
  if(s.tool==="position-draft"){
   const grip=findPositionDraftGrip(y);if(!grip){updateMessage("Positionsentwurf: SL- oder TP-Griff anklicken.");return}
   s.positionDraftDrag=grip;s.canvas.setPointerCapture(e.pointerId);e.preventDefault();return;
@@ -1249,6 +1271,7 @@ function pointerdown(e){
   if(s.tool==="fibtrend"&&s.pending.some(anchor=>anchor.time===p.time)){updateMessage("Trend-Based-Fibonacci braucht drei verschiedene Kerzen.");requestDraw();e.preventDefault();return}
   s.pending.push(p);
   if(s.pending.length>=required){
+   if(!canAddLocalDrawing()){s.begin=null;s.pending=[];s.preview=null;requestDraw();return}
    snapshot();s.draw.push({kind:s.tool,anchors:s.pending.map(point=>({...point})),
      ...(s.tool==="fib"?{levels:[...s.fibLevels]}:{})});
    s.begin=null;s.pending=[];s.preview=null;persist();updateMessage("Zeichnung gespeichert.");
@@ -1312,7 +1335,7 @@ function symbol(value){
  if(!s||!valid)return false;if(value===chartSymbol())return true;
  s.extensions?.clear();cancelPlanPreview();window.ChartStudioBrokerPanel?.invalidateDraft("Chartsymbol geändert · Positionsentwurf verworfen.");
  if(s.tool==="position-draft"||s.tool==="plan")setTool("cursor");
- s.symbol=value;syncTicketDraftScope();window.ChartStudioIndicators?.setScope(s.account,value,s.tf);window.ChartStudioServerSync?.scope(s.account,value);s.marketQuote=null;s.coordinates.setScope({account:s.account,symbol:value,timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.magnet=get(magnetKey(),false)===true;
+ s.symbol=value;syncTicketDraftScope();window.ChartStudioIndicators?.setScope(s.account,value,s.tf);window.ChartStudioServerSync?.scope(s.account,value);s.marketQuote=null;s.coordinates.setScope({account:s.account,symbol:value,timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:value,timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:value,timeframe:s.tf});loadDrawings();s.opts=cleanOptions(get(optKey(),{}));s.magnet=get(magnetKey(),false)===true;
  s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
  s.candles=[];s.candleSignature=null;s.positions=[];s.verifiedPositions=[];s.positionContext=null;refreshMainChartPositionAutoscale();s.positionDraft=null;s.positionDraftDrag=null;s.brokerMarkers=[];window.ChartStudioReplay?.switchContext(s.account,s.tf,value);
  s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.undo=[];s.redo=[];
@@ -1326,7 +1349,7 @@ function symbol(value){
  refreshProfiles();showOpts();updateSeries();window.ChartStudioObjectManager?.render();requestDraw();
  window.dispatchEvent(new CustomEvent("chartstudio:symbol-change",{detail:{account:s.account,symbol:value,timeframe:s.tf}}));return true;
 }
-function account(id,preferredSymbol,deferPortfolio=false){if(!s)return;cancelPlanPreview();if(s.account!==id)s.extensions?.clear();s.account=id;if(typeof preferredSymbol==="string"&&/^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$/.test(preferredSymbol))s.symbol=preferredSymbol;syncTicketDraftScope();const scenarioSymbol=s.panel.querySelector("#cs-scenario-symbol");if(scenarioSymbol)scenarioSymbol.textContent=chartSymbol();s.favorites=normalizeFavorites(get(favoritesKey(),[]));s.shortcuts=normalizeShortcuts(get(shortcutsKey(),{}));renderToolPreferences();s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});clearEvidence();s.verifiedPositions=[];s.positionContext=null;refreshMainChartPositionAutoscale();s.positionDraft=null;s.positionDraftDrag=null;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioLoading=false;s.portfolioError="";if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;s.draw=safeDraw(get(drawKey(),[]));s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
+function account(id,preferredSymbol,deferPortfolio=false){if(!s)return;cancelPlanPreview();if(s.account!==id)s.extensions?.clear();s.account=id;if(typeof preferredSymbol==="string"&&/^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$/.test(preferredSymbol))s.symbol=preferredSymbol;syncTicketDraftScope();const scenarioSymbol=s.panel.querySelector("#cs-scenario-symbol");if(scenarioSymbol)scenarioSymbol.textContent=chartSymbol();s.favorites=normalizeFavorites(get(favoritesKey(),[]));s.shortcuts=normalizeShortcuts(get(shortcutsKey(),{}));renderToolPreferences();s.coordinates.setScope({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.alerts?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.marketStructure?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});s.mtfConfluence?.setContext({account:s.account,symbol:chartSymbol(),timeframe:s.tf});clearEvidence();s.verifiedPositions=[];s.positionContext=null;refreshMainChartPositionAutoscale();s.positionDraft=null;s.positionDraftDrag=null;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioLoading=false;s.portfolioError="";if(s.tool==="position-draft")setTool("cursor");s.candleSignature=null;s.extraPrefix=null;s.extraTime=null;s.extraOptions=null;s.bbData=null;loadDrawings();s.opts=cleanOptions(get(optKey(),{}));s.undo=[];s.redo=[];s.positions=[];s.brokerMarkers=[];s.scenario=null;s.validatedScenario=null;s.begin=null;s.preview=null;s.drag=null;s.pending=[];s.selected=null;s.magnet=get(magnetKey(),false)===true;
  s.lastScenarioPreview=null;s.marketQuote=null;clearScenarioDraft("Konto geändert · neue Quote und Preise eingeben; Gebühren/Risikobudget neu bestätigen.",true);clearDataWindowPin();
   s.fibLevels=window.ChartStudioFib?.normalizeLevels(get(fibKey(),ratios))||[...ratios];
   const fibInput=s.panel.querySelector("#cs-fib-levels");if(fibInput)fibInput.value=window.ChartStudioFib?.display(s.fibLevels)||"";
@@ -1581,7 +1604,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  try{window.ChartStudioChartTypes?.mount({chart,candleSeries,panel,account:accountId});}
  catch(err){console.warn("Chart type editor unavailable:",err);}
  try{window.ChartStudioObjectManager?.mount({panel,
-  getItems:()=>s?.draw||[],getSelected:()=>s?.selected,
+  getItems:()=>s?.draw||[],getSelected:()=>s?.selected,getIsShared:i=>!!s?.globalDrawingIds?.has(s?.draw?.[i]?.id),getCanDuplicate:()=>localDrawings().length<MAX_DRAWINGS,
   operate:operateObject})}catch(err){console.warn("Chart object manager unavailable:",err)}
  try{s.mtfConfluence=window.ChartStudioMTFPanel?.mount({panel,account:accountId,symbol:chartSymbol(),timeframe:tf})||null}
  catch(err){console.warn("MTF-Konfluenz nicht verfügbar:",err)}
@@ -1687,8 +1710,8 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
     b.textContent="Magnet: "+(s.magnet?"AN":"AUS")+" · Kerzen-OHLC";
     updateMessage(s.magnet?"OHLC-Snap im 12-Pixel-Radius aktiviert.":"Magnet deaktiviert.");
    }
-  if(b.dataset.cmd==="clear"&&window.confirm("Zeichnungen für dieses Konto löschen?")){snapshot();s.draw=[];s.selected=null;persist()}
-  if(b.dataset.cmd==="export"){const data=JSON.stringify({schemaVersion:1,account:s.account,symbol:chartSymbol(),timeframe:s.tf||"M15",drawings:s.draw},null,2);
+  if(b.dataset.cmd==="clear"&&window.confirm("Zeichnungen für dieses Konto löschen?")){snapshot();s.draw=s.draw.filter(d=>s.globalDrawingIds?.has(d.id));s.selected=null;persist()}
+  if(b.dataset.cmd==="export"){const data=JSON.stringify({schemaVersion:1,account:s.account,symbol:chartSymbol(),timeframe:s.tf||"M15",drawings:localDrawings()},null,2);
    navigator.clipboard?.writeText(data).then(()=>updateMessage("JSON kopiert.")).catch(()=>updateMessage("Kopieren nicht möglich."))}
  });
  panel.querySelector("#cs-beta-layout-file")?.addEventListener("change",event=>{
