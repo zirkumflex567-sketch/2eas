@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import stat
 import sys
@@ -170,14 +171,19 @@ def _installation_matches(target: Path, files: dict[str, Path], artifact_hash: s
 def _cleanup_staging(experts: Path, staging: Path) -> None:
     if not staging.exists():
         return
-    if _is_reparse(staging) or staging.parent.resolve() != experts.resolve() or not staging.name.startswith(".ChartStudioEvidence_goldm15."):
+    if (_is_reparse(staging) or staging.parent.resolve() != experts.resolve() or
+            re.fullmatch(r"\.ChartStudioEvidence_goldm15(?:_[A-Za-z0-9-]{1,32})?\.[A-Za-z0-9_-]+", staging.name) is None):
         raise RuntimeError("refusing unsafe staging cleanup")
     shutil.rmtree(staging)
 
 
-def install_candidate(alias: str, package_path: Path, *, mt5=None) -> InstallResult:
+def install_candidate(alias: str, package_path: Path, *, mt5=None,
+                      install_directory: str = TARGET_DIRECTORY) -> InstallResult:
     if alias != ALLOWED_ACCOUNT:
         raise ValueError("account is not allowlisted for GoldM15 recorder installation")
+    if (not isinstance(install_directory, str) or
+            re.fullmatch(r"ChartStudioEvidence_goldm15(?:_[A-Za-z0-9-]{1,32})?", install_directory) is None):
+        raise ValueError("install directory must use the managed GoldM15 evidence name")
     spec = account_gateway.ACCOUNTS.get(alias)
     if (not spec or spec.get("is_demo") is not True or spec.get("challenge_protection") is not False):
         raise ValueError("configured non-challenge demo account required")
@@ -208,7 +214,7 @@ def install_candidate(alias: str, package_path: Path, *, mt5=None) -> InstallRes
     experts = data_root / "MQL5" / "Experts"
     if any(_is_reparse(path) for path in (data_root / "MQL5", experts)):
         raise ValueError("terminal Experts path cannot contain links or junctions")
-    target = experts / TARGET_DIRECTORY
+    target = experts / install_directory
     if target.exists():
         if _installation_matches(target, files, artifact_hash):
             return InstallResult(target, True, artifact_hash)
@@ -217,7 +223,7 @@ def install_candidate(alias: str, package_path: Path, *, mt5=None) -> InstallRes
     experts.mkdir(parents=True, exist_ok=True)
     if _is_reparse(experts):
         raise ValueError("terminal Experts path cannot be a link or junction")
-    staging = Path(tempfile.mkdtemp(prefix=f".{TARGET_DIRECTORY}.", dir=experts))
+    staging = Path(tempfile.mkdtemp(prefix=f".{install_directory}.", dir=experts))
     staging_owned = True
     try:
         for name, source in files.items():
@@ -252,9 +258,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("account", choices=[ALLOWED_ACCOUNT])
     parser.add_argument("--package", type=Path, default=ROOT / "output" / "goldm15-evidence" / ALLOWED_ACCOUNT)
+    parser.add_argument("--install-directory", default=TARGET_DIRECTORY)
     args = parser.parse_args()
     try:
-        result = install_candidate(args.account, args.package)
+        result = install_candidate(args.account, args.package, install_directory=args.install_directory)
     except Exception as exc:
         print(f"Refused: {type(exc).__name__}", file=sys.stderr)
         return 2

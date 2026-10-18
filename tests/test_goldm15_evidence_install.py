@@ -167,6 +167,36 @@ def test_conflicting_destination_is_never_overwritten(tmp_path, mt5_fixture):
     assert sentinel.read_bytes() == b"existing different installation"
 
 
+def test_versioned_install_keeps_prior_candidate_unchanged(tmp_path, mt5_fixture):
+    package = package_fixture(tmp_path)
+    mt5, terminal_root = mt5_fixture
+    experts = terminal_root / "MQL5" / "Experts"
+    previous = experts / "ChartStudioEvidence_goldm15"
+    previous.mkdir(parents=True)
+    sentinel = previous / "GoldM15_EvidenceCapture.ex5"
+    sentinel.write_bytes(b"previous candidate")
+
+    result = INSTALL.install_candidate(
+        "goldm15", package, mt5=mt5, install_directory="ChartStudioEvidence_goldm15_20261019"
+    )
+
+    expected = experts / "ChartStudioEvidence_goldm15_20261019"
+    assert result.installed_directory == expected
+    assert (expected / "GoldM15_EvidenceCapture.ex5").read_bytes() == b"compiled candidate"
+    assert sentinel.read_bytes() == b"previous candidate"
+
+
+@pytest.mark.parametrize("name", ["..", ".ChartStudioEvidence_goldm15.bad", "ChartStudioEvidence_goldm15/other", "other"])
+def test_versioned_install_directory_is_restricted_to_safe_goldm15_names(tmp_path, mt5_fixture, name):
+    package = package_fixture(tmp_path)
+    mt5, terminal_root = mt5_fixture
+
+    with pytest.raises(ValueError, match="install directory"):
+        INSTALL.install_candidate("goldm15", package, mt5=mt5, install_directory=name)
+
+    assert not (terminal_root / "MQL5" / "Experts").exists()
+
+
 def test_exact_existing_installation_is_idempotent(tmp_path, mt5_fixture):
     package = package_fixture(tmp_path)
     mt5, _ = mt5_fixture
