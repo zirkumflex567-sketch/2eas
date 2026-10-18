@@ -1,0 +1,262 @@
+{
+  "schemaVersion": 1,
+  "measuredAtUtc": "2026-10-18T23:36:17.215Z",
+  "runtime": {
+    "startupRevision": "50015a65d3e92c2da837ee927a779925935890b1",
+    "diskRevision": "50015a65d3e92c2da837ee927a779925935890b1",
+    "restartRequired": false,
+    "applicationCodeDirty": false
+  },
+  "scope": [
+    "titan",
+    "xau5m_m5",
+    "titan_m5",
+    "xau5m_500",
+    "goldm15"
+  ],
+  "method": "GET",
+  "measurementPlan": {
+    "mode": "one-shot",
+    "requestsPerAccount": 5,
+    "maxRequests": 25,
+    "completedCycles": null
+  },
+  "candles": {
+    "timeframe": "M15",
+    "count": 150
+  },
+  "sampleCount": 25,
+  "byAccount": [
+    {
+      "account": "titan",
+      "requests": 5,
+      "ratesRequests": 4,
+      "historyRequests": 1,
+      "traces": 5,
+      "clientMs": {
+        "median": 176.895,
+        "p95": 708.357,
+        "max": 708.357
+      },
+      "spanMs": {
+        "mt5_lock_wait": {
+          "count": 5,
+          "median": 0.001,
+          "p95": 318.067,
+          "max": 318.067
+        },
+        "mt5_initialize": {
+          "count": 4,
+          "median": 0.853,
+          "p95": 1.12,
+          "max": 1.12
+        },
+        "mt5_identity_verify": {
+          "count": 5,
+          "median": 0.795,
+          "p95": 1.202,
+          "max": 1.202
+        },
+        "mt5_rates": {
+          "count": 4,
+          "median": 0.118,
+          "p95": 0.139,
+          "max": 0.139
+        },
+        "mt5_history": {
+          "count": 1,
+          "median": 0.101,
+          "p95": 0.101,
+          "max": 0.101
+        }
+      }
+    },
+    {
+      "account": "xau5m_m5",
+      "requests": 5,
+      "ratesRequests": 4,
+      "historyRequests": 1,
+      "traces": 5,
+      "clientMs": {
+        "median": 278.336,
+        "p95": 875.438,
+        "max": 875.438
+      },
+      "spanMs": {
+        "mt5_lock_wait": {
+          "count": 5,
+          "median": 0.001,
+          "p95": 671.017,
+          "max": 671.017
+        },
+        "mt5_initialize": {
+          "count": 4,
+          "median": 0.833,
+          "p95": 1.166,
+          "max": 1.166
+        },
+        "mt5_identity_verify": {
+          "count": 5,
+          "median": 0.808,
+          "p95": 0.846,
+          "max": 0.846
+        },
+        "mt5_rates": {
+          "count": 4,
+          "median": 0.117,
+          "p95": 0.126,
+          "max": 0.126
+        },
+        "mt5_history": {
+          "count": 1,
+          "median": 0.087,
+          "p95": 0.087,
+          "max": 0.087
+        }
+      }
+    },
+    {
+      "account": "titan_m5",
+      "requests": 5,
+      "ratesRequests": 4,
+      "historyRequests": 1,
+      "traces": 5,
+      "clientMs": {
+        "median": 137.974,
+        "p95": 1692.117,
+        "max": 1692.117
+      },
+      "spanMs": {
+        "mt5_lock_wait": {
+          "count": 5,
+          "median": 0.001,
+          "p95": 1247.497,
+          "max": 1247.497
+        },
+        "mt5_initialize": {
+          "count": 4,
+          "median": 1.05,
+          "p95": 2.653,
+          "max": 2.653
+        },
+        "mt5_identity_verify": {
+          "count": 5,
+          "median": 0.842,
+          "p95": 0.912,
+          "max": 0.912
+        },
+        "mt5_rates": {
+          "count": 4,
+          "median": 0.121,
+          "p95": 0.193,
+          "max": 0.193
+        },
+        "mt5_history": {
+          "count": 1,
+          "median": 0.105,
+          "p95": 0.105,
+          "max": 0.105
+        }
+      }
+    },
+    {
+      "account": "xau5m_500",
+      "requests": 5,
+      "ratesRequests": 4,
+      "historyRequests": 1,
+      "traces": 5,
+      "clientMs": {
+        "median": 203.101,
+        "p95": 1865.794,
+        "max": 1865.794
+      },
+      "spanMs": {
+        "mt5_lock_wait": {
+          "count": 5,
+          "median": 0.001,
+          "p95": 1653.14,
+          "max": 1653.14
+        },
+        "mt5_initialize": {
+          "count": 4,
+          "median": 0.891,
+          "p95": 0.95,
+          "max": 0.95
+        },
+        "mt5_identity_verify": {
+          "count": 5,
+          "median": 0.723,
+          "p95": 0.842,
+          "max": 0.842
+        },
+        "mt5_rates": {
+          "count": 4,
+          "median": 0.116,
+          "p95": 0.131,
+          "max": 0.131
+        },
+        "mt5_history": {
+          "count": 1,
+          "median": 0.085,
+          "p95": 0.085,
+          "max": 0.085
+        }
+      }
+    },
+    {
+      "account": "goldm15",
+      "requests": 5,
+      "ratesRequests": 4,
+      "historyRequests": 1,
+      "traces": 5,
+      "clientMs": {
+        "median": 274.948,
+        "p95": 2376.43,
+        "max": 2376.43
+      },
+      "spanMs": {
+        "mt5_lock_wait": {
+          "count": 5,
+          "median": 0.002,
+          "p95": 2115.015,
+          "max": 2115.015
+        },
+        "mt5_initialize": {
+          "count": 3,
+          "median": 0.978,
+          "p95": 1.017,
+          "max": 1.017
+        },
+        "mt5_identity_verify": {
+          "count": 5,
+          "median": 0.785,
+          "p95": 0.892,
+          "max": 0.892
+        },
+        "mt5_rates": {
+          "count": 4,
+          "median": 0.271,
+          "p95": 0.335,
+          "max": 0.335
+        },
+        "mt5_history": {
+          "count": 1,
+          "median": 0.142,
+          "p95": 0.142,
+          "max": 0.142
+        }
+      }
+    }
+  ],
+  "process": {
+    "cpuSecondsBefore": 119.188,
+    "cpuSecondsAfter": 124.516,
+    "cpuSecondsDelta": 5.328,
+    "privateBytesBefore": 538476544,
+    "privateBytesAfter": 539078656,
+    "workingSetBytesBefore": 161722368,
+    "workingSetBytesAfter": 163024896
+  },
+  "mutations": 0,
+  "blueberryRequests": 0
+}
