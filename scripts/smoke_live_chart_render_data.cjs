@@ -6,6 +6,10 @@ const { countCandleInkPixels } = require("./chart_render_pixels.cjs");
 
 const base = process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056";
 const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
+const baseUrl = new URL(base);
+const basePath = baseUrl.pathname.replace(/\/$/, "");
+const PREVIEW_FLAG_OFF = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;";
+const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
 
 (async () => {
   const browser = await chromium.launch({ headless: true });
@@ -30,11 +34,23 @@ const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
       window.__chartExpectedAccount = new URL(location.href).searchParams.get("account");
       window.__mainCandleSeriesCaptures = [];
     });
-    await page.route("**/static/lightweight-charts.js", async route => {
-      const response = await route.fetch();
-      const source = await response.text();
-      const hook = `;(()=>{const api=window.LightweightCharts,createChart=api.createChart,wrappedCreate=(...args)=>{const chart=createChart.apply(api,args),add=chart.addCandlestickSeries.bind(chart);chart.addCandlestickSeries=function(...seriesArgs){const series=add(...seriesArgs),setData=series.setData.bind(series);series.setData=function(rows){const data=Array.isArray(rows)?rows.map(row=>({time:row.time,open:row.open,high:row.high,low:row.low,close:row.close})):[];window.__mainCandleSeriesCaptures.push({account:window.__chartExpectedAccount,data});return setData(rows)};return series};return chart};window.LightweightCharts={...api,createChart:wrappedCreate,__mainCandleCaptureInstalled:true}})();`;
-      await route.fulfill({ response, body: source + hook });
+    await page.route("**/*", async route => {
+      const url = new URL(route.request().url());
+      if (url.origin === baseUrl.origin && url.pathname === `${basePath}/` && url.searchParams.has("account")) {
+        const response = await route.fetch();
+        const html = await response.text();
+        assert.ok(html.includes(PREVIEW_FLAG_OFF), "the server must keep the production v5 preview disabled");
+        await route.fulfill({ response, body: html.replace(PREVIEW_FLAG_OFF, PREVIEW_FLAG_ON) });
+        return;
+      }
+      if (url.origin === baseUrl.origin && url.pathname === `${basePath}/static/lightweight-charts.js`) {
+        const response = await route.fetch();
+        const source = await response.text();
+        const hook = `;(()=>{const api=window.LightweightCharts,createChart=api.createChart,wrappedCreate=(...args)=>{const chart=createChart.apply(api,args),add=chart.addCandlestickSeries.bind(chart);chart.addCandlestickSeries=function(...seriesArgs){const series=add(...seriesArgs),setData=series.setData.bind(series);series.setData=function(rows){const data=Array.isArray(rows)?rows.map(row=>({time:row.time,open:row.open,high:row.high,low:row.low,close:row.close})):[];window.__mainCandleSeriesCaptures.push({account:window.__chartExpectedAccount,data});return setData(rows)};return series};return chart};window.LightweightCharts={...api,createChart:wrappedCreate,__mainCandleCaptureInstalled:true}})();`;
+        await route.fulfill({ response, body: source + hook });
+        return;
+      }
+      await route.continue();
     });
 
     const results = [];
@@ -123,29 +139,31 @@ const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
       let preview = "NOT_RUN";
       if (index === 0) {
         const previewEnabled = await page.evaluate(() => window.CHART_STUDIO_V5_PREVIEW_ENABLED === true);
-        const previewButton = page.locator("#chart-v5-preview-btn");
-        if (previewEnabled) {
-          await previewButton.waitFor({state:"visible"});
-          await previewButton.click();
-          await page.waitForFunction(() => document.querySelector("#chart-v5-preview-status")?.textContent.includes("1001 verifizierte Kerzen"));
-          await page.waitForFunction(() => [...document.querySelectorAll("#chart-v5-preview-host canvas")].some(canvas => canvas.width > 300 && canvas.height > 200));
-          await page.locator("#chart-v5-auto-fib-btn").click();
-          const fib = await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci());
-          assert.equal(fib.result.source, "MT5_VERIFIED");
-          assert.equal(fib.asOf.timeUtc, api.snapshotAsOfUtc);
-          assert.equal(fib.result.timeframe, api.timeframe);
-          assert.equal(fib.series.length, 7);
-          assert.ok(fib.series.every(line => line.visible === true));
-          await page.locator("#chart-v5-auto-fib-btn").click();
-          assert.equal(await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci()), null);
-          preview = "PASSED";
-        } else {
-          assert.equal(await previewButton.isHidden(), true, "the gated native-v5 preview remains unavailable while disabled");
-          preview = "GATED_OFF";
-        }
+        assert.equal(previewEnabled, true, "headless live acceptance enables the gated v5 preview only in its response copy");
+        await page.locator("#chart-v5-preview-btn").waitFor({state:"visible"});
+        await page.locator("#chart-v5-preview-btn").click();
       }
+      await page.waitForFunction(count => document.querySelector("#chart-v5-preview-status")?.textContent.includes(`${count} verifizierte Kerzen`), 1001);
+      await page.waitForFunction(() => [...document.querySelectorAll("#chart-v5-preview-host canvas")]
+        .some(canvas => canvas.width > 300 && canvas.height > 200));
+      await page.locator("#chart-v5-auto-fib-btn").click();
+      const fib = await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci());
+      assert.ok(fib?.result?.available, `${account} has a confirmed swing in the verified M15 history`);
+      assert.equal(fib.result.source, "MT5_VERIFIED");
+      assert.equal(fib.asOf.account, account);
+      assert.equal(fib.asOf.symbol, api.symbol);
+      assert.equal(fib.asOf.timeframe, api.timeframe);
+      assert.ok(Math.abs(fib.asOf.timeUtc - api.snapshotAsOfUtc) <= 5,
+        `${account}: Auto-Fibonacci cutoff is from the current broker snapshot window`);
+      assert.equal(fib.result.timeframe, api.timeframe);
+      assert.equal(fib.series.length, 7);
+      assert.ok(fib.series.every(line => line.visible === true && line.points.length > 0));
+      await page.locator("#chart-v5-auto-fib-btn").click();
+      assert.equal(await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci()), null);
+      preview = "PASSED";
       results.push({ account, symbol: api.symbol, timeframe: api.timeframe, renderedBars: rendered.length,
-        visibleCandlePixels, latestClose: rendered.at(-1).close, nativeV5AutoFibonacciPreview: preview });
+        visibleCandlePixels, latestClose: rendered.at(-1).close, nativeV5AutoFibonacciPreview: preview,
+        autoFibDirection: fib.result.direction, autoFibLevels: fib.series.length });
     }
 
     assert.deepEqual(errors, []);
