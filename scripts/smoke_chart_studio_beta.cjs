@@ -321,7 +321,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await page.waitForFunction(()=>document.querySelector(".cs-mtf-panel [data-mtf-status]")?.textContent.includes("5/5 Zeitrahmen"));
   const historicalMtf=await page.evaluate(()=>({status:document.querySelector(".cs-mtf-panel [data-mtf-status]").textContent,
     rows:[...document.querySelectorAll(".cs-mtf-panel tbody tr")].map(row=>[...row.cells].map(cell=>cell.textContent.trim()))}));
-  assert.match(historicalMtf.status,/2026-10-14T12:30:00Z/);assert.equal(historicalMtf.rows.length,5);
+  assert.match(historicalMtf.status,/2026-10-14T12:30:00(?:\.000)?Z/);assert.equal(historicalMtf.rows.length,5);
   assert.deepEqual(historicalMtfRequests.map(request=>request.params.tf).sort(),["D1","H1","H4","M15","M5"].sort());
   assert.ok(historicalMtfRequests.every(request=>request.method==="GET"&&request.params.account==="titan"&&request.params.symbol==="XAUUSD"),"Historical context stays on the snapshot account/symbol with GET-only candles");
   assert.ok(historicalMtfRequests.every(request=>request.params.before===String(Math.floor(Date.parse("2026-10-14T12:30:00Z")/1000))),"Each broker history request is bounded before the exact snapshot UTC timestamp");
