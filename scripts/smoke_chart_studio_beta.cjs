@@ -1326,6 +1326,12 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   const legacyAfterImport=await page.evaluate(()=>({drawings:ChartStudioBeta.getState().drawings,options:ChartStudioBeta.getState().options}));
   assert.ok(legacyAfterImport.drawings.some(drawing=>drawing.kind===legacyDrawingsExport.drawings[0].kind),"legacy drawing is restored");
   assert.deepEqual(legacyAfterImport.options,portableLayout.document.options,"legacy drawing-only migration preserves current chart settings");
+  const beforeLegacyFile=legacyAfterImport.drawings.length;
+  await page.locator("#cs-beta-layout-file").setInputFiles({name:"legacy-drawings-v1.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify(legacyDrawingsExport))});
+  assert.match(await page.locator("#cs-beta-message").textContent(),/Zusammenführen oder Ersetzen/,"legacy file import offers explicit merge/replace choices");
+  await page.locator('[data-cmd="merge-portable-layout"]').click();
+  await page.waitForFunction(expected=>ChartStudioBeta.getState().drawings.length===expected, beforeLegacyFile+1);
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().account),"titan","legacy file import remains account-scoped");
   const legacyBaseline=await page.evaluate(()=>JSON.stringify({document:ChartStudioBeta.exportDocument(),storage:Object.keys(localStorage).sort().map(key=>[key,localStorage.getItem(key)])}));
   const rejectedLegacy=await page.evaluate(async document=>{
     const candidates=[{...document,account:"blueberry"},{...document,symbol:"EURUSD"},

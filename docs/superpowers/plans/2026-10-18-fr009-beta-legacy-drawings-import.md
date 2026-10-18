@@ -6,8 +6,8 @@
 
 ## Tasks
 
-- [x] Add Chromium assertions for same-scope migration, settings preservation, account/symbol/timeframe rejection, malformed input, and no partial mutation; observe the schema-v2-only rejection first.
+- [x] Add Chromium assertions for same-scope migration, settings preservation, actual file-picker merge, account/symbol/timeframe rejection, malformed input, and no partial mutation; observe the schema-v2-only rejection first.
 - [x] Implement strict legacy envelope recognition and convert it to a schema-v2 candidate using the current settings and legacy drawing list.
-- [x] Run the full Beta Chromium smoke and confirm the existing no-write acceptance remains green.
+- [x] Run the full Beta Chromium smoke, including the user-facing file-picker merge, and confirm the existing no-write acceptance remains green.
 - [x] Update FR-009 to distinguish completed Beta import from remaining production persistence/parity and hardware gates.
 - [ ] Commit the implementation and run Main CI; do not change demo accounts or broker state.
