@@ -214,7 +214,8 @@ def install_read_routes(app, mt5, *, now=None, calendar_path_resolver=None):
                 quote = quote_model(mt5.symbol_info_tick(symbol), spec, now=clock())
                 if quote['freshness'] != 'FRESH':
                     raise HTTPException(503, 'Regime-Lesedaten nicht frisch verfügbar.')
-                as_of = datetime.fromtimestamp(quote['quoteTimeUtc'], timezone.utc).isoformat()
+                cutoff = quote['quoteTimeUtc']
+                as_of = datetime.fromtimestamp(cutoff, timezone.utc).isoformat()
             else:
                 try:
                     parsed = datetime.fromisoformat(at.replace('Z', '+00:00'))
@@ -262,7 +263,12 @@ def install_read_routes(app, mt5, *, now=None, calendar_path_resolver=None):
             converted.sort(key=lambda item: item['time'])
             snapshot = classify_regime(converted, symbol=symbol, timeframe=timeframe,
                                        as_of_utc=as_of)
+            closed_source_times = [item['time'] for item in converted
+                                   if item['time'] + FRAME_SECONDS[timeframe] <= cutoff]
+            source_time_utc = (datetime.fromtimestamp(max(closed_source_times), timezone.utc).isoformat()
+                               if closed_source_times else None)
             return {**provenance(spec), **snapshot, 'canExecute':False,
+                    'sourceTimeUtc':source_time_utc,
                     'lookbackLimit':MAX_BARS, 'barDurationSeconds':FRAME_SECONDS[timeframe]}
         return response(verified_read(mt5, account, operation))
 

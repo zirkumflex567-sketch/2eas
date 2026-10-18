@@ -6,7 +6,7 @@ const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;
 const endpoint=()=>window.location.pathname.startsWith("/stt")?"/stt":"";
 const keyFor=scope=>`chart-studio-mtf-rules:v1:${encodeURIComponent(scope.account)}:${encodeURIComponent(scope.symbol.toUpperCase())}`;
 function parseStrictUtc(value){
- const match=typeof value==="string"&&/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?Z$/.exec(value);if(!match)return NaN;
+ const match=typeof value==="string"&&/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|\+00:00)$/.exec(value);if(!match)return NaN;
  const ms=Date.parse(value);if(!Number.isFinite(ms))return NaN;const date=new Date(ms);
  return date.getUTCFullYear()===Number(match[1])&&date.getUTCMonth()+1===Number(match[2])&&date.getUTCDate()===Number(match[3])&&date.getUTCHours()===Number(match[4])&&date.getUTCMinutes()===Number(match[5])&&date.getUTCSeconds()===Number(match[6])?ms:NaN;
 }
@@ -17,7 +17,7 @@ function mount({panel,account,symbol,timeframe}){
   '<label>Stichtag UTC <input type="datetime-local" step="60" data-mtf-asof></label> '+
   '<button type="button" data-mtf-refresh>Aktualisieren</button></div>'+
   '<p data-mtf-status role="status" aria-live="polite">Noch nicht geladen. Nach Stichtag werden ausschließlich bereits geschlossene Kerzen verwendet.</p>'+
-  '<div class="cs-mtf-table-wrap"><table><thead><tr><th>TF</th><th>Status / Grund</th><th>Richtung</th><th>EMA 20 / 50 / 200 · EMA20 Δ vs. vorherige geschlossene Kerze (%)</th><th>Letzte geschlossene Kerze (UTC)</th><th>Bars</th></tr></thead><tbody data-mtf-rows></tbody></table></div>'+
+  '<div class="cs-mtf-table-wrap"><table><thead><tr><th>TF</th><th>Status / Grund</th><th>Richtung</th><th>EMA 20 / 50 / 200 · EMA20 Δ vs. vorherige geschlossene Kerze (%)</th><th>Volatilität · market-regime-v1</th><th>Letzte geschlossene Kerze (UTC)</th><th>Bars</th></tr></thead><tbody data-mtf-rows></tbody></table></div>'+
   '<details data-mtf-rule-editor><summary>Manuelle EMA-Kontextregeln</summary><p>Manueller EMA-Kontext, keine EA-Regel und keine Strategie. Lokal in diesem Browser für Konto und Symbol gespeichert.</p><div data-mtf-rule-fields></div><button type="button" data-mtf-save>Regeln lokal speichern</button><p data-mtf-rule-status role="status" aria-live="polite"></p><div class="cs-mtf-rule-result" data-mtf-rule-result aria-live="polite"></div></details>'+
   '<p>Quelle: MT5 Verified. EMA-Ausrichtung ist Kontext, kein Handelssignal. Es wird kein Gesamtscore berechnet.</p>';
  panel.prepend(section);
@@ -25,7 +25,7 @@ function mount({panel,account,symbol,timeframe}){
  fields.innerHTML=FRAMES.map(tf=>`<label>${tf} <select aria-label="${tf}" data-mtf-rule="${tf}">${CHOICES.map(c=>`<option value="${c}">${c==="ANY"?"Keine Anforderung (ANY)":c}</option>`).join("")}</select></label>`).join(" ");
  let scope={account,symbol,timeframe},generation=0,controller=null,currentProfile=null,featureCache=null,profileLoadError=false;
  function clear(message="Kontext geändert. Aktualisieren, um den neuen Scope zu laden."){
-  generation++;controller?.abort();controller=null;featureCache=null;rows.replaceChildren();for(const tf of FRAMES){const tr=document.createElement("tr");tr.innerHTML=`<th>${tf}</th><td>UNKNOWN · nicht geladen</td><td>UNKNOWN</td><td>—</td><td>—</td><td>0</td>`;rows.append(tr)}status.textContent=message;resultBox.replaceChildren();
+  generation++;controller?.abort();controller=null;featureCache=null;rows.replaceChildren();for(const tf of FRAMES){const tr=document.createElement("tr");tr.innerHTML=`<th>${tf}</th><td>UNKNOWN · nicht geladen</td><td>UNKNOWN</td><td>—</td><td>UNKNOWN · nicht geladen</td><td>—</td><td>0</td>`;rows.append(tr)}status.textContent=message;resultBox.replaceChildren();
  }
  function readProfile(){
   currentProfile=null;profileLoadError=false;for(const s of fields.querySelectorAll("select"))s.value="ANY";const k=keyFor(scope);
@@ -63,12 +63,26 @@ function mount({panel,account,symbol,timeframe}){
     window.ChartStudioMTF.frame(data.candles,tf,asOfUtc,capturedScope.symbol);input[tf]=data.candles;
    }catch(error){if(error.name!=="AbortError"||timedOut){sourceErrors.push(`${tf}: ${timedOut?"timeout":error.message}`);input[tf]=undefined}}
   }));
+  if(requestGeneration!==generation||local.signal.aborted&&!timedOut){clearTimeout(timeout);return false;}
+  const features=window.ChartStudioMTF.calculate(input,asOfUtc,capturedScope.symbol),volatility={};
+  const durations={M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400};
+  await Promise.all(FRAMES.map(async tf=>{
+   const frame=features.frames[tf];
+   if(frame.status!=="READY"){volatility[tf]=`UNKNOWN · MTF_${frame.reason||frame.status}`;return;}
+   try{
+    const params=new URLSearchParams({account:capturedScope.account,symbol:capturedScope.symbol,timeframe:tf,at:new Date(asOfMs).toISOString()}),url=new URL(endpoint()+"/api/chart/v1/regimes",location.origin);url.search=params.toString();
+    const response=await fetch(url.pathname+url.search,{method:"GET",cache:"no-store",credentials:"same-origin",signal:local.signal});
+    if(!response.ok)throw new Error("HTTP "+response.status);const data=await response.json(),sourceMs=parseStrictUtc(data.sourceTimeUtc),responseAsOfMs=parseStrictUtc(data.asOfUtc),allowed=["HIGH","LOW","NORMAL","UNKNOWN"];
+    if(data.account!==capturedScope.account||data.frame?.symbol!==capturedScope.symbol||data.frame?.timeframe!==tf||data.source!=="MT5_VERIFIED"||data.canExecute!==false||data.revision!=="market-regime-v1"||responseAsOfMs!==asOfMs||data.barDurationSeconds!==durations[tf]||!Number.isFinite(sourceMs)||sourceMs/1000!==frame.sourceTime||sourceMs/1000+durations[tf]>asOfUtc||!allowed.includes(data.regimeTags?.volatility))throw new Error("Provenienz-, Source-Bar- oder As-of-Prüfung fehlgeschlagen");
+    volatility[tf]=data.regimeTags.volatility==="UNKNOWN"?`UNKNOWN · ${(data.qualityFlags||[]).join(", ")||"REGIME_UNKNOWN"}`:`${data.regimeTags.volatility} · ${data.revision}`;
+   }catch(error){volatility[tf]=`UNKNOWN · ${timedOut?"timeout":error.name==="AbortError"?"abgebrochen":error.message}`;if(error.name!=="AbortError"||timedOut)sourceErrors.push(`${tf} regime: ${timedOut?"timeout":error.message}`);}
+  }));
   clearTimeout(timeout);if(requestGeneration!==generation||local.signal.aborted&&!timedOut)return false;
-  const features=window.ChartStudioMTF.calculate(input,asOfUtc,capturedScope.symbol);featureCache={account:capturedScope.account,symbol:capturedScope.symbol,asOfUtc,features};rows.replaceChildren();
+  featureCache={account:capturedScope.account,symbol:capturedScope.symbol,asOfUtc,features};rows.replaceChildren();
   for(const tf of FRAMES){const f=features.frames[tf],tr=document.createElement("tr"),time=f.sourceTime?new Date(f.sourceTime*1000).toISOString():"—",qualityWarning=f.dataQuality==="SESSION_HEURISTIC"?" · SESSION_HEURISTIC: Broker-Sitzung ungeprüft (Sessionlücke heuristisch toleriert)":"";
    const emaValues=f.status==="READY"?[f.ema20,f.ema50,f.ema200].map(x=>Number(x).toPrecision(7)).join(" / "):"—";
    const slope=f.status==="READY"&&Number.isFinite(f.ema20SlopePercent)?`${f.ema20SlopePercent>=0?"+":""}${f.ema20SlopePercent.toFixed(5)}%`:"—";
-   tr.innerHTML=`<th>${tf}</th><td>${esc(f.status)} · ${esc(f.reason)}${esc(qualityWarning)}</td><td>${esc(f.bias)}</td><td>${emaValues} · Δ ${esc(slope)}</td><td>${esc(time)}</td><td>${f.closedBars}</td>`;rows.append(tr);
+   tr.innerHTML=`<th>${tf}</th><td>${esc(f.status)} · ${esc(f.reason)}${esc(qualityWarning)}</td><td>${esc(f.bias)}</td><td>${emaValues} · Δ ${esc(slope)}</td><td data-volatility>${esc(volatility[tf]||"UNKNOWN · API_UNAVAILABLE")}</td><td>${esc(time)}</td><td>${f.closedBars}</td>`;rows.append(tr);
   }
   status.textContent=sourceErrors.length?`Unvollständige Quellenantwort (${sourceErrors.join("; ")}); betroffene Zeile bleibt UNKNOWN.`:`Abfrage abgeschlossen · as-of ${new Date(asOfMs).toISOString()} · ${features.ready}/5 Zeitrahmen mit ausreichender Historie.`;renderRuleResult();return true;
  }

@@ -6,7 +6,7 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process"),ass
   for(let i=0;i<60;i++){try{if((await fetch("http://127.0.0.1:8873/static/chart-studio-fixture.html")).ok)break}catch(_){}await new Promise(r=>setTimeout(r,250));if(i===59)throw Error("fixture server timed out")}
   browser=await chromium.launch({headless:true,executablePath:process.env.CHART_STUDIO_CHROMIUM_PATH||undefined});
   const page=await browser.newPage({viewport:{width:1280,height:900}}),requests=[],errors=[];page.setDefaultTimeout(5000);page.on("pageerror",e=>errors.push(e.message));page.on("request",r=>requests.push({method:r.method(),url:r.url()}));
-  let deferM5=false,releaseM5=null,forgedTf=null,failedTf=null,futureH4Spike=false,neutralH4=false;const m5Starts=[];
+  let deferM5=false,releaseM5=null,forgedTf=null,failedTf=null,futureH4Spike=false,neutralH4=false,regimeOverrides={},deferRegimeTf=null,releaseRegime=null;const m5Starts=[],regimeStarts=[],regimeSources={};
   const waitForM5=()=>new Promise(resolve=>m5Starts.push(resolve));
   await page.route("**/api/candles?*",async route=>{
    const request=route.request(),url=new URL(request.url()),tf=url.searchParams.get("tf");assert.equal(request.method(),"GET");
@@ -15,7 +15,16 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process"),ass
    const step={D1:86400,H4:14400,H1:3600,M15:900,M5:300}[tf],asOf=Date.parse("2025-01-06T01:00:00Z")/1000;
    const candles=tf==="H1"?makeSessionH1(asOf):Array.from({length:280},(_,i)=>{const time=asOf-(281-i)*step,close=tf==="H4"&&neutralH4?1800:1800+i*1.3;return {time,open:close-1,high:close+3,low:close-2,close,tick_volume:100}});
    candles.push({time:asOf+(tf==="H4"&&futureH4Spike?step:0),open:1000000,high:1000010,low:999990,close:1000005,tick_volume:999});
+   regimeSources[tf]=Math.max(...candles.filter(c=>c.time+step<=asOf).map(c=>c.time));
    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({accountId:forgedTf===tf?"wrong-account":url.searchParams.get("account"),symbol:url.searchParams.get("symbol"),timeframe:tf,source:"MT5_VERIFIED",canExecute:false,candles})});
+  });
+  await page.route("**/api/chart/v1/regimes?*",async route=>{
+   const request=route.request(),url=new URL(request.url()),tf=url.searchParams.get("timeframe"),override=regimeOverrides[tf]||{};assert.equal(request.method(),"GET");
+   if(deferRegimeTf===tf&&url.searchParams.has("at")){await new Promise(resolve=>{releaseRegime=resolve;regimeStarts.shift()?.()});}
+   if(override.failed)return route.fulfill({status:503,contentType:"application/json",body:JSON.stringify({detail:"fixture regime unavailable"})});
+   const at=url.searchParams.get("at")||"2025-01-06T01:00:00Z",asOfMs=Date.parse(at),sourceEpoch=regimeSources[tf],sourceMs=(Number.isFinite(sourceEpoch)?sourceEpoch:asOfMs/1000-({D1:86400,H4:14400,H1:3600,M15:900,M5:300}[tf]||900))*1000;if(!Number.isFinite(asOfMs)||!Number.isFinite(sourceMs))throw Error("invalid regime fixture time: "+JSON.stringify({tf,at,source:sourceEpoch}));
+   const iso=ms=>new Date(ms).toISOString().replace(".000Z","+00:00");
+   await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:override.account||url.searchParams.get("account"),source:override.source||"MT5_VERIFIED",canExecute:override.canExecute??false,asOfUtc:override.asOf?"2025-01-06T02:00:00Z":iso(asOfMs),sourceTimeUtc:override.sourceTime?"2025-01-06T00:00:00Z":iso(sourceMs),barDurationSeconds:{D1:86400,H4:14400,H1:3600,M15:900,M5:300}[tf],frame:{symbol:override.symbol||url.searchParams.get("symbol"),timeframe:override.timeframe||tf},revision:override.revision||"market-regime-v1",regimeTags:{volatility:override.volatility||"NORMAL"},qualityFlags:override.volatility==="UNKNOWN"?["INSUFFICIENT_HISTORY"]:[]})});
   });
   await page.goto("http://127.0.0.1:8873/static/chart-studio-fixture.html");await page.waitForFunction(()=>window.__chartSmokeReady===true);
   await page.locator("#cs-beta-toggle").click();const panel=page.locator("details.cs-mtf-panel");await panel.locator(":scope > summary").click();await panel.locator("[data-mtf-asof]").fill("2025-01-06T01:00");
@@ -39,6 +48,8 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process"),ass
   assert.equal(await panel.locator("[data-mtf-rows] tr").count(),5);assert.equal(await panel.locator("[data-mtf-rows] tr td").nth(0).textContent().then(t=>t.includes("READY")),true);
   assert.match(await panel.locator("[data-mtf-rows] tr").first().innerText(),/Δ \+\d+\.\d+%/,"ready frame shows signed EMA20 change from the prior closed bar");
   assert.match(await panel.locator(".cs-mtf-table-wrap thead").innerText(),/EMA20 Δ vs\. vorherige geschlossene Kerze \(%\)/,"slope unit and one-bar closed-candle reference are explicit");
+  assert.match(await panel.locator(".cs-mtf-table-wrap thead").innerText(),/Volatilität · market-regime-v1/,"volatility model revision is explicit");
+  assert.match(await panel.locator("[data-mtf-rows] tr").first().locator("[data-volatility]").textContent(),/NORMAL · market-regime-v1/,"validated closed-bar volatility is rendered");
   assert.equal(await panel.locator("[data-mtf-rows] tr").nth(1).locator("th").textContent(),"H4");
   assert.equal(await panel.locator("[data-mtf-rows] tr").nth(1).locator("td").last().textContent(),"280","open/as-of H4 bar must be excluded from source rows");
   const h4BeforeFuture=await panel.locator("[data-mtf-rows] tr").nth(1).innerText();futureH4Spike=true;
@@ -73,6 +84,20 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process"),ass
   assert.equal(await page.evaluate(()=>window.ChartStudioBeta.refreshMtfAt({account:"titan",symbol:"XAUUSD",timeframe:"M15",asOfUtc:"2025-01-06T01:00:00Z"})),true);
   const refreshAtRequests=requests.filter(x=>new URL(x.url).pathname.endsWith("/api/candles")).slice(beforeRefreshAt);assert.equal(refreshAtRequests.length,5);
   for(const req of refreshAtRequests)assert.equal(new URL(req.url).searchParams.get("before"),String(Math.floor(Date.parse("2025-01-06T01:00:00Z")/1000)));
+  const verifyRegimeFailure=async override=>{
+   regimeOverrides.M15=override;
+   const pending=page.waitForResponse(r=>new URL(r.url()).pathname.endsWith("/api/chart/v1/regimes")&&new URL(r.url()).searchParams.get("timeframe")==="M15"&&new URL(r.url()).searchParams.has("at"));
+   await panel.locator("[data-mtf-refresh]").click();await pending;
+   if(override.volatility==="UNKNOWN")await page.waitForFunction(()=>document.querySelector("tbody tr:nth-child(4) [data-volatility]")?.textContent.includes("INSUFFICIENT_HISTORY"));
+   else await page.waitForFunction(()=>document.querySelector(".cs-mtf-panel [data-mtf-status]")?.textContent.includes("Unvollständige Quellenantwort"));
+   assert.match(await panel.locator("tbody tr").nth(3).locator("[data-volatility]").textContent(),/^UNKNOWN ·/);
+  };
+  for(const mismatch of [{account:"wrong"},{symbol:"EURUSD"},{timeframe:"H1"},{asOf:true},{source:"UNVERIFIED"},{canExecute:true},{revision:"market-regime-v2"},{sourceTime:true},{failed:true}])await verifyRegimeFailure(mismatch);
+  await verifyRegimeFailure({volatility:"UNKNOWN"});regimeOverrides={};
+  await page.evaluate(()=>{window.__mtfNativeTimeout=window.setTimeout;window.setTimeout=(fn,ms,...args)=>window.__mtfNativeTimeout(fn,ms===12000?500:ms,...args)});
+  deferRegimeTf="M15";const timeoutRegimePending=new Promise(resolve=>regimeStarts.push(resolve));await panel.locator("[data-mtf-refresh]").click();await Promise.race([timeoutRegimePending,new Promise((_,reject)=>setTimeout(()=>reject(Error("M15 regime timeout fixture did not start")),5000))]);
+  await page.waitForFunction(()=>document.querySelector("tbody tr:nth-child(4) [data-volatility]")?.textContent.includes("timeout"),null,{timeout:5000});releaseRegime?.();deferRegimeTf=null;await page.evaluate(()=>{window.setTimeout=window.__mtfNativeTimeout});
+  {const restored=page.waitForResponse(r=>new URL(r.url()).pathname.endsWith("/api/chart/v1/regimes")&&new URL(r.url()).searchParams.get("timeframe")==="M15"&&new URL(r.url()).searchParams.has("at"));await panel.locator("[data-mtf-refresh]").click();await restored;await page.waitForFunction(()=>document.querySelector("[data-volatility]")?.textContent.includes("NORMAL · market-regime-v1"));}
   await page.evaluate(()=>window.ChartStudioBeta.symbol("EURUSD"));await page.waitForFunction(()=>document.querySelector("[data-mtf-rule-status]")?.textContent.includes("UNCONFIGURED"));
   const malformedKey="chart-studio-mtf-rules:v1:titan:EURUSD";await page.evaluate(key=>localStorage.setItem(key,"{broken"),malformedKey);
   await page.evaluate(()=>window.ChartStudioBeta.symbol("XAUUSD"));await page.waitForFunction(()=>document.querySelector('[data-mtf-rule="H1"]')?.value==="UP");
@@ -106,6 +131,10 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process"),ass
   await page.waitForFunction(()=>document.querySelector(".cs-mtf-panel [data-mtf-status]").textContent.includes("Kontext geändert"));
   releaseM5?.();await page.waitForTimeout(250);
   assert.equal(await panel.locator("[data-mtf-rows] tr td").first().textContent().then(t=>t.includes("nicht geladen")),true,"old-timeframe result must not render after timeframe change");
+  deferM5=false;
+  deferRegimeTf="M15";started=new Promise(resolve=>regimeStarts.push(resolve));await panel.locator("[data-mtf-refresh]").click();await Promise.race([started,new Promise((_,reject)=>setTimeout(()=>reject(Error("M15 regime request did not start")),5000))]);
+  await page.evaluate(()=>window.ChartStudioBeta.symbol("XAUUSD"));await page.waitForFunction(()=>document.querySelector(".cs-mtf-panel [data-mtf-status]").textContent.includes("Kontext geändert"));releaseRegime?.();deferRegimeTf=null;await page.waitForTimeout(250);
+  assert.equal(await panel.locator("[data-mtf-rows] tr td").first().textContent().then(t=>t.includes("nicht geladen")),true,"old regime result must not render after symbol change");
   assert.equal(errors.length,0,errors.join("; "));
   console.log("PASS MTF Chromium five verified timeframe reads, explicit UTC as-of, no writes, and stale-response cancellation");
  }finally{if(browser)await browser.close();server.kill()}

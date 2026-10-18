@@ -100,10 +100,27 @@ def test_demo_regime_api_is_scoped_bounded_closed_bar_and_read_only(env):
     assert body['canExecute'] is False
     assert body['frame'] == {'symbol':'XAUUSD', 'timeframe':'M15'}
     assert body['asOfUtc'] == datetime.fromtimestamp(NOW, timezone.utc).isoformat()
+    assert body['sourceTimeUtc'] == datetime.fromtimestamp(NOW - OFFSET - 900, timezone.utc).isoformat()
     assert body['barCount'] == 220
     assert body['regimeTags']['eventRisk'] == 'UNKNOWN'
     assert ('rates', 'XAUUSD', 15, 1, 500) in adapter.calls
     assert adapter.writes == 0
+
+
+def test_regime_source_time_is_latest_bar_closed_by_the_requested_cutoff(env):
+    client, adapter = env
+    adapter.rates.extend([
+        NS(time=NOW + OFFSET - 900, open=4000., high=4010., low=3990., close=4005.),
+        NS(time=NOW + OFFSET, open=4000., high=999999., low=1., close=4005.),
+    ])
+
+    response = get(client)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body['asOfUtc'] == datetime.fromtimestamp(NOW, timezone.utc).isoformat()
+    assert body['sourceTimeUtc'] == datetime.fromtimestamp(NOW - 900, timezone.utc).isoformat()
+    assert body['barCount'] == 221
 
 
 def test_mt5_numpy_bar_timestamps_are_builtin_utc_not_server_shifted(env):

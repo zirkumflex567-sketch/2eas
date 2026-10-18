@@ -27,7 +27,8 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   let calendarRevisionPhase=0,calendarMissingSnapshot=false;
   await page.route("**/api/chart/v1/regimes?*",async route=>{
     const url=new URL(route.request().url()),params=Object.fromEntries(url.searchParams);regimeRequests.push({method:route.request().method(),params});
-    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:params.account,symbol:params.symbol,source:"MT5_VERIFIED",canExecute:false,frame:{symbol:params.symbol,timeframe:params.timeframe},asOfUtc:params.at,revision:"market-regime-v1",features:{atr14:1.5,adx14:28},thresholds:{trend:{entryAdx:25}},regimeTags:{trend:"UP",volatility:"HIGH",eventRisk:"UNKNOWN",newsRisk:"UNKNOWN"},confidence:{score:1,meaning:"Datenqualität und Regelabdeckung, keine Wahrscheinlichkeit."},qualityFlags:["CALENDAR_UNAVAILABLE"]})});
+    const seconds={D1:86400,H4:14400,H1:3600,M15:900,M5:300}[params.timeframe]||900,cutoff=Date.parse(params.at||"2026-10-14T12:30:00Z")/1000,source=Math.floor(cutoff/seconds)*seconds-seconds;
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:params.account,symbol:params.symbol,source:"MT5_VERIFIED",canExecute:false,frame:{symbol:params.symbol,timeframe:params.timeframe},asOfUtc:params.at||new Date(cutoff*1000).toISOString().replace(".000Z","Z"),sourceTimeUtc:new Date(source*1000).toISOString().replace(".000Z","Z"),barDurationSeconds:seconds,revision:"market-regime-v1",features:{atr14:1.5,adx14:28},thresholds:{trend:{entryAdx:25}},regimeTags:{trend:"UP",volatility:"HIGH",eventRisk:"UNKNOWN",newsRisk:"UNKNOWN"},confidence:{score:1,meaning:"Datenqualität und Regelabdeckung, keine Wahrscheinlichkeit."},qualityFlags:["CALENDAR_UNAVAILABLE"]})});
   });
   await page.route("**/api/chart/v1/calendar?*",async route=>{
     const url=new URL(route.request().url());calendarRequests.push({method:route.request().method(),params:Object.fromEntries(url.searchParams)});
@@ -325,7 +326,10 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.deepEqual(historicalMtfRequests.map(request=>request.params.tf).sort(),["D1","H1","H4","M15","M5"].sort());
   assert.ok(historicalMtfRequests.every(request=>request.method==="GET"&&request.params.account==="titan"&&request.params.symbol==="XAUUSD"),"Historical context stays on the snapshot account/symbol with GET-only candles");
   assert.ok(historicalMtfRequests.every(request=>request.params.before===String(Math.floor(Date.parse("2026-10-14T12:30:00Z")/1000))),"Each broker history request is bounded before the exact snapshot UTC timestamp");
-  assert.ok(historicalMtf.rows.every(row=>row[1].includes("READY")&&row[5]==="300"),"Only 300 closed candles are counted; the current/future bar is excluded at fill time");
+  assert.ok(historicalMtf.rows.every(row=>row[1].includes("READY")&&row[4]==="HIGH · market-regime-v1"&&row[6]==="300"),"Versioned volatility and 300 closed candles are shown; the current/future bar is excluded at fill time");
+  const historicalRegimes=regimeRequests.filter(request=>request.params.at&&Date.parse(request.params.at)===Date.parse("2026-10-14T12:30:00Z"));
+  assert.deepEqual(historicalRegimes.map(request=>request.params.timeframe).sort(),["D1","H1","H4","M15","M5"].sort(),"Historical volatility is requested once per READY frame at the frozen snapshot cutoff");
+  assert.ok(historicalRegimes.every(request=>request.method==="GET"&&request.params.account==="titan"&&request.params.symbol==="XAUUSD"),"Historical volatility remains exact-scope and read-only");
   assert.equal(await page.evaluate(()=>ChartStudioBeta.refreshMtfAt({account:"titan",symbol:"EURUSD",timeframe:"M15",asOfUtc:"2026-10-14T12:30:00Z"})),false,"A snapshot for another symbol cannot fall back to the current chart scope");
   assert.equal(await page.evaluate(()=>ChartStudioBeta.refreshMtfAt({account:"blueberry",symbol:"XAUUSD",timeframe:"M15",asOfUtc:"2026-10-14T12:30:00Z"})),false,"Historical MTF navigation remains hard-disabled for the protected Blueberry account");
   assert.equal(historicalMtfRequests.length,5,"A rejected symbol scope sends no extra broker request");

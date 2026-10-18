@@ -20,6 +20,7 @@ const forbiddenAccounts = new Set(["blueberry"]);
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     const apiRequests = [];
     const mtfReads = [];
+    const regimeReads = [];
     const mutations = [];
     page.on("request", request => {
       const url = new URL(request.url());
@@ -27,6 +28,7 @@ const forbiddenAccounts = new Set(["blueberry"]);
       const account = url.searchParams.get("account");
       apiRequests.push({ method: request.method(), account, path: url.pathname, revision: url.searchParams.get("revision") });
       if (url.pathname === "/api/candles") mtfReads.push({ method: request.method(), account, symbol: url.searchParams.get("symbol"), timeframe: url.searchParams.get("tf"), before: url.searchParams.get("before") });
+      if (url.pathname === "/api/chart/v1/regimes") regimeReads.push({ method: request.method(), account, symbol: url.searchParams.get("symbol"), timeframe: url.searchParams.get("timeframe"), at: url.searchParams.get("at") });
       if (request.method() !== "GET") mutations.push({ method: request.method(), path: url.pathname });
       if (account && forbiddenAccounts.has(account)) {
         mutations.push({ method: "FORBIDDEN_ACCOUNT_READ", path: url.pathname });
@@ -122,11 +124,15 @@ const forbiddenAccounts = new Set(["blueberry"]);
       await rows.first().locator("button.cs-evidence-snapshot-mtf").click();
       await assertEventually(async () => assert.match(await rows.first().locator(".cs-evidence-snapshot-mtf-status").textContent(), /MTF-Kontext geladen/), 30000);
       await assertEventually(async () => assert.match(await page.locator(".cs-mtf-panel [data-mtf-status]").textContent(), /Abfrage abgeschlossen|Unvollständige Quellenantwort/), 30000);
-      const rowsMtf = await page.locator(".cs-mtf-panel tbody tr").evaluateAll(nodes => nodes.map(row => ({ timeframe: row.cells[0].textContent.trim(), state: row.cells[1].textContent.trim(), emaContext: row.cells[3].textContent.trim(), sourceTime: row.cells[4].textContent.trim(), closedBars: Number(row.cells[5].textContent.trim()) })));
+      const rowsMtf = await page.locator(".cs-mtf-panel tbody tr").evaluateAll(nodes => nodes.map(row => ({ timeframe: row.cells[0].textContent.trim(), state: row.cells[1].textContent.trim(), emaContext: row.cells[3].textContent.trim(), volatility: row.cells[4].textContent.trim(), sourceTime: row.cells[5].textContent.trim(), closedBars: Number(row.cells[6].textContent.trim()) })));
       assert.deepEqual(rowsMtf.map(row => row.timeframe), ["D1", "H4", "H1", "M15", "M5"], `${account}: MTF timeframe coverage drifted`);
       assert.ok(rowsMtf.every(row => ["READY", "INSUFFICIENT", "UNKNOWN", "UNAVAILABLE"].some(state => row.state.startsWith(state)) && Number.isInteger(row.closedBars) && row.closedBars <= 1000), `${account}: invalid historical MTF row`);
       assert.ok(rowsMtf.every(row => row.state.startsWith("READY") ? /Δ [+-]\d+\.\d{5}%$/.test(row.emaContext) : row.emaContext.endsWith("Δ —")), `${account}: EMA20 slope must be shown only for a valid closed-bar result`);
       assert.ok(rowsMtf.every(row => row.sourceTime === "—" || Number.isFinite(Date.parse(row.sourceTime)) && Date.parse(row.sourceTime) <= Date.parse(snapshot.payload.asOfUtc)), `${account}: MTF sourceTime contains a candle after the recorded fill`);
+      assert.ok(rowsMtf.every(row => row.state.startsWith("READY") ? /^(HIGH|LOW|NORMAL) · market-regime-v1$|^UNKNOWN ·/.test(row.volatility) : row.volatility.startsWith("UNKNOWN · MTF_")), `${account}: volatility must be versioned or visibly UNKNOWN and must not be inferred for non-READY frames`);
+      const exactRegimeReads = regimeReads.filter(read => read.account === account && read.at && Date.parse(read.at) === Date.parse(snapshot.payload.asOfUtc));
+      const readyFrames = rowsMtf.filter(row => row.state.startsWith("READY")).map(row => row.timeframe);
+      for (const timeframe of readyFrames) assert.ok(exactRegimeReads.some(read => read.method === "GET" && read.symbol === snapshotSymbol && read.timeframe === timeframe), `${account}: missing exact-scope/as-of read-only volatility request for ${timeframe}`);
       const snapshotBefore = String(Math.floor(Date.parse(snapshot.payload.asOfUtc) / 1000));
       const requested = mtfReads.filter(read => read.account === account && read.before === snapshotBefore);
       assert.equal(requested.length, 5, `${account}: historical check must read exactly five frames`);
@@ -146,7 +152,7 @@ const forbiddenAccounts = new Set(["blueberry"]);
       assert.ok(apiRequests.some(request => request.path.endsWith("/decisions")
         && request.account === account && request.method === "GET"), `${account}: missing scoped decision-history read`);
       observations.push({ account, snapshots: count, entries, exits, frozenBars: candleCount,
-        historicalDecisions: "NOT_RECORDED", mtfAsOfUtc: snapshot.payload.asOfUtc, mtf: rowsMtf });
+        historicalDecisions: "NOT_RECORDED", mtfAsOfUtc: snapshot.payload.asOfUtc, mtf: rowsMtf, volatilityReads: exactRegimeReads.length });
     }
 
     assert.ok(apiRequests.some(request => request.path.endsWith("/snapshots") && request.method === "GET"),
