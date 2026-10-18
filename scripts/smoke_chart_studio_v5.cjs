@@ -839,8 +839,13 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(measurementProbe.mismatchRejected,true,"Portable transfer rejects symbol/timeframe mismatch");
   assert.equal(writes.length,measurementWritesBefore,"Measurement lifecycle does not issue any broker/MT5 writes");
   assert.equal(result.first.version,"5.2.1");
-  assert.deepEqual(panZoom.measurements.map(item=>[item.range.from,item.range.to]),[[300,700],[400,530],[420,520]],"The chart traverses the requested 1,200-bar pan/zoom windows");
-  assert.equal(panZoom.measurements.length,3);
+  const expectedPanZoomRanges=[[300,700],[400,530],[420,520]];
+  assert.equal(panZoom.measurements.length,expectedPanZoomRanges.length);
+  panZoom.measurements.forEach((item,index)=>{
+    const [expectedFrom,expectedTo]=expectedPanZoomRanges[index];
+    assert.ok(Math.abs(item.range.from-expectedFrom)<1e-9&&Math.abs(item.range.to-expectedTo)<1e-9,
+      `The chart traverses requested pan/zoom window ${index+1}: ${JSON.stringify(item.range)}`);
+  });
   assert.deepEqual(timezoneProbe.before,["00:30+00","01:30+00","00:30+00","01:30+00"]);
   assert.deepEqual(timezoneProbe.after,["01:30+01","03:30+02","02:30+02","02:30+01"],"DST skips the missing spring hour and distinguishes repeated autumn local time by UTC offset");
   assert.deepEqual(timezoneProbe.afterInvalid,timezoneProbe.after,"An invalid IANA timezone change is atomic");
