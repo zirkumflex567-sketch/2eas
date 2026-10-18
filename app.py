@@ -1991,6 +1991,13 @@ HTML_CONTENT = """<!DOCTYPE html>
           </div>
           <small>700194822 · PUPrime-Demo · $500</small>
         </button>
+        <button class="account-tab" data-account="goldm15" aria-pressed="false" onclick="switchAccount('goldm15')">
+          <div class="flex items-center justify-between gap-1.5">
+            <strong>GoldM15 Reconstruction</strong>
+            <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 font-bold border border-slate-600">DEMO</span>
+          </div>
+          <small>ICMarkets-Demo · XAUUSD M15</small>
+        </button>
       </div>
       <div class="flex flex-wrap items-center gap-3">
         <!-- TOP NAV THEME & VIEW TOOLBAR -->

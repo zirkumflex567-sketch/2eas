@@ -5,7 +5,7 @@ const { chromium } = require("playwright");
 const { countCandleInkPixels } = require("./chart_render_pixels.cjs");
 
 const base = process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056";
-const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
+const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500", "goldm15"];
 const baseUrl = new URL(base);
 const basePath = baseUrl.pathname.replace(/\/$/, "");
 const PREVIEW_FLAG_OFF = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;";
@@ -17,17 +17,13 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     const errors = [];
     const requests = [];
+    const blockedApiRequests = [];
     const levelSnapshots = new Map();
     page.on("pageerror", error => errors.push(error.message));
     page.on("request", request => {
       const url = new URL(request.url());
       if (!url.pathname.startsWith("/api/")) return;
-      assert.equal(request.method(), "GET", `unexpected API mutation ${request.method()} ${url.pathname}`);
       const account = url.searchParams.get("account");
-      assert.notEqual(account, "blueberry", "protected account request");
-      if (["/api/candles", "/api/status", "/api/positions", "/api/quotes"].includes(url.pathname)) {
-        assert.ok(account, `account-scoped request lacks an explicit account: ${url.pathname}`);
-      }
       requests.push({ path: url.pathname, account });
     });
     page.on("response", response => {
@@ -47,6 +43,17 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
     });
     await page.route("**/*", async route => {
       const url = new URL(route.request().url());
+      if (url.origin === baseUrl.origin && url.pathname.startsWith(`${basePath}/api/`)) {
+        const account = url.searchParams.get("account");
+        if (route.request().method() !== "GET" || account === "blueberry") {
+          blockedApiRequests.push({path:url.pathname,method:route.request().method(),account});
+          await route.abort("blockedbyclient");
+          return;
+        }
+        if (["/api/candles", "/api/status", "/api/positions", "/api/quotes"].includes(url.pathname)) {
+          assert.ok(account, `account-scoped request lacks an explicit account: ${url.pathname}`);
+        }
+      }
       if (url.origin === baseUrl.origin && url.pathname === `${basePath}/` && url.searchParams.has("account")) {
         const response = await route.fetch();
         const html = await response.text();
@@ -208,7 +215,8 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
     }
 
     assert.deepEqual(errors, []);
-    console.log(JSON.stringify({ results, apiRequests: requests.length, mutations: 0, browserErrors: errors }, null, 2));
+    assert.deepEqual(blockedApiRequests, [], "no mutation or Blueberry-scoped request attempted to leave the browser");
+    console.log(JSON.stringify({ results, apiRequests: requests.length, mutations: 0, blockedApiRequests, browserErrors: errors }, null, 2));
   } finally {
     await browser.close();
   }

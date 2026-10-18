@@ -356,11 +356,21 @@ class DashboardFrontendTests(unittest.TestCase):
         self.page.wait_for_function("journalLoadedMode !== null && journalBusyMode === null", timeout=5000)
         self.assertEqual(self.page.evaluate('activeAccount'), 'titan')
         self.assertEqual(self.page.evaluate('journalFilter'), 'titan')
-        scoped_paths=('/api/status','/api/candles','/api/chart/v1/portfolio','/api/journal_summary')
-        scoped_requests=[url for url in self.requests if urlparse(url).path in scoped_paths]
+        scoped_requests=[url for url in self.requests if parse_qs(urlparse(url).query).get('account')]
         aliases={parse_qs(urlparse(url).query).get('account',[''])[0] for url in scoped_requests}
         self.assertTrue(scoped_requests, self.requests)
         self.assertEqual(aliases, {'titan'}, scoped_requests)
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.errors, [])
+    def test_goldm15_deep_link_is_registered_before_account_bootstrap_and_never_falls_back(self):
+        self.page.goto(self.url+'?account=goldm15')
+        expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=10000)
+        self.assertEqual(self.page.evaluate('activeAccount'), 'goldm15')
+        scoped_requests=[url for url in self.requests if parse_qs(urlparse(url).query).get('account')]
+        aliases={parse_qs(urlparse(url).query).get('account',[''])[0] for url in scoped_requests}
+        self.assertTrue(scoped_requests, self.requests)
+        self.assertEqual(aliases, {'goldm15'}, scoped_requests)
+        self.assertEqual(self.page.locator('#account-switcher [data-account="goldm15"]').count(), 1)
         self.assertEqual(self.mutations, [])
         self.assertEqual(self.errors, [])
     def test_bootstrap_uses_configured_broker_symbol_for_chart_feed(self):
