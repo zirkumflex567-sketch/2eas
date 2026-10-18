@@ -68,12 +68,19 @@ input double   InpMaxATRExtension         = 1.8;         // Max. Distanz zu EMA2
 input int      InpATRPeriod               = 14;          // ATR Periode für Volatilitätsmessung
 
 input group "=== 06 / Optionaler Prop-Firm & Challenge Schutz ==="
-input bool     InpEnablePropProtection    = false;       // Prop-Firm Notaus (false für privates 500 USD / 1:500 Konto)
+input bool     InpEnablePropProtection    = false;       // Legacy setfile field; challenge enforcement is bound to the verified Blueberry account.
 input double   InpMaxDailyDrawdownPercent = 3.5;         // Max. Tagesverlust %
 input double   InpMaxTotalDrawdownPercent = 9.0;         // Max. Gesamtverlust %
 input bool     InpDailyLockoutUntilMidnight = true;      // Nach Tagesverlust Handel bis Mitternacht sperren
 
 //--- Global Variables
+// Challenge protection is enforced only on the configured Blueberry account.
+// This deliberately ignores legacy setfile toggles on every other account.
+bool IsBlueberryChallengeAccount()
+{
+   return AccountInfoInteger(ACCOUNT_LOGIN) == 5120620 &&
+          AccountInfoString(ACCOUNT_SERVER) == "BlueberryMarketsSVG-Live";
+}
 CTrade         m_trade;
 CSymbolInfo    m_symbol;
 CPositionInfo  m_position;
@@ -362,7 +369,7 @@ void OnTick()
       m_peak_equity = current_equity;
 
    // 1. Optional Prop-Firm Protection
-   if(InpEnablePropProtection)
+   if(IsBlueberryChallengeAccount())
    {
       if(InpMaxDailyDrawdownPercent > 0.0 && m_day_start_balance > 0.0)
       {

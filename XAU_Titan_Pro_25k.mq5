@@ -57,7 +57,7 @@ input bool     InpBlockFridayLateEntries  = true;        // Freitag Spätnachmit
 input int      InpFridayStopEntryHour     = 19;          // Freitag Einstiegs-Stopp Stunde (Serverzeit, z.B. 19:00)
 
 input group "=== 04 / Preemptive Drawdown-Schutz (25k / 4% Daily / 10% Static) ==="
-input bool     InpEnablePropProtection    = true;        // Harter Prop-Firm Notaus aktiv
+input bool     InpEnablePropProtection    = true;        // Legacy setfile field; challenge enforcement is bound to the verified Blueberry account.
 input double   InpInitialBalance          = 25000.0;     // Feste Start-Balance ($25.000 für statischen DD)
 input double   InpMaxDailyDrawdownPercent = 3.2;         // Notbremse Tagesverlust % (Stoppt bei $800 vor 4.0% = $1.000)
 input double   InpMaxTotalDrawdownPercent = 8.0;         // Notbremse Gesamtverlust % (Stoppt bei $2.000 vor 10.0% = $2.500)
@@ -83,6 +83,13 @@ input int      InpMinSRRoomPoints         = 300;         // Min. Freiraum zum Sw
 input int      InpATRPeriod               = 14;          // ATR Periode für Volatilitätsmessung
 
 //--- Global Variables
+// Challenge protection is enforced only on the configured Blueberry account.
+// This deliberately ignores legacy setfile toggles on every other account.
+bool IsBlueberryChallengeAccount()
+{
+   return AccountInfoInteger(ACCOUNT_LOGIN) == 5120620 &&
+          AccountInfoString(ACCOUNT_SERVER) == "BlueberryMarketsSVG-Live";
+}
 CTrade         m_trade;
 CSymbolInfo    m_symbol;
 CPositionInfo  m_position;
@@ -329,7 +336,7 @@ void OnTick()
       m_peak_equity = current_equity;
 
    // 1. Preemptive Prop-Firm Circuit Breakers (4% Daily / 10% Static)
-   if(InpEnablePropProtection)
+   if(IsBlueberryChallengeAccount())
    {
       // 1.1 Hard Floor Absolute Equity Protection ($23,000.00)
       if(InpHardFloorEquityStop > 0.0 && current_equity <= InpHardFloorEquityStop && !m_total_lockout)

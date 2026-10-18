@@ -175,6 +175,9 @@ def test_prepare_creates_identity_bound_capture_variant_only_under_output(tmp_pa
         assert manifest["presetName"] == preset.name
         assert manifest["presetInputCount"] == 50
         assert manifest["sourceSha256"] == BUILD.EXPECTED_SOURCE_SHA256
+        assert "bool IsBlueberryChallengeAccount()" in source
+        assert "if(IsBlueberryChallengeAccount())" in source
+        assert "if(InpEnablePropProtection)" not in source
         assert manifest["expectedParameterSetHash"] == BUILD._expected_parameter_hash(
             (ROOT / BUILD.SOURCE_NAME).read_text(encoding="utf-8-sig"),
             BUILD._preset_input_names(preset)[1],

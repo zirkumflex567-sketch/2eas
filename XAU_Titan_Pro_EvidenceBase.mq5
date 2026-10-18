@@ -55,7 +55,7 @@ input bool     InpBlockFridayLateEntries  = true;        // Freitag Spätnachmit
 input int      InpFridayStopEntryHour     = 19;          // Freitag Einstiegs-Stopp Stunde (Serverzeit, z.B. 19:00)
 
 input group "=== 04 / Blueberry Funded Prop-Firm Schutz ==="
-input bool     InpEnablePropProtection    = true;        // Harter Prop-Firm Notaus aktiv (Standard: true für maximalen Kontoschutz)
+input bool     InpEnablePropProtection    = true;        // Legacy setfile field; challenge enforcement is bound to the verified Blueberry account.
 input double   InpMaxDailyDrawdownPercent = 3.5;         // Max. Tagesverlust % (Notbremse vor 4.0% Regel)
 input double   InpMaxTotalDrawdownPercent = 9.0;         // Max. Gesamtverlust % (Notbremse vor 10.0% Regel)
 input bool     InpTotalDDBasedOnInitial   = true;        // Max Drawdown Basis (true = Statisch vom Startkapital wie Blueberry; false = Trailing)
@@ -79,6 +79,13 @@ input int      InpMinSRRoomPoints         = 300;         // Min. Freiraum zum Sw
 input int      InpATRPeriod               = 14;          // ATR Periode für Volatilitätsmessung
 
 //--- Global Variables
+// Challenge protection is enforced only on the configured Blueberry account.
+// This deliberately ignores legacy setfile toggles on every other account.
+bool IsBlueberryChallengeAccount()
+{
+   return AccountInfoInteger(ACCOUNT_LOGIN) == 5120620 &&
+          AccountInfoString(ACCOUNT_SERVER) == "BlueberryMarketsSVG-Live";
+}
 CTrade         m_trade;
 CSymbolInfo    m_symbol;
 CPositionInfo  m_position;
@@ -332,7 +339,7 @@ void OnTick()
       m_peak_equity = current_equity;
 
    // 1. Hard Blueberry Funded Prop-Firm Drawdown Protection
-   if(InpEnablePropProtection)
+   if(IsBlueberryChallengeAccount())
    {
       // Daily Drawdown Protection (Calculated against true day start balance)
       if(InpMaxDailyDrawdownPercent > 0.0 && m_day_start_balance > 0.0)

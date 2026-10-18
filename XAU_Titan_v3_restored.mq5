@@ -47,7 +47,7 @@ input bool     InpCloseEOD                = false;       // Close Positions at E
 input int      InpEODHour                 = 22;          // EOD Close Hour
 
 input group "=== Hard Prop Firm Drawdown Protection (Blueberry Funded) ==="
-input bool     InpEnablePropProtection    = true;        // Enable Hard Drawdown Protection
+input bool     InpEnablePropProtection    = true;        // Legacy setfile field; challenge enforcement is bound to the verified Blueberry account.
 input double   InpMaxDailyDrawdownPercent = 3.0;         // Max Daily Loss % (Emergency Stop before 4% rule)
 input double   InpMaxTotalDrawdownPercent = 8.0;         // Max Overall Loss % (Emergency Stop before 10% rule)
 input double   InpPhaseProfitTargetPct    = 8.0;         // Phase Target % (8% Phase 1, 5% Phase 2)
@@ -60,6 +60,13 @@ input double   InpRSIOversold             = 45.0;        // RSI Pullback Entry T
 input double   InpRSIOverbought           = 55.0;        // RSI Rally Entry Threshold for SELL
 
 //--- Global Variables
+// Challenge protection is enforced only on the configured Blueberry account.
+// This deliberately ignores legacy setfile toggles on every other account.
+bool IsBlueberryChallengeAccount()
+{
+   return AccountInfoInteger(ACCOUNT_LOGIN) == 5120620 &&
+          AccountInfoString(ACCOUNT_SERVER) == "BlueberryMarketsSVG-Live";
+}
 CTrade         m_trade;
 CSymbolInfo    m_symbol;
 CPositionInfo  m_position;
@@ -179,7 +186,7 @@ void OnTick()
       m_peak_equity = current_equity;
 
    // 1. Hard Prop Firm Drawdown Monitoring (Every Tick)
-   if(InpEnablePropProtection)
+   if(IsBlueberryChallengeAccount())
    {
       double daily_loss_pct = 0.0;
       if(m_day_start_balance > 0)
