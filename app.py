@@ -1829,6 +1829,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script>window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;</script>
   <script src="static/chart-studio-v5-feed.js"></script>
   <script src="static/chart-studio-v5-indicator-feed.js"></script>
+  <script src="static/chart-studio-v5-oscillator-feed.js"></script>
   <script src="static/chart-studio-v5-preview.js"></script>
   <script src="static/stone-celebrations.js"></script>
   <style>

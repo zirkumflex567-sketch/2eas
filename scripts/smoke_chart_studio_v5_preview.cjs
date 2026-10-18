@@ -7,9 +7,9 @@ const {chromium}=require("playwright");
 
 const root=path.resolve(__dirname,"..");
 const html=enabled=>`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<script>window.CHART_STUDIO_V5_PREVIEW_ENABLED=${enabled};window.__v4Updates=0;window.__v5AverageAccount="titan";window.__v5AverageConfigs=[{id:"trend-ema",type:"EMA",period:21,source:"close",color:"#68dfff",lineWidth:2,visible:true,label:"Trend EMA",displayShift:0}];window.ChartStudioAverages={getConfigs:()=>window.__v5AverageConfigs.map(item=>({...item})),getAccount:()=>window.__v5AverageAccount};</script>
-<script src="static/chart-studio-v5-feed.js"></script><script src="static/chart-studio-v5-indicator-feed.js"></script><script src="static/chart-studio-v5-preview.js"></script>
-<style>body{margin:0;background:#07111a;color:#e6f4f8;font:14px sans-serif}#tv-chart{height:300px;width:500px}#chart-v5-preview-host{height:420px;width:700px}</style></head><body>
+<script>window.CHART_STUDIO_V5_PREVIEW_ENABLED=${enabled};window.__v4Updates=0;window.__v5AverageAccount="titan";window.__v5AverageConfigs=[{id:"trend-ema",type:"EMA",period:21,source:"close",color:"#68dfff",lineWidth:2,visible:true,label:"Trend EMA",displayShift:0}];window.ChartStudioAverages={getConfigs:()=>window.__v5AverageConfigs.map(item=>({...item})),getAccount:()=>window.__v5AverageAccount};window.__v5IndicatorScope={account:"titan",symbol:"XAUUSD",timeframe:"M15"};window.__v5IndicatorSettings={rsi:{enabled:false,period:14},macd:{enabled:false,fast:12,slow:26,signal:9},atr:{enabled:false,period:14},adx:{enabled:false,period:14},stochastic:{enabled:true,period:14,smoothK:3,smoothD:3}};window.__v5OscillatorInstances=[{id:"macd-one",kind:"macd",fast:8,slow:21,signal:5,visible:true,color:"#44ffaa",lineWidth:3,label:"Fast MACD"}];const cloneLocal=value=>JSON.parse(JSON.stringify(value));window.ChartStudioIndicators={getScope:()=>({...window.__v5IndicatorScope}),settings:()=>cloneLocal(window.__v5IndicatorSettings)};window.ChartStudioOscillators={getAccount:()=>window.__v5IndicatorScope.account,settings:()=>cloneLocal(window.__v5OscillatorInstances)};</script>
+<script src="static/chart-studio-v5-feed.js"></script><script src="static/chart-studio-v5-indicator-feed.js"></script><script src="static/chart-studio-v5-oscillator-feed.js"></script><script src="static/chart-studio-v5-preview.js"></script>
+<style>body{margin:0;background:#07111a;color:#e6f4f8;font:14px sans-serif}#tv-chart{height:300px;width:500px}#chart-v5-preview-host{height:700px;width:700px}</style></head><body>
 <div id="tv-chart"><canvas id="v4-sentinel" width="500" height="300"></canvas></div>
 <button type="button" id="chart-v5-preview-btn" aria-controls="chart-v5-preview-panel" aria-expanded="false" hidden>V5 Vorschau</button>
 <section id="chart-v5-preview-panel" hidden><strong id="chart-v5-preview-title">Native v5</strong><div id="chart-v5-preview-status" role="status"></div>
@@ -109,6 +109,10 @@ const server=http.createServer((req,res)=>{
   await page.locator("#chart-v5-preview-btn").click();
   await page.waitForFunction(()=>document.querySelector("#chart-v5-live-quote")?.textContent.includes("STALE"));
   await page.waitForFunction(()=>window.ChartStudioV5Preview?.inspect().customMovingAverageCount===1);
+  await page.waitForFunction(()=>window.ChartStudioV5Preview?.inspect().customOscillatorCount===2);
+  const syncedOscillators=await page.evaluate(()=>({stochastic:window.ChartStudioV5Preview.readOscillator("catalog-stochastic"),macd:window.ChartStudioV5Preview.readOscillator("instance-macd-one")}));
+  assert.deepEqual(syncedOscillators.stochastic,{id:"preview-osc-c-stochastic",kind:"stochastic",settings:{period:14,smoothK:3,smoothD:3},color:"#55d7ee",lineWidth:2,visible:true,title:"Stochastic %K/%D"});
+  assert.deepEqual(syncedOscillators.macd,{id:"preview-osc-i-pzbd09",kind:"macd",settings:{fast:8,slow:21,signal:5},color:"#44ffaa",lineWidth:3,visible:true,title:"Fast MACD"});
   const initialMovingAverage=await page.evaluate(()=>window.ChartStudioV5Preview.readMovingAverage("trend-ema"));
   assert.equal(initialMovingAverage.period,21);
   assert.equal(initialMovingAverage.source,"close");
@@ -116,6 +120,7 @@ const server=http.createServer((req,res)=>{
   assert.equal(initialMovingAverage.title,"Trend EMA");
   const initialPreviewLayout=await page.evaluate(()=>JSON.parse(window.ChartStudioV5Preview.exportLayout()));
   assert.equal(initialPreviewLayout.view.movingAverages.length,0,"temporary production-editor averages do not enter v5 portable layout storage");
+  assert.ok(initialPreviewLayout.view.paneHeights.every(Number.isFinite),"portable pane heights exclude empty transient preview panes");
   const changedMovingAverage=await page.evaluate(()=>{
     window.__v5AverageConfigs=[{...window.__v5AverageConfigs[0],period:34,source:"hlc3",displayShift:1}];
     window.dispatchEvent(new CustomEvent("chart-studio-averages-change",{detail:{account:"titan",symbol:"XAUUSD"}}));
@@ -125,10 +130,21 @@ const server=http.createServer((req,res)=>{
   assert.equal(changedMovingAverage.source,"hlc3");
   assert.equal(changedMovingAverage.displayShift,1);
   assert.equal((await page.evaluate(()=>JSON.parse(window.ChartStudioV5Preview.exportLayout()).view.movingAverages.length)),0,"edited source configurations stay temporary in preview exports");
+  assert.equal((await page.evaluate(()=>JSON.parse(window.ChartStudioV5Preview.exportLayout()).view.oscillators.length)),0,"temporary production-editor oscillator panes do not enter v5 portable layout storage");
+  const changedOscillator=await page.evaluate(()=>{
+    window.__v5IndicatorSettings.stochastic={...window.__v5IndicatorSettings.stochastic,period:21,smoothK:4};
+    window.dispatchEvent(new CustomEvent("chart-studio-indicators-change",{detail:{...window.__v5IndicatorScope}}));
+    return window.ChartStudioV5Preview.readOscillator("catalog-stochastic");
+  });
+  assert.deepEqual(changedOscillator.settings,{period:21,smoothK:4,smoothD:3},"v5 preview follows local oscillator-editor changes");
+  assert.equal((await page.evaluate(()=>JSON.parse(window.ChartStudioV5Preview.exportLayout()).view.oscillators.length)),0,"edited source oscillator settings stay temporary in preview exports");
   assert.match(await page.locator("#chart-v5-live-quote").textContent(),/STALE .*Bid 4100\.25 \/ Ask 4100\.5 \/ Spread 0\.25 .*2026-10-18T12:00:00\.000Z UTC · Alter 3600 s .*keine historische Kerze/);
   assert.deepEqual(quoteRequests[0],{account:"titan",symbol:"XAUUSD",method:"GET"},"v5 quote is fetched for exact account/symbol as a read-only snapshot");
   await page.waitForFunction(()=>document.querySelector("#chart-v5-preview-status")?.textContent.includes("150 verifizierte Kerzen"));
-  await page.waitForFunction(()=>[...document.querySelectorAll("#chart-v5-preview-host canvas")].some(canvas=>canvas.width>300&&canvas.height>200));
+  await page.waitForFunction(()=>[...document.querySelectorAll("#chart-v5-preview-host canvas")].some(canvas=>canvas.width>300&&canvas.height>80),null,{timeout:5000}).catch(async()=>{
+   const state=await page.evaluate(()=>({canvases:[...document.querySelectorAll("#chart-v5-preview-host canvas")].map(canvas=>({width:canvas.width,height:canvas.height})),inspection:window.ChartStudioV5Preview.inspect(),status:document.querySelector("#chart-v5-preview-status")?.textContent}));
+   throw new Error(`native v5 canvas did not render: ${JSON.stringify(state)}; browser errors: ${errors.join(" | ")}`);
+  });
   assert.match(await page.locator("#chart-v5-data-window").textContent(),/Fadenkreuz auf eine Kerze bewegen/);
   const liveDealReadback=await page.evaluate(()=>window.ChartStudioV5Preview.readBrokerDealMarkers());
   assert.equal(liveDealReadback.plotted,2,"native v5 renderer retains both in-window historical fills");
@@ -319,7 +335,7 @@ const server=http.createServer((req,res)=>{
    const stalePositionResult=window.ChartStudioV5Preview.setPositions({scope:{account:"titan",symbol:"XAUUSD",timeframe:"M15"},source:"MT5_VERIFIED",canExecute:false,positions:[{ticket:"71001",side:"BUY",priceOpen:4161}]},stalePositions);
    const current=window.ChartStudioV5Preview.beginRead();
    const updated=window.ChartStudioV5Preview.update({accountId:"xau5m_m5",symbol:"XAUUSD.p",timeframe:"M15",source:"MT5_VERIFIED",canExecute:false,snapshotAsOfUtc:asOfUtc,candles},current);
-   window.__v5AverageAccount="xau5m_m5";window.__v5AverageConfigs=[];
+   window.__v5AverageAccount="xau5m_m5";window.__v5AverageConfigs=[];window.__v5IndicatorScope={account:"xau5m_m5",symbol:"XAUUSD.p",timeframe:"M15"};window.__v5IndicatorSettings={stochastic:{enabled:false,period:14,smoothK:3,smoothD:3}};window.__v5OscillatorInstances=[];
    window.dispatchEvent(new CustomEvent("chart-studio-averages-change",{detail:{account:"xau5m_m5",symbol:"XAUUSD"}}));
    return {staleResult,stalePositionResult,updated,state:window.ChartStudioV5Preview.inspect()};
   },{candles,asOfUtc});
@@ -329,6 +345,7 @@ const server=http.createServer((req,res)=>{
   assert.equal(scopeSwitch.state.scope.account,"xau5m_m5");
   assert.equal(scopeSwitch.state.positionOverlayCount,0,"account changes clear prior account position lines");
   assert.equal(scopeSwitch.state.customMovingAverageCount,0,"a configuration still owned by another account is never drawn into the new chart");
+  assert.equal(scopeSwitch.state.customOscillatorCount,0,"a prior account's editor oscillators are cleared on scope switch");
   assert.equal(scopeSwitch.state.brokerDealMarkerCount,0,"account changes clear prior account deal markers");
   assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.readAutoFibonacci()),null,"a scope switch clears Auto-Fibonacci along with the prior account's candles");
   const hostBox=await page.locator("#chart-v5-preview-host").boundingBox();

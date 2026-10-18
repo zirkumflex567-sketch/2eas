@@ -572,7 +572,9 @@ function restore(account){
 }
 let state=null;
 function settings(){return state?JSON.parse(JSON.stringify(state.settings)):defaults()}
-function persist(){try{localStorage.setItem(storagePrefix+state.account,JSON.stringify(state.settings))}catch(_){}}
+function getScope(){return state?{account:state.account,symbol:state.symbol,timeframe:state.timeframe}:null}
+function notifyConfigChange(){if(!state)return;try{window.dispatchEvent(new CustomEvent("chart-studio-indicators-change",{detail:getScope()}))}catch(_){}}
+function persist(){try{localStorage.setItem(storagePrefix+state.account,JSON.stringify(state.settings))}catch(_){}notifyConfigChange()}
 function box(kind){
  const cfg=REGISTRY[kind],settings=state.settings[kind];
  const row=document.createElement("label");row.className="cs-indicator-control";
@@ -905,14 +907,14 @@ function switchAccount(account,symbol=null){
  if(!state)return;
  state.account=account;if(typeof symbol==="string")state.symbol=symbol;
  state.settings=restore(account);state.signature=null;state.bars=[];
- loadPivotSource();syncPanel();renderPanes();
+ loadPivotSource();syncPanel();renderPanes();notifyConfigChange();
 }
 function setScope(account,symbol,timeframe){
  if(!state)return;
  const changed=state.account!==account||state.symbol!==symbol||state.timeframe!==timeframe;
  state.account=account;state.symbol=symbol;state.timeframe=timeframe;
  if(changed){state.pivotController?.abort();state.pivotSource=null;state.pivotMetaByTime.clear();loadPivotSource()}
- renderPanes();
+ renderPanes();if(changed)notifyConfigChange();
 }
 function updateConfig(kind,prop,val){
  if(!state||!REGISTRY[kind])return false;
@@ -998,9 +1000,9 @@ function mount({chart,host,panel,account="titan",symbol="XAUUSD",onRender}){
   else updateConfig(target.dataset.kind,target.dataset.parameter,target.value);
  });
  chart.timeScale().subscribeVisibleLogicalRangeChange(syncRanges);
- syncPanel();renderPanes();if(state.settings.pivots.enabled)loadPivotSource();
+ syncPanel();renderPanes();notifyConfigChange();if(state.settings.pivots.enabled)loadPivotSource();
 }
 function setTimeframe(timeframe){if(!state||!Object.hasOwn({M1:1,M5:1,M15:1,M30:1,H1:1,H4:1,D1:1,W1:1},timeframe))return;setScope(state.account,state.symbol,timeframe)}
-window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,setScope,setTimeframe,updateConfig,settings,readout,ichimokuValues:()=>state?.ichimokuValues??null,createIncremental,
+window.ChartStudioIndicators=Object.freeze({mount,updateBars,switchAccount,setScope,setTimeframe,updateConfig,settings,getScope,readout,ichimokuValues:()=>state?.ichimokuValues??null,createIncremental,
  registry:REGISTRY,calculate:calc,applySettings,math:Object.freeze({validateBars,ema,rsi,stochastic,stochRsi,cci,momentum,roc,parabolicSar,obv,mfi,macd,atr,adx,supertrend,donchian,keltner,atrBands,linearRegressionChannel,ichimoku,pivotPoints,autoFibonacci,vwap,volumes})});
 })();

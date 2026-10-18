@@ -8884,6 +8884,7 @@ var ChartStudioV5 = (() => {
     const paneLines = /* @__PURE__ */ new Map();
     const paneHeightOverrides = /* @__PURE__ */ new Map();
     const oscillators = /* @__PURE__ */ new Map();
+    const transientOscillators = /* @__PURE__ */ new Set();
     const priceLevels = /* @__PURE__ */ new Map();
     const timeMarkers = /* @__PURE__ */ new Map();
     const textAnnotations = /* @__PURE__ */ new Map();
@@ -9372,23 +9373,34 @@ var ChartStudioV5 = (() => {
     }
     function viewSnapshots() {
       const visibleRange = chart.timeScale().getVisibleLogicalRange();
+      const persistentOscillators = [...oscillators.entries()].filter(([id]) => !transientOscillators.has(id));
+      const persistentPaneLines = [...paneLines.entries()].map(([id, series]) => ({ id, series, paneIndex: chart.panes().findIndex((pane) => pane.getSeries().includes(series)) }));
+      const volumePaneIndex = volume ? chart.panes().findIndex((pane) => pane.getSeries().includes(volume)) : -1;
+      const retainedPaneIndices = /* @__PURE__ */ new Set([
+        0,
+        ...persistentOscillators.map(([, group]) => group.paneIndex),
+        ...persistentPaneLines.map((item) => item.paneIndex),
+        ...volumePaneIndex >= 1 ? [volumePaneIndex] : []
+      ]);
+      const orderedPaneIndices = [...retainedPaneIndices].filter((index) => Number.isInteger(index) && index >= 0 && index < chart.panes().length).sort((a2, b2) => a2 - b2);
+      const portablePaneIndex = new Map(orderedPaneIndices.map((index, position) => [index, position]));
+      const paneHeight = (index) => {
+        const pane = chart.panes()[index], actual = pane ? Math.round(pane.getHeight()) : 0, override = paneHeightOverrides.get(index), derived = Math.round(host.clientHeight / (chart.panes().length || 1));
+        return actual >= 80 && actual <= 600 ? actual : override && override >= 80 && override <= 600 ? override : Number.isFinite(derived) ? Math.min(600, Math.max(80, derived)) : 150;
+      };
       return {
         movingAverages: [...managedMovingAverages.entries()].filter(([id]) => !transientMovingAverages.has(id)).map(([, value]) => ({ ...value.options })),
         sessionVwaps: [...sessionVwapOverlays.values()].map(({ options }) => ({ ...options })),
         supertrends: [...supertrendOverlays.values()].map((group) => ({ ...group.options })),
         parabolicSars: [...parabolicSarOverlays.values()].map((group) => ({ ...group.options })),
-        oscillators: [...oscillators.values()].map((group) => ({ options: { ...group.options, settings: { ...group.options.settings } }, paneIndex: group.paneIndex })),
-        paneLines: [...paneLines.entries()].map(([id, series]) => {
-          const paneIndex = chart.panes().findIndex((pane) => pane.getSeries().includes(series));
+        oscillators: persistentOscillators.map(([, group]) => ({ options: { ...group.options, settings: { ...group.options.settings } }, paneIndex: portablePaneIndex.get(group.paneIndex) ?? 0 })),
+        paneLines: persistentPaneLines.map(({ id, series, paneIndex }) => {
           const readout = readoutIndicators.get(id);
-          return { options: { id, color: series.options().color, lineWidth: series.options().lineWidth, title: series.options().title, visible: series.options().visible }, data: readout ? [...readout.values].map(([time, value]) => ({ time, value })) : [], paneIndex };
+          return { options: { id, color: series.options().color, lineWidth: series.options().lineWidth, title: series.options().title, visible: series.options().visible }, data: readout ? [...readout.values].map(([time, value]) => ({ time, value })) : [], paneIndex: portablePaneIndex.get(paneIndex) ?? 0 };
         }),
-        paneHeights: chart.panes().map((pane, index) => {
-          const actual = Math.round(pane.getHeight());
-          return actual >= 80 && actual <= 600 ? actual : paneHeightOverrides.get(index) ?? Math.min(600, Math.max(80, Math.round(host.clientHeight / (chart.panes().length || 1))));
-        }),
+        paneHeights: orderedPaneIndices.map(paneHeight),
         volumeVisible: !!volume,
-        volumePaneIndex: volume ? chart.panes().findIndex((pane) => pane.getSeries().includes(volume)) : null,
+        volumePaneIndex: volume && volumePaneIndex >= 0 ? portablePaneIndex.get(volumePaneIndex) ?? null : null,
         displayTimeZone,
         visibleRange: visibleRange ? { from: visibleRange.from, to: visibleRange.to } : null
       };
@@ -9818,6 +9830,7 @@ var ChartStudioV5 = (() => {
         transientMovingAverages.clear();
         for (const group of oscillators.values()) for (const series of group.series.values()) chart.removeSeries(series);
         oscillators.clear();
+        transientOscillators.clear();
         readoutIndicators.clear();
         for (const group of supertrendOverlays.values()) {
           chart.removeSeries(group.up);
@@ -11760,7 +11773,7 @@ var ChartStudioV5 = (() => {
     function refreshOscillators(incremental = false) {
       for (const group of oscillators.values()) replaceOscillatorData(group, incremental);
     }
-    function addOscillator(options) {
+    function addOscillator(options, persistent = true) {
       guard();
       if (!options || !/^[-_a-zA-Z0-9]{1,32}$/.test(options.id) || !colorPattern.test(options.color) || !["rsi", "atr", "macd", "adx", "stochastic", "stochrsi", "cci", "momentum", "roc", "obv", "mfi"].includes(options.kind) || options.lineWidth !== void 0 && ![1, 2, 3, 4].includes(options.lineWidth)) throw Error("Invalid oscillator options");
       if (supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || oscillators.has(options.id) || donchianOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || averages.has(options.id) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || measurements.has(options.id) || bollingerOverlays.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
@@ -11775,15 +11788,22 @@ var ChartStudioV5 = (() => {
         chart.panes()[paneIndex]?.setHeight(150);
         paneHeightOverrides.set(paneIndex, 150);
         replaceOscillatorData(group);
-        persistDrawings();
+        if (persistent) {
+          transientOscillators.delete(options.id);
+          persistDrawings();
+        } else transientOscillators.add(options.id);
       } catch (error) {
         oscillators.delete(options.id);
+        transientOscillators.delete(options.id);
         for (const series of group.series.values()) chart.removeSeries(series);
         for (const key of oscillatorComponents(normalized.kind)) readoutIndicators.delete(normalized.id + ":" + key);
         throw error;
       }
     }
-    function updateOscillator(id, patch) {
+    function addTransientOscillator(options) {
+      return addOscillator(options, false);
+    }
+    function updateOscillator(id, patch, persistent = true) {
       guard();
       const group = oscillators.get(id);
       if (!group) throw Error("Unknown oscillator");
@@ -11792,7 +11812,13 @@ var ChartStudioV5 = (() => {
       calculateOscillator(bars, next.kind, next.settings);
       group.options = next;
       replaceOscillatorData(group);
-      persistDrawings();
+      if (persistent) {
+        transientOscillators.delete(id);
+        persistDrawings();
+      } else transientOscillators.add(id);
+    }
+    function updateTransientOscillator(id, patch) {
+      return updateOscillator(id, patch, false);
     }
     function oscillatorOptions(id) {
       guard();
@@ -11811,15 +11837,19 @@ var ChartStudioV5 = (() => {
       guard();
       return chart.panes().map((pane, index) => ({ index, titles: pane.getSeries().map((series) => series.options().title) }));
     }
-    function removeOscillator(id) {
+    function removeOscillator(id, persistent = true) {
       guard();
       const group = oscillators.get(id);
       if (!group) return false;
       for (const series of group.series.values()) chart.removeSeries(series);
       for (const key of oscillatorComponents(group.options.kind)) readoutIndicators.delete(id + ":" + key);
       oscillators.delete(id);
-      persistDrawings();
+      transientOscillators.delete(id);
+      if (persistent) persistDrawings();
       return true;
+    }
+    function removeTransientOscillator(id) {
+      return removeOscillator(id, false);
     }
     function resizePane(index, height) {
       guard();
@@ -12147,6 +12177,7 @@ var ChartStudioV5 = (() => {
       parabolicSarOverlays.clear();
       paneLines.clear();
       oscillators.clear();
+      transientOscillators.clear();
       priceLevels.clear();
       timeMarkers.clear();
       textAnnotations.clear();
@@ -12258,6 +12289,9 @@ var ChartStudioV5 = (() => {
       addOscillator,
       updateOscillator,
       removeOscillator,
+      addTransientOscillator,
+      updateTransientOscillator,
+      removeTransientOscillator,
       moveOscillator,
       oscillatorOptions,
       oscillatorPaneLayout,

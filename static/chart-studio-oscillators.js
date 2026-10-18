@@ -63,11 +63,14 @@ function restore(account){
  catch(_){return []}
 }
 function settings(){return state?clone(state.items):[]}
+function getAccount(){return state?.account??null}
+function notifyConfigChange(){if(!state)return;try{const chart=window.ChartStudioBeta?.getState?.();window.dispatchEvent(new CustomEvent("chart-studio-oscillators-change",{detail:{account:state.account,symbol:chart?.symbol||"XAUUSD",timeframe:chart?.timeframe||"M15"}}))}catch(_){}}
 function announce(message){if(state)state.status.textContent=message}
 function save(){
  if(!state)return;
  try{localStorage.setItem(key(state.account),JSON.stringify(state.items))}
  catch(_){announce("Lokale Speicherung nicht verfügbar.")}
+ notifyConfigChange();
 }
 function rangeSync(){
  if(!state)return;
@@ -303,7 +306,7 @@ function updateBars(bars){
 function switchAccount(account){
  if(!state)return;
  state.account=account;state.items=restore(account);
- state.bars=[];state.signature=null;syncPanel();redraw();
+ state.bars=[];state.signature=null;syncPanel();redraw();notifyConfigChange();
 }
 function mount({chart,host,panel,account="titan"}){
  if(state||!chart||!host||!panel)return;
@@ -348,8 +351,8 @@ function mount({chart,host,panel,account="titan"}){
   }
  });
  chart.timeScale().subscribeVisibleLogicalRangeChange(rangeSync);
- syncPanel();redraw();
+ syncPanel();redraw();notifyConfigChange();
 }
-window.ChartStudioOscillators=Object.freeze({mount,settings,applySettings,
+window.ChartStudioOscillators=Object.freeze({mount,settings,getAccount,applySettings,
  updateBars,switchAccount,add,edit,remove,normalize,normalizeList,MAX,KINDS});
 })();
