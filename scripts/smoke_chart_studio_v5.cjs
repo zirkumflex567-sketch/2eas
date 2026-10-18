@@ -187,6 +187,15 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    document.getElementById("chart").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowUp",bubbles:true}));
    const verticalAfter=[engine.readDrawing("nudge-price-a"),engine.readDrawing("nudge-price-b")],verticalPositionsAfter=[engine.drawingPosition("nudge-price-a"),engine.drawingPosition("nudge-price-b")];
    const verticalUndo=[engine.undo(),engine.undo()],verticalRestored=[engine.readDrawing("nudge-price-a"),engine.readDrawing("nudge-price-b")],verticalRedo=[engine.redo(),engine.redo()];
+   engine.addChannel({id:"nudge-channel",startTime:bars[30].time,startPrice:4100,endTime:bars[40].time,endPrice:4110,offsetTime:bars[35].time,offsetPrice:4095,color:"#62deeb"});
+   engine.addPitchfork({id:"nudge-pitchfork",startTime:bars[30].time,startPrice:4100,endTime:bars[40].time,endPrice:4110,thirdTime:bars[35].time,thirdPrice:4120,color:"#b3d5ff"});
+   const compositeBefore=[engine.readDrawing("nudge-channel"),engine.readDrawing("nudge-pitchfork")];
+   engine.selectDrawings(["nudge-channel","nudge-pitchfork"]);
+   document.getElementById("chart").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true}));
+   const compositeAfter=[engine.readDrawing("nudge-channel"),engine.readDrawing("nudge-pitchfork")];
+   const compositeUndo=[engine.undo(),engine.undo()],compositeRestored=[engine.readDrawing("nudge-channel"),engine.readDrawing("nudge-pitchfork")];
+   const compositeRedo=[engine.redo(),engine.redo()],compositeRepeated=[engine.readDrawing("nudge-channel"),engine.readDrawing("nudge-pitchfork")];
+   engine.removeChannel("nudge-channel");engine.removePitchfork("nudge-pitchfork");
    engine.setDrawingLocked("nudge-time-b",true);engine.selectDrawings(["nudge-time-a","nudge-time-b"]);
    const lockedNudgeBefore=[engine.readDrawing("nudge-time-a"),engine.readDrawing("nudge-time-b")];
    document.getElementById("chart").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true}));
@@ -270,7 +279,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    let disposed=false;try{engine.setCandles(bars)}catch(_){disposed=true}
    return {first,updated,staleRejected,invalidRejected,isolated,removed,disposed,badPaneRejected,
     withPrimitive,updatedPrimitive,removedPrimitive,removedTimeMarker,withoutPrimitive,invalidPrimitiveRejected,unknownTimeRejected,duplicateDrawingRejected,
-    multiSelect,selectedTogether,groupHidden,hiddenReadings,groupLocked,lockedReadings,nudgeBefore,nudgeMoved,nudgeSelection,nudgeUndo,nudgeRestored,nudgeRedo,nudgeRepeated,mixedBefore,mixedAfter,mixedUndo,mixedRestored,verticalBefore,verticalAfter,verticalPositionsBefore,verticalPositionsAfter,verticalUndo,verticalRestored,verticalRedo,lockedNudgeBefore,lockedNudgeAfter,boundaryNudgeBefore,boundaryNudgeAfter,capacityBefore,capacityAfter,keyboardHidden,keyboardLocked,toggledSelection,selectedAfterToggle,unknownSelectionRejected,selectionAfterRejected,
+    multiSelect,selectedTogether,groupHidden,hiddenReadings,groupLocked,lockedReadings,nudgeBefore,nudgeMoved,nudgeSelection,nudgeUndo,nudgeRestored,nudgeRedo,nudgeRepeated,mixedBefore,mixedAfter,mixedUndo,mixedRestored,verticalBefore,verticalAfter,verticalPositionsBefore,verticalPositionsAfter,verticalUndo,verticalRestored,verticalRedo,compositeBefore,compositeAfter,compositeUndo,compositeRestored,compositeRedo,compositeRepeated,lockedNudgeBefore,lockedNudgeAfter,boundaryNudgeBefore,boundaryNudgeAfter,capacityBefore,capacityAfter,keyboardHidden,keyboardLocked,toggledSelection,selectedAfterToggle,unknownSelectionRejected,selectionAfterRejected,
     groupDeleteAvailable,groupDeleteIds,groupDeleteRemoved,groupDeleteSelection,groupDeleteUndo,groupDeleteRestored,groupDeleteRedo,groupDeleteRedone,
     keyboardGroupDelete,keyboardGroupDeleteSelection,keyboardGroupDeleteUndo,keyboardGroupBackspace,keyboardGroupBackspaceUndo,
     staleHistoryMarker,drawingIndicatorCollisionRejected,
@@ -1117,6 +1126,11 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(result.verticalAfter.map(item=>item.price).map((price,index)=>price>result.verticalBefore[index].price),[true,true],"ArrowUp moves every selected price anchor upward");
   result.verticalPositionsAfter.forEach((position,index)=>assert.ok(Math.abs(position.y-(result.verticalPositionsBefore[index].y-1))<0.1,"Vertical group movement applies the same pixel delta"));
   assert.deepEqual(result.verticalUndo,[true,true]);assert.deepEqual(result.verticalRestored.map(item=>item.price),result.verticalBefore.map(item=>item.price));assert.deepEqual(result.verticalRedo,[true,true]);
+  const compositeTimeKeys=[["startTime","endTime","offsetTime"],["startTime","endTime","thirdTime"]];
+  result.compositeAfter.forEach((drawing,index)=>{for(const key of compositeTimeKeys[index])assert.equal(drawing[key],result.compositeBefore[index][key]+900,`${drawing.id} shifts every time anchor by one candle`)});
+  result.compositeAfter.forEach((drawing,index)=>{const priceKeys=index===0?["startPrice","endPrice","offsetPrice"]:["startPrice","endPrice","thirdPrice"];for(const key of priceKeys)assert.equal(drawing[key],result.compositeBefore[index][key],`${drawing.id} leaves every price anchor unchanged`)});
+  assert.deepEqual(result.compositeUndo,[true,true]);assert.deepEqual(result.compositeRestored,result.compositeBefore,"Composite multi-anchor drawings undo back to their full original geometry");
+  assert.deepEqual(result.compositeRedo,[true,true]);assert.deepEqual(result.compositeRepeated,result.compositeAfter,"Composite multi-anchor drawings redo to their full shifted geometry");
   assert.deepEqual(result.lockedNudgeAfter,result.lockedNudgeBefore,"A locked selected member rejects the whole keyboard nudge");
   assert.deepEqual(result.boundaryNudgeAfter,result.boundaryNudgeBefore,"An out-of-range selected anchor rejects the whole keyboard nudge");
   assert.deepEqual(result.capacityAfter,result.capacityBefore,"A group larger than the 100-entry history bound is rejected without moving drawings");
