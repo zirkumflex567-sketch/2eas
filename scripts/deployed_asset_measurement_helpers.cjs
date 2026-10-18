@@ -36,4 +36,37 @@ function selectCacheHeaders(responses, paths) {
   });
 }
 
-module.exports = { summarizeResources, selectCacheHeaders };
+function measurementContextOptions(width, credentials) {
+  return {
+    viewport: { width, height: 1000 },
+    deviceScaleFactor: width < 500 ? 2 : 1,
+    reducedMotion: "reduce",
+    javaScriptEnabled: false,
+    httpCredentials: credentials,
+  };
+}
+
+function isSafeMeasurementRequest(method, pathname) {
+  return ["GET", "HEAD"].includes(method) && !pathname.startsWith("/stt/api/");
+}
+
+function summarizeCacheExchanges(events) {
+  const result = Object.fromEntries(["cold", "warm"].map(phase => [phase,
+    { requests: 0, conditionalRequests: 0, responses200: 0, responses304: 0 }]));
+  for (const event of events) {
+    const phase = result[event.phase];
+    if (!phase) continue;
+    if (event.kind === "request") {
+      phase.requests += 1;
+      if (event.ifNoneMatch) phase.conditionalRequests += 1;
+    } else if (event.kind === "response" && event.status === 200) {
+      phase.responses200 += 1;
+    } else if (event.kind === "response" && event.status === 304) {
+      phase.responses304 += 1;
+    }
+  }
+  return result;
+}
+
+module.exports = { summarizeResources, selectCacheHeaders, measurementContextOptions,
+  isSafeMeasurementRequest, summarizeCacheExchanges };

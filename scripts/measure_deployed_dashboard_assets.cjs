@@ -4,7 +4,8 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { chromium } = require("playwright");
-const { summarizeResources, selectCacheHeaders } = require("./deployed_asset_measurement_helpers.cjs");
+const { summarizeResources, selectCacheHeaders, measurementContextOptions, isSafeMeasurementRequest,
+  summarizeCacheExchanges } = require("./deployed_asset_measurement_helpers.cjs");
 
 const base = process.env.DASHBOARD_DEPLOYED_ASSET_URL || "https://h-town.duckdns.org/stt/";
 const username = process.env.DASHBOARD_DEPLOYED_ASSET_USERNAME || "kevin";
@@ -38,22 +39,32 @@ async function snapshot(page) {
 }
 
 async function measureViewport(browser, width, credentials) {
-  const context = await browser.newContext({
-    viewport: { width, height: 1000 },
-    deviceScaleFactor: width < 500 ? 2 : 1,
-    reducedMotion: "reduce",
-    httpCredentials: credentials,
-  });
+  const context = await browser.newContext(measurementContextOptions(width, credentials));
   const page = await context.newPage();
-  const blocked = [];
+  const unsafeRequests = [];
   const failures = [];
   const responseHeaders = [];
+  const cacheExchanges = [];
+  let phase = "cold";
   page.on("requestfailed", request => {
     const pathname = new URL(request.url()).pathname;
     if (!pathname.startsWith("/stt/api/")) failures.push({ pathname, error: request.failure()?.errorText || "unknown" });
   });
+  page.on("request", request => {
+    const pathname = new URL(request.url()).pathname;
+    if (!isSafeMeasurementRequest(request.method(), pathname)) {
+      unsafeRequests.push({ pathname, method: request.method() });
+    }
+    if (sampledPaths.includes(pathname) && pathname !== "/stt/") {
+      cacheExchanges.push({ phase, kind: "request", path: pathname,
+        ifNoneMatch: Boolean(request.headers()["if-none-match"]) });
+    }
+  });
   page.on("response", response => {
     const url = new URL(response.url());
+    if (sampledPaths.includes(url.pathname) && url.pathname !== "/stt/") {
+      cacheExchanges.push({ phase, kind: "response", path: url.pathname, status: response.status() });
+    }
     if (url.origin !== new URL(base).origin || !sampledPaths.includes(url.pathname)) return;
     const headers = response.headers();
     responseHeaders.push({ path: url.pathname, status: response.status(),
@@ -65,16 +76,6 @@ async function measureViewport(browser, width, credentials) {
       lastModified: headers["last-modified"] || null,
       vary: headers.vary || null });
   });
-  await page.route("**/*", route => {
-    const request = route.request();
-    const pathname = new URL(request.url()).pathname;
-    if (pathname.startsWith("/stt/api/") || !["GET", "HEAD"].includes(request.method())) {
-      blocked.push({ pathname, method: request.method() });
-      return route.abort();
-    }
-    return route.continue();
-  });
-
   const pageUrl = new URL(base);
   pageUrl.searchParams.set("account", "titan");
   const response = await page.goto(pageUrl.toString(), { waitUntil: "networkidle", timeout: 90_000 });
@@ -84,6 +85,7 @@ async function measureViewport(browser, width, credentials) {
   const cold = { ...coldRaw, resources: summarizeResources(coldRaw.resources) };
   const coldHeaders = responseHeaders.slice();
 
+  phase = "warm";
   const warmResponse = await page.reload({ waitUntil: "networkidle", timeout: 90_000 });
   if (warmResponse?.status() !== 200) throw new Error(`warm deployed document returned HTTP ${warmResponse?.status() ?? "no response"}`);
   await page.waitForTimeout(150);
@@ -92,9 +94,10 @@ async function measureViewport(browser, width, credentials) {
   await context.close();
 
   return { width, deviceScaleFactor: width < 500 ? 2 : 1, cold, warm,
-    blockedApiOrWriteRequests: blocked,
+    unsafeRequests,
     nonApiFailures: failures,
-    cacheHeaders: selectCacheHeaders(coldHeaders, sampledPaths) };
+    cacheHeaders: selectCacheHeaders(coldHeaders, sampledPaths),
+    staticCacheValidation: summarizeCacheExchanges(cacheExchanges) };
 }
 
 (async () => {
@@ -108,15 +111,15 @@ async function measureViewport(browser, width, credentials) {
     }
     const report = {
       schemaVersion: 1,
-      mode: "authenticated public /stt; only HTML and static GET/HEAD; /api requests blocked before network",
+      mode: "authenticated public /stt; JavaScript disabled to prevent API calls; Chromium HTTP cache enabled; GET/HEAD only",
       measuredAtUtc: new Date().toISOString(),
       baseOrigin: new URL(base).origin,
       viewports,
-      limits: "Resource Timing omits transfer headers and cache behavior may vary by browser; this is not a physical memory, paint or hardware benchmark.",
+      limits: "Resource Timing omits some transfer headers; this is not a physical memory, paint or hardware benchmark.",
     };
     if (viewports.some(view => view.nonApiFailures.length)) throw new Error("A non-API public asset request failed.");
-    if (viewports.some(view => view.blockedApiOrWriteRequests.some(request => !request.pathname.startsWith("/stt/api/")))) {
-      throw new Error("The browser attempted a non-GET request outside the blocked API.");
+    if (viewports.some(view => view.unsafeRequests.length)) {
+      throw new Error("The JavaScript-disabled browser attempted an API or non-GET request.");
     }
     const outputPath = path.resolve("output", "asset-budget", "deployed-dashboard-load-evidence.json");
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });

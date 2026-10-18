@@ -89,7 +89,7 @@ async def dashboard_cache_policy(request: Request, call_next):
             request_path = request_path[len(proxy_prefix):]
         if request_path.startswith('/static/'):
             # Keep validators (ETag/Last-Modified), but require revalidation after deploys.
-            response.headers['Cache-Control'] = 'no-cache'
+            response.headers['Cache-Control'] = 'private, no-cache'
     return response
 
 

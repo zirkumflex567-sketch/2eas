@@ -2,7 +2,8 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { summarizeResources, selectCacheHeaders } = require("../scripts/deployed_asset_measurement_helpers.cjs");
+const { summarizeResources, selectCacheHeaders, measurementContextOptions, isSafeMeasurementRequest } =
+  require("../scripts/deployed_asset_measurement_helpers.cjs");
 
 test("resource summary counts compressed browser transfers and cached reloads, excluding blocked APIs", () => {
   assert.deepEqual(summarizeResources([
@@ -44,4 +45,28 @@ test("header summary returns only requested static paths and safe cache fields",
     { path: "/stt/static/app.js", status: 200, cacheControl: null, etag: "W/\"abc\"", contentEncoding: null, age: null,
       expires: null, lastModified: "Sun, 18 Oct 2026 00:00:00 GMT", vary: "Accept-Encoding" },
   ]);
+});
+
+test("deployed measurement disables scripts instead of routing requests so Chromium keeps its HTTP cache", () => {
+  const options = measurementContextOptions(390, { username: "viewer", password: "private" });
+  assert.equal(options.javaScriptEnabled, false);
+  assert.equal(options.deviceScaleFactor, 2);
+  assert.deepEqual(options.httpCredentials, { username: "viewer", password: "private" });
+  assert.equal(isSafeMeasurementRequest("GET", "/stt/static/app.js"), true);
+  assert.equal(isSafeMeasurementRequest("HEAD", "/stt/static/app.js"), true);
+  assert.equal(isSafeMeasurementRequest("GET", "/stt/api/accounts"), false);
+  assert.equal(isSafeMeasurementRequest("POST", "/stt/static/app.js"), false);
+});
+
+test("cache exchange summary distinguishes full cold responses from conditional warm revalidation", () => {
+  const { summarizeCacheExchanges } = require("../scripts/deployed_asset_measurement_helpers.cjs");
+  assert.deepEqual(summarizeCacheExchanges([
+    { phase: "cold", kind: "request", ifNoneMatch: false },
+    { phase: "cold", kind: "response", status: 200 },
+    { phase: "warm", kind: "request", ifNoneMatch: true },
+    { phase: "warm", kind: "response", status: 304 },
+  ]), {
+    cold: { requests: 1, conditionalRequests: 0, responses200: 1, responses304: 0 },
+    warm: { requests: 1, conditionalRequests: 1, responses200: 0, responses304: 1 },
+  });
 });

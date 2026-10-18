@@ -16,7 +16,7 @@ def test_dashboard_scripts_are_revalidated_after_runtime_releases():
     response = TestClient(app).get('/static/chart-studio-beta.js')
 
     assert response.status_code == 200
-    assert response.headers['cache-control'] == 'no-cache'
+    assert response.headers['cache-control'] == 'private, no-cache'
 
 
 def test_static_assets_are_revalidated_through_authenticated_stt_prefix(monkeypatch):
@@ -35,9 +35,9 @@ def test_static_assets_are_revalidated_through_authenticated_stt_prefix(monkeypa
 
     response = client.get('/static/chart-studio-beta.js', headers=headers)
     assert response.status_code == 200
-    assert response.headers['cache-control'] == 'no-cache'
+    assert response.headers['cache-control'] == 'private, no-cache'
     etag = response.headers['etag']
 
     revalidated = client.get('/static/chart-studio-beta.js', headers={**headers, 'If-None-Match': etag})
     assert revalidated.status_code == 304
-    assert revalidated.headers['cache-control'] == 'no-cache'
+    assert revalidated.headers['cache-control'] == 'private, no-cache'
