@@ -42,9 +42,9 @@
 - Modify: `docs/OPEN_TASKS.md`
 - Modify: this plan
 
-- [ ] Extend the read-only four-demo historical snapshot smoke to assert exact-scope/as-of regime reads and displayed volatility states; require no writes and no Blueberry requests.
-- [ ] Cover timeout/API failure, API volatility UNKNOWN, every provenance mismatch, and stale responses after account/symbol/timeframe changes in the browser smoke.
-- [ ] Allow frames without sufficient validated history to remain UNKNOWN; do not make live acceptance depend on every timeframe being READY.
-- [ ] Run the MTF contract, Chromium smoke, beta smoke, live snapshot MTF acceptance, frontend syntax check and `git diff --check`.
-- [ ] Record that fixed versioned volatility context is now shown while editable thresholds, structure/setup semantics, authoritative session coverage and AT-041/042 remain open.
-- [ ] Commit on `main`, wait for both required GitHub workflows, guarded-restart the exact Main runtime, verify htown `/stt` identity/hash, then repeat the four-demo read-only snapshot acceptance.
+- [x] Extend the read-only four-demo historical snapshot smoke to assert exact-scope/as-of regime reads and displayed volatility states; require no writes and no Blueberry requests.
+- [x] Cover timeout/API failure, API volatility UNKNOWN, every provenance mismatch, and stale responses after account/symbol/timeframe changes in the browser smoke.
+- [x] Allow frames without sufficient validated history to remain UNKNOWN; do not make live acceptance depend on every timeframe being READY.
+- [x] Run the MTF contract, Chromium smoke, beta smoke, live snapshot MTF acceptance, frontend syntax check and `git diff --check`.
+- [x] Record that fixed versioned volatility context is now shown while editable thresholds, structure/setup semantics, authoritative session coverage and AT-041/042 remain open.
+- [x] Commit on `main` (`7a22356`), wait for both required GitHub workflows (Chart Studio `39103410196`, Performance/UX `39103410223`), guarded-restart the exact Main runtime, verify htown `/stt` identity/hash, then repeat the four-demo read-only snapshot acceptance. The historical M5 source now resolves for every READY demo snapshot as-of.
