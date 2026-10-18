@@ -1,0 +1,21 @@
+# Read-only demo terminal and runtime check — 19 October 2026
+
+This follow-up covers the five configured non-Blueberry demo aliases only: `titan`, `xau5m_m5`, `titan_m5`, `xau5m_500`, and `goldm15`. No terminal was opened, attached, reloaded, or modified by these checks. No broker order was sent and no Strategy Tester run was started.
+
+## Main runtime and chart reads
+
+Main is `8c21140ab0ea7f5bb7e72e3a646bb46e289edc66`. The guarded local runtime and the htown SSH upstream report the same startup and disk revision and digest `d47b79e9cd3acf75c9d4f9c4d3ec8b7547037bfdcb13873c5422f7ebaf573e36`; `applicationCodeDirty=false` and `restart_required=false`. The htown repository is clean on `main`; nginx is active and `sudo -n nginx -t` succeeds. The Chart Studio and Performance/UX workflows for this revision were still running when this note was written: [Chart Studio 39171763822](https://github.com/zirkumflex567-sketch/2eas/actions/runs/39171763822), [Performance/UX 39171763804](https://github.com/zirkumflex567-sketch/2eas/actions/runs/39171763804).
+
+After the guarded local runtime restart, `scripts/smoke_live_chart_render_data.cjs` loaded 1,001 `MT5_VERIFIED` XAU M15 bars and visible candle pixels for all five aliases. Native-v5 preview checks found ten feed-bound market levels and seven Auto-Fibonacci levels per account. The run issued 91 API GETs, zero mutations, zero browser errors, and no Blueberry-scoped request. Read-only position status reported 1 position on `titan`, 1 on `xau5m_m5`, 3 on `titan_m5`, and none on `xau5m_500` or `goldm15`.
+
+Ten direct read-only capture-status GETs returned Lifecycle `OK / ROLLING_WINDOW` for all five aliases. Decision Recorder was `IDLE` on `xau5m_m5`, `titan_m5`, and `goldm15`, and `NOT_CONFIGURED` on the two Marketplace aliases `titan` and `xau5m_500`.
+
+## Terminal and EA evidence
+
+The process-window inventory showed `titan` on XAUUSD/M15, `xau5m_500` on XAUUSD.p/M15, and `titan_m5` on XAUUSD.p/M1. The `xau5m_m5` and `goldm15` window titles did not expose a selected chart. The dashboard nevertheless read each account's configured XAU M15 feed. This M1-versus-M15 discrepancy for `titan_m5` remains unresolved; the terminal was not changed.
+
+Current 19 October Experts logs in the demo data folders contain `XAU_Titan_Pro_BasketGuard` activity on `titan`, `xau5m_m5`, and `titan_m5`. The logs also contain `Copier_Sender_Master` activity on `titan` and `xau5m_m5`. The `xau5m_m5` and `titan_m5` logs report successful demo EA orders; these were EA-generated log events and not actions from this check. The latest inspected Experts log for `xau5m_500` is dated 15 October, and `goldm15` is dated 17 October, so neither provides current in-memory EA evidence. The logs do not establish which EX5 binary or `.set` file was loaded into memory. No EA attach, preset load, or copier action was performed.
+
+## Protected-account handling note
+
+Two incidental local reads exceeded the intended demo-only scope: the Windows process inventory included the protected terminal's process metadata and window title, and a bulk hash command computed the supplied Blueberry preset's SHA-256 without opening or printing its contents. No Blueberry MT5 API call, Experts/Journal log read, terminal interaction, preset-content read, or account change was performed. Subsequent checks used the explicit five-demo allowlist. This incident is recorded without reproducing the protected account identifiers or preset hash.
