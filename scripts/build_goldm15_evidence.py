@@ -262,7 +262,7 @@ def _instrument_source(source_text: str, *, account_alias: str, producer: str,
       string cs_features=cs_has_position ? CSFeature("exit_candidate",CSBoolNumber(pending_close[cs_i]),"boolean",EnumToString(signal_timeframe)) : cs_entry_features;
       string cs_predicates=cs_has_position ? CSPredicate("exit_candidate",CSBoolNumber(pending_close[cs_i]),"EQ","1",pending_close[cs_i] ? "PASS" : "BLOCK",pending_close[cs_i] ? "EXIT_SIGNAL" : "EXIT_NOT_TRIGGERED") : cs_entry_predicates;
       string cs_outcome=cs_has_position ? (pending_close[cs_i] ? "PASS" : "BLOCK") : (pending_open[cs_i]!=0 ? "PASS" : "BLOCK");
-      CSEnqueueDecision(cs_has_position ? "EXIT_SIGNAL" : "SIGNAL",cs_outcome,cs_bar,cs_features,cs_predicates);
+      CSEnqueueDecision("SIGNAL",cs_outcome,cs_bar,cs_features,cs_predicates);
      }
 #endif
 '''
