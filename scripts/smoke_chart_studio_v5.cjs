@@ -170,6 +170,37 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const groupHidden=engine.setSelectedDrawingsVisible(false),hiddenReadings=[engine.readDrawing("risk-stop").visible,engine.readDrawing("entry-time").visible];
    const groupLocked=engine.setSelectedDrawingsLocked(true),lockedReadings=[engine.readDrawing("risk-stop").locked,engine.readDrawing("entry-time").locked];
    engine.setSelectedDrawingsVisible(true);engine.setSelectedDrawingsLocked(false);
+   engine.addTimeMarker({id:"nudge-time-a",time:bars[40].time,color:"#62deeb"});
+   engine.addTimeMarker({id:"nudge-time-b",time:bars[50].time,color:"#b3d5ff"});
+   engine.selectDrawings(["nudge-time-a","nudge-time-b"]);
+   const nudgeBefore=[engine.readDrawing("nudge-time-a"),engine.readDrawing("nudge-time-b")];
+   document.getElementById("chart").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true}));
+   const nudgeMoved=[engine.readDrawing("nudge-time-a"),engine.readDrawing("nudge-time-b")],nudgeSelection=engine.inspect().selectedDrawingIds;
+   const nudgeUndo=[engine.undo(),engine.undo()],nudgeRestored=[engine.readDrawing("nudge-time-a"),engine.readDrawing("nudge-time-b")];
+   const nudgeRedo=[engine.redo(),engine.redo()],nudgeRepeated=[engine.readDrawing("nudge-time-a"),engine.readDrawing("nudge-time-b")];
+   engine.addPriceLevel({id:"nudge-price-a",price:4100,color:"#ffaa66"});engine.addPriceLevel({id:"nudge-price-b",price:4102,color:"#ff6677"});
+   engine.selectDrawings(["nudge-time-a","nudge-price-a"]);const mixedBefore={time:engine.readDrawing("nudge-time-a"),price:engine.readDrawing("nudge-price-a")};
+   document.getElementById("chart").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true}));
+   const mixedAfter={time:engine.readDrawing("nudge-time-a"),price:engine.readDrawing("nudge-price-a")},mixedUndo=engine.undo(),mixedRestored={time:engine.readDrawing("nudge-time-a"),price:engine.readDrawing("nudge-price-a")};engine.redo();
+   engine.selectDrawings(["nudge-price-a","nudge-price-b"]);
+   const verticalBefore=[engine.readDrawing("nudge-price-a"),engine.readDrawing("nudge-price-b")],verticalPositionsBefore=[engine.drawingPosition("nudge-price-a"),engine.drawingPosition("nudge-price-b")];
+   document.getElementById("chart").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowUp",bubbles:true}));
+   const verticalAfter=[engine.readDrawing("nudge-price-a"),engine.readDrawing("nudge-price-b")],verticalPositionsAfter=[engine.drawingPosition("nudge-price-a"),engine.drawingPosition("nudge-price-b")];
+   const verticalUndo=[engine.undo(),engine.undo()],verticalRestored=[engine.readDrawing("nudge-price-a"),engine.readDrawing("nudge-price-b")],verticalRedo=[engine.redo(),engine.redo()];
+   engine.setDrawingLocked("nudge-time-b",true);engine.selectDrawings(["nudge-time-a","nudge-time-b"]);
+   const lockedNudgeBefore=[engine.readDrawing("nudge-time-a"),engine.readDrawing("nudge-time-b")];
+   document.getElementById("chart").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true}));
+   const lockedNudgeAfter=[engine.readDrawing("nudge-time-a"),engine.readDrawing("nudge-time-b")];engine.setDrawingLocked("nudge-time-b",false);
+   engine.addTimeMarker({id:"nudge-time-boundary",time:bars[0].time,color:"#f7c774"});engine.selectDrawings(["nudge-time-a","nudge-time-boundary"]);
+   const boundaryNudgeBefore=[engine.readDrawing("nudge-time-a"),engine.readDrawing("nudge-time-boundary")];
+   document.getElementById("chart").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowLeft",bubbles:true}));
+   const boundaryNudgeAfter=[engine.readDrawing("nudge-time-a"),engine.readDrawing("nudge-time-boundary")];
+   for(let i=0;i<101;i++)engine.addTimeMarker({id:`nudge-capacity-${i}`,time:bars[20].time,color:"#ffffff"});
+   const capacityIds=Array.from({length:101},(_,i)=>`nudge-capacity-${i}`);engine.selectDrawings(capacityIds);
+   const capacityBefore=capacityIds.map(id=>engine.readDrawing(id));document.getElementById("chart").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true}));
+   const capacityAfter=capacityIds.map(id=>engine.readDrawing(id));
+   [...capacityIds,"nudge-time-boundary","nudge-time-a","nudge-time-b"].forEach(id=>engine.removeTimeMarker(id));engine.removePriceLevel("nudge-price-a");engine.removePriceLevel("nudge-price-b");
+   engine.selectDrawings(["risk-stop","entry-time"]);
    document.getElementById("chart").dispatchEvent(new KeyboardEvent("keydown",{key:"h",bubbles:true}));
    const keyboardHidden=[engine.readDrawing("risk-stop").visible,engine.readDrawing("entry-time").visible];
    document.getElementById("chart").dispatchEvent(new KeyboardEvent("keydown",{key:"l",bubbles:true}));
@@ -239,7 +270,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    let disposed=false;try{engine.setCandles(bars)}catch(_){disposed=true}
    return {first,updated,staleRejected,invalidRejected,isolated,removed,disposed,badPaneRejected,
     withPrimitive,updatedPrimitive,removedPrimitive,removedTimeMarker,withoutPrimitive,invalidPrimitiveRejected,unknownTimeRejected,duplicateDrawingRejected,
-    multiSelect,selectedTogether,groupHidden,hiddenReadings,groupLocked,lockedReadings,keyboardHidden,keyboardLocked,toggledSelection,selectedAfterToggle,unknownSelectionRejected,selectionAfterRejected,
+    multiSelect,selectedTogether,groupHidden,hiddenReadings,groupLocked,lockedReadings,nudgeBefore,nudgeMoved,nudgeSelection,nudgeUndo,nudgeRestored,nudgeRedo,nudgeRepeated,mixedBefore,mixedAfter,mixedUndo,mixedRestored,verticalBefore,verticalAfter,verticalPositionsBefore,verticalPositionsAfter,verticalUndo,verticalRestored,verticalRedo,lockedNudgeBefore,lockedNudgeAfter,boundaryNudgeBefore,boundaryNudgeAfter,capacityBefore,capacityAfter,keyboardHidden,keyboardLocked,toggledSelection,selectedAfterToggle,unknownSelectionRejected,selectionAfterRejected,
     groupDeleteAvailable,groupDeleteIds,groupDeleteRemoved,groupDeleteSelection,groupDeleteUndo,groupDeleteRestored,groupDeleteRedo,groupDeleteRedone,
     keyboardGroupDelete,keyboardGroupDeleteSelection,keyboardGroupDeleteUndo,keyboardGroupBackspace,keyboardGroupBackspaceUndo,
     staleHistoryMarker,drawingIndicatorCollisionRejected,
@@ -1077,6 +1108,18 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(result.lockedReadings,[true,true]);
   assert.deepEqual(result.keyboardHidden,[false,false]);
   assert.deepEqual(result.keyboardLocked,[true,true]);
+  assert.deepEqual(result.nudgeSelection,["nudge-time-a","nudge-time-b"],"A successful group nudge retains the selection");
+  assert.deepEqual(result.nudgeMoved.map(item=>item.time),result.nudgeBefore.map(item=>item.time+900),"ArrowRight nudges every selected time anchor by one loaded candle");
+  assert.deepEqual(result.nudgeUndo,[true,true]);assert.deepEqual(result.nudgeRestored.map(item=>item.time),result.nudgeBefore.map(item=>item.time));
+  assert.deepEqual(result.nudgeRedo,[true,true]);assert.deepEqual(result.nudgeRepeated.map(item=>item.time),result.nudgeMoved.map(item=>item.time));
+  assert.equal(result.mixedAfter.time.time,result.mixedBefore.time.time+900,"A mixed selection shifts its time anchor horizontally");assert.equal(result.mixedAfter.price.price,result.mixedBefore.price.price,"A price-only drawing ignores horizontal movement");
+  assert.equal(result.mixedUndo,true);assert.deepEqual(result.mixedRestored,result.mixedBefore);
+  assert.deepEqual(result.verticalAfter.map(item=>item.price).map((price,index)=>price>result.verticalBefore[index].price),[true,true],"ArrowUp moves every selected price anchor upward");
+  result.verticalPositionsAfter.forEach((position,index)=>assert.ok(Math.abs(position.y-(result.verticalPositionsBefore[index].y-1))<0.1,"Vertical group movement applies the same pixel delta"));
+  assert.deepEqual(result.verticalUndo,[true,true]);assert.deepEqual(result.verticalRestored.map(item=>item.price),result.verticalBefore.map(item=>item.price));assert.deepEqual(result.verticalRedo,[true,true]);
+  assert.deepEqual(result.lockedNudgeAfter,result.lockedNudgeBefore,"A locked selected member rejects the whole keyboard nudge");
+  assert.deepEqual(result.boundaryNudgeAfter,result.boundaryNudgeBefore,"An out-of-range selected anchor rejects the whole keyboard nudge");
+  assert.deepEqual(result.capacityAfter,result.capacityBefore,"A group larger than the 100-entry history bound is rejected without moving drawings");
   assert.deepEqual(result.toggledSelection,["risk-stop"]);
   assert.deepEqual(result.selectedAfterToggle,["risk-stop"]);
   assert.equal(result.unknownSelectionRejected,true);
@@ -1619,6 +1662,17 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   const persistenceProbe=await page.evaluate(()=>{
    const rows=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2,tick_volume:100+i*3}});
    const scope={symbol:"XAUUSD",timeframe:"M15"};
+   const groupFailureAccount="groupnudgefailure",groupFailureKey="2eas.chartstudio.v5.drawings:v5:groupnudgefailure:XAUUSD:M15",groupFailureHost=document.createElement("div");groupFailureHost.style.cssText="width:800px;height:400px";document.body.append(groupFailureHost);
+   const groupFailure=ChartStudioV5.createStudioV5(groupFailureHost,groupFailureAccount,scope);groupFailure.setCandles(rows);
+   groupFailure.addTimeMarker({id:"group-failure-a",time:rows[30].time,color:"#ffffff"});groupFailure.addTimeMarker({id:"group-failure-b",time:rows[40].time,color:"#ffffff"});
+   groupFailure.selectDrawings(["group-failure-a","group-failure-b"]);
+   const groupFailureBefore={a:groupFailure.readDrawing("group-failure-a"),b:groupFailure.readDrawing("group-failure-b"),selection:groupFailure.inspect().selectedDrawingIds,stored:localStorage.getItem(groupFailureKey)};
+   const groupFailureSetItem=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key===groupFailureKey)throw Error("group nudge storage failure");return groupFailureSetItem.call(this,key,value)};
+   try{groupFailureHost.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true}))}finally{Storage.prototype.setItem=groupFailureSetItem}
+   const groupFailureAfter={a:groupFailure.readDrawing("group-failure-a"),b:groupFailure.readDrawing("group-failure-b"),selection:groupFailure.inspect().selectedDrawingIds,status:groupFailure.inspect().persistenceStatus,error:groupFailure.inspect().persistenceError,stored:localStorage.getItem(groupFailureKey)};
+   const groupFailureUndo=[groupFailure.undo(),groupFailure.undo()],groupFailureUndone=[groupFailure.readDrawing("group-failure-a"),groupFailure.readDrawing("group-failure-b")];
+   const groupFailureRedo=[groupFailure.redo(),groupFailure.redo()],groupFailureRedone=[groupFailure.readDrawing("group-failure-a"),groupFailure.readDrawing("group-failure-b")];
+   groupFailure.destroy();groupFailureHost.remove();
    let e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",scope);e.setCandles(rows);
    const restored={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives,price:e.readDrawing("visual-level"),priceSecond:e.readDrawing("visual-level-second"),time:e.readDrawing("visual-time"),timeSecond:e.readDrawing("visual-time-second"),text:e.readDrawing("visual-note"),trend:e.readDrawing("visual-trend"),rectangle:e.readDrawing("visual-zone"),channel:e.readDrawing("visual-channel"),ray:e.readDrawing("visual-ray"),fibo:e.readDrawing("visual-fibo"),customFibo:e.readDrawing("visual-fibo-custom")};
    e.changeAccount("goldm15");e.setCandles(rows);const otherAccount=e.inspect().nativePrimitives;
@@ -1677,9 +1731,16 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    e.addAverage({id:"ema21",color:"#61ddf2"},rows.slice(20).map(c=>({time:c.time,value:c.close-1.2})));
    e.addPaneLine({id:"rsi14",color:"#f7c774"},rows.slice(14).map((c,i)=>({time:c.time,value:45+18*Math.sin(i/8)})));
    e.showVolume(true);window.__v5Screenshot=e;
-   return {restored,otherAccount,returned,otherTimeframe,conflict,externalSnapshot,corrupt,unicodeOversizeSnapshot,unicodeOversizeImport,migrated,migratedV2,legacy,badHistory,malformedHistory,migrationFailure,failedMigration,sizeBound,capacityHydrated,capacityHistoryBound};
+   return {groupFailureBefore,groupFailureAfter,groupFailureUndo,groupFailureUndone,groupFailureRedo,groupFailureRedone,restored,otherAccount,returned,otherTimeframe,conflict,externalSnapshot,corrupt,unicodeOversizeSnapshot,unicodeOversizeImport,migrated,migratedV2,legacy,badHistory,malformedHistory,migrationFailure,failedMigration,sizeBound,capacityHydrated,capacityHistoryBound};
   });
   assert.equal(persistenceProbe.restored.status,"READY");
+  assert.deepEqual(persistenceProbe.groupFailureAfter.a,persistenceProbe.groupFailureBefore.a,"A failed persisted group nudge restores the first drawing in memory");
+  assert.deepEqual(persistenceProbe.groupFailureAfter.b,persistenceProbe.groupFailureBefore.b,"A failed persisted group nudge restores every drawing in memory");
+  assert.deepEqual(persistenceProbe.groupFailureAfter.selection,persistenceProbe.groupFailureBefore.selection);
+  assert.equal(persistenceProbe.groupFailureAfter.stored,persistenceProbe.groupFailureBefore.stored,"A failed group nudge leaves the saved snapshot unchanged");
+  assert.equal(persistenceProbe.groupFailureAfter.status,"UNAVAILABLE");assert.equal(persistenceProbe.groupFailureAfter.error,"STORAGE_WRITE_FAILED");
+  assert.deepEqual(persistenceProbe.groupFailureUndo,[true,true],"The pre-existing scoped history remains undoable after rollback");assert.deepEqual(persistenceProbe.groupFailureUndone,[null,null]);
+  assert.deepEqual(persistenceProbe.groupFailureRedo,[true,true],"The pre-existing scoped history remains redoable after rollback");assert.deepEqual(persistenceProbe.groupFailureRedone,[persistenceProbe.groupFailureBefore.a,persistenceProbe.groupFailureBefore.b]);
   assert.equal(persistenceProbe.restored.count,11);
   assert.deepEqual(persistenceProbe.restored.price,persistedBeforeReload.price);
   assert.deepEqual(persistenceProbe.restored.priceSecond,persistedBeforeReload.priceSecond);

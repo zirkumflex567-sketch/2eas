@@ -9568,82 +9568,67 @@ var ChartStudioV5 = (() => {
       finishDrag(true);
     };
     function nudgeSelectedDrawing(dx, dy) {
-      const id = selectedDrawingId;
-      if (!id || !dx && !dy || !bars.length) return false;
-      const current = snapshotDrawing(id);
-      if (!current || current.options.locked) return false;
-      const time = (value) => {
+      const ids = [...selectedDrawingIds];
+      if (!ids.length || !dx && !dy || !bars.length) return false;
+      const before = ids.map((id) => ({ id, snapshot: snapshotDrawing(id) }));
+      if (before.some((item) => !item.snapshot || item.snapshot.options.locked)) return false;
+      const timeKeys = { TIME: ["time"], TEXT: ["time"], TREND: ["startTime", "endTime"], RECT: ["startTime", "endTime"], RAY: ["startTime", "endTime"], FIBO: ["startTime", "endTime"], MEASURE: ["startTime", "endTime"], CHANNEL: ["startTime", "endTime", "offsetTime"], PITCHFORK: ["startTime", "endTime", "thirdTime"], RISK_REWARD: ["startTime", "stopTime", "endTime"] };
+      const priceKeys = { PRICE: ["price"], TEXT: ["price"], TREND: ["startPrice", "endPrice"], RECT: ["startPrice", "endPrice"], RAY: ["startPrice", "endPrice"], FIBO: ["startPrice", "endPrice"], MEASURE: ["startPrice", "endPrice"], CHANNEL: ["startPrice", "endPrice", "offsetPrice"], PITCHFORK: ["startPrice", "endPrice", "thirdPrice"], RISK_REWARD: ["entryPrice", "stopPrice", "targetPrice"] };
+      const moveTime = (value) => {
         const index = bars.findIndex((bar) => bar.time === value), next = index + dx;
         return index >= 0 && next >= 0 && next < bars.length ? bars[next].time : null;
       };
-      const priceValue = (value) => {
+      const movePrice = (value) => {
         if (!dy) return value;
         const coordinate = price.priceToCoordinate(value);
         if (coordinate === null) return null;
         const next = price.coordinateToPrice(coordinate + dy);
         return next !== null && Number.isFinite(next) && next > 0 ? next : null;
       };
-      if (current.kind === "PITCHFORK") {
-        const startTime2 = time(current.options.startTime), endTime2 = time(current.options.endTime), thirdTime = time(current.options.thirdTime), startPrice2 = priceValue(current.options.startPrice), endPrice2 = priceValue(current.options.endPrice), thirdPrice = priceValue(current.options.thirdPrice);
-        if (startTime2 === null || endTime2 === null || thirdTime === null || startPrice2 === null || endPrice2 === null || thirdPrice === null) return false;
-        try {
-          updatePitchfork(id, { startTime: startTime2, startPrice: startPrice2, endTime: endTime2, endPrice: endPrice2, thirdTime, thirdPrice });
-          return true;
-        } catch (_2) {
-          return false;
+      const candidates = [];
+      for (const item of before) {
+        const current = item.snapshot;
+        if (current.kind === "PRICE" && !dy || current.kind === "TIME" && !dx) continue;
+        const options = { ...current.options };
+        if (dx && current.kind !== "PRICE") for (const key of timeKeys[current.kind] ?? []) {
+          const moved = moveTime(options[key]);
+          if (moved === null) return false;
+          options[key] = moved;
         }
-      }
-      if (current.kind === "CHANNEL") {
-        const startTime2 = time(current.options.startTime), endTime2 = time(current.options.endTime), offsetTime = time(current.options.offsetTime);
-        const startPrice2 = priceValue(current.options.startPrice), endPrice2 = priceValue(current.options.endPrice), offsetPrice = priceValue(current.options.offsetPrice);
-        if (startTime2 === null || endTime2 === null || offsetTime === null || startPrice2 === null || endPrice2 === null || offsetPrice === null) return false;
-        try {
-          updateChannel(id, { startTime: startTime2, startPrice: startPrice2, endTime: endTime2, endPrice: endPrice2, offsetTime, offsetPrice });
-          return true;
-        } catch (_2) {
-          return false;
+        if (dy && current.kind !== "TIME") for (const key of priceKeys[current.kind] ?? []) {
+          const moved = movePrice(options[key]);
+          if (moved === null) return false;
+          options[key] = moved;
         }
+        const after = { kind: current.kind, options };
+        if (JSON.stringify(after) !== JSON.stringify(current)) candidates.push({ id: item.id, before: current, after });
       }
-      if (current.kind === "RISK_REWARD") {
-        const startTime2 = time(current.options.startTime), stopTime = time(current.options.stopTime), endTime2 = time(current.options.endTime);
-        const entryPrice = priceValue(current.options.entryPrice), stopPrice = priceValue(current.options.stopPrice), targetPrice = priceValue(current.options.targetPrice);
-        if (startTime2 === null || stopTime === null || endTime2 === null || entryPrice === null || stopPrice === null || targetPrice === null) return false;
-        try {
-          updateRiskReward(id, { startTime: startTime2, entryPrice, stopTime, stopPrice, endTime: endTime2, targetPrice });
-          return true;
-        } catch (_2) {
-          return false;
+      if (!candidates.length || candidates.length > historyLimit || !drawingScope && persistenceStatus !== "DISABLED" || drawingScope && persistenceStatus !== "READY") return false;
+      const originalUndo = undoStack.slice(), originalRedo = redoStack.slice(), originalSelection = ids.slice();
+      let applied = 0;
+      try {
+        for (const change of candidates) {
+          if (!restoreDrawing(change.id, change.after)) throw Error("Nudge apply failed");
+          applied++;
         }
+      } catch (_2) {
+        for (let index = Math.min(applied, candidates.length - 1); index >= 0; index--) restoreDrawing(candidates[index].id, candidates[index].before);
+        selectDrawings(originalSelection);
+        return false;
       }
-      if (current.kind === "PRICE") {
-        if (dx) return false;
-        const moved = priceValue(current.options.price);
-        if (moved === null) return false;
-        updatePriceLevel(id, { price: moved });
-        return true;
+      selectDrawings(originalSelection);
+      const keepExisting = Math.max(0, historyLimit - candidates.length);
+      if (undoStack.length > keepExisting) undoStack.splice(0, undoStack.length - keepExisting);
+      for (const change of candidates) undoStack.push({ id: change.id, before: change.before, after: change.after });
+      redoStack.length = 0;
+      if (!persistDrawings(candidates.length)) {
+        for (let index = candidates.length - 1; index >= 0; index--) restoreDrawing(candidates[index].id, candidates[index].before);
+        undoStack.splice(0, undoStack.length, ...originalUndo);
+        redoStack.splice(0, redoStack.length, ...originalRedo);
+        selectDrawings(originalSelection);
+        return false;
       }
-      if (current.kind === "TIME") {
-        if (dy) return false;
-        const moved = time(current.options.time);
-        if (moved === null) return false;
-        updateTimeMarker(id, { time: moved });
-        return true;
-      }
-      if (current.kind === "TEXT") {
-        const startTime2 = time(current.options.time), startPrice2 = priceValue(current.options.price);
-        if (startTime2 === null || startPrice2 === null) return false;
-        updateTextAnnotation(id, { time: startTime2, price: startPrice2 });
-        return true;
-      }
-      const startTime = time(current.options.startTime), endTime = time(current.options.endTime);
-      const startPrice = priceValue(current.options.startPrice), endPrice = priceValue(current.options.endPrice);
-      if (startTime === null || endTime === null || startPrice === null || endPrice === null) return false;
-      const patch = { startTime, startPrice, endTime, endPrice };
-      if (current.kind === "TREND") updateTrendLine(id, patch);
-      else if (current.kind === "RECT") updateRectangle(id, patch);
-      else if (current.kind === "RAY") updateRay(id, patch);
-      else if (current.kind === "FIBO") updateFibonacci(id, patch);
-      else if (current.kind === "MEASURE") updateMeasurement(id, patch);
+      selectDrawings(originalSelection);
       return true;
     }
     const onKeyDown = (event) => {
@@ -9810,19 +9795,20 @@ var ChartStudioV5 = (() => {
         visibleRange: visibleRange ? { from: visibleRange.from, to: visibleRange.to } : null
       };
     }
-    function persistDrawings() {
-      if (!drawingScope || !drawingsHydrated || hydratingDrawings || persistenceStatus === "CONFLICT" || persistenceStatus === "UNAVAILABLE") return;
+    function persistDrawings(protectedUndoEntries = 0) {
+      if (!drawingScope || !drawingsHydrated || hydratingDrawings) return true;
+      if (persistenceStatus === "CONFLICT" || persistenceStatus === "UNAVAILABLE") return false;
       const storage = localStorageApi(), key = persistenceKey();
       if (!storage || !key) {
         persistenceStatus = "UNAVAILABLE";
         persistenceError = "STORAGE_UNAVAILABLE";
-        return;
+        return false;
       }
       try {
         if (storage.getItem(key) !== lastPersistedSnapshot) {
           persistenceStatus = "CONFLICT";
           persistenceError = "EXTERNAL_CHANGE";
-          return;
+          return false;
         }
         const drawings = drawingSnapshots();
         const envelope = () => JSON.stringify({
@@ -9836,7 +9822,7 @@ var ChartStudioV5 = (() => {
           ...viewSnapshots()
         });
         let serialized = envelope();
-        while (utf8ByteLength(serialized) > persistenceLimit && undoStack.length) {
+        while (utf8ByteLength(serialized) > persistenceLimit && undoStack.length > protectedUndoEntries) {
           undoStack.shift();
           serialized = envelope();
         }
@@ -9847,15 +9833,17 @@ var ChartStudioV5 = (() => {
         if (utf8ByteLength(serialized) > persistenceLimit) {
           persistenceStatus = "UNAVAILABLE";
           persistenceError = "SNAPSHOT_TOO_LARGE";
-          return;
+          return false;
         }
         storage.setItem(key, serialized);
         lastPersistedSnapshot = serialized;
         persistenceStatus = "READY";
         persistenceError = null;
+        return true;
       } catch (_2) {
         persistenceStatus = "UNAVAILABLE";
         persistenceError = "STORAGE_WRITE_FAILED";
+        return false;
       }
     }
     function verifyPersistence() {

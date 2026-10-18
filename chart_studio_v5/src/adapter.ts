@@ -1199,58 +1199,35 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   finishDrag(true);
  };
  function nudgeSelectedDrawing(dx:number,dy:number):boolean{
-  const id=selectedDrawingId;if(!id||(!dx&&!dy)||!bars.length)return false;
-  const current=snapshotDrawing(id);if(!current||current.options.locked)return false;
-  const time=(value:number)=>{
-   const index=bars.findIndex(bar=>bar.time===value),next=index+dx;
-   return index>=0&&next>=0&&next<bars.length?bars[next].time:null;
-  };
-  const priceValue=(value:number)=>{
-   if(!dy)return value;
-   const coordinate=price.priceToCoordinate(value);if(coordinate===null)return null;
-   const next=price.coordinateToPrice(coordinate+dy);
-   return next!==null&&Number.isFinite(next)&&next>0?next:null;
-  };
-  if(current.kind==="PITCHFORK"){
-   const startTime=time(current.options.startTime),endTime=time(current.options.endTime),thirdTime=time(current.options.thirdTime),startPrice=priceValue(current.options.startPrice),endPrice=priceValue(current.options.endPrice),thirdPrice=priceValue(current.options.thirdPrice);
-   if(startTime===null||endTime===null||thirdTime===null||startPrice===null||endPrice===null||thirdPrice===null)return false;
-   try{updatePitchfork(id,{startTime,startPrice,endTime,endPrice,thirdTime,thirdPrice});return true}catch(_){return false}
+  const ids=[...selectedDrawingIds];if(!ids.length||(!dx&&!dy)||!bars.length)return false;
+  const before=ids.map(id=>({id,snapshot:snapshotDrawing(id)}));
+  if(before.some(item=>!item.snapshot||item.snapshot.options.locked))return false;
+  const timeKeys:Record<string,string[]>={TIME:["time"],TEXT:["time"],TREND:["startTime","endTime"],RECT:["startTime","endTime"],RAY:["startTime","endTime"],FIBO:["startTime","endTime"],MEASURE:["startTime","endTime"],CHANNEL:["startTime","endTime","offsetTime"],PITCHFORK:["startTime","endTime","thirdTime"],RISK_REWARD:["startTime","stopTime","endTime"]};
+  const priceKeys:Record<string,string[]>={PRICE:["price"],TEXT:["price"],TREND:["startPrice","endPrice"],RECT:["startPrice","endPrice"],RAY:["startPrice","endPrice"],FIBO:["startPrice","endPrice"],MEASURE:["startPrice","endPrice"],CHANNEL:["startPrice","endPrice","offsetPrice"],PITCHFORK:["startPrice","endPrice","thirdPrice"],RISK_REWARD:["entryPrice","stopPrice","targetPrice"]};
+  const moveTime=(value:number):number|null=>{const index=bars.findIndex(bar=>bar.time===value),next=index+dx;return index>=0&&next>=0&&next<bars.length?bars[next].time:null};
+  const movePrice=(value:number):number|null=>{if(!dy)return value;const coordinate=price.priceToCoordinate(value);if(coordinate===null)return null;const next=price.coordinateToPrice(coordinate+dy);return next!==null&&Number.isFinite(next)&&next>0?next:null};
+  const candidates:Array<{id:string;before:DrawingSnapshot;after:DrawingSnapshot}>=[];
+  for(const item of before){
+   const current=item.snapshot!;if((current.kind==="PRICE"&&!dy)||(current.kind==="TIME"&&!dx))continue;
+   const options={...current.options} as Record<string,unknown>;
+   if(dx&&current.kind!=="PRICE")for(const key of timeKeys[current.kind]??[]){const moved=moveTime(options[key] as number);if(moved===null)return false;options[key]=moved}
+   if(dy&&current.kind!=="TIME")for(const key of priceKeys[current.kind]??[]){const moved=movePrice(options[key] as number);if(moved===null)return false;options[key]=moved}
+   const after={kind:current.kind,options} as DrawingSnapshot;
+   if(JSON.stringify(after)!==JSON.stringify(current))candidates.push({id:item.id,before:current,after});
   }
-  if(current.kind==="CHANNEL"){
-   const startTime=time(current.options.startTime),endTime=time(current.options.endTime),offsetTime=time(current.options.offsetTime);
-   const startPrice=priceValue(current.options.startPrice),endPrice=priceValue(current.options.endPrice),offsetPrice=priceValue(current.options.offsetPrice);
-   if(startTime===null||endTime===null||offsetTime===null||startPrice===null||endPrice===null||offsetPrice===null)return false;
-   try{updateChannel(id,{startTime,startPrice,endTime,endPrice,offsetTime,offsetPrice});return true}catch(_){return false}
+  if(!candidates.length||candidates.length>historyLimit||(!drawingScope&&persistenceStatus!=="DISABLED")||(drawingScope&&persistenceStatus!=="READY"))return false;
+  const originalUndo=undoStack.slice(),originalRedo=redoStack.slice(),originalSelection=ids.slice();
+  let applied=0;
+  try{for(const change of candidates){if(!restoreDrawing(change.id,change.after))throw Error("Nudge apply failed");applied++}}
+  catch(_){for(let index=Math.min(applied,candidates.length-1);index>=0;index--)restoreDrawing(candidates[index].id,candidates[index].before);selectDrawings(originalSelection);return false}
+  selectDrawings(originalSelection);
+  const keepExisting=Math.max(0,historyLimit-candidates.length);if(undoStack.length>keepExisting)undoStack.splice(0,undoStack.length-keepExisting);
+  for(const change of candidates)undoStack.push({id:change.id,before:change.before,after:change.after});redoStack.length=0;
+  if(!persistDrawings(candidates.length)){
+   for(let index=candidates.length-1;index>=0;index--)restoreDrawing(candidates[index].id,candidates[index].before);
+   undoStack.splice(0,undoStack.length,...originalUndo);redoStack.splice(0,redoStack.length,...originalRedo);selectDrawings(originalSelection);return false;
   }
-  if(current.kind==="RISK_REWARD"){
-   const startTime=time(current.options.startTime),stopTime=time(current.options.stopTime),endTime=time(current.options.endTime);
-   const entryPrice=priceValue(current.options.entryPrice),stopPrice=priceValue(current.options.stopPrice),targetPrice=priceValue(current.options.targetPrice);
-   if(startTime===null||stopTime===null||endTime===null||entryPrice===null||stopPrice===null||targetPrice===null)return false;
-   try{updateRiskReward(id,{startTime,entryPrice,stopTime,stopPrice,endTime,targetPrice});return true}catch(_){return false}
-  }
-  if(current.kind==="PRICE"){
-   if(dx)return false;const moved=priceValue(current.options.price);if(moved===null)return false;
-   updatePriceLevel(id,{price:moved});return true;
-  }
-  if(current.kind==="TIME"){
-   if(dy)return false;const moved=time(current.options.time);if(moved===null)return false;
-   updateTimeMarker(id,{time:moved});return true;
-  }
-  if(current.kind==="TEXT"){
-   const startTime=time(current.options.time),startPrice=priceValue(current.options.price);
-   if(startTime===null||startPrice===null)return false;
-   updateTextAnnotation(id,{time:startTime,price:startPrice});return true;
-  }
-  const startTime=time(current.options.startTime),endTime=time(current.options.endTime);
-  const startPrice=priceValue(current.options.startPrice),endPrice=priceValue(current.options.endPrice);
-  if(startTime===null||endTime===null||startPrice===null||endPrice===null)return false;
-  const patch={startTime,startPrice,endTime,endPrice};
-  if(current.kind==="TREND")updateTrendLine(id,patch);
-  else if(current.kind==="RECT")updateRectangle(id,patch);
-  else if(current.kind==="RAY")updateRay(id,patch);
-  else if(current.kind==="FIBO")updateFibonacci(id,patch);
-  else if(current.kind==="MEASURE")updateMeasurement(id,patch);
-  return true;
+  selectDrawings(originalSelection);return true;
  }
  const onKeyDown=(event:KeyboardEvent)=>{
   if(event.target instanceof HTMLElement&&event.target.closest("input,textarea,select,button,[contenteditable=true]"))return;
@@ -1353,21 +1330,22 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    volumePaneIndex:volume&&volumePaneIndex>=0?(portablePaneIndex.get(volumePaneIndex)??null):null,
    displayTimeZone,visibleRange:visibleRange?{from:visibleRange.from,to:visibleRange.to}:null};
  }
- function persistDrawings(){
-  if(!drawingScope||!drawingsHydrated||hydratingDrawings||persistenceStatus==="CONFLICT"||persistenceStatus==="UNAVAILABLE")return;
+ function persistDrawings(protectedUndoEntries=0):boolean{
+  if(!drawingScope||!drawingsHydrated||hydratingDrawings)return true;
+  if(persistenceStatus==="CONFLICT"||persistenceStatus==="UNAVAILABLE")return false;
   const storage=localStorageApi(),key=persistenceKey();
-  if(!storage||!key){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_UNAVAILABLE";return}
+  if(!storage||!key){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_UNAVAILABLE";return false}
   try{
-   if(storage.getItem(key)!==lastPersistedSnapshot){persistenceStatus="CONFLICT";persistenceError="EXTERNAL_CHANGE";return}
+   if(storage.getItem(key)!==lastPersistedSnapshot){persistenceStatus="CONFLICT";persistenceError="EXTERNAL_CHANGE";return false}
    const drawings=drawingSnapshots();
    const envelope=()=>JSON.stringify({schemaVersion:5,account:activeAccount,symbol:drawingScope.symbol,
    timeframe:drawingScope.timeframe,drawings,undoStack,redoStack,...viewSnapshots()});
    let serialized=envelope();
-   while(utf8ByteLength(serialized)>persistenceLimit&&undoStack.length){undoStack.shift();serialized=envelope()}
+   while(utf8ByteLength(serialized)>persistenceLimit&&undoStack.length>protectedUndoEntries){undoStack.shift();serialized=envelope()}
    while(utf8ByteLength(serialized)>persistenceLimit&&redoStack.length){redoStack.shift();serialized=envelope()}
-   if(utf8ByteLength(serialized)>persistenceLimit){persistenceStatus="UNAVAILABLE";persistenceError="SNAPSHOT_TOO_LARGE";return}
-   storage.setItem(key,serialized);lastPersistedSnapshot=serialized;persistenceStatus="READY";persistenceError=null;
-  }catch(_){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_WRITE_FAILED"}
+   if(utf8ByteLength(serialized)>persistenceLimit){persistenceStatus="UNAVAILABLE";persistenceError="SNAPSHOT_TOO_LARGE";return false}
+   storage.setItem(key,serialized);lastPersistedSnapshot=serialized;persistenceStatus="READY";persistenceError=null;return true;
+  }catch(_){persistenceStatus="UNAVAILABLE";persistenceError="STORAGE_WRITE_FAILED";return false}
  }
  function verifyPersistence():boolean{
   guard();
