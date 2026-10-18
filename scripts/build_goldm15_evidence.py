@@ -200,6 +200,63 @@ def _instrument_source(source_text: str, *, account_alias: str, producer: str,
         raise ValueError("expected unique GoldM15 market-order submission")
     source_text = source_text.replace(order_anchor, order_capture, 1)
 
+    close_anchor = """         last_attempt[i]=TimeCurrent();
+         bool closed=trade.PositionClose(ticket);
+         uint close_result=trade.ResultRetcode();"""
+    close_capture = '''         last_attempt[i]=TimeCurrent();
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+         string cs_close_attempt_id=CS_EVIDENCE_PRODUCER_ID+"_close_"+
+            IntegerToString((long)GetTickCount64())+"_"+IntegerToString(i+1);
+         datetime cs_close_request_utc=TimeGMT();
+         string cs_close_request_time=CSUtc(cs_close_request_utc);
+         string cs_close_quote_time=CSUtcFromBrokerMillis(tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS);
+         double cs_close_tick_size=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+         double cs_close_tick_value=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
+         string cs_close_currency=SymbolInfoString(_Symbol,SYMBOL_CURRENCY_PROFIT);
+         string cs_close_side="";
+         double cs_close_price=0.0,cs_close_volume=0.0;
+         bool cs_close_position_known=PositionSelectByTicket(ticket);
+         if(cs_close_position_known)
+           {
+            long cs_position_type=PositionGetInteger(POSITION_TYPE);
+            cs_close_volume=PositionGetDouble(POSITION_VOLUME);
+            if(cs_position_type==POSITION_TYPE_BUY)
+              { cs_close_side="SELL"; cs_close_price=tick.bid; }
+            else if(cs_position_type==POSITION_TYPE_SELL)
+              { cs_close_side="BUY"; cs_close_price=tick.ask; }
+           }
+#endif
+         bool closed=trade.PositionClose(ticket);
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+         uint cs_close_retcode=trade.ResultRetcode();
+         datetime cs_close_ack_utc=TimeGMT();
+         ulong cs_close_ticket=trade.ResultOrder();
+         bool cs_close_accepted=closed && GoldAcceptedResult(cs_close_retcode);
+         string cs_close_outcome=cs_close_accepted ? "PASS" : "BLOCK";
+         string cs_close_predicates=CSPredicate("broker_close_request",CSBoolNumber(cs_close_accepted),"EQ","1",
+            cs_close_outcome,cs_close_accepted ? "BROKER_ACCEPTED" : "BROKER_REJECTED");
+         string cs_close_features="";
+         if(cs_close_position_known && cs_close_side!="")
+            cs_close_features=CSFeature("requested_lots",CSNumber(cs_close_volume,8),"lots","M15")+","+
+               CSFeature("intended_price",CSNumber(cs_close_price,_Digits),"price","M15");
+         string cs_close_attempt="";
+         if(cs_close_position_known && cs_close_side!="" && tick.time_msc>0 && tick.bid>0.0 && tick.ask>=tick.bid &&
+            cs_close_tick_size>0.0 && cs_close_retcode>0 && cs_close_quote_time!="")
+            cs_close_attempt=CSOrderAttemptJson(cs_close_attempt_id,cs_close_side,cs_close_price,cs_close_volume,
+               tick.bid,tick.ask,cs_close_tick_size,cs_close_tick_value,cs_close_currency,cs_close_quote_time,
+               cs_close_request_time,CSUtc(cs_close_ack_utc),cs_close_retcode,cs_close_ticket,
+               tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS);
+         CSEnqueueDecision("ORDER_ATTEMPT",cs_close_outcome,iTime(_Symbol,signal_timeframe,1),
+            cs_close_features,cs_close_predicates,cs_close_attempt,cs_close_attempt_id,cs_close_ticket,
+            cs_close_request_time,0,ticket);
+         if(cs_close_accepted && cs_close_ticket>0)
+            CSRegisterOrderAttempt(cs_close_ticket,cs_close_attempt_id,iTime(_Symbol,signal_timeframe,1));
+#endif
+         uint close_result=trade.ResultRetcode();'''
+    if source_text.count(close_anchor) != 1:
+        raise ValueError("expected unique GoldM15 strategy position-close call")
+    source_text = source_text.replace(close_anchor, close_capture, 1)
+
     event_handlers = '''
 #define CS_GOLD_ORDER_CAPACITY 64
 ulong CSOrderTickets[CS_GOLD_ORDER_CAPACITY];

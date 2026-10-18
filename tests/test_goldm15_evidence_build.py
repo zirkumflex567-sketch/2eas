@@ -92,6 +92,37 @@ def test_goldm15_candidate_correlates_partial_deals_and_owned_position_changes()
     assert not re.search(r"\b(trade\.(?:Buy|Sell|PositionModify|PositionClose)|OrderSend|HistoryDealGet|FileOpen|FileWrite|FileFlush|Sleep)\s*\(", handler)
 
 
+def test_goldm15_candidate_records_strategy_close_attempt_without_changing_close_call():
+    source = (ROOT / "goldm15" / "GoldM15_Reconstruction.mq5").read_text(encoding="utf-8-sig")
+    generated = BUILD._instrument_source(
+        source,
+        account_alias="goldm15",
+        producer="goldm15_demo",
+        terminal_hash="a" * 64,
+        source_hash="b" * 64,
+        expected_parameter_hash="c" * 64,
+        login=53090070,
+        server="ICMarketsEU-Demo",
+        terminal_path=r"C:\demo\terminal64.exe",
+        broker_utc_offset_seconds=10800,
+    )
+
+    close_call = "bool closed=trade.PositionClose(ticket);"
+    assert generated.count(close_call) == source.count(close_call) == 1
+    close_start = generated.rfind("if(ticket>0)", 0, generated.index(close_call))
+    close_end = generated.index("// Keep close intent", generated.index(close_call))
+    close_path = generated[close_start:close_end]
+    assert "CSOrderAttemptJson(cs_close_attempt_id" in close_path
+    assert 'CSEnqueueDecision("ORDER_ATTEMPT",cs_close_outcome' in close_path
+    assert "cs_close_side" in close_path and "cs_close_price" in close_path
+    assert "cs_close_volume" in close_path
+    assert 'if(cs_close_position_known && cs_close_side!="")' in close_path
+    assert 'CSFeature("position_ticket"' not in close_path
+    assert "cs_close_ticket,cs_close_attempt_id" in close_path
+    assert "cs_close_request_time,0,ticket" in close_path
+    assert "CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS" in close_path
+
+
 def test_goldm15_candidate_refuses_unexpected_source_anchors():
     source = (ROOT / "goldm15" / "GoldM15_Reconstruction.mq5").read_text(encoding="utf-8-sig")
     with pytest.raises(ValueError, match="unique"):
