@@ -158,6 +158,46 @@ const server=http.createServer((req,res)=>{
   assert.deepEqual(await page.locator("#chart-v5-profile-list option:not([value=''])").allTextContents(),["Morning layout v2","Morning copy"],"copy duplicates a profile without overwriting the source");
   await page.locator("#chart-v5-profile-delete").click();
   assert.deepEqual(await page.locator("#chart-v5-profile-list option:not([value=''])").allTextContents(),["Morning layout v2"],"delete removes only the selected scoped profile");
+  const profileStoreProbe=await page.evaluate(()=>{
+    const key="2eas.chartstudio.v5.profiles:v1:titan:XAUUSD:M15",previous=localStorage.getItem(key),layout=window.ChartStudioV5Preview.exportLayout();
+    const profiles=Array.from({length:20},(_,index)=>({id:`capacity-profile-${String(index).padStart(4,"0")}`,name:`Capacity ${String(index).padStart(2,"0")}`,layout}));
+    const serialized=JSON.stringify({schemaVersion:1,account:"titan",symbol:"XAUUSD",timeframe:"M15",profiles});
+    localStorage.setItem(key,serialized);
+    return {key,previous,layoutBytes:new TextEncoder().encode(layout).length,storeBytes:new TextEncoder().encode(serialized).length};
+  });
+  assert.ok(profileStoreProbe.layoutBytes<512*1024,"capacity fixture stays below the per-layout bound");
+  assert.ok(profileStoreProbe.storeBytes<2*1024*1024,"20-profile capacity fixture stays below the profile-store bound");
+  await page.locator("#chart-v5-profile-name").fill("Capacity overflow");
+  await page.locator("#chart-v5-profile-save").click();
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-profile-status")?.textContent.includes("Höchstens 20"));
+  assert.equal(await page.evaluate(key=>JSON.parse(localStorage.getItem(key)).profiles.length,profileStoreProbe.key),20,"profile cap rejects the 21st layout atomically");
+  await page.evaluate(({key,previous})=>previous===null?localStorage.removeItem(key):localStorage.setItem(key,previous),profileStoreProbe);
+  const malformedProfileStore='{"schemaVersion":1';
+  await page.evaluate(({key,value})=>localStorage.setItem(key,value),{key:profileStoreProbe.key,value:malformedProfileStore});
+  await page.locator("#chart-v5-profile-name").fill("Malformed store");
+  await page.locator("#chart-v5-profile-save").click();
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-profile-status")?.textContent.includes("beschädigt"));
+  assert.equal(await page.evaluate(key=>localStorage.getItem(key),profileStoreProbe.key),malformedProfileStore,"malformed profile data is preserved and rejected without overwrite");
+  await page.evaluate(({key,previous})=>previous===null?localStorage.removeItem(key):localStorage.setItem(key,previous),profileStoreProbe);
+  const oversizedProfileStore=" ".repeat(2*1024*1024+1);
+  await page.evaluate(({key,value})=>localStorage.setItem(key,value),{key:profileStoreProbe.key,value:oversizedProfileStore});
+  await page.locator("#chart-v5-profile-name").fill("Oversized store");
+  await page.locator("#chart-v5-profile-save").click();
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-profile-status")?.textContent.includes("überschreitet 2 MiB"));
+  assert.equal(await page.evaluate(key=>localStorage.getItem(key).length,profileStoreProbe.key),oversizedProfileStore.length,"the 2 MiB profile-store bound rejects oversized stored data without rewriting it");
+  await page.evaluate(({key,previous})=>previous===null?localStorage.removeItem(key):localStorage.setItem(key,previous),profileStoreProbe);
+  await page.evaluate(key=>{
+    window.__v5ProfileSetItem=Storage.prototype.setItem;
+    window.__v5ProfileGetItem=Storage.prototype.getItem;
+    window.__v5ProfileReadbackPending=false;
+    Storage.prototype.setItem=function(itemKey,value){const result=window.__v5ProfileSetItem.call(this,itemKey,value);if(itemKey===key)window.__v5ProfileReadbackPending=true;return result};
+    Storage.prototype.getItem=function(itemKey){if(itemKey===key&&window.__v5ProfileReadbackPending){window.__v5ProfileReadbackPending=false;return "fixture readback mismatch"}return window.__v5ProfileGetItem.call(this,itemKey)};
+  },profileStoreProbe.key);
+  await page.locator("#chart-v5-profile-name").fill("Readback failure");
+  await page.locator("#chart-v5-profile-save").click();
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-profile-status")?.textContent.includes("Layoutspeicher hat den Stand nicht bestätigt"));
+  await page.evaluate(()=>{Storage.prototype.setItem=window.__v5ProfileSetItem;Storage.prototype.getItem=window.__v5ProfileGetItem;delete window.__v5ProfileSetItem;delete window.__v5ProfileGetItem;delete window.__v5ProfileReadbackPending});
+  assert.equal(await page.evaluate(key=>localStorage.getItem(key),profileStoreProbe.key),profileStoreProbe.previous,"failed profile-store readback rolls back to the original serialized value");
   const changedMovingAverage=await page.evaluate(()=>{
     window.__v5AverageConfigs=[{...window.__v5AverageConfigs[0],period:34,source:"hlc3",displayShift:1}];
     window.dispatchEvent(new CustomEvent("chart-studio-averages-change",{detail:{account:"titan",symbol:"XAUUSD"}}));
