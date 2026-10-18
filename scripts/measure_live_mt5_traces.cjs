@@ -5,6 +5,9 @@ const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const { performance } = require("node:perf_hooks");
+const { parseOptions, createLoadPlan } = require("./aud01_load_plan.cjs");
+
+const options = parseOptions(process.argv.slice(2));
 
 const base = new URL(process.env.DASHBOARD_AUDIT_URL || "http://127.0.0.1:8056");
 if (!["127.0.0.1", "localhost"].includes(base.hostname) || base.protocol !== "http:") {
@@ -21,11 +24,12 @@ const samples = [];
 
 const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
-async function getJson(relativePath) {
+async function getJson(relativePath, { retry429 = true } = {}) {
   const url = new URL(relativePath, base);
-  for (let attempt = 0; attempt <= 2; attempt += 1) {
-    const response = await fetch(url, { method: "GET", cache: "no-store" });
-    if (response.status === 429 && attempt < 2) {
+  const maxAttempts = retry429 ? 3 : 1;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const response = await fetch(url, { method: "GET", cache: "no-store", signal: AbortSignal.timeout(15_000) });
+    if (response.status === 429 && attempt + 1 < maxAttempts) {
       const retryAfter = Number(response.headers.get("retry-after"));
       await wait(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 10_000) : 1_000);
       continue;
@@ -48,10 +52,10 @@ async function getTraces(account) {
   return body.traces;
 }
 
-async function readCandles(spec, phase) {
+async function readCandles(spec, phase, options) {
   const query = new URLSearchParams({ account: spec.account, symbol: spec.symbol, tf: "M15", count: "150" });
   const started = performance.now();
-  const { response, body } = await getJson(`/api/candles?${query}`);
+  const { response, body } = await getJson(`/api/candles?${query}`, options);
   const clientMs = performance.now() - started;
   assert.equal(response.status, 200, `${spec.account}/${phase} returned HTTP ${response.status}`);
   assert.equal(body.accountId, spec.account);
@@ -111,15 +115,35 @@ function percentile(values, fraction) {
   assert.equal(runtimeBefore.body.applicationCodeDirty, false);
   const processBefore = processSample(runtimeBefore.body.pid);
 
-  for (const spec of accounts) {
-    await readCandles(spec, "warm-1");
-    await readCandles(spec, "warm-2");
+  let repeatedCycles = 0;
+  let measurementPlan = { mode: "one-shot", requestsPerAccount: 5, maxRequests: accounts.length * 5 };
+  if (options.durationSeconds !== null) {
+    const plan = createLoadPlan(options);
+    const startedAt = Date.now();
+    const endsAt = startedAt + plan.durationSeconds * 1000;
+    measurementPlan = plan;
+    let lastCycleCompletedAt = null;
+    for (let cycle = 0; cycle < plan.cycles; cycle += 1) {
+      const scheduledAt = startedAt + cycle * plan.intervalSeconds * 1000;
+      const cycleAt = Math.max(scheduledAt, lastCycleCompletedAt === null ? scheduledAt : lastCycleCompletedAt + plan.intervalSeconds * 1000);
+      if (cycleAt >= endsAt) break;
+      await wait(Math.max(0, cycleAt - Date.now()));
+      if (Date.now() >= endsAt) break;
+      for (const spec of accounts) await readCandles(spec, `repeat-${cycle + 1}`, { retry429: false });
+      repeatedCycles += 1;
+      lastCycleCompletedAt = Date.now();
+    }
+  } else {
+    for (const spec of accounts) {
+      await readCandles(spec, "warm-1");
+      await readCandles(spec, "warm-2");
+    }
+    await Promise.all(accounts.flatMap(spec => [
+      readCandles(spec, "parallel-1"),
+      readCandles(spec, "parallel-2"),
+    ]));
+    for (const spec of accounts) await readHistory(spec);
   }
-  await Promise.all(accounts.flatMap(spec => [
-    readCandles(spec, "parallel-1"),
-    readCandles(spec, "parallel-2"),
-  ]));
-  for (const spec of accounts) await readHistory(spec);
 
   const byAccount = [];
   for (const spec of accounts) {
@@ -163,6 +187,7 @@ function percentile(values, fraction) {
     },
     scope: accounts.map(({ account }) => account),
     method: "GET",
+    measurementPlan: { ...measurementPlan, completedCycles: options.durationSeconds === null ? null : repeatedCycles },
     candles: { timeframe: "M15", count: 150 },
     sampleCount: samples.length,
     byAccount,
@@ -182,7 +207,7 @@ function percentile(values, fraction) {
   assert.equal(report.runtime.restartRequired, false);
   assert.equal(report.runtime.applicationCodeDirty, false);
   assert.equal(report.scope.includes("blueberry"), false);
-  assert.equal(report.sampleCount, accounts.length * 5);
+  assert.equal(report.sampleCount, options.durationSeconds === null ? accounts.length * 5 : accounts.length * repeatedCycles);
   const outputDir = path.resolve("output");
   fs.mkdirSync(outputDir, { recursive: true });
   const outputPath = path.join(outputDir, `aud01-mt5-traces-${report.runtime.startupRevision.slice(0, 8)}.json`);
