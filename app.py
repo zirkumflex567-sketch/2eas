@@ -3458,7 +3458,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
     }
 
-    const v5PositionDemoAccounts = new Set(['titan','xau5m_m5','titan_m5','xau5m_500']);
+    const v5PositionDemoAccounts = new Set(['titan','xau5m_m5','titan_m5','xau5m_500','goldm15']);
     let v5PositionReadInFlight = null;
     let v5PositionReadKey = '';
     let v5PositionReadAt = 0;

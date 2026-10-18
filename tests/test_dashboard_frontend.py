@@ -379,6 +379,11 @@ class DashboardFrontendTests(unittest.TestCase):
         self.assertEqual(self.page.locator('#account-switcher [data-account="goldm15"]').count(), 1)
         self.assertEqual(self.mutations, [])
         self.assertEqual(self.errors, [])
+    def test_goldm15_is_in_the_native_v5_read_only_position_allowlist(self):
+        source=(ROOT/'app.py').read_text(encoding='utf-8')
+        allowlist=source.split("const v5PositionDemoAccounts = new Set(",1)[1].split(");",1)[0]
+        self.assertIn("'goldm15'", allowlist)
+        self.assertNotIn("'blueberry'", allowlist)
     def test_goldm15_demo_lifecycle_status_is_visible_and_read_only(self):
         self.page.goto(self.url+'?account=goldm15')
         expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=10000)

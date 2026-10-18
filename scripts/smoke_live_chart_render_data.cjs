@@ -175,6 +175,17 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
       await page.waitForFunction(count => document.querySelector("#chart-v5-preview-status")?.textContent.includes(`${count} verifizierte Kerzen`), 1001);
       await page.waitForFunction(() => [...document.querySelectorAll("#chart-v5-preview-host canvas")]
         .some(canvas => canvas.width > 300 && canvas.height > 200));
+      await page.waitForFunction(() => {
+        const status = document.querySelector("#chart-v5-position-status")?.textContent || "";
+        return /\d+ MT5-Positionen · read-only|Positionen nur für freigegebene Demokonten|Positionen nicht verfügbar/.test(status);
+      }, null, {timeout:5000}).catch(async error => {
+        const state = await page.evaluate(() => ({status:document.querySelector("#chart-v5-position-status")?.textContent || null,
+          preview:window.ChartStudioV5Preview?.inspect?.() || null,activeAccount:typeof activeAccount==="string"?activeAccount:null}));
+        throw new Error(`${error.message}; v5 position state=${JSON.stringify(state)}`);
+      });
+      const positionStatus = (await page.locator("#chart-v5-position-status").textContent()).trim();
+      assert.match(positionStatus, /^\d+ MT5-Positionen · read-only$/,
+        `${account} native v5 position preview must read this verified demo scope, got: ${positionStatus}`);
       const marketLevels = await page.evaluate(() => window.ChartStudioV5Preview.readMarketLevels());
       assert.equal(marketLevels.source, "MT5_VERIFIED", `${account} native v5 levels retain broker-feed provenance`);
       // The API cutoff is Unix-second precision, so separate responses within
@@ -217,12 +228,14 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
       preview = "PASSED";
       results.push({ account, symbol: api.symbol, timeframe: api.timeframe, renderedBars: rendered.length,
         visibleCandlePixels, latestClose: rendered.at(-1).close, nativeV5MarketLevels: marketLevels.count, nativeV5AutoFibonacciPreview: preview,
-        autoFibDirection: fib.result.direction, autoFibLevels: fib.series.length });
+        autoFibDirection: fib.result.direction, autoFibLevels: fib.series.length, v5PositionStatus:positionStatus });
     }
 
     assert.deepEqual(errors, []);
     assert.deepEqual(blockedApiRequests, [], "no mutation or Blueberry-scoped request attempted to leave the browser");
-    console.log(JSON.stringify({ results, apiRequests: requests.length, mutations: 0, blockedApiRequests, browserErrors: errors }, null, 2));
+    const positionAccounts = [...new Set(requests.filter(request => request.path === "/api/chart/v1/positions").map(request => request.account))].sort();
+    assert.deepEqual(positionAccounts, [...accounts].sort(), "native v5 position previews read each authorized demo account with an explicit scope");
+    console.log(JSON.stringify({ results, positionAccounts, apiRequests: requests.length, mutations: 0, blockedApiRequests, browserErrors: errors }, null, 2));
   } finally {
     await browser.close();
   }
