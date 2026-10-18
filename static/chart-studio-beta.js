@@ -396,6 +396,8 @@ function drawEvidenceSnapshot(canvas,bars){
 function renderEvidence(){
  if(!s?.panel)return;const state=s.evidence,list=s.panel.querySelector("#cs-evidence-list"),status=s.panel.querySelector("#cs-evidence-status"),more=s.panel.querySelector("#cs-evidence-more");
  if(!list||!status||!more)return;list.replaceChildren();
+ const comparePanel=s.panel.querySelector("#cs-snapshot-compare"),compareRun=s.panel.querySelector("#cs-snapshot-compare-run"),compareStatus=s.panel.querySelector("#cs-snapshot-compare-status");
+ if(comparePanel){comparePanel.hidden=s.panel.querySelector("#cs-evidence-kind")?.value!=="SNAPSHOT";updateSnapshotCompareControls()}
  const meta=state.meta;
  status.textContent=state.loading?"Aufzeichnungen werden gelesen …":state.error|| (meta
   ? "Verfügbarkeit: "+meta.availability+" · Store: "+meta.storeState+" · Abdeckung: "+meta.coverage+" · Lücken seit Prozessstart: "+(meta.gaps?.knownLossSinceStart??0)+" · Historie außerhalb des Zeitraums: nicht bewertet"+(state.truncated?" · Anzeige auf "+MAX_EVIDENCE_ROWS+" begrenzt; Zeitraum verkleinern.":"")
@@ -413,6 +415,9 @@ function renderEvidence(){
    const caption=document.createElement("p");caption.className="cs-evidence-chart-caption";caption.textContent=p.marketData.source+" · "+p.chartView.timeframe+" · gespeicherte OHLC bis "+p.asOfUtc+" · historische Indikatoren/Zeichnungen nicht aufgezeichnet.";
    const canvas=document.createElement("canvas");canvas.className="cs-evidence-chart";canvas.setAttribute("role","img");canvas.setAttribute("aria-label","Historischer Candlestick-Snapshot "+p.chartView.symbol+" "+p.chartView.timeframe+" bis "+p.asOfUtc);
    drawEvidenceSnapshot(canvas,p.marketData.bars);
+   const compareLabel=document.createElement("label");compareLabel.className="cs-snapshot-compare-select";
+   const compareCheck=document.createElement("input");compareCheck.type="checkbox";compareCheck.dataset.snapshotCompareId=record.id;compareCheck.checked=(state.selectedSnapshotIds||[]).includes(record.id);compareCheck.setAttribute("aria-label","Snapshot für Entry/Exit-Vergleich wählen: "+label);
+   compareLabel.append(compareCheck,document.createTextNode(" Für Entry/Exit-Vergleich wählen"));
    const exportButton=document.createElement("button");exportButton.type="button";exportButton.className="cs-evidence-snapshot-export cs-evidence-png-export";exportButton.textContent="PNG aus Snapshot speichern";
    exportButton.setAttribute("aria-label","Gespeicherten Chart-Snapshot als PNG speichern");
    exportButton.addEventListener("click",()=>{
@@ -469,13 +474,36 @@ function renderEvidence(){
    mtfButton.setAttribute("aria-label","Read-only D1-, H4-, H1-, M15- und M5-Kontext zum UTC-Zeitpunkt dieses gespeicherten Fills laden");
    const mtfStatus=document.createElement("p");mtfStatus.className="cs-evidence-snapshot-mtf-status";mtfStatus.setAttribute("role","status");mtfStatus.setAttribute("aria-live","polite");mtfStatus.hidden=true;
    mtfButton.addEventListener("click",()=>{mtfStatus.hidden=false;startEvidenceSnapshotMtf(record,mtfButton,mtfStatus)});
-   details.append(summary,caption,canvas,exportButton,excursionButton,excursionStatus,replayButton,replayStatus,mtfButton,mtfStatus,pre);
+   details.append(summary,compareLabel,caption,canvas,exportButton,excursionButton,excursionStatus,replayButton,replayStatus,mtfButton,mtfStatus,pre);
   }else details.append(summary,pre);
   li.append(details);list.append(li);
  }
  more.hidden=!state.cursor;more.disabled=state.loading;
 }
-function clearEvidence(){if(!s?.evidence)return;s.evidence.generation++;s.evidence={rows:[],cursor:null,query:null,meta:null,loading:false,error:"",truncated:false,generation:s.evidence.generation};renderEvidence()}
+function updateSnapshotCompareControls(){
+ if(!s?.panel)return;const selected=s.evidence.selectedSnapshotIds||[],button=s.panel.querySelector("#cs-snapshot-compare-run"),status=s.panel.querySelector("#cs-snapshot-compare-status"),result=s.panel.querySelector("#cs-snapshot-comparison-result");
+ if(button)button.disabled=selected.length!==2;
+ if(status)status.textContent=selected.length===2?"Zwei Snapshots gewählt · prüfe beim Vergleich Konto, Terminal, Position und Zeitrahmen.":"Wähle genau einen ENTRY- und einen EXIT-Snapshot derselben Position.";
+ if(result){result.hidden=true;result.replaceChildren()}
+}
+function renderSnapshotComparison(){
+ if(!s?.panel)return;const state=s.evidence,selected=state.selectedSnapshotIds||[],status=s.panel.querySelector("#cs-snapshot-compare-status"),result=s.panel.querySelector("#cs-snapshot-comparison-result");
+ if(!status||!result)return;result.replaceChildren();result.hidden=true;
+ try{
+  const records=selected.map(id=>state.rows.find(row=>row.id===id));
+  const comparison=window.ChartStudioSnapshotCompare?.selectSnapshotComparison(records,s.account);
+  if(!comparison)throw Error("COMPARISON_UNAVAILABLE");
+  for(const [type,record] of [["ENTRY",comparison.entry],["EXIT",comparison.exit]]){
+   const payload=record.payload,item=document.createElement("article"),heading=document.createElement("h4"),caption=document.createElement("p"),canvas=document.createElement("canvas");
+   item.className="cs-snapshot-compare-item";heading.textContent=type+" · "+payload.asOfUtc;
+   caption.className="cs-evidence-chart-caption";caption.textContent=payload.chartView.symbol+" · "+payload.chartView.timeframe+" · "+payload.marketData.bars.length+" eingefrorene MT5-Kerzen.";
+   canvas.className="cs-evidence-chart";canvas.setAttribute("role","img");canvas.setAttribute("aria-label",type+"-Snapshot "+comparison.symbol+" "+comparison.timeframe);drawEvidenceSnapshot(canvas,payload.marketData.bars);
+   item.append(heading,caption,canvas);result.append(item);
+  }
+  result.hidden=false;status.textContent="ENTRY und EXIT verglichen · gespeicherte OHLC-Daten; keine historischen Indikatoren oder Zeichnungen.";
+ }catch(error){status.textContent="Vergleich nicht verfügbar · "+String(error?.message||"INVALID_SNAPSHOT_PAIR")}
+}
+function clearEvidence(){if(!s?.evidence)return;s.evidence.generation++;s.evidence={rows:[],cursor:null,query:null,meta:null,loading:false,error:"",truncated:false,selectedSnapshotIds:[],generation:s.evidence.generation};renderEvidence()}
 async function startEvidenceSnapshotReplay(record,button,status){
  const account=record?.accountId||record?.payload?.accountId,generation=s?.evidence?.generation;
  if(!account||s?.account!==account||record?.type!=="SNAPSHOT"||record.provenance!=="RECORDED")return;
@@ -594,7 +622,7 @@ async function loadEvidence(morePage=false){
  if(!s?.evidence||s.evidence.loading)return;const selector=s.panel.querySelector("#cs-evidence-kind"),kind=selector?.value;
  const paths={DECISION:"decisions",LIFECYCLE:"lifecycle",SNAPSHOT:"snapshots"};if(!paths[kind])return;
  const account=s.account,generation=s.evidence.generation;
- if(!morePage){const days=Number(s.panel.querySelector("#cs-evidence-days")?.value)||30,to=new Date(),from=new Date(to.getTime()-days*86400000);s.evidence.rows=[];s.evidence.cursor=null;s.evidence.meta=null;s.evidence.truncated=false;s.evidence.query={account,kind,fromUtc:from.toISOString(),toUtc:to.toISOString()};s.evidence.error=""}
+ if(!morePage){const days=Number(s.panel.querySelector("#cs-evidence-days")?.value)||30,to=new Date(),from=new Date(to.getTime()-days*86400000);s.evidence.rows=[];s.evidence.cursor=null;s.evidence.meta=null;s.evidence.truncated=false;s.evidence.selectedSnapshotIds=[];s.evidence.query={account,kind,fromUtc:from.toISOString(),toUtc:to.toISOString()};s.evidence.error=""}
  const query=s.evidence.query;if(!query||query.account!==account||query.kind!==kind){clearEvidence();return}
  const params=new URLSearchParams({account,fromUtc:query.fromUtc,toUtc:query.toUtc,limit:"100"});
  if(kind!=="LIFECYCLE")params.set("symbol",chartSymbol());if(morePage&&s.evidence.cursor)params.set("cursor",s.evidence.cursor);
@@ -1531,7 +1559,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  panel.innerHTML=
   '<div class="cs-beta-head"><strong>CHART STUDIO · EXPERIMENTELL</strong><span>Keine Handelsausführung</span></div>'+
   '<section id="cs-data-window" aria-label="Datenfenster"><div><strong>Datenfenster</strong> · <span id="cs-data-window-state">Crosshair</span> <button type="button" id="cs-data-window-pin">Crosshair anheften</button></div><dl><div><dt>Kerzenzeit (UTC)</dt><dd id="cs-data-window-time">—</dd></div><div><dt>Open</dt><dd id="cs-data-window-open">—</dd></div><div><dt>High</dt><dd id="cs-data-window-high">—</dd></div><div><dt>Low</dt><dd id="cs-data-window-low">—</dd></div><div><dt>Close</dt><dd id="cs-data-window-close">—</dd></div><div><dt>Indikatoren</dt><dd id="cs-data-window-indicators">—</dd></div><div><dt>Quelle</dt><dd id="cs-data-window-source">Chart-Feed · wartet auf Kerze</dd></div><div><dt>Bid</dt><dd id="cs-data-window-bid">—</dd></div><div><dt>Ask</dt><dd id="cs-data-window-ask">—</dd></div><div><dt>Spread (Preis)</dt><dd id="cs-data-window-spread">—</dd></div><div><dt>Quotezeit</dt><dd id="cs-data-window-quote-time">—</dd></div><div><dt>Quote-Status</dt><dd id="cs-data-window-quote-status">Noch keine verifizierte Quote</dd></div></dl></section>'+
-  '<details id="cs-evidence-panel" class="cs-evidence-panel"><summary>Aufzeichnungsnachweise · nur gespeicherte Read-Daten</summary><div class="cs-evidence-controls"><label for="cs-evidence-kind">Typ</label><select id="cs-evidence-kind"><option value="DECISION">Decisions</option><option value="LIFECYCLE">Broker-Lifecycle</option><option value="SNAPSHOT">Chart-Snapshots</option></select><label for="cs-evidence-days">Tage</label><select id="cs-evidence-days"><option value="1">1</option><option value="7">7</option><option value="30" selected>30</option></select><button type="button" id="cs-evidence-load">Zeitraum laden</button><button type="button" id="cs-evidence-more" hidden>Weitere Einträge</button><button type="button" id="cs-evidence-capture-status">Recorderstatus prüfen</button></div><p id="cs-evidence-capture-status-result" role="status" aria-live="polite">Nicht abgefragt · Statusabruf liest nur den lokalen Aufnahmezustand.</p><p id="cs-evidence-status" role="status" aria-live="polite">Keine Aufzeichnung abgefragt · Historie wird nicht rekonstruiert.</p><div class="cs-execution-quality"><button type="button" id="cs-execution-quality-load">Fill-/Slippage-Analyse laden</button><p id="cs-execution-quality-status" role="status" aria-live="polite">Noch keine Ausführungsanalyse abgefragt.</p></div><ol id="cs-evidence-list" aria-label="Aufgezeichnete Ereignisse"></ol><p>Read-only: gespeicherte Brokerhistorie wird nur von explizit freigegebenen Demo-Konten gelesen; keine Handelsänderungen. Fehlende Zeiträume bleiben NOT_RECORDED.</p></details>'+
+  '<details id="cs-evidence-panel" class="cs-evidence-panel"><summary>Aufzeichnungsnachweise · nur gespeicherte Read-Daten</summary><div class="cs-evidence-controls"><label for="cs-evidence-kind">Typ</label><select id="cs-evidence-kind"><option value="DECISION">Decisions</option><option value="LIFECYCLE">Broker-Lifecycle</option><option value="SNAPSHOT">Chart-Snapshots</option></select><label for="cs-evidence-days">Tage</label><select id="cs-evidence-days"><option value="1">1</option><option value="7">7</option><option value="30" selected>30</option></select><button type="button" id="cs-evidence-load">Zeitraum laden</button><button type="button" id="cs-evidence-more" hidden>Weitere Einträge</button><button type="button" id="cs-evidence-capture-status">Recorderstatus prüfen</button></div><p id="cs-evidence-capture-status-result" role="status" aria-live="polite">Nicht abgefragt · Statusabruf liest nur den lokalen Aufnahmezustand.</p><p id="cs-evidence-status" role="status" aria-live="polite">Keine Aufzeichnung abgefragt · Historie wird nicht rekonstruiert.</p><section id="cs-snapshot-compare" class="cs-snapshot-compare" hidden aria-labelledby="cs-snapshot-compare-heading"><div class="cs-snapshot-compare-controls"><div><h3 id="cs-snapshot-compare-heading">Entry/Exit vergleichen</h3><p id="cs-snapshot-compare-status" role="status" aria-live="polite">Wähle genau einen ENTRY- und einen EXIT-Snapshot derselben Position.</p></div><button type="button" id="cs-snapshot-compare-run" disabled>Vergleich anzeigen</button></div><p id="cs-snapshot-comparison-note">Verglichen werden nur eingefrorene MT5-Kerzen; historische Indikatoren oder Zeichnungen wurden nicht aufgezeichnet.</p><div id="cs-snapshot-comparison-result" class="cs-snapshot-comparison-result" hidden role="group" aria-label="ENTRY- und EXIT-Snapshotvergleich"></div></section><div class="cs-execution-quality"><button type="button" id="cs-execution-quality-load">Fill-/Slippage-Analyse laden</button><p id="cs-execution-quality-status" role="status" aria-live="polite">Noch keine Ausführungsanalyse abgefragt.</p></div><ol id="cs-evidence-list" aria-label="Aufgezeichnete Ereignisse"></ol><p>Read-only: gespeicherte Brokerhistorie wird nur von explizit freigegebenen Demo-Konten gelesen; keine Handelsänderungen. Fehlende Zeiträume bleiben NOT_RECORDED.</p></details>'+
   '<div class="cs-beta-buttons">'+toolLabels.map(([id,label])=>'<button type="button" data-tool="'+id+'">'+label+'</button>').join("")+
   ["undo","redo","delete-selected","export","save-png","clear"].map(id=>'<button type="button" data-cmd="'+id+'">'+({undo:"↶ Undo",redo:"↷ Redo","delete-selected":"Ausgewählte löschen",export:"JSON kopieren","save-png":"Bild (PNG) speichern",clear:"Alle Zeichnungen löschen"}[id])+'</button>').join("")+'</div>'+
   '<details id="cs-tool-preferences" class="cs-tool-preferences"><summary>Favoriten und individuelle Tastenkürzel</summary><strong>Favorisierte Werkzeuge</strong><div id="cs-favorite-tools" class="cs-beta-buttons" aria-label="Favorisierte Werkzeuge"></div><div class="cs-tool-preference-grid">'+toolLabels.map(([id,label])=>'<label><input type="checkbox" data-favorite-tool="'+id+'"> '+label+' als Favorit</label><label>'+label+' · Kürzel <input type="text" inputmode="text" autocomplete="off" maxlength="1" data-shortcut-tool="'+id+'" aria-label="Tastenkürzel für '+label+'" placeholder="—"></label>').join("")+'</div><p>Einzelne Buchstaben ohne Strg, Alt oder Umschalt. Doppelte Kürzel werden abgewiesen. Kürzel wirken nur bei geöffnetem Chart Studio.</p></details>'+
@@ -1579,7 +1607,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  s={chart,coordinates,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
   account:accountId,favorites:normalizeFavorites(get(accountId+":favorite-tools",[])),shortcuts:normalizeShortcuts(get(accountId+":tool-shortcuts",{})),symbol:"XAUUSD",tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,positionDraft:null,positionDraftDrag:null,verifiedPositions:[],positionContext:null,ticketDraft:window.ChartStudioTicketDraft?.create({account:accountId,symbol:"XAUUSD",timeframe:tf})||null,
   lastScenarioPreview:null,portfolio:null,portfolioCapturedAtUtc:null,portfolioLoading:false,portfolioError:"",dataWindow:{snapshot:null,pinned:false},marketQuote:null,
-  draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],brokerMarkers:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null,fibLevels:[...ratios],evidence:{rows:[],cursor:null,query:null,meta:null,loading:false,error:"",generation:0}};
+  draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],brokerMarkers:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null,fibLevels:[...ratios],evidence:{rows:[],cursor:null,query:null,meta:null,loading:false,error:"",selectedSnapshotIds:[],generation:0}};
  panel.querySelector("#cs-data-window-pin").addEventListener("click",()=>setDataWindowPin(!s.dataWindow.pinned));
  panel.querySelector("#cs-evidence-load").addEventListener("click",()=>loadEvidence(false));
  panel.querySelector("#cs-evidence-capture-status").addEventListener("click",loadEvidenceCaptureStatus);
@@ -1587,6 +1615,13 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  panel.querySelector("#cs-evidence-more").addEventListener("click",()=>loadEvidence(true));
  panel.querySelector("#cs-evidence-kind").addEventListener("change",clearEvidence);
  panel.querySelector("#cs-evidence-days").addEventListener("change",clearEvidence);
+ panel.addEventListener("change",event=>{
+  const checkbox=event.target.closest?.("[data-snapshot-compare-id]");if(!checkbox||!s?.evidence)return;
+  const selected=new Set(s.evidence.selectedSnapshotIds||[]),id=checkbox.dataset.snapshotCompareId;
+  if(checkbox.checked){if(selected.size>=2){checkbox.checked=false;const status=s.panel.querySelector("#cs-snapshot-compare-status");if(status)status.textContent="Wähle höchstens zwei Snapshots gleichzeitig.";return}selected.add(id)}else selected.delete(id);
+  s.evidence.selectedSnapshotIds=[...selected];updateSnapshotCompareControls();
+ });
+ panel.querySelector("#cs-snapshot-compare-run").addEventListener("click",renderSnapshotComparison);
  renderEvidence();
  panel.querySelector("#cs-portfolio-refresh").addEventListener("click",()=>loadPortfolio(s.account));
  s.coordinates.subscribeCrosshair(handleCrosshair);

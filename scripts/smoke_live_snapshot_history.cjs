@@ -86,6 +86,38 @@ const forbiddenAccounts = new Set(["blueberry"]);
         else assert.fail(`${account}: unknown capture type`);
       }
 
+      const comparisonPair = records.flatMap(entry => records
+        .filter(exit => entry.payload.captureType === "ENTRY" && exit.payload.captureType === "EXIT"
+          && entry.payload.positionIdentifier === exit.payload.positionIdentifier
+          && entry.terminalIdentityHash === exit.terminalIdentityHash
+          && entry.payload.chartView.symbol === exit.payload.chartView.symbol
+          && entry.payload.chartView.timeframe === exit.payload.chartView.timeframe)
+        .map(exit => ({ entry, exit })))[0];
+      assert.ok(comparisonPair, `${account}: no scope-matched immutable ENTRY/EXIT snapshots to compare`);
+      const apiReadsBeforeComparison = apiRequests.length;
+      const entryCheckbox = rows.locator(`[data-snapshot-compare-id="${comparisonPair.entry.id}"]`);
+      const exitCheckbox = rows.locator(`[data-snapshot-compare-id="${comparisonPair.exit.id}"]`);
+      await entryCheckbox.locator("xpath=../..").locator(":scope > summary").click();
+      await exitCheckbox.locator("xpath=../..").locator(":scope > summary").click();
+      await entryCheckbox.check();
+      await exitCheckbox.check();
+      const compareButton = panel.locator("#cs-snapshot-compare-run");
+      assert.equal(await compareButton.isEnabled(), true, `${account}: two valid selections must enable comparison`);
+      await compareButton.click();
+      const comparison = panel.locator("#cs-snapshot-comparison-result");
+      await comparison.waitFor({ state: "visible" });
+      const comparisonItems = comparison.locator(".cs-snapshot-compare-item");
+      assert.equal(await comparisonItems.count(), 2, `${account}: comparison must render exactly ENTRY and EXIT`);
+      assert.match(await comparisonItems.nth(0).locator("h4").textContent(), /^ENTRY · /);
+      assert.match(await comparisonItems.nth(1).locator("h4").textContent(), /^EXIT · /);
+      assert.equal(await comparisonItems.locator("canvas.cs-evidence-chart").count(), 2);
+      assert.equal(await comparisonItems.nth(0).locator("canvas").getAttribute("aria-label"), `ENTRY-Snapshot ${comparisonPair.entry.payload.chartView.symbol} ${comparisonPair.entry.payload.chartView.timeframe}`);
+      assert.equal(await comparisonItems.nth(1).locator("canvas").getAttribute("aria-label"), `EXIT-Snapshot ${comparisonPair.exit.payload.chartView.symbol} ${comparisonPair.exit.payload.chartView.timeframe}`);
+      assert.equal(apiRequests.length, apiReadsBeforeComparison, `${account}: local snapshot comparison must not fetch or mutate data`);
+      assert.match(await panel.locator("#cs-snapshot-comparison-note").textContent(), /keine Indikatoren oder Zeichnungen/);
+      await rows.locator(`[data-snapshot-compare-id="${comparisonPair.exit.id}"]`).uncheck();
+      assert.equal(await comparison.isVisible(), false, `${account}: changing selection must clear the prior comparison`);
+
       await rows.first().locator("details > summary").click();
       await rows.first().locator("canvas.cs-evidence-chart").waitFor({ state: "visible" });
       const caption = await rows.first().locator(".cs-evidence-chart-caption").textContent();

@@ -1825,6 +1825,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="static/chart-studio-multi-chart.js"></script>
   <script src="static/chart-studio-main-data-window.js"></script>
   <script src="static/chart-studio-position-autoscale.js"></script>
+  <script src="static/chart-studio-snapshot-compare.js"></script>
   <script src="static/chart-studio-beta.js"></script>
   <script>window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;</script>
   <script src="static/chart-studio-v5-feed.js"></script>
