@@ -47,7 +47,7 @@ function frame(candles,tf,asOfUtc,symbol=""){
  const step=SECONDS[tf],closed=candles.filter(c=>c.time+step<=asOfUtc);
  const future=candles.some(c=>c.time+step>asOfUtc);
  const result={timeframe:tf,status:"INSUFFICIENT",bias:"UNKNOWN",reason:"WARMUP_INSUFFICIENT",source:"MT5_VERIFIED",
-  sourceTime:null,lastClosedBarTime:null,asOfUtc,closedBars:closed.length,dataQuality:"OK",futureBarsExcluded:future,ema20:null,ema50:null,ema200:null};
+  sourceTime:null,lastClosedBarTime:null,asOfUtc,closedBars:closed.length,dataQuality:"OK",futureBarsExcluded:future,ema20:null,ema50:null,ema200:null,ema20SlopePercent:null};
  if(!closed.length&&future){result.status="UNKNOWN";result.reason="HISTORICAL_DATA_UNAVAILABLE";result.dataQuality="UNAVAILABLE";return result;}
  if(closed.length){
   result.lastClosedBarTime=closed[closed.length-1].time;result.sourceTime=result.lastClosedBarTime;
@@ -65,12 +65,14 @@ function frame(candles,tf,asOfUtc,symbol=""){
   if(asOfUtc-result.lastClosedBarTime>maxAge){result.status="UNKNOWN";result.reason="STALE_OR_MISSING_HISTORY";result.dataQuality="STALE";return result;}
  }
  if(closed.length<WARMUP_BARS)return result;
- const ema=(period)=>{
+ const ema=(period,end=closed.length)=>{
   const alpha=2/(period+1);let value=closed[0].close;
-  for(let i=1;i<closed.length;i++)value+=alpha*(closed[i].close-value);
+  for(let i=1;i<end;i++)value+=alpha*(closed[i].close-value);
   return value;
  };
  result.ema20=ema(20);result.ema50=ema(50);result.ema200=ema(200);
+ const previousEma20=ema(20,closed.length-1);
+ result.ema20SlopePercent=100*(result.ema20-previousEma20)/previousEma20;
  const close=closed[closed.length-1].close;
  result.bias=result.ema20>result.ema50&&result.ema50>result.ema200&&close>result.ema20?"UP":
   result.ema20<result.ema50&&result.ema50<result.ema200&&close<result.ema20?"DOWN":"NEUTRAL";
@@ -95,7 +97,7 @@ function calculate(input,asOfUtc,symbol=""){
    emaCalculationVersion:EMA_CALCULATION_VERSION,closedSourceWindow:{startUtc:closed.length?closed[0].time:null,endUtc:closed.length?closed[closed.length-1].time:null},
    status:r.status,reason:r.reason,dataQuality:r.dataQuality};
  }
- const featureSnapshot={schemaVersion:1,decisionTimeUtc:asOfUtc,asOfUtc,firstClosedInputOpenUtc:windowStartUtc,
+ const featureSnapshot={schemaVersion:1,decisionTimeUtc:asOfUtc,asOfUtc,ema20SlopeDefinition:"ONE_CLOSED_BAR_PERCENT_CHANGE_V1",firstClosedInputOpenUtc:windowStartUtc,
   decisionWindow:{startUtc:windowStartUtc,endUtc:asOfUtc,startInclusive:true,endExclusive:true},emaCalculationVersion:EMA_CALCULATION_VERSION,frames:provenanceFrames};
  return {schemaVersion:1,source:"MT5_VERIFIED",asOfUtc,coverage,ready,agreement,frames,featureSnapshot};
 }

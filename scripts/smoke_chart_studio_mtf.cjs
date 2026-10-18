@@ -37,6 +37,8 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process"),ass
   await panel.locator("[data-mtf-refresh]").click();await page.waitForTimeout(1200);if(!(await panel.locator("[data-mtf-status]").textContent()).includes("as-of"))throw Error("refresh diagnostic: "+JSON.stringify({status:await panel.locator("[data-mtf-status]").textContent(),errors,requests:requests.slice(-5)}));
   assert.match(await panel.locator("[data-mtf-status]").textContent(),/5\/5/);
   assert.equal(await panel.locator("[data-mtf-rows] tr").count(),5);assert.equal(await panel.locator("[data-mtf-rows] tr td").nth(0).textContent().then(t=>t.includes("READY")),true);
+  assert.match(await panel.locator("[data-mtf-rows] tr").first().innerText(),/Δ \+\d+\.\d+%/,"ready frame shows signed EMA20 change from the prior closed bar");
+  assert.match(await panel.locator(".cs-mtf-table-wrap thead").innerText(),/EMA20 Δ vs\. vorherige geschlossene Kerze \(%\)/,"slope unit and one-bar closed-candle reference are explicit");
   assert.equal(await panel.locator("[data-mtf-rows] tr").nth(1).locator("th").textContent(),"H4");
   assert.equal(await panel.locator("[data-mtf-rows] tr").nth(1).locator("td").last().textContent(),"280","open/as-of H4 bar must be excluded from source rows");
   const h4BeforeFuture=await panel.locator("[data-mtf-rows] tr").nth(1).innerText();futureH4Spike=true;

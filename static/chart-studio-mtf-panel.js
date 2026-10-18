@@ -17,7 +17,7 @@ function mount({panel,account,symbol,timeframe}){
   '<label>Stichtag UTC <input type="datetime-local" step="60" data-mtf-asof></label> '+
   '<button type="button" data-mtf-refresh>Aktualisieren</button></div>'+
   '<p data-mtf-status role="status" aria-live="polite">Noch nicht geladen. Nach Stichtag werden ausschließlich bereits geschlossene Kerzen verwendet.</p>'+
-  '<div class="cs-mtf-table-wrap"><table><thead><tr><th>TF</th><th>Status / Grund</th><th>Richtung</th><th>EMA 20 / 50 / 200</th><th>Letzte geschlossene Kerze (UTC)</th><th>Bars</th></tr></thead><tbody data-mtf-rows></tbody></table></div>'+
+  '<div class="cs-mtf-table-wrap"><table><thead><tr><th>TF</th><th>Status / Grund</th><th>Richtung</th><th>EMA 20 / 50 / 200 · EMA20 Δ vs. vorherige geschlossene Kerze (%)</th><th>Letzte geschlossene Kerze (UTC)</th><th>Bars</th></tr></thead><tbody data-mtf-rows></tbody></table></div>'+
   '<details data-mtf-rule-editor><summary>Manuelle EMA-Kontextregeln</summary><p>Manueller EMA-Kontext, keine EA-Regel und keine Strategie. Lokal in diesem Browser für Konto und Symbol gespeichert.</p><div data-mtf-rule-fields></div><button type="button" data-mtf-save>Regeln lokal speichern</button><p data-mtf-rule-status role="status" aria-live="polite"></p><div class="cs-mtf-rule-result" data-mtf-rule-result aria-live="polite"></div></details>'+
   '<p>Quelle: MT5 Verified. EMA-Ausrichtung ist Kontext, kein Handelssignal. Es wird kein Gesamtscore berechnet.</p>';
  panel.prepend(section);
@@ -66,7 +66,9 @@ function mount({panel,account,symbol,timeframe}){
   clearTimeout(timeout);if(requestGeneration!==generation||local.signal.aborted&&!timedOut)return false;
   const features=window.ChartStudioMTF.calculate(input,asOfUtc,capturedScope.symbol);featureCache={account:capturedScope.account,symbol:capturedScope.symbol,asOfUtc,features};rows.replaceChildren();
   for(const tf of FRAMES){const f=features.frames[tf],tr=document.createElement("tr"),time=f.sourceTime?new Date(f.sourceTime*1000).toISOString():"—",qualityWarning=f.dataQuality==="SESSION_HEURISTIC"?" · SESSION_HEURISTIC: Broker-Sitzung ungeprüft (Sessionlücke heuristisch toleriert)":"";
-   tr.innerHTML=`<th>${tf}</th><td>${esc(f.status)} · ${esc(f.reason)}${esc(qualityWarning)}</td><td>${esc(f.bias)}</td><td>${f.status==="READY"?[f.ema20,f.ema50,f.ema200].map(x=>Number(x).toPrecision(7)).join(" / "):"—"}</td><td>${esc(time)}</td><td>${f.closedBars}</td>`;rows.append(tr);
+   const emaValues=f.status==="READY"?[f.ema20,f.ema50,f.ema200].map(x=>Number(x).toPrecision(7)).join(" / "):"—";
+   const slope=f.status==="READY"&&Number.isFinite(f.ema20SlopePercent)?`${f.ema20SlopePercent>=0?"+":""}${f.ema20SlopePercent.toFixed(5)}%`:"—";
+   tr.innerHTML=`<th>${tf}</th><td>${esc(f.status)} · ${esc(f.reason)}${esc(qualityWarning)}</td><td>${esc(f.bias)}</td><td>${emaValues} · Δ ${esc(slope)}</td><td>${esc(time)}</td><td>${f.closedBars}</td>`;rows.append(tr);
   }
   status.textContent=sourceErrors.length?`Unvollständige Quellenantwort (${sourceErrors.join("; ")}); betroffene Zeile bleibt UNKNOWN.`:`Abfrage abgeschlossen · as-of ${new Date(asOfMs).toISOString()} · ${features.ready}/5 Zeitrahmen mit ausreichender Historie.`;renderRuleResult();return true;
  }

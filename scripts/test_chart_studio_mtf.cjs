@@ -30,8 +30,10 @@ for(const tf of ["D1","H4","H1","M15","M5"]){
  const up=M.frame(bars(tf),tf,asOf);
  assert.equal(up.status,"READY",tf);assert.equal(up.bias,"UP",tf);
  assert.equal(up.closedBars,280,tf);assert.equal(up.sourceTime,up.lastClosedBarTime,tf);
+ assert.ok(up.ema20SlopePercent>0,tf+" exposes the one-closed-bar EMA20 slope as a positive percentage");
  assert.ok(up.lastClosedBarTime+M.SECONDS[tf]<=asOf,tf+" reports only a candle closed by as-of");
  const down=M.frame(bars(tf,280,-1),tf,asOf);assert.equal(down.bias,"DOWN",tf);
+ assert.ok(down.ema20SlopePercent<0,tf+" exposes a negative EMA20 slope for declining closed bars");
  const short=M.frame(bars(tf,180),tf,asOf);assert.equal(short.status,"INSUFFICIENT",tf);assert.equal(short.bias,"UNKNOWN",tf);
 }
 const input=Object.fromEntries(["D1","H4","H1","M15","M5"].map(tf=>[tf,bars(tf)]));
@@ -45,6 +47,7 @@ assert.equal(all.featureSnapshot.decisionWindow.endExclusive,true);
 assert.equal(all.featureSnapshot.frames.H4.requiredWarmupBars,250);
 assert.equal(all.featureSnapshot.frames.H4.granularitySeconds,M.SECONDS.H4);
 assert.equal(all.featureSnapshot.frames.H4.emaSeedVersion,"FIRST_CLOSED_CLOSE_V1");
+assert.equal(all.featureSnapshot.ema20SlopeDefinition,"ONE_CLOSED_BAR_PERCENT_CHANGE_V1");
 assert.equal(all.featureSnapshot.frames.H4.closedSourceWindow.startUtc,input.H4[0].time);
 assert.equal(all.featureSnapshot.frames.H4.closedSourceWindow.endUtc,all.frames.H4.sourceTime);
 const futureOnlyFrame=M.calculate({M5:[{time:asOf,open:1,high:2,low:.5,close:1.5}]},asOf).featureSnapshot.frames.M5;
@@ -109,6 +112,7 @@ for(const tf of ["D1","H1","M15","M5"]){
 const base=M.frame(input.H4,"H4",asOf),future={time:asOf,open:1000000,high:1000010,low:999990,close:1000005};
 const protectedFrame=M.frame([...input.H4,future],"H4",asOf);
 assert.equal(protectedFrame.sourceTime,base.sourceTime);assert.equal(protectedFrame.ema200,base.ema200);
+assert.equal(protectedFrame.ema20SlopePercent,base.ema20SlopePercent,"future H4 candles cannot change the reported closed-bar EMA slope");
 const beforeHistory=M.frame(input.M15,"M15",asOf-10*86400);
 assert.equal(beforeHistory.status,"UNKNOWN");assert.equal(beforeHistory.reason,"HISTORICAL_DATA_UNAVAILABLE");
 const profile={schemaVersion:1,ruleVersion:"1.0.0",revision:1,profileId:"profile-1",accountId:"acct-1",symbol:"XAUUSD",
