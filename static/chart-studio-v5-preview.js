@@ -36,11 +36,14 @@
       const response=await fetch(`${prefix}/api/chart/v1/quotes?${query}`,{method:"GET",cache:"no-store",headers:{Accept:"application/json"}});
       const value=await response.json();
       if(request!==quoteRequest||!same(selected,scope))return;
+      const quoteEpoch=typeof value?.quoteTimeUtc==="number"?value.quoteTimeUtc:
+        typeof value?.quoteTimeUtc==="string"?Date.parse(value.quoteTimeUtc)/1000:NaN;
+      const quoteDate=Number.isFinite(quoteEpoch)?new Date(quoteEpoch*1000):null;
       if(!response.ok||value?.account!==selected.account||value?.symbol!==selected.symbol||value?.source!=="MT5_VERIFIED"||value?.canExecute!==false||
-         !Number.isFinite(value.bid)||!Number.isFinite(value.ask)||value.bid<=0||value.ask<value.bid||typeof value.quoteTimeUtc!=="string"||
+         !Number.isFinite(value.bid)||!Number.isFinite(value.ask)||value.bid<=0||value.ask<value.bid||!quoteDate||!Number.isFinite(quoteDate.getTime())||
          !Number.isFinite(value.ageSeconds)||!['FRESH','STALE','FUTURE'].includes(value.freshness))throw new Error("Quote nicht verifiziert oder nicht verfügbar");
       const spread=(value.ask-value.bid).toFixed(Number.isInteger(value.digits)?Math.min(value.digits,8):2);
-      liveQuote.textContent=`Aktuelle MT5-Quote beim Abruf · ${value.freshness} · Bid ${value.bid} / Ask ${value.ask} / Spread ${spread} · ${value.quoteTimeUtc} UTC · Alter ${Math.round(value.ageSeconds)} s · ${value.source} · keine historische Kerze`;
+      liveQuote.textContent=`Aktuelle MT5-Quote beim Abruf · ${value.freshness} · Bid ${value.bid} / Ask ${value.ask} / Spread ${spread} · ${quoteDate.toISOString()} UTC · Alter ${Math.round(value.ageSeconds)} s · ${value.source} · keine historische Kerze`;
     }catch(error){if(request===quoteRequest&&same(selected,scope))liveQuote.textContent=`Aktuelle MT5-Quote: nicht verfügbar · ${String(error?.message||error).slice(0,100)}`}
   }
   function refreshPinnedDataWindow(){

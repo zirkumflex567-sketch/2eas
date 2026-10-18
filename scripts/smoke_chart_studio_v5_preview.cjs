@@ -26,7 +26,7 @@ const server=http.createServer((req,res)=>{
  const normalized=pathname.replace(/^\/stt(?=\/)/,"");
  if(normalized==="/api/chart/v1/quotes"){
   const query=new URL(req.url,"http://localhost").searchParams;quoteRequests.push({account:query.get("account"),symbol:query.get("symbol"),method:req.method});
-  res.writeHead(200,{"Content-Type":"application/json"});res.end(JSON.stringify({account:query.get("account"),symbol:query.get("symbol"),source:"MT5_VERIFIED",canExecute:false,bid:4100.25,ask:4100.5,digits:2,quoteTimeUtc:"2026-10-18T12:00:00Z",ageSeconds:5,freshness:"FRESH"}));return;
+  res.writeHead(200,{"Content-Type":"application/json"});res.end(JSON.stringify({account:query.get("account"),symbol:query.get("symbol"),source:"MT5_VERIFIED",canExecute:false,bid:4100.25,ask:4100.5,digits:2,quoteTimeUtc:Date.parse("2026-10-18T12:00:00Z")/1000,ageSeconds:3600,freshness:"STALE"}));return;
  }
  if(!normalized.startsWith("/static/")){res.writeHead(404);res.end();return}
  const target=path.resolve(root,normalized.slice(1));
@@ -107,8 +107,8 @@ const server=http.createServer((req,res)=>{
   assert.equal(brokerMarkers.positionCount,0,"broker fill history does not fabricate open-position lines");
   const v4Before=await page.locator("#tv-chart").evaluate(el=>({visible:!!el.getClientRects().length,canvas:el.querySelector("canvas#v4-sentinel")?.width}));
   await page.locator("#chart-v5-preview-btn").click();
-  await page.waitForFunction(()=>document.querySelector("#chart-v5-live-quote")?.textContent.includes("FRESH"));
-  assert.match(await page.locator("#chart-v5-live-quote").textContent(),/Bid 4100\.25 \/ Ask 4100\.5 \/ Spread 0\.25 .* keine historische Kerze/);
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-live-quote")?.textContent.includes("STALE"));
+  assert.match(await page.locator("#chart-v5-live-quote").textContent(),/STALE .*Bid 4100\.25 \/ Ask 4100\.5 \/ Spread 0\.25 .*2026-10-18T12:00:00\.000Z UTC · Alter 3600 s .*keine historische Kerze/);
   assert.deepEqual(quoteRequests[0],{account:"titan",symbol:"XAUUSD",method:"GET"},"v5 quote is fetched for exact account/symbol as a read-only snapshot");
   await page.waitForFunction(()=>document.querySelector("#chart-v5-preview-status")?.textContent.includes("150 verifizierte Kerzen"));
   await page.waitForFunction(()=>[...document.querySelectorAll("#chart-v5-preview-host canvas")].some(canvas=>canvas.width>300&&canvas.height>200));
