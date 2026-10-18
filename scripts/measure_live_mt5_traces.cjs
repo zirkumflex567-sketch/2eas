@@ -5,7 +5,7 @@ const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const { performance } = require("node:perf_hooks");
-const { parseOptions, createLoadPlan } = require("./aud01_load_plan.cjs");
+const { parseOptions, createLoadPlan, demoAccounts } = require("./aud01_load_plan.cjs");
 
 const options = parseOptions(process.argv.slice(2));
 
@@ -14,12 +14,7 @@ if (!["127.0.0.1", "localhost"].includes(base.hostname) || base.protocol !== "ht
   throw new Error("This read-only audit accepts only a local HTTP dashboard URL.");
 }
 
-const accounts = [
-  { account: "titan", symbol: "XAUUSD" },
-  { account: "xau5m_m5", symbol: "XAUUSD.p" },
-  { account: "titan_m5", symbol: "XAUUSD.p" },
-  { account: "xau5m_500", symbol: "XAUUSD.p" },
-];
+const accounts = demoAccounts;
 const samples = [];
 
 const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));

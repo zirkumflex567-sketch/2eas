@@ -1,8 +1,15 @@
 "use strict";
 
-// Reserve one final interval for a four-request round to finish within 15 minutes.
+// Reserve one final interval for a five-request round to finish within 15 minutes.
 const MAX_DURATION_SECONDS = 840;
 const MIN_INTERVAL_SECONDS = 60;
+const demoAccounts = Object.freeze([
+  Object.freeze({ account: "titan", symbol: "XAUUSD" }),
+  Object.freeze({ account: "xau5m_m5", symbol: "XAUUSD.p" }),
+  Object.freeze({ account: "titan_m5", symbol: "XAUUSD.p" }),
+  Object.freeze({ account: "xau5m_500", symbol: "XAUUSD.p" }),
+  Object.freeze({ account: "goldm15", symbol: "XAUUSD" }),
+]);
 
 function positiveInteger(value, label) {
   const parsed = Number(value);
@@ -43,9 +50,9 @@ function createLoadPlan({ durationSeconds, intervalSeconds }) {
     durationSeconds,
     intervalSeconds,
     cycles,
-    requestsPerCycle: 4,
-    maxRequests: cycles * 4,
+    requestsPerCycle: demoAccounts.length,
+    maxRequests: cycles * demoAccounts.length,
   };
 }
 
-module.exports = { parseOptions, createLoadPlan };
+module.exports = { parseOptions, createLoadPlan, demoAccounts };

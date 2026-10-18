@@ -2,7 +2,19 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { parseOptions, createLoadPlan } = require("../scripts/aud01_load_plan.cjs");
+const { parseOptions, createLoadPlan, demoAccounts } = require("../scripts/aud01_load_plan.cjs");
+
+test("AUD-01 scopes traces to every current non-Blueberry demo exactly once", () => {
+  assert.deepEqual(demoAccounts, [
+    { account: "titan", symbol: "XAUUSD" },
+    { account: "xau5m_m5", symbol: "XAUUSD.p" },
+    { account: "titan_m5", symbol: "XAUUSD.p" },
+    { account: "xau5m_500", symbol: "XAUUSD.p" },
+    { account: "goldm15", symbol: "XAUUSD" },
+  ]);
+  assert.equal(new Set(demoAccounts.map(({ account }) => account)).size, demoAccounts.length);
+  assert.equal(demoAccounts.some(({ account }) => account === "blueberry"), false);
+});
 
 test("repeated plan includes one serial read cycle per interval within the duration", () => {
   assert.deepEqual(createLoadPlan({ durationSeconds: 180, intervalSeconds: 60 }), {
@@ -10,8 +22,8 @@ test("repeated plan includes one serial read cycle per interval within the durat
     durationSeconds: 180,
     intervalSeconds: 60,
     cycles: 3,
-    requestsPerCycle: 4,
-    maxRequests: 12,
+    requestsPerCycle: 5,
+    maxRequests: 15,
   });
 });
 
