@@ -1,0 +1,16 @@
+[Unit]
+Description=Scoped nftables INPUT guard for the private STT reverse-tunnel backend
+Documentation=man:nft(8)
+DefaultDependencies=no
+After=local-fs.target
+Before=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/stt-backend-guard
+ExecStop=/usr/sbin/nft delete table inet stt_backend_guard
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
