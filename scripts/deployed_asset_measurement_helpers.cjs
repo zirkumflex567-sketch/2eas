@@ -42,12 +42,21 @@ function measurementContextOptions(width, credentials) {
     deviceScaleFactor: width < 500 ? 2 : 1,
     reducedMotion: "reduce",
     javaScriptEnabled: false,
-    httpCredentials: credentials,
+    httpCredentials: {
+      username: credentials.username,
+      password: credentials.password,
+      origin: credentials.origin,
+    },
   };
 }
 
-function isSafeMeasurementRequest(method, pathname) {
-  return ["GET", "HEAD"].includes(method) && !pathname.startsWith("/stt/api/");
+function isSafeMeasurementRequest(method, urlOrPath, expectedOrigin) {
+  let requestUrl;
+  try { requestUrl = new URL(urlOrPath, expectedOrigin || "http://localhost"); }
+  catch { return false; }
+  return ["GET", "HEAD"].includes(method) &&
+    (!expectedOrigin || requestUrl.origin === expectedOrigin) &&
+    !requestUrl.pathname.startsWith("/stt/api/");
 }
 
 function summarizeCacheExchanges(events) {

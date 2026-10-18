@@ -47,15 +47,22 @@ test("header summary returns only requested static paths and safe cache fields",
   ]);
 });
 
-test("deployed measurement disables scripts instead of routing requests so Chromium keeps its HTTP cache", () => {
-  const options = measurementContextOptions(390, { username: "viewer", password: "private" });
+test("deployed measurement disables scripts, origin-scopes auth, and rejects cross-origin requests", () => {
+  const options = measurementContextOptions(390, {
+    username: "viewer", password: "private", origin: "https://dashboard.example.test",
+  });
   assert.equal(options.javaScriptEnabled, false);
   assert.equal(options.deviceScaleFactor, 2);
-  assert.deepEqual(options.httpCredentials, { username: "viewer", password: "private" });
+  assert.deepEqual(options.httpCredentials, {
+    username: "viewer", password: "private", origin: "https://dashboard.example.test",
+  });
+  assert.equal(options.extraHTTPHeaders, undefined);
   assert.equal(isSafeMeasurementRequest("GET", "/stt/static/app.js"), true);
   assert.equal(isSafeMeasurementRequest("HEAD", "/stt/static/app.js"), true);
   assert.equal(isSafeMeasurementRequest("GET", "/stt/api/accounts"), false);
   assert.equal(isSafeMeasurementRequest("POST", "/stt/static/app.js"), false);
+  assert.equal(isSafeMeasurementRequest("GET", "https://dashboard.example.test/stt/static/app.js", "https://dashboard.example.test"), true);
+  assert.equal(isSafeMeasurementRequest("GET", "https://other.example.test/stt/static/app.js", "https://dashboard.example.test"), false);
 });
 
 test("cache exchange summary distinguishes full cold responses from conditional warm revalidation", () => {

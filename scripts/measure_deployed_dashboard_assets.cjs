@@ -45,15 +45,17 @@ async function measureViewport(browser, width, credentials) {
   const failures = [];
   const responseHeaders = [];
   const cacheExchanges = [];
+  const allowedOrigin = new URL(base).origin;
   let phase = "cold";
   page.on("requestfailed", request => {
     const pathname = new URL(request.url()).pathname;
     if (!pathname.startsWith("/stt/api/")) failures.push({ pathname, error: request.failure()?.errorText || "unknown" });
   });
   page.on("request", request => {
-    const pathname = new URL(request.url()).pathname;
-    if (!isSafeMeasurementRequest(request.method(), pathname)) {
-      unsafeRequests.push({ pathname, method: request.method() });
+    const requestUrl = new URL(request.url());
+    const pathname = requestUrl.pathname;
+    if (!isSafeMeasurementRequest(request.method(), request.url(), allowedOrigin)) {
+      unsafeRequests.push({ pathname, method: request.method(), crossOrigin: requestUrl.origin !== allowedOrigin });
     }
     if (sampledPaths.includes(pathname) && pathname !== "/stt/") {
       cacheExchanges.push({ phase, kind: "request", path: pathname,
@@ -107,7 +109,7 @@ async function measureViewport(browser, width, credentials) {
   try {
     const viewports = [];
     for (const width of [390, 1440]) {
-      viewports.push(await measureViewport(browser, width, { username, password }));
+      viewports.push(await measureViewport(browser, width, { username, password, origin: new URL(base).origin }));
     }
     const report = {
       schemaVersion: 1,
