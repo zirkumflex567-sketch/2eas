@@ -15,14 +15,19 @@ const html=enabled=>`<!doctype html><html><head><meta charset="utf-8"><meta name
 <section id="chart-v5-preview-panel" hidden><strong id="chart-v5-preview-title">Native v5</strong><div id="chart-v5-preview-status" role="status"></div>
 <button type="button" id="chart-v5-auto-fib-btn" aria-pressed="false" disabled>Auto-Fibonacci einblenden</button><output id="chart-v5-auto-fib-status" aria-live="polite"></output><button type="button" id="chart-v5-layout-export-btn" disabled>Layout exportieren</button><button type="button" id="chart-v5-layout-import-btn" disabled>Layout zusammenführen</button><button type="button" id="chart-v5-layout-replace-btn" disabled>Layout ersetzen</button><input id="chart-v5-layout-import-file" type="file" accept="application/json,.json" hidden>
 <div id="chart-v5-drawing-tools" role="group" aria-label="Native v5 Zeichnungen"><button type="button" id="chart-v5-trend-btn" aria-pressed="false" disabled>Trendlinie</button><button type="button" id="chart-v5-ray-btn" aria-pressed="false" disabled>Strahl</button><button type="button" id="chart-v5-price-btn" aria-pressed="false" disabled>Preislinie</button><button type="button" id="chart-v5-time-btn" aria-pressed="false" disabled>Zeitlinie</button><button type="button" id="chart-v5-rect-btn" aria-pressed="false" disabled>Rechteck</button><button type="button" id="chart-v5-fibo-btn" aria-pressed="false" disabled>Fibonacci</button><button type="button" id="chart-v5-measure-btn" aria-pressed="false" disabled>Messung</button><button type="button" id="chart-v5-channel-btn" aria-pressed="false" disabled>Kanal</button><input id="chart-v5-text-input" aria-label="Textbeschriftung" maxlength="40" value="Fixture note"><button type="button" id="chart-v5-text-btn" aria-pressed="false" disabled>Text</button><output id="chart-v5-drawing-status" role="status" aria-live="polite">Zeichenwerkzeug aus.</output></div>
-<div id="chart-v5-preview-host"></div><output id="chart-v5-data-window" aria-label="Kerzendaten am Fadenkreuz">Fadenkreuz auf eine Kerze bewegen.</output><button type="button" id="chart-v5-data-window-pin" aria-pressed="false">Kerze fixieren</button><p>Read only. Powered by <a href="https://www.tradingview.com/">TradingView Lightweight Charts™</a></p></section><script>document.addEventListener("DOMContentLoaded",()=>{const host=document.querySelector("#chart-v5-preview-host");host.addEventListener("chartstudio-v5-drawing-state",e=>window.__v5LastDrawing=e.detail);host.addEventListener("chartstudio-v5-data-window",e=>window.__v5DataWindow=e.detail)});</script></body></html>`;
+<div id="chart-v5-preview-host"></div><output id="chart-v5-data-window" aria-label="Kerzendaten am Fadenkreuz">Fadenkreuz auf eine Kerze bewegen.</output><output id="chart-v5-live-quote" aria-label="Aktuelle MT5-Quote beim Abruf">Aktuelle MT5-Quote: noch nicht abgerufen.</output><button type="button" id="chart-v5-data-window-pin" aria-pressed="false">Kerze fixieren</button><p>Read only. Powered by <a href="https://www.tradingview.com/">TradingView Lightweight Charts™</a></p></section><script>document.addEventListener("DOMContentLoaded",()=>{const host=document.querySelector("#chart-v5-preview-host");host.addEventListener("chartstudio-v5-drawing-state",e=>window.__v5LastDrawing=e.detail);host.addEventListener("chartstudio-v5-data-window",e=>window.__v5DataWindow=e.detail)});</script></body></html>`;
 
+const quoteRequests=[];
 const server=http.createServer((req,res)=>{
  const pathname=new URL(req.url,"http://localhost").pathname;
  if(pathname==="/"||pathname==="/stt/"){
   res.writeHead(200,{"Content-Type":"text/html; charset=utf-8"});res.end(html(new URL(req.url,"http://localhost").searchParams.get("enabled")==="1"));return;
  }
  const normalized=pathname.replace(/^\/stt(?=\/)/,"");
+ if(normalized==="/api/chart/v1/quotes"){
+  const query=new URL(req.url,"http://localhost").searchParams;quoteRequests.push({account:query.get("account"),symbol:query.get("symbol"),method:req.method});
+  res.writeHead(200,{"Content-Type":"application/json"});res.end(JSON.stringify({account:query.get("account"),symbol:query.get("symbol"),source:"MT5_VERIFIED",canExecute:false,bid:4100.25,ask:4100.5,digits:2,quoteTimeUtc:"2026-10-18T12:00:00Z",ageSeconds:5,freshness:"FRESH"}));return;
+ }
  if(!normalized.startsWith("/static/")){res.writeHead(404);res.end();return}
  const target=path.resolve(root,normalized.slice(1));
  if(!target.startsWith(path.join(root,"static")+path.sep)){res.writeHead(403);res.end();return}
@@ -102,6 +107,9 @@ const server=http.createServer((req,res)=>{
   assert.equal(brokerMarkers.positionCount,0,"broker fill history does not fabricate open-position lines");
   const v4Before=await page.locator("#tv-chart").evaluate(el=>({visible:!!el.getClientRects().length,canvas:el.querySelector("canvas#v4-sentinel")?.width}));
   await page.locator("#chart-v5-preview-btn").click();
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-live-quote")?.textContent.includes("FRESH"));
+  assert.match(await page.locator("#chart-v5-live-quote").textContent(),/Bid 4100\.25 \/ Ask 4100\.5 \/ Spread 0\.25 .* keine historische Kerze/);
+  assert.deepEqual(quoteRequests[0],{account:"titan",symbol:"XAUUSD",method:"GET"},"v5 quote is fetched for exact account/symbol as a read-only snapshot");
   await page.waitForFunction(()=>document.querySelector("#chart-v5-preview-status")?.textContent.includes("150 verifizierte Kerzen"));
   await page.waitForFunction(()=>[...document.querySelectorAll("#chart-v5-preview-host canvas")].some(canvas=>canvas.width>300&&canvas.height>200));
   assert.match(await page.locator("#chart-v5-data-window").textContent(),/Fadenkreuz auf eine Kerze bewegen/);

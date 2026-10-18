@@ -9,6 +9,7 @@ Extend only the isolated Lightweight Charts v5 adapter with an exact-time, accou
 - Configured overlay/pane values appear only for the same exact timestamp; warm-up/missing values are null and labeled.
 - The preview can pin the exact hovered candle readout, keep it stable as the pointer moves, and clear it with Escape or on account/symbol/timeframe change.
 - Replacing candle history, updating a forming candle, or changing account invalidates stale indicator readout values.
+- The optional preview shows a separate current MT5 quote snapshot only when account, symbol, provenance and `canExecute=false` match; quote age and UTC as-of are explicit and never attached to the hovered historical candle.
 - Invalid timestamps/volume are rejected; unknown times return `UNAVAILABLE`; no future bar or interpolated value is returned.
 - Chromium smoke proves outputs and no network writes. No v4 mount/cutover, broker mutation, demo mutation, or backtest.
 
@@ -23,3 +24,4 @@ Add readout contracts to `scripts/smoke_chart_studio_v5.cjs` first and observe f
 - [x] TypeScript check/build and isolated v5 Chromium smoke pass; production v4 mount and MT5 remain untouched.
 - [x] Review confirms exact timestamp joins only, no look-ahead/interpolation, account/history invalidation and local-only data. TypeScript check/build, v5 Chromium smoke, 128 Python foundation/security/audit tests with 29 subtests, and `git diff --check` pass.
 - [x] Preview integration: the native v5 crosshair now emits the exact-time data-window record to an accessible read-only panel with UTC/OHLC, volume provenance, indicator values/warm-up labels, and explicit unavailable states. The user can pin the last exact candle readout, keep it steady while moving the pointer, and clear it with Escape or a scope change; feed replacement refreshes the pinned timestamp or clears it if unavailable. Pointer-driven Chromium acceptance passes with the v4 chart still mounted and no network writes. Quote/spread UI parity and production cutover remain outside this slice.
+- [x] Quote parity in the optional preview: a separate GET-only read requests the exact active account/symbol and renders verified bid/ask/spread, UTC quote time, freshness and age; mismatched/unverified responses fail closed. The UI labels it as a current quote at retrieval time, never as the historical candle under the crosshair. Chromium smoke checks the values and request scope.

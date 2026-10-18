@@ -3,10 +3,10 @@
 (function(){
   "use strict";
   if(window.CHART_STUDIO_V5_PREVIEW_ENABLED!==true)return;
-  let button=null,panel=null,host=null,status=null,title=null,dataWindow=null,dataWindowPinButton=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,priceButton=null,timeButton=null,rectButton=null,fiboButton=null,measureButton=null,channelButton=null,textButton=null,textInput=null,drawingStatus=null,layoutButton=null,layoutImportButton=null,layoutReplaceButton=null,layoutImportFile=null;
+  let button=null,panel=null,host=null,status=null,title=null,dataWindow=null,dataWindowPinButton=null,liveQuote=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,priceButton=null,timeButton=null,rectButton=null,fiboButton=null,measureButton=null,channelButton=null,textButton=null,textInput=null,drawingStatus=null,layoutButton=null,layoutImportButton=null,layoutReplaceButton=null,layoutImportFile=null;
 
   let scope=null,latest=null,engine=null,bridge=null,active=false,loading=null,autoFibEnabled=false,dataWindowHover=null,dataWindowPinned=null,dataWindowCrosshairActive=false;
-  let generation=0,sequence=0,latestSequence=0,positionSequence=0,positionsSnapshot=null,brokerDealMarkersSnapshot=null,positionsEnabled=true,drawingTool=null,pendingImportMode=null;
+  let generation=0,sequence=0,latestSequence=0,positionSequence=0,positionsSnapshot=null,brokerDealMarkersSnapshot=null,positionsEnabled=true,drawingTool=null,pendingImportMode=null,quoteTimer=null,quoteRequest=0;
   const setStatus=value=>{if(status)status.textContent=value};
   function renderDataWindow(event){
     if(!dataWindow)return;
@@ -25,6 +25,23 @@
     if(dataWindowPinned)dataWindowPinned=null;
     else if(dataWindowHover?.state==="AVAILABLE")dataWindowPinned=dataWindowHover;
     renderDataWindow({detail:null});
+  }
+  async function refreshLiveQuote(){
+    const request=++quoteRequest,selected=currentScope();
+    if(!selected||!active||!liveQuote)return;
+    liveQuote.textContent="Aktuelle MT5-Quote: wird read-only abgerufen …";
+    const prefix=window.location.pathname.startsWith("/stt")?"/stt":"";
+    const query=new URLSearchParams({account:selected.account,symbol:selected.symbol});
+    try{
+      const response=await fetch(`${prefix}/api/chart/v1/quotes?${query}`,{method:"GET",cache:"no-store",headers:{Accept:"application/json"}});
+      const value=await response.json();
+      if(request!==quoteRequest||!same(selected,scope))return;
+      if(!response.ok||value?.account!==selected.account||value?.symbol!==selected.symbol||value?.source!=="MT5_VERIFIED"||value?.canExecute!==false||
+         !Number.isFinite(value.bid)||!Number.isFinite(value.ask)||value.bid<=0||value.ask<value.bid||typeof value.quoteTimeUtc!=="string"||
+         !Number.isFinite(value.ageSeconds)||!['FRESH','STALE','FUTURE'].includes(value.freshness))throw new Error("Quote nicht verifiziert oder nicht verfügbar");
+      const spread=(value.ask-value.bid).toFixed(Number.isInteger(value.digits)?Math.min(value.digits,8):2);
+      liveQuote.textContent=`Aktuelle MT5-Quote beim Abruf · ${value.freshness} · Bid ${value.bid} / Ask ${value.ask} / Spread ${spread} · ${value.quoteTimeUtc} UTC · Alter ${Math.round(value.ageSeconds)} s · ${value.source} · keine historische Kerze`;
+    }catch(error){if(request===quoteRequest&&same(selected,scope))liveQuote.textContent=`Aktuelle MT5-Quote: nicht verfügbar · ${String(error?.message||error).slice(0,100)}`}
   }
   function refreshPinnedDataWindow(){
     if(!dataWindowPinned)return;
@@ -309,6 +326,7 @@
     if(bridge)bridge.clear();
     destroyRenderer();
     if(active&&window.ChartStudioV5?.createStudioV5)mountRenderer();
+    if(active)refreshLiveQuote();
     setStatus("Scope gewechselt · warte auf verifizierte MT5-Kerzen …");
     return true;
   }
@@ -348,7 +366,7 @@
   window.ChartStudioV5Preview=Object.freeze({setScope,beginRead,update,clear,renderAutoFib,clearAutoFib,beginPositionRead,setPositions,showPositions,readPositions,clearPositions,setBrokerDealMarkers,readBrokerDealMarkers,setDrawingTool,exportLayout,importLayout,readDrawing:id=>engine?.readDrawing?.(id)||null,readAutoFibonacci:()=>engine?.readAutoFibonacci?.()||null,inspect:()=>({active,scope:currentScope(),generation,status:status?.textContent||"",autoFibonacci:!!engine?.readAutoFibonacci?.(),positionOverlayCount:readPositions().count,brokerDealMarkerCount:readBrokerDealMarkers().plotted,nativeDrawingCount:engine?.inspect?.().nativeDrawingCount||0,drawingTool,positionsEnabled,dataWindowPinned:!!dataWindowPinned,brokerDealMarkers:readBrokerDealMarkers()})});
   function boot(){
     button=document.getElementById("chart-v5-preview-btn");panel=document.getElementById("chart-v5-preview-panel");
-    host=document.getElementById("chart-v5-preview-host");status=document.getElementById("chart-v5-preview-status");dataWindow=document.getElementById("chart-v5-data-window");dataWindowPinButton=document.getElementById("chart-v5-data-window-pin");
+    host=document.getElementById("chart-v5-preview-host");status=document.getElementById("chart-v5-preview-status");dataWindow=document.getElementById("chart-v5-data-window");dataWindowPinButton=document.getElementById("chart-v5-data-window-pin");liveQuote=document.getElementById("chart-v5-live-quote");
     title=document.getElementById("chart-v5-preview-title");
     autoFibButton=document.getElementById("chart-v5-auto-fib-btn");autoFibStatus=document.getElementById("chart-v5-auto-fib-status");
     trendButton=document.getElementById("chart-v5-trend-btn");rayButton=document.getElementById("chart-v5-ray-btn");priceButton=document.getElementById("chart-v5-price-btn");timeButton=document.getElementById("chart-v5-time-btn");rectButton=document.getElementById("chart-v5-rect-btn");fiboButton=document.getElementById("chart-v5-fibo-btn");measureButton=document.getElementById("chart-v5-measure-btn");channelButton=document.getElementById("chart-v5-channel-btn");textButton=document.getElementById("chart-v5-text-btn");textInput=document.getElementById("chart-v5-text-input");drawingStatus=document.getElementById("chart-v5-drawing-status");layoutButton=document.getElementById("chart-v5-layout-export-btn");
@@ -374,9 +392,10 @@
     if(layoutImportFile)layoutImportFile.addEventListener("change",readLayoutFile);
     document.addEventListener("keydown",event=>{if(event.key!=="Escape")return;if(dataWindowPinned){dataWindowPinned=null;renderDataWindow({detail:null});event.preventDefault();return}if(drawingTool){setDrawingTool(null);if(drawingStatus)drawingStatus.textContent="Zeichenwerkzeug abgebrochen."}});
     button.addEventListener("click",async()=>{
-      if(active){active=false;panel.hidden=true;button.setAttribute("aria-expanded","false");button.textContent="V5 Vorschau";clearPositions();destroyRenderer();return}
+      if(active){active=false;quoteRequest++;clearInterval(quoteTimer);quoteTimer=null;panel.hidden=true;button.setAttribute("aria-expanded","false");button.textContent="V5 Vorschau";clearPositions();destroyRenderer();return}
       active=true;panel.hidden=false;button.setAttribute("aria-expanded","true");button.textContent="V5 schließen";
       window.dispatchEvent(new CustomEvent("chart-studio-v5-preview-opened",{detail:{scope:currentScope()}}));
+      refreshLiveQuote();clearInterval(quoteTimer);quoteTimer=setInterval(refreshLiveQuote,15000);
       setStatus("Lade lokale v5-Vorschau …");
       try{await ensureBundle();mountRenderer();if(!bridge)throw new Error("Renderer konnte nicht erstellt werden")}
       catch(error){destroyRenderer();setStatus("V5-Vorschau nicht verfügbar: "+String(error?.message||error).slice(0,160))}
