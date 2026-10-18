@@ -47,8 +47,10 @@ export type RayOptions = TrendLineOptions;
 export type FibonacciOptions = TrendLineOptions&{levels?:number[]};
 export type ChartStorageScope = {symbol:string;timeframe:string};
 export type PositionOverlayScope = {account:string;symbol:string;timeframe:string};
-export type ReadOnlyPositionOverlaySnapshot = {scope:PositionOverlayScope;source:"MT5_VERIFIED";canExecute:false;positions:Array<{ticket:string;side:"BUY"|"SELL";entryPrice:number;stopLoss?:number|null;takeProfit?:number|null}>};
+export type ReadOnlyPositionOverlayPosition = {ticket:string;side:"BUY"|"SELL";entryPrice:number;stopLoss?:number|null;takeProfit?:number|null;volume:number;profit:number;swap:number;currency:string;usdConversion?:{state:"AVAILABLE";source:"ACCOUNT_CURRENCY"|"MT5_FX_QUOTE";amountsUsd:{profit:number;swap:number}}|{state:"UNAVAILABLE";source:"NONE";reason:string}};
+export type ReadOnlyPositionOverlaySnapshot = {scope:PositionOverlayScope;source:"MT5_VERIFIED";canExecute:false;currency:string;marginMode:0|1|2;positions:ReadOnlyPositionOverlayPosition[]};
 export type PositionOverlayLine = {ticket:string;side:"BUY"|"SELL";role:"Entry"|"SL"|"TP";price:number;label:string};
+export type PositionOverlayLabel = {ticket:string;side:"BUY"|"SELL";volume:number;entryPrice:number;stopLoss:number|null;takeProfit:number|null;profit:number;swap:number;currency:string;label:string;usdProfit:number|null;usdSwap:number|null};
 export type ReadOnlyBrokerDealMarker = {ticket:string;account:string;symbol:string;timeframe:string;side:"BUY"|"SELL";entry:"IN"|"OUT"|"INOUT"|"OUT_BY";price:number;fillTimeUtcMs:number;chartTimeSeconds:number;plotted:boolean;label:string};
 export type ReadOnlyBrokerDealMarkerSnapshot = {scope:PositionOverlayScope;source:"MT5_VERIFIED";canExecute:false;markers:ReadOnlyBrokerDealMarker[]};
 export type DataWindowReadout = {
@@ -534,6 +536,41 @@ class BrokerDealMarkersPrimitive implements ISeriesPrimitive {
   })})}];
  }
 }
+class PositionZonesPrimitive implements ISeriesPrimitive {
+ private requestUpdate:(()=>void)|null=null;
+ private positions:PositionOverlayLabel[]=[];
+ constructor(private readonly series:{priceToCoordinate(price:number):number|null}){}
+ attached(param:{requestUpdate:()=>void}){this.requestUpdate=param.requestUpdate}
+ detached(){this.requestUpdate=null}
+ set(positions:readonly PositionOverlayLabel[]){this.positions=positions.map(position=>({...position}));this.requestUpdate?.()}
+ paneViews(){
+  const series=this.series,positions=this.positions;
+  return [
+   {zOrder:()=>"bottom" as const,renderer:()=>({draw:(target:CanvasRenderingTarget2D)=>target.useMediaCoordinateSpace(({context,mediaSize})=>{
+    context.save();context.beginPath();context.rect(0,0,mediaSize.width,mediaSize.height);context.clip();
+    for(const position of positions){
+     const entry=series.priceToCoordinate(position.entryPrice);if(entry===null||!Number.isFinite(entry))continue;
+     for(const [price,color] of [[position.stopLoss,"rgba(244,94,112,.12)"],[position.takeProfit,"rgba(54,214,183,.10)"]] as const){
+      if(price===null||price===undefined)continue;const targetY=series.priceToCoordinate(price);if(targetY===null||!Number.isFinite(targetY))continue;
+      const top=Math.max(0,Math.min(entry,targetY)),bottom=Math.min(mediaSize.height,Math.max(entry,targetY));
+      if(bottom<=top)continue;context.fillStyle=color;context.fillRect(0,top,mediaSize.width,bottom-top);
+     }
+    }
+    context.restore();
+   })})},
+   {zOrder:()=>"top" as const,renderer:()=>({draw:(target:CanvasRenderingTarget2D)=>target.useMediaCoordinateSpace(({context,mediaSize})=>{
+    context.save();context.font="10px monospace";context.textBaseline="middle";
+    positions.forEach((position,index)=>{
+     const entry=series.priceToCoordinate(position.entryPrice);if(entry===null||!Number.isFinite(entry))return;
+     const y=Math.max(9,Math.min(mediaSize.height-9,entry-7+index*13));
+     const width=Math.max(0,mediaSize.width-12);context.fillStyle="rgba(5,17,26,.82)";context.fillRect(4,y-8,width,16);
+     context.fillStyle=position.side==="BUY"?"#b8eaff":"#ffe0a8";context.textAlign="left";
+     context.fillText(position.label,8,y,Math.max(0,mediaSize.width-16));
+    });context.restore();
+   })})},
+  ];
+ }
+}
 const colorPattern = /^#[0-9a-fA-F]{6}$/;
 function validBar(c:Candle):boolean {
  return Number.isSafeInteger(c.time) && c.time>0 && Number.isFinite(new Date(c.time*1000).getTime()) &&
@@ -753,26 +790,38 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  const brokerDealPrimitive=new BrokerDealMarkersPrimitive(chart,price);price.attachPrimitive(brokerDealPrimitive);
  let brokerDealMarkers:ReadOnlyBrokerDealMarker[]=[];
  const positionOverlayLines=new Map<string,{line:ReturnType<typeof price.createPriceLine>;readback:PositionOverlayLine}>();
- function clearPositionOverlays(){for(const item of positionOverlayLines.values())price.removePriceLine(item.line);positionOverlayLines.clear()}
+ const positionZonesPrimitive=new PositionZonesPrimitive(price);price.attachPrimitive(positionZonesPrimitive);
+ let positionOverlayPositions:PositionOverlayLabel[]=[],positionOverlayCurrency="",positionOverlayMarginMode:"NETTING"|"EXCHANGE"|"HEDGING"|"UNKNOWN"="UNKNOWN";
+ function clearPositionOverlays(){guard();for(const item of positionOverlayLines.values())price.removePriceLine(item.line);positionOverlayLines.clear();positionOverlayPositions=[];positionOverlayCurrency="";positionOverlayMarginMode="UNKNOWN";positionZonesPrimitive.set([])}
  function setPositionOverlays(snapshot:ReadOnlyPositionOverlaySnapshot){
   guard();const expected={account:activeAccount,symbol:drawingScope?.symbol??"",timeframe:drawingScope?.timeframe??""},received=snapshot?.scope;
   if(!received||received.account!==expected.account||received.symbol!==expected.symbol||received.timeframe!==expected.timeframe){clearPositionOverlays();throw Error("Position overlay scope mismatch")}
-  if(snapshot.source!=="MT5_VERIFIED"||snapshot.canExecute!==false||!Array.isArray(snapshot.positions)||snapshot.positions.length>500)throw Error("Invalid read-only position overlay snapshot");
-  const tickets=new Set<string>(),candidate:PositionOverlayLine[]=[];
+  if(snapshot.source!=="MT5_VERIFIED"||snapshot.canExecute!==false||!Array.isArray(snapshot.positions)||snapshot.positions.length>500||typeof snapshot.currency!=="string"||!/^[A-Z]{3}$/.test(snapshot.currency)||![0,1,2].includes(snapshot.marginMode))throw Error("Invalid read-only position overlay snapshot");
+  const tickets=new Set<string>(),candidate:PositionOverlayLine[]=[],positionModels:PositionOverlayLabel[]=[];
+  const mode=({0:"NETTING",1:"EXCHANGE",2:"HEDGING"} as const)[snapshot.marginMode];
   for(const row of snapshot.positions){
    if(!row||typeof row.ticket!=="string"||!/^[A-Za-z0-9_-]{1,64}$/.test(row.ticket)||tickets.has(row.ticket)||(row.side!=="BUY"&&row.side!=="SELL"))throw Error("Invalid or duplicate position ticket");tickets.add(row.ticket);
+   if(!Number.isFinite(row.volume)||row.volume<0||!Number.isFinite(row.profit)||!Number.isFinite(row.swap)||row.currency!==snapshot.currency)throw Error("Invalid position money fields");
+   let usdProfit:number|null=null,usdSwap:number|null=null;
+   if(row.usdConversion?.state==="AVAILABLE"){
+    if((row.usdConversion.source!=="ACCOUNT_CURRENCY"&&row.usdConversion.source!=="MT5_FX_QUOTE")||!Number.isFinite(row.usdConversion.amountsUsd?.profit)||!Number.isFinite(row.usdConversion.amountsUsd?.swap))throw Error("Invalid verified USD conversion");
+    usdProfit=row.usdConversion.amountsUsd.profit;usdSwap=row.usdConversion.amountsUsd.swap;
+   }else if(row.usdConversion!==undefined&&(row.usdConversion.state!=="UNAVAILABLE"||row.usdConversion.source!=="NONE"||typeof row.usdConversion.reason!=="string"))throw Error("Invalid unavailable USD conversion");
    for(const [role,value] of [["Entry",row.entryPrice],["SL",row.stopLoss],["TP",row.takeProfit]] as const){
     if((role==="Entry"||value!==undefined&&value!==null)&&(!Number.isFinite(value)||value!<=0))throw Error("Invalid position overlay price");
     if(value===undefined||value===null)continue;candidate.push({ticket:row.ticket,side:row.side,role,price:value,label:`${row.side} ${role}`});
    }
+   const fmt=(value:number)=>value.toFixed(2),usdLabel=usdProfit===null?"":` · USD P/L ${fmt(usdProfit)} · Swap ${fmt(usdSwap!)}`;
+   positionModels.push({ticket:row.ticket,side:row.side,volume:row.volume,entryPrice:row.entryPrice,stopLoss:row.stopLoss??null,takeProfit:row.takeProfit??null,profit:row.profit,swap:row.swap,currency:row.currency,usdProfit,usdSwap,
+    label:`${mode} · ${row.side} ${row.volume.toFixed(2)}L #${row.ticket} @ ${fmt(row.entryPrice)} · P/L ${fmt(row.profit)} ${row.currency} · Swap ${fmt(row.swap)} ${row.currency}${usdLabel}`});
   }
   const created:Array<{line:ReturnType<typeof price.createPriceLine>;readback:PositionOverlayLine}>=[];
   try{for(const item of candidate){const line=price.createPriceLine({price:item.price,color:item.role==="SL"?"#ff657a":item.role==="TP"?"#35d6c2":item.side==="BUY"?"#49c6ff":"#ffb84d",lineWidth:item.role==="Entry"?2:1,lineStyle:item.role==="SL"?2:item.role==="TP"?1:0,axisLabelVisible:true,title:item.label});created.push({line,readback:item})}}
   catch(error){for(const item of created)price.removePriceLine(item.line);throw error}
-  clearPositionOverlays();for(const item of created)positionOverlayLines.set(`${item.readback.ticket}:${item.readback.role}`,item);
-  return {count:positionOverlayLines.size,lines:Array.from(positionOverlayLines.values(),item=>({...item.readback}))};
+  clearPositionOverlays();for(const item of created)positionOverlayLines.set(`${item.readback.ticket}:${item.readback.role}`,item);positionOverlayPositions=positionModels;positionOverlayCurrency=snapshot.currency;positionOverlayMarginMode=mode;positionZonesPrimitive.set(positionModels);
+  return readPositionOverlays();
  }
- function readPositionOverlays(){guard();return {count:positionOverlayLines.size,lines:Array.from(positionOverlayLines.values(),item=>({...item.readback}))}}
+ function readPositionOverlays(){guard();return {count:positionOverlayLines.size,lines:Array.from(positionOverlayLines.values(),item=>({...item.readback})),positionCount:positionOverlayPositions.length,zoneCount:positionOverlayPositions.reduce((count,row)=>count+(row.stopLoss!==null?1:0)+(row.takeProfit!==null?1:0),0),currency:positionOverlayCurrency,marginMode:positionOverlayMarginMode,positions:positionOverlayPositions.map(row=>({...row}))}}
  function setBrokerDealMarkers(snapshot:ReadOnlyBrokerDealMarkerSnapshot){
   guard();const expected={account:activeAccount,symbol:drawingScope?.symbol??"",timeframe:drawingScope?.timeframe??""},received=snapshot?.scope;
   if(!received||received.account!==expected.account||received.symbol!==expected.symbol||received.timeframe!==expected.timeframe)throw Error("Broker deal marker scope mismatch");
@@ -2681,5 +2730,5 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   return Object.freeze({setCandles,addAverage,addMovingAverage,addTransientMovingAverage,addDonchian,removeDonchian,addBollinger,updateBollinger,removeBollinger,bollingerOptions,addSessionVwap,updateSessionVwap,removeSessionVwap,sessionVwapOptions,addKeltner,removeKeltner,addAtrBands,updateAtrBands,removeAtrBands,atrBandsOptions,addLinearRegression,updateLinearRegression,removeLinearRegression,linearRegressionOptions,addIchimoku,updateIchimoku,removeIchimoku,ichimokuOptions,addPivotPoints,updatePivotPoints,pivotOptions,removePivotPoints,addSupertrend,updateSupertrend,removeSupertrend,supertrendOptions,addParabolicSar,updateParabolicSar,removeParabolicSar,parabolicSarOptions,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,deleteSelectedDrawings,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,drawingPosition,drawingAnchorPosition,readDrawing,exportDrawings,exportLayout,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,duplicateSelectedDrawings,
   addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,addOscillator,updateOscillator,removeOscillator,addTransientOscillator,updateTransientOscillator,removeTransientOscillator,moveOscillator,oscillatorOptions,oscillatorPaneLayout,resizePane,paneHeights,showVolume,visibleLogicalRange,setVisibleLogicalRange,setDisplayTimeZone,displayTimeZone:()=>displayTimeZone,formatTimeLabel:formatDisplayTime,formatCrosshairTime,readDataWindow,
-  updateLast,changeAccount,averageOptions,setVolumeZones,readVolumeZones,clearVolumeZones,setAutoFibonacci,readAutoFibonacci,clearAutoFibonacci,setPositionOverlays,readPositionOverlays,setBrokerDealMarkers,readBrokerDealMarkers,setDrawingTool,drawingToolState,verifyPersistence,inspect,destroy});
+  updateLast,changeAccount,averageOptions,setVolumeZones,readVolumeZones,clearVolumeZones,setAutoFibonacci,readAutoFibonacci,clearAutoFibonacci,setPositionOverlays,readPositionOverlays,clearPositionOverlays,setBrokerDealMarkers,readBrokerDealMarkers,setDrawingTool,drawingToolState,verifyPersistence,inspect,destroy});
 }

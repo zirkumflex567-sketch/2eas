@@ -274,7 +274,7 @@
   }
   function clearRenderedPositions(){
     if(!engine||!scope)return;
-    try{engine.setPositionOverlays({scope:{...scope},source:"MT5_VERIFIED",canExecute:false,positions:[]})}catch(_){}
+    try{engine.clearPositionOverlays()}catch(_){}
   }
   function renderPositions(){
     if(!engine||!scope||!positionsEnabled||!positionsSnapshot){clearRenderedPositions();return {count:0,lines:[]}}
@@ -290,20 +290,22 @@
     if(snapshot.source!=="MT5_VERIFIED"||snapshot.canExecute!==false){
       positionsSnapshot=null;clearRenderedPositions();return {applied:false,reason:"UNVERIFIED_SOURCE"};
     }
-    if(!Array.isArray(snapshot.positions)||snapshot.positions.length>500){
+    if(typeof snapshot.currency!=="string"||!/^[A-Z]{3}$/.test(snapshot.currency)||![0,1,2].includes(snapshot.marginMode)||!Array.isArray(snapshot.positions)||snapshot.positions.length>500){
       positionsSnapshot=null;clearRenderedPositions();return {applied:false,reason:"INVALID_POSITIONS"};
     }
     const tickets=new Set(),positions=[];
     for(const row of snapshot.positions){
       const ticket=String(row?.ticket??""),side=row?.side??row?.type,entry=Number(row?.priceOpen??row?.entryPrice);
       const stop=row?.sl??row?.stopLoss??null,target=row?.tp??row?.takeProfit??null;
+      const volume=Number(row?.volume),profit=Number(row?.profit),swap=Number(row?.swap),currency=row?.currency??snapshot.currency;
       if(!/^[A-Za-z0-9_-]{1,64}$/.test(ticket)||tickets.has(ticket)||(side!=="BUY"&&side!=="SELL")||!Number.isFinite(entry)||entry<=0||
+         !Number.isFinite(volume)||volume<0||!Number.isFinite(profit)||!Number.isFinite(swap)||currency!==snapshot.currency||
          (stop!==null&&(!Number.isFinite(Number(stop))||Number(stop)<=0))||(target!==null&&(!Number.isFinite(Number(target))||Number(target)<=0))){
         positionsSnapshot=null;clearRenderedPositions();return {applied:false,reason:"INVALID_POSITIONS"};
       }
-      tickets.add(ticket);positions.push({ticket,side,entryPrice:entry,stopLoss:stop===null?null:Number(stop),takeProfit:target===null?null:Number(target)});
+      tickets.add(ticket);positions.push({ticket,side,entryPrice:entry,stopLoss:stop===null?null:Number(stop),takeProfit:target===null?null:Number(target),volume,profit,swap,currency,usdConversion:row?.usdConversion});
     }
-    positionsSnapshot={scope:{...scope},source:"MT5_VERIFIED",canExecute:false,positions};
+    positionsSnapshot={scope:{...scope},source:"MT5_VERIFIED",canExecute:false,currency:snapshot.currency,marginMode:snapshot.marginMode,positions};
     try{return {applied:true,count:renderPositions().count}}
     catch(_){positionsSnapshot=null;clearRenderedPositions();return {applied:false,reason:"INVALID_POSITIONS"}}
   }

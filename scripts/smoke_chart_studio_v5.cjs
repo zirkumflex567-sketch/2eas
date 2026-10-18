@@ -2016,15 +2016,15 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   const positionOverlayProbe=await page.evaluate(()=>{
    const host=document.createElement("div");host.style.cssText="width:900px;height:360px;position:fixed;left:-2000px;top:0";document.body.append(host);
    const engine=ChartStudioV5.createStudioV5(host,"titan",{symbol:"XAUUSD",timeframe:"M15"}),bars=Array.from({length:5},(_,i)=>({time:1700600000+i*900,open:4100,high:4110,low:4090,close:4105}));engine.setCandles(bars);
-   const snapshot={scope:{account:"titan",symbol:"XAUUSD",timeframe:"M15"},source:"MT5_VERIFIED",canExecute:false,positions:[{ticket:"1001",side:"BUY",entryPrice:4101,stopLoss:4090,takeProfit:4120},{ticket:"1002",side:"SELL",entryPrice:4108,stopLoss:null,takeProfit:null}]};
+   const snapshot={scope:{account:"titan",symbol:"XAUUSD",timeframe:"M15"},source:"MT5_VERIFIED",canExecute:false,currency:"USD",marginMode:2,positions:[{ticket:"1001",side:"BUY",entryPrice:4101,stopLoss:4090,takeProfit:4120,volume:.2,profit:3.5,swap:-.1,currency:"USD",usdConversion:{state:"AVAILABLE",source:"ACCOUNT_CURRENCY",amountsUsd:{profit:3.5,swap:-.1}}},{ticket:"1002",side:"SELL",entryPrice:4108,stopLoss:null,takeProfit:null,volume:.1,profit:-1.25,swap:0,currency:"USD",usdConversion:{state:"AVAILABLE",source:"ACCOUNT_CURRENCY",amountsUsd:{profit:-1.25,swap:0}}}]};
    let supported=typeof engine.setPositionOverlays==="function";let first=null,rejected={};
    if(supported){first=engine.setPositionOverlays(snapshot);const before=engine.inspect().positionOverlayCount;
     for(const [name,bad] of Object.entries({account:{...snapshot,scope:{...snapshot.scope,account:"other"}},symbol:{...snapshot,scope:{...snapshot.scope,symbol:"EURUSD"}},timeframe:{...snapshot,scope:{...snapshot.scope,timeframe:"H1"}}})){try{engine.setPositionOverlays(bad)}catch(_){rejected[name]=true}if(engine.inspect().positionOverlayCount!==0)throw Error("scope mismatch retained stale position lines");engine.setPositionOverlays(snapshot)}
     for(const [name,bad] of Object.entries({source:{...snapshot,source:"UNVERIFIED"},executable:{...snapshot,canExecute:true},duplicate:{...snapshot,positions:[snapshot.positions[0],snapshot.positions[0]]},malformed:{...snapshot,positions:[{...snapshot.positions[0],entryPrice:0}]}})){try{engine.setPositionOverlays(bad)}catch(_){rejected[name]=true}}
-    const afterInvalid=engine.inspect().positionOverlayCount;engine.setPositionOverlays({...snapshot,positions:[{ticket:"1003",side:"BUY",entryPrice:4103,stopLoss:null,takeProfit:null}]});const replaced=engine.inspect().positionOverlays;
+    const afterInvalid=engine.inspect().positionOverlayCount,details=engine.readPositionOverlays();engine.setPositionOverlays({...snapshot,marginMode:0,positions:[{ticket:"1003",side:"BUY",entryPrice:4103,stopLoss:null,takeProfit:null,volume:.3,profit:2,swap:0,currency:"USD",usdConversion:{state:"AVAILABLE",source:"ACCOUNT_CURRENCY",amountsUsd:{profit:2,swap:0}}}]});const replaced=engine.readPositionOverlays();
     const drawings=engine.exportDrawings(),accountBefore=engine.inspect().positionOverlayCount;engine.changeAccount("goldm15");const accountAfter=engine.inspect().positionOverlayCount;
     engine.changeAccount("titan");engine.setCandles(bars);engine.setPositionOverlays(snapshot);engine.destroy();host.remove();
-    return {supported,first,rejected,before,afterInvalid,replaced,drawings,accountBefore,accountAfter};
+    return {supported,first,rejected,before,afterInvalid,details,replaced,drawings,accountBefore,accountAfter};
    }
    engine.destroy();host.remove();return {supported};
   });
@@ -2034,7 +2034,17 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(positionOverlayProbe.rejected,{account:true,symbol:true,timeframe:true,source:true,executable:true,duplicate:true,malformed:true});
   assert.equal(positionOverlayProbe.before,4);
   assert.equal(positionOverlayProbe.afterInvalid,4,"Invalid same-scope snapshots leave the current overlays intact");
-  assert.equal(positionOverlayProbe.replaced.length,1);
+  assert.equal(positionOverlayProbe.details.positionCount,2);
+  assert.equal(positionOverlayProbe.details.zoneCount,2,"one SL and one TP zone are present for the hedged ticket that has both stops");
+  assert.equal(positionOverlayProbe.details.currency,"USD");
+  assert.equal(positionOverlayProbe.details.marginMode,"HEDGING");
+  assert.deepEqual(positionOverlayProbe.details.positions.map(position=>position.ticket),["1001","1002"],"hedged broker tickets remain separate");
+  assert.match(positionOverlayProbe.details.positions[0].label,/BUY 0\.20L #1001/);
+  assert.match(positionOverlayProbe.details.positions[0].label,/P\/L 3\.50 USD · Swap -0\.10 USD/);
+  assert.match(positionOverlayProbe.details.positions[0].label,/USD P\/L 3\.50 · Swap -0\.10/);
+  assert.equal(positionOverlayProbe.replaced.positionCount,1);
+  assert.equal(positionOverlayProbe.replaced.marginMode,"NETTING");
+  assert.match(positionOverlayProbe.replaced.positions[0].label,/NETTING/);
   assert.equal(positionOverlayProbe.drawings,"{\"schemaVersion\":1,\"symbol\":\"XAUUSD\",\"timeframe\":\"M15\",\"drawings\":[]}");
   assert.equal(positionOverlayProbe.accountBefore,1);
   assert.equal(positionOverlayProbe.accountAfter,0);

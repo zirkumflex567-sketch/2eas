@@ -158,13 +158,16 @@ const server=http.createServer((req,res)=>{
   assert.equal(liveDealReadback.unplotted,1,"native v5 renderer keeps an out-of-window fill unplotted");
   const positions=await page.evaluate(()=>{
    const scope={account:"titan",symbol:"XAUUSD",timeframe:"M15"},token=window.ChartStudioV5Preview.beginPositionRead();
-   return window.ChartStudioV5Preview.setPositions({scope,source:"MT5_VERIFIED",canExecute:false,positions:[
-    {ticket:"71001",side:"BUY",priceOpen:4161,sl:4158,tp:4168},
-    {ticket:"71002",side:"SELL",priceOpen:4165,sl:4169,tp:null},
+   return window.ChartStudioV5Preview.setPositions({scope,source:"MT5_VERIFIED",canExecute:false,currency:"USD",marginMode:2,positions:[
+    {ticket:"71001",side:"BUY",priceOpen:4161,sl:4158,tp:4168,volume:.2,profit:4.5,swap:-.25,currency:"USD",usdConversion:{state:"AVAILABLE",source:"ACCOUNT_CURRENCY",amountsUsd:{profit:4.5,swap:-.25}}},
+    {ticket:"71002",side:"SELL",priceOpen:4165,sl:4169,tp:null,volume:.1,profit:-2,swap:0,currency:"USD",usdConversion:{state:"AVAILABLE",source:"ACCOUNT_CURRENCY",amountsUsd:{profit:-2,swap:0}}},
    ]},token);
   });
   assert.deepEqual(positions,{applied:true,count:5},"verified position entry/SL/TP overlays render in v5");
-  assert.equal((await page.evaluate(()=>window.ChartStudioV5Preview.readPositions())).count,5);
+  const positionReadback=await page.evaluate(()=>window.ChartStudioV5Preview.readPositions());
+  assert.equal(positionReadback.count,5);assert.equal(positionReadback.positionCount,2);assert.equal(positionReadback.zoneCount,3);
+  assert.equal(positionReadback.currency,"USD");assert.equal(positionReadback.marginMode,"HEDGING");
+  assert.match(positionReadback.positions[0].label,/P\/L 4\.50 USD · Swap -0\.25 USD · USD P\/L 4\.50 · Swap -0\.25/);
   assert.equal((await page.evaluate(()=>window.ChartStudioV5Preview.readBrokerDealMarkers())).plotted,2,"rendering position lines preserves separate historical deal markers");
   const positionVisibility=await page.evaluate(()=>{
    const hidden=window.ChartStudioV5Preview.showPositions(false),hiddenCount=window.ChartStudioV5Preview.readPositions().count;

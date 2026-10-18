@@ -3479,7 +3479,8 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (data.account !== scope.account || data.symbol !== scope.symbol || data.source !== 'MT5_VERIFIED' || data.canExecute !== false || !Array.isArray(data.positions)) {
           preview.clearPositions(); setV5PositionStatus('Positionen nicht verifiziert · Overlay entfernt'); return;
         }
-        const result = preview.setPositions({scope,source:data.source,canExecute:data.canExecute,positions:data.positions},token);
+        const positions = data.positions.map(position => ({...position,volume:Number(position.volume),profit:Number(position.profit),swap:Number(position.swap)}));
+        const result = preview.setPositions({scope,source:data.source,canExecute:data.canExecute,currency:data.currency,marginMode:data.marginMode,positions},token);
         if (!result.applied) {
           setV5PositionStatus(!showChartPositions ? 'Positionen ausgeblendet' : 'Positionen nicht verfügbar · ' + result.reason);
           return;

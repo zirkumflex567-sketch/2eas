@@ -8496,6 +8496,65 @@ var ChartStudioV5 = (() => {
       }) }) }];
     }
   };
+  var PositionZonesPrimitive = class {
+    constructor(series) {
+      this.series = series;
+      this.requestUpdate = null;
+      this.positions = [];
+    }
+    attached(param) {
+      this.requestUpdate = param.requestUpdate;
+    }
+    detached() {
+      this.requestUpdate = null;
+    }
+    set(positions) {
+      this.positions = positions.map((position) => ({ ...position }));
+      this.requestUpdate?.();
+    }
+    paneViews() {
+      const series = this.series, positions = this.positions;
+      return [
+        { zOrder: () => "bottom", renderer: () => ({ draw: (target) => target.useMediaCoordinateSpace(({ context, mediaSize }) => {
+          context.save();
+          context.beginPath();
+          context.rect(0, 0, mediaSize.width, mediaSize.height);
+          context.clip();
+          for (const position of positions) {
+            const entry = series.priceToCoordinate(position.entryPrice);
+            if (entry === null || !Number.isFinite(entry)) continue;
+            for (const [price, color] of [[position.stopLoss, "rgba(244,94,112,.12)"], [position.takeProfit, "rgba(54,214,183,.10)"]]) {
+              if (price === null || price === void 0) continue;
+              const targetY = series.priceToCoordinate(price);
+              if (targetY === null || !Number.isFinite(targetY)) continue;
+              const top = Math.max(0, Math.min(entry, targetY)), bottom = Math.min(mediaSize.height, Math.max(entry, targetY));
+              if (bottom <= top) continue;
+              context.fillStyle = color;
+              context.fillRect(0, top, mediaSize.width, bottom - top);
+            }
+          }
+          context.restore();
+        }) }) },
+        { zOrder: () => "top", renderer: () => ({ draw: (target) => target.useMediaCoordinateSpace(({ context, mediaSize }) => {
+          context.save();
+          context.font = "10px monospace";
+          context.textBaseline = "middle";
+          positions.forEach((position, index) => {
+            const entry = series.priceToCoordinate(position.entryPrice);
+            if (entry === null || !Number.isFinite(entry)) return;
+            const y2 = Math.max(9, Math.min(mediaSize.height - 9, entry - 7 + index * 13));
+            const width = Math.max(0, mediaSize.width - 12);
+            context.fillStyle = "rgba(5,17,26,.82)";
+            context.fillRect(4, y2 - 8, width, 16);
+            context.fillStyle = position.side === "BUY" ? "#b8eaff" : "#ffe0a8";
+            context.textAlign = "left";
+            context.fillText(position.label, 8, y2, Math.max(0, mediaSize.width - 16));
+          });
+          context.restore();
+        }) }) }
+      ];
+    }
+  };
   var colorPattern = /^#[0-9a-fA-F]{6}$/;
   function validBar(c2) {
     return Number.isSafeInteger(c2.time) && c2.time > 0 && Number.isFinite(new Date(c2.time * 1e3).getTime()) && [c2.open, c2.high, c2.low, c2.close].every((n) => Number.isFinite(n) && n > 0) && (c2.tick_volume === void 0 || Number.isFinite(c2.tick_volume) && c2.tick_volume >= 0) && (c2.real_volume === void 0 || Number.isFinite(c2.real_volume) && c2.real_volume >= 0) && c2.high >= Math.max(c2.open, c2.close, c2.low) && c2.low <= Math.min(c2.open, c2.close, c2.high);
@@ -8799,9 +8858,17 @@ var ChartStudioV5 = (() => {
     price.attachPrimitive(brokerDealPrimitive);
     let brokerDealMarkers = [];
     const positionOverlayLines = /* @__PURE__ */ new Map();
+    const positionZonesPrimitive = new PositionZonesPrimitive(price);
+    price.attachPrimitive(positionZonesPrimitive);
+    let positionOverlayPositions = [], positionOverlayCurrency = "", positionOverlayMarginMode = "UNKNOWN";
     function clearPositionOverlays() {
+      guard();
       for (const item of positionOverlayLines.values()) price.removePriceLine(item.line);
       positionOverlayLines.clear();
+      positionOverlayPositions = [];
+      positionOverlayCurrency = "";
+      positionOverlayMarginMode = "UNKNOWN";
+      positionZonesPrimitive.set([]);
     }
     function setPositionOverlays(snapshot) {
       guard();
@@ -8810,16 +8877,39 @@ var ChartStudioV5 = (() => {
         clearPositionOverlays();
         throw Error("Position overlay scope mismatch");
       }
-      if (snapshot.source !== "MT5_VERIFIED" || snapshot.canExecute !== false || !Array.isArray(snapshot.positions) || snapshot.positions.length > 500) throw Error("Invalid read-only position overlay snapshot");
-      const tickets = /* @__PURE__ */ new Set(), candidate = [];
+      if (snapshot.source !== "MT5_VERIFIED" || snapshot.canExecute !== false || !Array.isArray(snapshot.positions) || snapshot.positions.length > 500 || typeof snapshot.currency !== "string" || !/^[A-Z]{3}$/.test(snapshot.currency) || ![0, 1, 2].includes(snapshot.marginMode)) throw Error("Invalid read-only position overlay snapshot");
+      const tickets = /* @__PURE__ */ new Set(), candidate = [], positionModels = [];
+      const mode = { 0: "NETTING", 1: "EXCHANGE", 2: "HEDGING" }[snapshot.marginMode];
       for (const row of snapshot.positions) {
         if (!row || typeof row.ticket !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(row.ticket) || tickets.has(row.ticket) || row.side !== "BUY" && row.side !== "SELL") throw Error("Invalid or duplicate position ticket");
         tickets.add(row.ticket);
+        if (!Number.isFinite(row.volume) || row.volume < 0 || !Number.isFinite(row.profit) || !Number.isFinite(row.swap) || row.currency !== snapshot.currency) throw Error("Invalid position money fields");
+        let usdProfit = null, usdSwap = null;
+        if (row.usdConversion?.state === "AVAILABLE") {
+          if (row.usdConversion.source !== "ACCOUNT_CURRENCY" && row.usdConversion.source !== "MT5_FX_QUOTE" || !Number.isFinite(row.usdConversion.amountsUsd?.profit) || !Number.isFinite(row.usdConversion.amountsUsd?.swap)) throw Error("Invalid verified USD conversion");
+          usdProfit = row.usdConversion.amountsUsd.profit;
+          usdSwap = row.usdConversion.amountsUsd.swap;
+        } else if (row.usdConversion !== void 0 && (row.usdConversion.state !== "UNAVAILABLE" || row.usdConversion.source !== "NONE" || typeof row.usdConversion.reason !== "string")) throw Error("Invalid unavailable USD conversion");
         for (const [role, value] of [["Entry", row.entryPrice], ["SL", row.stopLoss], ["TP", row.takeProfit]]) {
           if ((role === "Entry" || value !== void 0 && value !== null) && (!Number.isFinite(value) || value <= 0)) throw Error("Invalid position overlay price");
           if (value === void 0 || value === null) continue;
           candidate.push({ ticket: row.ticket, side: row.side, role, price: value, label: `${row.side} ${role}` });
         }
+        const fmt = (value) => value.toFixed(2), usdLabel = usdProfit === null ? "" : ` \xB7 USD P/L ${fmt(usdProfit)} \xB7 Swap ${fmt(usdSwap)}`;
+        positionModels.push({
+          ticket: row.ticket,
+          side: row.side,
+          volume: row.volume,
+          entryPrice: row.entryPrice,
+          stopLoss: row.stopLoss ?? null,
+          takeProfit: row.takeProfit ?? null,
+          profit: row.profit,
+          swap: row.swap,
+          currency: row.currency,
+          usdProfit,
+          usdSwap,
+          label: `${mode} \xB7 ${row.side} ${row.volume.toFixed(2)}L #${row.ticket} @ ${fmt(row.entryPrice)} \xB7 P/L ${fmt(row.profit)} ${row.currency} \xB7 Swap ${fmt(row.swap)} ${row.currency}${usdLabel}`
+        });
       }
       const created = [];
       try {
@@ -8833,11 +8923,15 @@ var ChartStudioV5 = (() => {
       }
       clearPositionOverlays();
       for (const item of created) positionOverlayLines.set(`${item.readback.ticket}:${item.readback.role}`, item);
-      return { count: positionOverlayLines.size, lines: Array.from(positionOverlayLines.values(), (item) => ({ ...item.readback })) };
+      positionOverlayPositions = positionModels;
+      positionOverlayCurrency = snapshot.currency;
+      positionOverlayMarginMode = mode;
+      positionZonesPrimitive.set(positionModels);
+      return readPositionOverlays();
     }
     function readPositionOverlays() {
       guard();
-      return { count: positionOverlayLines.size, lines: Array.from(positionOverlayLines.values(), (item) => ({ ...item.readback })) };
+      return { count: positionOverlayLines.size, lines: Array.from(positionOverlayLines.values(), (item) => ({ ...item.readback })), positionCount: positionOverlayPositions.length, zoneCount: positionOverlayPositions.reduce((count, row) => count + (row.stopLoss !== null ? 1 : 0) + (row.takeProfit !== null ? 1 : 0), 0), currency: positionOverlayCurrency, marginMode: positionOverlayMarginMode, positions: positionOverlayPositions.map((row) => ({ ...row })) };
     }
     function setBrokerDealMarkers(snapshot) {
       guard();
@@ -12316,6 +12410,7 @@ var ChartStudioV5 = (() => {
       clearAutoFibonacci,
       setPositionOverlays,
       readPositionOverlays,
+      clearPositionOverlays,
       setBrokerDealMarkers,
       readBrokerDealMarkers,
       setDrawingTool,

@@ -12,6 +12,7 @@ import account_gateway as gateway
 import broker_clock
 import broker_telemetry
 from chart_studio import history_cursor
+from chart_studio.currency_conversion import convert_amounts_to_usd
 
 SOURCE = 'MT5_VERIFIED'
 SYMBOL_PATTERN = r'^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$'
@@ -256,6 +257,29 @@ def positions_read(mt5, spec, symbol, *, ticket=None, magic=None, manual=None, n
     quote = quote_model(mt5.symbol_info_tick(symbol), spec, symbol=symbol, now=now)
     # Validate ALL rows first: ticket/magic filters never conceal malformed data.
     models = [position_model(row, spec, symbol, currency) for row in positions]
+    if models:
+        conversion_inputs = {}
+        for index, row in enumerate(models):
+            conversion_inputs[f'{index}:profit'] = float(row['profit'])
+            conversion_inputs[f'{index}:swap'] = float(row['swap'])
+        conversion = convert_amounts_to_usd(mt5, conversion_inputs, currency,
+                                            now_ms=int(now*1000) if now is not None else None)
+        for index, row in enumerate(models):
+            if conversion['state'] == 'AVAILABLE':
+                row['usdConversion'] = {
+                    'state':'AVAILABLE', 'source':conversion['source'],
+                    'amountsUsd':{'profit':conversion['amountsUsd'][f'{index}:profit'],
+                                  'swap':conversion['amountsUsd'][f'{index}:swap']}}
+                if conversion.get('symbol'):
+                    row['usdConversion'].update(symbol=conversion['symbol'],
+                                                quoteTimeUtc=conversion.get('quoteTimeUtc'),
+                                                conversionSides={
+                                                    'profit':conversion.get('conversionSides',{}).get(f'{index}:profit'),
+                                                    'swap':conversion.get('conversionSides',{}).get(f'{index}:swap')})
+            else:
+                row['usdConversion'] = {'state':'UNAVAILABLE',
+                                        'reason':conversion.get('reason','FX_CONVERSION_UNAVAILABLE'),
+                                        'source':'NONE'}
     pending = [order_model(row, spec, symbol) for row in orders]
     def matches(row):
         return ((ticket is None or row['ticket'] == ticket)

@@ -511,6 +511,8 @@ def test_positions_orders_decimal_ids_nullable_stops_and_provenance(client, fake
     assert sell['ownership'] == 'UNKNOWN'
     assert buy['comment'] == 'Titan EA is not proof of ownership'
     assert buy['source'] == 'MT5_VERIFIED' and buy['canExecute'] is False
+    assert buy['currency'] == 'EUR'
+    assert buy['usdConversion'] == {'state':'UNAVAILABLE','reason':'NO_FX_SYMBOL','source':'NONE'}
     assert buy['createdTime']['utcEpochMs'] == (NOW-60)*1000
     assert buy['updatedTime']['rawBrokerEpochMs'] == (RAW-10)*1000
     pending = body['orders'][0]
@@ -529,6 +531,19 @@ def test_positions_orders_decimal_ids_nullable_stops_and_provenance(client, fake
     assert quote['offsetSource'] == 'ACCOUNT_CONFIG'
     assert len(body['positionsRevision']) == len(body['ordersRevision']) == 64
     assert len(quote['revision']) == 64
+
+
+def test_positions_publish_usd_amounts_only_from_verified_conversion(client, fake):
+    fake.account_info = lambda: NS(login=fake.current['login'], server=fake.current['server'],
+        currency='USD', currency_digits=2, margin_mode=2, balance=1000., equity=1000.,
+        margin=0., margin_free=1000.)
+    response = read(client)
+    assert response.status_code == 200
+    body = response.json()
+    assert body['currency'] == 'USD'
+    assert body['positions'][0]['usdConversion'] == {
+        'state':'AVAILABLE','source':'ACCOUNT_CURRENCY','amountsUsd':{'profit':10.0,'swap':-1.0}}
+    assert fake.writes == 0
 
 
 def test_snapshot_revisions_track_semantic_book_and_quote_changes_but_not_observation_age(client, fake):
