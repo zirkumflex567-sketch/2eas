@@ -67,6 +67,7 @@ jobs:
           node scripts/test_chart_render_pixels.cjs
           node --check scripts/smoke_live_account_race.cjs
           node --check scripts/smoke_live_chart_render_data.cjs
+          node --check scripts/smoke_live_v5_measure_text.cjs
           node --check scripts/smoke_live_account_deeplink.cjs
           node --check static/chart-studio-data-signature.js
           node scripts/test_chart_studio_data_signature.cjs
