@@ -582,7 +582,7 @@ async function loadExecutionQuality(){
  }catch(error){if(s?.account===account)status.textContent="Ausführungsqualität nicht verfügbar · "+String(error?.message||"READ_ERROR")}
  finally{button.disabled=false}
 }
-const EVIDENCE_CAPTURE_DEMO_ACCOUNTS=new Set(["titan","xau5m_m5","titan_m5","xau5m_500"]);
+const EVIDENCE_CAPTURE_DEMO_ACCOUNTS=new Set(["titan","xau5m_m5","titan_m5","xau5m_500","goldm15"]);
 function isEvidenceCaptureDemo(account){return EVIDENCE_CAPTURE_DEMO_ACCOUNTS.has(account)}
 function captureStatusLine(kind,body,account){
  const state=body?.status,code=state?.code;

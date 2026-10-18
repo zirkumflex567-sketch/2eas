@@ -328,6 +328,12 @@ class DashboardFrontendTests(unittest.TestCase):
         if parsed.path == '/api/chart/v1/positions':
             symbol=parse_qs(parsed.query).get('symbol',['XAUUSD'])[0]
             route.fulfill(json=dict(account=account,symbol=symbol,source='MT5_VERIFIED',canExecute=False,currency='USD',marginMode=2,positions=[],orders=[])); return
+        if parsed.path == '/api/chart/v1/decisions/capture/status':
+            route.fulfill(json=dict(schemaVersion=1,account=account,canExecute=False,
+                status=dict(code='IDLE',importedTotal=0,gapCount=0,storeLostCount=0,gapObserved=False,recordingState='NOT_RECORDED'))); return
+        if parsed.path == '/api/chart/v1/lifecycle/capture/status':
+            route.fulfill(json=dict(schemaVersion=1,account=account,
+                status=dict(code='OK',coverage='ROLLING_WINDOW',appended=0,storeLostCount=0,gapObserved=False))); return
         if parsed.path == '/api/chart/v1/lifecycle/mt5_deal_201':
             route.fulfill(status=self.lifecycle_status, json=dict(record=copy.deepcopy(self.lifecycle_record)) if self.lifecycle_status == 200 else dict(detail=dict(code='RECORD_NOT_FOUND'))); return
         route.fulfill(status=404, json=dict(detail='unexpected fixture API'))
@@ -371,6 +377,18 @@ class DashboardFrontendTests(unittest.TestCase):
         self.assertTrue(scoped_requests, self.requests)
         self.assertEqual(aliases, {'goldm15'}, scoped_requests)
         self.assertEqual(self.page.locator('#account-switcher [data-account="goldm15"]').count(), 1)
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.errors, [])
+    def test_goldm15_demo_lifecycle_status_is_visible_and_read_only(self):
+        self.page.goto(self.url+'?account=goldm15')
+        expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=10000)
+        self.page.locator('#cs-beta-toggle').click()
+        self.page.locator('#cs-evidence-panel > summary').click()
+        self.page.locator('#cs-evidence-capture-status').click()
+        expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text('Lifecycle: OK', timeout=5000)
+        status_requests=[url for url in self.requests if '/capture/status?' in url]
+        self.assertEqual(len(status_requests), 2, status_requests)
+        self.assertTrue(all(parse_qs(urlparse(url).query).get('account') == ['goldm15'] for url in status_requests), status_requests)
         self.assertEqual(self.mutations, [])
         self.assertEqual(self.errors, [])
     def test_bootstrap_uses_configured_broker_symbol_for_chart_feed(self):
