@@ -603,6 +603,25 @@ class SqliteLayoutTests(unittest.TestCase):
             with self.subTest(instance=invalid), self.assertRaises(StoreError):
                 validate_document({**original,"oscillatorInstances":[invalid]})
 
+    def test_auto_fibonacci_settings_workspace_roundtrip_and_provenance_bounds(self):
+        original = example()
+        config = {"enabled": True,
+                  "algorithmVersion": "confirmed-swing-auto-fib-v1",
+                  "source": "MT5_VERIFIED"}
+        document = {**original, "indicators": {"autoFib": config}}
+        self.assertEqual(validate_document(document)["indicators"]["autoFib"], config)
+        self.store.put("local-owner", "titan", "XAUUSD", "Auto Fibonacci", document, 0)
+        loaded = self.store.get("local-owner", "titan", "XAUUSD", "Auto Fibonacci")["document"]
+        self.assertEqual(loaded["indicators"]["autoFib"], config)
+        for invalid in [
+            {**config, "enabled": 1},
+            {**config, "algorithmVersion": "untrusted-v2"},
+            {**config, "source": "CALLER_SUPPLIED"},
+            {**config, "extra": True},
+        ]:
+            with self.subTest(invalid=invalid), self.assertRaises(StoreError):
+                validate_document({**original, "indicators": {"autoFib": invalid}})
+
     def test_chart_type_compatibility_and_strict_validation(self):
         original = example()
         self.assertNotIn("chartType", validate_document(original))
@@ -678,8 +697,12 @@ class ApiAccessTests(unittest.TestCase):
             self.assertEqual(self.client.get(base,headers=self.headers).status_code,503)
 
     def test_api_put_get_account_isolation_stale_conflict(self):
+        auto_fib={"enabled":True,"algorithmVersion":"confirmed-swing-auto-fib-v1",
+                  "source":"MT5_VERIFIED"}
+        expected_document=example()
+        expected_document["indicators"]["autoFib"]=auto_fib
         payload={"account":"titan","symbol":"XAUUSD","name":"My Setup",
-                 "expectedRevision":0,"document":example()}
+                 "expectedRevision":0,"document":expected_document}
         p=self.client.put("/api/chart/v1/workspace",json=payload,headers=self.headers)
         self.assertEqual(p.status_code,200,p.text)
         self.assertEqual(p.json()["revision"],1)
@@ -692,7 +715,7 @@ class ApiAccessTests(unittest.TestCase):
             "account":"titan","symbol":"XAUUSD","name":"My Setup"
         },headers=self.headers)
         self.assertEqual(r.status_code,200)
-        self.assertEqual(r.json()["document"],example())
+        self.assertEqual(r.json()["document"],expected_document)
         stale=self.client.put("/api/chart/v1/workspace",json=payload,headers=self.headers)
         self.assertEqual(stale.status_code,409)
         payload["expectedRevision"]=1
