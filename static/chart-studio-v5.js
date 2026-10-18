@@ -8892,12 +8892,12 @@ var ChartStudioV5 = (() => {
     const fibonacci = /* @__PURE__ */ new Map();
     const channels = /* @__PURE__ */ new Map();
     const measurements = /* @__PURE__ */ new Map();
-    let placementTool = null, placementAnchor = null, placementText = null, placementSequence = 0;
+    let placementTool = null, placementAnchors = [], placementText = null, placementSequence = 0;
     const drawingState = (phase, id) => host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state", { detail: { kind: placementTool, phase, ...id ? { id } : {} } }));
     const cancelDrawingTool = (notify = true) => {
       if (!placementTool) return;
       placementTool = null;
-      placementAnchor = null;
+      placementAnchors = [];
       placementText = null;
       if (notify) drawingState("CANCELLED");
     };
@@ -8922,7 +8922,7 @@ var ChartStudioV5 = (() => {
           else if (tool === "TIME") addTimeMarker({ id: id2, time: anchor.time, color: "#ffb84d" });
           else addTextAnnotation({ id: id2, time: anchor.time, price: anchor.price, text: placementText, color: "#f4d35e" });
           placementTool = null;
-          placementAnchor = null;
+          placementAnchors = [];
           placementText = null;
           host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state", { detail: { kind: tool, phase: "CREATED", id: id2 } }));
         } catch (_2) {
@@ -8930,25 +8930,30 @@ var ChartStudioV5 = (() => {
         }
         return;
       }
-      if (!placementAnchor) {
-        placementAnchor = anchor;
-        drawingState("FIRST_ANCHOR");
+      if (placementAnchors.some((item) => item.time === anchor.time)) {
+        drawingState("ERROR");
         return;
       }
-      if (placementAnchor.time === anchor.time) {
-        drawingState("ERROR");
+      const anchors = [...placementAnchors, anchor], required = tool === "CHANNEL" ? 3 : 2;
+      if (anchors.length < required) {
+        placementAnchors = anchors;
+        drawingState(anchors.length === 1 ? "FIRST_ANCHOR" : "SECOND_ANCHOR");
         return;
       }
       const id = `preview-${tool.toLowerCase()}-${++placementSequence}`;
       try {
-        const options = { id, startTime: placementAnchor.time, startPrice: placementAnchor.price, endTime: anchor.time, endPrice: anchor.price, color: tool === "TREND" || tool === "RECT" ? "#49c6ff" : "#ffb84d" };
-        if (tool === "TREND") addTrendLine(options);
-        else if (tool === "RAY") addRay(options);
-        else if (tool === "RECT") addRectangle({ ...options, fill: true });
-        else if (tool === "FIBO") addFibonacci(options);
-        else addMeasurement(options);
+        const [start, end, offset] = anchors, color = tool === "TREND" || tool === "RECT" || tool === "CHANNEL" ? "#49c6ff" : "#ffb84d";
+        if (tool === "CHANNEL") addChannel({ id, startTime: start.time, startPrice: start.price, endTime: end.time, endPrice: end.price, offsetTime: offset.time, offsetPrice: offset.price, color });
+        else {
+          const options = { id, startTime: start.time, startPrice: start.price, endTime: end.time, endPrice: end.price, color };
+          if (tool === "TREND") addTrendLine(options);
+          else if (tool === "RAY") addRay(options);
+          else if (tool === "RECT") addRectangle({ ...options, fill: true });
+          else if (tool === "FIBO") addFibonacci(options);
+          else addMeasurement(options);
+        }
         placementTool = null;
-        placementAnchor = null;
+        placementAnchors = [];
         placementText = null;
         host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state", { detail: { kind: tool, phase: "CREATED", id } }));
       } catch (_2) {
@@ -12030,17 +12035,17 @@ var ChartStudioV5 = (() => {
     }
     function setDrawingTool(tool, text) {
       guard();
-      if (tool !== null && !["TREND", "RAY", "PRICE", "TIME", "RECT", "FIBO", "MEASURE", "TEXT"].includes(tool)) throw Error("Invalid drawing tool");
+      if (tool !== null && !["TREND", "RAY", "PRICE", "TIME", "RECT", "FIBO", "MEASURE", "CHANNEL", "TEXT"].includes(tool)) throw Error("Invalid drawing tool");
       if (tool === "TEXT" && (typeof text !== "string" || !/^[\x20-\x7E]{1,40}$/.test(text))) throw Error("Text placement requires 1-40 printable ASCII characters");
       cancelDrawingTool(false);
       placementTool = tool;
-      placementAnchor = null;
+      placementAnchors = [];
       placementText = tool === "TEXT" ? text : null;
       if (tool) drawingState("SECOND_ANCHOR");
       return true;
     }
     function drawingToolState() {
-      return { tool: placementTool, hasFirstAnchor: !!placementAnchor };
+      return { tool: placementTool, hasFirstAnchor: placementAnchors.length > 0, anchorCount: placementAnchors.length };
     }
     function inspect() {
       guard();

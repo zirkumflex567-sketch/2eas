@@ -14,7 +14,7 @@ const html=enabled=>`<!doctype html><html><head><meta charset="utf-8"><meta name
 <button type="button" id="chart-v5-preview-btn" aria-controls="chart-v5-preview-panel" aria-expanded="false" hidden>V5 Vorschau</button>
 <section id="chart-v5-preview-panel" hidden><strong id="chart-v5-preview-title">Native v5</strong><div id="chart-v5-preview-status" role="status"></div>
 <button type="button" id="chart-v5-auto-fib-btn" aria-pressed="false" disabled>Auto-Fibonacci einblenden</button><output id="chart-v5-auto-fib-status" aria-live="polite"></output><button type="button" id="chart-v5-layout-export-btn" disabled>Layout exportieren</button><button type="button" id="chart-v5-layout-import-btn" disabled>Layout zusammenführen</button><button type="button" id="chart-v5-layout-replace-btn" disabled>Layout ersetzen</button><input id="chart-v5-layout-import-file" type="file" accept="application/json,.json" hidden>
-<div id="chart-v5-drawing-tools" role="group" aria-label="Native v5 Zeichnungen"><button type="button" id="chart-v5-trend-btn" aria-pressed="false" disabled>Trendlinie</button><button type="button" id="chart-v5-ray-btn" aria-pressed="false" disabled>Strahl</button><button type="button" id="chart-v5-price-btn" aria-pressed="false" disabled>Preislinie</button><button type="button" id="chart-v5-time-btn" aria-pressed="false" disabled>Zeitlinie</button><button type="button" id="chart-v5-rect-btn" aria-pressed="false" disabled>Rechteck</button><button type="button" id="chart-v5-fibo-btn" aria-pressed="false" disabled>Fibonacci</button><button type="button" id="chart-v5-measure-btn" aria-pressed="false" disabled>Messung</button><input id="chart-v5-text-input" aria-label="Textbeschriftung" maxlength="40" value="Fixture note"><button type="button" id="chart-v5-text-btn" aria-pressed="false" disabled>Text</button><output id="chart-v5-drawing-status" role="status" aria-live="polite">Zeichenwerkzeug aus.</output></div>
+<div id="chart-v5-drawing-tools" role="group" aria-label="Native v5 Zeichnungen"><button type="button" id="chart-v5-trend-btn" aria-pressed="false" disabled>Trendlinie</button><button type="button" id="chart-v5-ray-btn" aria-pressed="false" disabled>Strahl</button><button type="button" id="chart-v5-price-btn" aria-pressed="false" disabled>Preislinie</button><button type="button" id="chart-v5-time-btn" aria-pressed="false" disabled>Zeitlinie</button><button type="button" id="chart-v5-rect-btn" aria-pressed="false" disabled>Rechteck</button><button type="button" id="chart-v5-fibo-btn" aria-pressed="false" disabled>Fibonacci</button><button type="button" id="chart-v5-measure-btn" aria-pressed="false" disabled>Messung</button><button type="button" id="chart-v5-channel-btn" aria-pressed="false" disabled>Kanal</button><input id="chart-v5-text-input" aria-label="Textbeschriftung" maxlength="40" value="Fixture note"><button type="button" id="chart-v5-text-btn" aria-pressed="false" disabled>Text</button><output id="chart-v5-drawing-status" role="status" aria-live="polite">Zeichenwerkzeug aus.</output></div>
 <div id="chart-v5-preview-host"></div><p>Read only. Powered by <a href="https://www.tradingview.com/">TradingView Lightweight Charts™</a></p></section><script>document.addEventListener("DOMContentLoaded",()=>document.querySelector("#chart-v5-preview-host").addEventListener("chartstudio-v5-drawing-state",e=>window.__v5LastDrawing=e.detail));</script></body></html>`;
 
 const server=http.createServer((req,res)=>{
@@ -174,11 +174,19 @@ const server=http.createServer((req,res)=>{
   await textInput.fill("");assert.equal(await page.locator("#chart-v5-text-btn").isEnabled(),false,"text placement rejects an empty annotation");
   await textInput.fill("🚀");assert.equal(await page.locator("#chart-v5-text-btn").isEnabled(),false,"text placement rejects unsupported Unicode before creating a drawing");
   await textInput.fill("Fixture note");assert.equal(await page.locator("#chart-v5-text-btn").isEnabled(),true,"valid text enables annotation placement");
-  for(const [buttonId,kind,clicks] of [["price","PRICE",1],["time","TIME",1],["rect","RECT",2],["fibo","FIBO",2],["measure","MEASURE",2],["text","TEXT",1]]){
+  for(const [buttonId,kind,clicks] of [["price","PRICE",1],["time","TIME",1],["rect","RECT",2],["fibo","FIBO",2],["measure","MEASURE",2],["text","TEXT",1],["channel","CHANNEL",3]]){
    const button=page.locator(`#chart-v5-${buttonId}-btn`);
    assert.equal(await button.isEnabled(),true,`${kind} placement is enabled with verified bars`);
    await button.click();
-   for(let index=0;index<clicks;index++)await page.mouse.click(chartBox.x+250+index*90,chartBox.y+140+index*70);
+   if(kind==="CHANNEL"){
+    await page.mouse.click(chartBox.x+260,chartBox.y+130);
+    await page.mouse.click(chartBox.x+260,chartBox.y+130);
+    const repeatedAnchorStatus=await page.locator("#chart-v5-drawing-status").textContent();assert.match(repeatedAnchorStatus,/ungültig/i,`channel rejects a repeated candle anchor: ${repeatedAnchorStatus}`);
+    assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),8,"an invalid repeated channel anchor creates no object");
+    await page.mouse.click(chartBox.x+360,chartBox.y+230);
+    assert.match(await page.locator("#chart-v5-drawing-status").textContent(),/dritten kanalanker/i);
+    await page.mouse.click(chartBox.x+460,chartBox.y+140);
+   }else for(let index=0;index<clicks;index++)await page.mouse.click(chartBox.x+250+index*90,chartBox.y+140+index*70);
    await page.waitForFunction(expected=>window.__v5LastDrawing?.kind===expected,kind,{timeout:5000}).catch(async()=>{
     const state=await page.evaluate(()=>({event:window.__v5LastDrawing,status:document.querySelector("#chart-v5-drawing-status")?.textContent,tool:window.ChartStudioV5Preview.inspect().drawingTool}));
     throw new Error(`${kind} placement did not complete: ${JSON.stringify(state)}`);
@@ -191,6 +199,7 @@ const server=http.createServer((req,res)=>{
    if(kind==="RECT")assert.equal(placed.drawing.fill,true);
    if(kind==="TEXT")assert.equal(placed.drawing.text,"Fixture note");
    if(kind==="MEASURE")assert.ok(Number.isFinite(placed.drawing.startPrice)&&Number.isFinite(placed.drawing.endPrice));
+   if(kind==="CHANNEL"){assert.notEqual(placed.drawing.offsetPrice,placed.drawing.startPrice);assert.ok(Number.isSafeInteger(placed.drawing.offsetTime));}
   }
   assert.equal(await page.locator("#chart-v5-layout-export-btn").isEnabled(),true,"verified chart enables portable layout export");
   const downloadPromise=page.waitForEvent("download");
@@ -199,7 +208,7 @@ const server=http.createServer((req,res)=>{
   assert.equal(layoutDownload.suggestedFilename(),"chart-studio-layout-XAUUSD-M15.json");
   const portableLayout=JSON.parse(require("node:fs").readFileSync(layoutPath,"utf8"));
   assert.deepEqual(Object.keys(portableLayout).sort(),["drawings","schemaVersion","symbol","timeframe","view"]);
-  assert.equal(portableLayout.schemaVersion,2);assert.equal(portableLayout.drawings.length,8);
+  assert.equal(portableLayout.schemaVersion,2);assert.equal(portableLayout.drawings.length,9);
   assert.equal(portableLayout.symbol,"XAUUSD");assert.equal(portableLayout.timeframe,"M15");
   assert.equal(Object.hasOwn(portableLayout,"account"),false,"downloaded layout omits account identity");
   assert.equal(JSON.stringify(portableLayout).includes('"positionOverlays"'),false,"download excludes broker position overlays");
@@ -233,10 +242,10 @@ const server=http.createServer((req,res)=>{
     const afterRejected=preview.exportLayout();
     return {merged,mergedAgain,afterMerge,before,afterRejected,mismatch,timeframeMismatch,account,invalid,oversized,storageBefore,storageAfterValid,storageAfter:localStorage.getItem(key),rollback,afterRollback,rollbackState,cancelled};
   },JSON.stringify(portableLayout));
-  assert.equal(importProbe.merged.importedDrawings,8,"merge imports the complete native drawing set");
-  assert.equal(importProbe.mergedAgain.importedDrawings,8,"a second merge imports the layout again");
-  assert.equal(importProbe.afterMerge.drawings.length,24,"merge retains current drawings and adds imported drawings");
-  assert.equal(new Set(importProbe.afterMerge.drawings.map(row=>row.options.id)).size,24,"merge remaps colliding drawing IDs");
+  assert.equal(importProbe.merged.importedDrawings,9,"merge imports the complete native drawing set");
+  assert.equal(importProbe.mergedAgain.importedDrawings,9,"a second merge imports the layout again");
+  assert.equal(importProbe.afterMerge.drawings.length,27,"merge retains current drawings and adds imported drawings");
+  assert.equal(new Set(importProbe.afterMerge.drawings.map(row=>row.options.id)).size,27,"merge remaps colliding drawing IDs");
   assert.equal(importProbe.afterMerge.view.movingAverages.length,2,"merge combines managed averages");
   assert.equal(importProbe.afterMerge.view.sessionVwaps.length,2,"merge combines session VWAP settings");
   assert.equal(new Set(importProbe.afterMerge.view.sessionVwaps.map(item=>item.id)).size,2,"merge remaps colliding session VWAP IDs");
@@ -262,11 +271,11 @@ const server=http.createServer((req,res)=>{
   await page.locator("#chart-v5-ray-btn").click();
   await page.keyboard.press("Escape");
   assert.equal(await page.locator("#chart-v5-ray-btn").getAttribute("aria-pressed"),"false","Escape cancels a pending drawing tool");
-  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),24,"cancel does not persist an incomplete drawing");
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),27,"cancel does not persist an incomplete drawing");
   await page.locator("#chart-v5-layout-replace-btn").click();
   await page.locator("#chart-v5-layout-import-file").setInputFiles({name:"portable-layout.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify(portableLayout))});
   await page.waitForFunction(()=>document.querySelector("#chart-v5-preview-status")?.textContent.includes("Layout ersetzt"));
-  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),8,"confirmed replace restores the imported layout after renderer remount");
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),9,"confirmed replace restores the imported layout after renderer remount");
   const storedImport=await page.evaluate(()=>{const key="2eas.chartstudio.v5.drawings:v5:titan:XAUUSD:M15";return JSON.parse(localStorage.getItem(key))});
   assert.equal(storedImport.account,"titan","portable import binds the saved snapshot to the active account");
   assert.equal(storedImport.schemaVersion,4,"portable import reuses the validated local persistence schema");

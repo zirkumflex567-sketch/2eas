@@ -832,10 +832,10 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  const fibonacci=new Map<string,{primitive:FibonacciPrimitive;options:FibonacciOptions}>();
  const channels=new Map<string,{primitive:ChannelPrimitive;options:ChannelOptions}>();
  const measurements=new Map<string,{primitive:MeasurementPrimitive;options:MeasurementOptions}>();
- type PlacementTool="TREND"|"RAY"|"PRICE"|"TIME"|"RECT"|"FIBO"|"MEASURE"|"TEXT";
- let placementTool:PlacementTool|null=null,placementAnchor:{time:UTCTimestamp;price:number}|null=null,placementText:string|null=null,placementSequence=0;
+ type PlacementTool="TREND"|"RAY"|"PRICE"|"TIME"|"RECT"|"FIBO"|"MEASURE"|"CHANNEL"|"TEXT";
+ let placementTool:PlacementTool|null=null,placementAnchors:Array<{time:UTCTimestamp;price:number}>=[],placementText:string|null=null,placementSequence=0;
  const drawingState=(phase:"FIRST_ANCHOR"|"SECOND_ANCHOR"|"CREATED"|"CANCELLED"|"ERROR",id?:string)=>host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state",{detail:{kind:placementTool,phase,...(id?{id}:{})}}));
- const cancelDrawingTool=(notify=true)=>{if(!placementTool)return;placementTool=null;placementAnchor=null;placementText=null;if(notify)drawingState("CANCELLED")};
+ const cancelDrawingTool=(notify=true)=>{if(!placementTool)return;placementTool=null;placementAnchors=[];placementText=null;if(notify)drawingState("CANCELLED")};
  const placeDrawingAt=(time:Time|null,x:number,y:number)=>{
   if(!placementTool)return;
   const {width}=chart.paneSize(),paneHeight=chart.panes()[0]?.getHeight()??0;
@@ -850,21 +850,26 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
     if(tool==="PRICE")addPriceLevel({id,price:anchor.price,color:"#49c6ff"});
     else if(tool==="TIME")addTimeMarker({id,time:anchor.time,color:"#ffb84d"});
     else addTextAnnotation({id,time:anchor.time,price:anchor.price,text:placementText!,color:"#f4d35e"});
-    placementTool=null;placementAnchor=null;placementText=null;host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state",{detail:{kind:tool,phase:"CREATED",id}}));
+    placementTool=null;placementAnchors=[];placementText=null;host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state",{detail:{kind:tool,phase:"CREATED",id}}));
    }catch(_){drawingState("ERROR")}
    return;
   }
-  if(!placementAnchor){placementAnchor=anchor;drawingState("FIRST_ANCHOR");return}
-  if(placementAnchor.time===anchor.time){drawingState("ERROR");return}
+  if(placementAnchors.some(item=>item.time===anchor.time)){drawingState("ERROR");return}
+  const anchors=[...placementAnchors,anchor],required=tool==="CHANNEL"?3:2;
+  if(anchors.length<required){placementAnchors=anchors;drawingState(anchors.length===1?"FIRST_ANCHOR":"SECOND_ANCHOR");return}
   const id=`preview-${tool.toLowerCase()}-${++placementSequence}`;
   try{
-   const options={id,startTime:placementAnchor.time,startPrice:placementAnchor.price,endTime:anchor.time,endPrice:anchor.price,color:tool==="TREND"||tool==="RECT"?"#49c6ff":"#ffb84d"};
-   if(tool==="TREND")addTrendLine(options);
-   else if(tool==="RAY")addRay(options);
-   else if(tool==="RECT")addRectangle({...options,fill:true});
-   else if(tool==="FIBO")addFibonacci(options);
-   else addMeasurement(options);
-   placementTool=null;placementAnchor=null;placementText=null;host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state",{detail:{kind:tool,phase:"CREATED",id}}));
+   const [start,end,offset]=anchors,color=tool==="TREND"||tool==="RECT"||tool==="CHANNEL"?"#49c6ff":"#ffb84d";
+   if(tool==="CHANNEL")addChannel({id,startTime:start.time,startPrice:start.price,endTime:end.time,endPrice:end.price,offsetTime:offset.time,offsetPrice:offset.price,color});
+   else{
+    const options={id,startTime:start.time,startPrice:start.price,endTime:end.time,endPrice:end.price,color};
+    if(tool==="TREND")addTrendLine(options);
+    else if(tool==="RAY")addRay(options);
+    else if(tool==="RECT")addRectangle({...options,fill:true});
+    else if(tool==="FIBO")addFibonacci(options);
+    else addMeasurement(options);
+   }
+   placementTool=null;placementAnchors=[];placementText=null;host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state",{detail:{kind:tool,phase:"CREATED",id}}));
   }catch(_){drawingState("ERROR")}
  }
  const maxNativeDrawings=1000,maxIndicatorInstances=20;
@@ -2641,8 +2646,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   for(const line of paneLines.values())chart.removeSeries(line);
   paneLines.clear();readoutIndicators.clear();if(volume)volume.setData([]);
  }
- function setDrawingTool(tool:PlacementTool|null,text?:string){guard();if(tool!==null&&!["TREND","RAY","PRICE","TIME","RECT","FIBO","MEASURE","TEXT"].includes(tool))throw Error("Invalid drawing tool");if(tool==="TEXT"&&(typeof text!=="string"||!/^[\x20-\x7E]{1,40}$/.test(text)))throw Error("Text placement requires 1-40 printable ASCII characters");cancelDrawingTool(false);placementTool=tool;placementAnchor=null;placementText=tool==="TEXT"?text!:null;if(tool)drawingState("SECOND_ANCHOR");return true}
- function drawingToolState(){return {tool:placementTool,hasFirstAnchor:!!placementAnchor}}
+ function setDrawingTool(tool:PlacementTool|null,text?:string){guard();if(tool!==null&&!["TREND","RAY","PRICE","TIME","RECT","FIBO","MEASURE","CHANNEL","TEXT"].includes(tool))throw Error("Invalid drawing tool");if(tool==="TEXT"&&(typeof text!=="string"||!/^[\x20-\x7E]{1,40}$/.test(text)))throw Error("Text placement requires 1-40 printable ASCII characters");cancelDrawingTool(false);placementTool=tool;placementAnchors=[];placementText=tool==="TEXT"?text!:null;if(tool)drawingState("SECOND_ANCHOR");return true}
+ function drawingToolState(){return {tool:placementTool,hasFirstAnchor:placementAnchors.length>0,anchorCount:placementAnchors.length}}
  function inspect(){guard();return {version:VERSION,account:activeAccount,positionOverlayCount:positionOverlayLines.size,positionOverlays:readPositionOverlays().lines,brokerDealMarkerCount:brokerDealMarkers.filter(row=>row.plotted).length,nativeDrawingCount:drawingCount(),drawingTool:placementTool,
   displayTimeZone,volumeZoneStatus:volumeZones?.result.status??"DISABLED",volumeZoneCount:volumeZones?.result.zones.length??0,
   candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
