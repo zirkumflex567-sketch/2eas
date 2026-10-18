@@ -1804,7 +1804,10 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const storageConflict={error:storageConflictError,status:storageConflictTarget.inspect().persistenceStatus,count:storageConflictTarget.inspect().nativePrimitives,stored:localStorage.getItem(conflictKey)};storageConflictTarget.destroy();
    const wrongScope=ChartStudioV5.createStudioV5(document.getElementById("chart"),"goldm15",{symbol:"EURUSD",timeframe:"M15"});wrongScope.setCandles(rows);
    let scopeError="";try{wrongScope.importDrawings(source)}catch(error){scopeError=error.message}const wrongScopeCount=wrongScope.inspect().nativePrimitives;wrongScope.destroy();
-   return {source,imported,restored,annotationApi,channelApi,trendApi,rectangleApi,rayApi,fiboApi,fiboPaneCollision,malformed,afterMalformed,malformedTrend,afterMalformedTrend,malformedRectangle,afterMalformedRectangle,malformedFibo,afterMalformedFibo,malformedCustomFibo,afterMalformedCustomFibo,missingChannel,missingChannelCount,conflictError,conflictCount,storageConflict,scopeError,wrongScopeCount};
+   const pitchforkHost=document.createElement("div");pitchforkHost.style.cssText="width:400px;height:200px";document.body.append(pitchforkHost);const pitchSource=ChartStudioV5.createStudioV5(pitchforkHost,"pitchfork-portable-source",scope);pitchSource.setCandles(rows);pitchSource.addPitchfork({id:"portable-pitchfork",startTime:rows[20].time,startPrice:rows[20].close,endTime:rows[40].time,endPrice:rows[40].close+8,thirdTime:rows[60].time,thirdPrice:rows[60].close+12,color:"#38bdf8"});const pitchExport=pitchSource.exportDrawings();pitchSource.updatePitchfork("portable-pitchfork",{thirdPrice:rows[60].close+14});const pitchUpdated=pitchSource.readDrawing("portable-pitchfork");pitchSource.setCandles([]);let unavailablePitchPrice="";try{pitchSource.updatePitchfork("portable-pitchfork",{thirdPrice:rows[60].close+15})}catch(error){unavailablePitchPrice=error.message}const pitchAfterUnavailable=pitchSource.readDrawing("portable-pitchfork");pitchSource.destroy();pitchforkHost.remove();
+   const pitchTargetHost=document.createElement("div");pitchTargetHost.style.cssText="width:400px;height:200px";document.body.append(pitchTargetHost);const pitchTarget=ChartStudioV5.createStudioV5(pitchTargetHost,"pitchfork-portable-target",scope);pitchTarget.setCandles(rows);const pitchImported=pitchTarget.importDrawings(pitchExport),pitchRestored=pitchTarget.readDrawing("portable-pitchfork");pitchTarget.destroy();pitchTargetHost.remove();
+   const badPitchEnvelope=JSON.parse(pitchExport);badPitchEnvelope.drawings[0].options.thirdTime=rows[89].time+900;const badPitchHost=document.createElement("div");badPitchHost.style.cssText="width:400px;height:200px";document.body.append(badPitchHost);const badPitchTarget=ChartStudioV5.createStudioV5(badPitchHost,"pitchfork-portable-invalid",scope);badPitchTarget.setCandles(rows);let badPitchError="";try{badPitchTarget.importDrawings(JSON.stringify(badPitchEnvelope))}catch(error){badPitchError=error.message}const badPitchCount=badPitchTarget.inspect().nativePrimitives;badPitchTarget.destroy();badPitchHost.remove();
+   return {source,imported,restored,annotationApi,channelApi,trendApi,rectangleApi,rayApi,fiboApi,fiboPaneCollision,malformed,afterMalformed,malformedTrend,afterMalformedTrend,malformedRectangle,afterMalformedRectangle,malformedFibo,afterMalformedFibo,malformedCustomFibo,afterMalformedCustomFibo,missingChannel,missingChannelCount,conflictError,conflictCount,storageConflict,scopeError,wrongScopeCount,pitchExport,pitchImported,pitchRestored,pitchUpdated,pitchExpectedInitial:rows[60].close+12,pitchExpectedUpdated:rows[60].close+14,unavailablePitchPrice,pitchAfterUnavailable,badPitchError,badPitchCount};
   });
   const transferEnvelope=JSON.parse(drawingTransfer.source);
   assert.equal(transferEnvelope.schemaVersion,1);
@@ -1877,6 +1880,14 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(drawingTransfer.storageConflict.stored,JSON.stringify({external:true}));
   assert.ok(drawingTransfer.scopeError);
   assert.equal(drawingTransfer.wrongScopeCount,0);
+  assert.deepEqual(drawingTransfer.pitchImported,{imported:1});
+  assert.equal(drawingTransfer.pitchRestored.id,"portable-pitchfork");
+  assert.equal(drawingTransfer.pitchRestored.thirdPrice,drawingTransfer.pitchExpectedInitial);
+  assert.equal(drawingTransfer.pitchUpdated.thirdPrice,drawingTransfer.pitchExpectedUpdated);
+  assert.match(drawingTransfer.unavailablePitchPrice,/Pitchfork|anchor/i);
+  assert.equal(drawingTransfer.pitchAfterUnavailable.thirdPrice,drawingTransfer.pitchExpectedUpdated);
+  assert.match(drawingTransfer.badPitchError,/Pitchfork|anchor/i);
+  assert.equal(drawingTransfer.badPitchCount,0);
   await page.waitForTimeout(150);
   assert.ok((await page.locator("#chart canvas").count())>=1);
   const folder=path.join("output","visual-smoke");

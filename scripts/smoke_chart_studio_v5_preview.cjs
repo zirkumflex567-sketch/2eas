@@ -14,7 +14,7 @@ const html=enabled=>`<!doctype html><html><head><meta charset="utf-8"><meta name
 <button type="button" id="chart-v5-preview-btn" aria-controls="chart-v5-preview-panel" aria-expanded="false" hidden>V5 Vorschau</button>
 <section id="chart-v5-preview-panel" hidden><strong id="chart-v5-preview-title">Native v5</strong><div id="chart-v5-preview-status" role="status"></div>
 <button type="button" id="chart-v5-auto-fib-btn" aria-pressed="false" disabled>Auto-Fibonacci einblenden</button><output id="chart-v5-auto-fib-status" aria-live="polite"></output><button type="button" id="chart-v5-layout-export-btn" disabled>Layout exportieren</button><button type="button" id="chart-v5-layout-import-btn" disabled>Layout zusammenführen</button><button type="button" id="chart-v5-layout-replace-btn" disabled>Layout ersetzen</button><input id="chart-v5-layout-import-file" type="file" accept="application/json,.json" hidden>
-<div id="chart-v5-drawing-tools" role="group" aria-label="Native v5 Zeichnungen"><button type="button" id="chart-v5-trend-btn" aria-pressed="false" disabled>Trendlinie</button><button type="button" id="chart-v5-ray-btn" aria-pressed="false" disabled>Strahl</button><button type="button" id="chart-v5-price-btn" aria-pressed="false" disabled>Preislinie</button><button type="button" id="chart-v5-time-btn" aria-pressed="false" disabled>Zeitlinie</button><button type="button" id="chart-v5-rect-btn" aria-pressed="false" disabled>Rechteck</button><button type="button" id="chart-v5-fibo-btn" aria-pressed="false" disabled>Fibonacci</button><button type="button" id="chart-v5-measure-btn" aria-pressed="false" disabled>Messung</button><button type="button" id="chart-v5-channel-btn" aria-pressed="false" disabled>Kanal</button><button type="button" id="chart-v5-risk-reward-btn" aria-pressed="false" disabled>Risiko/Ertrag</button><input id="chart-v5-text-input" aria-label="Textbeschriftung" maxlength="40" value="Fixture note"><button type="button" id="chart-v5-text-btn" aria-pressed="false" disabled>Text</button><output id="chart-v5-drawing-status" role="status" aria-live="polite">Zeichenwerkzeug aus.</output></div>
+<div id="chart-v5-drawing-tools" role="group" aria-label="Native v5 Zeichnungen"><button type="button" id="chart-v5-trend-btn" aria-pressed="false" disabled>Trendlinie</button><button type="button" id="chart-v5-ray-btn" aria-pressed="false" disabled>Strahl</button><button type="button" id="chart-v5-price-btn" aria-pressed="false" disabled>Preislinie</button><button type="button" id="chart-v5-time-btn" aria-pressed="false" disabled>Zeitlinie</button><button type="button" id="chart-v5-rect-btn" aria-pressed="false" disabled>Rechteck</button><button type="button" id="chart-v5-fibo-btn" aria-pressed="false" disabled>Fibonacci</button><button type="button" id="chart-v5-measure-btn" aria-pressed="false" disabled>Messung</button><button type="button" id="chart-v5-channel-btn" aria-pressed="false" disabled>Kanal</button><button type="button" id="chart-v5-pitchfork-btn" aria-pressed="false" disabled>Pitchfork</button><button type="button" id="chart-v5-risk-reward-btn" aria-pressed="false" disabled>Risiko/Ertrag</button><input id="chart-v5-text-input" aria-label="Textbeschriftung" maxlength="40" value="Fixture note"><button type="button" id="chart-v5-text-btn" aria-pressed="false" disabled>Text</button><output id="chart-v5-drawing-status" role="status" aria-live="polite">Zeichenwerkzeug aus.</output></div>
 <div id="chart-v5-preview-host"></div><output id="chart-v5-data-window" aria-label="Kerzendaten am Fadenkreuz">Fadenkreuz auf eine Kerze bewegen.</output><output id="chart-v5-live-quote" aria-label="Aktuelle MT5-Quote beim Abruf">Aktuelle MT5-Quote: noch nicht abgerufen.</output><button type="button" id="chart-v5-data-window-pin" aria-pressed="false">Kerze fixieren</button><p>Read only. Powered by <a href="https://www.tradingview.com/">TradingView Lightweight Charts™</a></p></section><script>document.addEventListener("DOMContentLoaded",()=>{const host=document.querySelector("#chart-v5-preview-host");host.addEventListener("chartstudio-v5-drawing-state",e=>window.__v5LastDrawing=e.detail);host.addEventListener("chartstudio-v5-data-window",e=>window.__v5DataWindow=e.detail)});</script></body></html>`;
 
 const quoteRequests=[];
@@ -239,12 +239,12 @@ const server=http.createServer((req,res)=>{
   await page.waitForFunction(()=>document.querySelector("#chart-v5-drawing-status")?.textContent.includes("erstellt"));
   const ray=await page.evaluate(()=>({event:window.__v5LastDrawing,drawing:window.ChartStudioV5Preview.readDrawing(window.__v5LastDrawing?.id),count:window.ChartStudioV5Preview.inspect().nativeDrawingCount}));
   assert.equal(ray.event?.kind,"RAY");assert.ok(ray.drawing?.id);assert.notEqual(ray.drawing.startTime,ray.drawing.endTime);assert.equal(ray.count,2,"native ray placement persists exactly once");
-  let expectedPlacementCount=2,riskRewardPlacedId=null;
+  let expectedPlacementCount=2,riskRewardPlacedId=null,pitchforkPlacedId=null;
   const textInput=page.locator("#chart-v5-text-input");
   await textInput.fill("");assert.equal(await page.locator("#chart-v5-text-btn").isEnabled(),false,"text placement rejects an empty annotation");
   await textInput.fill("🚀");assert.equal(await page.locator("#chart-v5-text-btn").isEnabled(),false,"text placement rejects unsupported Unicode before creating a drawing");
   await textInput.fill("Fixture note");assert.equal(await page.locator("#chart-v5-text-btn").isEnabled(),true,"valid text enables annotation placement");
-  for(const [buttonId,kind,clicks] of [["price","PRICE",1],["time","TIME",1],["rect","RECT",2],["fibo","FIBO",2],["measure","MEASURE",2],["text","TEXT",1],["channel","CHANNEL",3],["risk-reward","RISK_REWARD",3]]){
+  for(const [buttonId,kind,clicks] of [["price","PRICE",1],["time","TIME",1],["rect","RECT",2],["fibo","FIBO",2],["measure","MEASURE",2],["text","TEXT",1],["channel","CHANNEL",3],["pitchfork","PITCHFORK",3],["risk-reward","RISK_REWARD",3]]){
    const button=page.locator(`#chart-v5-${buttonId}-btn`);
    assert.equal(await button.isEnabled(),true,`${kind} placement is enabled with verified bars`);
    await button.click();
@@ -262,7 +262,7 @@ const server=http.createServer((req,res)=>{
     await page.mouse.click(chartBox.x+500,chartBox.y+55); // target above entry
    }else for(let index=0;index<clicks;index++)await page.mouse.click(chartBox.x+250+index*90,chartBox.y+140+index*70);
    await page.waitForFunction(expected=>window.__v5LastDrawing?.kind===expected,kind,{timeout:5000}).catch(async()=>{
-    const state=await page.evaluate(()=>({event:window.__v5LastDrawing,status:document.querySelector("#chart-v5-drawing-status")?.textContent,tool:window.ChartStudioV5Preview.inspect().drawingTool}));
+    const state=await page.evaluate(()=>({event:window.__v5LastDrawing,status:document.querySelector("#chart-v5-drawing-status")?.textContent,tool:window.ChartStudioV5Preview.inspect().drawingTool,placement:window.ChartStudioV5Preview.inspect().placement}));
     throw new Error(`${kind} placement did not complete: ${JSON.stringify(state)}`);
    });
    const placed=await page.evaluate(()=>({kind:window.__v5LastDrawing?.kind,drawing:window.ChartStudioV5Preview.readDrawing(window.__v5LastDrawing?.id),count:window.ChartStudioV5Preview.inspect().nativeDrawingCount}));
@@ -274,12 +274,45 @@ const server=http.createServer((req,res)=>{
    if(kind==="TEXT")assert.equal(placed.drawing.text,"Fixture note");
    if(kind==="MEASURE")assert.ok(Number.isFinite(placed.drawing.startPrice)&&Number.isFinite(placed.drawing.endPrice));
    if(kind==="CHANNEL"){assert.notEqual(placed.drawing.offsetPrice,placed.drawing.startPrice);assert.ok(Number.isSafeInteger(placed.drawing.offsetTime));}
+   if(kind==="PITCHFORK"){
+    assert.ok(placed.drawing.startTime<placed.drawing.endTime&&placed.drawing.startTime<placed.drawing.thirdTime,"pivot one precedes the two arm pivots");
+    assert.notEqual(placed.drawing.endTime,placed.drawing.thirdTime,"the arm pivots have distinct candle times");pitchforkPlacedId=placed.drawing.id;
+    const geometry=await page.evaluate(id=>window.ChartStudioV5Preview.drawingGeometry(id),pitchforkPlacedId);
+    assert.ok(geometry&&geometry.segments.length===3,"pitchfork exposes three clipped rays");
+    assert.ok(Math.abs(geometry.m.x-(geometry.b.x+geometry.c.x)/2)<1e-7&&Math.abs(geometry.m.y-(geometry.b.y+geometry.c.y)/2)<1e-7,"median pivot is the exact screen-space midpoint of arm pivots");
+    for(const [from,to] of geometry.segments){assert.ok(Math.abs((to.x-from.x)*geometry.direction.y-(to.y-from.y)*geometry.direction.x)<1e-5,"all three rays are parallel to the median direction")}
+    await page.mouse.move(chartBox.x+420,chartBox.y+240);await page.mouse.wheel(0,-240);await page.waitForTimeout(250);
+    const zoomedGeometry=await page.evaluate(id=>window.ChartStudioV5Preview.drawingGeometry(id),pitchforkPlacedId);
+    assert.ok(zoomedGeometry&&Math.abs(zoomedGeometry.m.x-(zoomedGeometry.b.x+zoomedGeometry.c.x)/2)<1e-7&&Math.abs(zoomedGeometry.m.y-(zoomedGeometry.b.y+zoomedGeometry.c.y)/2)<1e-7,"zoom recomputes the exact pitchfork midpoint from anchors");
+    const originalHeight=await page.locator("#chart-v5-preview-host").evaluate(el=>el.style.height);await page.locator("#chart-v5-preview-host").evaluate(el=>el.style.height="520px");await page.waitForTimeout(100);
+    const resizedGeometry=await page.evaluate(id=>window.ChartStudioV5Preview.drawingGeometry(id),pitchforkPlacedId);
+    assert.ok(resizedGeometry&&Math.abs(resizedGeometry.m.x-(resizedGeometry.b.x+resizedGeometry.c.x)/2)<1e-7&&Math.abs(resizedGeometry.m.y-(resizedGeometry.b.y+resizedGeometry.c.y)/2)<1e-7,"resize recomputes pitchfork geometry from persisted anchors");
+    await page.locator("#chart-v5-preview-host").evaluate((el,height)=>el.style.height=height,originalHeight);await page.waitForTimeout(100);
+   }
    if(kind==="RISK_REWARD"){
     assert.ok(placed.drawing.entryPrice>placed.drawing.stopPrice&&placed.drawing.targetPrice>placed.drawing.entryPrice,"long setup preserves entry/stop/target ordering");
     assert.ok(Math.abs(placed.drawing.riskRewardRatio-2)<0.3,`risk/reward ratio is derived from the three price anchors: ${placed.drawing.riskRewardRatio}`);
     riskRewardPlacedId=placed.drawing.id;
    }
   }
+  const pitchforkOriginal=await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),pitchforkPlacedId);
+  const thirdHandle=await page.evaluate(id=>window.ChartStudioV5Preview.drawingAnchorPosition(id,"THIRD"),pitchforkPlacedId);
+  await page.mouse.move(thirdHandle.x,thirdHandle.y);await page.mouse.down();await page.mouse.move(thirdHandle.x,thirdHandle.y+16,{steps:3});await page.mouse.up();
+  const pitchforkEdited=await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),pitchforkPlacedId);
+  assert.notEqual(pitchforkEdited.thirdPrice,pitchforkOriginal.thirdPrice,"third handle edits its saved price anchor");
+  await page.keyboard.press("Control+Z");assert.equal((await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),pitchforkPlacedId)).thirdPrice,pitchforkOriginal.thirdPrice,"pitchfork handle drag is one undo step");
+  await page.keyboard.press("Control+Y");assert.equal((await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),pitchforkPlacedId)).thirdPrice,pitchforkEdited.thirdPrice,"pitchfork drag can be redone");
+  const lockedAnchor=await page.evaluate(id=>window.ChartStudioV5Preview.drawingAnchorPosition(id,"THIRD"),pitchforkPlacedId);
+  await page.mouse.click(lockedAnchor.x,lockedAnchor.y);await page.keyboard.press("l");
+  const beforeLockedDrag=await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),pitchforkPlacedId);
+  await page.mouse.move(lockedAnchor.x,lockedAnchor.y);await page.mouse.down();await page.mouse.move(lockedAnchor.x,lockedAnchor.y+25,{steps:3});await page.mouse.up();
+  assert.equal((await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),pitchforkPlacedId)).thirdPrice,beforeLockedDrag.thirdPrice,"locked pitchfork ignores anchor drags");
+  await page.keyboard.press("l");await page.keyboard.press("h");assert.equal((await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),pitchforkPlacedId)).visible,false,"H hides a selected pitchfork");
+  await page.keyboard.press("h");assert.equal((await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),pitchforkPlacedId)).visible,true,"H restores pitchfork visibility");
+  await page.keyboard.press("Control+D");
+  const duplicateFork=await page.evaluate(()=>JSON.parse(window.ChartStudioV5Preview.exportLayout()).drawings.filter(row=>row.kind==="PITCHFORK"));
+  assert.equal(duplicateFork.length,2,"Ctrl+D duplicates all three pitchfork anchors");
+  await page.keyboard.press("Delete");assert.equal((await page.evaluate(()=>JSON.parse(window.ChartStudioV5Preview.exportLayout()).drawings.filter(row=>row.kind==="PITCHFORK").length)),1,"Delete removes the selected duplicate pitchfork");
   const originalRiskReward=await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),riskRewardPlacedId);
   const targetHandle=await page.evaluate(id=>window.ChartStudioV5Preview.drawingAnchorPosition(id,"TARGET"),riskRewardPlacedId);
   assert.ok(targetHandle,"selected risk/reward drawing exposes an editable target handle");
@@ -298,7 +331,8 @@ const server=http.createServer((req,res)=>{
   assert.equal(layoutDownload.suggestedFilename(),"chart-studio-layout-XAUUSD-M15.json");
   const portableLayout=JSON.parse(require("node:fs").readFileSync(layoutPath,"utf8"));
   assert.deepEqual(Object.keys(portableLayout).sort(),["drawings","schemaVersion","symbol","timeframe","view"]);
-  assert.equal(portableLayout.schemaVersion,2);assert.equal(portableLayout.drawings.length,10);
+  assert.equal(portableLayout.schemaVersion,2);assert.equal(portableLayout.drawings.length,11);
+  assert.ok(portableLayout.drawings.some(row=>row.kind==="PITCHFORK"),"portable schema carries the three-anchor pitchfork");
   const portableRiskReward=portableLayout.drawings.find(row=>row.kind==="RISK_REWARD");
   assert.ok(portableRiskReward,"portable schema carries the editable risk/reward drawing");
   assert.equal(Object.hasOwn(portableRiskReward.options,"riskRewardRatio"),false,"derived ratio is recomputed from prices, not trusted from imports");
@@ -327,18 +361,19 @@ const server=http.createServer((req,res)=>{
     let timeframeMismatch="";try{preview.importLayout(JSON.stringify({...JSON.parse(serialized),timeframe:"M5"}),"merge")}catch(error){timeframeMismatch=error.message}
     let account="";try{preview.importLayout(JSON.stringify({...JSON.parse(serialized),account:"blueberry"}),"merge")}catch(error){account=error.message}
     let invalid="";const malformed=JSON.parse(serialized);malformed.view.paneHeights=[-10];try{preview.importLayout(JSON.stringify(malformed),"merge")}catch(error){invalid=error.message}
+    let invalidPitchfork="";const malformedPitchfork=JSON.parse(serialized),fork=malformedPitchfork.drawings.find(row=>row.kind==="PITCHFORK");fork.options.thirdTime=fork.options.startTime;try{preview.importLayout(JSON.stringify(malformedPitchfork),"merge")}catch(error){invalidPitchfork=error.message}
     let oversized="";try{preview.importLayout(" ".repeat(512*1024+1),"merge")}catch(error){oversized=error.message}
     const originalFeed=window.ChartStudioV5Feed;let corrupted=false,rollback="";
     window.ChartStudioV5Feed={...originalFeed,create:(...args)=>{const bridge=originalFeed.create(...args);return {...bridge,update:(snapshot,token)=>{if(!corrupted){corrupted=true;localStorage.setItem(key,"{")}return bridge.update(snapshot,token)}}}};
     try{preview.importLayout(serialized,"replace")}catch(error){rollback=error.message}finally{window.ChartStudioV5Feed=originalFeed}
     const afterRollback=preview.exportLayout(),rollbackState=preview.inspect();
     const afterRejected=preview.exportLayout();
-    return {merged,mergedAgain,afterMerge,before,afterRejected,mismatch,timeframeMismatch,account,invalid,oversized,storageBefore,storageAfterValid,storageAfter:localStorage.getItem(key),rollback,afterRollback,rollbackState,cancelled};
+    return {merged,mergedAgain,afterMerge,before,afterRejected,mismatch,timeframeMismatch,account,invalid,invalidPitchfork,oversized,storageBefore,storageAfterValid,storageAfter:localStorage.getItem(key),rollback,afterRollback,rollbackState,cancelled};
   },JSON.stringify(portableLayout));
-  assert.equal(importProbe.merged.importedDrawings,10,"merge imports the complete native drawing set");
-  assert.equal(importProbe.mergedAgain.importedDrawings,10,"a second merge imports the layout again");
-  assert.equal(importProbe.afterMerge.drawings.length,30,"merge retains current drawings and adds imported drawings");
-  assert.equal(new Set(importProbe.afterMerge.drawings.map(row=>row.options.id)).size,30,"merge remaps colliding drawing IDs");
+  assert.equal(importProbe.merged.importedDrawings,11,"merge imports the complete native drawing set");
+  assert.equal(importProbe.mergedAgain.importedDrawings,11,"a second merge imports the layout again");
+  assert.equal(importProbe.afterMerge.drawings.length,33,"merge retains current drawings and adds imported drawings");
+  assert.equal(new Set(importProbe.afterMerge.drawings.map(row=>row.options.id)).size,33,"merge remaps colliding drawing IDs");
   assert.equal(importProbe.afterMerge.view.movingAverages.length,2,"merge combines managed averages");
   assert.equal(importProbe.afterMerge.view.sessionVwaps.length,2,"merge combines session VWAP settings");
   assert.equal(new Set(importProbe.afterMerge.view.sessionVwaps.map(item=>item.id)).size,2,"merge remaps colliding session VWAP IDs");
@@ -353,6 +388,7 @@ const server=http.createServer((req,res)=>{
   assert.match(importProbe.timeframeMismatch,/scope/i,"timeframe-mismatched portable layouts are rejected");
   assert.ok(importProbe.account.length>0,"layout files containing account identity are rejected");
   assert.ok(importProbe.invalid.length>0,"invalid view configuration is rejected before mutation");
+  assert.ok(importProbe.invalidPitchfork.length>0,"malformed pitchfork anchors are rejected before mutation");
   assert.ok(importProbe.oversized.length>0,"files exceeding 512 KiB are rejected");
   assert.match(importProbe.cancelled,/abgebrochen/i,"unconfirmed replace is rejected by the import API");
   assert.match(importProbe.rollback,/nicht wiederhergestellt/i,"renderer failure is reported after failed apply");
@@ -364,11 +400,13 @@ const server=http.createServer((req,res)=>{
   await page.locator("#chart-v5-ray-btn").click();
   await page.keyboard.press("Escape");
   assert.equal(await page.locator("#chart-v5-ray-btn").getAttribute("aria-pressed"),"false","Escape cancels a pending drawing tool");
-  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),30,"cancel does not persist an incomplete drawing");
+  await page.locator("#chart-v5-pitchfork-btn").click();await page.mouse.click(chartBox.x+280,chartBox.y+160);await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#chart-v5-pitchfork-btn").getAttribute("aria-pressed"),"false","Escape cancels an incomplete Pitchfork placement");
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),33,"cancel does not persist an incomplete drawing");
   await page.locator("#chart-v5-layout-replace-btn").click();
   await page.locator("#chart-v5-layout-import-file").setInputFiles({name:"portable-layout.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify(portableLayout))});
   await page.waitForFunction(()=>document.querySelector("#chart-v5-preview-status")?.textContent.includes("Layout ersetzt"));
-  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),10,"confirmed replace restores the imported layout after renderer remount");
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),11,"confirmed replace restores the imported layout after renderer remount");
   const storedImport=await page.evaluate(()=>{const key="2eas.chartstudio.v5.drawings:v5:titan:XAUUSD:M15";return JSON.parse(localStorage.getItem(key))});
   assert.equal(storedImport.account,"titan","portable import binds the saved snapshot to the active account");
   assert.equal(storedImport.schemaVersion,5,"portable import reuses the validated local persistence schema");
