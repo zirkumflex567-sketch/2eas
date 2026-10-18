@@ -816,6 +816,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   type ParabolicSarGroup={options:ParabolicSarOptions;up:LineApi;down:LineApi;state:ParabolicSarState;beforeLast:ParabolicSarState;lastTime:number|null};
   const parabolicSarOverlays=new Map<string,ParabolicSarGroup>();
  const managedMovingAverages=new Map<string,{options:MovingAverageOptions;base:Map<number,number>}>();
+ const transientMovingAverages=new Set<string>();
  type ReadoutIndicator={id:string;title:string;kind:"OVERLAY"|"PANE";values:Map<number,number>;directions?:Map<number,"UP"|"DOWN">};
  const readoutIndicators=new Map<string,ReadoutIndicator>();
  // Independent native chart panes, not separate chart instances or duplicated time axes.
@@ -1170,7 +1171,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function viewSnapshots(){
   const visibleRange=chart.timeScale().getVisibleLogicalRange();
-  return {movingAverages:[...managedMovingAverages.values()].map(({options})=>({...options})),
+  return {movingAverages:[...managedMovingAverages.entries()].filter(([id])=>!transientMovingAverages.has(id)).map(([,value])=>({...value.options})),
    sessionVwaps:[...sessionVwapOverlays.values()].map(({options})=>({...options})),
    supertrends:[...supertrendOverlays.values()].map(group=>({...group.options})),
    parabolicSars:[...parabolicSarOverlays.values()].map(group=>({...group.options})),
@@ -1401,7 +1402,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    for(const item of rays.values())price.detachPrimitive(item.primitive);rays.clear();
     for(const item of fibonacci.values())price.detachPrimitive(item.primitive);fibonacci.clear();
     for(const item of channels.values())price.detachPrimitive(item.primitive);channels.clear();
-   for(const item of averages.values())chart.removeSeries(item);averages.clear();managedMovingAverages.clear();
+   for(const item of averages.values())chart.removeSeries(item);averages.clear();managedMovingAverages.clear();transientMovingAverages.clear();
    for(const group of oscillators.values())for(const series of group.series.values())chart.removeSeries(series);oscillators.clear();readoutIndicators.clear();
    for(const group of supertrendOverlays.values()){chart.removeSeries(group.up);chart.removeSeries(group.down)}supertrendOverlays.clear();
    for(const group of parabolicSarOverlays.values()){chart.removeSeries(group.up);chart.removeSeries(group.down)}parabolicSarOverlays.clear();
@@ -1627,13 +1628,16 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   series.setData(values);
   readoutIndicators.set(opts.id,{id:opts.id,title:opts.title??opts.id,kind:"OVERLAY",values:new Map(values.map(v=>[v.time,v.value]))});
  }
- function addAverage(opts:AverageOptions,data:readonly AveragePoint[]){managedMovingAverages.delete(opts?.id);applyAverageData(opts,data)}
- function addMovingAverage(options:MovingAverageOptions){
+ function addAverage(opts:AverageOptions,data:readonly AveragePoint[]){managedMovingAverages.delete(opts?.id);transientMovingAverages.delete(opts?.id);applyAverageData(opts,data)}
+ function addManagedMovingAverage(options:MovingAverageOptions,persistent:boolean){
   guard();const calculation=movingAverageData(bars,options),normalized={...options,source:options.source??"close",displayShift:options.displayShift??0};
   applyAverageData({id:options.id,color:options.color,lineWidth:options.lineWidth,visible:options.visible,title:options.title??`${options.type} ${options.period}`},calculation.points);
   managedMovingAverages.set(options.id,{options:normalized,base:new Map(calculation.base.map(point=>[point.time,point.value]))});
-  persistDrawings();
+  if(persistent){transientMovingAverages.delete(options.id);persistDrawings()}
+  else transientMovingAverages.add(options.id);
  }
+ function addMovingAverage(options:MovingAverageOptions){addManagedMovingAverage(options,true)}
+ function addTransientMovingAverage(options:MovingAverageOptions){addManagedMovingAverage(options,false)}
  function refreshDonchianOverlays(){
   for(const [id,group] of donchianOverlays){
    const values=donchianData(bars,group.options.period),keys:["upper","middle","lower"]=["upper","middle","lower"];
@@ -2586,7 +2590,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function removeAverage(id:string){
   guard();const s=averages.get(id);if(!s)return false;
-  chart.removeSeries(s);averages.delete(id);managedMovingAverages.delete(id);readoutIndicators.delete(id);return true;
+  chart.removeSeries(s);averages.delete(id);managedMovingAverages.delete(id);transientMovingAverages.delete(id);readoutIndicators.delete(id);return true;
  }
  function averageOptions(id:string){guard();return averages.get(id)?.options()??null}
  function movingAverageOptions(id:string){guard();const value=managedMovingAverages.get(id)?.options;return value?{...value}:null}
@@ -2625,7 +2629,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   for(const item of channels.values())price.detachPrimitive(item.primitive);channels.clear();
   for(const item of measurements.values())price.detachPrimitive(item.primitive);measurements.clear();
   for(const item of averages.values())chart.removeSeries(item);
-  averages.clear();managedMovingAverages.clear();
+  averages.clear();managedMovingAverages.clear();transientMovingAverages.clear();
   for(const group of donchianOverlays.values())for(const series of group.series)chart.removeSeries(series);
   donchianOverlays.clear();
   for(const group of bollingerOverlays.values())for(const series of group.series)chart.removeSeries(series);
@@ -2658,8 +2662,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   sessionVwapCount:sessionVwapOverlays.size,sessionVwapSeries:[...sessionVwapOverlays.entries()].map(([id,group])=>({id,options:{...group.options},points:group.result.points.map(point=>({...point})),volumeSource:group.result.volumeSource,visible:group.series.options().visible})),
     averageCount:averages.size,nativePaneLines:paneLines.size,oscillatorCount:oscillators.size,supertrendCount:supertrendOverlays.size,parabolicSarCount:parabolicSarOverlays.size,ichimokuCount:ichimokuOverlays.size,pivotCount:pivotOverlays.size,pivotSeries:[...pivotOverlays.entries()].map(([id,group])=>({id,options:{...group.options,sourceWindow:{...group.options.sourceWindow}},lines:Object.fromEntries((["p","r1","r2","r3","s1","s2","s3"] as const).map(key=>[key,group.values.lines[key].map(point=>({...point}))])),visible:Array.from(group.series.values(),series=>series.options().visible)})),ichimokuSeries:[...ichimokuOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:Object.fromEntries((["tenkan","kijun","senkouA","senkouB","chikou"] as const).map(key=>[key,group.values[key].map(point=>({...point}))])),visible:group.series.map(series=>series.options().visible)})),bollingerCount:bollingerOverlays.size,bollingerSeries:[...bollingerOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),atrBandsCount:atrBandsOverlays.size,atrBandsSeries:[...atrBandsOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),linearRegressionCount:linearRegressionOverlays.size,linearRegressionLineCount:[...linearRegressionOverlays.values()].reduce((count,group)=>count+group.series.length,0),linearRegressionSeries:[...linearRegressionOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),oscillatorPaneCount:new Set(Array.from(oscillators.values(),group=>{const series=group.series.values().next().value;return series?chart.panes().findIndex(pane=>pane.getSeries().includes(series)):-1}).filter(index=>index>=0)).size,nativePrimitives:drawingCount(),selectedDrawingId,selectedDrawingIds:[...selectedDrawingIds],hoveredDrawingId,
   paneCount:chart.panes().length,volumeVisible:!!volume,persistenceStatus,persistenceError}}
- function destroy(){if(destroyed)return;cancelDrawingTool(false);finishDrag(true);clearPositionOverlays();if(volumeZones){price.detachPrimitive(volumeZones.primitive);volumeZones=null}destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();managedMovingAverages.clear();donchianOverlays.clear();bollingerOverlays.clear();sessionVwapOverlays.clear();keltnerOverlays.clear();atrBandsOverlays.clear();ichimokuOverlays.clear();pivotOverlays.clear();linearRegressionOverlays.clear();supertrendOverlays.clear();parabolicSarOverlays.clear();paneLines.clear();oscillators.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();measurements.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
-  return Object.freeze({setCandles,addAverage,addMovingAverage,addDonchian,removeDonchian,addBollinger,updateBollinger,removeBollinger,bollingerOptions,addSessionVwap,updateSessionVwap,removeSessionVwap,sessionVwapOptions,addKeltner,removeKeltner,addAtrBands,updateAtrBands,removeAtrBands,atrBandsOptions,addLinearRegression,updateLinearRegression,removeLinearRegression,linearRegressionOptions,addIchimoku,updateIchimoku,removeIchimoku,ichimokuOptions,addPivotPoints,updatePivotPoints,pivotOptions,removePivotPoints,addSupertrend,updateSupertrend,removeSupertrend,supertrendOptions,addParabolicSar,updateParabolicSar,removeParabolicSar,parabolicSarOptions,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,deleteSelectedDrawings,addPriceLevel,updatePriceLevel,removePriceLevel,
+ function destroy(){if(destroyed)return;cancelDrawingTool(false);finishDrag(true);clearPositionOverlays();if(volumeZones){price.detachPrimitive(volumeZones.primitive);volumeZones=null}destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();managedMovingAverages.clear();transientMovingAverages.clear();donchianOverlays.clear();bollingerOverlays.clear();sessionVwapOverlays.clear();keltnerOverlays.clear();atrBandsOverlays.clear();ichimokuOverlays.clear();pivotOverlays.clear();linearRegressionOverlays.clear();supertrendOverlays.clear();parabolicSarOverlays.clear();paneLines.clear();oscillators.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();rays.clear();fibonacci.clear();channels.clear();measurements.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
+  return Object.freeze({setCandles,addAverage,addMovingAverage,addTransientMovingAverage,addDonchian,removeDonchian,addBollinger,updateBollinger,removeBollinger,bollingerOptions,addSessionVwap,updateSessionVwap,removeSessionVwap,sessionVwapOptions,addKeltner,removeKeltner,addAtrBands,updateAtrBands,removeAtrBands,atrBandsOptions,addLinearRegression,updateLinearRegression,removeLinearRegression,linearRegressionOptions,addIchimoku,updateIchimoku,removeIchimoku,ichimokuOptions,addPivotPoints,updatePivotPoints,pivotOptions,removePivotPoints,addSupertrend,updateSupertrend,removeSupertrend,supertrendOptions,addParabolicSar,updateParabolicSar,removeParabolicSar,parabolicSarOptions,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,deleteSelectedDrawings,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,drawingPosition,drawingAnchorPosition,readDrawing,exportDrawings,exportLayout,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,duplicateSelectedDrawings,
   addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,addOscillator,updateOscillator,removeOscillator,moveOscillator,oscillatorOptions,oscillatorPaneLayout,resizePane,paneHeights,showVolume,visibleLogicalRange,setVisibleLogicalRange,setDisplayTimeZone,displayTimeZone:()=>displayTimeZone,formatTimeLabel:formatDisplayTime,formatCrosshairTime,readDataWindow,
   updateLast,changeAccount,averageOptions,setVolumeZones,readVolumeZones,clearVolumeZones,setAutoFibonacci,readAutoFibonacci,clearAutoFibonacci,setPositionOverlays,readPositionOverlays,setBrokerDealMarkers,readBrokerDealMarkers,setDrawingTool,drawingToolState,verifyPersistence,inspect,destroy});

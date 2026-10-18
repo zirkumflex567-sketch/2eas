@@ -110,6 +110,8 @@ function restore(account){
 }
 let state=null;
 function getConfigs(){return state?copy(state.configs):[]}
+function getAccount(){return state?.account??null}
+function notifyConfigChange(){if(!state)return;try{window.dispatchEvent(new CustomEvent("chart-studio-averages-change",{detail:{account:state.account,symbol:"XAUUSD"}}))}catch(_){}}
 function readout(time){
  if(!state)return "";
  return (state.readouts.get(Number(time))||[]).join(" · ");
@@ -119,6 +121,7 @@ function persist(){
  if(!state)return;
  try{localStorage.setItem(STORE_PREFIX+state.account+":XAUUSD",JSON.stringify(state.configs))}
  catch(_){announce("Browser-Speicher nicht verfügbar. Layout im Serverprofil sichern.")}
+ notifyConfigChange();
 }
 function keyFor(cfg){return [cfg.type,cfg.period,cfg.source].join(":")}
 function refreshSeries(){
@@ -311,6 +314,7 @@ function switchAccount(account){
  state.series.clear();state.loaded.clear();
  state.account=account;state.bars=[];state.signature=null;state.cache.clear();
  state.configs=restore(account);redrawEditor();refreshSeries();
+ notifyConfigChange();
  window.ChartStudioBeta?.refreshDataWindowIndicators();
 }
 function mount({chart,panel,account="titan"}){
@@ -359,7 +363,7 @@ function mount({chart,panel,account="titan"}){
  });
  redrawEditor();refreshSeries();
 }
-window.ChartStudioAverages=Object.freeze({mount,updateBars,switchAccount,getConfigs,getLiveAverages,
+window.ChartStudioAverages=Object.freeze({mount,updateBars,switchAccount,getConfigs,getAccount,getLiveAverages,
  applySettings,add,edit,remove,calculate,readout,normalize,normalizeList,MAX_INSTANCES,shiftDisplay,applyPreset:applyDisplayPreset,
  diagnostics:()=>state?{account:state.account,dataWrites:state.dataWrites,seriesCount:state.series.size}:null});
 })();

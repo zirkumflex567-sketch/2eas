@@ -26,6 +26,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   });
   await page.goto("http://127.0.0.1:8865/static/chart-studio-fixture.html",{waitUntil:"networkidle"});
   await page.waitForFunction(()=>window.__chartSmokeReady===true);
+  await page.evaluate(()=>{window.__averageConfigEvents=[];window.addEventListener("chart-studio-averages-change",event=>window.__averageConfigEvents.push(event.detail))});
   // EMA controls must be directly accessible without opening the beta drawer.
   const quick=page.locator(".cs-ma-quick");
   assert.equal(await quick.isVisible(),true);
@@ -33,6 +34,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await quick.getByRole("button",{name:"EMA mit gewählter Periode hinzufügen"}).click();
   assert.equal(await page.locator("#cs-beta-panel").isVisible(),true);
   assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].period,1000);
+  assert.deepEqual(await page.evaluate(()=>({account:ChartStudioAverages.getAccount(),event:window.__averageConfigEvents.at(-1)})),
+   {account:"titan",event:{account:"titan",symbol:"XAUUSD"}},"editor changes publish only the active local account/symbol scope");
   await quick.getByRole("button",{name:"EMAs einstellen"}).click();
   assert.equal(await page.locator(".cs-ma-editor").isVisible(),true);
   await page.locator('[data-instance="ma1"] [data-action="remove"]').click();
@@ -169,6 +172,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal((await page.evaluate(()=>ChartStudioAverages.getConfigs()))[0].displayShift,2);
   // Account isolation, including persisted original.
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));
+  assert.equal(await page.evaluate(()=>ChartStudioAverages.getAccount()),"goldm15");
+  assert.deepEqual(await page.evaluate(()=>window.__averageConfigEvents.at(-1)),{account:"goldm15",symbol:"XAUUSD"},"account switches notify the preview after restoring that account's settings");
   assert.equal(await page.evaluate(()=>ChartStudioAverages.getConfigs().length),0);
   assert.equal(await page.evaluate(()=>ChartStudioAverages.diagnostics().seriesCount),0);
   await area.locator(".cs-ma-presets button").nth(2).click();

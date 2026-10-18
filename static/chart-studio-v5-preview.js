@@ -5,7 +5,7 @@
   if(window.CHART_STUDIO_V5_PREVIEW_ENABLED!==true)return;
   let button=null,panel=null,host=null,status=null,title=null,dataWindow=null,dataWindowPinButton=null,liveQuote=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,priceButton=null,timeButton=null,rectButton=null,fiboButton=null,measureButton=null,channelButton=null,textButton=null,textInput=null,drawingStatus=null,layoutButton=null,layoutImportButton=null,layoutReplaceButton=null,layoutImportFile=null;
 
-  let scope=null,latest=null,engine=null,bridge=null,active=false,loading=null,autoFibEnabled=false,dataWindowHover=null,dataWindowPinned=null,dataWindowCrosshairActive=false;
+  let scope=null,latest=null,engine=null,bridge=null,indicatorBridge=null,active=false,loading=null,autoFibEnabled=false,dataWindowHover=null,dataWindowPinned=null,dataWindowCrosshairActive=false;
   let generation=0,sequence=0,latestSequence=0,positionSequence=0,positionsSnapshot=null,brokerDealMarkersSnapshot=null,positionsEnabled=true,drawingTool=null,pendingImportMode=null,quoteTimer=null,quoteRequest=0;
   const setStatus=value=>{if(status)status.textContent=value};
   function renderDataWindow(event){
@@ -54,6 +54,19 @@
   }
   const same=(a,b)=>!!a&&!!b&&a.account===b.account&&a.symbol===b.symbol&&a.timeframe===b.timeframe;
   function currentScope(){return scope?{...scope}:null}
+  function syncMovingAverages(){
+    if(!indicatorBridge||!active||!latest||!scope)return {applied:false,reason:"PREVIEW_NOT_READY"};
+    const source=window.ChartStudioAverages;
+    if(!source||typeof source.getConfigs!=="function"||typeof source.getAccount!=="function")return {applied:false,reason:"CONFIG_UNAVAILABLE"};
+    if(source.getAccount()!==scope.account){indicatorBridge.clear();return {applied:false,reason:"ACCOUNT_SCOPE_MISMATCH"};}
+    return indicatorBridge.update({account:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,
+      source:"CHART_STUDIO_LOCAL",canExecute:false,configs:source.getConfigs()},indicatorBridge.beginRead());
+  }
+  function onAverageConfigsChanged(event){
+    const changed=event?.detail;
+    if(!changed||changed.account!==scope?.account||changed.symbol!==scope?.symbol)return;
+    syncMovingAverages();
+  }
   function asset(name){
     const prefix=window.location.pathname.startsWith("/stt")?"/stt":"";
     return `${prefix}/static/${name}`;
@@ -75,6 +88,7 @@
   }
   function destroyRenderer(){
     if(host)host.removeEventListener("chartstudio-v5-drawing-state",drawingState);
+    try{indicatorBridge?.clear()}catch(_){}indicatorBridge=null;
     dataWindowHover=null;dataWindowPinned=null;dataWindowCrosshairActive=false;
     renderDataWindow({detail:null});
     try{engine?.destroy()}catch(_){}
@@ -312,11 +326,13 @@
       engine=window.ChartStudioV5.createStudioV5(host,scope.account,{symbol:scope.symbol,timeframe:scope.timeframe});
       host.addEventListener("chartstudio-v5-drawing-state",drawingState);
       bridge=window.ChartStudioV5Feed.create(engine,scope);
+      if(!window.ChartStudioV5IndicatorFeed?.create)throw new Error("Indikatorbrücke nicht verfügbar");
+      indicatorBridge=window.ChartStudioV5IndicatorFeed.create(engine,scope);
       setStatus("Warte auf verifizierte MT5-Kerzen …");
       if(latest){const token=bridge.beginRead();const result=bridge.update(latest,token);
         if(autoFibButton)autoFibButton.disabled=!Number.isSafeInteger(latest.snapshotAsOfUtc);
         updateDrawingButtons();
-        if(result.applied){refreshPinnedDataWindow();renderPositions();renderBrokerDealMarkers()}
+        if(result.applied){refreshPinnedDataWindow();renderPositions();renderBrokerDealMarkers();syncMovingAverages()}
         setStatus(result.applied?`${result.candleCount} verifizierte Kerzen · read-only · Kerzenfrische ungeprüft`:"V5-Daten abgelehnt: "+result.reason)}
     }catch(error){destroyRenderer();setStatus("V5-Vorschau nicht verfügbar: "+String(error?.message||error).slice(0,160))}
   }
@@ -352,21 +368,22 @@
     if(!bridge)return {applied:false,reason:"ENGINE_UNAVAILABLE"};
     const result=bridge.update(latest,bridge.beginRead());
     if(!result.applied){clear("V5-Daten abgelehnt: "+result.reason);return result}
+    const indicatorResult=syncMovingAverages();
     refreshPinnedDataWindow();
     renderPositions();renderBrokerDealMarkers();
     if(autoFibButton)autoFibButton.disabled=false;
     updateDrawingButtons();
     if(autoFibEnabled)renderAutoFib();
-    setStatus(`${result.candleCount} verifizierte Kerzen · read-only · Kerzenfrische ungeprüft`);
+    setStatus(`${result.candleCount} verifizierte Kerzen · ${indicatorResult.applied?indicatorResult.count+" benutzerdefinierte MAs":indicatorResult.reason||"MAs nicht synchronisiert"} · read-only · Kerzenfrische ungeprüft`);
     return result;
   }
   function clear(message){
     latest=null;latestSequence=++sequence;brokerDealMarkersSnapshot=null;dataWindowHover=null;dataWindowPinned=null;dataWindowCrosshairActive=false;renderDataWindow({detail:null});try{engine?.setBrokerDealMarkers({scope:{...scope},source:"MT5_VERIFIED",canExecute:false,markers:[]})}catch(_){}
-    clearAutoFib();clearPositions();try{bridge?.clear()}catch(_){}if(autoFibButton)autoFibButton.disabled=true;
+    clearAutoFib();clearPositions();try{bridge?.clear()}catch(_){}try{indicatorBridge?.clear()}catch(_){}if(autoFibButton)autoFibButton.disabled=true;
     setDrawingTool(null);updateDrawingButtons();
     setStatus(message||"MT5-Kerzen derzeit nicht verfügbar");
   }
-  window.ChartStudioV5Preview=Object.freeze({setScope,beginRead,update,clear,renderAutoFib,clearAutoFib,beginPositionRead,setPositions,showPositions,readPositions,clearPositions,setBrokerDealMarkers,readBrokerDealMarkers,setDrawingTool,exportLayout,importLayout,readDrawing:id=>engine?.readDrawing?.(id)||null,readAutoFibonacci:()=>engine?.readAutoFibonacci?.()||null,inspect:()=>({active,scope:currentScope(),generation,status:status?.textContent||"",autoFibonacci:!!engine?.readAutoFibonacci?.(),positionOverlayCount:readPositions().count,brokerDealMarkerCount:readBrokerDealMarkers().plotted,nativeDrawingCount:engine?.inspect?.().nativeDrawingCount||0,drawingTool,positionsEnabled,dataWindowPinned:!!dataWindowPinned,brokerDealMarkers:readBrokerDealMarkers()})});
+  window.ChartStudioV5Preview=Object.freeze({setScope,beginRead,update,clear,renderAutoFib,clearAutoFib,beginPositionRead,setPositions,showPositions,readPositions,clearPositions,setBrokerDealMarkers,readBrokerDealMarkers,setDrawingTool,syncMovingAverages,readMovingAverage:id=>engine?.movingAverageOptions?.("preview-ma-"+id)||null,exportLayout,importLayout,readDrawing:id=>engine?.readDrawing?.(id)||null,readAutoFibonacci:()=>engine?.readAutoFibonacci?.()||null,inspect:()=>({active,scope:currentScope(),generation,status:status?.textContent||"",autoFibonacci:!!engine?.readAutoFibonacci?.(),customMovingAverageCount:indicatorBridge?.inspect?.().count||0,positionOverlayCount:readPositions().count,brokerDealMarkerCount:readBrokerDealMarkers().plotted,nativeDrawingCount:engine?.inspect?.().nativeDrawingCount||0,drawingTool,positionsEnabled,dataWindowPinned:!!dataWindowPinned,brokerDealMarkers:readBrokerDealMarkers()})});
   function boot(){
     button=document.getElementById("chart-v5-preview-btn");panel=document.getElementById("chart-v5-preview-panel");
     host=document.getElementById("chart-v5-preview-host");status=document.getElementById("chart-v5-preview-status");dataWindow=document.getElementById("chart-v5-data-window");dataWindowPinButton=document.getElementById("chart-v5-data-window-pin");liveQuote=document.getElementById("chart-v5-live-quote");
@@ -374,6 +391,7 @@
     autoFibButton=document.getElementById("chart-v5-auto-fib-btn");autoFibStatus=document.getElementById("chart-v5-auto-fib-status");
     trendButton=document.getElementById("chart-v5-trend-btn");rayButton=document.getElementById("chart-v5-ray-btn");priceButton=document.getElementById("chart-v5-price-btn");timeButton=document.getElementById("chart-v5-time-btn");rectButton=document.getElementById("chart-v5-rect-btn");fiboButton=document.getElementById("chart-v5-fibo-btn");measureButton=document.getElementById("chart-v5-measure-btn");channelButton=document.getElementById("chart-v5-channel-btn");textButton=document.getElementById("chart-v5-text-btn");textInput=document.getElementById("chart-v5-text-input");drawingStatus=document.getElementById("chart-v5-drawing-status");layoutButton=document.getElementById("chart-v5-layout-export-btn");
     if(!button||!panel||!host||!status)return;
+    window.addEventListener("chart-studio-averages-change",onAverageConfigsChanged);
     host.addEventListener("chartstudio-v5-data-window",renderDataWindow);
     if(dataWindowPinButton){dataWindowPinButton.disabled=true;dataWindowPinButton.addEventListener("click",toggleDataWindowPin)}
     button.hidden=false;if(scope&&title)title.textContent=`Native v5 · ${scope.symbol} ${scope.timeframe} · ${scope.account}`;

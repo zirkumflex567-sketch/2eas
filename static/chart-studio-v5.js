@@ -8879,6 +8879,7 @@ var ChartStudioV5 = (() => {
     const supertrendOverlays = /* @__PURE__ */ new Map();
     const parabolicSarOverlays = /* @__PURE__ */ new Map();
     const managedMovingAverages = /* @__PURE__ */ new Map();
+    const transientMovingAverages = /* @__PURE__ */ new Set();
     const readoutIndicators = /* @__PURE__ */ new Map();
     const paneLines = /* @__PURE__ */ new Map();
     const paneHeightOverrides = /* @__PURE__ */ new Map();
@@ -9372,7 +9373,7 @@ var ChartStudioV5 = (() => {
     function viewSnapshots() {
       const visibleRange = chart.timeScale().getVisibleLogicalRange();
       return {
-        movingAverages: [...managedMovingAverages.values()].map(({ options }) => ({ ...options })),
+        movingAverages: [...managedMovingAverages.entries()].filter(([id]) => !transientMovingAverages.has(id)).map(([, value]) => ({ ...value.options })),
         sessionVwaps: [...sessionVwapOverlays.values()].map(({ options }) => ({ ...options })),
         supertrends: [...supertrendOverlays.values()].map((group) => ({ ...group.options })),
         parabolicSars: [...parabolicSarOverlays.values()].map((group) => ({ ...group.options })),
@@ -9814,6 +9815,7 @@ var ChartStudioV5 = (() => {
         for (const item of averages.values()) chart.removeSeries(item);
         averages.clear();
         managedMovingAverages.clear();
+        transientMovingAverages.clear();
         for (const group of oscillators.values()) for (const series of group.series.values()) chart.removeSeries(series);
         oscillators.clear();
         readoutIndicators.clear();
@@ -10260,14 +10262,24 @@ var ChartStudioV5 = (() => {
     }
     function addAverage(opts, data) {
       managedMovingAverages.delete(opts?.id);
+      transientMovingAverages.delete(opts?.id);
       applyAverageData(opts, data);
     }
-    function addMovingAverage(options) {
+    function addManagedMovingAverage(options, persistent) {
       guard();
       const calculation = movingAverageData(bars, options), normalized = { ...options, source: options.source ?? "close", displayShift: options.displayShift ?? 0 };
       applyAverageData({ id: options.id, color: options.color, lineWidth: options.lineWidth, visible: options.visible, title: options.title ?? `${options.type} ${options.period}` }, calculation.points);
       managedMovingAverages.set(options.id, { options: normalized, base: new Map(calculation.base.map((point2) => [point2.time, point2.value])) });
-      persistDrawings();
+      if (persistent) {
+        transientMovingAverages.delete(options.id);
+        persistDrawings();
+      } else transientMovingAverages.add(options.id);
+    }
+    function addMovingAverage(options) {
+      addManagedMovingAverage(options, true);
+    }
+    function addTransientMovingAverage(options) {
+      addManagedMovingAverage(options, false);
     }
     function refreshDonchianOverlays() {
       for (const [id, group] of donchianOverlays) {
@@ -11922,6 +11934,7 @@ var ChartStudioV5 = (() => {
       chart.removeSeries(s);
       averages.delete(id);
       managedMovingAverages.delete(id);
+      transientMovingAverages.delete(id);
       readoutIndicators.delete(id);
       return true;
     }
@@ -12004,6 +12017,7 @@ var ChartStudioV5 = (() => {
       for (const item of averages.values()) chart.removeSeries(item);
       averages.clear();
       managedMovingAverages.clear();
+      transientMovingAverages.clear();
       for (const group of donchianOverlays.values()) for (const series of group.series) chart.removeSeries(series);
       donchianOverlays.clear();
       for (const group of bollingerOverlays.values()) for (const series of group.series) chart.removeSeries(series);
@@ -12120,6 +12134,7 @@ var ChartStudioV5 = (() => {
       chart.remove();
       averages.clear();
       managedMovingAverages.clear();
+      transientMovingAverages.clear();
       donchianOverlays.clear();
       bollingerOverlays.clear();
       sessionVwapOverlays.clear();
@@ -12150,6 +12165,7 @@ var ChartStudioV5 = (() => {
       setCandles,
       addAverage,
       addMovingAverage,
+      addTransientMovingAverage,
       addDonchian,
       removeDonchian,
       addBollinger,
