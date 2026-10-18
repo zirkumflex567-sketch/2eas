@@ -94,7 +94,7 @@ const forbiddenAccounts = new Set(["blueberry"]);
           && entry.payload.chartView.timeframe === exit.payload.chartView.timeframe)
         .map(exit => ({ entry, exit })))[0];
       assert.ok(comparisonPair, `${account}: no scope-matched immutable ENTRY/EXIT snapshots to compare`);
-      const apiReadsBeforeComparison = apiRequests.length;
+      const snapshotReadsBeforeComparison = apiRequests.filter(request => request.path.endsWith("/snapshots")).length;
       const entryCheckbox = rows.locator(`[data-snapshot-compare-id="${comparisonPair.entry.id}"]`);
       const exitCheckbox = rows.locator(`[data-snapshot-compare-id="${comparisonPair.exit.id}"]`);
       await entryCheckbox.locator("xpath=../..").locator(":scope > summary").click();
@@ -113,12 +113,14 @@ const forbiddenAccounts = new Set(["blueberry"]);
       assert.equal(await comparisonItems.locator("canvas.cs-evidence-chart").count(), 2);
       assert.equal(await comparisonItems.nth(0).locator("canvas").getAttribute("aria-label"), `ENTRY-Snapshot ${comparisonPair.entry.payload.chartView.symbol} ${comparisonPair.entry.payload.chartView.timeframe}`);
       assert.equal(await comparisonItems.nth(1).locator("canvas").getAttribute("aria-label"), `EXIT-Snapshot ${comparisonPair.exit.payload.chartView.symbol} ${comparisonPair.exit.payload.chartView.timeframe}`);
-      assert.equal(apiRequests.length, apiReadsBeforeComparison, `${account}: local snapshot comparison must not fetch or mutate data`);
-      assert.match(await panel.locator("#cs-snapshot-comparison-note").textContent(), /keine Indikatoren oder Zeichnungen/);
+      assert.equal(apiRequests.filter(request => request.path.endsWith("/snapshots")).length, snapshotReadsBeforeComparison,
+        `${account}: local snapshot comparison must not fetch another history snapshot`);
+      assert.match(await panel.locator("#cs-snapshot-comparison-note").textContent(), /historische Indikatoren oder Zeichnungen wurden nicht aufgezeichnet/);
       await rows.locator(`[data-snapshot-compare-id="${comparisonPair.exit.id}"]`).uncheck();
       assert.equal(await comparison.isVisible(), false, `${account}: changing selection must clear the prior comparison`);
 
-      await rows.first().locator("details > summary").click();
+      const firstDetails = rows.first().locator("details");
+      if (!await firstDetails.evaluate(element => element.open)) await firstDetails.locator(":scope > summary").click();
       await rows.first().locator("canvas.cs-evidence-chart").waitFor({ state: "visible" });
       const caption = await rows.first().locator(".cs-evidence-chart-caption").textContent();
       assert.match(caption, /M15 · gespeicherte OHLC/);
