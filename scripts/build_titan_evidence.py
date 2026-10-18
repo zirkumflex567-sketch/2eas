@@ -24,6 +24,10 @@ EXPECTED_PRESET_SHA256 = {
 EA_NAME = "XAU_Titan_Pro_EvidenceCapture"
 SOURCE_NAME = "XAU_Titan_Pro_EvidenceBase.mq5"
 EXPECTED_SOURCE_SHA256 = "a3acca057c8f4dd0b0c2b642432ee7ef918cb95c1af6a36c21dd6a4021c02336"
+EXPECTED_SOURCE_TEXT_SHA256 = "48aed95375bf3cae67627dc77077f1e4b8b568a521bfddba1b71d40079778a0a"
+# Exact earlier terminal source: same strategy and order logic, before the
+# account-bound Blueberry guard replaced the legacy global input toggle.
+EXPECTED_LEGACY_INSTALLED_SOURCE_TEXT_SHA256 = "0a350ad96fcada67eeaddc1d2a60480693f39bf15a4825ed4cc932ec7f8a0339"
 
 
 @dataclass(frozen=True)
@@ -657,6 +661,11 @@ def _atomic_write(path: Path, content: bytes) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
+def _normalized_source_sha256(source_bytes: bytes) -> str:
+    text = source_bytes.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_path: Path) -> BuildVariant:
     """Generate an account-bound source package in output_root/alias."""
     if alias not in ALLOWED_ACCOUNTS:
@@ -708,7 +717,17 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_pa
     source_digest = hashlib.sha256(source_bytes).hexdigest()
     if source_digest != EXPECTED_SOURCE_SHA256:
         raise ValueError("recorder base source hash is not the verified installed Titan version")
-    if not installed_source_path.is_file() or hashlib.sha256(installed_source_path.read_bytes()).hexdigest() != EXPECTED_SOURCE_SHA256:
+    installed_source_matches = False
+    if installed_source_path.is_file():
+        installed_source_bytes = installed_source_path.read_bytes()
+        installed_source_matches = (
+            hashlib.sha256(installed_source_bytes).hexdigest() == EXPECTED_SOURCE_SHA256
+            or _normalized_source_sha256(installed_source_bytes) in {
+                EXPECTED_SOURCE_TEXT_SHA256,
+                EXPECTED_LEGACY_INSTALLED_SOURCE_TEXT_SHA256,
+            }
+        )
+    if not installed_source_matches:
         raise ValueError(f"installed Titan source does not match the verified recorder base for {alias}")
     if not installed_binary_path.is_file():
         raise FileNotFoundError(f"installed Titan binary not found for {alias}")
