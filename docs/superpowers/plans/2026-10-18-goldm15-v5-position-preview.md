@@ -23,8 +23,9 @@
 **Files:** `app.py`
 
 - [x] Add `goldm15` to the existing v5 demo-position allowlist without widening any write allowlist.
-- [ ] Run frontend tests, v5 preview smoke, and five-demo live chart smoke; confirm GET-only and Blueberry-free behavior.
-- [ ] Commit and push on `main`, wait for both current-head CI workflows, restart the guarded runtime if required, and verify local/htown identity.
+- [x] Run frontend tests, v5 preview smoke, and five-demo live chart smoke; confirm GET-only and Blueberry-free behavior.
+- [x] Commit and push on `main`; verify local/htown identity and guarded runtime state.
+- [x] Wait for both current-head GitHub CI workflows.
 
 ### Remaining gates
 
