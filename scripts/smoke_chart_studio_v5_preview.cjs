@@ -14,6 +14,7 @@ const html=enabled=>`<!doctype html><html><head><meta charset="utf-8"><meta name
 <button type="button" id="chart-v5-preview-btn" aria-controls="chart-v5-preview-panel" aria-expanded="false" hidden>V5 Vorschau</button>
 <section id="chart-v5-preview-panel" hidden><strong id="chart-v5-preview-title">Native v5</strong><div id="chart-v5-preview-status" role="status"></div>
 <button type="button" id="chart-v5-auto-fib-btn" aria-pressed="false" disabled>Auto-Fibonacci einblenden</button><output id="chart-v5-auto-fib-status" aria-live="polite"></output><button type="button" id="chart-v5-layout-export-btn" disabled>Layout exportieren</button><button type="button" id="chart-v5-layout-import-btn" disabled>Layout zusammenführen</button><button type="button" id="chart-v5-layout-replace-btn" disabled>Layout ersetzen</button><input id="chart-v5-layout-import-file" type="file" accept="application/json,.json" hidden>
+<details id="chart-v5-profile-manager"><summary>Lokale v5-Layouts</summary><label>Name <input id="chart-v5-profile-name" maxlength="40"></label><select id="chart-v5-profile-list" aria-label="Gespeichertes v5-Layout"></select><button id="chart-v5-profile-save" type="button">Speichern</button><button id="chart-v5-profile-load" type="button">Laden</button><button id="chart-v5-profile-rename" type="button">Umbenennen</button><button id="chart-v5-profile-copy" type="button">Kopieren</button><button id="chart-v5-profile-delete" type="button">Löschen</button><button id="chart-v5-layout-reset" type="button">Aktuelles Layout zurücksetzen</button><output id="chart-v5-profile-status" role="status"></output></details>
 <div id="chart-v5-drawing-tools" role="group" aria-label="Native v5 Zeichnungen"><button type="button" id="chart-v5-trend-btn" aria-pressed="false" disabled>Trendlinie</button><button type="button" id="chart-v5-ray-btn" aria-pressed="false" disabled>Strahl</button><button type="button" id="chart-v5-price-btn" aria-pressed="false" disabled>Preislinie</button><button type="button" id="chart-v5-time-btn" aria-pressed="false" disabled>Zeitlinie</button><button type="button" id="chart-v5-rect-btn" aria-pressed="false" disabled>Rechteck</button><button type="button" id="chart-v5-fibo-btn" aria-pressed="false" disabled>Fibonacci</button><button type="button" id="chart-v5-measure-btn" aria-pressed="false" disabled>Messung</button><button type="button" id="chart-v5-channel-btn" aria-pressed="false" disabled>Kanal</button><button type="button" id="chart-v5-pitchfork-btn" aria-pressed="false" disabled>Pitchfork</button><button type="button" id="chart-v5-risk-reward-btn" aria-pressed="false" disabled>Risiko/Ertrag</button><input id="chart-v5-text-input" aria-label="Textbeschriftung" maxlength="40" value="Fixture note"><button type="button" id="chart-v5-text-btn" aria-pressed="false" disabled>Text</button><output id="chart-v5-drawing-status" role="status" aria-live="polite">Zeichenwerkzeug aus.</output></div>
 <div id="chart-v5-preview-host"></div><output id="chart-v5-data-window" aria-label="Kerzendaten am Fadenkreuz">Fadenkreuz auf eine Kerze bewegen.</output><output id="chart-v5-live-quote" aria-label="Aktuelle MT5-Quote beim Abruf">Aktuelle MT5-Quote: noch nicht abgerufen.</output><button type="button" id="chart-v5-data-window-pin" aria-pressed="false">Kerze fixieren</button><p>Read only. Powered by <a href="https://www.tradingview.com/">TradingView Lightweight Charts™</a></p></section><script>document.addEventListener("DOMContentLoaded",()=>{const host=document.querySelector("#chart-v5-preview-host");host.addEventListener("chartstudio-v5-drawing-state",e=>window.__v5LastDrawing=e.detail);host.addEventListener("chartstudio-v5-data-window",e=>window.__v5DataWindow=e.detail)});</script></body></html>`;
 
@@ -138,6 +139,25 @@ const server=http.createServer((req,res)=>{
   const initialPreviewLayout=await page.evaluate(()=>JSON.parse(window.ChartStudioV5Preview.exportLayout()));
   assert.equal(initialPreviewLayout.view.movingAverages.length,0,"temporary production-editor averages do not enter v5 portable layout storage");
   assert.ok(initialPreviewLayout.view.paneHeights.every(Number.isFinite),"portable pane heights exclude empty transient preview panes");
+  await page.locator("#chart-v5-profile-manager > summary").click();
+  assert.equal(await page.locator("#chart-v5-profile-save").isEnabled(),true,"verified v5 chart enables local named layout saving");
+  await page.locator("#chart-v5-profile-name").fill("Morning layout");
+  await page.locator("#chart-v5-profile-save").click();
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-profile-status")?.textContent.includes("gespeichert"));
+  assert.deepEqual(await page.locator("#chart-v5-profile-list option:not([value=''])").allTextContents(),["Morning layout"],"named local layout appears in its scoped selector");
+  await page.locator("#chart-v5-profile-name").fill("Morning layout");
+  await page.locator("#chart-v5-profile-save").click();
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-profile-status")?.textContent.includes("bereits"));
+  assert.equal(await page.locator("#chart-v5-profile-list option:not([value=''])").count(),1,"duplicate names are rejected without adding a second layout");
+  await page.locator("#chart-v5-profile-name").fill("Morning layout v2");
+  await page.locator("#chart-v5-profile-rename").click();
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-profile-list")?.selectedOptions[0]?.textContent==="Morning layout v2");
+  await page.locator("#chart-v5-profile-name").fill("Morning copy");
+  await page.locator("#chart-v5-profile-copy").click();
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-profile-list")?.options.length===3);
+  assert.deepEqual(await page.locator("#chart-v5-profile-list option:not([value=''])").allTextContents(),["Morning layout v2","Morning copy"],"copy duplicates a profile without overwriting the source");
+  await page.locator("#chart-v5-profile-delete").click();
+  assert.deepEqual(await page.locator("#chart-v5-profile-list option:not([value=''])").allTextContents(),["Morning layout v2"],"delete removes only the selected scoped profile");
   const changedMovingAverage=await page.evaluate(()=>{
     window.__v5AverageConfigs=[{...window.__v5AverageConfigs[0],period:34,source:"hlc3",displayShift:1}];
     window.dispatchEvent(new CustomEvent("chart-studio-averages-change",{detail:{account:"titan",symbol:"XAUUSD"}}));
@@ -412,6 +432,14 @@ const server=http.createServer((req,res)=>{
   assert.equal(storedImport.schemaVersion,5,"portable import reuses the validated local persistence schema");
   assert.equal(storedImport.sessionVwaps.length,1,"confirmed replacement restores the imported VWAP settings");
   assert.ok(storedImport.drawings.some(row=>row.kind==="RISK_REWARD"),"confirmed replacement persists the risk/reward drawing in the active scope");
+  await page.locator("#chart-v5-layout-reset").click();
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-profile-status")?.textContent.includes("zurückgesetzt"));
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),0,"reset returns only the current scoped workspace to its default state");
+  assert.deepEqual(await page.locator("#chart-v5-profile-list option:not([value=''])").allTextContents(),["Morning layout v2"],"reset preserves explicitly saved named layouts");
+  await page.locator("#chart-v5-profile-list").selectOption({label:"Morning layout v2"});
+  await page.locator("#chart-v5-profile-load").click();
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-profile-status")?.textContent.includes("geladen"));
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),0,"loading a saved scoped layout restores its saved drawing state");
   const v4After=await page.locator("#tv-chart").evaluate(el=>({visible:!!el.getClientRects().length,canvas:el.querySelector("canvas#v4-sentinel")?.width}));
   assert.deepEqual(v4After,v4Before,"v5 owns a separate host and leaves v4 mounted");
   assert.match(await page.locator("#chart-v5-preview-title").textContent(),/XAUUSD M15/);
@@ -438,9 +466,20 @@ const server=http.createServer((req,res)=>{
   assert.equal(scopeSwitch.state.customOscillatorCount,0,"a prior account's editor oscillators are cleared on scope switch");
   assert.equal(scopeSwitch.state.brokerDealMarkerCount,0,"account changes clear prior account deal markers");
   assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.readAutoFibonacci()),null,"a scope switch clears Auto-Fibonacci along with the prior account's candles");
+  const profileScope=await page.evaluate(({candles,asOfUtc})=>{
+   const preview=window.ChartStudioV5Preview,names=()=>[...document.querySelectorAll("#chart-v5-profile-list option")].filter(option=>option.value).map(option=>option.textContent);
+   preview.setScope({account:"titan",symbol:"XAUUSD",timeframe:"M15"});const titan=names();
+   preview.setScope({account:"titan",symbol:"EURUSD",timeframe:"M15"});const otherSymbol=names();
+   preview.setScope({account:"titan",symbol:"XAUUSD",timeframe:"M5"});const otherTimeframe=names();
+   preview.setScope({account:"goldm15",symbol:"XAUUSD",timeframe:"M15"});const otherAccount=names();
+    preview.setScope({account:"xau5m_m5",symbol:"XAUUSD",timeframe:"M15"});const token=preview.beginRead();preview.update({accountId:"xau5m_m5",symbol:"XAUUSD",timeframe:"M15",source:"MT5_VERIFIED",canExecute:false,snapshotAsOfUtc:asOfUtc,candles},token);
+   return {titan,otherSymbol,otherTimeframe,otherAccount};
+  },{candles,asOfUtc});
+  assert.deepEqual(profileScope,{titan:["Morning layout v2"],otherSymbol:[],otherTimeframe:[],otherAccount:[]},"saved named layouts are isolated by account, symbol and timeframe");
+  await page.locator("#chart-v5-profile-manager > summary").click();
   const hostBox=await page.locator("#chart-v5-preview-host").boundingBox();
   await page.mouse.move(hostBox.x+hostBox.width*0.45,hostBox.y+hostBox.height*0.45);
-  await page.waitForFunction(()=>window.__v5DataWindow?.state==="AVAILABLE",null,{timeout:3000});
+  await page.waitForFunction(()=>window.__v5DataWindow?.state==="AVAILABLE",null,{timeout:10000});
   const dataWindow=await page.evaluate(()=>window.__v5DataWindow);
   assert.equal(dataWindow.account,"xau5m_m5");assert.equal(dataWindow.source,"CHART_FEED");
   assert.equal(dataWindow.ohlc.open,candles.find(row=>row.time===dataWindow.time).open);

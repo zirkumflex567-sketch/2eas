@@ -3,7 +3,7 @@
 (function(){
   "use strict";
   if(window.CHART_STUDIO_V5_PREVIEW_ENABLED!==true)return;
-  let button=null,panel=null,host=null,status=null,title=null,dataWindow=null,dataWindowPinButton=null,liveQuote=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,priceButton=null,timeButton=null,rectButton=null,fiboButton=null,measureButton=null,channelButton=null,pitchforkButton=null,riskRewardButton=null,textButton=null,textInput=null,drawingStatus=null,layoutButton=null,layoutImportButton=null,layoutReplaceButton=null,layoutImportFile=null;
+  let button=null,panel=null,host=null,status=null,title=null,dataWindow=null,dataWindowPinButton=null,liveQuote=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,priceButton=null,timeButton=null,rectButton=null,fiboButton=null,measureButton=null,channelButton=null,pitchforkButton=null,riskRewardButton=null,textButton=null,textInput=null,drawingStatus=null,layoutButton=null,layoutImportButton=null,layoutReplaceButton=null,layoutImportFile=null,profileSummary=null,profileName=null,profileList=null,profileSaveButton=null,profileLoadButton=null,profileRenameButton=null,profileCopyButton=null,profileDeleteButton=null,layoutResetButton=null,profileStatus=null;
 
   let scope=null,latest=null,engine=null,bridge=null,indicatorBridge=null,oscillatorBridge=null,active=false,loading=null,autoFibEnabled=false,dataWindowHover=null,dataWindowPinned=null,dataWindowCrosshairActive=false;
   let generation=0,sequence=0,latestSequence=0,positionSequence=0,positionsSnapshot=null,brokerDealMarkersSnapshot=null,positionsEnabled=true,drawingTool=null,pendingImportMode=null,quoteTimer=null,quoteRequest=0;
@@ -138,7 +138,7 @@
     try{engine?.destroy()}catch(_){}
     engine=null;bridge=null;autoFibEnabled=false;drawingTool=null;if(autoFibButton){autoFibButton.setAttribute("aria-pressed","false");autoFibButton.textContent="Auto-Fibonacci einblenden";autoFibButton.disabled=!latest}if(autoFibStatus)autoFibStatus.textContent="";updateDrawingButtons();if(drawingStatus)drawingStatus.textContent="Zeichenwerkzeug aus.";if(host)host.replaceChildren();
   }
-  function updateDrawingButtons(){for(const [button,kind] of [[trendButton,"TREND"],[rayButton,"RAY"],[priceButton,"PRICE"],[timeButton,"TIME"],[rectButton,"RECT"],[fiboButton,"FIBO"],[measureButton,"MEASURE"],[channelButton,"CHANNEL"],[pitchforkButton,"PITCHFORK"],[riskRewardButton,"RISK_REWARD"],[textButton,"TEXT"]])if(button){button.disabled=!engine||!latest||(kind==="TEXT"&&!/^[\x20-\x7E]{1,40}$/.test(textInput?.value||""));button.setAttribute("aria-pressed",drawingTool===kind?"true":"false")}for(const item of [layoutButton,layoutImportButton,layoutReplaceButton])if(item)item.disabled=!engine||!latest}
+  function updateDrawingButtons(){for(const [button,kind] of [[trendButton,"TREND"],[rayButton,"RAY"],[priceButton,"PRICE"],[timeButton,"TIME"],[rectButton,"RECT"],[fiboButton,"FIBO"],[measureButton,"MEASURE"],[channelButton,"CHANNEL"],[pitchforkButton,"PITCHFORK"],[riskRewardButton,"RISK_REWARD"],[textButton,"TEXT"]])if(button){button.disabled=!engine||!latest||(kind==="TEXT"&&!/^[\x20-\x7E]{1,40}$/.test(textInput?.value||""));button.setAttribute("aria-pressed",drawingTool===kind?"true":"false")}for(const item of [layoutButton,layoutImportButton,layoutReplaceButton,profileSaveButton,layoutResetButton])if(item)item.disabled=!engine||!latest;updateProfileButtons()}
   function exportLayout(){
     if(!engine||!scope)return null;
     const serialized=engine.exportLayout(),layout=JSON.parse(serialized);
@@ -230,10 +230,97 @@
     }finally{try{candidate?.destroy()}catch(_){}frame.remove()}
   }
   function layoutStorageKey(){return `2eas.chartstudio.v5.drawings:v5:${encodeURIComponent(scope.account)}:${encodeURIComponent(scope.symbol)}:${encodeURIComponent(scope.timeframe)}`}
-  function importLayout(serialized,mode="merge"){
+  const PROFILE_LIMIT=20,PROFILE_BYTES_LIMIT=2*1024*1024;
+  function profileStorageKey(){return `2eas.chartstudio.v5.profiles:v1:${encodeURIComponent(scope.account)}:${encodeURIComponent(scope.symbol)}:${encodeURIComponent(scope.timeframe)}`}
+  function cleanProfileName(value){if(typeof value!=="string")throw new Error("Layoutname muss Text sein");const name=value.trim();if(name.length<1||name.length>40||/[\x00-\x1f\x7f]/.test(name))throw new Error("Layoutname muss 1–40 druckbare Zeichen enthalten");return name}
+  function readProfileStore(){
+    if(!scope)throw new Error("Kein aktiver Layoutscope");
+    const raw=window.localStorage.getItem(profileStorageKey());if(raw===null)return {schemaVersion:1,account:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,profiles:[]};
+    if(new TextEncoder().encode(raw).length>PROFILE_BYTES_LIMIT)throw new Error("Lokaler Layoutspeicher überschreitet 2 MiB");
+    let store;try{store=JSON.parse(raw)}catch(_){throw new Error("Lokaler Layoutspeicher ist beschädigt")}
+    if(!store||typeof store!=="object"||Array.isArray(store)||Object.keys(store).sort().join(",")!=="account,profiles,schemaVersion,symbol,timeframe"||
+      store.schemaVersion!==1||store.account!==scope.account||store.symbol!==scope.symbol||store.timeframe!==scope.timeframe||!Array.isArray(store.profiles)||store.profiles.length>PROFILE_LIMIT)
+      throw new Error("Gespeicherte Layouts haben einen ungültigen Scope oder ein ungültiges Schema");
+    const ids=new Set(),names=new Set();
+    for(const profile of store.profiles){
+      if(!profile||typeof profile!=="object"||Array.isArray(profile)||Object.keys(profile).sort().join(",")!=="id,layout,name"||
+        typeof profile.id!=="string"||!/^[-_a-zA-Z0-9]{12,64}$/.test(profile.id)||ids.has(profile.id)||
+        typeof profile.layout!=="string"||new TextEncoder().encode(profile.layout).length>512*1024)throw new Error("Gespeichertes Layout ist ungültig");
+      const name=cleanProfileName(profile.name),folded=name.toLocaleLowerCase();if(names.has(folded))throw new Error("Gespeicherte Layoutnamen sind doppelt");
+      parseLayout(profile.layout);ids.add(profile.id);names.add(folded);
+    }
+    return store;
+  }
+  function writeProfileStore(store){
+    const key=profileStorageKey(),previous=window.localStorage.getItem(key),serialized=JSON.stringify(store);
+    if(new TextEncoder().encode(serialized).length>PROFILE_BYTES_LIMIT)throw new Error("Lokale Layouts überschreiten 2 MiB");
+    try{window.localStorage.setItem(key,serialized);if(window.localStorage.getItem(key)!==serialized)throw new Error("Layoutspeicher hat den Stand nicht bestätigt")}
+    catch(error){try{if(previous===null)window.localStorage.removeItem(key);else window.localStorage.setItem(key,previous)}catch(_){}throw error}
+  }
+  function selectedProfileId(){return profileList?.value||""}
+  function updateProfileButtons(){
+    const selected=!!selectedProfileId(),ready=!!engine&&!!latest;
+    if(profileSaveButton)profileSaveButton.disabled=!ready;
+    for(const item of [profileLoadButton,profileRenameButton,profileCopyButton,profileDeleteButton])if(item)item.disabled=!ready||!selected;
+    if(layoutResetButton)layoutResetButton.disabled=!ready;
+  }
+  function refreshProfileList(){
+    if(profileSummary&&scope)profileSummary.textContent=`Lokale Layouts · ${scope.account} · ${scope.symbol} · ${scope.timeframe}`;
+    if(!profileList)return;
+    const prior=profileList.value;profileList.replaceChildren();
+    const placeholder=document.createElement("option");placeholder.value="";placeholder.textContent="Layout auswählen …";profileList.append(placeholder);
+    try{for(const profile of readProfileStore().profiles){const option=document.createElement("option");option.value=profile.id;option.textContent=profile.name;profileList.append(option)}
+      if([...profileList.options].some(option=>option.value===prior))profileList.value=prior;
+      if(profileStatus&&!profileStatus.textContent)profileStatus.textContent="Layouts werden nur in diesem Browser gespeichert.";
+    }catch(error){if(profileStatus)profileStatus.textContent="Layoutliste nicht verfügbar · "+String(error?.message||error).slice(0,120)}
+    updateProfileButtons();
+  }
+  function profileById(store,id){return store.profiles.find(profile=>profile.id===id)||null}
+  function ensureUniqueProfileName(store,name,exceptId=""){
+    const folded=name.toLocaleLowerCase();if(store.profiles.some(profile=>profile.id!==exceptId&&profile.name.toLocaleLowerCase()===folded))throw new Error("Ein Layout mit diesem Namen existiert bereits");
+  }
+  function newProfileId(){if(window.crypto?.randomUUID)return window.crypto.randomUUID();const bytes=new Uint8Array(16);window.crypto.getRandomValues(bytes);return [...bytes].map(value=>value.toString(16).padStart(2,"0")).join("")}
+  function saveProfile(){
+    const store=readProfileStore(),name=cleanProfileName(profileName?.value||"");ensureUniqueProfileName(store,name);
+    if(store.profiles.length>=PROFILE_LIMIT)throw new Error(`Höchstens ${PROFILE_LIMIT} Layouts pro Konto, Symbol und Zeitraum`);
+    const layout=exportLayout();parseLayout(layout);store.profiles.push({id:newProfileId(),name,layout});writeProfileStore(store);refreshProfileList();profileList.value=store.profiles.at(-1).id;
+    updateProfileButtons();if(profileStatus)profileStatus.textContent=`Layout „${name}“ gespeichert.`;return {name,count:store.profiles.length};
+  }
+  function renameProfile(){
+    const store=readProfileStore(),profile=profileById(store,selectedProfileId());if(!profile)throw new Error("Bitte zuerst ein Layout auswählen");
+    const name=cleanProfileName(profileName?.value||"");ensureUniqueProfileName(store,name,profile.id);profile.name=name;writeProfileStore(store);refreshProfileList();profileList.value=profile.id;
+    if(profileStatus)profileStatus.textContent=`Layout in „${name}“ umbenannt.`;return {name,count:store.profiles.length};
+  }
+  function copyProfile(){
+    const store=readProfileStore(),source=profileById(store,selectedProfileId());if(!source)throw new Error("Bitte zuerst ein Layout auswählen");
+    const name=cleanProfileName(profileName?.value||"");ensureUniqueProfileName(store,name);if(store.profiles.length>=PROFILE_LIMIT)throw new Error(`Höchstens ${PROFILE_LIMIT} Layouts pro Konto, Symbol und Zeitraum`);
+    const copy={id:newProfileId(),name,layout:source.layout};store.profiles.push(copy);writeProfileStore(store);refreshProfileList();profileList.value=copy.id;
+    if(profileStatus)profileStatus.textContent=`Layout „${source.name}“ als „${name}“ kopiert.`;return {name,count:store.profiles.length};
+  }
+  function loadProfile(){
+    const profile=profileById(readProfileStore(),selectedProfileId());if(!profile)throw new Error("Bitte zuerst ein Layout auswählen");
+    if(!window.confirm(`Gespeichertes Layout „${profile.name}“ für ${scope.symbol} ${scope.timeframe} laden und die aktuelle Ansicht ersetzen?`))throw new Error("Laden abgebrochen");
+    const result=importLayout(profile.layout,"replace",true);if(profileStatus)profileStatus.textContent=`Layout „${profile.name}“ geladen.`;return result;
+  }
+  function deleteProfile(){
+    const store=readProfileStore(),profile=profileById(store,selectedProfileId());if(!profile)throw new Error("Bitte zuerst ein Layout auswählen");
+    if(!window.confirm(`Gespeichertes Layout „${profile.name}“ löschen?`))throw new Error("Löschen abgebrochen");
+    store.profiles=store.profiles.filter(item=>item.id!==profile.id);writeProfileStore(store);refreshProfileList();profileName.value="";
+    if(profileStatus)profileStatus.textContent=`Layout „${profile.name}“ gelöscht.`;return {count:store.profiles.length};
+  }
+  function resetCurrentLayout(){
+    if(!engine||!scope)throw new Error("Aktuelles Layout ist nicht verfügbar");
+    if(!window.confirm(`Das aktuelle Arbeitslayout für ${scope.symbol} ${scope.timeframe} zurücksetzen? Gespeicherte Layouts bleiben erhalten.`))throw new Error("Zurücksetzen abgebrochen");
+    const key=layoutStorageKey(),previous=window.localStorage.getItem(key);
+    try{window.localStorage.removeItem(key);destroyRenderer();mountRenderer();const state=engine?.inspect();if(!state||state.persistenceStatus!=="READY"||state.persistenceError!==null)throw new Error("Standardlayout konnte nicht geladen werden")}
+    catch(error){let rollbackFailed=false;try{if(previous!==null)window.localStorage.setItem(key,previous)}catch(_){rollbackFailed=true}destroyRenderer();mountRenderer();const state=engine?.inspect();if(rollbackFailed||!state||state.persistenceStatus!=="READY"||state.persistenceError!==null)throw new Error("Layout-Reset fehlgeschlagen; vorheriger Zustand konnte nicht wiederhergestellt werden");throw error}
+    if(profileStatus)profileStatus.textContent="Aktuelles Layout zurückgesetzt · gespeicherte Layouts bleiben erhalten.";return true;
+  }
+  function profileAction(action){try{action()}catch(error){if(profileStatus)profileStatus.textContent="Layoutaktion nicht ausgeführt · "+String(error?.message||error).slice(0,140)}}
+  function importLayout(serialized,mode="merge",replaceConfirmed=false){
     if(!engine||!scope||!latest)throw new Error("Layoutimport benötigt verifizierte Chartdaten");
     if(mode!=="merge"&&mode!=="replace")throw new Error("Unbekannter Importmodus");
-    if(mode==="replace"&&!window.confirm("Das aktuelle lokale Layout dieses Kontos, Symbols und Zeitrahmens ersetzen?"))throw new Error("Import abgebrochen");
+    if(mode==="replace"&&!replaceConfirmed&&!window.confirm("Das aktuelle lokale Layout dieses Kontos, Symbols und Zeitrahmens ersetzen?"))throw new Error("Import abgebrochen");
     if(!engine.verifyPersistence())throw new Error("Lokaler Layoutspeicher ist nicht bereit oder wurde parallel geändert");
     const storage=window.localStorage,key=layoutStorageKey(),previous=storage.getItem(key);
     const importedFile=parseLayout(serialized),imported=validateLayoutSnapshot(storedLayout(importedFile)),current=JSON.parse(engine.exportLayout());
@@ -389,6 +476,7 @@
     if(same(scope,next))return true;
     scope={account:next.account,symbol:next.symbol,timeframe:next.timeframe};
     if(title)title.textContent=`Native v5 · ${scope.symbol} ${scope.timeframe} · ${scope.account}`;
+    refreshProfileList();
     generation++;sequence=0;latestSequence=0;positionSequence=0;positionsSnapshot=null;brokerDealMarkersSnapshot=null;latest=null;
     if(bridge)bridge.clear();
     destroyRenderer();
@@ -439,6 +527,7 @@
     title=document.getElementById("chart-v5-preview-title");
     autoFibButton=document.getElementById("chart-v5-auto-fib-btn");autoFibStatus=document.getElementById("chart-v5-auto-fib-status");
     trendButton=document.getElementById("chart-v5-trend-btn");rayButton=document.getElementById("chart-v5-ray-btn");priceButton=document.getElementById("chart-v5-price-btn");timeButton=document.getElementById("chart-v5-time-btn");rectButton=document.getElementById("chart-v5-rect-btn");fiboButton=document.getElementById("chart-v5-fibo-btn");measureButton=document.getElementById("chart-v5-measure-btn");channelButton=document.getElementById("chart-v5-channel-btn");pitchforkButton=document.getElementById("chart-v5-pitchfork-btn");riskRewardButton=document.getElementById("chart-v5-risk-reward-btn");textButton=document.getElementById("chart-v5-text-btn");textInput=document.getElementById("chart-v5-text-input");drawingStatus=document.getElementById("chart-v5-drawing-status");layoutButton=document.getElementById("chart-v5-layout-export-btn");
+    profileSummary=document.querySelector("#chart-v5-profile-manager > summary");profileName=document.getElementById("chart-v5-profile-name");profileList=document.getElementById("chart-v5-profile-list");profileSaveButton=document.getElementById("chart-v5-profile-save");profileLoadButton=document.getElementById("chart-v5-profile-load");profileRenameButton=document.getElementById("chart-v5-profile-rename");profileCopyButton=document.getElementById("chart-v5-profile-copy");profileDeleteButton=document.getElementById("chart-v5-profile-delete");layoutResetButton=document.getElementById("chart-v5-layout-reset");profileStatus=document.getElementById("chart-v5-profile-status");
     if(!button||!panel||!host||!status)return;
     window.addEventListener("chart-studio-averages-change",onAverageConfigsChanged);
     window.addEventListener("chart-studio-indicators-change",onOscillatorConfigsChanged);
@@ -460,6 +549,15 @@
     if(textButton)textButton.addEventListener("click",()=>setDrawingTool(drawingTool==="TEXT"?null:"TEXT"));
     if(textInput)textInput.addEventListener("input",updateDrawingButtons);
     layoutImportButton=document.getElementById("chart-v5-layout-import-btn");layoutReplaceButton=document.getElementById("chart-v5-layout-replace-btn");layoutImportFile=document.getElementById("chart-v5-layout-import-file");
+    if(profileList)profileList.addEventListener("change",()=>{const profile=profileById(readProfileStore(),selectedProfileId());if(profileName)profileName.value=profile?.name||"";updateProfileButtons()});
+    if(profileSaveButton)profileSaveButton.addEventListener("click",()=>profileAction(saveProfile));
+    if(profileLoadButton)profileLoadButton.addEventListener("click",()=>profileAction(loadProfile));
+    if(profileRenameButton)profileRenameButton.addEventListener("click",()=>profileAction(renameProfile));
+    if(profileCopyButton)profileCopyButton.addEventListener("click",()=>profileAction(copyProfile));
+    if(profileDeleteButton)profileDeleteButton.addEventListener("click",()=>profileAction(deleteProfile));
+    if(layoutResetButton)layoutResetButton.addEventListener("click",()=>profileAction(resetCurrentLayout));
+    if(profileName)profileName.addEventListener("input",updateProfileButtons);
+    refreshProfileList();updateProfileButtons();
     if(layoutButton)layoutButton.addEventListener("click",downloadLayout);
     if(layoutImportButton)layoutImportButton.addEventListener("click",()=>chooseLayoutFile("merge"));
     if(layoutReplaceButton)layoutReplaceButton.addEventListener("click",()=>chooseLayoutFile("replace"));
