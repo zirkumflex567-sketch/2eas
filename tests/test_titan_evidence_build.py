@@ -55,6 +55,27 @@ def test_titan_candidate_uses_explicit_broker_offset_for_quote_utc_and_provenanc
     assert "cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS" in generated
 
 
+def test_titan_deinit_flushes_bounded_recorder_queue_before_killing_timer():
+    source = (ROOT / BUILD.SOURCE_NAME).read_text(encoding="utf-8-sig")
+    generated = BUILD._instrument_source(
+        source, "xau5m_m5", "titan_test", "a" * 64, "b" * 64, "c" * 64,
+        700194619, "PUPrime-Demo", r"C:\\demo\\terminal64.exe", 10800,
+    )
+    deinit = re.search(r"void OnDeinit\(const int reason\)\s*\{(.*?)^\}", generated, re.S | re.M)
+
+    assert deinit, "generated EA must retain its deinitialization handler"
+    body = deinit.group(1)
+    assert "CSFlushEvidenceQueueOnShutdown();" in body
+    assert body.index("CSFlushEvidenceQueueOnShutdown();") < body.index("EventKillTimer();")
+    helper = (ROOT / "ChartStudioEvidenceSpool.mqh").read_text()
+    assert "#define CS_SHUTDOWN_FLUSH_PASSES ((CS_QUEUE_CAPACITY+CS_QUEUE_BATCH-1)/CS_QUEUE_BATCH)" in helper
+    drain = re.search(r"void CSFlushEvidenceQueueOnShutdown\(\)\s*\{(.*?)^  \}", helper, re.S | re.M)
+    assert drain, "shared spool must provide a bounded shutdown drain"
+    assert "pass<CS_SHUTDOWN_FLUSH_PASSES" in drain.group(1)
+    assert "CSQueueCount>=before" in drain.group(1)
+    assert "CSRecorderDisabled" in drain.group(1)
+
+
 def test_titan_candidate_correlates_real_deal_transactions_to_order_attempts():
     source = (ROOT / BUILD.SOURCE_NAME).read_text(encoding="utf-8-sig")
     generated = BUILD._instrument_source(

@@ -36,6 +36,7 @@
 
 #define CS_QUEUE_CAPACITY 64
 #define CS_QUEUE_BATCH 8
+#define CS_SHUTDOWN_FLUSH_PASSES ((CS_QUEUE_CAPACITY+CS_QUEUE_BATCH-1)/CS_QUEUE_BATCH)
 #define CS_SEGMENT_FOLDER "ChartStudioEvidence"
 #define CS_SEGMENT_MAX_BYTES 131072
 
@@ -430,6 +431,21 @@ void CSFlushEvidenceQueue()
       CSQueueHead=(CSQueueHead+1)%CS_QUEUE_CAPACITY;
       CSQueueCount--;
       sent++;
+     }
+#endif
+  }
+
+void CSFlushEvidenceQueueOnShutdown()
+  {
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+   for(int pass=0;pass<CS_SHUTDOWN_FLUSH_PASSES;pass++)
+     {
+      if(CSQueueCount<=0 || CSRecorderDisabled)
+         return;
+      int before=CSQueueCount;
+      CSFlushEvidenceQueue();
+      if(CSQueueCount>=before)
+         return;
      }
 #endif
   }

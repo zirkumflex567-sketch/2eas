@@ -53,6 +53,29 @@ def test_goldm15_candidate_captures_computed_signal_values_without_changing_trad
     assert generated.index("CSFlushEvidenceQueue();") < generated.index("risk_guard.Service(trade,MagicBase);", generated.index("void OnTimer()"))
 
 
+def test_goldm15_deinit_flushes_before_timer_and_risk_guard_shutdown():
+    source = (ROOT / "goldm15" / "GoldM15_Reconstruction.mq5").read_text(encoding="utf-8-sig")
+    generated = BUILD._instrument_source(
+        source,
+        account_alias="goldm15",
+        producer="goldm15_demo",
+        terminal_hash="a" * 64,
+        source_hash="b" * 64,
+        expected_parameter_hash="c" * 64,
+        login=53090070,
+        server="ICMarketsEU-Demo",
+        terminal_path=r"C:\demo\terminal64.exe",
+        broker_utc_offset_seconds=10800,
+    )
+    deinit = re.search(r"void OnDeinit\(const int reason\)\s*\{(.*?)^\}", generated, re.S | re.M)
+
+    assert deinit, "generated GoldM15 EA must retain its deinitialization handler"
+    body = deinit.group(1)
+    assert "CSFlushEvidenceQueueOnShutdown();" in body
+    assert body.index("CSFlushEvidenceQueueOnShutdown();") < body.index("EventKillTimer();")
+    assert body.index("CSFlushEvidenceQueueOnShutdown();") < body.index("risk_guard.Shutdown();")
+
+
 def test_goldm15_candidate_correlates_partial_deals_and_owned_position_changes():
     source = (ROOT / "goldm15" / "GoldM15_Reconstruction.mq5").read_text(encoding="utf-8-sig")
     generated = BUILD._instrument_source(

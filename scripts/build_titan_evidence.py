@@ -191,7 +191,11 @@ def _instrument_source(source_text: str, account_alias: str, producer: str,
     deinit_anchor = "void OnDeinit(const int reason)\n{"
     if source_text.count(deinit_anchor) != 1:
         raise ValueError("expected unique deinitialization function")
-    source_text = source_text.replace(deinit_anchor, deinit_anchor + "\n#ifdef CS_EVIDENCE_CAPTURE_ENABLED\n   EventKillTimer();\n#endif", 1)
+    source_text = source_text.replace(
+        deinit_anchor,
+        deinit_anchor + "\n#ifdef CS_EVIDENCE_CAPTURE_ENABLED\n   CSFlushEvidenceQueueOnShutdown();\n   EventKillTimer();\n#endif",
+        1,
+    )
     event_handlers = '''
 void OnTimer()
   {
