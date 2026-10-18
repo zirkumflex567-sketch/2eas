@@ -82,9 +82,14 @@ async def dashboard_cache_policy(request: Request, call_next):
     content_type = response.headers.get('content-type', '').lower()
     if content_type.startswith('text/html'):
         response.headers['Cache-Control'] = 'no-store'
-    elif request.url.path.startswith('/static/'):
-        # Keep validators (ETag/Last-Modified), but require revalidation after deploys.
-        response.headers['Cache-Control'] = 'no-cache'
+    else:
+        request_path = request.url.path
+        proxy_prefix = os.environ.get('DASHBOARD_PROXY_PREFIX', '/stt')
+        if proxy_prefix and request_path.startswith(proxy_prefix + '/'):
+            request_path = request_path[len(proxy_prefix):]
+        if request_path.startswith('/static/'):
+            # Keep validators (ETag/Last-Modified), but require revalidation after deploys.
+            response.headers['Cache-Control'] = 'no-cache'
     return response
 
 
