@@ -710,7 +710,7 @@ def get_live_market_data(include_journal=True):
     daily_drawdown, source_meta, guard = current_daily_drawdown(mt5, acc, tick, now, params, dd_cfg)
     wall_time = datetime.fromtimestamp(now, timezone.utc)
 
-    rates = _mt5_read('copy_rates_from_pos', sym_name, acc_tf, 0, 5000 if acc_id == 'goldm15' else 1000)
+    rates = _mt5_read('copy_rates_from_pos', sym_name, acc_tf, 0, 4999 if acc_id == 'goldm15' else 1000)
     if rates is None or len(rates) < 200:
         return None
 
@@ -1173,7 +1173,7 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
     tf_val = TIMEFRAME_MAP[tf_upper]
     count = min(1001, max(10, count))
     rates_offset = broker_clock.rates_offset_seconds(current_acc)
-    fetch_count = max(5000, count+250) if (account == 'goldm15' and sym_name == SYMBOL and tf_val == mt5.TIMEFRAME_M15) else (count+250)
+    fetch_count = 4999 if (account == 'goldm15' and sym_name == SYMBOL and tf_val == mt5.TIMEFRAME_M15) else (count+250)
     if before is None:
         rates = _mt5_read('copy_rates_from_pos', sym_name, tf_val, 0, fetch_count)
     else:

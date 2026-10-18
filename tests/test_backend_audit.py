@@ -258,6 +258,51 @@ def test_chart_candles_accepts_full_1000_period_indicator_warmup(isolated, monke
     isolated.send.assert_not_called()
 
 
+def test_goldm15_chart_candles_stays_within_terminal_history_limit(isolated, monkeypatch):
+    account = gateway.ACCOUNTS['goldm15']
+    isolated.info.login = account['login']
+    isolated.info.server = account['server']
+    requests = []
+
+    def copy_rates(symbol, timeframe, start, count):
+        requests.append((symbol, timeframe, start, count))
+        if count >= 5000:
+            return None
+        return isolated.rates.copy()
+
+    monkeypatch.setattr(app.mt5, 'copy_rates_from_pos', copy_rates)
+    response = isolated.client.get('/api/candles?account=goldm15&tf=M15&symbol=XAUUSD&count=1001')
+
+    assert response.status_code == 200, response.text
+    assert requests == [('XAUUSD', app.mt5.TIMEFRAME_M15, 0, 4999)]
+    assert len(response.json()['candles']) == len(isolated.rates)
+    assert response.json()['source'] == 'MT5_VERIFIED'
+    assert response.json()['canExecute'] is False
+    isolated.send.assert_not_called()
+
+
+def test_goldm15_light_status_stays_within_terminal_history_limit(isolated, monkeypatch):
+    account = gateway.ACCOUNTS['goldm15']
+    isolated.info.login = account['login']
+    isolated.info.server = account['server']
+    requests = []
+
+    def copy_rates(symbol, timeframe, start, count):
+        requests.append((symbol, timeframe, start, count))
+        if count >= 5000:
+            return None
+        return isolated.rates.copy()
+
+    monkeypatch.setattr(app.mt5, 'copy_rates_from_pos', copy_rates)
+    response = isolated.client.get('/api/status?account=goldm15&light=true')
+
+    assert response.status_code == 200, response.text
+    assert requests == [('XAUUSD', app.mt5.TIMEFRAME_M15, 0, 4999)]
+    assert response.json()['account']['id'] == 'goldm15'
+    assert response.json()['ea_execution_verified'] is False
+    isolated.send.assert_not_called()
+
+
 def test_chart_candles_rejects_nonpositive_history_cursor(isolated, monkeypatch):
     reads=[]
     monkeypatch.setattr(app.mt5, 'copy_rates_from', lambda *args: reads.append(args), raising=False)
