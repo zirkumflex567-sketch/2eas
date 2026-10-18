@@ -123,6 +123,8 @@ def test_titan_candidate_records_each_risk_close_attempt_without_changing_guard_
     assert "bool cs_close_sent=m_trade.PositionClose(ticket);" in generated
     assert 'cs_close_sent ? "PASS" : "BLOCK"' in generated
     assert 'CSPredicate("risk_guard_close",cs_close_sent ? "1" : "0"' in generated
+    assert 'cs_position_type==POSITION_TYPE_SELL ? "BUY" : ""' in generated
+    assert 'cs_close_side!=""' in generated
     assert "TRADE_ACTION" not in generated
 
 

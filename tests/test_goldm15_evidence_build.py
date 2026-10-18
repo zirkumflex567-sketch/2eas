@@ -123,6 +123,43 @@ def test_goldm15_candidate_records_strategy_close_attempt_without_changing_close
     assert "CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS" in close_path
 
 
+def test_goldm15_candidate_records_risk_guard_liquidations_with_reason_and_order_link():
+    risk = (ROOT / "goldm15" / "GoldM15_Risk.mqh").read_text(encoding="utf-8-sig")
+    generated = BUILD._instrument_risk_helper(risk)
+    source = (ROOT / "goldm15" / "GoldM15_Reconstruction.mq5").read_text(encoding="utf-8-sig")
+    candidate = BUILD._instrument_source(
+        source,
+        account_alias="goldm15",
+        producer="goldm15_demo",
+        terminal_hash="a" * 64,
+        source_hash="b" * 64,
+        expected_parameter_hash="c" * 64,
+        login=53090070,
+        server="ICMarketsEU-Demo",
+        terminal_path=r"C:\demo\terminal64.exe",
+        broker_utc_offset_seconds=10800,
+    )
+
+    assert "void GoldLiquidate(CTrade &closer,long magic,bool all,const string reason)" in generated
+    assert "GoldLiquidate(closer,magic,all_scope,cs_reason)" in generated
+    for trigger in (
+        '"HARD_LOCK"', '"DAILY_DRAWDOWN"', '"ROLLOVER"',
+        '"BASELINE_UNKNOWN"', '"PERSISTENCE_FAILURE"', '"HOLIDAY_OR_GUARD"',
+    ):
+        assert trigger in generated
+    assert "CSCaptureGoldRiskCloseAttempt(reason,ticket,cs_position_type,cs_volume," in generated
+    assert "CSRegisterOrderAttempt(order_ticket,attempt_id,bar_time)" in candidate
+    assert 'CSEnqueueDecision("ORDER_ATTEMPT",outcome,bar_time' in candidate
+    assert 'position_type==POSITION_TYPE_SELL ? "BUY" : ""' in candidate
+    assert 'quote_ok && side!=""' in candidate
+    assert "symbol!=_Symbol" in candidate
+    assert '#define CS_EVIDENCE_CAPTURE' in candidate
+    assert candidate.index('#define CS_EVIDENCE_CAPTURE') < candidate.index('#include "GoldM15_Risk.mqh"')
+    assert "#else\n         if(!closer.PositionClose(ticket) || !GoldAcceptedResult(closer.ResultRetcode())) PrintFormat" in generated
+    assert generated.count("GoldCancelOrders(closer,magic,all);") == 1
+    assert "CSCaptureGoldRiskCloseAttempt" not in risk
+
+
 def test_goldm15_candidate_refuses_unexpected_source_anchors():
     source = (ROOT / "goldm15" / "GoldM15_Reconstruction.mq5").read_text(encoding="utf-8-sig")
     with pytest.raises(ValueError, match="unique"):
@@ -205,6 +242,11 @@ def test_prepare_variant_writes_complete_package_only_below_ignored_output(tmp_p
         assert manifest["spoolHelperSha256"] == BUILD.EXPECTED_HASHES["ChartStudioEvidenceSpool.mqh"]
         assert (package / "ChartStudioEvidenceSpool.mqh").is_file()
         assert all((package / path.name).is_file() for path in BUILD.HELPERS)
+        generated_risk = package / "GoldM15_Risk.mqh"
+        assert "CSCaptureGoldRiskCloseAttempt(reason,ticket" in generated_risk.read_text(encoding="utf-8-sig")
+        assert manifest["generatedSupportingSources"][BUILD.HELPERS[1].as_posix()] == hashlib.sha256(
+            generated_risk.read_bytes()
+        ).hexdigest()
         assert result.source.with_suffix(".ex5").exists() is False
     finally:
         shutil.rmtree(output_root, ignore_errors=True)

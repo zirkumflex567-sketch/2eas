@@ -554,12 +554,14 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
             ulong ticket=m_position.Ticket();
             ENUM_POSITION_TYPE cs_position_type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
             double cs_close_volume=PositionGetDouble(POSITION_VOLUME);
-            string cs_close_side=cs_position_type==POSITION_TYPE_BUY ? "SELL" : "BUY";
+            string cs_close_side=cs_position_type==POSITION_TYPE_BUY ? "SELL" :
+               (cs_position_type==POSITION_TYPE_SELL ? "BUY" : "");
             MqlTick cs_close_tick={};
             bool cs_close_quote_ok=SymbolInfoTick(_Symbol,cs_close_tick) && cs_close_tick.time_msc>0 &&
                                    cs_close_tick.bid>0.0 && cs_close_tick.ask>=cs_close_tick.bid;
             double cs_close_bid=cs_close_tick.bid,cs_close_ask=cs_close_tick.ask;
-            double cs_close_price=cs_position_type==POSITION_TYPE_BUY ? cs_close_bid : cs_close_ask;
+            double cs_close_price=cs_position_type==POSITION_TYPE_BUY ? cs_close_bid :
+               (cs_position_type==POSITION_TYPE_SELL ? cs_close_ask : 0.0);
             string cs_close_quote_time=CSUtcFromBrokerMillis(cs_close_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS);
             double cs_close_tick_size=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
             double cs_close_tick_value=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
@@ -578,7 +580,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
                                                    cs_close_outcome,cs_reason);
             datetime cs_close_bar_time=iTime(_Symbol,PERIOD_M15,1);
             string cs_attempt="";
-            if(cs_close_quote_ok && cs_close_tick_size>0.0 && cs_close_volume>0.0 && cs_close_price>0.0)
+            if(cs_close_quote_ok && cs_close_side!="" && cs_close_tick_size>0.0 && cs_close_volume>0.0 && cs_close_price>0.0)
                cs_attempt=CSOrderAttemptJson(cs_attempt_id,cs_close_side,cs_close_price,cs_close_volume,
                   cs_close_bid,cs_close_ask,cs_close_tick_size,cs_close_tick_value,cs_close_currency,
                   cs_close_quote_time,cs_close_request_time,CSUtc(cs_close_ack_utc),cs_close_retcode,

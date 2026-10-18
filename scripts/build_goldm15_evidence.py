@@ -52,6 +52,55 @@ def _source_digest(content: bytes) -> str:
     return hashlib.sha256(content.replace(b"\r\n", b"\n")).hexdigest()
 
 
+def _instrument_risk_helper(source_text: str) -> str:
+    source_text = source_text.replace("\r\n", "\n")
+    liquidate_anchor = "void GoldLiquidate(CTrade &closer,long magic,bool all)"
+    if source_text.count(liquidate_anchor) != 1:
+        raise ValueError("expected unique GoldM15 account risk liquidation helper")
+    source_text = source_text.replace(
+        liquidate_anchor,
+        "void GoldLiquidate(CTrade &closer,long magic,bool all,const string reason)",
+        1,
+    )
+    service_anchor = """      bool close=state.hard_lock || state.daily_lock || rollover || !state.known || !persistence_ok || !HolidayAllowed(now);
+      if(close && now-last_liquidate>=2)
+      { last_liquidate=now; if(!flat) liquidations++; GoldLiquidate(closer,magic,all_scope); }"""
+    service_capture = """      bool close=state.hard_lock || state.daily_lock || rollover || !state.known || !persistence_ok || !HolidayAllowed(now);
+      string cs_reason=state.hard_lock ? "HARD_LOCK" :
+         (state.daily_lock ? "DAILY_DRAWDOWN" : (rollover ? "ROLLOVER" :
+         (!state.known ? "BASELINE_UNKNOWN" : (!persistence_ok ? "PERSISTENCE_FAILURE" : "HOLIDAY_OR_GUARD"))));
+      if(close && now-last_liquidate>=2)
+      { last_liquidate=now; if(!flat) liquidations++; GoldLiquidate(closer,magic,all_scope,cs_reason); }"""
+    if source_text.count(service_anchor) != 1:
+        raise ValueError("expected unique GoldM15 risk liquidation trigger")
+    source_text = source_text.replace(service_anchor, service_capture, 1)
+
+    close_anchor = """         closer.SetTypeFillingBySymbol(PositionGetString(POSITION_SYMBOL));
+         if(!closer.PositionClose(ticket) || !GoldAcceptedResult(closer.ResultRetcode())) PrintFormat("RISK close retry %I64u: %u",ticket,closer.ResultRetcode());"""
+    close_capture = """         string cs_symbol=PositionGetString(POSITION_SYMBOL);
+         closer.SetTypeFillingBySymbol(cs_symbol);
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+         long cs_position_type=PositionGetInteger(POSITION_TYPE);
+         double cs_volume=PositionGetDouble(POSITION_VOLUME);
+         MqlTick cs_tick={};
+         bool cs_quote_ok=cs_symbol==_Symbol && SymbolInfoTick(cs_symbol,cs_tick) && cs_tick.time_msc>0 &&
+                          cs_tick.bid>0.0 && cs_tick.ask>=cs_tick.bid;
+         datetime cs_request_utc=TimeGMT();
+         bool cs_closed=closer.PositionClose(ticket);
+         uint cs_retcode=closer.ResultRetcode();
+         ulong cs_order_ticket=cs_closed ? closer.ResultOrder() : 0;
+         if(!cs_closed || !GoldAcceptedResult(cs_retcode))
+            PrintFormat("RISK close retry %I64u: %u",ticket,cs_retcode);
+         CSCaptureGoldRiskCloseAttempt(reason,ticket,cs_position_type,cs_volume,cs_symbol,cs_quote_ok,
+            cs_tick,cs_request_utc,cs_closed,cs_retcode,cs_order_ticket);
+#else
+         if(!closer.PositionClose(ticket) || !GoldAcceptedResult(closer.ResultRetcode())) PrintFormat("RISK close retry %I64u: %u",ticket,closer.ResultRetcode());
+#endif"""
+    if source_text.count(close_anchor) != 1:
+        raise ValueError("expected unique GoldM15 risk close request")
+    return source_text.replace(close_anchor, close_capture, 1)
+
+
 def _instrument_source(source_text: str, *, account_alias: str, producer: str,
                        terminal_hash: str, source_hash: str, expected_parameter_hash: str,
                        login: int, server: str, terminal_path: str,
@@ -80,10 +129,14 @@ def _instrument_source(source_text: str, *, account_alias: str, producer: str,
         f"#define CS_EVIDENCE_EXPECTED_TERMINAL_PATH {_mql_string(terminal_path)}",
         f"#define CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS {broker_utc_offset_seconds}",
         "string CSParameterSetCanonical();",
+        "void CSCaptureGoldRiskCloseAttempt(const string reason,const ulong ticket,const long position_type,",
+        "   const double volume,const string symbol,const bool quote_ok,const MqlTick &tick,",
+        "   const datetime request_utc,const bool sent,const uint retcode,const ulong order_ticket);",
         'string CSParameterSetHash="";',
         '#include "ChartStudioEvidenceSpool.mqh"',
     ]
-    source_text = source_text.replace(include_anchor, include_anchor + "\n" + "\n".join(definitions), 1)
+    source_text = source_text.replace("\n" + include_anchor,
+                                      "\n" + "\n".join(definitions) + "\n" + include_anchor, 1)
 
     parameter_anchor = "ENUM_TIMEFRAMES signal_timeframe=PERIOD_CURRENT;"
     if source_text.count(parameter_anchor) != 1:
@@ -405,7 +458,45 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
     timer_anchor = "void OnTimer()\n{\n#ifdef CS_EVIDENCE_CAPTURE_ENABLED"
     if source_text.count(timer_anchor) != 1:
         raise ValueError("expected unique GoldM15 timer insertion point")
-    source_text = source_text.replace(timer_anchor, event_handlers + timer_anchor, 1)
+    risk_capture_handler = '''
+void CSCaptureGoldRiskCloseAttempt(const string reason,const ulong ticket,const long position_type,
+   const double volume,const string symbol,const bool quote_ok,const MqlTick &tick,
+   const datetime request_utc,const bool sent,const uint retcode,const ulong order_ticket)
+  {
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+   if(!CSRecorderReady || CSRecorderDisabled || symbol!=_Symbol)
+      return;
+   string side=position_type==POSITION_TYPE_BUY ? "SELL" :
+      (position_type==POSITION_TYPE_SELL ? "BUY" : "");
+   bool accepted=sent && GoldAcceptedResult(retcode);
+   string outcome=accepted ? "PASS" : "BLOCK";
+   string attempt_id=CS_EVIDENCE_PRODUCER_ID+"_risk_"+
+      IntegerToString((long)GetTickCount64())+"_"+IntegerToString((long)(CSEventCounter+1));
+   datetime bar_time=iTime(_Symbol,PERIOD_M15,1);
+   string request_time=CSUtc(request_utc);
+   string ack_time=CSUtc(TimeGMT());
+   string quote_time=CSUtcFromBrokerMillis(tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS);
+   double price=position_type==POSITION_TYPE_BUY ? tick.bid :
+      (position_type==POSITION_TYPE_SELL ? tick.ask : 0.0);
+   double tick_size=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+   double tick_value=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_VALUE);
+   string currency=SymbolInfoString(symbol,SYMBOL_CURRENCY_PROFIT);
+   string predicates=CSPredicate("risk_guard_close",CSBoolNumber(accepted),"EQ","1",outcome,reason);
+   string attempt="";
+   if(quote_ok && side!="" && tick_size>0.0 && volume>0.0 && price>0.0 && retcode>0 && quote_time!="")
+      attempt=CSOrderAttemptJson(attempt_id,side,price,volume,tick.bid,tick.ask,tick_size,tick_value,
+         currency,quote_time,request_time,ack_time,retcode,order_ticket,
+         tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS);
+   if(bar_time>0)
+      CSEnqueueDecision("ORDER_ATTEMPT",outcome,bar_time,"",predicates,attempt,attempt_id,
+         order_ticket,request_time,0,ticket);
+   if(accepted && order_ticket>0 && bar_time>0)
+      CSRegisterOrderAttempt(order_ticket,attempt_id,bar_time);
+#endif
+  }
+
+'''
+    source_text = source_text.replace(timer_anchor, event_handlers + risk_capture_handler + timer_anchor, 1)
     return source_text
 
 
@@ -502,8 +593,13 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_pa
     log.unlink(missing_ok=True)
     _atomic_write(variant_source, generated.encode("utf-8-sig"))
     _atomic_write(helper_output, spool_bytes)
+    generated_supporting_sources = {}
     for source_helper, output_helper in zip(HELPERS, helper_outputs, strict=True):
-        _atomic_write(output_helper, (root / source_helper).read_bytes())
+        helper_bytes = (root / source_helper).read_bytes()
+        if source_helper == Path("goldm15/GoldM15_Risk.mqh"):
+            helper_bytes = _instrument_risk_helper(helper_bytes.decode("utf-8-sig")).encode("utf-8-sig")
+        _atomic_write(output_helper, helper_bytes)
+        generated_supporting_sources[source_helper.as_posix()] = hashlib.sha256(helper_bytes).hexdigest()
     manifest = {
         "schemaVersion": 1,
         "accountAlias": alias,
@@ -512,6 +608,7 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_pa
         "sourceAndIncludeSha256": source_and_include_hash,
         "spoolHelperSha256": _source_digest(spool_bytes),
         "supportingSources": {str(path): EXPECTED_HASHES[path.as_posix()] for path in HELPERS},
+        "generatedSupportingSources": generated_supporting_sources,
         "sourceSha256": source_hash,
         "presetName": Path(preset_path).name,
         "presetSha256": preset_hash,
