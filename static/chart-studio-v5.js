@@ -8892,12 +8892,13 @@ var ChartStudioV5 = (() => {
     const fibonacci = /* @__PURE__ */ new Map();
     const channels = /* @__PURE__ */ new Map();
     const measurements = /* @__PURE__ */ new Map();
-    let placementTool = null, placementAnchor = null, placementSequence = 0;
+    let placementTool = null, placementAnchor = null, placementText = null, placementSequence = 0;
     const drawingState = (phase, id) => host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state", { detail: { kind: placementTool, phase, ...id ? { id } : {} } }));
     const cancelDrawingTool = (notify = true) => {
       if (!placementTool) return;
       placementTool = null;
       placementAnchor = null;
+      placementText = null;
       if (notify) drawingState("CANCELLED");
     };
     const placeDrawingAt = (time, x2, y2) => {
@@ -8914,13 +8915,15 @@ var ChartStudioV5 = (() => {
       }
       const anchor = { time, price: value };
       const tool = placementTool;
-      if (tool === "PRICE" || tool === "TIME") {
+      if (tool === "PRICE" || tool === "TIME" || tool === "TEXT") {
         const id2 = `preview-${tool.toLowerCase()}-${++placementSequence}`;
         try {
           if (tool === "PRICE") addPriceLevel({ id: id2, price: anchor.price, color: "#49c6ff" });
-          else addTimeMarker({ id: id2, time: anchor.time, color: "#ffb84d" });
+          else if (tool === "TIME") addTimeMarker({ id: id2, time: anchor.time, color: "#ffb84d" });
+          else addTextAnnotation({ id: id2, time: anchor.time, price: anchor.price, text: placementText, color: "#f4d35e" });
           placementTool = null;
           placementAnchor = null;
+          placementText = null;
           host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state", { detail: { kind: tool, phase: "CREATED", id: id2 } }));
         } catch (_2) {
           drawingState("ERROR");
@@ -8942,9 +8945,11 @@ var ChartStudioV5 = (() => {
         if (tool === "TREND") addTrendLine(options);
         else if (tool === "RAY") addRay(options);
         else if (tool === "RECT") addRectangle({ ...options, fill: true });
-        else addFibonacci(options);
+        else if (tool === "FIBO") addFibonacci(options);
+        else addMeasurement(options);
         placementTool = null;
         placementAnchor = null;
+        placementText = null;
         host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state", { detail: { kind: tool, phase: "CREATED", id } }));
       } catch (_2) {
         drawingState("ERROR");
@@ -12023,12 +12028,14 @@ var ChartStudioV5 = (() => {
       readoutIndicators.clear();
       if (volume) volume.setData([]);
     }
-    function setDrawingTool(tool) {
+    function setDrawingTool(tool, text) {
       guard();
-      if (tool !== null && !["TREND", "RAY", "PRICE", "TIME", "RECT", "FIBO"].includes(tool)) throw Error("Invalid drawing tool");
+      if (tool !== null && !["TREND", "RAY", "PRICE", "TIME", "RECT", "FIBO", "MEASURE", "TEXT"].includes(tool)) throw Error("Invalid drawing tool");
+      if (tool === "TEXT" && (typeof text !== "string" || !/^[\x20-\x7E]{1,40}$/.test(text))) throw Error("Text placement requires 1-40 printable ASCII characters");
       cancelDrawingTool(false);
       placementTool = tool;
       placementAnchor = null;
+      placementText = tool === "TEXT" ? text : null;
       if (tool) drawingState("SECOND_ANCHOR");
       return true;
     }

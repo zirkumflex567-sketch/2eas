@@ -832,10 +832,10 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  const fibonacci=new Map<string,{primitive:FibonacciPrimitive;options:FibonacciOptions}>();
  const channels=new Map<string,{primitive:ChannelPrimitive;options:ChannelOptions}>();
  const measurements=new Map<string,{primitive:MeasurementPrimitive;options:MeasurementOptions}>();
- type PlacementTool="TREND"|"RAY"|"PRICE"|"TIME"|"RECT"|"FIBO";
- let placementTool:PlacementTool|null=null,placementAnchor:{time:UTCTimestamp;price:number}|null=null,placementSequence=0;
+ type PlacementTool="TREND"|"RAY"|"PRICE"|"TIME"|"RECT"|"FIBO"|"MEASURE"|"TEXT";
+ let placementTool:PlacementTool|null=null,placementAnchor:{time:UTCTimestamp;price:number}|null=null,placementText:string|null=null,placementSequence=0;
  const drawingState=(phase:"FIRST_ANCHOR"|"SECOND_ANCHOR"|"CREATED"|"CANCELLED"|"ERROR",id?:string)=>host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state",{detail:{kind:placementTool,phase,...(id?{id}:{})}}));
- const cancelDrawingTool=(notify=true)=>{if(!placementTool)return;placementTool=null;placementAnchor=null;if(notify)drawingState("CANCELLED")};
+ const cancelDrawingTool=(notify=true)=>{if(!placementTool)return;placementTool=null;placementAnchor=null;placementText=null;if(notify)drawingState("CANCELLED")};
  const placeDrawingAt=(time:Time|null,x:number,y:number)=>{
   if(!placementTool)return;
   const {width}=chart.paneSize(),paneHeight=chart.panes()[0]?.getHeight()??0;
@@ -844,12 +844,13 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   if(value===null||!Number.isFinite(value)||value<=0){drawingState("ERROR");return}
   const anchor={time:time as UTCTimestamp,price:value};
   const tool=placementTool;
-  if(tool==="PRICE"||tool==="TIME"){
+  if(tool==="PRICE"||tool==="TIME"||tool==="TEXT"){
    const id=`preview-${tool.toLowerCase()}-${++placementSequence}`;
    try{
     if(tool==="PRICE")addPriceLevel({id,price:anchor.price,color:"#49c6ff"});
-    else addTimeMarker({id,time:anchor.time,color:"#ffb84d"});
-    placementTool=null;placementAnchor=null;host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state",{detail:{kind:tool,phase:"CREATED",id}}));
+    else if(tool==="TIME")addTimeMarker({id,time:anchor.time,color:"#ffb84d"});
+    else addTextAnnotation({id,time:anchor.time,price:anchor.price,text:placementText!,color:"#f4d35e"});
+    placementTool=null;placementAnchor=null;placementText=null;host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state",{detail:{kind:tool,phase:"CREATED",id}}));
    }catch(_){drawingState("ERROR")}
    return;
   }
@@ -861,8 +862,9 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    if(tool==="TREND")addTrendLine(options);
    else if(tool==="RAY")addRay(options);
    else if(tool==="RECT")addRectangle({...options,fill:true});
-   else addFibonacci(options);
-   placementTool=null;placementAnchor=null;host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state",{detail:{kind:tool,phase:"CREATED",id}}));
+   else if(tool==="FIBO")addFibonacci(options);
+   else addMeasurement(options);
+   placementTool=null;placementAnchor=null;placementText=null;host.dispatchEvent(new CustomEvent("chartstudio-v5-drawing-state",{detail:{kind:tool,phase:"CREATED",id}}));
   }catch(_){drawingState("ERROR")}
  }
  const maxNativeDrawings=1000,maxIndicatorInstances=20;
@@ -2639,7 +2641,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   for(const line of paneLines.values())chart.removeSeries(line);
   paneLines.clear();readoutIndicators.clear();if(volume)volume.setData([]);
  }
- function setDrawingTool(tool:PlacementTool|null){guard();if(tool!==null&&!["TREND","RAY","PRICE","TIME","RECT","FIBO"].includes(tool))throw Error("Invalid drawing tool");cancelDrawingTool(false);placementTool=tool;placementAnchor=null;if(tool)drawingState("SECOND_ANCHOR");return true}
+ function setDrawingTool(tool:PlacementTool|null,text?:string){guard();if(tool!==null&&!["TREND","RAY","PRICE","TIME","RECT","FIBO","MEASURE","TEXT"].includes(tool))throw Error("Invalid drawing tool");if(tool==="TEXT"&&(typeof text!=="string"||!/^[\x20-\x7E]{1,40}$/.test(text)))throw Error("Text placement requires 1-40 printable ASCII characters");cancelDrawingTool(false);placementTool=tool;placementAnchor=null;placementText=tool==="TEXT"?text!:null;if(tool)drawingState("SECOND_ANCHOR");return true}
  function drawingToolState(){return {tool:placementTool,hasFirstAnchor:!!placementAnchor}}
  function inspect(){guard();return {version:VERSION,account:activeAccount,positionOverlayCount:positionOverlayLines.size,positionOverlays:readPositionOverlays().lines,brokerDealMarkerCount:brokerDealMarkers.filter(row=>row.plotted).length,nativeDrawingCount:drawingCount(),drawingTool:placementTool,
   displayTimeZone,volumeZoneStatus:volumeZones?.result.status??"DISABLED",volumeZoneCount:volumeZones?.result.zones.length??0,
