@@ -55,7 +55,7 @@ input double   InpMinRangePts             = 100;         // Min. Range in Punkte
 input double   InpMaxRangePts             = 8000;        // Max. Range in Punkten
 
 input group "=== Hard Prop Firm Drawdown Protection ==="
-input bool     InpEnablePropProtection    = true;        // Harter Drawdown-Schutz aktiv
+input bool     InpEnablePropProtection    = true;        // Legacy setfile field; challenge enforcement is bound to the verified Blueberry account.
 input double   InpMaxDailyDrawdownPercent = 3.0;         // Max. Tagesverlust % (Notaus vor 4% Regel)
 input double   InpMaxTotalDrawdownPercent = 8.0;         // Max. Gesamtverlust % (Notaus vor 10% Regel)
 input double   InpPhaseProfitTargetPct    = 8.0;         // Phasen-Ziel % (8% Phase 1, 5% Phase 2)
@@ -68,6 +68,13 @@ input color    InpBuyLineColor            = clrLimeGreen; // Buy Trigger Linie F
 input color    InpSellLineColor           = clrCrimson;   // Sell Trigger Linie Farbe
 
 //--- Global Variables
+// Challenge protection is enforced only on the configured Blueberry account.
+// Legacy input toggles cannot enable this guard for demo accounts.
+bool IsBlueberryChallengeAccount()
+{
+   return AccountInfoInteger(ACCOUNT_LOGIN) == 5120620 &&
+          AccountInfoString(ACCOUNT_SERVER) == "BlueberryMarketsSVG-Live";
+}
 CTrade         m_trade;
 CSymbolInfo    m_symbol;
 CPositionInfo  m_position;
@@ -193,7 +200,7 @@ void OnTick()
       m_peak_equity = current_equity;
 
    // 1. Hard Prop Firm Drawdown Monitoring (Every Tick)
-   if(InpEnablePropProtection)
+   if(IsBlueberryChallengeAccount())
    {
       double daily_drawdown_pct = 0.0;
       if(m_day_start_balance > 0)

@@ -25,7 +25,7 @@ input ulong    InpMagicNumber             = 108822;      // Magic Number
 input string   InpTradeComment            = "Blueberry_LBO"; // Trade Comment
 
 input group "=== Hard Prop Firm Drawdown Protection ==="
-input bool     InpEnablePropProtection    = true;        // Enable Hard Drawdown Protection
+input bool     InpEnablePropProtection    = true;        // Legacy setfile field; challenge enforcement is bound to the verified Blueberry account.
 input double   InpMaxDailyDrawdownPercent = 3.0;         // Max Daily Loss % (Emergency Stop before 4% rule)
 input double   InpMaxTotalDrawdownPercent = 8.0;         // Max Overall Loss % (Emergency Stop before 10% rule)
 input double   InpPhaseProfitTargetPct    = 8.0;         // Phase Target % (8% Phase 1, 5% Phase 2)
@@ -53,6 +53,13 @@ input color    InpBuyLineColor            = clrLimeGreen; // Buy Breakout Level 
 input color    InpSellLineColor           = clrCrimson;   // Sell Breakout Level Color
 
 //--- Global Variables
+// Challenge protection is enforced only on the configured Blueberry account.
+// Legacy input toggles cannot enable this guard for demo accounts.
+bool IsBlueberryChallengeAccount()
+{
+   return AccountInfoInteger(ACCOUNT_LOGIN) == 5120620 &&
+          AccountInfoString(ACCOUNT_SERVER) == "BlueberryMarketsSVG-Live";
+}
 CTrade         m_trade;
 CSymbolInfo    m_symbol;
 CPositionInfo  m_position;
@@ -153,7 +160,7 @@ void OnTick()
    }
 
    // 2. Hard Prop Firm Drawdown Monitoring (Every Tick)
-   if(InpEnablePropProtection)
+   if(IsBlueberryChallengeAccount())
    {
       // Check Daily Drawdown (from day start balance)
       double daily_drawdown_pct = 0.0;

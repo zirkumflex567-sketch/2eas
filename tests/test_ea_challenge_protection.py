@@ -1,20 +1,26 @@
 from pathlib import Path
 import re
+import subprocess
 
 import account_gateway
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TITAN_SOURCES = tuple(sorted(
-    path for path in ROOT.glob("XAU_Titan_*.mq5")
-    if "InpEnablePropProtection" in path.read_text(encoding="utf-8-sig")
-))
+TRACKED_EA_SOURCES = tuple(
+    ROOT / relative_path
+    for relative_path in subprocess.check_output(
+        ["git", "ls-files", "*.mq5"], cwd=ROOT, text=True
+    ).splitlines()
+    if "InpEnablePropProtection" in (ROOT / relative_path).read_text(encoding="utf-8-sig")
+)
 
 
-def test_titan_challenge_protection_is_hard_bound_to_blueberry_identity():
+def test_every_ea_challenge_guard_is_hard_bound_to_blueberry_identity():
     blueberry = account_gateway.ACCOUNTS["blueberry"]
 
-    for path in TITAN_SOURCES:
+    assert TRACKED_EA_SOURCES, "expected tracked EA source files with a challenge-guard input"
+
+    for path in TRACKED_EA_SOURCES:
         source = path.read_text(encoding="utf-8-sig")
         assert "bool IsBlueberryChallengeAccount()" in source, path.name
         assert f"AccountInfoInteger(ACCOUNT_LOGIN) == {blueberry['login']}" in source, path.name
