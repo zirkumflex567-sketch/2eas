@@ -3992,10 +3992,10 @@ HTML_CONTENT = """<!DOCTYPE html>
       vpSignature = signature;
 
       document.getElementById('vp-summary-badge').innerHTML = `
-        <span class="text-amber-500 font-bold">POC: $${vp.poc.toFixed(2)}</span> |
-        <span class="text-sky-500">VAH: $${vp.vah.toFixed(2)}</span> |
-        <span class="text-emerald-500">VAL: $${vp.val.toFixed(2)}</span> |
-        <span class="text-rose-500">High: $${vp.high.toFixed(2)}</span> |
+        <span class="text-amber-500 font-bold">POC: $${vp.poc.toFixed(2)}</span><span class="vp-summary-separator" aria-hidden="true"> | </span>
+        <span class="text-sky-500">VAH: $${vp.vah.toFixed(2)}</span><span class="vp-summary-separator" aria-hidden="true"> | </span>
+        <span class="text-emerald-500">VAL: $${vp.val.toFixed(2)}</span><span class="vp-summary-separator" aria-hidden="true"> | </span>
+        <span class="text-rose-500">High: $${vp.high.toFixed(2)}</span><span class="vp-summary-separator" aria-hidden="true"> | </span>
         <span class="text-emerald-600">Low: $${vp.low.toFixed(2)}</span>
       `;
 

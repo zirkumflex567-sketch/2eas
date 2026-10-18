@@ -130,6 +130,7 @@ def probe_incomplete_text_target(page, selector, threshold=4.5):
           const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
           while (walker.nextNode()) {
             const node = walker.currentNode;
+            if (node.parentElement.closest('[aria-hidden="true"]')) continue;
             if (!node.textContent.trim()) continue;
             const parent = node.parentElement;
             const style = getComputedStyle(parent);
@@ -165,28 +166,38 @@ def probe_incomplete_text_target(page, selector, threshold=4.5):
             return {'classification': 'non-text', 'reason': 'target has no visible bounding box'}
         original_attr = locator.get_attribute('data-codex-contrast-probe')
         visible = locator.screenshot(animations='disabled', caret='hide', scale='css')
-        page.evaluate('''() => {
-          document.activeElement?.blur(); window.getSelection()?.removeAllRanges();
-          const style=document.createElement('style'); style.dataset.codexContrastProbeStyle='1';
-          style.textContent='[data-codex-contrast-probe="1"],[data-codex-contrast-probe="1"] *{color:transparent!important;-webkit-text-fill-color:transparent!important}';
-          document.head.append(style);
+        page.evaluate('''() => { document.activeElement?.blur(); window.getSelection()?.removeAllRanges(); }''')
+        locator.evaluate('''el=>{
+          el.setAttribute('data-codex-contrast-probe','1');
+          const textElements=[el,...el.querySelectorAll('*')].filter(node=>
+            [...node.childNodes].some(child=>child.nodeType===Node.TEXT_NODE&&child.textContent.trim()));
+          el.__codexContrastProbeStyles=textElements.map(node=>[node,node.getAttribute('style')]);
         }''')
-        locator.evaluate("el=>el.setAttribute('data-codex-contrast-probe','1')")
+        def set_probe_color(color):
+            locator.evaluate('''(el,color)=>{
+              for(const [node] of el.__codexContrastProbeStyles){
+                node.style.setProperty('color',color,'important');
+                node.style.setProperty('-webkit-text-fill-color',color,'important');
+              }
+            }''', color)
         try:
+            set_probe_color('transparent')
             hidden = locator.screenshot(animations='disabled', caret='hide', scale='css')
             hidden_box = locator.bounding_box()
-            page.evaluate('''() => document.querySelector('style[data-codex-contrast-probe-style]').textContent=
-              '[data-codex-contrast-probe="1"],[data-codex-contrast-probe="1"] *{color:rgb(255,0,255)!important;-webkit-text-fill-color:rgb(255,0,255)!important}' ''')
+            set_probe_color('rgb(255,0,255)')
             sentinel_magenta = locator.screenshot(animations='disabled', caret='hide', scale='css')
-            page.evaluate('''() => document.querySelector('style[data-codex-contrast-probe-style]').textContent=
-              '[data-codex-contrast-probe="1"],[data-codex-contrast-probe="1"] *{color:rgb(0,255,0)!important;-webkit-text-fill-color:rgb(0,255,0)!important}' ''')
+            set_probe_color('rgb(0,255,0)')
             sentinel_green = locator.screenshot(animations='disabled', caret='hide', scale='css')
         finally:
             locator.evaluate('''(el,hadValue) => {
+              for(const [node,style] of el.__codexContrastProbeStyles){
+                if(style===null)node.removeAttribute('style');
+                else node.setAttribute('style',style);
+              }
+              delete el.__codexContrastProbeStyles;
               if(hadValue===null)el.removeAttribute('data-codex-contrast-probe');
               else el.setAttribute('data-codex-contrast-probe',hadValue);
             }''', original_attr)
-            page.locator('style[data-codex-contrast-probe-style]').evaluate('el=>el.remove()')
         if not hidden_box or any(abs(visible_box[key]-hidden_box[key]) > .1 for key in ('x','y','width','height')):
             return {'classification': 'unresolved', 'reason': 'text hiding changed target geometry'}
         from PIL import Image
@@ -830,8 +841,8 @@ class DashboardFrontendTests(unittest.TestCase):
                 item['classification'] = item['probe']['classification']
             self.assertEqual(self.page.locator('[data-codex-contrast-probe="1"]').count(), 0,
                              'pixel probe leaked its temporary target attribute')
-            self.assertEqual(self.page.locator('style[data-codex-contrast-probe-style]').count(), 0,
-                             'pixel probe leaked its temporary stylesheet')
+            self.assertFalse(self.page.evaluate("[...document.querySelectorAll('*')].some(el=>Object.hasOwn(el,'__codexContrastProbeStyles'))"),
+                             'pixel probe leaked saved inline styles')
             self.page.locator('#journal-list').screenshot(path=str(OUTPUT/f'{theme}-journal.png'))
         (OUTPUT/'contrast.json').write_text(json.dumps(reports, ensure_ascii=False, indent=2), encoding='utf-8')
         audit_path = OUTPUT/'axe-incomplete-pixel.json'
@@ -859,6 +870,23 @@ class DashboardFrontendTests(unittest.TestCase):
                     ('span:nth-child(2)' in item['target'][0] or '.stone-rule-state-label' in item['target'][0]))
                 self.assertEqual(live_badge_text['classification'], 'measured', live_badge_text)
                 self.assertEqual(live_badge_text['probe']['result'], 'pass', live_badge_text)
+                self.assertEqual(self.page.locator('#vp-summary-badge .vp-summary-separator[aria-hidden="true"]').count(), 4)
+                self.assertFalse(any(item['target'] == ['#vp-summary-badge'] for item in pixel_audit[theme]),
+                    'axe should inspect the five separately styled price labels rather than their container')
+                volume_profile_text = [item for item in pixel_audit[theme]
+                    if item['target'] and (item['target'][0] in {'#vp-tab-daily', '#vp-tab-weekly'} or
+                        item['target'][0].startswith('#vp-summary-badge > .text-'))]
+                self.assertEqual({item['target'][0] for item in volume_profile_text
+                    if item['target'][0] in {'#vp-tab-daily', '#vp-tab-weekly'}},
+                    {'#vp-tab-daily', '#vp-tab-weekly'})
+                self.assertEqual({item['target'][0] for item in volume_profile_text
+                    if item['target'][0].startswith('#vp-summary-badge > .text-')}, {
+                        '#vp-summary-badge > .text-amber-500.font-bold',
+                        '#vp-summary-badge > .text-emerald-500',
+                        '#vp-summary-badge > .text-rose-500'})
+                self.assertTrue(all(item['classification'] == 'measured' and
+                    item.get('probe', {}).get('result') == 'pass' for item in volume_profile_text),
+                    volume_profile_text)
                 failed_measurements = [item for item in pixel_audit[theme]
                     if item.get('probe', {}).get('result') == 'fail']
                 self.assertEqual(failed_measurements, [], f'project 4.5:1 threshold failures: {failed_measurements}')
