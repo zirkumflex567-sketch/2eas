@@ -140,12 +140,12 @@ const { chromium } = require("playwright");
     assert.equal(overlay.limitCount, 1);
     assert.equal(overlay.removed, true);
     assert.equal(overlay.cleared, true);
-    assert.equal(overlay.savedSchemaVersion, 4, "VWAP profile storage advances to schema v4");
+    assert.equal(overlay.savedSchemaVersion, 5, "VWAP profile storage advances to schema v5");
     assert.deepEqual(overlay.savedVwaps, [{ id: "persisted-vwap", color: "#55d7ee", title: "London VWAP", visible: true, timeZone: "Europe/Berlin", sessionStart: "09:30" }]);
     assert.deepEqual(overlay.restoredOptions, overlay.savedVwaps[0], "native v5 session VWAP survives scoped reload");
     assert.equal(overlay.restoredCount, 1);
     assert.equal(overlay.otherAccountCount, 0, "VWAP settings do not cross account scope");
-    assert.equal(overlay.migratedSchemaVersion, 4, "prior v4-key schema-v3 snapshots migrate to the new key");
+    assert.equal(overlay.migratedSchemaVersion, 5, "prior v4-key schema-v3 snapshots migrate to schema v5");
     assert.equal(overlay.preservedOldSnapshot, true, "migration leaves the rollback snapshot untouched");
     assert.deepEqual(errors, [], "native v5 VWAP smoke has no browser errors");
     console.log("PASS native v5 session VWAP calculation:", JSON.stringify({
