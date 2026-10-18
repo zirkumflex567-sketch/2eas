@@ -164,7 +164,11 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
         .some(canvas => canvas.width > 300 && canvas.height > 200));
       const marketLevels = await page.evaluate(() => window.ChartStudioV5Preview.readMarketLevels());
       assert.equal(marketLevels.source, "MT5_VERIFIED", `${account} native v5 levels retain broker-feed provenance`);
-      const matchingLevelsSnapshot = levelSnapshots.get(account)?.find(snapshot => snapshot.snapshotAsOfUtc === marketLevels.asOfUtc);
+      // The API cutoff is Unix-second precision, so separate responses within
+      // the same second can share an as-of value. The preview uses the latest
+      // response; compare its readback with the latest captured response at
+      // that cutoff rather than an older candle request from the same second.
+      const matchingLevelsSnapshot = levelSnapshots.get(account)?.findLast(snapshot => snapshot.snapshotAsOfUtc === marketLevels.asOfUtc);
       assert.ok(matchingLevelsSnapshot, `${account} native v5 levels match an exact broker candle snapshot cutoff`);
       for (const [key, value] of Object.entries(matchingLevelsSnapshot.sr_levels)) {
         const renderedLevel = marketLevels.levels[key];
