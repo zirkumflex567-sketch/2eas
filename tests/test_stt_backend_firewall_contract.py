@@ -28,4 +28,3 @@ def test_firewall_guard_installs_idempotently_and_starts_before_network():
     assert "Before=network-pre.target" in unit
     assert "RemainAfterExit=yes" in unit
     assert "ExecStop=/usr/sbin/nft delete table inet stt_backend_guard" in unit
-
