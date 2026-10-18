@@ -16,6 +16,7 @@ OFFSET = 10_800
 
 class DemoMT5:
     TIMEFRAME_M15 = 15
+    TIMEFRAME_M5 = 5
 
     def __init__(self, history=True):
         self.calls = []
@@ -63,6 +64,12 @@ class DemoMT5:
         self.calls.append(('rates', symbol, timeframe, start_pos, count))
         return self.rates
 
+    def copy_rates_from(self, symbol, timeframe, date_from, count):
+        self.calls.append(('rates_from', symbol, timeframe, date_from, count))
+        cutoff = int(date_from.timestamp())
+        rows = [row for row in (self.rates or []) if row.time <= cutoff]
+        return sorted(rows, key=lambda row: row.time, reverse=True)[:count]
+
     def order_send(self, *args, **kwargs):
         self.writes += 1
         raise AssertionError('regime endpoint must be read-only')
@@ -103,8 +110,37 @@ def test_demo_regime_api_is_scoped_bounded_closed_bar_and_read_only(env):
     assert body['sourceTimeUtc'] == datetime.fromtimestamp(NOW - OFFSET - 900, timezone.utc).isoformat()
     assert body['barCount'] == 220
     assert body['regimeTags']['eventRisk'] == 'UNKNOWN'
-    assert ('rates', 'XAUUSD', 15, 1, 500) in adapter.calls
+    assert ('rates_from', 'XAUUSD', 15,
+            datetime.fromtimestamp(NOW + OFFSET, timezone.utc), 500) in adapter.calls
     assert adapter.writes == 0
+
+
+def test_historical_regime_reads_bars_as_of_requested_cutoff(env):
+    client, adapter = env
+    cutoff = NOW - 3 * 86400
+    adapter.rates = [NS(time=cutoff - index * 300 + OFFSET,
+                        open=4000.0, high=4001.0, low=3999.0, close=4000.5)
+                     for index in range(499, -2, -1)]
+
+    response = get(client, timeframe='M5', at=datetime.fromtimestamp(
+        cutoff, timezone.utc).isoformat())
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body['sourceTimeUtc'] == datetime.fromtimestamp(cutoff - 300, timezone.utc).isoformat()
+    assert ('rates_from', 'XAUUSD', 5,
+            datetime.fromtimestamp(cutoff + OFFSET, timezone.utc), 500) in adapter.calls
+    assert not any(call[0] == 'rates' for call in adapter.calls)
+
+
+def test_historical_regime_fails_closed_without_historical_reader(env):
+    client, adapter = env
+    adapter.copy_rates_from = None
+
+    response = get(client)
+
+    assert response.status_code == 503
+    assert not any(call[0] == 'rates' for call in adapter.calls)
 
 
 def test_regime_source_time_is_latest_bar_closed_by_the_requested_cutoff(env):

@@ -230,10 +230,22 @@ def install_read_routes(app, mt5, *, now=None, calendar_path_resolver=None):
             timeframe_value = getattr(mt5, 'TIMEFRAME_'+timeframe, {
                 'M1':1, 'M5':5, 'M15':15, 'M30':30, 'H1':16385,
                 'H4':16388, 'D1':16408}[timeframe])
-            reader = getattr(mt5, 'copy_rates_from_pos', None)
-            if not callable(reader):
-                raise HTTPException(503, 'Regime-Historie nicht verfügbar.')
-            raw = reader(symbol, timeframe_value, 1, MAX_BARS)
+            if at is not None:
+                # Historical MTF snapshots can be older than the terminal's
+                # latest 500 bars. Anchor the bounded read at the requested
+                # cutoff (in the configured raw rates time basis) instead of
+                # reading recent bars and silently losing all source bars.
+                reader = getattr(mt5, 'copy_rates_from', None)
+                if not callable(reader):
+                    raise HTTPException(503, 'Historische Regime-Historie nicht verfügbar.')
+                raw_cutoff = cutoff + broker_clock.rates_offset_seconds(spec)
+                date_from = datetime.fromtimestamp(raw_cutoff, timezone.utc)
+                raw = reader(symbol, timeframe_value, date_from, MAX_BARS)
+            else:
+                reader = getattr(mt5, 'copy_rates_from_pos', None)
+                if not callable(reader):
+                    raise HTTPException(503, 'Regime-Historie nicht verfügbar.')
+                raw = reader(symbol, timeframe_value, 1, MAX_BARS)
             if raw is None:
                 rows = []
             else:
