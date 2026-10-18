@@ -1,6 +1,7 @@
 from pathlib import Path
 import hashlib
 import json
+import re
 import shutil
 import sys
 
@@ -50,6 +51,45 @@ def test_goldm15_candidate_captures_computed_signal_values_without_changing_trad
     assert generated.count("GoldPullbackSignal(") == source.count("GoldPullbackSignal(")
     assert generated.index("CSFlushEvidenceQueue();") > generated.index("void OnTimer()")
     assert generated.index("CSFlushEvidenceQueue();") < generated.index("risk_guard.Service(trade,MagicBase);", generated.index("void OnTimer()"))
+
+
+def test_goldm15_candidate_correlates_partial_deals_and_owned_position_changes():
+    source = (ROOT / "goldm15" / "GoldM15_Reconstruction.mq5").read_text(encoding="utf-8-sig")
+    generated = BUILD._instrument_source(
+        source,
+        account_alias="goldm15",
+        producer="goldm15_demo",
+        terminal_hash="a" * 64,
+        source_hash="b" * 64,
+        expected_parameter_hash="c" * 64,
+        login=53090070,
+        server="ICMarketsEU-Demo",
+        terminal_path=r"C:\demo\terminal64.exe",
+        broker_utc_offset_seconds=10800,
+    )
+
+    assert "CSRegisterOrderAttempt(cs_order_ticket,cs_attempt_id,iTime(_Symbol,signal_timeframe,1));" in generated
+    match = re.search(r"void OnTradeTransaction\([^)]*\)\s*\{(.*?)^  \}", generated, re.S | re.M)
+    assert match, "generated GoldM15 EA must observe broker deal and position transactions"
+    handler = match.group(1)
+
+    assert "TRADE_TRANSACTION_DEAL_ADD" in handler
+    assert "CSFindOrderAttempt(trans.order" in handler
+    assert 'CSEnqueueDecision("BROKER_RESULT","PASS"' in handler
+    assert "trans.deal,trans.position" in handler
+    assert 'CSFeature("deal_volume"' in handler
+    assert 'CSFeature("deal_price"' in handler
+    assert "PositionSelectByTicket(trans.position)" in handler
+    assert "PositionGetDouble(POSITION_VOLUME)" in handler
+    assert "PositionGetDouble(POSITION_SL)" in handler
+    assert "PositionGetDouble(POSITION_TP)" in handler
+    assert "CSRegisterPosition(trans.position,cs_attempt_id,cs_signal_bar," in handler
+    assert "TRADE_TRANSACTION_POSITION" in handler
+    assert "CSFindPosition(trans.position" in handler
+    assert 'CSFeature("sl_before"' in handler and 'CSFeature("sl_after"' in handler
+    assert 'CSFeature("volume_before"' in handler and 'CSFeature("volume_after"' in handler
+    assert "CSRegisterPosition(trans.position,cs_attempt_id" in handler
+    assert not re.search(r"\b(trade\.(?:Buy|Sell|PositionModify|PositionClose)|OrderSend|HistoryDealGet|FileOpen|FileWrite|FileFlush|Sleep)\s*\(", handler)
 
 
 def test_goldm15_candidate_refuses_unexpected_source_anchors():
