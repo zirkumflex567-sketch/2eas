@@ -10,4 +10,4 @@
 - [x] Implement strict legacy envelope recognition and convert it to a schema-v2 candidate using the current settings and legacy drawing list.
 - [x] Run the full Beta Chromium smoke, including the user-facing file-picker merge, and confirm the existing no-write acceptance remains green.
 - [x] Update FR-009 to distinguish completed Beta import from remaining production persistence/parity and hardware gates.
-- [ ] Commit the implementation and run Main CI; do not change demo accounts or broker state.
+- [x] Commit the implementation and run Main CI; do not change demo accounts or broker state. Implementation is on `main`; both workflows passed on `29b68eb` (`39152840637`, `39152840621`).

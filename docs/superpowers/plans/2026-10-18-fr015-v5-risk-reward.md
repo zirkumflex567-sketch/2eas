@@ -30,9 +30,10 @@
 
 ### Task 3: Verification and status
 
-**Files:** `docs/OPEN_TASKS.md`, this plan.
+**Files:** `scripts/smoke_live_v5_risk_reward.cjs`, `docs/OPEN_TASKS.md`, this plan.
 
 - [x] Run TypeScript check/build and Chromium preview smoke, including schema-v4 recovery-copy migration.
 - [x] Run full v5 regression and all relevant app tests.
-- [ ] Pass both Main CI workflows.
+- [x] Exercise long and short placement on live, verified MT5 charts for all five demos; verify derived R:R, portable export, v4 remains mounted, and the browser sends GET only.
+- [x] Pass both Main CI workflows (`39152840637`, `39152840621`; both successful on `29b68eb`).
 - [ ] Keep production-v4 parity, target hardware, and touch/DPI acceptance open.
