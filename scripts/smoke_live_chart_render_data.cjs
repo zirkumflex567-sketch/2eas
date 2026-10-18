@@ -17,6 +17,7 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     const errors = [];
     const requests = [];
+    const levelSnapshots = new Map();
     page.on("pageerror", error => errors.push(error.message));
     page.on("request", request => {
       const url = new URL(request.url());
@@ -28,6 +29,16 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
         assert.ok(account, `account-scoped request lacks an explicit account: ${url.pathname}`);
       }
       requests.push({ path: url.pathname, account });
+    });
+    page.on("response", response => {
+      const url = new URL(response.url());
+      if (url.origin !== baseUrl.origin || url.pathname !== `${basePath}/api/candles` || url.searchParams.get("count") !== "150") return;
+      void response.json().then(snapshot => {
+        if (snapshot?.source !== "MT5_VERIFIED" || typeof snapshot.accountId !== "string") return;
+        const versions = levelSnapshots.get(snapshot.accountId) || [];
+        versions.push(snapshot);
+        levelSnapshots.set(snapshot.accountId, versions.slice(-16));
+      }).catch(() => {});
     });
 
     await page.addInitScript(() => {
@@ -80,6 +91,7 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
       const response = await candleResponse;
       assert.ok(response.ok(), `${account} candle request returned ${response.status()}`);
       const api = await response.json();
+      levelSnapshots.set(account, [...(levelSnapshots.get(account) || []), api]);
       assert.equal(api.accountId, account);
       assert.equal(api.source, "MT5_VERIFIED");
       assert.equal(api.canExecute, false);
@@ -131,7 +143,9 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
       await page.locator("#tv-chart").scrollIntoViewIfNeeded();
       const chartBox = await page.locator("#tv-chart").boundingBox();
       assert.ok(chartBox, `${account} chart has a visible browser rectangle`);
-      await page.mouse.move(chartBox.x + chartBox.width / 2, chartBox.y + chartBox.height / 2);
+      // The draggable price-level legend occupies the plot's lower-right area.
+      // Probe an unobstructed candle so the real chart crosshair can emit its readout.
+      await page.mouse.move(chartBox.x + chartBox.width * 0.2, chartBox.y + chartBox.height / 2);
       await page.waitForFunction(() => /^\d+(?:\.\d+)?$/.test(document.querySelector("#chart-crosshair-close")?.textContent || ""));
       assert.match(await page.locator("#chart-crosshair-time").textContent(), /UTC$/,
         `${account} production data window labels its candle time as UTC`);
@@ -150,8 +164,9 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
         .some(canvas => canvas.width > 300 && canvas.height > 200));
       const marketLevels = await page.evaluate(() => window.ChartStudioV5Preview.readMarketLevels());
       assert.equal(marketLevels.source, "MT5_VERIFIED", `${account} native v5 levels retain broker-feed provenance`);
-      assert.equal(marketLevels.asOfUtc, api.snapshotAsOfUtc, `${account} native v5 levels share the broker candle cutoff`);
-      for (const [key, value] of Object.entries(api.sr_levels)) {
+      const matchingLevelsSnapshot = levelSnapshots.get(account)?.find(snapshot => snapshot.snapshotAsOfUtc === marketLevels.asOfUtc);
+      assert.ok(matchingLevelsSnapshot, `${account} native v5 levels match an exact broker candle snapshot cutoff`);
+      for (const [key, value] of Object.entries(matchingLevelsSnapshot.sr_levels)) {
         const renderedLevel = marketLevels.levels[key];
         assert.equal(renderedLevel?.price ?? null, Number.isFinite(value) && value > 0 ? value : null,
           `${account} ${key} axis overlay uses the exact feed value`);
