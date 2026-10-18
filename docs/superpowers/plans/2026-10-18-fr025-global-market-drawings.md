@@ -10,7 +10,7 @@
 - [x] Add a separate symbol-keyed shared-drawing store and explicit Object Manager controls.
 - [x] Keep account-local exports, profiles, clear, and reset operations from copying or deleting shared drawings.
 - [x] Run object-manager and Beta Chromium regression tests, JavaScript syntax checks, and `git diff --check`.
-- [ ] Review, record the partial FR-025 status in `OPEN_TASKS.md`, and deploy the commit to main/`/stt`.
+- [x] Review and record the partial FR-025 status in `OPEN_TASKS.md`. Implementation `193f282` is included in current `main` `7379032`; read-only verification confirms htown `/stt` checkout at that same clean `main` revision and `nginx -t` succeeds. Both required Main CI workflows passed on resulting Main `7379032` (`39104351268`, `39104351380`).
 
 ## Acceptance
 
