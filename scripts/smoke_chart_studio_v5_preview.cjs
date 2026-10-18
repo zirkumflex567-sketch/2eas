@@ -138,6 +138,13 @@ const server=http.createServer((req,res)=>{
   });
   assert.deepEqual(changedOscillator.settings,{period:21,smoothK:4,smoothD:3},"v5 preview follows local oscillator-editor changes");
   assert.equal((await page.evaluate(()=>JSON.parse(window.ChartStudioV5Preview.exportLayout()).view.oscillators.length)),0,"edited source oscillator settings stay temporary in preview exports");
+  const oscillatorScopeChange=await page.evaluate(()=>{
+    window.dispatchEvent(new CustomEvent("chart-studio-oscillators-change",{detail:{account:"xau5m_m5",symbol:"XAUUSD.p",timeframe:"M15"}}));
+    const cleared=window.ChartStudioV5Preview.inspect().customOscillatorCount;
+    window.dispatchEvent(new CustomEvent("chart-studio-indicators-change",{detail:{...window.__v5IndicatorScope}}));
+    return {cleared,restored:window.ChartStudioV5Preview.inspect().customOscillatorCount};
+  });
+  assert.deepEqual(oscillatorScopeChange,{cleared:0,restored:2},"a mismatched editor scope clears prior oscillator panes and a matching scope resyncs them");
   assert.match(await page.locator("#chart-v5-live-quote").textContent(),/STALE .*Bid 4100\.25 \/ Ask 4100\.5 \/ Spread 0\.25 .*2026-10-18T12:00:00\.000Z UTC · Alter 3600 s .*keine historische Kerze/);
   assert.deepEqual(quoteRequests[0],{account:"titan",symbol:"XAUUSD",method:"GET"},"v5 quote is fetched for exact account/symbol as a read-only snapshot");
   await page.waitForFunction(()=>document.querySelector("#chart-v5-preview-status")?.textContent.includes("150 verifizierte Kerzen"));

@@ -83,7 +83,11 @@
   }
   function onOscillatorConfigsChanged(event){
     const changed=event?.detail;
-    if(!changed||changed.account!==scope?.account||changed.symbol!==scope?.symbol||changed.timeframe!==scope?.timeframe)return;
+    if(!changed)return;
+    if(changed.account!==scope?.account||changed.symbol!==scope?.symbol||changed.timeframe!==scope?.timeframe){
+      try{oscillatorBridge?.clear()}catch(_){}
+      return;
+    }
     syncOscillators();
   }
   function asset(name){
