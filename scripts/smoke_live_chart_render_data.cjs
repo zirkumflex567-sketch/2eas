@@ -83,6 +83,8 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
       assert.equal(api.accountId, account);
       assert.equal(api.source, "MT5_VERIFIED");
       assert.equal(api.canExecute, false);
+      assert.deepEqual(Object.keys(api.sr_levels).sort(), ["daily_high","daily_low","daily_poc","daily_vah","daily_val","weekly_high","weekly_low","weekly_poc","weekly_vah","weekly_val"].sort(),
+        `${account} broker candle response includes all ten daily/weekly price and volume-profile levels`);
       assert.ok(Number.isSafeInteger(api.snapshotAsOfUtc) && api.snapshotAsOfUtc > 0, `${account} candle response includes a verified snapshot as-of`);
       assert.equal(api.candles.length, 1001, `${account} chart history contains the requested 1001 candles`);
       await page.waitForFunction(id => window.__mainCandleSeriesCaptures.some(item => item.account === id && item.data.length > 0), account).catch(async error => {
@@ -146,6 +148,26 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
       await page.waitForFunction(count => document.querySelector("#chart-v5-preview-status")?.textContent.includes(`${count} verifizierte Kerzen`), 1001);
       await page.waitForFunction(() => [...document.querySelectorAll("#chart-v5-preview-host canvas")]
         .some(canvas => canvas.width > 300 && canvas.height > 200));
+      const marketLevels = await page.evaluate(() => window.ChartStudioV5Preview.readMarketLevels());
+      assert.equal(marketLevels.source, "MT5_VERIFIED", `${account} native v5 levels retain broker-feed provenance`);
+      assert.equal(marketLevels.asOfUtc, api.snapshotAsOfUtc, `${account} native v5 levels share the broker candle cutoff`);
+      for (const [key, value] of Object.entries(api.sr_levels)) {
+        const renderedLevel = marketLevels.levels[key];
+        assert.equal(renderedLevel?.price ?? null, Number.isFinite(value) && value > 0 ? value : null,
+          `${account} ${key} axis overlay uses the exact feed value`);
+      }
+      const accountLevelPreference = await page.evaluate(id => {
+        const visibility = window.DashboardChartLevelVisibility;
+        const original = visibility.read(id).daily_poc;
+        const accepted = visibility.set(id, "daily_poc", !original);
+        window.ChartStudioV5Preview.syncMarketLevels();
+        const changed = visibility.read(id).daily_poc;
+        visibility.set(id, "daily_poc", original);
+        window.ChartStudioV5Preview.syncMarketLevels();
+        return {accepted, changed, restored:visibility.read(id).daily_poc};
+      }, account);
+      assert.deepEqual(accountLevelPreference, {accepted:true,changed:!accountLevelPreference.restored,restored:accountLevelPreference.restored},
+        `${account} accepts an isolated browser preference for the chart-level toggle`);
       await page.locator("#chart-v5-auto-fib-btn").click();
       const fib = await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci());
       assert.ok(fib?.result?.available, `${account} has a confirmed swing in the verified M15 history`);
@@ -162,7 +184,7 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
       assert.equal(await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci()), null);
       preview = "PASSED";
       results.push({ account, symbol: api.symbol, timeframe: api.timeframe, renderedBars: rendered.length,
-        visibleCandlePixels, latestClose: rendered.at(-1).close, nativeV5AutoFibonacciPreview: preview,
+        visibleCandlePixels, latestClose: rendered.at(-1).close, nativeV5MarketLevels: marketLevels.count, nativeV5AutoFibonacciPreview: preview,
         autoFibDirection: fib.result.direction, autoFibLevels: fib.series.length });
     }
 

@@ -10,6 +10,13 @@ assert.equal(levels.read("titan").daily_poc,false);
 assert.equal(levels.read("goldm15").daily_poc,true,"Accounts have separate visibility preferences");
 assert.equal(levels.hasChoice("titan","daily_poc"),true);
 assert.equal(levels.hasChoice("titan","daily_high"),false);
+for(const account of ["xau5m_m5","titan_m5","xau5m_500","goldm15","titan_500_2","xau5m_m15","titan_25k"]){
+ assert.equal(levels.set(account,"daily_poc",false),true,`${account} is an authorized demo level-preference scope`);
+ assert.equal(levels.read(account).daily_poc,false,`${account} keeps its own level preference`);
+}
+assert.equal(levels.set("blueberry","daily_poc",false),false,"the protected Blueberry account is never a preference scope");
+assert.equal(levels.hasChoice("blueberry","daily_poc"),false,"Blueberry never stores a preference");
+assert.equal(levels.read("blueberry").daily_poc,true,"unsupported account defaults do not persist a Blueberry choice");
 assert.equal(levels.set("titan","daily_high",1),false);
 values.set("2eas:chart-level-visibility:v1:titan",'{"daily_high":"false","evil":true}');
 assert.equal(levels.read("titan").daily_high,true,"Invalid preferences fail closed to defaults");

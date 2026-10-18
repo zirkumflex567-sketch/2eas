@@ -8943,6 +8943,7 @@ var ChartStudioV5 = (() => {
       autoSize: true,
       layout: { background: { color: "#091923" }, textColor: "#d0e7ee" },
       grid: { vertLines: { visible: false }, horzLines: { color: "#233b48" } },
+      rightPriceScale: { minimumWidth: 112 },
       localization: { timeFormatter: formatCrosshairTime },
       timeScale: { timeVisible: true, borderVisible: true, rightOffset: 8, tickMarkFormatter: formatTimeLabel },
       crosshair: { mode: 0 }
@@ -8961,6 +8962,48 @@ var ChartStudioV5 = (() => {
     const positionZonesPrimitive = new PositionZonesPrimitive(price);
     price.attachPrimitive(positionZonesPrimitive);
     let positionOverlayPositions = [], positionOverlayCurrency = "", positionOverlayMarginMode = "UNKNOWN";
+    const marketLevelLabels = { daily_high: "D-H", daily_low: "D-L", daily_poc: "D-POC", daily_vah: "D-VAH", daily_val: "D-VAL", weekly_high: "W-H", weekly_low: "W-L", weekly_poc: "W-POC", weekly_vah: "W-VAH", weekly_val: "W-VAL" };
+    const marketLevelColors = { daily_high: "#f43f5e", daily_low: "#10b981", daily_poc: "#f59e0b", daily_vah: "#fb923c", daily_val: "#fbbf24", weekly_high: "#e11d48", weekly_low: "#059669", weekly_poc: "#06b6d4", weekly_vah: "#38bdf8", weekly_val: "#67e8f9" };
+    const marketLevelStyles = { daily_high: 2, daily_low: 2, daily_poc: 0, daily_vah: 1, daily_val: 1, weekly_high: 1, weekly_low: 1, weekly_poc: 0, weekly_vah: 1, weekly_val: 1 };
+    const marketLevelKeys = Object.keys(marketLevelLabels);
+    const marketLevelLines = /* @__PURE__ */ new Map();
+    let marketLevelAsOfUtc = null;
+    function clearMarketLevels() {
+      guard();
+      for (const item of marketLevelLines.values()) price.removePriceLine(item.line);
+      marketLevelLines.clear();
+      marketLevelAsOfUtc = null;
+    }
+    function setMarketLevels(snapshot) {
+      guard();
+      const expected = { account: activeAccount, symbol: drawingScope?.symbol ?? "", timeframe: drawingScope?.timeframe ?? "" }, received = snapshot?.scope;
+      if (!received || received.account !== expected.account || received.symbol !== expected.symbol || received.timeframe !== expected.timeframe) throw Error("Market-level scope mismatch");
+      if (snapshot.source !== "MT5_VERIFIED" || snapshot.canExecute !== false || !Number.isSafeInteger(snapshot.asOfUtc) || snapshot.asOfUtc <= 0 || !snapshot.levels || typeof snapshot.levels !== "object" || Array.isArray(snapshot.levels) || Object.keys(snapshot.levels).sort().join(",") !== [...marketLevelKeys].sort().join(",")) throw Error("Invalid read-only market-level snapshot");
+      if (snapshot.visible !== void 0 && (!snapshot.visible || typeof snapshot.visible !== "object" || Array.isArray(snapshot.visible) || Object.keys(snapshot.visible).some((key) => !marketLevelKeys.includes(key)) || Object.values(snapshot.visible).some((value) => typeof value !== "boolean"))) throw Error("Invalid market-level visibility");
+      const candidate = [];
+      try {
+        for (const key of marketLevelKeys) {
+          const value = snapshot.levels[key];
+          if (value === null) continue;
+          if (!Number.isFinite(value) || value <= 0) throw Error("Invalid market-level price");
+          const visible = snapshot.visible?.[key] !== false, label = marketLevelLabels[key];
+          candidate.push({ key, price: value, label, visible, line: price.createPriceLine({ price: value, color: marketLevelColors[key], lineWidth: key.endsWith("_poc") ? 2 : 1, lineStyle: marketLevelStyles[key], axisLabelVisible: visible, title: visible ? label : "", lineVisible: visible }) });
+        }
+      } catch (error) {
+        for (const item of candidate) price.removePriceLine(item.line);
+        throw error;
+      }
+      clearMarketLevels();
+      for (const item of candidate) marketLevelLines.set(item.key, { line: item.line, price: item.price, label: item.label, visible: item.visible });
+      marketLevelAsOfUtc = snapshot.asOfUtc;
+      return readMarketLevels();
+    }
+    function readMarketLevels() {
+      guard();
+      const levels = {};
+      for (const [key, item] of marketLevelLines) levels[key] = { price: item.price, label: item.label, visible: item.visible };
+      return { source: marketLevelAsOfUtc !== null ? "MT5_VERIFIED" : "NONE", asOfUtc: marketLevelAsOfUtc, count: marketLevelLines.size, levels };
+    }
     function clearPositionOverlays() {
       guard();
       for (const item of positionOverlayLines.values()) price.removePriceLine(item.line);
@@ -12434,8 +12477,11 @@ var ChartStudioV5 = (() => {
       return {
         version: VERSION2,
         account: activeAccount,
+        priceAxisWidth: chart.priceScale("right").width(),
         positionOverlayCount: positionOverlayLines.size,
         positionOverlays: readPositionOverlays().lines,
+        marketLevelCount: marketLevelLines.size,
+        marketLevels: readMarketLevels(),
         brokerDealMarkerCount: brokerDealMarkers.filter((row) => row.plotted).length,
         nativeDrawingCount: drawingCount(),
         drawingTool: placementTool,
@@ -12649,6 +12695,9 @@ var ChartStudioV5 = (() => {
       setAutoFibonacci,
       readAutoFibonacci,
       clearAutoFibonacci,
+      setMarketLevels,
+      readMarketLevels,
+      clearMarketLevels,
       setPositionOverlays,
       readPositionOverlays,
       clearPositionOverlays,

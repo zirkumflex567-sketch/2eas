@@ -164,6 +164,10 @@ def test_chart_candles_read_exact_requested_verified_symbol(isolated, monkeypatc
             for field in (('open','high','low','close') if series=='candles' else ('value',)):
                 assert row[field]==round(row[field],5),f'{series}.{field} must use the verified symbol precision'
     assert all(value==round(value,5) for value in body['sr_levels'].values())
+    assert set(body['sr_levels']) == {
+        'daily_high', 'daily_low', 'daily_poc', 'daily_vah', 'daily_val',
+        'weekly_high', 'weekly_low', 'weekly_poc', 'weekly_vah', 'weekly_val',
+    }
     assert body['markers']==[]
     isolated.send.assert_not_called()
 

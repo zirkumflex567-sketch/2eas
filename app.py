@@ -1288,9 +1288,13 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
         'daily_high': round(daily_vp.get('high', 0.0), digits),
         'daily_low':  round(daily_vp.get('low', 0.0), digits),
         'daily_poc':  round(daily_vp.get('poc', 0.0), digits),
+        'daily_vah':  round(daily_vp.get('vah', 0.0), digits),
+        'daily_val':  round(daily_vp.get('val', 0.0), digits),
         'weekly_high': round(weekly_vp.get('high', 0.0), digits),
         'weekly_low':  round(weekly_vp.get('low', 0.0), digits),
         'weekly_poc':  round(weekly_vp.get('poc', 0.0), digits),
+        'weekly_vah':  round(weekly_vp.get('vah', 0.0), digits),
+        'weekly_val':  round(weekly_vp.get('val', 0.0), digits),
     }
 
     oldest_time = int(candles[0]['time']) if candles else None
@@ -3351,7 +3355,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       if (!box) return;
       window.DashboardChartLevelVisibility?.render(box,levels,activeAccount,{
         storage:localStorage,
-        onChange:()=>{if(currentSRLevels)updateChartSRLines(currentSRLevels,currentSRPrice);}
+        onChange:()=>{if(currentSRLevels)updateChartSRLines(currentSRLevels,currentSRPrice);window.ChartStudioV5Preview?.syncMarketLevels?.();}
       });
     }
 

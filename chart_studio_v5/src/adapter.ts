@@ -48,6 +48,8 @@ export type RayOptions = TrendLineOptions;
 export type FibonacciOptions = TrendLineOptions&{levels?:number[]};
 export type ChartStorageScope = {symbol:string;timeframe:string};
 export type PositionOverlayScope = {account:string;symbol:string;timeframe:string};
+export type MarketLevelKey = "daily_high"|"daily_low"|"daily_poc"|"daily_vah"|"daily_val"|"weekly_high"|"weekly_low"|"weekly_poc"|"weekly_vah"|"weekly_val";
+export type ReadOnlyMarketLevelsSnapshot = {scope:PositionOverlayScope;source:"MT5_VERIFIED";canExecute:false;asOfUtc:number;levels:Record<MarketLevelKey,number|null>;visible?:Partial<Record<MarketLevelKey,boolean>>};
 export type ReadOnlyPositionOverlayPosition = {ticket:string;side:"BUY"|"SELL";entryPrice:number;stopLoss?:number|null;takeProfit?:number|null;volume:number;profit:number;swap:number;currency:string;usdConversion?:{state:"AVAILABLE";source:"ACCOUNT_CURRENCY"|"MT5_FX_QUOTE";amountsUsd:{profit:number;swap:number}}|{state:"UNAVAILABLE";source:"NONE";reason:string}};
 export type ReadOnlyPositionOverlaySnapshot = {scope:PositionOverlayScope;source:"MT5_VERIFIED";canExecute:false;currency:string;marginMode:0|1|2;positions:ReadOnlyPositionOverlayPosition[]};
 export type PositionOverlayLine = {ticket:string;side:"BUY"|"SELL";role:"Entry"|"SL"|"TP";price:number;label:string};
@@ -818,6 +820,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  const formatCrosshairTime=(time:Time)=>timeFormatters.crosshair.format(utcDateForTime(time));
  const chart=createChart(host,{autoSize:true,layout:{background:{color:"#091923"},textColor:"#d0e7ee"},
   grid:{vertLines:{visible:false},horzLines:{color:"#233b48"}},
+  rightPriceScale:{minimumWidth:112},
   localization:{timeFormatter:formatCrosshairTime},
   timeScale:{timeVisible:true,borderVisible:true,rightOffset:8,tickMarkFormatter:formatTimeLabel},
   crosshair:{mode:0}});
@@ -828,6 +831,27 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  const positionOverlayLines=new Map<string,{line:ReturnType<typeof price.createPriceLine>;readback:PositionOverlayLine}>();
  const positionZonesPrimitive=new PositionZonesPrimitive(price);price.attachPrimitive(positionZonesPrimitive);
  let positionOverlayPositions:PositionOverlayLabel[]=[],positionOverlayCurrency="",positionOverlayMarginMode:"NETTING"|"EXCHANGE"|"HEDGING"|"UNKNOWN"="UNKNOWN";
+ const marketLevelLabels:Record<MarketLevelKey,string>={daily_high:"D-H",daily_low:"D-L",daily_poc:"D-POC",daily_vah:"D-VAH",daily_val:"D-VAL",weekly_high:"W-H",weekly_low:"W-L",weekly_poc:"W-POC",weekly_vah:"W-VAH",weekly_val:"W-VAL"};
+ const marketLevelColors:Record<MarketLevelKey,string>={daily_high:"#f43f5e",daily_low:"#10b981",daily_poc:"#f59e0b",daily_vah:"#fb923c",daily_val:"#fbbf24",weekly_high:"#e11d48",weekly_low:"#059669",weekly_poc:"#06b6d4",weekly_vah:"#38bdf8",weekly_val:"#67e8f9"};
+ const marketLevelStyles:Record<MarketLevelKey,0|1|2>={daily_high:2,daily_low:2,daily_poc:0,daily_vah:1,daily_val:1,weekly_high:1,weekly_low:1,weekly_poc:0,weekly_vah:1,weekly_val:1};
+ const marketLevelKeys=Object.keys(marketLevelLabels) as MarketLevelKey[];
+ const marketLevelLines=new Map<MarketLevelKey,{line:ReturnType<typeof price.createPriceLine>;price:number;label:string;visible:boolean}>();
+ let marketLevelAsOfUtc:number|null=null;
+ function clearMarketLevels(){guard();for(const item of marketLevelLines.values())price.removePriceLine(item.line);marketLevelLines.clear();marketLevelAsOfUtc=null}
+ function setMarketLevels(snapshot:ReadOnlyMarketLevelsSnapshot){
+  guard();const expected={account:activeAccount,symbol:drawingScope?.symbol??"",timeframe:drawingScope?.timeframe??""},received=snapshot?.scope;
+  if(!received||received.account!==expected.account||received.symbol!==expected.symbol||received.timeframe!==expected.timeframe)throw Error("Market-level scope mismatch");
+  if(snapshot.source!=="MT5_VERIFIED"||snapshot.canExecute!==false||!Number.isSafeInteger(snapshot.asOfUtc)||snapshot.asOfUtc<=0||!snapshot.levels||typeof snapshot.levels!=="object"||Array.isArray(snapshot.levels)||Object.keys(snapshot.levels).sort().join(",")!==[...marketLevelKeys].sort().join(","))throw Error("Invalid read-only market-level snapshot");
+  if(snapshot.visible!==undefined&&(!snapshot.visible||typeof snapshot.visible!=="object"||Array.isArray(snapshot.visible)||Object.keys(snapshot.visible).some(key=>!marketLevelKeys.includes(key as MarketLevelKey))||Object.values(snapshot.visible).some(value=>typeof value!=="boolean")))throw Error("Invalid market-level visibility");
+  const candidate:Array<{key:MarketLevelKey;price:number;label:string;visible:boolean;line:ReturnType<typeof price.createPriceLine>}>=[];
+  try{for(const key of marketLevelKeys){const value=snapshot.levels[key];if(value===null)continue;if(!Number.isFinite(value)||value<=0)throw Error("Invalid market-level price");
+   const visible=snapshot.visible?.[key]!==false,label=marketLevelLabels[key];
+   candidate.push({key,price:value,label,visible,line:price.createPriceLine({price:value,color:marketLevelColors[key],lineWidth:key.endsWith("_poc")?2:1,lineStyle:marketLevelStyles[key],axisLabelVisible:visible,title:visible?label:"",lineVisible:visible})});
+  }}catch(error){for(const item of candidate)price.removePriceLine(item.line);throw error}
+  clearMarketLevels();for(const item of candidate)marketLevelLines.set(item.key,{line:item.line,price:item.price,label:item.label,visible:item.visible});marketLevelAsOfUtc=snapshot.asOfUtc;
+  return readMarketLevels();
+ }
+ function readMarketLevels(){guard();const levels:Partial<Record<MarketLevelKey,{price:number;label:string;visible:boolean}>>={};for(const [key,item] of marketLevelLines)levels[key]={price:item.price,label:item.label,visible:item.visible};return {source:marketLevelAsOfUtc!==null?"MT5_VERIFIED":"NONE",asOfUtc:marketLevelAsOfUtc,count:marketLevelLines.size,levels}}
  function clearPositionOverlays(){guard();for(const item of positionOverlayLines.values())price.removePriceLine(item.line);positionOverlayLines.clear();positionOverlayPositions=[];positionOverlayCurrency="";positionOverlayMarginMode="UNKNOWN";positionZonesPrimitive.set([])}
  function setPositionOverlays(snapshot:ReadOnlyPositionOverlaySnapshot){
   guard();const expected={account:activeAccount,symbol:drawingScope?.symbol??"",timeframe:drawingScope?.timeframe??""},received=snapshot?.scope;
@@ -2812,7 +2836,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function setDrawingTool(tool:PlacementTool|null,text?:string){guard();if(tool!==null&&!["TREND","RAY","PRICE","TIME","RECT","FIBO","MEASURE","CHANNEL","RISK_REWARD","TEXT"].includes(tool))throw Error("Invalid drawing tool");if(tool==="TEXT"&&(typeof text!=="string"||!/^[\x20-\x7E]{1,40}$/.test(text)))throw Error("Text placement requires 1-40 printable ASCII characters");cancelDrawingTool(false);placementTool=tool;placementAnchors=[];placementText=tool==="TEXT"?text!:null;if(tool)drawingState("SECOND_ANCHOR");return true}
  function drawingToolState(){return {tool:placementTool,hasFirstAnchor:placementAnchors.length>0,anchorCount:placementAnchors.length}}
- function inspect(){guard();return {version:VERSION,account:activeAccount,positionOverlayCount:positionOverlayLines.size,positionOverlays:readPositionOverlays().lines,brokerDealMarkerCount:brokerDealMarkers.filter(row=>row.plotted).length,nativeDrawingCount:drawingCount(),drawingTool:placementTool,
+ function inspect(){guard();return {version:VERSION,account:activeAccount,priceAxisWidth:chart.priceScale("right").width(),positionOverlayCount:positionOverlayLines.size,positionOverlays:readPositionOverlays().lines,marketLevelCount:marketLevelLines.size,marketLevels:readMarketLevels(),brokerDealMarkerCount:brokerDealMarkers.filter(row=>row.plotted).length,nativeDrawingCount:drawingCount(),drawingTool:placementTool,
   displayTimeZone,volumeZoneStatus:volumeZones?.result.status??"DISABLED",volumeZoneCount:volumeZones?.result.zones.length??0,
   candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
   sessionVwapCount:sessionVwapOverlays.size,sessionVwapSeries:[...sessionVwapOverlays.entries()].map(([id,group])=>({id,options:{...group.options},points:group.result.points.map(point=>({...point})),volumeSource:group.result.volumeSource,visible:group.series.options().visible})),
@@ -2822,5 +2846,5 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   return Object.freeze({setCandles,addAverage,addMovingAverage,addTransientMovingAverage,addDonchian,removeDonchian,addBollinger,updateBollinger,removeBollinger,bollingerOptions,addSessionVwap,updateSessionVwap,removeSessionVwap,sessionVwapOptions,addKeltner,removeKeltner,addAtrBands,updateAtrBands,removeAtrBands,atrBandsOptions,addLinearRegression,updateLinearRegression,removeLinearRegression,linearRegressionOptions,addIchimoku,updateIchimoku,removeIchimoku,ichimokuOptions,addPivotPoints,updatePivotPoints,pivotOptions,removePivotPoints,addSupertrend,updateSupertrend,removeSupertrend,supertrendOptions,addParabolicSar,updateParabolicSar,removeParabolicSar,parabolicSarOptions,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,deleteSelectedDrawings,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,addRiskReward:(options:RiskRewardOptions)=>addRiskReward(options),updateRiskReward,removeRiskReward,drawingPosition,drawingAnchorPosition,readDrawing,exportDrawings,exportLayout,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,duplicateSelectedDrawings,
   addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,addOscillator,updateOscillator,removeOscillator,addTransientOscillator,updateTransientOscillator,removeTransientOscillator,moveOscillator,oscillatorOptions,oscillatorPaneLayout,resizePane,paneHeights,showVolume,visibleLogicalRange,setVisibleLogicalRange,setDisplayTimeZone,displayTimeZone:()=>displayTimeZone,formatTimeLabel:formatDisplayTime,formatCrosshairTime,readDataWindow,
-  updateLast,changeAccount,averageOptions,setVolumeZones,readVolumeZones,clearVolumeZones,setAutoFibonacci,readAutoFibonacci,clearAutoFibonacci,setPositionOverlays,readPositionOverlays,clearPositionOverlays,setBrokerDealMarkers,readBrokerDealMarkers,setDrawingTool,drawingToolState,verifyPersistence,inspect,destroy});
+  updateLast,changeAccount,averageOptions,setVolumeZones,readVolumeZones,clearVolumeZones,setAutoFibonacci,readAutoFibonacci,clearAutoFibonacci,setMarketLevels,readMarketLevels,clearMarketLevels,setPositionOverlays,readPositionOverlays,clearPositionOverlays,setBrokerDealMarkers,readBrokerDealMarkers,setDrawingTool,drawingToolState,verifyPersistence,inspect,destroy});
 }

@@ -8,7 +8,7 @@ const {chromium}=require("playwright");
 const root=path.resolve(__dirname,"..");
 const html=enabled=>`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <script>window.CHART_STUDIO_V5_PREVIEW_ENABLED=${enabled};window.__v4Updates=0;window.__v5AverageAccount="titan";window.__v5AverageConfigs=[{id:"trend-ema",type:"EMA",period:21,source:"close",color:"#68dfff",lineWidth:2,visible:true,label:"Trend EMA",displayShift:0}];window.ChartStudioAverages={getConfigs:()=>window.__v5AverageConfigs.map(item=>({...item})),getAccount:()=>window.__v5AverageAccount};window.__v5IndicatorScope={account:"titan",symbol:"XAUUSD",timeframe:"M15"};window.__v5IndicatorSettings={rsi:{enabled:false,period:14},macd:{enabled:false,fast:12,slow:26,signal:9},atr:{enabled:false,period:14},adx:{enabled:false,period:14},stochastic:{enabled:true,period:14,smoothK:3,smoothD:3}};window.__v5OscillatorInstances=[{id:"macd-one",kind:"macd",fast:8,slow:21,signal:5,visible:true,color:"#44ffaa",lineWidth:3,label:"Fast MACD"}];const cloneLocal=value=>JSON.parse(JSON.stringify(value));window.ChartStudioIndicators={getScope:()=>({...window.__v5IndicatorScope}),settings:()=>cloneLocal(window.__v5IndicatorSettings)};window.ChartStudioOscillators={getAccount:()=>window.__v5IndicatorScope.account,settings:()=>cloneLocal(window.__v5OscillatorInstances)};</script>
-<script src="static/chart-studio-v5-feed.js"></script><script src="static/chart-studio-v5-indicator-feed.js"></script><script src="static/chart-studio-v5-oscillator-feed.js"></script><script src="static/chart-studio-v5-preview.js"></script>
+<script src="static/chart-level-visibility.js"></script><script src="static/chart-studio-v5-feed.js"></script><script src="static/chart-studio-v5-indicator-feed.js"></script><script src="static/chart-studio-v5-oscillator-feed.js"></script><script src="static/chart-studio-v5-preview.js"></script>
 <style>body{margin:0;background:#07111a;color:#e6f4f8;font:14px sans-serif}#tv-chart{height:300px;width:500px}#chart-v5-preview-host{height:700px;width:700px}</style></head><body>
 <div id="tv-chart"><canvas id="v4-sentinel" width="500" height="300"></canvas></div>
 <button type="button" id="chart-v5-preview-btn" aria-controls="chart-v5-preview-panel" aria-expanded="false" hidden>V5 Vorschau</button>
@@ -65,7 +65,8 @@ const server=http.createServer((req,res)=>{
    const scope={account:"titan",symbol:"XAUUSD",timeframe:"M15"};
    window.ChartStudioV5Preview.setScope(scope);
    const token=window.ChartStudioV5Preview.beginRead();
-   return window.ChartStudioV5Preview.update({accountId:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,source:"MT5_VERIFIED",canExecute:false,snapshotAsOfUtc:asOfUtc,candles},token);
+   return window.ChartStudioV5Preview.update({accountId:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,source:"MT5_VERIFIED",canExecute:false,snapshotAsOfUtc:asOfUtc,candles,
+    sr_levels:{daily_high:4110,daily_low:4100,daily_poc:4105,daily_vah:4108,daily_val:4102,weekly_high:4120,weekly_low:4090,weekly_poc:4106,weekly_vah:4112,weekly_val:4101}},token);
   },{candles,asOfUtc});
   assert.deepEqual(first,{applied:true,candleCount:150});
   assert.match(await page.locator("#chart-v5-data-window").textContent(),/Fadenkreuz auf eine Kerze bewegen/);
@@ -110,6 +111,22 @@ const server=http.createServer((req,res)=>{
   await page.waitForFunction(()=>document.querySelector("#chart-v5-live-quote")?.textContent.includes("STALE"));
   await page.waitForFunction(()=>window.ChartStudioV5Preview?.inspect().customMovingAverageCount===1);
   await page.waitForFunction(()=>window.ChartStudioV5Preview?.inspect().customOscillatorCount===2);
+  const marketLevels=await page.evaluate(()=>window.ChartStudioV5Preview.readMarketLevels?.());
+  const priceAxisWidth=await page.evaluate(()=>window.ChartStudioV5Preview.inspect().priceAxisWidth);
+  assert.ok(priceAxisWidth>=112,"native v5 reserves enough axis width for concise price and level labels");
+  assert.equal(marketLevels?.source,"MT5_VERIFIED","native v5 receives scoped read-only market levels from the broker candle response");
+  assert.equal(marketLevels?.count,10,"native v5 renders all ten daily/weekly high, low and volume-profile levels");
+  assert.equal(marketLevels?.levels.daily_poc.price,4105);
+  assert.equal(marketLevels?.levels.daily_poc.label,"D-POC","concise native axis labels retain readable level identity without long clipped titles");
+  assert.equal(marketLevels?.levels.weekly_poc.price,4106);
+  const levelPreferences=await page.evaluate(()=>{
+   const visibility=window.DashboardChartLevelVisibility,preview=window.ChartStudioV5Preview;
+   visibility.set("titan","daily_poc",false);preview.syncMarketLevels();
+   const hidden=preview.readMarketLevels().levels.daily_poc.visible;
+   visibility.set("titan","weekly_high",true);preview.syncMarketLevels();
+   return {hidden,explicitWeekly:preview.readMarketLevels().levels.weekly_high.visible};
+  });
+  assert.deepEqual(levelPreferences,{hidden:false,explicitWeekly:true},"native levels follow account toggles and preserve explicit distant-weekly override");
   const syncedOscillators=await page.evaluate(()=>({stochastic:window.ChartStudioV5Preview.readOscillator("catalog-stochastic"),macd:window.ChartStudioV5Preview.readOscillator("instance-macd-one")}));
   assert.deepEqual(syncedOscillators.stochastic,{id:"preview-osc-c-stochastic",kind:"stochastic",settings:{period:14,smoothK:3,smoothD:3},color:"#55d7ee",lineWidth:2,visible:true,title:"Stochastic %K/%D"});
   assert.deepEqual(syncedOscillators.macd,{id:"preview-osc-i-pzbd09",kind:"macd",settings:{fast:8,slow:21,signal:5},color:"#44ffaa",lineWidth:3,visible:true,title:"Fast MACD"});
@@ -376,6 +393,7 @@ const server=http.createServer((req,res)=>{
   assert.deepEqual(scopeSwitch.staleResult,{applied:false,reason:"STALE_SCOPE"});
   assert.deepEqual(scopeSwitch.stalePositionResult,{applied:false,reason:"STALE_SCOPE"},"late position reads cannot cross account changes");
   assert.deepEqual(scopeSwitch.updated,{applied:true,candleCount:150});
+  assert.equal(scopeSwitch.state.marketLevelCount,0,"account/symbol scope changes clear prior market-level lines");
   assert.equal(scopeSwitch.state.scope.account,"xau5m_m5");
   assert.equal(scopeSwitch.state.positionOverlayCount,0,"account changes clear prior account position lines");
   assert.equal(scopeSwitch.state.customMovingAverageCount,0,"a configuration still owned by another account is never drawn into the new chart");

@@ -16,7 +16,8 @@ const keys=definitions.map(row=>row.key),keySet=new Set(keys),defaults=Object.fr
 const storageKey=account=>"2eas:chart-level-visibility:v1:"+account;
 const sessionChoices=new Map();
 function choicesFor(account){let choices=sessionChoices.get(account);if(!choices){choices={};sessionChoices.set(account,choices)}return choices}
-function validAccount(account){return account==="titan"||account==="goldm15"}
+const demoAccounts=new Set(["titan","xau5m_m5","titan_m5","xau5m_500","goldm15","titan_500_2","xau5m_m15","titan_25k"]);
+function validAccount(account){return demoAccounts.has(account)}
 function parse(account,storage){
  if(!validAccount(account))return null;
  try{

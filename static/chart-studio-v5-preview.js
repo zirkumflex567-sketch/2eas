@@ -54,6 +54,26 @@
   }
   const same=(a,b)=>!!a&&!!b&&a.account===b.account&&a.symbol===b.symbol&&a.timeframe===b.timeframe;
   function currentScope(){return scope?{...scope}:null}
+  const marketLevelKeys=["daily_high","daily_low","daily_poc","daily_vah","daily_val","weekly_high","weekly_low","weekly_poc","weekly_vah","weekly_val"];
+  function syncMarketLevels(){
+    if(!engine||!scope||!latest||!latest.sr_levels||typeof latest.sr_levels!=="object"){
+      try{engine?.clearMarketLevels?.()}catch(_){}
+      return {applied:false,reason:"LEVELS_UNAVAILABLE"};
+    }
+    const levels=Object.fromEntries(marketLevelKeys.map(key=>{
+      const value=latest.sr_levels[key];return [key,value===null||value===undefined||value===0?null:value];
+    }));
+    const preferences=window.DashboardChartLevelVisibility?.read?.(scope.account)||Object.fromEntries(marketLevelKeys.map(key=>[key,true]));
+    const hasChoice=key=>window.DashboardChartLevelVisibility?.hasChoice?.(scope.account,key)===true;
+    const reference=Number(latest.candles?.at(-1)?.close)||Number(levels.daily_poc)||0;
+    const visible=Object.fromEntries(marketLevelKeys.map(key=>{
+      const weeklyExtreme=key==="weekly_high"||key==="weekly_low";
+      const nearChart=!weeklyExtreme||reference<=0||levels[key]===null||Math.abs(levels[key]-reference)<=35;
+      return [key,preferences[key]===true&&(nearChart||hasChoice(key))];
+    }));
+    try{return engine.setMarketLevels({scope:{...scope},source:"MT5_VERIFIED",canExecute:false,asOfUtc:latest.snapshotAsOfUtc,levels,visible})}
+    catch(_){try{engine.clearMarketLevels()}catch(__){}return {applied:false,reason:"INVALID_LEVELS"}}
+  }
   function syncMovingAverages(){
     if(!indicatorBridge||!active||!latest||!scope)return {applied:false,reason:"PREVIEW_NOT_READY"};
     const source=window.ChartStudioAverages;
@@ -360,7 +380,7 @@
       if(latest){const token=bridge.beginRead();const result=bridge.update(latest,token);
         if(autoFibButton)autoFibButton.disabled=!Number.isSafeInteger(latest.snapshotAsOfUtc);
         updateDrawingButtons();
-        if(result.applied){refreshPinnedDataWindow();renderPositions();renderBrokerDealMarkers();syncMovingAverages();syncOscillators()}
+        if(result.applied){refreshPinnedDataWindow();renderPositions();renderBrokerDealMarkers();syncMarketLevels();syncMovingAverages();syncOscillators()}
         setStatus(result.applied?`${result.candleCount} verifizierte Kerzen · read-only · Kerzenfrische ungeprüft`:"V5-Daten abgelehnt: "+result.reason)}
     }catch(error){destroyRenderer();setStatus("V5-Vorschau nicht verfügbar: "+String(error?.message||error).slice(0,160))}
   }
@@ -397,6 +417,7 @@
     const result=bridge.update(latest,bridge.beginRead());
     if(!result.applied){clear("V5-Daten abgelehnt: "+result.reason);return result}
     const indicatorResult=syncMovingAverages();syncOscillators();
+    syncMarketLevels();
     refreshPinnedDataWindow();
     renderPositions();renderBrokerDealMarkers();
     if(autoFibButton)autoFibButton.disabled=false;
@@ -406,12 +427,12 @@
     return result;
   }
   function clear(message){
-    latest=null;latestSequence=++sequence;brokerDealMarkersSnapshot=null;dataWindowHover=null;dataWindowPinned=null;dataWindowCrosshairActive=false;renderDataWindow({detail:null});try{engine?.setBrokerDealMarkers({scope:{...scope},source:"MT5_VERIFIED",canExecute:false,markers:[]})}catch(_){}
+    latest=null;latestSequence=++sequence;brokerDealMarkersSnapshot=null;dataWindowHover=null;dataWindowPinned=null;dataWindowCrosshairActive=false;renderDataWindow({detail:null});try{engine?.setBrokerDealMarkers({scope:{...scope},source:"MT5_VERIFIED",canExecute:false,markers:[]})}catch(_){}try{engine?.clearMarketLevels?.()}catch(_){}
     clearAutoFib();clearPositions();try{bridge?.clear()}catch(_){}try{indicatorBridge?.clear()}catch(_){}try{oscillatorBridge?.clear()}catch(_){}if(autoFibButton)autoFibButton.disabled=true;
     setDrawingTool(null);updateDrawingButtons();
     setStatus(message||"MT5-Kerzen derzeit nicht verfügbar");
   }
-  window.ChartStudioV5Preview=Object.freeze({setScope,beginRead,update,clear,renderAutoFib,clearAutoFib,beginPositionRead,setPositions,showPositions,readPositions,clearPositions,setBrokerDealMarkers,readBrokerDealMarkers,setDrawingTool,syncMovingAverages,syncOscillators,readMovingAverage:id=>engine?.movingAverageOptions?.("preview-ma-"+id)||null,readOscillator:id=>oscillatorBridge?.read(id)||null,exportLayout,importLayout,readDrawing:id=>engine?.readDrawing?.(id)||null,drawingAnchorPosition:(id,anchor)=>engine?.drawingAnchorPosition?.(id,anchor)||null,readAutoFibonacci:()=>engine?.readAutoFibonacci?.()||null,inspect:()=>({active,scope:currentScope(),generation,status:status?.textContent||"",autoFibonacci:!!engine?.readAutoFibonacci?.(),customMovingAverageCount:indicatorBridge?.inspect?.().count||0,customOscillatorCount:oscillatorBridge?.inspect?.().count||0,positionOverlayCount:readPositions().count,brokerDealMarkerCount:readBrokerDealMarkers().plotted,nativeDrawingCount:engine?.inspect?.().nativeDrawingCount||0,persistenceStatus:engine?.inspect?.().persistenceStatus||null,persistenceError:engine?.inspect?.().persistenceError||null,drawingTool,positionsEnabled,dataWindowPinned:!!dataWindowPinned,brokerDealMarkers:readBrokerDealMarkers()})});
+  window.ChartStudioV5Preview=Object.freeze({setScope,beginRead,update,clear,renderAutoFib,clearAutoFib,beginPositionRead,setPositions,showPositions,readPositions,clearPositions,setBrokerDealMarkers,readBrokerDealMarkers,readMarketLevels:()=>engine?.readMarketLevels?.()||{source:"NONE",asOfUtc:null,count:0,levels:{}},syncMarketLevels,setDrawingTool,syncMovingAverages,syncOscillators,readMovingAverage:id=>engine?.movingAverageOptions?.("preview-ma-"+id)||null,readOscillator:id=>oscillatorBridge?.read(id)||null,exportLayout,importLayout,readDrawing:id=>engine?.readDrawing?.(id)||null,drawingAnchorPosition:(id,anchor)=>engine?.drawingAnchorPosition?.(id,anchor)||null,readAutoFibonacci:()=>engine?.readAutoFibonacci?.()||null,inspect:()=>({active,scope:currentScope(),generation,status:status?.textContent||"",autoFibonacci:!!engine?.readAutoFibonacci?.(),priceAxisWidth:engine?.inspect?.().priceAxisWidth||0,customMovingAverageCount:indicatorBridge?.inspect?.().count||0,customOscillatorCount:oscillatorBridge?.inspect?.().count||0,positionOverlayCount:readPositions().count,marketLevelCount:engine?.readMarketLevels?.().count||0,brokerDealMarkerCount:readBrokerDealMarkers().plotted,nativeDrawingCount:engine?.inspect?.().nativeDrawingCount||0,persistenceStatus:engine?.inspect?.().persistenceStatus||null,persistenceError:engine?.inspect?.().persistenceError||null,drawingTool,positionsEnabled,dataWindowPinned:!!dataWindowPinned,brokerDealMarkers:readBrokerDealMarkers()})});
   function boot(){
     button=document.getElementById("chart-v5-preview-btn");panel=document.getElementById("chart-v5-preview-panel");
     host=document.getElementById("chart-v5-preview-host");status=document.getElementById("chart-v5-preview-status");dataWindow=document.getElementById("chart-v5-data-window");dataWindowPinButton=document.getElementById("chart-v5-data-window-pin");liveQuote=document.getElementById("chart-v5-live-quote");
