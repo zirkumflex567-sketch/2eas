@@ -156,8 +156,26 @@ def test_goldm15_candidate_records_risk_guard_liquidations_with_reason_and_order
     assert '#define CS_EVIDENCE_CAPTURE' in candidate
     assert candidate.index('#define CS_EVIDENCE_CAPTURE') < candidate.index('#include "GoldM15_Risk.mqh"')
     assert "#else\n         if(!closer.PositionClose(ticket) || !GoldAcceptedResult(closer.ResultRetcode())) PrintFormat" in generated
-    assert generated.count("GoldCancelOrders(closer,magic,all);") == 1
+    assert generated.count("GoldCancelOrders(closer,magic,all,reason);") == 1
     assert "CSCaptureGoldRiskCloseAttempt" not in risk
+
+
+def test_goldm15_candidate_records_pending_order_cancel_attempts_without_fill_correlation():
+    risk = (ROOT / "goldm15" / "GoldM15_Risk.mqh").read_text(encoding="utf-8-sig")
+    generated = BUILD._instrument_risk_helper(risk)
+
+    assert "void GoldCancelOrders(CTrade &closer,long magic,bool all,const string reason)" in generated
+    assert "GoldCancelOrders(closer,magic,all,reason);" in generated
+    assert 'GoldCancelOrders(closer,magic,all_scope,"NEWS_ENTRY_VETO")' in generated
+    assert "bool cs_cancelled=closer.OrderDelete(ticket);" in generated
+    assert "uint cs_cancel_retcode=closer.ResultRetcode();" in generated
+    assert 'CSEnqueueDecision("ORDER_ATTEMPT",cs_cancel_outcome' in generated
+    assert 'CSPredicate("pending_order_cancel"' in generated
+    assert "CSFeature(\"pending_order_price\"" in generated
+    assert "CSFeature(\"pending_order_volume\"" in generated
+    assert 'cs_cancel_id,ticket,cs_request_time' in generated
+    assert "CSRegisterOrderAttempt" not in generated
+    assert "#else\n         if(!closer.OrderDelete(ticket) || !GoldAcceptedResult(closer.ResultRetcode())) PrintFormat" in generated
 
 
 def test_goldm15_candidate_refuses_unexpected_source_anchors():

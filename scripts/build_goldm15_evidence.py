@@ -54,6 +54,67 @@ def _source_digest(content: bytes) -> str:
 
 def _instrument_risk_helper(source_text: str) -> str:
     source_text = source_text.replace("\r\n", "\n")
+    cancel_anchor = "void GoldCancelOrders(CTrade &closer,long magic,bool all)"
+    if source_text.count(cancel_anchor) != 1:
+        raise ValueError("expected unique GoldM15 pending-order cancellation helper")
+    source_text = source_text.replace(
+        cancel_anchor,
+        "void GoldCancelOrders(CTrade &closer,long magic,bool all,const string reason)",
+        1,
+    )
+    cancel_calls = "GoldCancelOrders(closer,magic,all);"
+    if source_text.count(cancel_calls) != 1:
+        raise ValueError("expected unique GoldM15 liquidation cancel call")
+    source_text = source_text.replace(cancel_calls, "GoldCancelOrders(closer,magic,all,reason);", 1)
+    news_cancel_call = "GoldCancelOrders(closer,magic,all_scope);"
+    if source_text.count(news_cancel_call) != 1:
+        raise ValueError("expected unique GoldM15 news-veto cancellation call")
+    source_text = source_text.replace(
+        news_cancel_call,
+        'GoldCancelOrders(closer,magic,all_scope,"NEWS_ENTRY_VETO");',
+        1,
+    )
+
+    cancel_request_anchor = '''      if(ticket>0 && (all || (OrderGetString(ORDER_SYMBOL)==_Symbol && m>magic && m<=magic+3)))
+         if(!closer.OrderDelete(ticket) || !GoldAcceptedResult(closer.ResultRetcode())) PrintFormat("RISK cancel retry %I64u: %u",ticket,closer.ResultRetcode());'''
+    cancel_request_capture = '''      if(ticket>0 && (all || (OrderGetString(ORDER_SYMBOL)==_Symbol && m>magic && m<=magic+3)))
+        {
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+         string cs_symbol=OrderGetString(ORDER_SYMBOL);
+         ENUM_ORDER_TYPE cs_order_type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+         double cs_order_price=OrderGetDouble(ORDER_PRICE_OPEN);
+         double cs_order_volume=OrderGetDouble(ORDER_VOLUME_CURRENT);
+         datetime cs_request_utc=TimeGMT();
+         bool cs_cancelled=closer.OrderDelete(ticket);
+         uint cs_cancel_retcode=closer.ResultRetcode();
+         bool cs_cancel_accepted=cs_cancelled && GoldAcceptedResult(cs_cancel_retcode);
+         string cs_cancel_outcome=cs_cancel_accepted ? "PASS" : "BLOCK";
+         if(!cs_cancelled || !GoldAcceptedResult(cs_cancel_retcode))
+            PrintFormat("RISK cancel retry %I64u: %u",ticket,cs_cancel_retcode);
+         if(cs_symbol==_Symbol && CSRecorderReady && !CSRecorderDisabled)
+           {
+            datetime cs_bar_time=iTime(_Symbol,PERIOD_M15,1);
+            string cs_cancel_id=CS_EVIDENCE_PRODUCER_ID+"_cancel_"+
+               IntegerToString((long)GetTickCount64())+"_"+IntegerToString((long)(CSEventCounter+1));
+            string cs_features=CSFeature("pending_order_price",CSNumber(cs_order_price,_Digits),"price","M15")+","+
+               CSFeature("pending_order_volume",CSNumber(cs_order_volume,8),"lots","M15")+","+
+               CSFeature("pending_order_type_code",CSNumber((double)cs_order_type,0),"enum","M15")+","+
+               CSFeature("broker_retcode",CSNumber((double)cs_cancel_retcode,0),"code","M15");
+            string cs_predicates=CSPredicate("pending_order_cancel",CSBoolNumber(cs_cancel_accepted),"EQ","1",
+               cs_cancel_outcome,reason);
+            string cs_request_time=CSUtc(cs_request_utc);
+            if(cs_bar_time>0)
+               CSEnqueueDecision("ORDER_ATTEMPT",cs_cancel_outcome,cs_bar_time,cs_features,cs_predicates,"",
+                  cs_cancel_id,ticket,cs_request_time);
+           }
+#else
+         if(!closer.OrderDelete(ticket) || !GoldAcceptedResult(closer.ResultRetcode())) PrintFormat("RISK cancel retry %I64u: %u",ticket,closer.ResultRetcode());
+#endif
+        }'''
+    if source_text.count(cancel_request_anchor) != 1:
+        raise ValueError("expected unique GoldM15 pending-order cancel request")
+    source_text = source_text.replace(cancel_request_anchor, cancel_request_capture, 1)
+
     liquidate_anchor = "void GoldLiquidate(CTrade &closer,long magic,bool all)"
     if source_text.count(liquidate_anchor) != 1:
         raise ValueError("expected unique GoldM15 account risk liquidation helper")
