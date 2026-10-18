@@ -211,7 +211,7 @@ def install_read_routes(app, mt5, *, now=None, calendar_path_resolver=None):
         def operation(spec):
             require_symbol(mt5, symbol)
             if at is None:
-                quote = quote_model(mt5.symbol_info_tick(symbol), spec, now=clock())
+                quote = quote_model(mt5.symbol_info_tick(symbol), spec, symbol=symbol, now=clock())
                 if quote['freshness'] != 'FRESH':
                     raise HTTPException(503, 'Regime-Lesedaten nicht frisch verfügbar.')
                 cutoff = quote['quoteTimeUtc']

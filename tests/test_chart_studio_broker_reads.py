@@ -527,6 +527,30 @@ def test_positions_orders_decimal_ids_nullable_stops_and_provenance(client, fake
     assert quote['quoteTimeUtcMs'] == NOW*1000+123
     assert quote['brokerUtcOffsetSeconds'] == 10800
     assert quote['offsetSource'] == 'ACCOUNT_CONFIG'
+    assert len(body['positionsRevision']) == len(body['ordersRevision']) == 64
+    assert len(quote['revision']) == 64
+
+
+def test_snapshot_revisions_track_semantic_book_and_quote_changes_but_not_observation_age(client, fake):
+    before = read(client).json()
+    same_tick_later = read(client).json()
+    assert before['positionsRevision'] == same_tick_later['positionsRevision']
+    assert before['ordersRevision'] == same_tick_later['ordersRevision']
+    assert before['quote']['revision'] == same_tick_later['quote']['revision']
+    from chart_studio.broker_reads import quote_model
+    spec = gateway.ACCOUNTS['titan']
+    later_quote = quote_model(fake.tick, spec, symbol='XAUUSD', now=NOW+5)
+    assert later_quote['ageSeconds'] != before['quote']['ageSeconds']
+    assert later_quote['revision'] == before['quote']['revision']
+
+    fake.tick.bid += .01
+    changed_quote = read(client).json()
+    assert changed_quote['quote']['revision'] != before['quote']['revision']
+    assert changed_quote['positionsRevision'] == before['positionsRevision']
+
+    fake.positions = fake.positions[:1]
+    changed_book = read(client).json()
+    assert changed_book['positionsRevision'] != before['positionsRevision']
 
 
 @pytest.mark.parametrize('kind,label', [(2,'BUY_LIMIT'),(3,'SELL_LIMIT'),(4,'BUY_STOP'),(5,'SELL_STOP'),(6,'BUY_STOP_LIMIT'),(7,'SELL_STOP_LIMIT')])
@@ -553,6 +577,7 @@ def test_empty_broker_book_is_honest(client, fake):
     fake.positions = fake.orders = ()
     body = read(client).json()
     assert body['positions'] == body['orders'] == []
+    assert len(body['positionsRevision']) == len(body['ordersRevision']) == 64
 
 
 @pytest.mark.parametrize('field,value', [('volume',float('nan')),('price_open',float('inf')),('sl',-1),('type',2),('ticket',0),('magic',-1),('symbol','EURUSD')])

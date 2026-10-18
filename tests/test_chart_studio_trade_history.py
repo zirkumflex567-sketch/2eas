@@ -118,9 +118,25 @@ def test_actual_fill_decimal_currency_ids_and_millisecond_clock(client, fake):
     assert body['nextCursor'] is None
     assert body['asOfUtc'] == '2026-10-09T12:00:00.789000Z'
     assert result.headers['cache-control'] == 'no-store'
+    assert len(body['historyRevision']) == 64
     start, stop = next(c[2] for c in fake.calls if c[0] == 'history')
     assert start == datetime(2026,10,9,12,tzinfo=timezone.utc)
     assert stop == datetime(2026,10,9,15,0,0,789000,tzinfo=timezone.utc)
+
+
+def test_history_revision_is_stable_across_pages_and_changes_with_snapshot(client, fake):
+    fake.deals = tuple(deal(ticket=9007199254740993+i,
+                            order=9007199254740994+i,
+                            position_id=9007199254740995+i,
+                            time=RAW-60-i, time_msc=(RAW-60-i)*1000)
+                       for i in range(3))
+    first = read(client, limit=1).json()
+    second = read(client, limit=1, cursor=first['nextCursor']).json()
+    assert first['historyRevision'] == second['historyRevision']
+    fake.deals = (*fake.deals, deal(ticket=9007199254741000, time=RAW-20,
+                                   time_msc=(RAW-20)*1000))
+    changed = read(client).json()
+    assert changed['historyRevision'] != first['historyRevision']
 
 
 @pytest.mark.parametrize('entry,label', [(0,'IN'),(1,'OUT'),(2,'INOUT'),(3,'OUT_BY'),(99,'UNKNOWN')])

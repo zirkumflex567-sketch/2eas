@@ -30,7 +30,7 @@ class PositionCommitService:
             raise self._error(404 if not matches else 503,
                               'POSITION_NOT_FOUND' if not matches else 'BROKER_DATA_UNAVAILABLE')
         observed = self.clock()
-        quote = reads.quote_model(self.mt5.symbol_info_tick(symbol), spec, now=observed)
+        quote = reads.quote_model(self.mt5.symbol_info_tick(symbol), spec, symbol=symbol, now=observed)
         age = observed * 1000 - quote['quoteTimeUtcMs']
         if not -1000 <= age <= 5000:
             raise self._error(503, 'QUOTE_NOT_FRESH')

@@ -236,7 +236,7 @@ class TradeTicketPreviewService:
                 metadata = reads.require_symbol(self.mt5, payload.symbol)
                 reads.symbol_model(metadata, spec)
                 quote = reads.quote_model(self.mt5.symbol_info_tick(payload.symbol), spec,
-                                          now=self.clock())
+                                          symbol=payload.symbol, now=self.clock())
                 if quote.get('freshness') != 'FRESH':
                     raise self._error(503, 'QUOTE_NOT_FRESH')
                 built = build_pending_order_request(
@@ -356,7 +356,8 @@ class TradeTicketCommitService:
         info = reads.require_symbol(self.mt5, payload.symbol)
         reads.symbol_model(info, spec)
         observed = self.clock()
-        quote = reads.quote_model(self.mt5.symbol_info_tick(payload.symbol), spec, now=observed)
+        quote = reads.quote_model(self.mt5.symbol_info_tick(payload.symbol), spec,
+                                  symbol=payload.symbol, now=observed)
         age = observed * 1000 - quote['quoteTimeUtcMs']
         if quote.get('freshness') != 'FRESH' or not -1000 <= age <= 5000:
             raise self._error(503, 'QUOTE_NOT_FRESH')

@@ -99,7 +99,7 @@ def install_preview_routes(app, mt5, *, now=None, monotonic=None):
             if not selected: raise failure(404,'POSITION_NOT_FOUND')
             raise failure(503,'BROKER_DATA_UNAVAILABLE')
         observed=clock()
-        model=reads.quote_model(mt5.symbol_info_tick(payload.symbol),spec,now=observed)
+        model=reads.quote_model(mt5.symbol_info_tick(payload.symbol),spec,symbol=payload.symbol,now=observed)
         age=observed*1000-model['quoteTimeUtcMs']
         # Match broker_reads.quote_model: ticks up to one second ahead of the
         # local clock are still classified as FRESH by the read-only quote API.

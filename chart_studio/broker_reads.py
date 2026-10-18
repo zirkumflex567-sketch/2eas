@@ -90,7 +90,13 @@ def provenance(spec):
             'source': SOURCE, 'canExecute': False}
 
 
-def quote_model(tick, spec, *, now=None):
+def snapshot_revision(scope, content):
+    encoded = json.dumps({'scope':scope, 'content':content}, sort_keys=True,
+                         separators=(',', ':'), ensure_ascii=True)
+    return hashlib.sha256(encoded.encode('utf-8')).hexdigest()
+
+
+def quote_model(tick, spec, *, symbol='', now=None):
     bid = decimal(required(tick, 'bid'), positive=True)
     ask = decimal(required(tick, 'ask'), positive=True)
     if Decimal(bid) > Decimal(ask):
@@ -107,11 +113,16 @@ def quote_model(tick, spec, *, now=None):
         raise BrokerReadError('invalid observation clock')
     delta = observed-clock['utcEpochMs']/1000
     freshness = 'FUTURE' if delta < -1 else ('STALE' if delta > FRESH_SECONDS else 'FRESH')
-    return {**provenance(spec), 'bid': bid, 'ask': ask, 'quoteTimeUtc': utc,
+    result = {**provenance(spec), 'bid': bid, 'ask': ask, 'quoteTimeUtc': utc,
             'quoteTimeUtcMs': clock['utcEpochMs'], 'rawBrokerEpoch': raw,
             'rawBrokerEpochMs': raw_ms, 'brokerUtcOffsetSeconds': clock['brokerUtcOffsetSeconds'],
             'offsetSource': clock['offsetSource'], 'ageSeconds': max(0., delta),
             'freshness': freshness, 'stale': freshness != 'FRESH'}
+    result['revision'] = snapshot_revision(
+        {'account':spec['id'], 'login':str(spec['login']), 'server':spec['server'],
+         'kind':'quote'}, {'symbol':broker_symbol(symbol) if symbol else '', 'bid':bid, 'ask':ask,
+                           'rawBrokerEpochMs':raw_ms})
+    return result
 
 
 def symbol_summary(row, spec):
@@ -132,6 +143,10 @@ def symbol_model(row, spec):
     for field, key in [('currency_base','currencyBase'), ('currency_profit','currencyProfit'),
                        ('currency_margin','currencyMargin')]:
         result[key] = text(required(row, field), nonempty=False)
+    result['revision'] = snapshot_revision(
+        {'account':spec['id'], 'login':str(spec['login']), 'server':spec['server'],
+         'kind':'symbol-metadata'}, {key:value for key,value in result.items()
+                                    if key not in ('account','login','server','source','canExecute')})
     return result
 
 
@@ -238,7 +253,7 @@ def positions_read(mt5, spec, symbol, *, ticket=None, magic=None, manual=None, n
     margin_mode = integer(required(info, 'margin_mode'), choices=(0,1,2))
     positions = broker_rows(mt5.positions_get(symbol=symbol))
     orders = broker_rows(mt5.orders_get(symbol=symbol))
-    quote = quote_model(mt5.symbol_info_tick(symbol), spec, now=now)
+    quote = quote_model(mt5.symbol_info_tick(symbol), spec, symbol=symbol, now=now)
     # Validate ALL rows first: ticket/magic filters never conceal malformed data.
     models = [position_model(row, spec, symbol, currency) for row in positions]
     pending = [order_model(row, spec, symbol) for row in orders]
@@ -246,10 +261,17 @@ def positions_read(mt5, spec, symbol, *, ticket=None, magic=None, manual=None, n
         return ((ticket is None or row['ticket'] == ticket)
                 and (magic is None or row['magic'] == magic)
                 and (manual is None or (row['ownership'] == 'MANUAL') == manual))
+    filtered_positions = [r for r in models if matches(r)]
+    filtered_orders = [r for r in pending if matches(r)]
+    scope = {'account':spec['id'], 'login':str(spec['login']), 'server':spec['server'],
+             'symbol':symbol}
     return {**provenance(spec), 'symbol': symbol, 'currency': currency,
             'marginMode': margin_mode, 'quote': quote,
-            'positions': [r for r in models if matches(r)],
-            'orders': [r for r in pending if matches(r)]}
+            'positionsRevision':snapshot_revision({**scope, 'kind':'positions'},
+                sorted((r['revision'] for r in filtered_positions))),
+            'ordersRevision':snapshot_revision({**scope, 'kind':'orders'},
+                sorted((r['revision'] for r in filtered_orders))),
+            'positions':filtered_positions, 'orders':filtered_orders}
 
 
 PORTFOLIO_MAX_POSITIONS = 500
@@ -509,6 +531,7 @@ def trades_read(mt5, spec, symbol, start, stop, *, limit=100, ticket=None,
     return {**provenance(spec), 'symbol':symbol, 'currency':currency,
             'fromUtc':history_cursor.utc_text(start), 'toUtc':history_cursor.utc_text(stop),
             'asOfUtc':history_cursor.utc_text(asof), 'limit':limit,
+            'historyRevision':snapshot_revision({'scope':scope, 'asof':asof}, snapshot),
             'trades':page, 'nextCursor':next_cursor,
             'omittedCategories':[{'type':DEAL_TYPES.get(k, 'OTHER_UNKNOWN'),
                                   'rawType':k, 'count':omitted[k]} for k in sorted(omitted)]}
@@ -517,7 +540,7 @@ def trades_read(mt5, spec, symbol, start, stop, *, limit=100, ticket=None,
 def legacy_quote(mt5, spec, info, symbol, *, now=None):
     """Keep legacy numeric names/types while correcting the explicit broker clock."""
     try:
-        quote = quote_model(mt5.symbol_info_tick(symbol), spec, now=now)
+        quote = quote_model(mt5.symbol_info_tick(symbol), spec, symbol=symbol, now=now)
         sym = mt5.symbol_info(symbol)
         if broker_symbol(required(sym, 'name')) != symbol:
             raise BrokerReadError('symbol mismatch')
