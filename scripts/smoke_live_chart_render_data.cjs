@@ -5,7 +5,12 @@ const { chromium } = require("playwright");
 const { countCandleInkPixels } = require("./chart_render_pixels.cjs");
 
 const base = process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056";
-const accounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500", "goldm15"];
+const allowedAccounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500", "goldm15"];
+const accounts = process.env.CHART_STUDIO_ACCOUNTS
+  ? process.env.CHART_STUDIO_ACCOUNTS.split(",").map(value => value.trim()).filter(Boolean)
+  : allowedAccounts;
+assert.ok(accounts.length > 0 && accounts.every(account => allowedAccounts.includes(account)),
+  "CHART_STUDIO_ACCOUNTS must contain only configured non-Blueberry demo aliases");
 const baseUrl = new URL(base);
 const basePath = baseUrl.pathname.replace(/\/$/, "");
 const PREVIEW_FLAG_OFF = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;";
@@ -28,7 +33,7 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
     });
     page.on("response", response => {
       const url = new URL(response.url());
-      if (url.origin !== baseUrl.origin || url.pathname !== `${basePath}/api/candles` || url.searchParams.get("count") !== "150") return;
+      if (url.origin !== baseUrl.origin || url.pathname !== `${basePath}/api/candles`) return;
       void response.json().then(snapshot => {
         if (snapshot?.source !== "MT5_VERIFIED" || typeof snapshot.accountId !== "string") return;
         const versions = levelSnapshots.get(snapshot.accountId) || [];
