@@ -60,28 +60,29 @@
     return envelope.drawings.filter(row=>row&&typeof row.kind==="string"&&row.options&&typeof row.options.id==="string")
       .map(row=>({id:row.options.id,kind:row.kind,options:row.options}));
   }
-  function refreshDrawingManager(){
+  function refreshDrawingManager(statusOverride=null){
     const list=document.getElementById("chart-v5-object-list"),message=document.getElementById("chart-v5-object-status");
     if(!list)return;
-    let rows=[],selected=[];
-    try{rows=readNativeDrawingRows();selected=engine?.inspect?.().selectedDrawingIds||[]}catch(error){if(message)message.textContent="Zeichnungsliste nicht verfügbar · "+String(error?.message||error).slice(0,100)}
+    let rows=[],selected=[],readError="";
+    try{rows=readNativeDrawingRows();selected=engine?.inspect?.().selectedDrawingIds||[]}catch(error){readError="Zeichnungsliste nicht verfügbar · "+String(error?.message||error).slice(0,100)}
     const selectedIds=new Set(selected);list.replaceChildren();
     for(const row of rows){
       const item=document.createElement("li");item.dataset.drawingId=row.id;
       const label=document.createElement("label"),checkbox=document.createElement("input");checkbox.type="checkbox";checkbox.checked=selectedIds.has(row.id);
-      checkbox.setAttribute("aria-label",`Auswählen: ${drawingNames[row.kind]||row.kind}`);checkbox.addEventListener("change",()=>{
+      const customLabel=typeof row.options.text==="string"?row.options.text:typeof row.options.title==="string"?row.options.title:"";
+      const drawingLabel=`${drawingNames[row.kind]||row.kind}${customLabel?` · ${customLabel}`:""}`,stateLabel=`${row.options.visible===false?" · verborgen":" · sichtbar"}${row.options.locked===true?" · gesperrt":" · entsperrt"}`;
+      checkbox.setAttribute("aria-label",`Auswählen: ${drawingLabel} · ${row.id.slice(-8)}${stateLabel}`);checkbox.addEventListener("change",()=>{
         if(!engine)return;
         try{engine.selectDrawings([...list.querySelectorAll('input[type="checkbox"]:checked')].map(input=>input.closest("[data-drawing-id]")?.dataset.drawingId).filter(Boolean));refreshDrawingManager()}
-        catch(error){if(message)message.textContent="Auswahl abgelehnt · "+String(error?.message||error).slice(0,100);refreshDrawingManager()}
+        catch(error){refreshDrawingManager("Auswahl abgelehnt · "+String(error?.message||error).slice(0,100))}
       });
-      const title=document.createElement("span"),customLabel=typeof row.options.text==="string"?row.options.text:typeof row.options.title==="string"?row.options.title:"";
-      title.textContent=`${drawingNames[row.kind]||row.kind}${customLabel?` · ${customLabel}`:""}`;label.append(checkbox,title);item.append(label);
-      const state=document.createElement("span");state.textContent=`${row.options.visible===false?" · verborgen":""}${row.options.locked===true?" · gesperrt":""}`;item.append(state);list.append(item);
+      const title=document.createElement("span");title.textContent=drawingLabel;label.append(checkbox,title);item.append(label);
+      const state=document.createElement("span");state.textContent=stateLabel;item.append(state);list.append(item);
     }
     const hasSelection=selectedIds.size>0;
     for(const id of ["chart-v5-object-hide","chart-v5-object-show","chart-v5-object-lock","chart-v5-object-unlock","chart-v5-object-duplicate","chart-v5-object-delete"]){const control=document.getElementById(id);if(control)control.disabled=!engine||!hasSelection}
     for(const id of ["chart-v5-object-undo","chart-v5-object-redo"]){const control=document.getElementById(id);if(control)control.disabled=!engine}
-    if(message)message.textContent=rows.length?`${rows.length} Zeichnungen · ${selectedIds.size} ausgewählt`:"Keine Zeichnungen in diesem Chart.";
+    if(message)message.textContent=statusOverride||readError||(rows.length?`${rows.length} Zeichnungen · ${selectedIds.size} ausgewählt`:"Keine Zeichnungen in diesem Chart.");
   }
   function applyDrawingManagerAction(action){
     if(!engine)return;
@@ -95,7 +96,7 @@
       else if(action==="undo")engine.undo();
       else if(action==="redo")engine.redo();
       refreshDrawingManager();
-    }catch(error){const message=document.getElementById("chart-v5-object-status");if(message)message.textContent=`Aktion abgelehnt · ${String(error?.message||error).slice(0,120)}`;refreshDrawingManager()}
+    }catch(error){refreshDrawingManager(`Aktion abgelehnt · ${String(error?.message||error).slice(0,120)}`)}
   }
   const same=(a,b)=>!!a&&!!b&&a.account===b.account&&a.symbol===b.symbol&&a.timeframe===b.timeframe;
   function currentScope(){return scope?{...scope}:null}

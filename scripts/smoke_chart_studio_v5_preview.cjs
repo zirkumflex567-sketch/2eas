@@ -311,6 +311,9 @@ const server=http.createServer((req,res)=>{
   const duplicatedIds=await page.evaluate(()=>window.ChartStudioV5Preview.inspect().selectedDrawingIds);
   assert.equal(duplicatedIds.length,1,"duplicate selects only the newly created copy");
   assert.notEqual(duplicatedIds[0],trend.drawing.id);
+  const accessibleDrawingNames=await page.locator("#chart-v5-object-list input[type=checkbox]").evaluateAll(items=>items.map(item=>item.getAttribute("aria-label")));
+  assert.equal(new Set(accessibleDrawingNames).size,2,"same-kind drawings have distinct accessible names");
+  assert.ok(accessibleDrawingNames.every(name=>/sichtbar · entsperrt/.test(name)),"accessible names include drawing visibility and lock state");
   await page.locator("#chart-v5-object-delete").click();
   await page.waitForFunction(()=>document.querySelectorAll("#chart-v5-object-list [data-drawing-id]").length===1);
   await page.locator("#chart-v5-object-undo").click();
