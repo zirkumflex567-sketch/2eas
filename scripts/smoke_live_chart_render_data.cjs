@@ -212,14 +212,31 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
       assert.deepEqual(accountLevelPreference, {accepted:true,changed:!accountLevelPreference.restored,restored:accountLevelPreference.restored},
         `${account} accepts an isolated browser preference for the chart-level toggle`);
       await page.locator("#chart-v5-auto-fib-btn").click();
-      const fib = await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci());
+      const fibState = await page.evaluate(() => ({
+        fibonacci: window.ChartStudioV5Preview.readAutoFibonacci(),
+        marketLevels: window.ChartStudioV5Preview.readMarketLevels(),
+      }));
+      const fib = fibState.fibonacci;
       assert.ok(fib?.result, `${account} returns an explicit Auto-Fibonacci state`);
       assert.equal(fib.result.source, "MT5_VERIFIED");
       assert.equal(fib.asOf.account, account);
       assert.equal(fib.asOf.symbol, api.symbol);
       assert.equal(fib.asOf.timeframe, api.timeframe);
-      assert.equal(fib.asOf.timeUtc, marketLevels.asOfUtc,
-        `${account}: Auto-Fibonacci and native levels use the same latest verified broker snapshot`);
+      assert.equal(fibState.marketLevels.source, "MT5_VERIFIED");
+      assert.equal(fib.asOf.timeUtc, fibState.marketLevels.asOfUtc,
+        `${account}: Auto-Fibonacci and native levels share the same current in-memory snapshot`);
+      let fibonacciSnapshot = null;
+      const snapshotDeadline = Date.now() + 5000;
+      while (Date.now() < snapshotDeadline) {
+        fibonacciSnapshot = levelSnapshots.get(account)?.findLast(snapshot => snapshot.snapshotAsOfUtc === fib.asOf.timeUtc) || null;
+        if (fibonacciSnapshot) break;
+        await page.waitForTimeout(25);
+      }
+      assert.ok(fibonacciSnapshot,
+        `${account}: Auto-Fibonacci cutoff matches a captured MT5 candle response`);
+      assert.equal(fibonacciSnapshot.accountId, account);
+      assert.equal(fibonacciSnapshot.symbol, api.symbol);
+      assert.equal(fibonacciSnapshot.timeframe, api.timeframe);
       assert.equal(fib.result.timeframe, api.timeframe);
       assert.equal(fib.series.length, 7);
       let fibStatus="PASSED";
