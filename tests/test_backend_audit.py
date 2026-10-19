@@ -285,6 +285,28 @@ def test_goldm15_chart_candles_stays_within_terminal_history_limit(isolated, mon
     isolated.send.assert_not_called()
 
 
+def test_goldm15_chart_candles_normalize_broker_time_without_future_bars(isolated, monkeypatch):
+    account = gateway.ACCOUNTS['goldm15']
+    isolated.info.login = account['login']
+    isolated.info.server = account['server']
+    raw = isolated.rates.copy()
+    raw['time'] += 10800
+    expected_last_utc = int(isolated.rates[-1]['time'])
+    monkeypatch.setitem(account, 'broker_utc_offset_seconds', 10800)
+    monkeypatch.setattr(app.time, 'time', lambda: expected_last_utc + 60)
+    monkeypatch.setattr(app.mt5, 'copy_rates_from_pos', lambda *args: raw.copy())
+
+    response = isolated.client.get('/api/candles?account=goldm15&tf=M15&symbol=XAUUSD&count=10')
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body['candles'][-1]['time'] == expected_last_utc
+    assert body['candles'][-1]['time'] <= body['snapshotAsOfUtc']
+    assert body['source'] == 'MT5_VERIFIED'
+    assert body['canExecute'] is False
+    isolated.send.assert_not_called()
+
+
 def test_goldm15_light_status_stays_within_terminal_history_limit(isolated, monkeypatch):
     account = gateway.ACCOUNTS['goldm15']
     isolated.info.login = account['login']

@@ -52,6 +52,7 @@ ACCOUNTS = {
                     server='ICMarketsEU-Demo', company='IC Markets (EU) Ltd',
                     terminal=r'C:\Users\zirku\Documents\goldm5\.mt5-demo\terminal64.exe',
                     portable=True, version='v1.21 GUARDED', capacity=3, broker_utc_offset_seconds=10800,
+                    rates_time_basis='BROKER_SERVER',
                     symbol='XAUUSD', timeframe='M15', initial_balance=10000.0, leverage='1:10',
                     account_type='DEMO', is_demo=True, badge='DEMO 10k',
                     challenge_protection=False),

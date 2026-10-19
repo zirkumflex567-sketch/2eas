@@ -30,7 +30,14 @@ def test_rates_time_normalization_uses_only_explicit_account_basis():
     with patch.dict(gateway.ACCOUNTS['xau5m_m5'],{
             'broker_utc_offset_seconds':10800,'rates_time_basis':'BROKER_SERVER'}):
         assert broker_clock.rates_to_utc_epoch(utc+10800,gateway.ACCOUNTS['xau5m_m5'])==utc
-    assert broker_clock.rates_to_utc_epoch(utc,gateway.ACCOUNTS['goldm15'])==utc
+    assert broker_clock.rates_to_utc_epoch(utc+10800,gateway.ACCOUNTS['goldm15'])==utc
+
+
+def test_goldm15_rates_are_explicitly_normalized_from_broker_server_time():
+    utc=int(datetime(2026,10,16,2,0,tzinfo=timezone.utc).timestamp())
+    account=gateway.ACCOUNTS['goldm15']
+    assert account.get('rates_time_basis')=='BROKER_SERVER'
+    assert broker_clock.rates_to_utc_epoch(utc+10800,account)==utc
 
 
 def test_invalid_rates_time_basis_is_rejected():
