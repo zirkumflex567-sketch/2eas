@@ -218,8 +218,8 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
       assert.equal(fib.asOf.account, account);
       assert.equal(fib.asOf.symbol, api.symbol);
       assert.equal(fib.asOf.timeframe, api.timeframe);
-      assert.ok(Math.abs(fib.asOf.timeUtc - api.snapshotAsOfUtc) <= 5,
-        `${account}: Auto-Fibonacci cutoff is from the current broker snapshot window`);
+      assert.equal(fib.asOf.timeUtc, marketLevels.asOfUtc,
+        `${account}: Auto-Fibonacci and native levels use the same latest verified broker snapshot`);
       assert.equal(fib.result.timeframe, api.timeframe);
       assert.equal(fib.series.length, 7);
       let fibStatus="PASSED";
