@@ -11,9 +11,13 @@ function cleanRule(raw){
  const triggeredAt=raw.triggeredAt===null||raw.triggeredAt===undefined?null:typeof raw.triggeredAt==="string"&&Number.isFinite(Date.parse(raw.triggeredAt))?raw.triggeredAt:null;
  return {id:raw.id,direction:raw.direction,price:raw.price,triggered:raw.triggered,triggeredAt};
 }
+function quoteTimestampMillis(value){
+ if(typeof value==="number"&&Number.isFinite(value)&&value>0)return value<1e12?value*1000:value;
+ return typeof value==="string"?Date.parse(value):NaN;
+}
 function quotePrice(quote,scope,now){
  if(!quote||quote.account!==scope.account||quote.symbol!==scope.symbol||quote.source!=="MT5_VERIFIED"||quote.canExecute!==false||quote.freshness!=="FRESH")return null;
- const bid=Number(quote.bid),ask=Number(quote.ask),age=Number(quote.ageSeconds),stamp=Date.parse(quote.quoteTimeUtc);
+ const bid=Number(quote.bid),ask=Number(quote.ask),age=Number(quote.ageSeconds),stamp=quoteTimestampMillis(Number.isFinite(quote.quoteTimeUtcMs)?quote.quoteTimeUtcMs:quote.quoteTimeUtc);
  if(!Number.isFinite(bid)||bid<=0||!Number.isFinite(ask)||ask<bid||!Number.isFinite(age)||age<0||age>MAX_AGE||!Number.isFinite(stamp))return null;
  const computedAge=(now-stamp)/1000;
  if(computedAge< -1||computedAge>MAX_AGE||Math.abs(computedAge-age)>5)return null;

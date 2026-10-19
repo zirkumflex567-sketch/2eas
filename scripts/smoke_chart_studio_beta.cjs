@@ -84,7 +84,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
     quoteReadRequests.push({method:route.request().method(),account:url.searchParams.get("account"),symbol:url.searchParams.get("symbol")});
     const symbol=url.searchParams.get("symbol"),fx=symbol==="EURUSD";
     if(alertPollingEnabled){alertQuoteRequests.push({account:url.searchParams.get("account"),symbol,method:route.request().method()});return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),symbol,bid:(alertQuotePrice-.01).toFixed(2),ask:(alertQuotePrice+.01).toFixed(2),quoteTimeUtc:new Date().toISOString(),ageSeconds:0,freshness:"FRESH",source:"MT5_VERIFIED",canExecute:false})})}
-    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),symbol,bid:fx?"1.10000":"4100.00",ask:fx?"1.10002":"4100.25",tickSize:fx?0.00001:0.01,digits:fx?5:2,currency:"USD",quoteTimeUtc:"2026-10-14T13:00:00.000000Z",ageSeconds:0,freshness:"FRESH",source:badQuote?"UNVERIFIED":"MT5_VERIFIED",canExecute:false})});
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({account:url.searchParams.get("account"),symbol,bid:fx?"1.10000":"4100.00",ask:fx?"1.10002":"4100.25",tickSize:fx?0.00001:0.01,digits:fx?5:2,currency:"USD",quoteTimeUtc:new Date().toISOString(),ageSeconds:0,freshness:"FRESH",source:badQuote?"UNVERIFIED":"MT5_VERIFIED",canExecute:false})});
   });
   await page.route("**/api/chart/v1/decisions**",async route=>{
     const url=new URL(route.request().url());
@@ -565,7 +565,12 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await page.locator("#cs-position-stop-draft [name='slPrice']").fill("4098.50");
   await page.locator("#cs-position-stop-draft [name='tpPrice']").fill("4104.00");
   await page.locator("#cs-position-stop-draft button[type='submit']").click();
-  await page.waitForFunction(()=>document.querySelector("#cs-position-stop-draft-status")?.textContent.includes("GUARD UNKNOWN · KEINE ÄNDERUNG"));
+  await page.waitForFunction(()=>document.querySelector("#cs-position-stop-draft-status")?.textContent.includes("Guard UNKNOWN · keine Änderung möglich")).catch(async error=>{
+    const debug=await page.evaluate(()=>({status:document.querySelector("#cs-position-stop-draft-status")?.textContent,
+      draft:ChartStudioBeta.getState().positionDraft,quote:ChartStudioBeta.getState().marketQuote,
+      timeframe:ChartStudioBeta.getState().tf,symbol:ChartStudioBeta.getState().symbol}));
+    throw new Error(`${error.message}; stopPreviewPayloads=${JSON.stringify(stopPreviewPayloads)}; debug=${JSON.stringify(debug)}`);
+  });
   assert.deepEqual(stopPreviewPayloads[0],{account:"titan",symbol:"XAUUSD",positionTicket:"9007199254740993",expectedRevision:"a".repeat(64),candidate:{slPrice:"4098.50",tpPrice:"4104.00"},clientRequestId:stopPreviewPayloads[0]?.clientRequestId});
   assert.match(stopPreviewPayloads[0].clientRequestId,/^[0-9a-f-]{36}$/i);
   invalidStopGeometry=true;await page.locator("#cs-position-stop-draft button[type='submit']").click();
@@ -596,7 +601,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.equal(Number(await page.locator("#cs-position-stop-draft [name='slPrice']").inputValue()),await page.evaluate(()=>ChartStudioBeta.getState().positionDraft.slPrice),"The live draft price stays synchronized between the chart handle and input");
   assert.match(await page.locator("#cs-position-stop-draft-status").textContent(),/Entwurf geändert/,"Draft edits invalidate the previous calculation");
   await page.locator("#cs-position-stop-draft button[type='submit']").click();
-  await page.waitForFunction(()=>document.querySelector("#cs-position-stop-draft-status")?.textContent.includes("GUARD UNKNOWN · KEINE ÄNDERUNG"));
+  await page.waitForFunction(()=>document.querySelector("#cs-position-stop-draft-status")?.textContent.includes("Guard UNKNOWN · keine Änderung möglich"));
   assert.equal(stopPreviewPayloads.at(-1).candidate.slPrice,await page.locator("#cs-position-stop-draft [name='slPrice']").inputValue(),"The post-drag preview uses the exact displayed live price");
   await page.evaluate(()=>ChartStudioBeta.timeframe("M5"));
   assert.equal(await page.locator("#cs-position-stop-draft").isHidden(),true,"Timeframe changes clear the scoped position draft");
@@ -673,7 +678,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
       "symbol metadata must use the exact broker symbol");
     await page.locator("#cs-position-stop-draft [name='slPrice']").fill("4098.25");
     await page.locator("#cs-position-stop-draft button[type='submit']").click();
-    await page.waitForFunction(()=>document.querySelector("#cs-position-stop-draft-status")?.textContent.includes("GUARD UNKNOWN · KEINE ÄNDERUNG"));
+    await page.waitForFunction(()=>document.querySelector("#cs-position-stop-draft-status")?.textContent.includes("Guard UNKNOWN · keine Änderung möglich"));
     assert.equal(stopPreviewPayloads.at(-1).symbol,goldSymbol,"the read-only broker preview must retain the exact broker symbol");
     assert.equal(await page.evaluate(()=>ChartStudioBeta.getState().positionDraft.symbol),goldSymbol,
       "the chart draft overlay must remain bound to the selected broker symbol");

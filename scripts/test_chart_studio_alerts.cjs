@@ -16,6 +16,17 @@ assert.equal(engine.rearm("alert-1"),true);
 assert.deepEqual(tick(engine,102),[]); // re-arm also needs baseline
 assert.equal(tick(engine,99).length,0);
 assert.equal(tick(engine,101).length,1);
+const mt5Numeric=core.createEngine({account:"titan",symbol:"XAUUSD",timeframe:"M15",now:()=>clock});
+mt5Numeric.add({id:"mt5-numeric",direction:"ABOVE",price:100});
+const mt5Quote=(price,stamp)=>({...quote(price),quoteTimeUtc:Math.floor(stamp/1000),quoteTimeUtcMs:stamp});
+assert.deepEqual(observe(mt5Numeric,mt5Quote(99,clock)),[]);
+assert.equal(mt5Numeric.stale,false,"fresh MT5 quotes encode quoteTimeUtc as Unix seconds plus quoteTimeUtcMs");
+clock+=5000;
+assert.equal(observe(mt5Numeric,mt5Quote(101,clock)).length,1,"numeric MT5 quote timestamps must support live crossing detection");
+const numericMilliseconds=core.createEngine({account:"titan",symbol:"XAUUSD",timeframe:"M15",now:()=>clock});
+numericMilliseconds.add({id:"mt5-milliseconds",direction:"ABOVE",price:100});
+assert.deepEqual(observe(numericMilliseconds,quote(99,{quoteTimeUtc:clock})),[]);
+assert.equal(numericMilliseconds.stale,false,"numeric millisecond quote timestamps are accepted");
 const stale=core.createEngine({account:"titan",symbol:"XAUUSD",timeframe:"M15",now:()=>clock});
 stale.add({id:"s",direction:"ABOVE",price:100});
 assert.deepEqual(observe(stale,quote(99)),[]);
