@@ -4,7 +4,7 @@ const assert=require("node:assert/strict");
 const {chromium}=require("playwright");
 
 const base=(process.env.CHART_STUDIO_BASE_URL||"http://127.0.0.1:8056").replace(/\/+$/,"");
-const accounts=Object.freeze(["titan","xau5m_m5","titan_m5","xau5m_500"]);
+const accounts=Object.freeze(["titan","xau5m_m5","titan_m5","xau5m_500","goldm15"]);
 const statusPaths=new Set(["/api/chart/v1/decisions/capture/status","/api/chart/v1/lifecycle/capture/status"]);
 
 (async()=>{
@@ -17,7 +17,7 @@ const statusPaths=new Set(["/api/chart/v1/decisions/capture/status","/api/chart/
    const url=new URL(request.url());if(!url.pathname.startsWith("/api/"))return;
    assert.equal(request.method(),"GET","recorder status acceptance must remain read-only");
    const account=url.searchParams.get("account");
-   if(account!==null)assert.ok(accounts.includes(account),"request escaped the four authorized demo aliases: "+account);
+   if(account!==null)assert.ok(accounts.includes(account),"request escaped the five authorized non-Blueberry demo aliases: "+account);
    const entry={path:url.pathname,account};apiRequests.push(entry);
    if(statusPaths.has(url.pathname))captureRequests.push({...entry,method:request.method()});
   });
