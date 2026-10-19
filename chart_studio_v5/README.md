@@ -6,6 +6,8 @@ The adapter also exposes `setPositionOverlays(snapshot)` / `readPositionOverlays
 
 The optional `RISK_REWARD` drawing is placed with entry, stop and target anchors. It renders separate stop/target zones, an entry guide and a ratio derived from the three prices; invalid long/short ordering is rejected. The drawing supports handle editing, keyboard nudging, lock/visibility, undo/redo, duplication/deletion and the common 1,000-drawing limit. It is included in schema-v5 local persistence and portable schema-v2 layout transfer, while the production v4 chart remains authoritative.
 
+The optional `FIB_FAN` drawing uses two distinct loaded candle/price anchors and projects the default 0.382/0.5/0.618 rays to the pane edge; callers may supply 1–16 strictly increasing ratios inside (0,1). It participates in the same scoped persistence, schema-v2 portable layout transfer, object manager, visibility/lock, undo/redo, duplicate/delete and 1,000-drawing limit as other native drawings. Preview placement and lifecycle actions are covered by the Chromium smoke; geometry, validation and CRUD history are covered by the adapter smoke. v5 remains opt-in.
+
 Build on Node.js 22:
 
 ```sh

@@ -1602,6 +1602,32 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(fibonacciTimeZones.reverse.map(item=>item.time),[0,1,2,3,5,8,13,21,34,55].map(factor=>1700100000+(31-factor)*900));
   assert.ok(fibonacciTimeZones.forward.guides.every(item=>Number.isFinite(item.x)&&item.x>=0));
   assert.equal(fibonacciTimeZones.identicalAnchorRejected,true,"Time zones require two distinct candle anchors");
+  const fibonacciFan=await page.evaluate(()=>{
+   const engine=window.__v5Screenshot,base=1700100000,startTime=base+30*900,endTime=base+34*900;
+   engine.addFibonacciFan({id:"visual-fibfan",startTime,startPrice:4012,endTime,endPrice:4020,color:"#22d3ee"});
+   const forward={drawing:engine.readDrawing("visual-fibfan"),rays:engine.fibonacciFanRays("visual-fibfan")};
+   engine.updateFibonacciFan("visual-fibfan",{endPrice:4024});const edited=engine.readDrawing("visual-fibfan");engine.undo();const undone=engine.readDrawing("visual-fibfan");engine.redo();const redone=engine.readDrawing("visual-fibfan");
+   engine.setDrawingVisible("visual-fibfan",false);const hidden=engine.readDrawing("visual-fibfan").visible;engine.setDrawingLocked("visual-fibfan",true);const locked=engine.readDrawing("visual-fibfan").locked;engine.setDrawingLocked("visual-fibfan",false);engine.setDrawingVisible("visual-fibfan",true);
+   engine.selectDrawings(["visual-fibfan"]);engine.duplicateSelectedDrawings();const duplicateCount=JSON.parse(engine.exportDrawings()).drawings.filter(row=>row.kind==="FIB_FAN").length;engine.deleteSelectedDrawings();const remaining=JSON.parse(engine.exportDrawings()).drawings.filter(row=>row.kind==="FIB_FAN").length;
+   let sameAnchorRejected=false,badRatiosRejected=false;
+   try{engine.addFibonacciFan({id:"visual-fibfan-same",startTime,endTime:startTime,startPrice:4012,endPrice:4012,color:"#fff"})}catch{sameAnchorRejected=true}
+   try{engine.addFibonacciFan({id:"visual-fibfan-ratios",startTime,startPrice:4012,endTime,endPrice:4020,color:"#fff",ratios:[.5,.4]})}catch{badRatiosRejected=true}
+   engine.removeFibonacciFan("visual-fibfan");
+   return {forward,edited,undone,redone,hidden,locked,duplicateCount,remaining,sameAnchorRejected,badRatiosRejected};
+  });
+  assert.deepEqual(fibonacciFan.forward.rays.map(ray=>ray.ratio),[.382,.5,.618]);
+  assert.ok(fibonacciFan.forward.rays.every(ray=>ray.x1===fibonacciFan.forward.rays[0].x1&&ray.y1===fibonacciFan.forward.rays[0].y1&&Number.isFinite(ray.x2)&&Number.isFinite(ray.y2)));
+  assert.notEqual(fibonacciFan.forward.rays[0].y2,fibonacciFan.forward.rays[2].y2,"fan ratios project distinct rays");
+  assert.equal(fibonacciFan.sameAnchorRejected,true,"fan anchors must differ");
+  assert.equal(fibonacciFan.badRatiosRejected,true,"fan ratios must be strictly increasing inside (0,1)");
+  assert.equal(fibonacciFan.edited.endPrice,4024);assert.equal(fibonacciFan.undone.endPrice,4020);assert.equal(fibonacciFan.redone.endPrice,4024);
+  assert.equal(fibonacciFan.hidden,false);assert.equal(fibonacciFan.locked,true);assert.equal(fibonacciFan.duplicateCount,2);assert.equal(fibonacciFan.remaining,1);
+  const fanDragSetup=await page.evaluate(()=>{const host=document.createElement("div");host.id="isolated-fan-drag";host.style.cssText="position:fixed;left:220px;top:90px;width:640px;height:360px;z-index:1000";document.body.append(host);const engine=ChartStudioV5.createStudioV5(host,"fan-drag-test",{symbol:"XAUUSD",timeframe:"M15"}),base=1700300000,bars=Array.from({length:100},(_,index)=>{const price=4000+index*.2+Math.sin(index/8)*3;return {time:base+index*900,open:price,high:price+4,low:price-4,close:price+1}});engine.setCandles(bars);engine.setVisibleLogicalRange({from:0,to:100});engine.addFibonacciFan({id:"fan-drag",startTime:bars[70].time,startPrice:bars[70].close,endTime:bars[82].time,endPrice:bars[82].close+2,color:"#22d3ee"});window.__fanDragEngine=engine;return {original:engine.readDrawing("fan-drag")}});
+  await page.waitForTimeout(150);const fanEndPoint=await page.evaluate(()=>window.__fanDragEngine.drawingAnchorPosition("fan-drag","END"));
+  await page.mouse.move(fanEndPoint.x,fanEndPoint.y);await page.mouse.down();await page.mouse.move(fanEndPoint.x+28,fanEndPoint.y-18,{steps:3});await page.mouse.up();
+  const fanDragged=await page.evaluate(()=>window.__fanDragEngine.readDrawing("fan-drag"));assert.ok(fanDragged.endTime!==fanDragSetup.original.endTime||fanDragged.endPrice!==fanDragSetup.original.endPrice,"isolated selected Fan endpoint supports pointer dragging");
+  await page.evaluate(()=>window.__fanDragEngine.undo());assert.deepEqual(await page.evaluate(()=>{const drawing=window.__fanDragEngine.readDrawing("fan-drag");return [drawing.startTime,drawing.startPrice,drawing.endTime,drawing.endPrice]}),[fanDragSetup.original.startTime,fanDragSetup.original.startPrice,fanDragSetup.original.endTime,fanDragSetup.original.endPrice]);
+  await page.evaluate(()=>{window.__fanDragEngine.destroy();document.getElementById("isolated-fan-drag").remove();delete window.__fanDragEngine});
   const duplicateSourcePoint=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-time"));
   await page.mouse.move(duplicateSourcePoint.x,duplicateSourcePoint.y);await page.waitForTimeout(80);
   await page.mouse.click(duplicateSourcePoint.x,duplicateSourcePoint.y);

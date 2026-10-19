@@ -3,7 +3,7 @@
 (function(){
   "use strict";
   if(window.CHART_STUDIO_V5_PREVIEW_ENABLED!==true)return;
-  let button=null,panel=null,host=null,status=null,title=null,dataWindow=null,dataWindowPinButton=null,liveQuote=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,priceButton=null,timeButton=null,rectButton=null,fiboButton=null,fibTimeButton=null,measureButton=null,channelButton=null,pitchforkButton=null,riskRewardButton=null,textButton=null,textInput=null,drawingStatus=null,layoutButton=null,layoutImportButton=null,layoutReplaceButton=null,layoutImportFile=null,profileSummary=null,profileName=null,profileList=null,profileSaveButton=null,profileLoadButton=null,profileRenameButton=null,profileCopyButton=null,profileDeleteButton=null,layoutResetButton=null,profileStatus=null,indicatorTemplateManager=null,indicatorTemplateName=null,indicatorTemplateList=null,indicatorTemplateSaveButton=null,indicatorTemplateApplyButton=null,indicatorTemplateRenameButton=null,indicatorTemplateCopyButton=null,indicatorTemplateDeleteButton=null,indicatorTemplateStatus=null;
+  let button=null,panel=null,host=null,status=null,title=null,dataWindow=null,dataWindowPinButton=null,liveQuote=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,priceButton=null,timeButton=null,rectButton=null,fiboButton=null,fibFanButton=null,fibTimeButton=null,measureButton=null,channelButton=null,pitchforkButton=null,riskRewardButton=null,textButton=null,textInput=null,drawingStatus=null,layoutButton=null,layoutImportButton=null,layoutReplaceButton=null,layoutImportFile=null,profileSummary=null,profileName=null,profileList=null,profileSaveButton=null,profileLoadButton=null,profileRenameButton=null,profileCopyButton=null,profileDeleteButton=null,layoutResetButton=null,profileStatus=null,indicatorTemplateManager=null,indicatorTemplateName=null,indicatorTemplateList=null,indicatorTemplateSaveButton=null,indicatorTemplateApplyButton=null,indicatorTemplateRenameButton=null,indicatorTemplateCopyButton=null,indicatorTemplateDeleteButton=null,indicatorTemplateStatus=null;
 
   let scope=null,latest=null,engine=null,bridge=null,indicatorBridge=null,oscillatorBridge=null,active=false,loading=null,autoFibEnabled=false,dataWindowHover=null,dataWindowPinned=null,dataWindowCrosshairActive=false,indicatorTemplateStore=null;
   let generation=0,sequence=0,latestSequence=0,positionSequence=0,positionsSnapshot=null,brokerDealMarkersSnapshot=null,positionsEnabled=true,drawingTool=null,pendingImportMode=null,quoteTimer=null,quoteRequest=0;
@@ -52,7 +52,7 @@
     catch(_){dataWindowPinned=null}
     renderDataWindow({detail:null});
   }
-  const drawingNames={PRICE:"Preislinie",TIME:"Zeitlinie",TEXT:"Text",TREND:"Trendlinie",RECT:"Rechteck",RAY:"Strahl",FIBO:"Fibonacci",CHANNEL:"Kanal",PITCHFORK:"Pitchfork",MEASURE:"Messung",RISK_REWARD:"Risiko/Ertrag"};
+  const drawingNames={PRICE:"Preislinie",TIME:"Zeitlinie",TEXT:"Text",TREND:"Trendlinie",RECT:"Rechteck",RAY:"Strahl",FIBO:"Fibonacci",FIB_FAN:"Fibonacci-Fächer",CHANNEL:"Kanal",PITCHFORK:"Pitchfork",MEASURE:"Messung",RISK_REWARD:"Risiko/Ertrag"};
   function readNativeDrawingRows(){
     if(!engine)return [];
     const envelope=JSON.parse(engine.exportDrawings());
@@ -185,7 +185,7 @@
     try{engine?.destroy()}catch(_){}
     engine=null;bridge=null;autoFibEnabled=false;drawingTool=null;if(autoFibButton){autoFibButton.setAttribute("aria-pressed","false");autoFibButton.textContent="Auto-Fibonacci einblenden";autoFibButton.disabled=!latest}if(autoFibStatus)autoFibStatus.textContent="";updateDrawingButtons();if(drawingStatus)drawingStatus.textContent="Zeichenwerkzeug aus.";if(host)host.replaceChildren();refreshDrawingManager();
   }
-  function updateDrawingButtons(){for(const [button,kind] of [[trendButton,"TREND"],[rayButton,"RAY"],[priceButton,"PRICE"],[timeButton,"TIME"],[rectButton,"RECT"],[fiboButton,"FIBO"],[fibTimeButton,"FIB_TIME"],[measureButton,"MEASURE"],[channelButton,"CHANNEL"],[pitchforkButton,"PITCHFORK"],[riskRewardButton,"RISK_REWARD"],[textButton,"TEXT"]])if(button){button.disabled=!engine||!latest||(kind==="TEXT"&&!/^[\x20-\x7E]{1,40}$/.test(textInput?.value||""));button.setAttribute("aria-pressed",drawingTool===kind?"true":"false")}for(const item of [layoutButton,layoutImportButton,layoutReplaceButton,profileSaveButton,layoutResetButton])if(item)item.disabled=!engine||!latest;updateProfileButtons();updateIndicatorTemplateButtons()}
+  function updateDrawingButtons(){for(const [button,kind] of [[trendButton,"TREND"],[rayButton,"RAY"],[priceButton,"PRICE"],[timeButton,"TIME"],[rectButton,"RECT"],[fiboButton,"FIBO"],[fibFanButton,"FIB_FAN"],[fibTimeButton,"FIB_TIME"],[measureButton,"MEASURE"],[channelButton,"CHANNEL"],[pitchforkButton,"PITCHFORK"],[riskRewardButton,"RISK_REWARD"],[textButton,"TEXT"]])if(button){button.disabled=!engine||!latest||(kind==="TEXT"&&!/^[\x20-\x7E]{1,40}$/.test(textInput?.value||""));button.setAttribute("aria-pressed",drawingTool===kind?"true":"false")}for(const item of [layoutButton,layoutImportButton,layoutReplaceButton,profileSaveButton,layoutResetButton])if(item)item.disabled=!engine||!latest;updateProfileButtons();updateIndicatorTemplateButtons()}
   function exactObject(value){return !!value&&typeof value==="object"&&!Array.isArray(value)&&(Object.getPrototypeOf(value)===Object.prototype||Object.getPrototypeOf(value)===null)}
   function normalizeTemplateIndicators(raw){
     const api=window.ChartStudioIndicators;
@@ -491,6 +491,7 @@
       storage.setItem(key,normalized);destroyRenderer();mountRenderer();
       const state=engine?.inspect();
       if(!state||state.persistenceStatus!=="READY"||state.persistenceError!==null)throw new Error(`Layout konnte nicht wiederhergestellt werden (${state?.persistenceStatus||"NO_ENGINE"}/${state?.persistenceError||"NO_ERROR"})`);
+      refreshDrawingManager();
       return {mode,importedDrawings:imported.drawings.length,drawings:state.nativeDrawingCount};
     }catch(error){
       let rollbackFailed=false;
@@ -510,11 +511,11 @@
     }catch(error){setStatus("Layoutimport abgelehnt: "+String(error?.message||error).slice(0,140))}
   }
   function setDrawingTool(kind){
-    if(kind!==null&&!["TREND","RAY","PRICE","TIME","RECT","FIBO","FIB_TIME","MEASURE","CHANNEL","PITCHFORK","RISK_REWARD","TEXT"].includes(kind))return false;
+    if(kind!==null&&!["TREND","RAY","PRICE","TIME","RECT","FIBO","FIB_FAN","FIB_TIME","MEASURE","CHANNEL","PITCHFORK","RISK_REWARD","TEXT"].includes(kind))return false;
     if(!engine||(kind!==null&&!latest))return false;
     if(kind==="TEXT"&&!/^[\x20-\x7E]{1,40}$/.test(textInput?.value||"")){if(drawingStatus)drawingStatus.textContent="Text muss 1–40 druckbare ASCII-Zeichen enthalten.";return false}
     drawingTool=kind;engine.setDrawingTool(kind,kind==="TEXT"?textInput.value:undefined);updateDrawingButtons();
-    if(drawingStatus)drawingStatus.textContent=kind?`${({TREND:"Trendlinie",RAY:"Strahl",PRICE:"Preislinie",TIME:"Zeitlinie",RECT:"Rechteck",FIBO:"Fibonacci",FIB_TIME:"Fibonacci-Zeitzonen",MEASURE:"Messung",CHANNEL:"Kanal",PITCHFORK:"Pitchfork",RISK_REWARD:"Risiko/Ertrag",TEXT:"Text"})[kind]}: ${kind==="PRICE"||kind==="TIME"||kind==="TEXT"?"Kerze wählen.":"ersten Anker wählen."}`:"Zeichenwerkzeug aus.";
+    if(drawingStatus)drawingStatus.textContent=kind?`${({TREND:"Trendlinie",RAY:"Strahl",PRICE:"Preislinie",TIME:"Zeitlinie",RECT:"Rechteck",FIBO:"Fibonacci",FIB_FAN:"Fibonacci-Fächer",FIB_TIME:"Fibonacci-Zeitzonen",MEASURE:"Messung",CHANNEL:"Kanal",PITCHFORK:"Pitchfork",RISK_REWARD:"Risiko/Ertrag",TEXT:"Text"})[kind]}: ${kind==="PRICE"||kind==="TIME"||kind==="TEXT"?"Kerze wählen.":"ersten Anker wählen."}`:"Zeichenwerkzeug aus.";
     return true;
   }
   function drawingState(event){const detail=event?.detail;if(!detail)return;
@@ -687,7 +688,7 @@
     host=document.getElementById("chart-v5-preview-host");status=document.getElementById("chart-v5-preview-status");dataWindow=document.getElementById("chart-v5-data-window");dataWindowPinButton=document.getElementById("chart-v5-data-window-pin");liveQuote=document.getElementById("chart-v5-live-quote");
     title=document.getElementById("chart-v5-preview-title");
     autoFibButton=document.getElementById("chart-v5-auto-fib-btn");autoFibStatus=document.getElementById("chart-v5-auto-fib-status");
-    trendButton=document.getElementById("chart-v5-trend-btn");rayButton=document.getElementById("chart-v5-ray-btn");priceButton=document.getElementById("chart-v5-price-btn");timeButton=document.getElementById("chart-v5-time-btn");rectButton=document.getElementById("chart-v5-rect-btn");fiboButton=document.getElementById("chart-v5-fibo-btn");fibTimeButton=document.getElementById("chart-v5-fib-time-btn");measureButton=document.getElementById("chart-v5-measure-btn");channelButton=document.getElementById("chart-v5-channel-btn");pitchforkButton=document.getElementById("chart-v5-pitchfork-btn");riskRewardButton=document.getElementById("chart-v5-risk-reward-btn");textButton=document.getElementById("chart-v5-text-btn");textInput=document.getElementById("chart-v5-text-input");drawingStatus=document.getElementById("chart-v5-drawing-status");layoutButton=document.getElementById("chart-v5-layout-export-btn");
+    trendButton=document.getElementById("chart-v5-trend-btn");rayButton=document.getElementById("chart-v5-ray-btn");priceButton=document.getElementById("chart-v5-price-btn");timeButton=document.getElementById("chart-v5-time-btn");rectButton=document.getElementById("chart-v5-rect-btn");fiboButton=document.getElementById("chart-v5-fibo-btn");fibFanButton=document.getElementById("chart-v5-fib-fan-btn");fibTimeButton=document.getElementById("chart-v5-fib-time-btn");measureButton=document.getElementById("chart-v5-measure-btn");channelButton=document.getElementById("chart-v5-channel-btn");pitchforkButton=document.getElementById("chart-v5-pitchfork-btn");riskRewardButton=document.getElementById("chart-v5-risk-reward-btn");textButton=document.getElementById("chart-v5-text-btn");textInput=document.getElementById("chart-v5-text-input");drawingStatus=document.getElementById("chart-v5-drawing-status");layoutButton=document.getElementById("chart-v5-layout-export-btn");
     profileSummary=document.querySelector("#chart-v5-profile-manager > summary");profileName=document.getElementById("chart-v5-profile-name");profileList=document.getElementById("chart-v5-profile-list");profileSaveButton=document.getElementById("chart-v5-profile-save");profileLoadButton=document.getElementById("chart-v5-profile-load");profileRenameButton=document.getElementById("chart-v5-profile-rename");profileCopyButton=document.getElementById("chart-v5-profile-copy");profileDeleteButton=document.getElementById("chart-v5-profile-delete");layoutResetButton=document.getElementById("chart-v5-layout-reset");profileStatus=document.getElementById("chart-v5-profile-status");
     installIndicatorTemplateControls();
     if(!button||!panel||!host||!status)return;
@@ -707,6 +708,7 @@
     if(timeButton)timeButton.addEventListener("click",()=>setDrawingTool(drawingTool==="TIME"?null:"TIME"));
     if(rectButton)rectButton.addEventListener("click",()=>setDrawingTool(drawingTool==="RECT"?null:"RECT"));
     if(fiboButton)fiboButton.addEventListener("click",()=>setDrawingTool(drawingTool==="FIBO"?null:"FIBO"));
+    if(fibFanButton)fibFanButton.addEventListener("click",()=>setDrawingTool(drawingTool==="FIB_FAN"?null:"FIB_FAN"));
     if(fibTimeButton)fibTimeButton.addEventListener("click",()=>setDrawingTool(drawingTool==="FIB_TIME"?null:"FIB_TIME"));
     if(measureButton)measureButton.addEventListener("click",()=>setDrawingTool(drawingTool==="MEASURE"?null:"MEASURE"));
     if(channelButton)channelButton.addEventListener("click",()=>setDrawingTool(drawingTool==="CHANNEL"?null:"CHANNEL"));
