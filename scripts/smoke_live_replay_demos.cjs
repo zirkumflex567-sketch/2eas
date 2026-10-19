@@ -69,10 +69,25 @@ assert.ok(accounts.length > 0 && accounts.every(account => allowedAccounts.inclu
       assert.equal(state.snapshotBars, expectedClosed,
         `${account} live replay contains only M15 bars that were closed at the frozen as-of time`);
       assert.equal(state.visibleBars, 1, `${account} replay starts at its first eligible candle`);
+      assert.deepEqual(state.emaCounts, { "9": 0, "20": 0, "50": 0, "200": 0 },
+        `${account} EMA lines remain empty until their visible-prefix warmup completes`);
       assert.ok(state.lastVisibleTime <= replayStartUtc - 900,
         `${account} replay must not start on a forming or future candle`);
+      const completeReplay = await page.evaluate(() => {
+        const replay = window.ChartStudioReplay.inspect();
+        window.ChartStudioReplay.seek(replay.snapshotBars - 1);
+        return window.ChartStudioReplay.inspect();
+      });
+      const expectedEmaCounts = Object.fromEntries([9, 20, 50, 200].map(period =>
+        [String(period), Math.max(0, completeReplay.snapshotBars - period + 1)]));
+      assert.deepEqual(completeReplay.emaCounts, expectedEmaCounts,
+        `${account} EMA point counts must follow the full closed-bar prefix and strict warmup`);
+      for (const period of [9, 20, 50, 200]) {
+        assert.equal(completeReplay.emaLastTimes[String(period)], completeReplay.lastVisibleTime,
+          `${account} EMA ${period} must stop at the final replay candle`);
+      }
       results.push({ account, bars: state.sourceBars, replayBars: state.snapshotBars,
-        asOfUtc: new Date(replayStartUtc * 1000).toISOString() });
+        emaCounts: completeReplay.emaCounts, asOfUtc: new Date(replayStartUtc * 1000).toISOString() });
       await page.close();
     }
     assert.deepEqual(mutations, [], "live replay must not call mutating API routes");

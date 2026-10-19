@@ -31,7 +31,12 @@ const {spawn}=require("node:child_process"),fs=require("node:fs"),path=require("
   await page.locator(".cs-replay-actions button").nth(1).click();
   assert.equal((await page.evaluate(()=>ChartStudioReplay.inspect())).visibleBars,2);
   await page.evaluate(()=>ChartStudioReplay.seek(33));
-  assert.equal((await page.evaluate(()=>ChartStudioReplay.inspect())).visibleBars,34);
+  state=await page.evaluate(()=>ChartStudioReplay.inspect());
+  assert.equal(state.visibleBars,34);
+  assert.deepEqual(state.emaCounts,{"9":26,"20":15,"50":0,"200":0},"Replay indicators must respect their visible-prefix warmup");
+  const expectedEma9=await page.evaluate(()=>ChartStudioIndicators.math.ema(
+   window.__chartSmokeCandles.slice(0,34).map(bar=>bar.close),9).at(-1));
+  assert.equal(state.emaLastValues["9"],expectedEma9,"Replay EMA uses only candles visible at the current cursor");
   // No future-bar leak: live updates while in replay do not extend the frozen snapshot.
   await page.evaluate(()=>{
    const x=Array.from({length:121},(_,i)=>({time:1700000000+i*900,
@@ -40,6 +45,8 @@ const {spawn}=require("node:child_process"),fs=require("node:fs"),path=require("
   });
   state=await page.evaluate(()=>ChartStudioReplay.inspect());
   assert.equal(state.snapshotBars,120);assert.equal(state.visibleBars,34);
+  assert.deepEqual(state.emaCounts,{"9":26,"20":15,"50":0,"200":0});
+  assert.equal(state.emaLastValues["9"],expectedEma9,"Later live candles cannot alter frozen replay indicators");
   const liveClosedBars=await page.evaluate(()=>{
    ChartStudioReplay.switchContext("titan","M15","XAUUSD");
    const tf=900,now=Math.floor(Date.now()/1000),currentOpen=Math.floor(now/tf)*tf;

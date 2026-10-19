@@ -4,6 +4,8 @@
 (()=>{"use strict";
 const MAX_BARS=1200;
 const MAX_EVIDENCE_EVENTS=500;
+const EMA_PERIODS=[9,20,50,200];
+const EMA_COLORS={9:"#e7f2fa",20:"#44cceb",50:"#ffc233",200:"#c28af3"};
 const TF_SECONDS={M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400,W1:604800,MN1:2592000};
 let state=null;
 const valid=b=>b&&Number.isSafeInteger(b.time)&&b.time>0&&
@@ -44,6 +46,9 @@ function buildChart(){
  state.series=state.chart.addCandlestickSeries({
   upColor:"#39ccae",downColor:"#e77791",borderVisible:false,
   wickUpColor:"#39ccae",wickDownColor:"#e77791"});
+ for(const period of EMA_PERIODS)state.emaSeries[period]=state.chart.addLineSeries({
+  title:"EMA "+period,color:EMA_COLORS[period],lineWidth:1,
+  priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
 }
 function redraw(){
  if(!state)return;
@@ -52,11 +57,18 @@ function redraw(){
  state.slider.disabled=!state.active;
  state.step.disabled=!state.active||state.cursor>=state.snapshot.length-1;
  state.play.disabled=!state.active||state.snapshot.length<2;
- if(!state.active){state.series?.setData([]);state.series?.setMarkers?.([]);state.visibleEvents=[];state.eventList?.replaceChildren();return}
+ if(!state.active){state.series?.setData([]);state.series?.setMarkers?.([]);for(const period of EMA_PERIODS)state.emaSeries[period]?.setData([]);state.emaData={};state.visibleEvents=[];state.eventList?.replaceChildren();return}
  if(!state.series)buildChart();
  // Every displayed candle must belong to the immutable as-of prefix.
  const prefix=state.snapshot.slice(0,state.cursor+1);
  state.series?.setData(prefix);
+ const ema=window.ChartStudioIndicators?.math?.ema;
+ state.emaData={};
+ for(const period of EMA_PERIODS){
+  const values=typeof ema==="function"?ema(prefix.map(bar=>bar.close),period):[];
+  const data=values.flatMap((value,index)=>Number.isFinite(value)?[{time:prefix[index].time,value}]:[]);
+  state.emaData[period]=data;state.emaSeries[period]?.setData(data);
+ }
  if(prefix.length>0){
   const t=prefix[prefix.length-1].time;
   const closeUs=BigInt(t+state.tfSeconds)*1000000n,cutoff=state.cursor===state.snapshot.length-1?state.asOfUs:(closeUs<state.asOfUs?closeUs:state.asOfUs);
@@ -168,16 +180,18 @@ function switchContext(account,timeframe,symbol){
 function inspect(){
  if(!state)return null;
  const prefix=state.active?state.snapshot.slice(0,state.cursor+1):[];
+ const emaCounts={},emaLastValues={},emaLastTimes={};
+ for(const period of EMA_PERIODS){const last=state.emaData?.[period]?.at(-1);emaCounts[period]=state.emaData?.[period]?.length||0;emaLastValues[period]=last?.value??null;emaLastTimes[period]=last?.time??null}
  return {account:state.account,symbol:state.symbol,timeframe:state.timeframe,active:state.active,mode:state.mode||"IDLE",
   sourceBars:state.bars.length,snapshotBars:state.snapshot.length,visibleBars:prefix.length,
-  lastVisibleTime:prefix.length?prefix[prefix.length-1].time:null,visibleEventIds:(state.visibleEvents||[]).map(event=>event.id),
+  lastVisibleTime:prefix.length?prefix[prefix.length-1].time:null,emaCounts,emaLastValues,emaLastTimes,visibleEventIds:(state.visibleEvents||[]).map(event=>event.id),
   eventCount:state.events.length,playing:!!state.timer};
 }
 function mount({panel,account="titan",symbol="XAUUSD",timeframe="M15"}={}){
  if(!panel||state)return false;
  const root=document.createElement("details");root.className="cs-replay";
  const summary=document.createElement("summary");summary.textContent="Historisches Chart-Replay · Read-only";
- const info=document.createElement("p");info.textContent="Isolierte historische Ansicht. Kein echtes Backtesting, keine Orders oder Brokeränderungen.";
+ const info=document.createElement("p");info.textContent="Isolierte historische Ansicht. EMA 9/20/50/200 werden nur aus bis zum Cursor sichtbaren, abgeschlossenen Kerzen berechnet. Kein echtes Backtesting, keine Orders oder Brokeränderungen.";
  const tools=document.createElement("div");tools.className="cs-replay-actions";
  function button(label){const el=document.createElement("button");el.type="button";el.textContent=label;tools.append(el);return el}
  const begin=button("↤ Replay starten"),next=button("Schritt ▶"),playButton=button("▶ Abspielen"),quit=button("Replay beenden");
@@ -188,7 +202,7 @@ function mount({panel,account="titan",symbol="XAUUSD",timeframe="M15"}={}){
  root.append(summary,info,tools,status,plot);panel.append(root);
  const eventList=document.createElement("ol");eventList.className="cs-replay-events";eventList.setAttribute("aria-label","Im Replay bis zum aktuellen Zeitpunkt belegte Ereignisse");root.append(eventList);
  state={root,plot,status,slider,step:next,play:playButton,account,symbol,timeframe,tfSeconds:TF_SECONDS[timeframe]||900,
-  active:false,mode:"IDLE",bars:[],snapshot:[],events:[],visibleEvents:[],asOfUs:0n,cursor:-1,timer:null,chart:null,series:null,eventList,contextVersion:0,requestVersion:0};
+  active:false,mode:"IDLE",bars:[],snapshot:[],events:[],visibleEvents:[],emaSeries:Object.create(null),emaData:{},asOfUs:0n,cursor:-1,timer:null,chart:null,series:null,eventList,contextVersion:0,requestVersion:0};
  begin.addEventListener("click",start);next.addEventListener("click",step);
  playButton.addEventListener("click",play);quit.addEventListener("click",exit);
  slider.addEventListener("input",()=>seek(Number(slider.value)));
