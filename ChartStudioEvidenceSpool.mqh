@@ -358,6 +358,23 @@ bool CSInitializeEvidenceProducer()
 #endif
   }
 
+void CSLogWriteFailure(const string stage,const ulong sequence,const int error)
+  {
+   static ulong nextLogSequence=0;
+   if(sequence<nextLogSequence)
+      return;
+   PrintFormat("ChartStudio evidence segment write failed: stage=%s sequence=%I64u error=%d",
+               stage,sequence,error);
+   nextLogSequence=sequence+100;
+  }
+
+void CSDeleteFailedTemp(const string temp,const ulong sequence)
+  {
+   ResetLastError();
+   if(!FileDelete(temp,FILE_COMMON))
+      CSLogWriteFailure("cleanup",sequence,GetLastError());
+  }
+
 bool CSWriteReadySegment(const string line,const ulong sequence)
   {
    string stem=CS_SEGMENT_FOLDER+"\\"+CS_EVIDENCE_PRODUCER_ID+"."+IntegerToString((long)sequence);
@@ -365,21 +382,31 @@ bool CSWriteReadySegment(const string line,const ulong sequence)
    string ready=stem+"-"+IntegerToString((long)sequence)+".ready.ndjson";
    if(StringLen(line)>CS_SEGMENT_MAX_BYTES || FileIsExist(ready,FILE_COMMON))
       return false;
+   ResetLastError();
    int handle=FileOpen(temp,FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON,0,CP_UTF8);
    if(handle==INVALID_HANDLE)
+     {
+      CSLogWriteFailure("open",sequence,GetLastError());
       return false;
+     }
+   ResetLastError();
    uint written=FileWriteString(handle,line+"\n");
    FileFlush(handle);
    bool complete=(written==StringLen(line)+1 && FileSize(handle)<=CS_SEGMENT_MAX_BYTES);
+   int write_error=GetLastError();
    FileClose(handle);
    if(!complete)
      {
-      FileDelete(temp,FILE_COMMON);
+      CSLogWriteFailure("write",sequence,write_error);
+      CSDeleteFailedTemp(temp,sequence);
       return false;
      }
+   ResetLastError();
    if(!FileMove(temp,FILE_COMMON,ready,FILE_COMMON))
      {
-      FileDelete(temp,FILE_COMMON);
+      int error=GetLastError();
+      CSLogWriteFailure("rename",sequence,error);
+      CSDeleteFailedTemp(temp,sequence);
       return false;
      }
    return true;

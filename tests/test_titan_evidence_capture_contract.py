@@ -69,10 +69,36 @@ def test_failed_segment_write_removes_its_unimportable_temporary_file():
     spool = SPOOL.read_text(encoding="utf-8-sig")
     write = _function(spool, "CSWriteReadySegment")
 
-    assert write.count("FileDelete(temp,FILE_COMMON)") == 2
+    assert write.count("CSDeleteFailedTemp(temp,sequence);") == 2
     assert write.index("FileClose(handle);") < write.index("if(!complete)")
-    assert "if(!complete)\n     {\n      FileDelete(temp,FILE_COMMON);\n      return false;\n     }" in write
-    assert "if(!FileMove(temp,FILE_COMMON,ready,FILE_COMMON))\n     {\n      FileDelete(temp,FILE_COMMON);\n      return false;\n     }" in write
+    assert "if(!complete)\n     {\n      CSLogWriteFailure(\"write\",sequence,write_error);\n      CSDeleteFailedTemp(temp,sequence);\n      return false;\n     }" in write
+    assert "if(!FileMove(temp,FILE_COMMON,ready,FILE_COMMON))\n     {\n      int error=GetLastError();\n      CSLogWriteFailure(\"rename\",sequence,error);\n      CSDeleteFailedTemp(temp,sequence);\n      return false;\n     }" in write
+
+
+def test_failed_segment_rename_emits_throttled_actionable_diagnostic():
+    spool = SPOOL.read_text(encoding="utf-8-sig")
+    write = _function(spool, "CSWriteReadySegment")
+
+    assert "ResetLastError();" in write
+    assert re.search(r'if\(!FileMove\(temp,FILE_COMMON,ready,FILE_COMMON\)\)\s*\{\s*int error=GetLastError\(\);', write)
+    assert 'CSLogWriteFailure("rename",sequence,error);' in write
+    logger = _function(spool, "CSLogWriteFailure")
+    assert "static ulong nextLogSequence=0;" in logger
+    assert "if(sequence<nextLogSequence)" in logger
+    assert 'PrintFormat("ChartStudio evidence segment write failed: stage=%s sequence=%I64u error=%d",' in logger
+    assert "nextLogSequence=sequence+100;" in logger
+
+
+def test_failed_temp_cleanup_is_reported_without_exposing_event_contents():
+    spool = SPOOL.read_text(encoding="utf-8-sig")
+    write = _function(spool, "CSWriteReadySegment")
+    cleanup = _function(spool, "CSDeleteFailedTemp")
+
+    assert write.count("CSDeleteFailedTemp(temp,sequence);") == 2
+    assert "ResetLastError();" in cleanup
+    assert "if(!FileDelete(temp,FILE_COMMON))" in cleanup
+    assert 'CSLogWriteFailure("cleanup",sequence,GetLastError());' in cleanup
+    assert "line" not in cleanup
 
 
 def test_capture_records_strategy_features_and_closed_bar_predicates():
