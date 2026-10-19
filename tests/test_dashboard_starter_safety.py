@@ -54,7 +54,15 @@ class DashboardStarterSafetyTests(unittest.TestCase):
 
     def test_runtime_restart_defaults_to_the_private_environment_file(self):
         source = (ROOT / 'scripts/dashboard_runtime.ps1').read_text(encoding='utf-8')
-        self.assertRegex(source, r"\[string\]\$PrivateEnvJson\s*=\s*\(Join-Path\s+\$env:USERPROFILE\s+'\.dashboard-env\.json'\)")
+        self.assertIn("'.dashboard-env-8050-isolated.json'", source)
+        self.assertIn("'.dashboard-env.json'", source)
+        self.assertIn('$Port -eq 8050', source)
+
+    def test_guarded_launcher_selects_the_isolated_8050_environment(self):
+        source = (ROOT / 'scripts/ensure_dashboard_runtime.ps1').read_text(encoding='utf-8')
+        self.assertIn("'.dashboard-env-8050-isolated.json'", source)
+        self.assertIn("'.dashboard-env.json'", source)
+        self.assertIn('$Port -eq 8050', source)
 
     def test_guarded_launcher_accepts_running_runtime_status_without_status_field(self):
         source = (ROOT / 'scripts/ensure_dashboard_runtime.ps1').read_text(encoding='utf-8')

@@ -5,7 +5,7 @@ param(
     [Parameter(Mandatory=$true)][string]$Repo,
     [Parameter(Mandatory=$true)][string]$Python,
     [Parameter(Mandatory=$true)][ValidateRange(1,65535)][int]$Port,
-    [string]$PrivateEnvJson = (Join-Path $env:USERPROFILE '.dashboard-env.json'),
+    [string]$PrivateEnvJson = '',
     [ValidateRange(1,60)][int]$StartupTimeoutSeconds = 30
 )
 Set-StrictMode -Version Latest
@@ -15,6 +15,11 @@ $script:Stopped = $false
 $script:Previous = $null
 $script:Child = $null
 $script:RuntimeJsonParameters = @{}
+
+if (-not $PSBoundParameters.ContainsKey('PrivateEnvJson')) {
+    $privateEnvName = if ($Port -eq 8050) { '.dashboard-env-8050-isolated.json' } else { '.dashboard-env.json' }
+    $PrivateEnvJson = Join-Path $env:USERPROFILE $privateEnvName
+}
 
 function Reject([string]$Message) { $script:Failure = $Message; throw 'guard refused' }
 function Quote-Argument([string]$Value) {

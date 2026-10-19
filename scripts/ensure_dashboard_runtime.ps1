@@ -3,10 +3,15 @@ param(
     [Parameter(Mandatory=$true)][string]$Repo,
     [Parameter(Mandatory=$true)][string]$Python,
     [Parameter(Mandatory=$true)][ValidateRange(1,65535)][int]$Port,
-    [string]$PrivateEnvJson = (Join-Path $env:USERPROFILE '.dashboard-env.json')
+    [string]$PrivateEnvJson = ''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if (-not $PSBoundParameters.ContainsKey('PrivateEnvJson')) {
+    $privateEnvName = if ($Port -eq 8050) { '.dashboard-env-8050-isolated.json' } else { '.dashboard-env.json' }
+    $PrivateEnvJson = Join-Path $env:USERPROFILE $privateEnvName
+}
 
 function Invoke-Runtime([string]$Action) {
     $runtimeScript = Join-Path $Repo 'scripts/dashboard_runtime.ps1'
