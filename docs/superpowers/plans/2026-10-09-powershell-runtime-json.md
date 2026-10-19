@@ -33,3 +33,9 @@ Files: modify scripts/dashboard_runtime.ps1, tests/test_dashboard_runtime.py and
 ## Release gate
 
 - [x] Parent performs CI and main merge with expected head, then Status under both installed shells against live runtime. A subsequent parent-approved guarded dashboard restart may use PowerShell 7 only after disposable regression and independent reviews pass. Keep both MT5 terminal processes and the existing reverse tunnel unchanged. Record revision/digest and protected public/local proofs separately.
+
+## Runtime response latency follow-up (19.10.2026)
+
+- [x] Reproduce that a valid live `/api/runtime` response can take longer than the previous two-second `Invoke-WebRequest` timeout. The disposable fixture delayed only that response by 2.5 seconds; guarded `Status` first failed closed with “Listener runtime identity unavailable or malformed; nothing stopped.”
+- [x] Raise only the bounded response timeout to five seconds. Runtime parsing and every PID/checkout/hash/source validation remain unchanged, as do the repeated pre-stop identity checks.
+- [x] Focused delayed-response regression plus existing guarded lifecycle/pre-stop test passed (**2 tests**); complete `tests/test_dashboard_runtime.py`: **52 passed**; starter/auto-sync safety: **11 tests, 12 subtests passed**. The 8056 listener was not stopped during diagnosis. Guarded restart/deployment verification follows the commit.

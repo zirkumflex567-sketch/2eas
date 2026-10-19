@@ -273,13 +273,24 @@ def test_route_is_installed_without_dependency_on_fastapi(checkout):
     assert routes['/api/runtime']()['startupDigest']
 
 
-MOCK_APP = '''import hashlib, json, os
+MOCK_APP = '''import hashlib, json, os, time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from dashboard_runtime import RuntimeIdentity
 identity = RuntimeIdentity(Path(__file__).resolve().parent)
+runtime_delay = 0.0
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        global runtime_delay
+        if self.path == '/fixture/slow-runtime-on':
+            runtime_delay = 2.5
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'enabled': True}).encode())
+            return
+        if self.path == '/api/runtime':
+            time.sleep(runtime_delay)
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
@@ -411,6 +422,27 @@ def test_powershell_cross_shell_runtime_timestamp_and_private_environment(checko
         env_file.unlink(missing_ok=True)
         for result in results:
             assert secret not in result.stdout + result.stderr
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Windows PowerShell guarded runtime')
+def test_powershell_status_accepts_slow_valid_runtime_identity(checkout):
+    port = prepare_mock_checkout(checkout)
+    environment = os.environ.copy()
+    results = []
+    try:
+        started = run_control(checkout, port, 'Start', environment=environment)
+        results.append(started)
+        assert started.returncode == 0, started.stdout + started.stderr
+        assert mock_endpoint(port, '/fixture/slow-runtime-on') == {'enabled': True}
+
+        status = run_control(checkout, port, 'Status', environment=environment)
+        results.append(status)
+        assert status.returncode == 0, status.stdout + status.stderr
+        runtime = mock_endpoint(port)
+        assert json.loads(status.stdout) == runtime
+        assert runtime['restart_required'] is False
+    finally:
+        cleanup_mock_processes(checkout)
 
 
 @pytest.mark.skipif(os.name != 'nt', reason='Windows PowerShell operational workflow')

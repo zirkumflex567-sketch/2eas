@@ -70,7 +70,7 @@ function Get-Listener {
 }
 function Read-Runtime([int]$ListenerPid) {
     try {
-        $response = Invoke-WebRequest -Uri ('http://127.0.0.1:' + $Port + '/api/runtime') -Method Get -UseBasicParsing -TimeoutSec 2
+        $response = Invoke-WebRequest -Uri ('http://127.0.0.1:' + $Port + '/api/runtime') -Method Get -UseBasicParsing -TimeoutSec 5
         $value = ConvertFrom-Json -InputObject $response.Content @script:RuntimeJsonParameters
         $required = @('pid','startedUtc','checkoutId','startupRevision','startupDigest','diskRevision','diskDigest',
                       'applicationCodeDirty','sourceAvailable','restart_required')
