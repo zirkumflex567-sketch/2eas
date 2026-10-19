@@ -40,6 +40,17 @@ const {spawn}=require("node:child_process"),fs=require("node:fs"),path=require("
   });
   state=await page.evaluate(()=>ChartStudioReplay.inspect());
   assert.equal(state.snapshotBars,120);assert.equal(state.visibleBars,34);
+  const liveClosedBars=await page.evaluate(()=>{
+   ChartStudioReplay.switchContext("titan","M15","XAUUSD");
+   const tf=900,now=Math.floor(Date.now()/1000),currentOpen=Math.floor(now/tf)*tf;
+   const bars=[currentOpen-1800,currentOpen-900,currentOpen,currentOpen+900].map((time,i)=>({
+    time,open:4100+i,high:4110+i,low:4090+i,close:4105+i}));
+   ChartStudioReplay.updateBars(bars);ChartStudioReplay.start();
+   return ChartStudioReplay.inspect();
+  });
+  assert.equal(liveClosedBars.sourceBars,4);
+  assert.equal(liveClosedBars.snapshotBars,2,"Live replay must exclude the current forming bar and future bars");
+  assert.equal(liveClosedBars.visibleBars,1);
   const recordedReplay=await page.evaluate(async()=>{
    const stable=v=>Array.isArray(v)?`[${v.map(stable).join(",")}]`:v&&typeof v==="object"?`{${Object.keys(v).sort().map(k=>JSON.stringify(k)+":"+stable(v[k])).join(",")}}`:JSON.stringify(v);
    const bars=Array.from({length:5},(_,i)=>({timeUtc:new Date((1700600000+i*900)*1000).toISOString(),open:"4100.00",high:"4110.00",low:"4090.00",close:"4105.00",tickVolume:10,spread:2,realVolume:0}));

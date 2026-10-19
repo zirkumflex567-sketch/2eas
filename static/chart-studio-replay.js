@@ -72,9 +72,11 @@ function redraw(){
 }
 function start(){
  if(!state)return false;if(state.active)exit();pause();state.previousContext=null;
- if(state.bars.length<2){announce("Nicht genügend historische Brokerkerzen für Replay.");return false}
- state.snapshot=state.bars.map(c=>Object.freeze({...c}));
- Object.freeze(state.snapshot);state.mode="LIVE_CANDLES";state.events=[];state.asOfUs=BigInt(state.snapshot.at(-1).time+state.tfSeconds)*1000000n;
+ const asOfSeconds=Math.floor(Date.now()/1000),asOfUs=BigInt(asOfSeconds);
+ const completed=state.bars.filter(c=>BigInt(c.time)+BigInt(state.tfSeconds)<=asOfUs);
+ if(completed.length<2){announce("Nicht genügend abgeschlossene historische Brokerkerzen für Replay.");return false}
+ state.snapshot=completed.map(c=>Object.freeze({...c}));
+ Object.freeze(state.snapshot);state.mode="LIVE_CANDLES";state.events=[];state.asOfUs=asOfUs*1000000n;
  state.cursor=0;state.active=true;redraw();return true;
 }
 async function startSnapshot({record,events=[]}={}){
