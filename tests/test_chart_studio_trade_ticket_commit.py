@@ -120,6 +120,11 @@ def test_ticket_commit_rejects_request_changed_after_order_check(monkeypatch, tm
     assert changed.value.detail['code'] == 'ORDER_REQUEST_CHANGED'
     assert len(checked_requests) == 1
     assert mt5.sent == []
+    replay = commit.commit(_commit_payload(proposal['previewId']),
+                           ('proxy', 'operator', 'trade'), '203.0.113.5')
+    assert replay['status'] == 'BROKER_REJECTED'
+    assert replay['code'] == 'ORDER_REQUEST_CHANGED'
+    assert mt5.sent == []
 
 
 def test_ticket_commit_ambiguous_send_is_unknown_and_never_retried(monkeypatch, tmp_path):

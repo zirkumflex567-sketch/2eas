@@ -551,7 +551,8 @@ class TradeTicketCommitService:
                 allowed = {'PREVIEW_EXPIRED', 'PREVIEW_MISMATCH', 'DEMO_ACCOUNT_REQUIRED',
                            'QUOTE_NOT_FRESH', 'GEOMETRY_INVALID', 'GUARD_BLOCKED',
                            'GUARD_UNAVAILABLE', 'BROKER_DATA_UNAVAILABLE',
-                           'INSUFFICIENT_FREE_MARGIN', 'ORDER_CHECK_REJECTED'}
+                           'INSUFFICIENT_FREE_MARGIN', 'ORDER_CHECK_REJECTED',
+                           'ORDER_REQUEST_CHANGED'}
                 try:
                     self._finish(principal, key, 'UNKNOWN' if sent else 'BROKER_REJECTED',
                                  code='BROKER_TIMEOUT' if sent else code if code in allowed else 'BROKER_DATA_UNAVAILABLE')

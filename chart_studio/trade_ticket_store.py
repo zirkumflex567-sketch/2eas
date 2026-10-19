@@ -24,7 +24,8 @@ _RESULT_KEYS = frozenset({'status', 'brokerRetcode', 'orderTicket', 'code', 'ver
 _TERMINAL = frozenset({'PLACED', 'BROKER_REJECTED', 'UNKNOWN'})
 _CODES = frozenset({'INTERRUPTED', 'BROKER_REJECTED', 'BROKER_TIMEOUT',
                     'READBACK_MISMATCH', 'BROKER_DATA_UNAVAILABLE',
-                    'ORDER_CHECK_REJECTED', 'GUARD_BLOCKED', 'GUARD_UNAVAILABLE',
+                    'ORDER_CHECK_REJECTED', 'ORDER_REQUEST_CHANGED',
+                    'GUARD_BLOCKED', 'GUARD_UNAVAILABLE',
                     'QUOTE_NOT_FRESH', 'GEOMETRY_INVALID', 'PREVIEW_EXPIRED',
                     'PREVIEW_MISMATCH', 'DEMO_ACCOUNT_REQUIRED',
                     'INSUFFICIENT_FREE_MARGIN'})
