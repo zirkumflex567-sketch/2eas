@@ -37,6 +37,39 @@ def consumer(store, root):
     return SpoolFileConsumer(store, root, producers={'titan': 'titan_demo'}, excluded_roots=[Path.cwd()])
 
 
+def test_idle_status_reports_temporary_segment_metadata_without_importing_it(private_root, spool_root):
+    store = evidence_store(private_root)
+    write_private(spool_root / 'titan_demo.1.tmp.ndjson', b'private event payload')
+    write_private(spool_root / 'titan_demo.2.tmp.ndjson', b'another private payload')
+    write_private(spool_root / 'other_demo.1.tmp.ndjson', b'unrelated')
+    write_private(spool_root / 'titan_demo.sequence.tmp', b'sequence')
+
+    result = consumer(store, spool_root).poll_once()['titan_demo']
+
+    assert result['code'] == 'IDLE'
+    assert result['temporaryFileCount'] == 2
+    assert result['temporaryBytes'] == len(b'private event payload') + len(b'another private payload')
+    assert result['imported'] == 0
+    assert store.read(context(), kind='DECISION')['records'] == []
+    assert (spool_root / 'titan_demo.1.tmp.ndjson').exists()
+
+
+def test_temporary_segment_scan_is_throttled(private_root, spool_root):
+    store = evidence_store(private_root)
+    service = consumer(store, spool_root)
+    service.poll_once()
+    first_scan = service._temporary_scan_at
+    write_private(spool_root / 'titan_demo.1.tmp.ndjson', b'pending')
+    cached = service.poll_once()['titan_demo']
+    assert service._temporary_scan_at == first_scan
+    assert cached['temporaryFileCount'] == 0
+
+    service._temporary_scan_at -= 61
+    refreshed = service.poll_once()['titan_demo']
+    assert service._temporary_scan_at > first_scan
+    assert refreshed['temporaryFileCount'] == 1
+
+
 def write_private(path, data):
     path.write_bytes(data)
     if os.name == 'posix': path.chmod(0o600)

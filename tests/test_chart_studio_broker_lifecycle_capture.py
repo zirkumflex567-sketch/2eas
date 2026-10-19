@@ -447,6 +447,7 @@ def test_decision_capture_status_is_authenticated_demo_scoped_and_redacted(monke
     secure_app.state.evidence_spool_status = {
         'titan_puprime250': {'code':'IDLE','imported':0,'duplicates':2,
                              'gapCount':1,'gapObserved':True,'storeLostCount':3,
+                             'temporaryFileCount':12,'temporaryBytes':36156,
                              'fileName':'private.ready.ndjson','cursorPath':'private.json'}
     }
     store.has_decision = True
@@ -456,7 +457,8 @@ def test_decision_capture_status_is_authenticated_demo_scoped_and_redacted(monke
     assert allowed.json() == {
         'schemaVersion':1,'account':'xau5m_m5','canExecute':False,
         'status':{'code':'IDLE','imported':0,'duplicates':2,'importedTotal':0,
-                  'duplicatesTotal':0,'gapCount':1,
+                  'duplicatesTotal':0,'gapCount':1,'temporaryFileCount':12,
+                  'temporaryBytes':36156,
                   'gapObserved':True,'storeLostCount':3,'recordingState':'RECORDED'}
     }
     marketplace = client.get('/api/chart/v1/decisions/capture/status', params={'account':'titan'})

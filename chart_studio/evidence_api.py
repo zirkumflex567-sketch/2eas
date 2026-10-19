@@ -314,6 +314,7 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
         if producer is None:
             status = {'code': 'NOT_CONFIGURED', 'imported': 0, 'duplicates': 0,
                       'importedTotal': 0, 'duplicatesTotal': 0,
+                      'temporaryFileCount': 0, 'temporaryBytes': 0,
                       'gapCount': 0, 'gapObserved': False, 'storeLostCount': 0,
                       'recordingState': 'NOT_RECORDED'}
         else:
@@ -331,7 +332,8 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
                 else:
                     code = 'NOT_RECORDED'
             status = {'code': code}
-            for key in ('imported', 'duplicates', 'importedTotal', 'duplicatesTotal', 'gapCount', 'storeLostCount'):
+            for key in ('imported', 'duplicates', 'importedTotal', 'duplicatesTotal',
+                        'temporaryFileCount', 'temporaryBytes', 'gapCount', 'storeLostCount'):
                 value = raw_status.get(key, 0)
                 status[key] = value if type(value) is int and value >= 0 else 0
             gap_observed = raw_status.get('gapObserved', False)

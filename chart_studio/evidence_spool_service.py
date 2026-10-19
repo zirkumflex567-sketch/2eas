@@ -10,8 +10,10 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 import threading
+import time
 
 from chart_studio.evidence_spool import MAX_LINE_BYTES, SpoolImporter
 from chart_studio.evidence_store import StoreUnavailable, _physical, _private
@@ -19,6 +21,8 @@ from chart_studio.evidence_store import StoreUnavailable, _physical, _private
 MAX_SEGMENT_BYTES = 8 * 1024 * 1024
 MAX_RECORDS_PER_POLL = 50
 _READY = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)-([1-9][0-9]*)\.ready\.ndjson\Z')
+_TEMP_SEGMENT = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)\.tmp\.ndjson\Z')
+_TEMP_SCAN_INTERVAL_SECONDS = 60.0
 
 
 class FileIdentityChanged(Exception):
@@ -39,6 +43,8 @@ class SpoolFileConsumer:
         self.root = Path(os.path.abspath(spool_root))
         self.excluded_roots = [Path(p).resolve() for p in excluded_roots]
         self.records_per_poll = records_per_poll
+        self._temporary_scan_at = 0.0
+        self._temporary_backlog = {}
         self._reported_store_loss = {}
         self._reported_gap = {}
         if type(records_per_poll) is not int or not 1 <= records_per_poll <= MAX_RECORDS_PER_POLL:
@@ -325,10 +331,38 @@ class SpoolFileConsumer:
             except (OSError, ValueError, TypeError, StoreUnavailable, json.JSONDecodeError):
                 return {'code':'SPOOL_UNAVAILABLE','imported':0,'gapCount':importer.gap_count,'gapObserved':importer.gap_count>0,'storeLostCount':0}
 
+    def _scan_temporary_segments(self):
+        now = time.monotonic()
+        if now - self._temporary_scan_at < _TEMP_SCAN_INTERVAL_SECONDS:
+            return
+        self._temporary_scan_at = now
+        counts = {producer: [0, 0] for producer in self.producers}
+        try:
+            with os.scandir(self.root) as entries:
+                for entry in entries:
+                    match = _TEMP_SEGMENT.fullmatch(entry.name)
+                    if not match or match.group(1) not in counts:
+                        continue
+                    try:
+                        metadata = entry.stat(follow_symlinks=False)
+                    except OSError:
+                        continue
+                    if stat.S_ISREG(metadata.st_mode):
+                        counts[match.group(1)][0] += 1
+                        counts[match.group(1)][1] += max(0, metadata.st_size)
+        except OSError:
+            return
+        self._temporary_backlog = {
+            producer: {'temporaryFileCount': values[0], 'temporaryBytes': values[1]}
+            for producer, values in counts.items()
+        }
+
     def poll_once(self):
+        self._scan_temporary_segments()
         status={}
         for producer in self.producers:
             result=self._poll_producer(producer)
+            result.update(self._temporary_backlog.get(producer, {'temporaryFileCount': 0, 'temporaryBytes': 0}))
             self._reported_store_loss[producer]=max(self._reported_store_loss[producer],result.get('storeLostCount',0))
             self._reported_gap[producer]=self._reported_gap[producer] or bool(result.get('gapObserved'))
             result['storeLostCount']=self._reported_store_loss[producer]

@@ -340,8 +340,11 @@ class DashboardFrontendTests(unittest.TestCase):
             symbol=parse_qs(parsed.query).get('symbol',['XAUUSD'])[0]
             route.fulfill(json=dict(account=account,symbol=symbol,source='MT5_VERIFIED',canExecute=False,currency='USD',marginMode=2,positions=[],orders=[])); return
         if parsed.path == '/api/chart/v1/decisions/capture/status':
-            route.fulfill(json=dict(schemaVersion=1,account=account,canExecute=False,
-                status=dict(code='IDLE',importedTotal=0,gapCount=0,storeLostCount=0,gapObserved=False,recordingState='NOT_RECORDED'))); return
+            capture_status=dict(code='IDLE',importedTotal=0,gapCount=0,storeLostCount=0,
+                gapObserved=False,recordingState='NOT_RECORDED')
+            if not getattr(self,'legacy_capture_status',False):
+                capture_status.update(temporaryFileCount=3,temporaryBytes=2097152)
+            route.fulfill(json=dict(schemaVersion=1,account=account,canExecute=False,status=capture_status)); return
         if parsed.path == '/api/chart/v1/lifecycle/capture/status':
             route.fulfill(json=dict(schemaVersion=1,account=account,
                 status=dict(code='OK',coverage='ROLLING_WINDOW',appended=0,storeLostCount=0,gapObserved=False))); return
@@ -401,10 +404,22 @@ class DashboardFrontendTests(unittest.TestCase):
         self.page.locator('#cs-beta-toggle').click()
         self.page.locator('#cs-evidence-panel > summary').click()
         self.page.locator('#cs-evidence-capture-status').click()
+        expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text('3 Temp-Dateien / 2.0 MiB', timeout=5000)
         expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text('Lifecycle: OK', timeout=5000)
         status_requests=[url for url in self.requests if '/capture/status?' in url]
         self.assertEqual(len(status_requests), 2, status_requests)
         self.assertTrue(all(parse_qs(urlparse(url).query).get('account') == ['goldm15'] for url in status_requests), status_requests)
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.errors, [])
+    def test_capture_status_accepts_legacy_schema_one_without_temp_metrics(self):
+        self.legacy_capture_status = True
+        self.page.goto(self.url+'?account=goldm15')
+        expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=10000)
+        self.page.locator('#cs-beta-toggle').click()
+        self.page.locator('#cs-evidence-panel > summary').click()
+        self.page.locator('#cs-evidence-capture-status').click()
+        expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text('Decision-Recorder: IDLE', timeout=5000)
+        self.assertNotIn('nicht verfügbar', self.page.locator('#cs-evidence-capture-status-result').inner_text())
         self.assertEqual(self.mutations, [])
         self.assertEqual(self.errors, [])
     def test_bootstrap_uses_configured_broker_symbol_for_chart_feed(self):

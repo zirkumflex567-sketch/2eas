@@ -588,9 +588,12 @@ function captureStatusLine(kind,body,account){
  const state=body?.status,code=state?.code;
  if(body?.schemaVersion!==1||body?.account!==account||!state||typeof code!=="string"||!/^[A-Z][A-Z0-9_]{0,63}$/.test(code))throw Error("INVALID_CAPTURE_STATUS");
  if(kind==="decision"){
-  if(body.canExecute!==false||!Number.isInteger(state.importedTotal)||state.importedTotal<0||!Number.isInteger(state.gapCount)||state.gapCount<0||!Number.isInteger(state.storeLostCount)||state.storeLostCount<0||typeof state.gapObserved!=="boolean"||!["RECORDED","NOT_RECORDED","UNKNOWN"].includes(state.recordingState))throw Error("INVALID_DECISION_CAPTURE_STATUS");
+  const temporaryFileCount=Object.prototype.hasOwnProperty.call(state,"temporaryFileCount")?state.temporaryFileCount:0;
+  const temporaryBytes=Object.prototype.hasOwnProperty.call(state,"temporaryBytes")?state.temporaryBytes:0;
+  if(body.canExecute!==false||!Number.isInteger(state.importedTotal)||state.importedTotal<0||!Number.isInteger(temporaryFileCount)||temporaryFileCount<0||!Number.isInteger(temporaryBytes)||temporaryBytes<0||!Number.isInteger(state.gapCount)||state.gapCount<0||!Number.isInteger(state.storeLostCount)||state.storeLostCount<0||typeof state.gapObserved!=="boolean"||!["RECORDED","NOT_RECORDED","UNKNOWN"].includes(state.recordingState))throw Error("INVALID_DECISION_CAPTURE_STATUS");
   const detail=code==="IDLE"?"aktiv, wartet auf neue Events":code==="NOT_CONFIGURED"?"keine EA-Source eingebunden":code==="NOT_STARTED"?"Service nicht gestartet":code==="RECORDED"?"Events verarbeitet":code;
-  return "Decision-Recorder: "+code+" · "+detail+" · "+state.importedTotal+" importiert · "+state.recordingState+" · Lücken "+state.gapCount+" / Store-Verluste "+state.storeLostCount;
+  const temporary=temporaryFileCount?" · "+temporaryFileCount+" Temp-Dateien / "+(temporaryBytes/1048576).toFixed(1)+" MiB nicht importiert":"";
+  return "Decision-Recorder: "+code+" · "+detail+temporary+" · "+state.importedTotal+" importiert · "+state.recordingState+" · Lücken "+state.gapCount+" / Store-Verluste "+state.storeLostCount;
  }
  const coverage=typeof state.coverage==="string"&&/^[A-Z][A-Z0-9_]{0,63}$/.test(state.coverage)?state.coverage:"UNKNOWN";
  if(code==="NOT_STARTED")return "Lifecycle: NOT_STARTED · "+coverage;
