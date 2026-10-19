@@ -705,7 +705,16 @@ function renderScenarioSnapshots(){
   const net=item.result.netEstimate,costs=item.result.estimatedCosts,currency=costs?.currency||item.result.pnlAtSl?.currency||"";
   const dd=item.result.dailyDrawdownProjection;
   const ddText=dd?.state==="AVAILABLE"?" · Tages-DD-Schätzung Rest "+dd.remainingToLimit+"/Limit "+dd.dailyLimit+" "+dd.currency+" · Quote "+dd.quoteTimeUtc+" · Guard UNKNOWN": " · Tages-DD UNAVAILABLE · Guard UNKNOWN";
-  detail.textContent="Lots "+(item.result.positionSizing?.volumeLots??"UNKNOWN")+" · GROSS SL/TP "+(item.result.pnlAtSl?.amount??"UNKNOWN")+" / "+(item.result.pnlAtTp?.amount??"UNKNOWN")+" · NETTO-Annahme SL/TP "+(net?.pnlAtSl?.amount??"UNKNOWN")+" / "+(net?.pnlAtTp?.amount??"UNKNOWN")+" · R:R "+(item.result.riskRewardRatio??"UNKNOWN")+" / Netto "+(net?.riskRewardRatio??"UNKNOWN")+" · Gebührannahme "+(costs?.feesPerLot??"UNKNOWN")+" "+currency+"/Lot; Slippage "+(costs?.slippageTicks??"UNKNOWN")+" Ticks · Margin "+(item.result.margin?.amount??"UNKNOWN")+" "+(item.result.margin?.currency||"")+ddText+" · "+savedPortfolioSummary(item)+" · Preview "+item.savedAtUtc;
+  const assessment=item.result.marginAssessment,required=Number(assessment?.required),free=Number(assessment?.free),after=Number(assessment?.estimatedFreeAfter),marginCurrency=item.result.margin?.currency;
+  const hasMarginValues=(assessment?.state==="WITHIN_FREE_MARGIN"||assessment?.state==="EXCEEDS_FREE_MARGIN")&&assessment.currency===marginCurrency&&
+   Number.isFinite(required)&&required>=0&&Number.isFinite(free)&&free>=0&&Number.isFinite(after)&&Math.abs((free-required)-after)<0.011&&
+   ((assessment.state==="WITHIN_FREE_MARGIN"&&required<=free)||(assessment.state==="EXCEEDS_FREE_MARGIN"&&required>free));
+  const marginSummary=hasMarginValues&&typeof assessment.capturedAtUtc==="string"&&Number.isFinite(Date.parse(assessment.capturedAtUtc))?
+   "Marginstatus "+assessment.state+" · Szenario-Margin (MT5-Berechnung): "+String(Number(required.toPrecision(12)))+" "+marginCurrency+" · Freie Kontomargin (MT5-Read): "+String(Number(free.toPrecision(12)))+" "+marginCurrency+" · Stand "+assessment.capturedAtUtc+
+    (assessment.state==="WITHIN_FREE_MARGIN"?" · geschätzter Puffer danach: "+String(Number(after.toPrecision(12)))+" "+marginCurrency:" · geschätzter Fehlbetrag: "+String(Number(Math.abs(after).toPrecision(12)))+" "+marginCurrency)+
+    " · Snapshot-Schätzung, keine Ausführungszusage; order_calc_margin berücksichtigt bestehende Positionen und Pending Orders nicht.":
+   "Marginvergleich UNAVAILABLE · freie Kontomargin oder passende Brokerwerte fehlen.";
+  detail.textContent="Lots "+(item.result.positionSizing?.volumeLots??"UNKNOWN")+" · GROSS SL/TP "+(item.result.pnlAtSl?.amount??"UNKNOWN")+" / "+(item.result.pnlAtTp?.amount??"UNKNOWN")+" · NETTO-Annahme SL/TP "+(net?.pnlAtSl?.amount??"UNKNOWN")+" / "+(net?.pnlAtTp?.amount??"UNKNOWN")+" · R:R "+(item.result.riskRewardRatio??"UNKNOWN")+" / Netto "+(net?.riskRewardRatio??"UNKNOWN")+" · Gebührannahme "+(costs?.feesPerLot??"UNKNOWN")+" "+currency+"/Lot; Slippage "+(costs?.slippageTicks??"UNKNOWN")+" Ticks · Margin "+(item.result.margin?.amount??"UNKNOWN")+" "+(item.result.margin?.currency||"")+" · "+marginSummary+ddText+" · "+savedPortfolioSummary(item)+" · Preview "+item.savedAtUtc;
   section.append(title,detail);host.append(section);
  }
  if(!count){const empty=document.createElement("p");empty.textContent="Keine A/B-Snapshots für "+label+" / "+symbol+". Erst eine erfolgreiche Broker-Vorschau speichern.";host.append(empty)}

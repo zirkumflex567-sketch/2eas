@@ -637,6 +637,12 @@ class DashboardFrontendTests(unittest.TestCase):
         expect(impact).to_contain_text('Stand 2026-10-19T12:00:00Z')
         expect(impact).to_contain_text('keine Ausführungszusage')
         expect(impact).to_have_attribute('role','status'); expect(impact).to_have_attribute('aria-live','polite')
+        self.page.locator('#cs-scenario-save-a').click()
+        saved=self.page.locator('#cs-scenario-ab section')
+        expect(saved).to_contain_text('Szenario-Margin (MT5-Berechnung): 123.4 USD')
+        expect(saved).to_contain_text('Freie Kontomargin (MT5-Read): 200 USD')
+        expect(saved).to_contain_text('geschätzter Puffer danach: 76.6 USD')
+        expect(saved).to_contain_text('Stand 2026-10-19T12:00:00Z')
         self.assertEqual(self.mutations,[]); self.assertEqual(self.errors,[])
         scenario_urls=[url for url in self.requests if '/api/chart/v1/scenarios/preview' in url]
         self.assertTrue(scenario_urls); self.assertTrue(all('account=titan' in url for url in scenario_urls))
@@ -653,6 +659,27 @@ class DashboardFrontendTests(unittest.TestCase):
         form.locator('[name="tpPrice"]').fill('4020'); form.locator('button[type="submit"]').click()
         impact=self.page.locator('#cs-scenario-portfolio-impact')
         expect(impact).to_contain_text('Marginvergleich UNAVAILABLE')
+        self.page.locator('#cs-scenario-save-b').click()
+        expect(self.page.locator('#cs-scenario-ab section')).to_contain_text('Marginvergleich UNAVAILABLE')
+        self.assertEqual(self.mutations,[]); self.assertEqual(self.errors,[])
+    def test_saved_scenario_margin_projection_keeps_estimated_shortfall(self):
+        self.scenario_preview_result=dict(account='titan',symbol='XAUUSD',canExecute=False,
+            positionSizing=dict(volumeLots=.1,mode='FIXED_LOTS'),pnlAtSl=dict(amount=-10,currency='USD'),
+            pnlAtTp=dict(amount=20,currency='USD'),riskRewardRatio=2,margin=dict(amount=123.4,currency='USD'),
+            marginAssessment=dict(state='EXCEEDS_FREE_MARGIN',required=123.4,free=100,estimatedFreeAfter=-23.4,
+                currency='USD',source='MT5_ACCOUNT_INFO',capturedAtUtc='2026-10-19T12:00:00Z'),
+            netEstimate=dict(pnlAtSl=dict(amount=-10),pnlAtTp=dict(amount=20)),
+            estimatedCosts=dict(currency='USD',feesPerLot=0,slippageTicks=0),
+            dailyDrawdownProjection=dict(state='UNAVAILABLE',reason='fixture'))
+        self.load(); self.page.locator('#cs-beta-toggle').click(); self.page.locator('.cs-scenario summary').click()
+        form=self.page.locator('#cs-scenario-form')
+        form.locator('[name="entryPrice"]').fill('4000'); form.locator('[name="slPrice"]').fill('3990')
+        form.locator('[name="tpPrice"]').fill('4020'); form.locator('button[type="submit"]').click()
+        self.page.locator('#cs-scenario-save-a').click()
+        saved=self.page.locator('#cs-scenario-ab section')
+        expect(saved).to_contain_text('EXCEEDS_FREE_MARGIN')
+        expect(saved).to_contain_text('geschätzter Fehlbetrag: 23.4 USD')
+        expect(saved).to_contain_text('Snapshot-Schätzung, keine Ausführungszusage')
         self.assertEqual(self.mutations,[]); self.assertEqual(self.errors,[])
     def test_mismatched_symbol_candle_response_is_rejected_after_old_feed_clears(self):
         self.candle_rows=[
