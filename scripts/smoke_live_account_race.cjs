@@ -2,12 +2,18 @@
 
 const assert = require("node:assert/strict");
 const { chromium } = require("playwright");
+const { classifyLiveDemoRequest } = require("./live_demo_scope_guard.cjs");
 
 const base = (process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056").replace(/\/$/, "");
+const baseUrl = new URL(base);
+const basePath = baseUrl.pathname.replace(/\/$/, "");
 const allowedAccounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500", "goldm15"];
+const demoSymbols = {
+  titan: "XAUUSD", xau5m_m5: "XAUUSD.p", titan_m5: "XAUUSD.p", xau5m_500: "XAUUSD.p", goldm15: "XAUUSD",
+};
 const accounts = process.env.CHART_STUDIO_ACCOUNTS
   ? process.env.CHART_STUDIO_ACCOUNTS.split(",").map(value => value.trim()).filter(Boolean)
-  : ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
+  : allowedAccounts;
 assert.ok(accounts.includes("titan") && accounts.length >= 2
   && accounts.every(account => allowedAccounts.includes(account)),
   "CHART_STUDIO_ACCOUNTS must include titan and only configured non-Blueberry demo aliases");
@@ -17,6 +23,7 @@ assert.ok(accounts.includes("titan") && accounts.length >= 2
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     const apiRequests = [];
+    const blockedApiRequests = [];
     const browserErrors = [];
     let heldTitanReady;
     let releaseTitan;
@@ -24,37 +31,76 @@ assert.ok(accounts.includes("titan") && accounts.length >= 2
     const titanGate = new Promise(resolve => { releaseTitan = resolve; });
     let heldTitanRequest = false;
     let currentAccountResponse;
+    let holdTitanM5Request = false;
+    let heldTitanM5Ready;
+    let releaseTitanM5;
+    const titanM5Ready = new Promise(resolve => { heldTitanM5Ready = resolve; });
+    const titanM5Gate = new Promise(resolve => { releaseTitanM5 = resolve; });
 
     page.on("pageerror", error => browserErrors.push(error.message));
     page.on("request", request => {
       const url = new URL(request.url());
-      if (!url.pathname.startsWith("/api/")) return;
+      if (url.origin !== baseUrl.origin) return;
+      const scope = classifyLiveDemoRequest({ url, method: request.method(), basePath, allowedAccounts: accounts });
+      const pathname = decodeURIComponent(url.pathname);
+      if (!pathname.startsWith(`${basePath}/api/`)) return;
       const account = url.searchParams.get("account");
-      assert.notEqual(account, "blueberry", "protected account requests are forbidden");
-      assert.equal(request.method(), "GET", `unexpected API mutation ${request.method()} ${url.pathname}`);
-      apiRequests.push({ account, path: url.pathname, method: request.method() });
+      apiRequests.push({ account, path: pathname.slice(basePath.length), method: request.method() });
+      if (!scope.allowed) blockedApiRequests.push({ path: pathname.slice(basePath.length), account, reason: scope.reason });
     });
 
     await page.addInitScript(() => { window.__mainCandleSeriesCaptures = []; });
+    await page.route("**/*", async route => {
+      const url = new URL(route.request().url());
+      if (url.origin === baseUrl.origin) {
+        const scope = classifyLiveDemoRequest({ url, method: route.request().method(), basePath, allowedAccounts: accounts });
+        if (!scope.allowed) {
+          blockedApiRequests.push({ path: url.pathname, account: url.searchParams.get("account"), reason: scope.reason });
+          await route.abort("blockedbyclient");
+          return;
+        }
+        if (scope.kind === "global_read" && scope.endpoint === "/api/accounts") {
+          await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+            default: accounts[0],
+            accounts: accounts.map(id => ({ id, name: id, login: "Demo", server: "Demo", symbol: demoSymbols[id],
+              timeframe: "M15", is_demo: true, challenge_protection: false, capacity: 3 })),
+          }) });
+          return;
+        }
+        if (scope.kind === "global_read" && scope.endpoint === "/api/chart/v1/capabilities") {
+          await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+            accountScopes: accounts, symbols: Object.values(demoSymbols),
+            timeframes: ["M1", "M5", "M15", "M30", "H1", "H4", "D1"], features: { encryptedDeviceSync: false },
+          }) });
+          return;
+        }
+        if (scope.endpoint === "/api/candles" && scope.account === "titan" && !heldTitanRequest) {
+          heldTitanRequest = true;
+          const response = await route.fetch();
+          const body = await response.body();
+          heldTitanReady({ route, response, body });
+          await titanGate;
+          await route.fulfill({ response, body });
+          return;
+        }
+        if (scope.endpoint === "/api/candles" && scope.account === "titan" && holdTitanM5Request
+          && url.searchParams.get("tf") === "M5") {
+          holdTitanM5Request = false;
+          const response = await route.fetch();
+          const body = await response.body();
+          heldTitanM5Ready({ route, response, body });
+          await titanM5Gate;
+          await route.fulfill({ response, body });
+          return;
+        }
+      }
+      await route.continue();
+    });
     await page.route("**/static/lightweight-charts.js", async route => {
       const response = await route.fetch();
       const source = await response.text();
       const hook = `;(()=>{const api=window.LightweightCharts,createChart=api.createChart,wrappedCreate=(...args)=>{const chart=createChart.apply(api,args),add=chart.addCandlestickSeries.bind(chart);chart.addCandlestickSeries=function(...seriesArgs){const series=add(...seriesArgs),setData=series.setData.bind(series);series.setData=function(rows){const data=Array.isArray(rows)?rows.map(row=>({time:row.time,open:row.open,high:row.high,low:row.low,close:row.close})):[];const active=document.querySelector('#account-switcher [aria-pressed="true"]')?.dataset.account||null;const timeframe=document.querySelector('[id^="tf-btn-"].bg-blue-600')?.id.replace('tf-btn-','')||null;window.__mainCandleSeriesCaptures.push({active,timeframe,data});return setData(rows)};return series};return chart};window.LightweightCharts={...api,createChart:wrappedCreate,__mainCandleCaptureInstalled:true}})();`;
       await route.fulfill({ response, body: source + hook });
-    });
-    await page.route("**/api/candles?*", async route => {
-      const url = new URL(route.request().url());
-      const account = url.searchParams.get("account");
-      if (account === "titan" && !heldTitanRequest) {
-        heldTitanRequest = true;
-        const response = await route.fetch();
-        const body = await response.body();
-        heldTitanReady({ route, response, body });
-        await titanGate;
-        await route.fulfill({ response, body });
-        return;
-      }
-      await route.continue();
     });
 
     await page.goto(`${base}/?account=titan`, { waitUntil: "domcontentloaded" });
@@ -150,13 +196,82 @@ assert.ok(accounts.includes("titan") && accounts.length >= 2
       completedCycles += 1;
     }
 
+    // Deliver an older timeframe response only after the newer selection has rendered.
+    const titanAccountResponse = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.pathname === `${basePath}/api/candles` && url.searchParams.get("account") === "titan"
+        && url.searchParams.get("count") === "1001";
+    });
+    await page.locator('#account-switcher [data-account="titan"]').click();
+    await titanAccountResponse;
+    let titanState = await page.evaluate(() => window.ChartStudioBeta.getState());
+    if (titanState.timeframe !== "M15") {
+      const m15Response = page.waitForResponse(response => {
+        const url = new URL(response.url());
+        return url.pathname === `${basePath}/api/candles` && url.searchParams.get("account") === "titan"
+          && url.searchParams.get("tf") === "M15" && url.searchParams.get("count") === "1001";
+      });
+      await page.locator("#tf-btn-M15").click();
+      await m15Response;
+    }
+    holdTitanM5Request = true;
+    const delayedM5 = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.pathname === `${basePath}/api/candles` && url.searchParams.get("account") === "titan"
+        && url.searchParams.get("tf") === "M5" && url.searchParams.get("count") === "1001";
+    });
+    await page.locator("#tf-btn-M5").click();
+    const heldM5 = await titanM5Ready;
+    assert.equal(heldM5.response.status(), 200, "older Titan/M5 response is held after retrieval");
+    const heldM5Data = JSON.parse(heldM5.body.toString("utf8"));
+    assert.equal(heldM5Data.accountId, "titan");
+    assert.equal(heldM5Data.timeframe, "M5");
+    const freshM15ResponsePromise = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.pathname === `${basePath}/api/candles` && url.searchParams.get("account") === "titan"
+        && url.searchParams.get("tf") === "M15" && url.searchParams.get("count") === "1001";
+    });
+    await page.locator("#tf-btn-M15").click();
+    const freshM15Response = await freshM15ResponsePromise;
+    assert.equal(freshM15Response.status(), 200);
+    const freshM15 = await freshM15Response.json();
+    assert.equal(freshM15.accountId, "titan");
+    assert.equal(freshM15.timeframe, "M15");
+    await page.waitForFunction(() => {
+      const state = window.ChartStudioBeta.getState();
+      return state.account === "titan" && state.timeframe === "M15"
+        && window.__mainCandleSeriesCaptures.some(item => item.active === "titan"
+          && item.timeframe === "M15" && item.data.length === 1001);
+    });
+    releaseTitanM5();
+    const oldM5Response = await delayedM5;
+    assert.equal(oldM5Response.status(), 200);
+    await page.waitForTimeout(300);
+    titanState = await page.evaluate(() => ({
+      state: window.ChartStudioBeta.getState(),
+      selectedTimeframe: document.querySelector('[id^="tf-btn-"].bg-blue-600')?.id.replace("tf-btn-", ""),
+      capture: [...window.__mainCandleSeriesCaptures].reverse().find(item => item.active === "titan"
+        && item.timeframe === "M15" && item.data.length === 1001)?.data,
+    }));
+    assert.equal(titanState.state.account, "titan");
+    assert.equal(titanState.state.timeframe, "M15", "late M5 data must not roll active state back");
+    assert.equal(titanState.selectedTimeframe, "M15");
+    const expectedM15 = freshM15.candles.map(row => ({
+      time: row.time, open: row.open, high: row.high, low: row.low, close: row.close,
+    })).sort((a, b) => Number(a.time) - Number(b.time));
+    assert.deepEqual([...titanState.capture].sort((a, b) => Number(a.time) - Number(b.time)), expectedM15,
+      "late Titan/M5 data must not overwrite the newer Titan/M15 series");
+
     assert.deepEqual(browserErrors, []);
+    assert.deepEqual(blockedApiRequests, [], "no mutation or out-of-scope API request left the browser");
     assert.ok(apiRequests.length > 0);
-    assert.ok(apiRequests.every(row => row.method === "GET" && row.account !== "blueberry"));
+    assert.ok(apiRequests.every(row => row.method === "GET" && (row.account === null || accounts.includes(row.account))));
+    const verifiedAccounts = [...new Set(apiRequests.map(row => row.account).filter(account => accounts.includes(account)))].sort();
+    assert.deepEqual(verifiedAccounts, [...accounts].sort(), "rapid scope cycles exercised every authorized demo alias");
     console.log(JSON.stringify({
       delayedAccount: "titan", activeAccount: state.account, symbol: verified.symbol,
       verifiedBars: expected.length, apiRequests: apiRequests.length,
-      verifiedScopeCycles: completedCycles,
+      verifiedScopeCycles: completedCycles, verifiedAccounts, delayedTimeframeRace: "Titan M5 behind Titan M15",
       brokerWrites: 0, protectedAccountQueried: false, browserErrors,
     }, null, 2));
   } finally {
