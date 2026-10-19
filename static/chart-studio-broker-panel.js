@@ -54,7 +54,7 @@ function renderPositions(rows){
 }
 function closeDraft(message="Entwurf beendet."){
  state.draftToken++;state.draft=null;window.ChartStudioBeta?.updatePositionDraft(state.account,null);
- state.draftForm.hidden=true;state.draftConfirm.hidden=true;state.draftConfirmCheck.checked=false;state.draftConfirmButton.disabled=false;state.draftStatus.textContent=message;
+ state.draftForm.hidden=true;state.draftConfirm.hidden=true;state.draftConfirmCheck.checked=false;state.draftConfirmButton.disabled=true;state.draftStatus.textContent=message;
 }
 function draftPayload(){
  const form=state.draftForm,asPrice=name=>form.elements.namedItem(name).value.trim()||null;
@@ -66,7 +66,7 @@ function syncDraftOverlay(){
  const values=draftPayload(),num=value=>value===null?null:Number(value);
  const draft={...state.draft,slPrice:num(values.slPrice),tpPrice:num(values.tpPrice)};
  if(!window.ChartStudioBeta?.updatePositionDraft(state.account,draft)){closeDraft("Entwurf verworfen · Konto oder Positionsdaten geändert.");return}
- state.draft={...state.draft,...values};state.draftPreview=null;state.draftConfirm.hidden=true;state.draftConfirmCheck.checked=false;state.draftStatus.textContent="Entwurf · noch keine Broker-Vorschau · keine Änderung";
+ state.draft={...state.draft,...values};state.draftPreview=null;state.draftConfirm.hidden=true;state.draftConfirmCheck.checked=false;state.draftConfirmButton.disabled=true;state.draftStatus.textContent="Entwurf · noch keine Broker-Vorschau · keine Änderung";
 }
 async function beginDraft(position){
  const symbol=state.symbol;
@@ -100,8 +100,8 @@ async function previewDraft(event){
   if(response.status===409)throw new Error("Broker-Scope geändert (409) · Vorschau verworfen.");
   if(!response.ok||data.clientRequestId!==requestId||data.account!==scope.account||data.symbol!==scope.symbol||data.positionTicket!==scope.ticket||data.positionRevision!==scope.revision||data.canExecute!==false||typeof data.canCommit!=="boolean"||!['ALLOW','BLOCK','UNKNOWN'].includes(data.guard?.state)||typeof data.guard?.source!=="string"||!['VALID','INVALID'].includes(data.geometry?.state)||!data.brokerPreview)throw new Error("Vorschau nicht verifiziert; keine Änderung möglich.");
   if(data.canCommit&&!(data.valid===true&&data.geometry.state==="VALID"&&data.guard.state==="ALLOW"&&data.guard.source==="NON_CHALLENGE_DEMO_POLICY"))throw new Error("Commit-Freigabe widerspricht Guard oder Geometrie.");
-  state.draftPreview=data;state.draftConfirm.hidden=data.canCommit!==true;state.draftConfirmCheck.checked=false;state.draftConfirmButton.disabled=false;state.draftStatus.textContent=(data.geometry.state==="VALID"?"Vorschau":"Vorschau ungültig · "+(data.geometry.reasons||[]).join(", "))+" · SL "+(data.brokerPreview.slPrice??"—")+" / TP "+(data.brokerPreview.tpPrice??"—")+" · Guard "+(data.guard?.state||"UNKNOWN")+(data.canCommit?" · Bestätigung erforderlich":" · keine Änderung möglich");
- }catch(error){if(token===state.draftToken){state.draftPreview=null;state.draftConfirm.hidden=true;state.draftStatus.textContent="Keine gültige Vorschau: "+error.message}}
+  state.draftPreview=data;state.draftConfirm.hidden=data.canCommit!==true;state.draftConfirmCheck.checked=false;state.draftConfirmButton.disabled=true;state.draftStatus.textContent=(data.geometry.state==="VALID"?"Vorschau":"Vorschau ungültig · "+(data.geometry.reasons||[]).join(", "))+" · SL "+(data.brokerPreview.slPrice??"—")+" / TP "+(data.brokerPreview.tpPrice??"—")+" · Guard "+(data.guard?.state||"UNKNOWN")+(data.canCommit?" · Bestätigung erforderlich":" · keine Änderung möglich");
+ }catch(error){if(token===state.draftToken){state.draftPreview=null;state.draftConfirm.hidden=true;state.draftConfirmCheck.checked=false;state.draftConfirmButton.disabled=true;state.draftStatus.textContent="Keine gültige Vorschau: "+error.message}}
 }
 async function commitDraft(){
  const preview=state.draftPreview,draft=state.draft;
@@ -272,6 +272,7 @@ function mount({panel,account,timeframe="M15"}){
  const details=el("details",{class:"cs-broker-read-panel"});
  details.innerHTML='<summary>Brokerbuch · Positionen, Pending Orders &amp; Deals · nur lesen</summary><div class="cs-broker-read-content"><p>Verifizierte MT5-Daten. Deals werden nicht zu Positionen rekonstruiert; EA-Zuordnung bleibt UNKNOWN, wenn sie nicht belegt ist.</p><label>Ticket <input name="ticket" inputmode="numeric" maxlength="20" autocomplete="off"></label><label>Magic <input name="magic" inputmode="numeric" maxlength="20" autocomplete="off"></label><label>Zuordnung <select name="ownership" autocomplete="off"><option value="ANY">Alle / unbekannt</option><option value="MANUAL">MANUAL</option><option value="NON_MANUAL">Nicht MANUAL (UNKNOWN möglich)</option></select></label><button type="button" id="cs-broker-positions-refresh">Positionen aktualisieren</button><p id="cs-broker-positions-status" role="status" aria-live="polite"></p><h4>Offene Positionen</h4><div class="cs-broker-table-wrap" id="cs-broker-positions"><table><thead></thead><tbody></tbody></table></div><form id="cs-position-stop-draft" hidden><h4>SL/TP-Entwurf · read-only</h4><p>Ziehe die farbigen Chartgriffe oder bearbeite die Preise. Vorschau sendet keine Änderung an MT5.</p><label>SL <input name="slPrice" type="number" min="0" step="any"></label><label>TP <input name="tpPrice" type="number" min="0" step="any"></label><button type="button" data-cmd="drag">Griffe am Chart bewegen</button><button type="submit">Broker-Vorschau</button><button type="button" data-cmd="close">Entwurf schließen</button><p id="cs-position-stop-draft-status" role="status" aria-live="polite"></p></form><h4>Pending Orders</h4><div class="cs-broker-table-wrap" id="cs-broker-orders"><table><thead></thead><tbody></tbody></table></div><fieldset><legend>Deal-Historie · UTC</legend><label>Von <input type="date" name="fromUtc" autocomplete="off"></label><label>Bis einschließlich <input type="date" name="toUtc" autocomplete="off"></label><button type="button" id="cs-broker-history-load">Historie laden</button><button type="button" id="cs-broker-history-next" disabled>Nächste Seite</button></fieldset><p id="cs-broker-history-status" role="status" aria-live="polite">Historie noch nicht geladen.</p><div class="cs-broker-table-wrap" id="cs-broker-trades"><table><thead></thead><tbody></tbody></table></div></div>';
  const draftConfirm=el("fieldset",{id:"cs-position-stop-confirm",hidden:""}),draftConfirmCheck=el("input",{type:"checkbox",id:"cs-position-stop-confirm-check"}),draftConfirmButton=el("button",{type:"button",id:"cs-position-stop-confirm-button"},"Änderung jetzt anwenden"),draftConfirmLabel=el("label");
+ draftConfirmButton.disabled=true;
  draftConfirmLabel.append(draftConfirmCheck,document.createTextNode(" Ich bestätige genau diese SL/TP-Änderung für die angezeigte Position."));
  draftConfirm.append(el("legend",{},"Explizite Demo-Bestätigung"),draftConfirmLabel,draftConfirmButton);
  const draftForm=details.querySelector("#cs-position-stop-draft");draftForm.querySelector("h4").textContent="SL/TP-Schutzentwurf";draftForm.querySelector("p").textContent="Vorschau bleibt ohne Änderung. Nur die explizit bestätigte, gültige Demo-Schutzänderung wird an MT5 gesendet.";draftForm.append(draftConfirm);
