@@ -51,6 +51,7 @@
 .cs-replay-actions button:focus-visible,.cs-replay-actions input:focus-visible{outline:2px solid #65dded;outline-offset:2px}
 .cs-replay-plot{height:240px;min-height:240px;max-width:100%;overflow:hidden}
 .cs-replay output{display:block;color:#bde0e9;font-size:12px;margin:6px 0;min-height:18px}
+.cs-replay .cs-replay-recorded-state{white-space:pre-wrap;border-left:2px solid #6bb7c5;padding:7px 10px;color:#d2edf2;background:rgba(8,30,42,.72);line-height:1.5}
 
 /* Chart Studio adaptive layout: no controls may disappear off-canvas on touch widths. */
 #cs-beta-panel,.cs-ma-editor,.cs-ma-items,.cs-catalog,.cs-replay,

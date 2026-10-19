@@ -7,6 +7,9 @@ const MAX_EVIDENCE_EVENTS=500;
 const EMA_PERIODS=[9,20,50,200];
 const EMA_COLORS={9:"#e7f2fa",20:"#44cceb",50:"#ffc233",200:"#c28af3"};
 const TF_SECONDS={M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400,W1:604800,MN1:2592000};
+const EVIDENCE_IDENTIFIER=/^[A-Za-z0-9_-]{1,64}$/;
+const EVIDENCE_COMPARATORS=new Set(["GT","GE","LT","LE","EQ","NE","PRESENT"]);
+const EVIDENCE_OUTCOMES=new Set(["PASS","BLOCK","UNKNOWN"]);
 let state=null;
 function barCloseSeconds(time,timeframe){
  if(timeframe==="MN1"){
@@ -25,6 +28,16 @@ function normalize(raw){
  return values.filter((b,i)=>i===0||values[i-1].time!==b.time).slice(-MAX_BARS);
 }
 function announce(message){if(state)state.status.textContent=message}
+function formatReplayNumber(value){return value===null?"UNKNOWN":Number.isFinite(value)?String(value):"INVALID"}
+function renderRecordedDecision(event){
+ if(!state?.recordedState)return;
+ if(!event){state.recordedState.textContent="Keine aufgezeichnete Entscheidung an dieser Replay-Zeit.";return}
+ const features=event.featureVector.length?event.featureVector.map(item=>
+  `${item.id}=${formatReplayNumber(item.value)} ${item.unit}/${item.timeframe}`).join(" · "):"keine Merkmalswerte erfasst";
+ const predicates=event.predicates.length?event.predicates.map(item=>
+  `${item.ruleId}: ${formatReplayNumber(item.observedValue)} ${item.comparator} ${formatReplayNumber(item.threshold)} → ${item.outcome} (${item.reasonCode})`).join(" · "):"keine Prädikate erfasst";
+ state.recordedState.textContent=`Letzte Entscheidung ${event.stage} · ${event.outcome} · ${event.featureProvenance.toUpperCase()}\nMerkmale: ${features}\nPrädikate: ${predicates}`;
+}
 function utcMicros(value){
  if(typeof value!=="string")throw Error("Invalid evidence timestamp");
  const match=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?Z$/.exec(value);
@@ -32,6 +45,25 @@ function utcMicros(value){
  const [,y,mo,d,h,mi,s,fraction=""]=match,ms=Date.UTC(+y,+mo-1,+d,+h,+mi,+s);
  const date=new Date(ms);if(date.getUTCFullYear()!==+y||date.getUTCMonth()!==+mo-1||date.getUTCDate()!==+d||date.getUTCHours()!==+h||date.getUTCMinutes()!==+mi||date.getUTCSeconds()!==+s)throw Error("Invalid evidence timestamp");
  return BigInt(ms)*1000n+BigInt((fraction+"000000").slice(0,6));
+}
+function evidenceNumber(value){return value===null||typeof value==="number"&&Number.isFinite(value)&&Math.abs(value)<=1e12}
+function normalizeDecisionDetails(payload){
+ if(!payload||!['recorded','reconstructed'].includes(payload.dataProvenance)||
+    !Array.isArray(payload.featureVector)||payload.featureVector.length>128||
+    !Array.isArray(payload.predicates)||payload.predicates.length>128)throw Error("Invalid recorded decision features");
+ const featureIds=new Set(),predicateIds=new Set();
+ const featureVector=payload.featureVector.map(item=>{
+  if(!item||typeof item!=="object"||typeof item.id!=="string"||!EVIDENCE_IDENTIFIER.test(item.id)||featureIds.has(item.id)||
+     !evidenceNumber(item.value)||typeof item.unit!=="string"||!EVIDENCE_IDENTIFIER.test(item.unit)||typeof item.timeframe!=="string"||!TF_SECONDS[item.timeframe])throw Error("Invalid recorded decision feature");
+  featureIds.add(item.id);return {id:item.id,value:item.value,unit:item.unit,timeframe:item.timeframe};
+ });
+ const predicates=payload.predicates.map(item=>{
+  if(!item||typeof item!=="object"||typeof item.ruleId!=="string"||!EVIDENCE_IDENTIFIER.test(item.ruleId)||predicateIds.has(item.ruleId)||
+     !evidenceNumber(item.observedValue)||!EVIDENCE_COMPARATORS.has(item.comparator)||!evidenceNumber(item.threshold)||
+     !EVIDENCE_OUTCOMES.has(item.outcome)||typeof item.reasonCode!=="string"||!EVIDENCE_IDENTIFIER.test(item.reasonCode))throw Error("Invalid recorded decision predicate");
+  predicateIds.add(item.ruleId);return {ruleId:item.ruleId,observedValue:item.observedValue,comparator:item.comparator,threshold:item.threshold,outcome:item.outcome,reasonCode:item.reasonCode};
+ });
+ return {featureProvenance:payload.dataProvenance,featureVector,predicates};
 }
 function stable(value){
  if(Array.isArray(value))return "["+value.map(stable).join(",")+"]";
@@ -64,7 +96,7 @@ function redraw(){
  state.slider.disabled=!state.active;
  state.step.disabled=!state.active||state.cursor>=state.snapshot.length-1;
  state.play.disabled=!state.active||state.snapshot.length<2;
- if(!state.active){state.series?.setData([]);state.series?.setMarkers?.([]);for(const period of EMA_PERIODS)state.emaSeries[period]?.setData([]);state.emaData={};state.visibleEvents=[];state.eventList?.replaceChildren();return}
+ if(!state.active){state.series?.setData([]);state.series?.setMarkers?.([]);for(const period of EMA_PERIODS)state.emaSeries[period]?.setData([]);state.emaData={};state.visibleEvents=[];state.eventList?.replaceChildren();renderRecordedDecision(null);return}
  if(!state.series)buildChart();
  // Every displayed candle must belong to the immutable as-of prefix.
  const prefix=state.snapshot.slice(0,state.cursor+1);
@@ -80,6 +112,7 @@ function redraw(){
   const t=prefix[prefix.length-1].time;
   const closeUs=BigInt(barCloseSeconds(t,state.timeframe))*1000000n,cutoff=state.cursor===state.snapshot.length-1?state.asOfUs:(closeUs<state.asOfUs?closeUs:state.asOfUs);
   state.visibleEvents=state.events.filter(event=>event.timeUs<=cutoff);
+  renderRecordedDecision([...state.visibleEvents].reverse().find(event=>event.type==="DECISION")||null);
   if(state.eventList){state.eventList.replaceChildren();for(const event of state.visibleEvents){const row=document.createElement("li");row.textContent=event.description+" · "+event.id+" · "+event.eventTimeUtc+" · RECORDED";state.eventList.append(row)}}
   const markers=state.visibleEvents.map(event=>({time:event.barTime,position:event.type==="DECISION"?"aboveBar":"belowBar",
    color:event.type==="DECISION"?(event.outcome==="BLOCK"?"#f07886":"#75c9ed"):"#f5c451",
@@ -141,7 +174,8 @@ async function startSnapshot({record,events=[]}={}){
   if(timeUs>asOfUs)throw Error("Historical event occurs after snapshot as-of time");
   const time=Number(timeUs/1000000n);let bar=null;for(const candidate of bars){if(candidate.time<=time)bar=candidate;else break}
   if(!bar)throw Error("Historical event is outside the snapshot candle range");
-  eventIds.add(type+":"+id);normalized.push({id,type,timeUs,eventTimeUtc,description:type==="DECISION"?"DECISION "+(ep.stage||"UNKNOWN")+" "+(ep.outcome||"UNKNOWN"):"LIFECYCLE "+(ep.eventType||"UNKNOWN"),barTime:bar.time,outcome:type==="DECISION"?ep.outcome:"",markerLabel:type==="DECISION"?"D":"L"});
+  const details=type==="DECISION"?normalizeDecisionDetails(ep):{featureProvenance:"unknown",featureVector:[],predicates:[]};
+  eventIds.add(type+":"+id);normalized.push({id,type,timeUs,eventTimeUtc,description:type==="DECISION"?"DECISION "+(ep.stage||"UNKNOWN")+" "+(ep.outcome||"UNKNOWN"):"LIFECYCLE "+(ep.eventType||"UNKNOWN"),barTime:bar.time,outcome:type==="DECISION"?ep.outcome:"",markerLabel:type==="DECISION"?"D":"L",stage:type==="DECISION"?ep.stage:"",...details});
  }
  normalized.sort((a,b)=>a.timeUs<b.timeUs?-1:a.timeUs>b.timeUs?1:a.type.localeCompare(b.type)||a.id.localeCompare(b.id));
  // Replace the replay only after the snapshot, digest, scope and every supplied event pass validation.
@@ -205,10 +239,11 @@ function mount({panel,account="titan",symbol="XAUUSD",timeframe="M15"}={}){
  const slider=document.createElement("input");slider.type="range";slider.min="0";slider.max="0";slider.value="0";
  slider.setAttribute("aria-label","Replay-Kerze auswählen");tools.append(slider);
  const status=document.createElement("output");status.setAttribute("role","status");status.setAttribute("aria-live","polite");
+ const recordedState=document.createElement("output");recordedState.className="cs-replay-recorded-state";recordedState.setAttribute("aria-label","Aufgezeichnete Entscheidungswerte zum Replay-Zeitpunkt");recordedState.setAttribute("aria-live","polite");
  const plot=document.createElement("div");plot.className="cs-replay-plot";
- root.append(summary,info,tools,status,plot);panel.append(root);
+ root.append(summary,info,tools,status,recordedState,plot);panel.append(root);
  const eventList=document.createElement("ol");eventList.className="cs-replay-events";eventList.setAttribute("aria-label","Im Replay bis zum aktuellen Zeitpunkt belegte Ereignisse");root.append(eventList);
- state={root,plot,status,slider,step:next,play:playButton,account,symbol,timeframe,tfSeconds:TF_SECONDS[timeframe]||900,
+ state={root,plot,status,recordedState,slider,step:next,play:playButton,account,symbol,timeframe,tfSeconds:TF_SECONDS[timeframe]||900,
   active:false,mode:"IDLE",bars:[],snapshot:[],events:[],visibleEvents:[],emaSeries:Object.create(null),emaData:{},asOfUs:0n,cursor:-1,timer:null,chart:null,series:null,eventList,contextVersion:0,requestVersion:0};
  begin.addEventListener("click",start);next.addEventListener("click",step);
  playButton.addEventListener("click",play);quit.addEventListener("click",exit);
