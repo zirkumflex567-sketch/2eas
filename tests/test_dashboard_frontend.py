@@ -408,6 +408,8 @@ class DashboardFrontendTests(unittest.TestCase):
         self.page.locator('#cs-evidence-capture-status').click()
         expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text('3 Temp-Dateien / 2.0 MiB', timeout=5000)
         expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text(
+            'Temp-Rückstand · nicht importiert', timeout=5000)
+        expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text(
             'Änderungszeit UTC 2026-10-18 07:00 bis 2026-10-19 08:00', timeout=5000)
         expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text('Lifecycle: OK', timeout=5000)
         status_requests=[url for url in self.requests if '/capture/status?' in url]
@@ -1052,11 +1054,13 @@ class DashboardFrontendTests(unittest.TestCase):
         self.assertEqual(dot.evaluate('el=>getComputedStyle(el).animationName'), 'none')
         self.page.emulate_media(reduced_motion='no-preference')
         self.page.get_by_label('Nicht-Chart-Dekoration').select_option('full')
+        expect(self.page.locator('body')).to_have_attribute('data-ui-motion', 'full')
+        self.assertFalse(self.page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"))
         # This tests IntersectionObserver/motion, not pointer actionability.
         # Native scrolling works while decoration/layout is still animating.
         self.page.locator('header').evaluate("el=>el.scrollIntoView({block:'start',behavior:'instant'})")
         expect(self.page.locator('header')).to_have_attribute('data-ui-visible', 'true')
-        self.assertNotEqual(dot.evaluate('el=>getComputedStyle(el).animationName'), 'none')
+        self.page.wait_for_function("() => { const el=document.querySelector('header .animate-pulse'); return !!el && getComputedStyle(el).animationName !== 'none'; }")
         self.page.get_by_label('Nicht-Chart-Dekoration').select_option('off')
         self.assertEqual(dot.evaluate('el=>getComputedStyle(el).animationName'), 'none')
         self.page.get_by_label('Nicht-Chart-Dekoration').select_option('full')
