@@ -8,6 +8,13 @@ const EMA_PERIODS=[9,20,50,200];
 const EMA_COLORS={9:"#e7f2fa",20:"#44cceb",50:"#ffc233",200:"#c28af3"};
 const TF_SECONDS={M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400,W1:604800,MN1:2592000};
 let state=null;
+function barCloseSeconds(time,timeframe){
+ if(timeframe==="MN1"){
+  const date=new Date(time*1000);
+  return Math.floor(Date.UTC(date.getUTCFullYear(),date.getUTCMonth()+1,1)/1000);
+ }
+ return time+(TF_SECONDS[timeframe]||900);
+}
 const valid=b=>b&&Number.isSafeInteger(b.time)&&b.time>0&&
  ["open","high","low","close"].every(k=>Number.isFinite(b[k])&&b[k]>0)&&
  b.high>=Math.max(b.open,b.close,b.low)&&b.low<=Math.min(b.open,b.close,b.high);
@@ -71,7 +78,7 @@ function redraw(){
  }
  if(prefix.length>0){
   const t=prefix[prefix.length-1].time;
-  const closeUs=BigInt(t+state.tfSeconds)*1000000n,cutoff=state.cursor===state.snapshot.length-1?state.asOfUs:(closeUs<state.asOfUs?closeUs:state.asOfUs);
+  const closeUs=BigInt(barCloseSeconds(t,state.timeframe))*1000000n,cutoff=state.cursor===state.snapshot.length-1?state.asOfUs:(closeUs<state.asOfUs?closeUs:state.asOfUs);
   state.visibleEvents=state.events.filter(event=>event.timeUs<=cutoff);
   if(state.eventList){state.eventList.replaceChildren();for(const event of state.visibleEvents){const row=document.createElement("li");row.textContent=event.description+" · "+event.id+" · "+event.eventTimeUtc+" · RECORDED";state.eventList.append(row)}}
   const markers=state.visibleEvents.map(event=>({time:event.barTime,position:event.type==="DECISION"?"aboveBar":"belowBar",
@@ -85,7 +92,7 @@ function redraw(){
 function start(){
  if(!state)return false;if(state.active)exit();pause();state.previousContext=null;
  const asOfSeconds=Math.floor(Date.now()/1000),asOfUs=BigInt(asOfSeconds);
- const completed=state.bars.filter(c=>BigInt(c.time)+BigInt(state.tfSeconds)<=asOfUs);
+ const completed=state.bars.filter(c=>BigInt(barCloseSeconds(c.time,state.timeframe))<=asOfUs);
  if(completed.length<2){announce("Nicht genügend abgeschlossene historische Brokerkerzen für Replay.");return false}
  state.snapshot=completed.map(c=>Object.freeze({...c}));
  Object.freeze(state.snapshot);state.mode="LIVE_CANDLES";state.events=[];state.asOfUs=asOfUs*1000000n;
@@ -111,7 +118,7 @@ async function startSnapshot({record,events=[]}={}){
   if(!Number.isSafeInteger(time)||seen.has(time)||time<=previous||![bar.open,bar.high,bar.low,bar.close].every(v=>typeof v==="string"&&/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(v))){throw Error("Invalid snapshot candle")}
   const o=Number(bar.open),h=Number(bar.high),l=Number(bar.low),c=Number(bar.close);
   if(![o,h,l,c].every(Number.isFinite)||l<=0||h<Math.max(o,c,l)||l>Math.min(o,c,h))throw Error("Invalid snapshot candle");
-  if(openUs+BigInt(tfSeconds)*1000000n<=asOfUs)bars.push({time,open:o,high:h,low:l,close:c});
+  if(BigInt(barCloseSeconds(time,view.timeframe))*1000000n<=asOfUs)bars.push({time,open:o,high:h,low:l,close:c});
   seen.add(time);previous=time;
  }
  if(ref.eventTimeUtc!==data.bars.at(-1).timeUtc||view.fromUtc!==data.bars[0].timeUtc||view.toUtc!==data.bars.at(-1).timeUtc)throw Error("Snapshot market-data reference mismatch");

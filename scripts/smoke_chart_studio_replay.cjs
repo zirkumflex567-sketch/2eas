@@ -58,6 +58,17 @@ const {spawn}=require("node:child_process"),fs=require("node:fs"),path=require("
   assert.equal(liveClosedBars.sourceBars,4);
   assert.equal(liveClosedBars.snapshotBars,2,"Live replay must exclude the current forming bar and future bars");
   assert.equal(liveClosedBars.visibleBars,1);
+  const monthlyClosedBars=await page.evaluate(()=>{
+   const originalNow=Date.now;Date.now=()=>Date.UTC(2024,9,31,12,0,0);
+   try{
+    ChartStudioReplay.switchContext("titan","MN1","XAUUSD");
+    const times=[Date.UTC(2024,7,1),Date.UTC(2024,8,1),Date.UTC(2024,9,1),Date.UTC(2024,10,1)];
+    ChartStudioReplay.updateBars(times.map((ms,i)=>({time:ms/1000,open:4100+i,high:4110+i,low:4090+i,close:4105+i})));
+    ChartStudioReplay.start();return ChartStudioReplay.inspect();
+   }finally{Date.now=originalNow}
+  });
+  assert.equal(monthlyClosedBars.snapshotBars,2,"MN1 bars close at the next UTC month boundary, not after a fixed 30 days");
+  assert.equal(monthlyClosedBars.visibleBars,1);
   const recordedReplay=await page.evaluate(async()=>{
    const stable=v=>Array.isArray(v)?`[${v.map(stable).join(",")}]`:v&&typeof v==="object"?`{${Object.keys(v).sort().map(k=>JSON.stringify(k)+":"+stable(v[k])).join(",")}}`:JSON.stringify(v);
    const bars=Array.from({length:5},(_,i)=>({timeUtc:new Date((1700600000+i*900)*1000).toISOString(),open:"4100.00",high:"4110.00",low:"4090.00",close:"4105.00",tickVolume:10,spread:2,realVolume:0}));

@@ -61,7 +61,7 @@
 - [ ] 5.3 Execution quality with real intended-vs-fill quote baselines/partial fills.
 - [ ] 5.4 Reproducible market regimes with OOS analysis.
 - [ ] 5.5 Licensed news/event overlays, EA-news-guard differentiation.
-- [~] 5.6 Read-only deterministic replay with no-lookahead and zero trading routes. Browser-only as-of candlestick preview, frozen snapshot, seek/step/playback, context reset and no-trade smoke merged in PR #21. Live-candle replay excludes the forming and future bars and freezes its UTC as-of at start; EMA 9/20/50/200 are recalculated from the visible closed-bar prefix with strict warm-up (RED/GREEN Chromium regression, 19.10.2026). EA telemetry/indicator provenance, real broker dataset validation and full acceptance are not complete.
+- [~] 5.6 Read-only deterministic replay with no-lookahead and zero trading routes. Browser-only as-of candlestick preview, frozen snapshot, seek/step/playback, context reset and no-trade smoke merged in PR #21. Live-candle replay excludes the forming and future bars and freezes its UTC as-of at start; MN1 bars close at the next calendar-month boundary; EMA 9/20/50/200 are recalculated from the visible closed-bar prefix with strict warm-up (RED/GREEN Chromium regressions, 19.10.2026). EA telemetry/indicator provenance, real broker dataset validation and full acceptance are not complete.
 - [ ] 5.7 All AT-001–AT-056 green with proof, legacy parity, screenshots and complete rollout/rollback plan.
 
 ## Gate proof required before marking "complete"
