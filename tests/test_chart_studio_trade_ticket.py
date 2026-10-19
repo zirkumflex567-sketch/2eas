@@ -279,6 +279,26 @@ def test_preview_service_never_issues_commit_token_without_authoritative_guard(m
     assert mt5.sent == []
 
 
+def test_goldm15_preview_is_read_only_and_never_issues_commit_token(monkeypatch):
+    mt5 = PreviewMT5()
+    _spec, guard = _preview_environment(monkeypatch, mt5, guard_state='ALLOW',
+                                       account_id='goldm15')
+    registry = TradeTicketPreviewRegistry(monotonic=lambda: 1.0)
+    service = TradeTicketPreviewService(mt5, registry, guard, now=lambda: 100.0)
+    request = SimpleNamespace(account='goldm15', symbol='XAUUSD', orderType='BUY_LIMIT',
+                              volumeLots=0.01, entryPrice=99.4, slPrice=98.0, tpPrice=100.4)
+
+    result = service.preview(request, ('proxy', 'operator', 'trade'), '203.0.113.5')
+
+    assert result['status'] == 'PREVIEW_ONLY'
+    assert result['canExecute'] is False
+    assert result['canCommit'] is False
+    assert result['guard'] == {'state': 'UNKNOWN', 'source': 'NONE'}
+    assert 'previewId' not in result
+    assert registry.items == {}
+    assert mt5.sent == []
+
+
 def test_preview_service_rejects_stale_quote_before_calculation(monkeypatch):
     mt5 = PreviewMT5()
     _spec, guard = _preview_environment(monkeypatch, mt5, quote_state='STALE')

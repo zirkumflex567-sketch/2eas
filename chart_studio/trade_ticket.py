@@ -14,6 +14,12 @@ from chart_studio.money import PreviewError, validate_plan
 from chart_studio.position_preview import actual_number
 
 
+TRADE_TICKET_COMMIT_DEMO_ACCOUNTS = frozenset({
+    'titan', 'xau5m_m5', 'titan_m5', 'xau5m_500',
+})
+TRADE_TICKET_PREVIEW_DEMO_ACCOUNTS = TRADE_TICKET_COMMIT_DEMO_ACCOUNTS | {'goldm15'}
+
+
 class TradeTicketError(ValueError):
     def __init__(self, code):
         self.code = code
@@ -222,7 +228,7 @@ class TradeTicketPreviewService:
     def preview(self, payload, identity, peer):
         account = payload.account
         config = gateway.ACCOUNTS.get(account)
-        if (account not in {'titan', 'xau5m_m5', 'titan_m5', 'xau5m_500'} or
+        if (account not in TRADE_TICKET_PREVIEW_DEMO_ACCOUNTS or
                 not isinstance(config, dict) or config.get('is_demo') is not True or
                 payload.symbol != config.get('symbol')):
             raise self._error(403, 'DEMO_ACCOUNT_REQUIRED')
@@ -281,7 +287,8 @@ class TradeTicketPreviewService:
                     except Exception:
                         decision = None
                 guard = ({'state': 'ALLOW', 'source': decision['source']}
-                         if isinstance(decision, dict) and decision.get('state') == 'ALLOW'
+                         if account in TRADE_TICKET_COMMIT_DEMO_ACCOUNTS
+                         and isinstance(decision, dict) and decision.get('state') == 'ALLOW'
                          and decision.get('hardLock') is False
                          and isinstance(decision.get('source'), str)
                          and decision['source'] not in ('', 'NONE')
