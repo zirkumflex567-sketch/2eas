@@ -25,6 +25,6 @@ Make native v5 drawings usable through an accessible, scope-local object manager
 - [x] Contract fails before implementation.
 - [x] Object manager behavior and adapter read surface pass focused tests (preview smoke, full native-v5 smoke, TypeScript check/build, JS syntax, Python compile).
 - [x] Focused Python tests (54 passed), preview and native-v5 regressions pass; review findings were fixed and cleared.
-- [x] Deployment is verified on local ports 8050/8056 and hTown `/stt` upstream 8055 at `7caf0a6`, with matching runtime digest and clean nginx check.
+- [x] Deployment is verified on local ports 8050/8056 and hTown `/stt` upstream 8055 at app commit `67f1f90`, with matching runtime digest and clean nginx check; five-demo chart/Auto-Fibonacci read-only acceptance passed (97 GETs, zero mutations/Blueberry requests/browser errors).
 - [x] Evidence is recorded without claiming production parity or hardware acceptance.
 - [ ] GitHub CI for the final feature commit completes successfully.
