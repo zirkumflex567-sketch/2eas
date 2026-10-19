@@ -1585,6 +1585,23 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(risingFibo[0].price,4000+35*.4+Math.sin(3.5)*16);
   assert.equal(risingFibo[6].price,4000+20*.4+Math.sin(2)*16);
   await page.evaluate(()=>window.__v5Screenshot.removeFibonacci("visual-fibo-rising"));
+  const fibonacciTimeZones=await page.evaluate(()=>{
+   const engine=window.__v5Screenshot,base=1700100000,start=base+30*900,end=base+31*900;
+   engine.addFibonacciTimeZones({id:"visual-fibtime",startTime:start,endTime:end,color:"#f97316"});
+   const forward={drawing:engine.readDrawing("visual-fibtime"),guides:engine.fibonacciTimeZoneGuides("visual-fibtime")};
+   engine.addFibonacciTimeZones({id:"visual-fibtime-reverse",startTime:end,endTime:start,color:"#38bdf8"});
+   const reverse=engine.fibonacciTimeZoneGuides("visual-fibtime-reverse");
+   let identicalAnchorRejected=false;
+   try{engine.addFibonacciTimeZones({id:"visual-fibtime-invalid",startTime:start,endTime:start,color:"#ffffff"})}catch{identicalAnchorRejected=true}
+   const count=engine.inspect().nativeDrawingCount;engine.removeFibonacciTimeZones("visual-fibtime");engine.removeFibonacciTimeZones("visual-fibtime-reverse");
+   return {forward,reverse,identicalAnchorRejected,count};
+  });
+  assert.equal(fibonacciTimeZones.forward.drawing.startTime,1700100000+30*900);
+  assert.deepEqual(fibonacciTimeZones.forward.guides.map(item=>item.factor),[0,1,2,3,5,8,13,21,34,55]);
+  assert.deepEqual(fibonacciTimeZones.forward.guides.map(item=>item.time),[0,1,2,3,5,8,13,21,34,55].map(factor=>1700100000+(30+factor)*900));
+  assert.deepEqual(fibonacciTimeZones.reverse.map(item=>item.time),[0,1,2,3,5,8,13,21,34,55].map(factor=>1700100000+(31-factor)*900));
+  assert.ok(fibonacciTimeZones.forward.guides.every(item=>Number.isFinite(item.x)&&item.x>=0));
+  assert.equal(fibonacciTimeZones.identicalAnchorRejected,true,"Time zones require two distinct candle anchors");
   const duplicateSourcePoint=await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-time"));
   await page.mouse.move(duplicateSourcePoint.x,duplicateSourcePoint.y);await page.waitForTimeout(80);
   await page.mouse.click(duplicateSourcePoint.x,duplicateSourcePoint.y);
@@ -1718,7 +1735,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const migratedV2={status:e.inspect().persistenceStatus,drawing:e.readDrawing("legacy-v2-price"),stored:JSON.parse(localStorage.getItem(legacyV2Key)),current:JSON.parse(localStorage.getItem("2eas.chartstudio.v5.drawings:v5:migrationv2:XAUUSD:M15"))};e.destroy();
    const badHistoryKey="2eas.chartstudio.v5.drawings:badhistory:XAUUSD:M15",badHistory=JSON.stringify({schemaVersion:2,account:"badhistory",symbol:"XAUUSD",timeframe:"M15",drawings:[{kind:"PRICE",options:{id:"must-not-restore",price:4001,color:"#ffffff",visible:true,locked:false}}],undoStack:[{id:"wrong-id",before:null,after:{kind:"PRICE",options:{id:"other-id",price:4001,color:"#ffffff",visible:true,locked:false}}}],redoStack:[]});localStorage.setItem(badHistoryKey,badHistory);
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"badhistory",scope);e.setCandles(rows);
-   const malformedHistory={status:e.inspect().persistenceStatus,error:e.inspect().persistenceError,count:e.inspect().nativePrimitives,stored:localStorage.getItem(badHistoryKey)};e.destroy();
+   const malformedHistory={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives,stored:localStorage.getItem(badHistoryKey)};e.destroy();
    const failedMigrationKey="2eas.chartstudio.v5.drawings:migrationfailure:XAUUSD:M15",failedMigration=JSON.stringify({schemaVersion:1,account:"migrationfailure",symbol:"XAUUSD",timeframe:"M15",drawings:[]}),failedMigrationTarget="2eas.chartstudio.v5.drawings:v5:migrationfailure:XAUUSD:M15";localStorage.setItem(failedMigrationKey,failedMigration);
    const originalSetItem=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key===failedMigrationTarget)throw Error("quota fixture");return originalSetItem.call(this,key,value)};
    let migrationFailure;try{e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"migrationfailure",scope);e.setCandles(rows);migrationFailure={status:e.inspect().persistenceStatus,error:e.inspect().persistenceError,stored:localStorage.getItem(failedMigrationKey)};e.destroy()}finally{Storage.prototype.setItem=originalSetItem}
@@ -1739,7 +1756,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const capacitySeed=capacityEnvelope(),capacitySeedBytes=new TextEncoder().encode(capacitySeed).byteLength,capacitySeedHistory=capacityHistory.length,capacitySeedOldest=capacityHistory[0]?.id;
    localStorage.setItem(capacityHistoryKey,capacitySeed);
    const capacityHost=document.createElement("div");capacityHost.style.cssText="width:2px;height:2px;position:absolute;left:-2000px;top:0";document.body.append(capacityHost);
-   e=ChartStudioV5.createStudioV5(capacityHost,"capacityhistory",scope);e.setCandles(rows);const capacityHydrated={status:e.inspect().persistenceStatus,error:e.inspect().persistenceError,count:e.inspect().nativePrimitives};
+   e=ChartStudioV5.createStudioV5(capacityHost,"capacityhistory",scope);e.setCandles(rows);const capacityHydrated={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives};let fibTimeCapacityRejected=false;try{e.addFibonacciTimeZones({id:"capacity-fibtime",startTime:rows[10].time,endTime:rows[11].time,color:"#ffffff"})}catch{fibTimeCapacityRejected=true}capacityHydrated.fibTimeCapacityRejected=fibTimeCapacityRejected;
    e.updateFibonacci("capacity-fibo-000000000000000000",{color:"#ffffff"});
    const capacityStored=JSON.parse(localStorage.getItem(capacityHistoryKey)),capacityHistoryBound={seedBytes:capacitySeedBytes,storedBytes:new TextEncoder().encode(localStorage.getItem(capacityHistoryKey)).byteLength,seedHistoryCount:capacitySeedHistory,storedHistoryCount:capacityStored.undoStack.length,seedOldest:capacitySeedOldest,storedOldest:capacityStored.undoStack[0]?.id,drawingCount:e.inspect().nativePrimitives,status:e.inspect().persistenceStatus,error:e.inspect().persistenceError};e.destroy();capacityHost.remove();
    e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",scope);e.setCandles(rows);
@@ -1805,6 +1822,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.ok(persistenceProbe.sizeBound.historyCount<=100,"persisted undo history remains bounded to 100 entries");
   assert.equal(persistenceProbe.capacityHydrated.status,"READY","near-limit 1,000-drawing snapshot hydrates cleanly");
   assert.equal(persistenceProbe.capacityHydrated.count,1000);
+  assert.equal(persistenceProbe.capacityHydrated.fibTimeCapacityRejected,true,"Fibonacci Time Zones shares the 1,000-drawing cap");
   assert.ok(persistenceProbe.capacityHistoryBound.seedBytes<=524288-512,"seed leaves room for the new history entry to exceed the persistence budget");
   assert.ok(persistenceProbe.capacityHistoryBound.seedBytes>524288-4096,"seed exercises the persistence boundary rather than an ordinary snapshot");
   assert.ok(persistenceProbe.capacityHistoryBound.seedHistoryCount>0&&persistenceProbe.capacityHistoryBound.seedHistoryCount<100);

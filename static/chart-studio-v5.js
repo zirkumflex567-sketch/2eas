@@ -8150,6 +8150,87 @@ var ChartStudioV5 = (() => {
       this.requestUpdate?.();
     }
   };
+  var FIBONACCI_TIME_FACTORS = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55];
+  var FibonacciTimeZonePrimitive = class {
+    constructor(options) {
+      this.options = options;
+      this.guides = null;
+      this.selected = false;
+      this.visible = true;
+      this.chart = null;
+      this.requestUpdate = null;
+      this.visible = options.visible ?? true;
+    }
+    attached(param) {
+      this.chart = param.chart;
+      this.requestUpdate = param.requestUpdate;
+      this.updateAllViews();
+    }
+    detached() {
+      this.chart = null;
+      this.requestUpdate = null;
+      this.guides = null;
+    }
+    updateAllViews() {
+      const chart = this.chart;
+      if (!chart) {
+        this.guides = null;
+        return;
+      }
+      const interval = this.options.endTime - this.options.startTime;
+      const startX = chart.timeScale().timeToCoordinate(this.options.startTime), endX = chart.timeScale().timeToCoordinate(this.options.endTime);
+      if (startX === null || endX === null) {
+        this.guides = null;
+        return;
+      }
+      this.guides = FIBONACCI_TIME_FACTORS.map((factor) => {
+        const time = this.options.startTime + interval * factor, projected = chart.timeScale().timeToCoordinate(time), x2 = projected ?? startX + (endX - startX) * factor;
+        return { factor, time, x: x2 };
+      });
+    }
+    coordinates() {
+      this.updateAllViews();
+      return this.guides;
+    }
+    hitTest(x2, y2) {
+      if (!this.visible || !this.guides) return null;
+      const nearest = Math.min(...this.guides.map((guide) => Math.abs(guide.x - x2)));
+      return nearest > 6 ? null : { externalId: this.options.id, zOrder: "top", cursorStyle: "ew-resize", hitTestPriority: 1, distance: nearest };
+    }
+    paneViews() {
+      return !this.visible ? [] : [{ zOrder: () => "top", renderer: () => this.guides === null ? null : { draw: (target) => {
+        const guides = this.guides;
+        if (!guides) return;
+        target.useMediaCoordinateSpace(({ context }) => {
+          context.save();
+          context.strokeStyle = this.options.color;
+          context.lineWidth = this.selected ? 2 : 1.25;
+          for (const guide of guides) {
+            context.beginPath();
+            context.moveTo(guide.x, 0);
+            context.lineTo(guide.x, context.canvas.height);
+            context.stroke();
+          }
+          if (this.selected) {
+            const start = guides.find((guide) => guide.factor === 0), end = guides.find((guide) => guide.factor === 1);
+            if (start) drawAnchorHandle(context, start.x, 20, this.options.color);
+            if (end) drawAnchorHandle(context, end.x, 20, this.options.color);
+          }
+          context.restore();
+        });
+      } } }];
+    }
+    setSelected(selected) {
+      this.selected = selected;
+      this.requestUpdate?.();
+    }
+    setOptions(options) {
+      this.options = { ...options };
+      this.visible = options.visible ?? true;
+      this.updateAllViews();
+      this.requestUpdate?.();
+    }
+  };
   var RectanglePrimitive = class {
     constructor(id, options) {
       this.id = id;
@@ -9237,6 +9318,7 @@ var ChartStudioV5 = (() => {
     const rectangles = /* @__PURE__ */ new Map();
     const rays = /* @__PURE__ */ new Map();
     const fibonacci = /* @__PURE__ */ new Map();
+    const fibonacciTimeZones = /* @__PURE__ */ new Map();
     const channels = /* @__PURE__ */ new Map();
     const pitchforks = /* @__PURE__ */ new Map();
     const measurements = /* @__PURE__ */ new Map();
@@ -9258,11 +9340,11 @@ var ChartStudioV5 = (() => {
         return;
       }
       const value = price.coordinateToPrice(y2);
-      if (value === null || !Number.isFinite(value) || value <= 0) {
+      if (placementTool !== "FIB_TIME" && (value === null || !Number.isFinite(value) || value <= 0)) {
         drawingState("ERROR");
         return;
       }
-      const anchor = { time, price: value };
+      const anchor = { time, price: value ?? 0 };
       const tool = placementTool;
       if (tool === "PRICE" || tool === "TIME" || tool === "TEXT") {
         const id2 = `preview-${tool.toLowerCase()}-${++placementSequence}`;
@@ -9292,7 +9374,8 @@ var ChartStudioV5 = (() => {
       const id = `preview-${tool.toLowerCase()}-${++placementSequence}`;
       try {
         const [start, end, offset] = anchors, color = tool === "TREND" || tool === "RECT" || tool === "CHANNEL" ? "#49c6ff" : "#ffb84d";
-        if (tool === "CHANNEL") addChannel({ id, startTime: start.time, startPrice: start.price, endTime: end.time, endPrice: end.price, offsetTime: offset.time, offsetPrice: offset.price, color });
+        if (tool === "FIB_TIME") addFibonacciTimeZone({ id, startTime: start.time, endTime: end.time, color });
+        else if (tool === "CHANNEL") addChannel({ id, startTime: start.time, startPrice: start.price, endTime: end.time, endPrice: end.price, offsetTime: offset.time, offsetPrice: offset.price, color });
         else if (tool === "PITCHFORK") addPitchfork({ id, startTime: start.time, startPrice: start.price, endTime: end.time, endPrice: end.price, thirdTime: offset.time, thirdPrice: offset.price, color });
         else if (tool === "RISK_REWARD") addRiskReward({ id, startTime: start.time, entryPrice: start.price, stopTime: end.time, stopPrice: end.price, endTime: offset.time, targetPrice: offset.price });
         else {
@@ -9312,7 +9395,7 @@ var ChartStudioV5 = (() => {
       }
     };
     const maxNativeDrawings = 1e3, maxIndicatorInstances = 20;
-    const drawingCount = () => priceLevels.size + timeMarkers.size + textAnnotations.size + trendLines.size + rectangles.size + rays.size + fibonacci.size + channels.size + pitchforks.size + measurements.size + riskRewards.size;
+    const drawingCount = () => priceLevels.size + timeMarkers.size + textAnnotations.size + trendLines.size + rectangles.size + rays.size + fibonacci.size + fibonacciTimeZones.size + channels.size + pitchforks.size + measurements.size + riskRewards.size;
     const undoStack = [], redoStack = [];
     const historyLimit = 100;
     const utf8ByteLength = (value) => new TextEncoder().encode(value).byteLength;
@@ -9332,15 +9415,16 @@ var ChartStudioV5 = (() => {
       }
       host.dispatchEvent(new CustomEvent("chartstudio-v5-data-window", { detail: dataWindow }));
       const objectId = param.hoveredInfo?.objectId;
-      hoveredDrawingId = typeof objectId === "string" && (priceLevels.has(objectId) || timeMarkers.has(objectId) || textAnnotations.has(objectId) || trendLines.has(objectId) || rectangles.has(objectId) || rays.has(objectId) || fibonacci.has(objectId) || measurements.has(objectId)) ? objectId : null;
+      hoveredDrawingId = typeof objectId === "string" && (priceLevels.has(objectId) || timeMarkers.has(objectId) || textAnnotations.has(objectId) || trendLines.has(objectId) || rectangles.has(objectId) || rays.has(objectId) || fibonacci.has(objectId) || fibonacciTimeZones.has(objectId) || measurements.has(objectId)) ? objectId : null;
     });
-    const touchAnchorAt = (x2, y2) => {
+    const touchAnchorAt = (x2, y2, excludeTimeZones = false) => {
       let bestId = null, bestDistance = 12;
-      const ids = [...trendLines.keys(), ...rectangles.keys(), ...fibonacci.keys(), ...channels.keys(), ...riskRewards.keys()];
+      const ids = [...trendLines.keys(), ...rectangles.keys(), ...fibonacci.keys(), ...fibonacciTimeZones.keys(), ...channels.keys(), ...pitchforks.keys(), ...riskRewards.keys()];
       for (const id of ids) {
+        if (excludeTimeZones && fibonacciTimeZones.has(id)) continue;
         const snapshot = snapshotDrawing(id);
         if (!snapshot || snapshot.options.visible === false) continue;
-        for (const anchor of channels.has(id) ? ["START", "END", "OFFSET"] : riskRewards.has(id) ? ["ENTRY", "STOP", "TARGET"] : ["START", "END"]) {
+        for (const anchor of channels.has(id) ? ["START", "END", "OFFSET"] : riskRewards.has(id) ? ["ENTRY", "STOP", "TARGET"] : pitchforks.has(id) ? ["START", "END", "THIRD"] : ["START", "END"]) {
           const point2 = drawingAnchorPosition(id, anchor);
           if (!point2) continue;
           const distance = Math.hypot(x2 - point2.x, y2 - point2.y);
@@ -9355,7 +9439,7 @@ var ChartStudioV5 = (() => {
     const drawingAt = (clientX, clientY) => {
       const rect = host.getBoundingClientRect(), x2 = clientX - rect.left, y2 = clientY - rect.top;
       let bestId = null, bestDistance = Infinity;
-      const primitives = [...priceLevels.values(), ...timeMarkers.values(), ...textAnnotations.values(), ...trendLines.values(), ...rectangles.values(), ...rays.values(), ...fibonacci.values(), ...channels.values(), ...pitchforks.values(), ...measurements.values(), ...riskRewards.values()];
+      const primitives = [...priceLevels.values(), ...timeMarkers.values(), ...textAnnotations.values(), ...trendLines.values(), ...rectangles.values(), ...rays.values(), ...fibonacci.values(), ...fibonacciTimeZones.values(), ...channels.values(), ...pitchforks.values(), ...measurements.values(), ...riskRewards.values()];
       for (const item of primitives) {
         const hit = item.primitive.hitTest(x2, y2);
         if (hit && hit.distance <= bestDistance) {
@@ -9375,19 +9459,20 @@ var ChartStudioV5 = (() => {
         event.stopImmediatePropagation();
         return;
       }
-      const drawingId = hoveredDrawingId ?? drawingAt(event.clientX, event.clientY) ?? (event.pointerType === "touch" ? touchAnchorAt(event.clientX, event.clientY) : null);
+      const competingAnchor = hoveredDrawingId && fibonacciTimeZones.has(hoveredDrawingId) ? touchAnchorAt(event.clientX, event.clientY, true) : null;
+      const drawingId = competingAnchor ?? hoveredDrawingId ?? drawingAt(event.clientX, event.clientY) ?? (event.pointerType === "touch" ? touchAnchorAt(event.clientX, event.clientY) : null);
       if (!drawingId) {
         if (!event.shiftKey) selectDrawing(null);
         return;
       }
       hoveredDrawingId = drawingId;
-      const level = priceLevels.get(drawingId), marker = timeMarkers.get(drawingId), annotation = textAnnotations.get(drawingId), trend = trendLines.get(drawingId), rectangle = rectangles.get(drawingId), fibo = fibonacci.get(drawingId), channel = channels.get(drawingId), pitchfork = pitchforks.get(drawingId), measurement = measurements.get(drawingId), riskReward = riskRewards.get(drawingId);
+      const level = priceLevels.get(drawingId), marker = timeMarkers.get(drawingId), annotation = textAnnotations.get(drawingId), trend = trendLines.get(drawingId), rectangle = rectangles.get(drawingId), fibo = fibonacci.get(drawingId), fibTime = fibonacciTimeZones.get(drawingId), channel = channels.get(drawingId), pitchfork = pitchforks.get(drawingId), measurement = measurements.get(drawingId), riskReward = riskRewards.get(drawingId);
       if (event.shiftKey) toggleDrawingSelection(drawingId);
       else selectDrawing(drawingId);
       if (host.tabIndex < 0) host.tabIndex = 0;
       host.focus({ preventScroll: true });
-      if (!level && !marker && !annotation && !trend && !rectangle && !fibo && !channel && !pitchfork && !measurement && !riskReward) return;
-      if ((level?.options.locked ?? marker?.options.locked ?? annotation?.options.locked ?? trend?.options.locked ?? rectangle?.options.locked ?? fibo?.options.locked ?? channel?.options.locked ?? pitchfork?.options.locked ?? measurement?.options.locked ?? riskReward?.options.locked) === true) {
+      if (!level && !marker && !annotation && !trend && !rectangle && !fibo && !fibTime && !channel && !pitchfork && !measurement && !riskReward) return;
+      if ((level?.options.locked ?? marker?.options.locked ?? annotation?.options.locked ?? trend?.options.locked ?? rectangle?.options.locked ?? fibo?.options.locked ?? fibTime?.options.locked ?? channel?.options.locked ?? pitchfork?.options.locked ?? measurement?.options.locked ?? riskReward?.options.locked) === true) {
         event.preventDefault();
         event.stopImmediatePropagation();
         return;
@@ -9418,6 +9503,12 @@ var ChartStudioV5 = (() => {
         const original = { ...fibo.options };
         if (original.levels) original.levels = [...original.levels];
         activeDrag = { pointerId: event.pointerId, id: drawingId, kind: "FIBO", anchor: startDistance <= endDistance ? "START" : "END", original };
+      } else if (fibTime) {
+        const start = drawingAnchorPosition(drawingId, "START"), end = drawingAnchorPosition(drawingId, "END");
+        if (!start || !end) return;
+        const ds2 = Math.hypot(event.clientX - start.x, event.clientY - start.y), de2 = Math.hypot(event.clientX - end.x, event.clientY - end.y);
+        if (Math.min(ds2, de2) > 12) return;
+        activeDrag = { pointerId: event.pointerId, id: drawingId, kind: "FIB_TIME", anchor: ds2 <= de2 ? "START" : "END", original: { ...fibTime.options } };
       } else if (channel) {
         const points = ["START", "END", "OFFSET"].map((anchor) => drawingAnchorPosition(drawingId, anchor));
         if (points.some((point2) => !point2)) return;
@@ -9471,6 +9562,15 @@ var ChartStudioV5 = (() => {
         if (candle && value !== null && Number.isFinite(value) && value > 0) {
           const item = textAnnotations.get(activeDrag.id);
           if (item) updateTextAnnotation(activeDrag.id, { time: candle.time, price: value });
+        }
+      } else if (activeDrag.kind === "FIB_TIME") {
+        const logical = chart.timeScale().coordinateToLogical(x2), index = logical === null ? -1 : Math.round(Number(logical)), candle = bars[index], item = fibonacciTimeZones.get(activeDrag.id);
+        if (candle && item) {
+          const patch = activeDrag.anchor === "START" ? { startTime: candle.time } : { endTime: candle.time };
+          try {
+            updateFibonacciTimeZone(activeDrag.id, patch);
+          } catch (_2) {
+          }
         }
       } else if (activeDrag.kind === "CHANNEL") {
         const logical = chart.timeScale().coordinateToLogical(x2), index = logical === null ? -1 : Math.round(Number(logical));
@@ -9527,6 +9627,7 @@ var ChartStudioV5 = (() => {
         if (drag.kind === "TREND" && trendLines.has(drag.id)) updateTrendLine(drag.id, drag.original);
         if (drag.kind === "RECT" && rectangles.has(drag.id)) updateRectangle(drag.id, drag.original);
         if (drag.kind === "FIBO" && fibonacci.has(drag.id)) updateFibonacci(drag.id, drag.original);
+        if (drag.kind === "FIB_TIME" && fibonacciTimeZones.has(drag.id)) updateFibonacciTimeZone(drag.id, drag.original);
         if (drag.kind === "CHANNEL" && channels.has(drag.id)) updateChannel(drag.id, drag.original);
         if (drag.kind === "PITCHFORK" && pitchforks.has(drag.id)) updatePitchfork(drag.id, drag.original);
         if (drag.kind === "MEASURE" && measurements.has(drag.id)) updateMeasurement(drag.id, drag.original);
@@ -9543,7 +9644,8 @@ var ChartStudioV5 = (() => {
           if (original.levels) original.levels = [...original.levels];
           else delete original.levels;
           before = { kind: "FIBO", options: original };
-        } else if (drag.kind === "CHANNEL") before = { kind: "CHANNEL", options: { ...drag.original } };
+        } else if (drag.kind === "FIB_TIME") before = { kind: "FIB_TIME", options: { ...drag.original } };
+        else if (drag.kind === "CHANNEL") before = { kind: "CHANNEL", options: { ...drag.original } };
         else if (drag.kind === "PITCHFORK") before = { kind: "PITCHFORK", options: { ...drag.original } };
         else if (drag.kind === "RISK_REWARD") before = { kind: "RISK_REWARD", options: { ...drag.original } };
         else before = { kind: "MEASURE", options: { ...drag.original } };
@@ -9573,7 +9675,7 @@ var ChartStudioV5 = (() => {
       if (!ids.length || !dx && !dy || !bars.length) return false;
       const before = ids.map((id) => ({ id, snapshot: snapshotDrawing(id) }));
       if (before.some((item) => !item.snapshot || item.snapshot.options.locked)) return false;
-      const timeKeys = { TIME: ["time"], TEXT: ["time"], TREND: ["startTime", "endTime"], RECT: ["startTime", "endTime"], RAY: ["startTime", "endTime"], FIBO: ["startTime", "endTime"], MEASURE: ["startTime", "endTime"], CHANNEL: ["startTime", "endTime", "offsetTime"], PITCHFORK: ["startTime", "endTime", "thirdTime"], RISK_REWARD: ["startTime", "stopTime", "endTime"] };
+      const timeKeys = { TIME: ["time"], TEXT: ["time"], TREND: ["startTime", "endTime"], RECT: ["startTime", "endTime"], RAY: ["startTime", "endTime"], FIBO: ["startTime", "endTime"], FIB_TIME: ["startTime", "endTime"], MEASURE: ["startTime", "endTime"], CHANNEL: ["startTime", "endTime", "offsetTime"], PITCHFORK: ["startTime", "endTime", "thirdTime"], RISK_REWARD: ["startTime", "stopTime", "endTime"] };
       const priceKeys = { PRICE: ["price"], TEXT: ["price"], TREND: ["startPrice", "endPrice"], RECT: ["startPrice", "endPrice"], RAY: ["startPrice", "endPrice"], FIBO: ["startPrice", "endPrice"], MEASURE: ["startPrice", "endPrice"], CHANNEL: ["startPrice", "endPrice", "offsetPrice"], PITCHFORK: ["startPrice", "endPrice", "thirdPrice"], RISK_REWARD: ["entryPrice", "stopPrice", "targetPrice"] };
       const moveTime = (value) => {
         const index = bars.findIndex((bar) => bar.time === value), next = index + dx;
@@ -9743,6 +9845,7 @@ var ChartStudioV5 = (() => {
         ...[...rectangles.values()].map(({ options }) => ({ kind: "RECT", options: { ...options } })),
         ...[...rays.values()].map(({ options }) => ({ kind: "RAY", options: { ...options } })),
         ...[...fibonacci.values()].map(({ options }) => ({ kind: "FIBO", options: { ...options } })),
+        ...[...fibonacciTimeZones.values()].map(({ options }) => ({ kind: "FIB_TIME", options: { ...options } })),
         ...[...channels.values()].map(({ options }) => ({ kind: "CHANNEL", options: { ...options } })),
         ...[...pitchforks.values()].map(({ options }) => ({ kind: "PITCHFORK", options: { ...options } })),
         ...[...measurements.values()].map(({ options }) => ({ kind: "MEASURE", options: { ...options } })),
@@ -10020,7 +10123,7 @@ var ChartStudioV5 = (() => {
         if (Object.keys(row).sort().join(",") !== "kind,options" || !row.options || typeof row.options !== "object" || Array.isArray(row.options)) throw Error();
         const options = row.options, kind = row.kind;
         const keys = Object.keys(options).sort().join(",");
-        const expected = kind === "PRICE" ? "color,id,locked,price,visible" : kind === "TIME" ? "color,id,locked,time,visible" : kind === "TEXT" ? "color,id,locked,price,text,time,visible" : kind === "TREND" || kind === "RAY" || kind === "MEASURE" ? "color,endPrice,endTime,id,locked,startPrice,startTime,visible" : kind === "RECT" ? "color,endPrice,endTime,fill,id,locked,startPrice,startTime,visible" : kind === "CHANNEL" ? "color,endPrice,endTime,id,locked,offsetPrice,offsetTime,startPrice,startTime,visible" : kind === "PITCHFORK" ? "color,endPrice,endTime,id,locked,startPrice,startTime,thirdPrice,thirdTime,visible" : kind === "RISK_REWARD" ? "endTime,entryPrice,id,locked,startTime,stopPrice,stopTime,targetPrice,visible" : kind === "FIBO" ? (/* @__PURE__ */ new Set(["color,endPrice,endTime,id,locked,startPrice,startTime,visible", "color,endPrice,endTime,id,levels,locked,startPrice,startTime,visible"])).has(keys) : false;
+        const expected = kind === "PRICE" ? "color,id,locked,price,visible" : kind === "TIME" ? "color,id,locked,time,visible" : kind === "TEXT" ? "color,id,locked,price,text,time,visible" : kind === "TREND" || kind === "RAY" || kind === "MEASURE" ? "color,endPrice,endTime,id,locked,startPrice,startTime,visible" : kind === "RECT" ? "color,endPrice,endTime,fill,id,locked,startPrice,startTime,visible" : kind === "CHANNEL" ? "color,endPrice,endTime,id,locked,offsetPrice,offsetTime,startPrice,startTime,visible" : kind === "PITCHFORK" ? "color,endPrice,endTime,id,locked,startPrice,startTime,thirdPrice,thirdTime,visible" : kind === "RISK_REWARD" ? "endTime,entryPrice,id,locked,startTime,stopPrice,stopTime,targetPrice,visible" : kind === "FIB_TIME" ? "color,endTime,id,locked,startTime,visible" : kind === "FIBO" ? (/* @__PURE__ */ new Set(["color,endPrice,endTime,id,locked,startPrice,startTime,visible", "color,endPrice,endTime,id,levels,locked,startPrice,startTime,visible"])).has(keys) : false;
         if (!expected || kind !== "FIBO" && keys !== expected || options.id !== expectedId || averages.has(expectedId) || paneLines.has(expectedId)) throw Error();
         if (kind === "PRICE") {
           const value2 = options;
@@ -10072,13 +10175,18 @@ var ChartStudioV5 = (() => {
           validateTrendLine(value2, false);
           return { kind, options: { ...value2 } };
         }
+        if (kind === "FIB_TIME") {
+          const value2 = options;
+          validateFibonacciTimeZone(value2, false);
+          return { kind, options: { ...value2 } };
+        }
         const value = normalizeFibonacciOptions(options, false);
         return { kind: "FIBO", options: { ...value } };
       };
       const parseHistory = (raw2, out) => {
-        if (!Array.isArray(raw2) || raw2.length > historyLimit) throw Error();
+        if (!Array.isArray(raw2) || raw2.length > historyLimit) throw Error("history array invalid");
         for (const item of raw2) {
-          if (!item || typeof item !== "object" || Array.isArray(item)) throw Error();
+          if (!item || typeof item !== "object" || Array.isArray(item)) throw Error("history item invalid");
           const entry = item;
           if (Object.keys(entry).sort().join(",") !== "after,before,id" || typeof entry.id !== "string" || !/^[-_a-zA-Z0-9]{1,32}$/.test(entry.id)) throw Error();
           const before = parseSnapshot(entry.before, entry.id), after = parseSnapshot(entry.after, entry.id);
@@ -10090,7 +10198,7 @@ var ChartStudioV5 = (() => {
         try {
           parseHistory(root.undoStack, restoredUndo);
           parseHistory(root.redoStack, restoredRedo);
-          if (restoredUndo.length + restoredRedo.length > historyLimit) throw Error();
+          if (restoredUndo.length + restoredRedo.length > historyLimit) throw Error(`history total ${restoredUndo.length}+${restoredRedo.length}`);
         } catch (_2) {
           persistenceStatus = "UNAVAILABLE";
           persistenceError = "INVALID_OR_UNAVAILABLE_DRAWING";
@@ -10112,7 +10220,7 @@ var ChartStudioV5 = (() => {
           if (isV2) {
             if (Array.isArray(entry) || Object.keys(entry).sort().join(",") !== "kind,options" || Array.isArray(row.options)) throw Error();
             const keys = Object.keys(options).sort().join(","), kind = row.kind;
-            const expected = kind === "PRICE" ? "color,id,locked,price,visible" : kind === "TIME" ? "color,id,locked,time,visible" : kind === "TEXT" ? "color,id,locked,price,text,time,visible" : kind === "TREND" || kind === "RAY" || kind === "MEASURE" ? "color,endPrice,endTime,id,locked,startPrice,startTime,visible" : kind === "RECT" ? "color,endPrice,endTime,fill,id,locked,startPrice,startTime,visible" : kind === "CHANNEL" ? "color,endPrice,endTime,id,locked,offsetPrice,offsetTime,startPrice,startTime,visible" : kind === "PITCHFORK" ? "color,endPrice,endTime,id,locked,startPrice,startTime,thirdPrice,thirdTime,visible" : kind === "RISK_REWARD" ? "endTime,entryPrice,id,locked,startTime,stopPrice,stopTime,targetPrice,visible" : kind === "FIBO" ? (/* @__PURE__ */ new Set(["color,endPrice,endTime,id,locked,startPrice,startTime,visible", "color,endPrice,endTime,id,levels,locked,startPrice,startTime,visible"])).has(keys) : false;
+            const expected = kind === "PRICE" ? "color,id,locked,price,visible" : kind === "TIME" ? "color,id,locked,time,visible" : kind === "TEXT" ? "color,id,locked,price,text,time,visible" : kind === "TREND" || kind === "RAY" || kind === "MEASURE" ? "color,endPrice,endTime,id,locked,startPrice,startTime,visible" : kind === "RECT" ? "color,endPrice,endTime,fill,id,locked,startPrice,startTime,visible" : kind === "CHANNEL" ? "color,endPrice,endTime,id,locked,offsetPrice,offsetTime,startPrice,startTime,visible" : kind === "PITCHFORK" ? "color,endPrice,endTime,id,locked,startPrice,startTime,thirdPrice,thirdTime,visible" : kind === "RISK_REWARD" ? "endTime,entryPrice,id,locked,startTime,stopPrice,stopTime,targetPrice,visible" : kind === "FIB_TIME" ? "color,endTime,id,locked,startTime,visible" : kind === "FIBO" ? (/* @__PURE__ */ new Set(["color,endPrice,endTime,id,locked,startPrice,startTime,visible", "color,endPrice,endTime,id,levels,locked,startPrice,startTime,visible"])).has(keys) : false;
             if (!expected || kind !== "FIBO" && keys !== expected) throw Error();
           }
           if (typeof options.id !== "string" || seen.has(options.id) || averages.has(options.id) || paneLines.has(options.id)) throw Error();
@@ -10157,6 +10265,10 @@ var ChartStudioV5 = (() => {
             const normalized = options;
             validateTrendLine(normalized);
             snapshots.push({ kind: "MEASURE", options: { ...normalized, visible: normalized.visible ?? true, locked: normalized.locked ?? false } });
+          } else if (row.kind === "FIB_TIME") {
+            const normalized = options;
+            validateFibonacciTimeZone(normalized, false);
+            snapshots.push({ kind: "FIB_TIME", options: { ...normalized, visible: normalized.visible ?? true, locked: normalized.locked ?? false } });
           } else if (row.kind === "FIBO") {
             const normalized = { id: options.id, startTime: options.startTime, startPrice: options.startPrice, endTime: options.endTime, endPrice: options.endPrice, color: options.color, levels: options.levels, visible: options.visible, locked: options.locked };
             const validated = normalizeFibonacciOptions(normalized, false);
@@ -10191,6 +10303,7 @@ var ChartStudioV5 = (() => {
           else if (snapshot.kind === "PITCHFORK") addPitchfork(snapshot.options);
           else if (snapshot.kind === "RISK_REWARD") addRiskReward(snapshot.options);
           else if (snapshot.kind === "MEASURE") addMeasurement(snapshot.options);
+          else if (snapshot.kind === "FIB_TIME") addFibonacciTimeZone(snapshot.options, false);
           else addFibonacci(snapshot.options, false);
         }
         if (isV3) {
@@ -10337,6 +10450,8 @@ var ChartStudioV5 = (() => {
         else delete options.levels;
         return { kind: "FIBO", options };
       }
+      const fibTime = fibonacciTimeZones.get(id);
+      if (fibTime) return { kind: "FIB_TIME", options: { ...fibTime.options } };
       const channel = channels.get(id);
       if (channel) return { kind: "CHANNEL", options: { ...channel.options } };
       const pitchfork = pitchforks.get(id);
@@ -10392,6 +10507,11 @@ var ChartStudioV5 = (() => {
       if (oldFibo) {
         price.detachPrimitive(oldFibo.primitive);
         fibonacci.delete(id);
+      }
+      const oldFibTime = fibonacciTimeZones.get(id);
+      if (oldFibTime) {
+        price.detachPrimitive(oldFibTime.primitive);
+        fibonacciTimeZones.delete(id);
       }
       const oldChannel = channels.get(id);
       if (oldChannel) {
@@ -10462,6 +10582,13 @@ var ChartStudioV5 = (() => {
         const primitive = new FibonacciPrimitive(id, options);
         price.attachPrimitive(primitive);
         fibonacci.set(id, { primitive, options });
+      } else if (snapshot?.kind === "FIB_TIME") {
+        if (drawingCount() >= maxNativeDrawings) return false;
+        const options = { ...snapshot.options };
+        validateFibonacciTimeZone(options, false);
+        const primitive = new FibonacciTimeZonePrimitive(options);
+        price.attachPrimitive(primitive);
+        fibonacciTimeZones.set(id, { primitive, options });
       } else if (snapshot?.kind === "CHANNEL") {
         if (drawingCount() >= maxNativeDrawings) return false;
         const options = { ...snapshot.options };
@@ -10532,6 +10659,7 @@ var ChartStudioV5 = (() => {
       if (measurements.has(id)) return removeMeasurement(id);
       if (riskRewards.has(id)) return removeRiskReward(id);
       if (fibonacci.has(id)) return removeFibonacci(id);
+      if (fibonacciTimeZones.has(id)) return removeFibonacciTimeZone(id);
       return false;
     }
     function deleteSelectedDrawings() {
@@ -10555,13 +10683,14 @@ var ChartStudioV5 = (() => {
       let suffix = 1, id = "";
       do {
         id = `${base}-copy${suffix++}`;
-      } while (priceLevels.has(id) || timeMarkers.has(id) || textAnnotations.has(id) || trendLines.has(id) || rectangles.has(id) || rays.has(id) || fibonacci.has(id) || channels.has(id) || pitchforks.has(id) || riskRewards.has(id) || averages.has(id) || paneLines.has(id));
+      } while (priceLevels.has(id) || timeMarkers.has(id) || textAnnotations.has(id) || trendLines.has(id) || rectangles.has(id) || rays.has(id) || fibonacci.has(id) || fibonacciTimeZones.has(id) || channels.has(id) || pitchforks.has(id) || riskRewards.has(id) || averages.has(id) || paneLines.has(id));
       if (source.kind === "PRICE") addPriceLevel({ id, price: source.options.price, color: source.options.color, visible: source.options.visible, locked: source.options.locked });
       else if (source.kind === "TIME") addTimeMarker({ id, time: source.options.time, color: source.options.color, visible: source.options.visible, locked: source.options.locked });
       else if (source.kind === "TEXT") addTextAnnotation({ ...source.options, id });
       else if (source.kind === "TREND") addTrendLine({ ...source.options, id });
       else if (source.kind === "RECT") addRectangle({ ...source.options, id });
       else if (source.kind === "RAY") addRay({ ...source.options, id });
+      else if (source.kind === "FIB_TIME") addFibonacciTimeZone({ ...source.options, id });
       else if (source.kind === "CHANNEL") addChannel({ ...source.options, id });
       else if (source.kind === "PITCHFORK") addPitchfork({ ...source.options, id });
       else if (source.kind === "MEASURE") addMeasurement({ ...source.options, id });
@@ -10714,7 +10843,7 @@ var ChartStudioV5 = (() => {
       guard();
       if (!opts || !/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id) || !colorPattern.test(opts.color)) throw Error("Invalid line options");
       if (indicatorInstanceCount() >= maxIndicatorInstances && !averages.has(opts.id)) throw Error("Indicator instance limit");
-      if (oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || fibonacciTimeZones.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const values = validSeriesData(data);
       let series = averages.get(opts.id);
       if (!series) {
@@ -10788,10 +10917,10 @@ var ChartStudioV5 = (() => {
       guard();
       const normalized = { ...options, timeZone: options.timeZone ?? "UTC", sessionStart: options.sessionStart ?? "00:00", visible: options.visible ?? true };
       if (!validSessionVwapOptions(normalized)) throw Error("Invalid session VWAP configuration");
-      if (oscillators.has(normalized.id) || averages.has(normalized.id) || donchianOverlays.has(normalized.id) || bollingerOverlays.has(normalized.id) || keltnerOverlays.has(normalized.id) || atrBandsOverlays.has(normalized.id) || linearRegressionOverlays.has(normalized.id) || supertrendOverlays.has(normalized.id) || parabolicSarOverlays.has(normalized.id) || ichimokuOverlays.has(normalized.id) || pivotOverlays.has(normalized.id) || paneLines.has(normalized.id) || priceLevels.has(normalized.id) || timeMarkers.has(normalized.id) || textAnnotations.has(normalized.id) || trendLines.has(normalized.id) || rectangles.has(normalized.id) || rays.has(normalized.id) || fibonacci.has(normalized.id) || channels.has(normalized.id) || pitchforks.has(normalized.id) || measurements.has(normalized.id)) throw Error("Duplicate chart object identity");
+      if (oscillators.has(normalized.id) || averages.has(normalized.id) || donchianOverlays.has(normalized.id) || bollingerOverlays.has(normalized.id) || keltnerOverlays.has(normalized.id) || atrBandsOverlays.has(normalized.id) || linearRegressionOverlays.has(normalized.id) || supertrendOverlays.has(normalized.id) || parabolicSarOverlays.has(normalized.id) || ichimokuOverlays.has(normalized.id) || pivotOverlays.has(normalized.id) || paneLines.has(normalized.id) || priceLevels.has(normalized.id) || timeMarkers.has(normalized.id) || textAnnotations.has(normalized.id) || trendLines.has(normalized.id) || rectangles.has(normalized.id) || rays.has(normalized.id) || fibonacci.has(normalized.id) || fibonacciTimeZones.has(normalized.id) || channels.has(normalized.id) || pitchforks.has(normalized.id) || measurements.has(normalized.id)) throw Error("Duplicate chart object identity");
       const existing = sessionVwapOverlays.get(normalized.id);
       if (indicatorInstanceCount() >= maxIndicatorInstances && !existing) throw Error("Indicator instance limit");
-      if (!existing && (averages.has(normalized.id) || oscillators.has(normalized.id) || donchianOverlays.has(normalized.id) || bollingerOverlays.has(normalized.id) || keltnerOverlays.has(normalized.id) || atrBandsOverlays.has(normalized.id) || linearRegressionOverlays.has(normalized.id) || supertrendOverlays.has(normalized.id) || parabolicSarOverlays.has(normalized.id) || ichimokuOverlays.has(normalized.id) || pivotOverlays.has(normalized.id) || paneLines.has(normalized.id) || priceLevels.has(normalized.id) || timeMarkers.has(normalized.id) || textAnnotations.has(normalized.id) || trendLines.has(normalized.id) || rectangles.has(normalized.id) || rays.has(normalized.id) || fibonacci.has(normalized.id) || channels.has(normalized.id) || pitchforks.has(normalized.id) || measurements.has(normalized.id))) throw Error("Duplicate chart object identity");
+      if (!existing && (averages.has(normalized.id) || oscillators.has(normalized.id) || donchianOverlays.has(normalized.id) || bollingerOverlays.has(normalized.id) || keltnerOverlays.has(normalized.id) || atrBandsOverlays.has(normalized.id) || linearRegressionOverlays.has(normalized.id) || supertrendOverlays.has(normalized.id) || parabolicSarOverlays.has(normalized.id) || ichimokuOverlays.has(normalized.id) || pivotOverlays.has(normalized.id) || paneLines.has(normalized.id) || priceLevels.has(normalized.id) || timeMarkers.has(normalized.id) || textAnnotations.has(normalized.id) || trendLines.has(normalized.id) || rectangles.has(normalized.id) || rays.has(normalized.id) || fibonacci.has(normalized.id) || fibonacciTimeZones.has(normalized.id) || channels.has(normalized.id) || pitchforks.has(normalized.id) || measurements.has(normalized.id))) throw Error("Duplicate chart object identity");
       const result = calculateSessionVwap(bars, normalized), series = existing?.series ?? newLine({ id: normalized.id, color: normalized.color, lineWidth: normalized.lineWidth, visible: normalized.visible, title: sessionVwapTitle(normalized, result.volumeSource) });
       series.applyOptions({ color: normalized.color, lineWidth: normalized.lineWidth ?? 2, visible: normalized.visible, title: sessionVwapTitle(normalized, result.volumeSource) });
       series.setData(result.points);
@@ -10835,7 +10964,7 @@ var ChartStudioV5 = (() => {
       guard();
       const normalized = { ...options, period: options.period ?? 20, stdDev: options.stdDev ?? 2, visible: options.visible ?? true };
       if (!validBollingerOptions(normalized)) throw Error("Invalid Bollinger configuration");
-      if (oscillators.has(normalized.id) || averages.has(normalized.id) || donchianOverlays.has(normalized.id) || (keltnerOverlays.has(normalized.id) || atrBandsOverlays.has(normalized.id)) || linearRegressionOverlays.has(normalized.id) || supertrendOverlays.has(normalized.id) || parabolicSarOverlays.has(normalized.id) || (ichimokuOverlays.has(normalized.id) || pivotOverlays.has(normalized.id)) || paneLines.has(normalized.id) || priceLevels.has(normalized.id) || timeMarkers.has(normalized.id) || textAnnotations.has(normalized.id) || trendLines.has(normalized.id) || rectangles.has(normalized.id) || rays.has(normalized.id) || fibonacci.has(normalized.id) || channels.has(normalized.id) || pitchforks.has(normalized.id) || measurements.has(normalized.id) || riskRewards.has(normalized.id) || sessionVwapOverlays.has(normalized.id)) throw Error("Duplicate chart object identity");
+      if (oscillators.has(normalized.id) || averages.has(normalized.id) || donchianOverlays.has(normalized.id) || (keltnerOverlays.has(normalized.id) || atrBandsOverlays.has(normalized.id)) || linearRegressionOverlays.has(normalized.id) || supertrendOverlays.has(normalized.id) || parabolicSarOverlays.has(normalized.id) || (ichimokuOverlays.has(normalized.id) || pivotOverlays.has(normalized.id)) || paneLines.has(normalized.id) || priceLevels.has(normalized.id) || timeMarkers.has(normalized.id) || textAnnotations.has(normalized.id) || trendLines.has(normalized.id) || rectangles.has(normalized.id) || rays.has(normalized.id) || fibonacci.has(normalized.id) || fibonacciTimeZones.has(normalized.id) || channels.has(normalized.id) || pitchforks.has(normalized.id) || measurements.has(normalized.id) || riskRewards.has(normalized.id) || sessionVwapOverlays.has(normalized.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances && !bollingerOverlays.has(normalized.id)) throw Error("Indicator instance limit");
       const existing = bollingerOverlays.get(normalized.id);
       const series = existing?.series ?? [
@@ -10875,7 +11004,7 @@ var ChartStudioV5 = (() => {
     function addDonchian(options) {
       guard();
       if (!options || !/^[-_a-zA-Z0-9]{1,32}$/.test(options.id) || !colorPattern.test(options.color) || !Number.isInteger(options.period) || options.period < 2 || options.period > 200 || options.lineWidth !== void 0 && (!Number.isInteger(options.lineWidth) || options.lineWidth < 1 || options.lineWidth > 4) || options.visible !== void 0 && typeof options.visible !== "boolean") throw Error("Invalid Donchian configuration");
-      if (oscillators.has(options.id) || averages.has(options.id) || linearRegressionOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id) || bollingerOverlays.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
+      if (oscillators.has(options.id) || averages.has(options.id) || linearRegressionOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || fibonacciTimeZones.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id) || bollingerOverlays.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances && !donchianOverlays.has(options.id)) throw Error("Indicator instance limit");
       const current = donchianOverlays.get(options.id), normalized = { ...options, visible: options.visible ?? true };
       const series = current?.series ?? [
@@ -10907,7 +11036,7 @@ var ChartStudioV5 = (() => {
     function addKeltner(options) {
       guard();
       if (!options || !/^[-_a-zA-Z0-9]{1,32}$/.test(options.id) || !colorPattern.test(options.color) || !Number.isInteger(options.period) || options.period < 2 || options.period > 200 || !Number.isInteger(options.atrPeriod) || options.atrPeriod < 2 || options.atrPeriod > 200 || !Number.isFinite(options.multiplier) || options.multiplier < 0.1 || options.multiplier > 10 || Math.abs(options.multiplier * 10 - Math.round(options.multiplier * 10)) > 1e-8 || options.lineWidth !== void 0 && (!Number.isInteger(options.lineWidth) || options.lineWidth < 1 || options.lineWidth > 4) || options.visible !== void 0 && typeof options.visible !== "boolean") throw Error("Invalid Keltner configuration");
-      if (oscillators.has(options.id) || averages.has(options.id) || donchianOverlays.has(options.id) || atrBandsOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id) || bollingerOverlays.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
+      if (oscillators.has(options.id) || averages.has(options.id) || donchianOverlays.has(options.id) || atrBandsOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || fibonacciTimeZones.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id) || bollingerOverlays.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances && !(keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id))) throw Error("Indicator instance limit");
       const existing = keltnerOverlays.get(options.id), normalized = { ...options, visible: options.visible ?? true };
       const series = existing?.series ?? [
@@ -10995,7 +11124,7 @@ var ChartStudioV5 = (() => {
     function addLinearRegression(options) {
       guard();
       if (!validLinearRegressionOptions(options)) throw Error("Invalid Linear Regression configuration");
-      if (oscillators.has(options.id) || averages.has(options.id) || donchianOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id) || bollingerOverlays.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
+      if (oscillators.has(options.id) || averages.has(options.id) || donchianOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || fibonacciTimeZones.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id) || bollingerOverlays.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances && !linearRegressionOverlays.has(options.id)) throw Error("Indicator instance limit");
       const existing = linearRegressionOverlays.get(options.id), normalized = { ...options, visible: options.visible ?? true };
       const series = existing?.series ?? [
@@ -11057,7 +11186,7 @@ var ChartStudioV5 = (() => {
     function addPivotPoints(options, sourceBars) {
       guard();
       if (!validPivotOptions(options, sourceBars)) throw Error("Invalid or mismatched verified Pivot Points scope");
-      if (averages.has(options.id) || donchianOverlays.has(options.id) || bollingerOverlays.has(options.id) || keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || ichimokuOverlays.has(options.id) || oscillators.has(options.id) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
+      if (averages.has(options.id) || donchianOverlays.has(options.id) || bollingerOverlays.has(options.id) || keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || ichimokuOverlays.has(options.id) || oscillators.has(options.id) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || fibonacciTimeZones.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances && !pivotOverlays.has(options.id)) throw Error("Indicator instance limit");
       const existing = pivotOverlays.get(options.id), normalized = { ...options, visible: options.visible ?? true }, keys = ["p", "r1", "r2", "r3", "s1", "s2", "s3"], colors = [options.color, "#52cbea", "#41d89a", "#b58aff", "#f47789", "#ffae57", "#e6e6e6"];
       const series = existing?.series ?? /* @__PURE__ */ new Map();
@@ -11189,7 +11318,7 @@ var ChartStudioV5 = (() => {
     function addSupertrend(options) {
       guard();
       if (!validSupertrendConfiguration(options)) throw Error("Invalid Supertrend configuration");
-      if (oscillators.has(options.id) || averages.has(options.id) || donchianOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id) || bollingerOverlays.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
+      if (oscillators.has(options.id) || averages.has(options.id) || donchianOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || fibonacciTimeZones.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id) || bollingerOverlays.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances) throw Error("Indicator instance limit");
       const normalized = { ...options, visible: options.visible ?? true }, title = options.title ?? `Supertrend ${options.period} \xD7 ${options.multiplier}`;
       const up = newLine({ id: options.id + "-up", color: options.color, lineWidth: options.lineWidth ?? 2, visible: normalized.visible, title: title + " \xB7 Aufw\xE4rtstrend" });
@@ -11275,7 +11404,7 @@ var ChartStudioV5 = (() => {
     function addParabolicSar(options) {
       guard();
       if (!validParabolicSar(options)) throw Error("Invalid Parabolic SAR configuration");
-      if (averages.has(options.id) || managedMovingAverages.has(options.id) || oscillators.has(options.id) || paneLines.has(options.id) || donchianOverlays.has(options.id) || bollingerOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || linearRegressionOverlays.has(options.id) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
+      if (averages.has(options.id) || managedMovingAverages.has(options.id) || oscillators.has(options.id) || paneLines.has(options.id) || donchianOverlays.has(options.id) || bollingerOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || linearRegressionOverlays.has(options.id) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || fibonacciTimeZones.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances) throw Error("Indicator instance limit");
       const normalized = { ...options, visible: options.visible ?? true }, title = options.title ?? "Parabolic SAR";
       const up = newLine({ id: options.id + "-up", color: options.color, lineWidth: options.lineWidth ?? 2, visible: normalized.visible, title: title + " \xB7 Aufw\xE4rtstrend" });
@@ -11373,7 +11502,7 @@ var ChartStudioV5 = (() => {
     function addPriceLevel(opts) {
       guard();
       validatePriceLevel(opts);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || fibonacciTimeZones.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = priceLevels.get(opts.id);
       const options = { ...opts, visible: opts.visible ?? existing?.options.visible ?? true, locked: opts.locked ?? existing?.options.locked ?? false };
       if (existing) {
@@ -11419,7 +11548,7 @@ var ChartStudioV5 = (() => {
     function addTimeMarker(opts, requireLoadedTime = true) {
       guard();
       validateTimeMarker(opts, requireLoadedTime);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || fibonacciTimeZones.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = timeMarkers.get(opts.id);
       const options = { ...opts, visible: opts.visible ?? existing?.options.visible ?? true, locked: opts.locked ?? existing?.options.locked ?? false };
       if (existing) {
@@ -11465,7 +11594,7 @@ var ChartStudioV5 = (() => {
     function addTextAnnotation(opts, requireLoadedTime = true) {
       guard();
       validateTextAnnotation(opts, requireLoadedTime);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || fibonacciTimeZones.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = textAnnotations.get(opts.id);
       const options = { ...opts, visible: opts.visible ?? existing?.options.visible ?? true, locked: opts.locked ?? existing?.options.locked ?? false };
       if (existing) {
@@ -11509,7 +11638,7 @@ var ChartStudioV5 = (() => {
     function addTrendLine(opts, requireLoadedAnchors = true) {
       guard();
       validateTrendLine(opts, requireLoadedAnchors);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || fibonacciTimeZones.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = trendLines.get(opts.id), options = { ...opts, visible: opts.visible ?? existing?.options.visible ?? true, locked: opts.locked ?? existing?.options.locked ?? false };
       if (existing) {
         const before = snapshotDrawing(opts.id);
@@ -11553,7 +11682,7 @@ var ChartStudioV5 = (() => {
     function addRectangle(opts, requireLoadedAnchors = true) {
       guard();
       validateRectangle(opts, requireLoadedAnchors);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || fibonacciTimeZones.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = rectangles.get(opts.id), options = { ...opts, visible: opts.visible ?? existing?.options.visible ?? true, locked: opts.locked ?? existing?.options.locked ?? false };
       if (existing) {
         const before = snapshotDrawing(opts.id);
@@ -11593,7 +11722,7 @@ var ChartStudioV5 = (() => {
     function addRay(opts, requireLoadedAnchors = true) {
       guard();
       validateTrendLine(opts, requireLoadedAnchors);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || fibonacci.has(opts.id) || fibonacciTimeZones.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = rays.get(opts.id), options = { ...opts, visible: opts.visible ?? existing?.options.visible ?? true, locked: opts.locked ?? existing?.options.locked ?? false };
       if (existing) {
         const before = snapshotDrawing(opts.id);
@@ -11685,6 +11814,52 @@ var ChartStudioV5 = (() => {
       recordDrawingChange(id, before, null);
       return true;
     }
+    function validateFibonacciTimeZone(options, requireLoadedAnchors = true) {
+      const validTime = (value) => Number.isSafeInteger(value) && value > 0 && Number.isFinite(new Date(value * 1e3).getTime());
+      if (!options || !/^[-_a-zA-Z0-9]{1,32}$/.test(options.id) || !colorPattern.test(options.color) || !validTime(options.startTime) || !validTime(options.endTime) || options.startTime === options.endTime || requireLoadedAnchors && (!barsByTime.has(options.startTime) || !barsByTime.has(options.endTime)) || options.visible !== void 0 && typeof options.visible !== "boolean" || options.locked !== void 0 && typeof options.locked !== "boolean") throw Error("Invalid or unavailable Fibonacci Time Zones");
+    }
+    function fibonacciTimeZoneGuides(id) {
+      guard();
+      const item = fibonacciTimeZones.get(id);
+      return item?.primitive.coordinates()?.map((guide) => ({ ...guide })) ?? null;
+    }
+    function addFibonacciTimeZone(options, requireLoadedAnchors = true) {
+      guard();
+      validateFibonacciTimeZone(options, requireLoadedAnchors);
+      if (averages.has(options.id) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || fibonacciTimeZones.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id) || fibonacciTimeZones.has(options.id) || oscillators.has(options.id) || donchianOverlays.has(options.id) || bollingerOverlays.has(options.id) || keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
+      const existing = fibonacciTimeZones.get(options.id), normalized = { ...options, visible: options.visible ?? existing?.options.visible ?? true, locked: options.locked ?? existing?.options.locked ?? false };
+      if (existing) {
+        existing.primitive.setOptions(normalized);
+        existing.options = normalized;
+        return;
+      }
+      if (drawingCount() >= maxNativeDrawings) throw Error("Native drawing limit");
+      const primitive = new FibonacciTimeZonePrimitive(normalized);
+      price.attachPrimitive(primitive);
+      fibonacciTimeZones.set(options.id, { primitive, options: normalized });
+      recordDrawingChange(options.id, null, snapshotDrawing(options.id));
+    }
+    function updateFibonacciTimeZone(id, patch) {
+      guard();
+      const item = fibonacciTimeZones.get(id);
+      if (!item) throw Error("Unknown Fibonacci Time Zones drawing");
+      const before = snapshotDrawing(id), options = { ...item.options, ...patch };
+      validateFibonacciTimeZone(options, patch.startTime !== void 0 || patch.endTime !== void 0);
+      item.primitive.setOptions(options);
+      item.options = options;
+      if (activeDrag?.id !== id) recordDrawingChange(id, before, snapshotDrawing(id));
+    }
+    function removeFibonacciTimeZone(id) {
+      guard();
+      const item = fibonacciTimeZones.get(id);
+      if (!item) return false;
+      const before = snapshotDrawing(id);
+      price.detachPrimitive(item.primitive);
+      fibonacciTimeZones.delete(id);
+      if (selectedDrawingIds.has(id)) selectDrawings([...selectedDrawingIds].filter((selected) => selected !== id));
+      recordDrawingChange(id, before, null);
+      return true;
+    }
     function validateChannel(opts, requireLoadedAnchors = true) {
       const timeValid = (value) => Number.isSafeInteger(value) && value > 0 && Number.isFinite(new Date(value * 1e3).getTime());
       if (!opts || !/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id) || !colorPattern.test(opts.color) || !timeValid(opts.startTime) || !timeValid(opts.endTime) || !timeValid(opts.offsetTime) || opts.startTime === opts.endTime && opts.startPrice === opts.endPrice || requireLoadedAnchors && (!barsByTime.has(opts.startTime) || !barsByTime.has(opts.endTime) || !barsByTime.has(opts.offsetTime)) || !Number.isFinite(opts.startPrice) || opts.startPrice <= 0 || !Number.isFinite(opts.endPrice) || opts.endPrice <= 0 || !Number.isFinite(opts.offsetPrice) || opts.offsetPrice <= 0 || opts.visible !== void 0 && typeof opts.visible !== "boolean" || opts.locked !== void 0 && typeof opts.locked !== "boolean") throw Error("Invalid or unavailable channel");
@@ -11709,7 +11884,7 @@ var ChartStudioV5 = (() => {
     function addMeasurement(opts) {
       guard();
       validateTrendLine(opts, true);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || fibonacciTimeZones.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = measurements.get(opts.id), options = { ...opts, visible: opts.visible ?? existing?.options.visible ?? true, locked: opts.locked ?? existing?.options.locked ?? false };
       if (existing) {
         const before = snapshotDrawing(opts.id);
@@ -11755,7 +11930,7 @@ var ChartStudioV5 = (() => {
     function addChannel(opts, requireLoadedAnchors = true) {
       guard();
       validateChannel(opts, requireLoadedAnchors);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || fibonacciTimeZones.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = channels.get(opts.id), options = { ...opts, visible: opts.visible ?? existing?.options.visible ?? true, locked: opts.locked ?? existing?.options.locked ?? false };
       if (existing) {
         const before = snapshotDrawing(opts.id);
@@ -11803,7 +11978,7 @@ var ChartStudioV5 = (() => {
     function addPitchfork(opts) {
       guard();
       validatePitchfork(opts);
-      if (averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || bollingerOverlays.has(opts.id) || keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (averages.has(opts.id) || paneLines.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || fibonacciTimeZones.has(opts.id) || channels.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || bollingerOverlays.has(opts.id) || keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       const existing = pitchforks.get(opts.id), options = { ...opts, visible: opts.visible ?? existing?.options.visible ?? true, locked: opts.locked ?? existing?.options.locked ?? false };
       if (existing) {
         const before = snapshotDrawing(opts.id);
@@ -11850,7 +12025,7 @@ var ChartStudioV5 = (() => {
     function addRiskReward(options) {
       guard();
       validateRiskReward(options, true);
-      if (supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || oscillators.has(options.id) || donchianOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || averages.has(options.id) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || oscillators.has(options.id) || donchianOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || averages.has(options.id) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || fibonacciTimeZones.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id)) throw Error("Duplicate chart object identity");
       const existing = riskRewards.get(options.id), normalized = { ...options, visible: options.visible ?? existing?.options.visible ?? true, locked: options.locked ?? existing?.options.locked ?? false };
       if (existing) {
         const before = snapshotDrawing(options.id);
@@ -11934,6 +12109,12 @@ var ChartStudioV5 = (() => {
         const level = p2.levels.find((item) => item.ratio === 0.5);
         return level ? { x: rect.left + (p2.x1 + p2.x2) / 2, y: rect.top + level.y } : null;
       }
+      const fibTime = fibonacciTimeZones.get(id);
+      if (fibTime) {
+        if (!fibTime.options.visible) return null;
+        const guide = fibTime.primitive.coordinates()?.[0];
+        return guide ? { x: rect.left + guide.x, y: rect.top + 20 } : null;
+      }
       const channel = channels.get(id);
       if (channel) {
         if (!channel.options.visible) return null;
@@ -11968,6 +12149,12 @@ var ChartStudioV5 = (() => {
     function drawingAnchorPosition(id, anchor) {
       guard();
       const trend = trendLines.get(id), zone = rectangles.get(id), ray = rays.get(id), fibo = fibonacci.get(id), measurement = measurements.get(id);
+      const fibTime = fibonacciTimeZones.get(id)?.options;
+      if (fibTime) {
+        if (fibTime.visible === false) return null;
+        const x3 = chart.timeScale().timeToCoordinate(anchor === "START" ? fibTime.startTime : fibTime.endTime), rect2 = host.getBoundingClientRect();
+        return x3 === null ? null : { x: rect2.left + x3, y: rect2.top + 20 };
+      }
       const channel = channels.get(id)?.options;
       const pitchfork = pitchforks.get(id)?.options;
       const risk = riskRewards.get(id)?.options;
@@ -12006,6 +12193,8 @@ var ChartStudioV5 = (() => {
         else delete options.levels;
         return options;
       }
+      const fibTime = fibonacciTimeZones.get(id);
+      if (fibTime) return { ...fibTime.options };
       const channel = channels.get(id);
       if (channel) return { ...channel.options };
       const pitchfork = pitchforks.get(id);
@@ -12027,6 +12216,7 @@ var ChartStudioV5 = (() => {
         ...[...rectangles.values()].map(({ options }) => ({ kind: "RECT", options: { ...options } })),
         ...[...rays.values()].map(({ options }) => ({ kind: "RAY", options: { ...options } })),
         ...[...fibonacci.values()].map(({ options }) => ({ kind: "FIBO", options: { ...options } })),
+        ...[...fibonacciTimeZones.values()].map(({ options }) => ({ kind: "FIB_TIME", options: { ...options } })),
         ...[...channels.values()].map(({ options }) => ({ kind: "CHANNEL", options: { ...options } })),
         ...[...pitchforks.values()].map(({ options }) => ({ kind: "PITCHFORK", options: { ...options } })),
         ...[...measurements.values()].map(({ options }) => ({ kind: "MEASURE", options: { ...options } })),
@@ -12079,8 +12269,8 @@ var ChartStudioV5 = (() => {
           throw Error("Invalid drawing import entry");
         const options = row.options, kind = row.kind;
         const keys = Object.keys(options).sort().join(",");
-        const expected = kind === "PRICE" ? "color,id,locked,price,visible" : kind === "TIME" ? "color,id,locked,time,visible" : kind === "TEXT" ? "color,id,locked,price,text,time,visible" : kind === "TREND" || kind === "RAY" || kind === "MEASURE" ? "color,endPrice,endTime,id,locked,startPrice,startTime,visible" : kind === "CHANNEL" ? "color,endPrice,endTime,id,locked,offsetPrice,offsetTime,startPrice,startTime,visible" : kind === "PITCHFORK" ? "color,endPrice,endTime,id,locked,startPrice,startTime,thirdPrice,thirdTime,visible" : kind === "FIBO" ? (/* @__PURE__ */ new Set(["color,endPrice,endTime,id,locked,startPrice,startTime,visible", "color,endPrice,endTime,id,levels,locked,startPrice,startTime,visible"])).has(keys) : kind === "RECT" ? "color,endPrice,endTime,fill,id,locked,startPrice,startTime,visible" : "";
-        if (!expected || kind !== "FIBO" && keys !== expected || typeof options.id !== "string" || seen.has(options.id) || averages.has(options.id) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id)) throw Error("Invalid or conflicting drawing identity/options");
+        const expected = kind === "PRICE" ? "color,id,locked,price,visible" : kind === "TIME" ? "color,id,locked,time,visible" : kind === "TEXT" ? "color,id,locked,price,text,time,visible" : kind === "TREND" || kind === "RAY" || kind === "MEASURE" ? "color,endPrice,endTime,id,locked,startPrice,startTime,visible" : kind === "CHANNEL" ? "color,endPrice,endTime,id,locked,offsetPrice,offsetTime,startPrice,startTime,visible" : kind === "PITCHFORK" ? "color,endPrice,endTime,id,locked,startPrice,startTime,thirdPrice,thirdTime,visible" : kind === "FIB_TIME" ? "color,endTime,id,locked,startTime,visible" : kind === "FIBO" ? (/* @__PURE__ */ new Set(["color,endPrice,endTime,id,locked,startPrice,startTime,visible", "color,endPrice,endTime,id,levels,locked,startPrice,startTime,visible"])).has(keys) : kind === "RECT" ? "color,endPrice,endTime,fill,id,locked,startPrice,startTime,visible" : "";
+        if (!expected || kind !== "FIBO" && keys !== expected || typeof options.id !== "string" || seen.has(options.id) || averages.has(options.id) || supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || fibonacciTimeZones.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id)) throw Error("Invalid or conflicting drawing identity/options");
         seen.add(options.id);
         if (kind === "PRICE") {
           const normalized = options;
@@ -12118,6 +12308,10 @@ var ChartStudioV5 = (() => {
           const normalized = options;
           validateTrendLine(normalized);
           snapshots.push({ kind: "MEASURE", options: { ...normalized, visible: normalized.visible ?? true, locked: normalized.locked ?? false } });
+        } else if (kind === "FIB_TIME") {
+          const normalized = options;
+          validateFibonacciTimeZone(normalized);
+          snapshots.push({ kind: "FIB_TIME", options: { ...normalized, visible: normalized.visible ?? true, locked: normalized.locked ?? false } });
         } else {
           const normalized = normalizeFibonacciOptions(options);
           if (options.levels === void 0) delete normalized.levels;
@@ -12138,6 +12332,7 @@ var ChartStudioV5 = (() => {
           else if (snapshot.kind === "PITCHFORK") addPitchfork(snapshot.options);
           else if (snapshot.kind === "RISK_REWARD") addRiskReward(snapshot.options);
           else if (snapshot.kind === "MEASURE") addMeasurement(snapshot.options);
+          else if (snapshot.kind === "FIB_TIME") addFibonacciTimeZone(snapshot.options);
           else addFibonacci(snapshot.options);
         }
       } catch (error) {
@@ -12212,6 +12407,11 @@ var ChartStudioV5 = (() => {
         updateFibonacci(id, { visible });
         return true;
       }
+      const fibTime = fibonacciTimeZones.get(id);
+      if (fibTime) {
+        updateFibonacciTimeZone(id, { visible });
+        return true;
+      }
       const channel = channels.get(id);
       if (channel) {
         updateChannel(id, { visible });
@@ -12270,6 +12470,11 @@ var ChartStudioV5 = (() => {
         updateFibonacci(id, { locked });
         return true;
       }
+      const fibTime = fibonacciTimeZones.get(id);
+      if (fibTime) {
+        updateFibonacciTimeZone(id, { locked });
+        return true;
+      }
       const channel = channels.get(id);
       if (channel) {
         updateChannel(id, { locked });
@@ -12311,7 +12516,7 @@ var ChartStudioV5 = (() => {
       if (!opts || !/^[-_a-zA-Z0-9]{1,32}$/.test(opts.id) || !colorPattern.test(opts.color))
         throw Error("Invalid pane line");
       const values = validSeriesData(data);
-      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(opts.id) || parabolicSarOverlays.has(opts.id) || (ichimokuOverlays.has(opts.id) || pivotOverlays.has(opts.id)) || oscillators.has(opts.id) || donchianOverlays.has(opts.id) || linearRegressionOverlays.has(opts.id) || (keltnerOverlays.has(opts.id) || atrBandsOverlays.has(opts.id)) || averages.has(opts.id) || priceLevels.has(opts.id) || timeMarkers.has(opts.id) || textAnnotations.has(opts.id) || trendLines.has(opts.id) || rectangles.has(opts.id) || rays.has(opts.id) || fibonacci.has(opts.id) || fibonacciTimeZones.has(opts.id) || channels.has(opts.id) || pitchforks.has(opts.id) || measurements.has(opts.id) || riskRewards.has(opts.id) || bollingerOverlays.has(opts.id) || sessionVwapOverlays.has(opts.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances && !paneLines.has(opts.id)) throw Error("Indicator instance limit");
       if (paneLines.size + oscillators.size >= 8 && !paneLines.has(opts.id)) throw Error("Native pane limit");
       let series = paneLines.get(opts.id);
@@ -12388,7 +12593,7 @@ var ChartStudioV5 = (() => {
     function addOscillator(options, persistent = true) {
       guard();
       if (!options || !/^[-_a-zA-Z0-9]{1,32}$/.test(options.id) || !colorPattern.test(options.color) || !["rsi", "atr", "macd", "adx", "stochastic", "stochrsi", "cci", "momentum", "roc", "obv", "mfi"].includes(options.kind) || options.lineWidth !== void 0 && ![1, 2, 3, 4].includes(options.lineWidth)) throw Error("Invalid oscillator options");
-      if (supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || oscillators.has(options.id) || donchianOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || averages.has(options.id) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id) || bollingerOverlays.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
+      if (supertrendOverlays.has(options.id) || parabolicSarOverlays.has(options.id) || (ichimokuOverlays.has(options.id) || pivotOverlays.has(options.id)) || oscillators.has(options.id) || donchianOverlays.has(options.id) || linearRegressionOverlays.has(options.id) || (keltnerOverlays.has(options.id) || atrBandsOverlays.has(options.id)) || averages.has(options.id) || paneLines.has(options.id) || priceLevels.has(options.id) || timeMarkers.has(options.id) || textAnnotations.has(options.id) || trendLines.has(options.id) || rectangles.has(options.id) || rays.has(options.id) || fibonacci.has(options.id) || fibonacciTimeZones.has(options.id) || channels.has(options.id) || pitchforks.has(options.id) || measurements.has(options.id) || riskRewards.has(options.id) || bollingerOverlays.has(options.id) || sessionVwapOverlays.has(options.id)) throw Error("Duplicate chart object identity");
       if (indicatorInstanceCount() >= maxIndicatorInstances) throw Error("Indicator instance limit");
       if (paneLines.size + oscillators.size >= 8) throw Error("Native pane limit");
       const normalized = { ...options, settings: { ...options.settings } };
@@ -12702,7 +12907,7 @@ var ChartStudioV5 = (() => {
     }
     function setDrawingTool(tool, text) {
       guard();
-      if (tool !== null && !["TREND", "RAY", "PRICE", "TIME", "RECT", "FIBO", "MEASURE", "CHANNEL", "PITCHFORK", "RISK_REWARD", "TEXT"].includes(tool)) throw Error("Invalid drawing tool");
+      if (tool !== null && !["TREND", "RAY", "PRICE", "TIME", "RECT", "FIBO", "FIB_TIME", "MEASURE", "CHANNEL", "PITCHFORK", "RISK_REWARD", "TEXT"].includes(tool)) throw Error("Invalid drawing tool");
       if (tool === "TEXT" && (typeof text !== "string" || !/^[\x20-\x7E]{1,40}$/.test(text))) throw Error("Text placement requires 1-40 printable ASCII characters");
       cancelDrawingTool(false);
       placementTool = tool;
@@ -12883,6 +13088,10 @@ var ChartStudioV5 = (() => {
       updateFibonacci,
       removeFibonacci,
       fibonacciLevels,
+      addFibonacciTimeZones: (options) => addFibonacciTimeZone(options),
+      updateFibonacciTimeZones: updateFibonacciTimeZone,
+      removeFibonacciTimeZones: removeFibonacciTimeZone,
+      fibonacciTimeZoneGuides,
       addChannel: (options) => addChannel(options),
       updateChannel,
       removeChannel,

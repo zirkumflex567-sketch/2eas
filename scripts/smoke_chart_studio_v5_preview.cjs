@@ -15,7 +15,7 @@ const html=enabled=>`<!doctype html><html><head><meta charset="utf-8"><meta name
 <section id="chart-v5-preview-panel" hidden><strong id="chart-v5-preview-title">Native v5</strong><div id="chart-v5-preview-status" role="status"></div>
 <button type="button" id="chart-v5-auto-fib-btn" aria-pressed="false" disabled>Auto-Fibonacci einblenden</button><output id="chart-v5-auto-fib-status" aria-live="polite"></output><button type="button" id="chart-v5-layout-export-btn" disabled>Layout exportieren</button><button type="button" id="chart-v5-layout-import-btn" disabled>Layout zusammenführen</button><button type="button" id="chart-v5-layout-replace-btn" disabled>Layout ersetzen</button><input id="chart-v5-layout-import-file" type="file" accept="application/json,.json" hidden>
 <details id="chart-v5-profile-manager"><summary>Lokale v5-Layouts</summary><label>Name <input id="chart-v5-profile-name" maxlength="40"></label><select id="chart-v5-profile-list" aria-label="Gespeichertes v5-Layout"></select><button id="chart-v5-profile-save" type="button">Speichern</button><button id="chart-v5-profile-load" type="button">Laden</button><button id="chart-v5-profile-rename" type="button">Umbenennen</button><button id="chart-v5-profile-copy" type="button">Kopieren</button><button id="chart-v5-profile-delete" type="button">Löschen</button><button id="chart-v5-layout-reset" type="button">Aktuelles Layout zurücksetzen</button><output id="chart-v5-profile-status" role="status"></output></details>
-<div id="chart-v5-drawing-tools" role="group" aria-label="Native v5 Zeichnungen"><button type="button" id="chart-v5-trend-btn" aria-pressed="false" disabled>Trendlinie</button><button type="button" id="chart-v5-ray-btn" aria-pressed="false" disabled>Strahl</button><button type="button" id="chart-v5-price-btn" aria-pressed="false" disabled>Preislinie</button><button type="button" id="chart-v5-time-btn" aria-pressed="false" disabled>Zeitlinie</button><button type="button" id="chart-v5-rect-btn" aria-pressed="false" disabled>Rechteck</button><button type="button" id="chart-v5-fibo-btn" aria-pressed="false" disabled>Fibonacci</button><button type="button" id="chart-v5-measure-btn" aria-pressed="false" disabled>Messung</button><button type="button" id="chart-v5-channel-btn" aria-pressed="false" disabled>Kanal</button><button type="button" id="chart-v5-pitchfork-btn" aria-pressed="false" disabled>Pitchfork</button><button type="button" id="chart-v5-risk-reward-btn" aria-pressed="false" disabled>Risiko/Ertrag</button><input id="chart-v5-text-input" aria-label="Textbeschriftung" maxlength="40" value="Fixture note"><button type="button" id="chart-v5-text-btn" aria-pressed="false" disabled>Text</button><output id="chart-v5-drawing-status" role="status" aria-live="polite">Zeichenwerkzeug aus.</output></div>
+<div id="chart-v5-drawing-tools" role="group" aria-label="Native v5 Zeichnungen"><button type="button" id="chart-v5-trend-btn" aria-pressed="false" disabled>Trendlinie</button><button type="button" id="chart-v5-ray-btn" aria-pressed="false" disabled>Strahl</button><button type="button" id="chart-v5-price-btn" aria-pressed="false" disabled>Preislinie</button><button type="button" id="chart-v5-time-btn" aria-pressed="false" disabled>Zeitlinie</button><button type="button" id="chart-v5-rect-btn" aria-pressed="false" disabled>Rechteck</button><button type="button" id="chart-v5-fibo-btn" aria-pressed="false" disabled>Fibonacci</button><button type="button" id="chart-v5-fib-time-btn" aria-pressed="false" disabled>Fibonacci-Zeitzonen</button><button type="button" id="chart-v5-measure-btn" aria-pressed="false" disabled>Messung</button><button type="button" id="chart-v5-channel-btn" aria-pressed="false" disabled>Kanal</button><button type="button" id="chart-v5-pitchfork-btn" aria-pressed="false" disabled>Pitchfork</button><button type="button" id="chart-v5-risk-reward-btn" aria-pressed="false" disabled>Risiko/Ertrag</button><input id="chart-v5-text-input" aria-label="Textbeschriftung" maxlength="40" value="Fixture note"><button type="button" id="chart-v5-text-btn" aria-pressed="false" disabled>Text</button><output id="chart-v5-drawing-status" role="status" aria-live="polite">Zeichenwerkzeug aus.</output></div>
 <div id="chart-v5-preview-host"></div><details id="chart-v5-object-manager"><summary>Zeichnungsobjekte</summary><div role="group" aria-label="Ausgewählte Zeichnungen"><button type="button" id="chart-v5-object-hide" disabled>Ausblenden</button><button type="button" id="chart-v5-object-show" disabled>Einblenden</button><button type="button" id="chart-v5-object-lock" disabled>Sperren</button><button type="button" id="chart-v5-object-unlock" disabled>Entsperren</button><button type="button" id="chart-v5-object-duplicate" disabled>Duplizieren</button><button type="button" id="chart-v5-object-delete" disabled>Löschen</button><button type="button" id="chart-v5-object-undo" disabled>Rückgängig</button><button type="button" id="chart-v5-object-redo" disabled>Wiederholen</button></div><ul id="chart-v5-object-list" aria-label="Zeichnungsobjekte"></ul><output id="chart-v5-object-status" role="status" aria-live="polite"></output></details><output id="chart-v5-data-window" aria-label="Kerzendaten am Fadenkreuz">Fadenkreuz auf eine Kerze bewegen.</output><output id="chart-v5-live-quote" aria-label="Aktuelle MT5-Quote beim Abruf">Aktuelle MT5-Quote: noch nicht abgerufen.</output><button type="button" id="chart-v5-data-window-pin" aria-pressed="false">Kerze fixieren</button><p>Read only. Powered by <a href="https://www.tradingview.com/">TradingView Lightweight Charts™</a></p></section><script>document.addEventListener("DOMContentLoaded",()=>{const host=document.querySelector("#chart-v5-preview-host");host.addEventListener("chartstudio-v5-drawing-state",e=>window.__v5LastDrawing=e.detail);host.addEventListener("chartstudio-v5-data-window",e=>window.__v5DataWindow=e.detail)});</script></body></html>`;
 
 const quoteRequests=[];
@@ -375,7 +375,7 @@ const server=http.createServer((req,res)=>{
   await textInput.fill("");assert.equal(await page.locator("#chart-v5-text-btn").isEnabled(),false,"text placement rejects an empty annotation");
   await textInput.fill("🚀");assert.equal(await page.locator("#chart-v5-text-btn").isEnabled(),false,"text placement rejects unsupported Unicode before creating a drawing");
   await textInput.fill("Fixture note");assert.equal(await page.locator("#chart-v5-text-btn").isEnabled(),true,"valid text enables annotation placement");
-  for(const [buttonId,kind,clicks] of [["price","PRICE",1],["time","TIME",1],["rect","RECT",2],["fibo","FIBO",2],["measure","MEASURE",2],["text","TEXT",1],["channel","CHANNEL",3],["pitchfork","PITCHFORK",3],["risk-reward","RISK_REWARD",3]]){
+  for(const [buttonId,kind,clicks] of [["price","PRICE",1],["time","TIME",1],["rect","RECT",2],["fibo","FIBO",2],["fib-time","FIB_TIME",2],["measure","MEASURE",2],["text","TEXT",1],["channel","CHANNEL",3],["pitchfork","PITCHFORK",3],["risk-reward","RISK_REWARD",3]]){
    const button=page.locator(`#chart-v5-${buttonId}-btn`);
    assert.equal(await button.isEnabled(),true,`${kind} placement is enabled with verified bars`);
    await button.click();
@@ -383,7 +383,7 @@ const server=http.createServer((req,res)=>{
     await page.mouse.click(chartBox.x+260,chartBox.y+130);
     await page.mouse.click(chartBox.x+260,chartBox.y+130);
     const repeatedAnchorStatus=await page.locator("#chart-v5-drawing-status").textContent();assert.match(repeatedAnchorStatus,/ungültig/i,`channel rejects a repeated candle anchor: ${repeatedAnchorStatus}`);
-    assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),8,"an invalid repeated channel anchor creates no object");
+    assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),9,"an invalid repeated channel anchor creates no object");
     await page.mouse.click(chartBox.x+360,chartBox.y+230);
     assert.match(await page.locator("#chart-v5-drawing-status").textContent(),/dritten kanalanker/i);
     await page.mouse.click(chartBox.x+460,chartBox.y+140);
@@ -402,6 +402,23 @@ const server=http.createServer((req,res)=>{
    if(kind==="PRICE")assert.ok(Number.isFinite(placed.drawing.price));
    if(kind==="TIME")assert.ok(Number.isSafeInteger(placed.drawing.time));
    if(kind==="RECT")assert.equal(placed.drawing.fill,true);
+   if(kind==="FIB_TIME"){
+    assert.notEqual(placed.drawing.startTime,placed.drawing.endTime);
+    const guides=await page.evaluate(id=>window.ChartStudioV5Preview.fibonacciTimeZoneGuides(id),placed.drawing.id);
+    assert.deepEqual(guides.map(item=>item.factor),[0,1,2,3,5,8,13,21,34,55]);
+    const original=placed.drawing,endHandle=await page.evaluate(id=>window.ChartStudioV5Preview.drawingAnchorPosition(id,"END"),placed.drawing.id);
+    await page.mouse.click(endHandle.x,chartBox.y+chartBox.height/2);
+    assert.equal((await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),placed.drawing.id)).endTime,original.endTime,"clicking the body of a vertical time-zone guide does not drag its top handle");
+    await page.mouse.move(endHandle.x,endHandle.y);await page.mouse.down();await page.mouse.move(endHandle.x+25,endHandle.y,{steps:3});await page.mouse.up();
+    const edited=await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),placed.drawing.id);assert.notEqual(edited.endTime,original.endTime,"horizontal handle drag moves the second time anchor");
+    await page.keyboard.press("Control+Z");assert.equal((await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),placed.drawing.id)).endTime,original.endTime,"time-zone handle drag is one undo step");
+    await page.keyboard.press("Control+Y");assert.equal((await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),placed.drawing.id)).endTime,edited.endTime,"time-zone handle drag can be redone");
+    await page.keyboard.press("h");assert.equal((await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),placed.drawing.id)).visible,false,"H hides selected time zones");
+    await page.keyboard.press("h");await page.keyboard.press("l");assert.equal((await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),placed.drawing.id)).locked,true,"L locks selected time zones");
+    await page.keyboard.press("l");await page.keyboard.press("Control+D");
+    const duplicateTimeZone=await page.evaluate(()=>JSON.parse(window.ChartStudioV5Preview.exportLayout()).drawings.filter(row=>row.kind==="FIB_TIME"));assert.equal(duplicateTimeZone.length,2,"Ctrl+D duplicates a time-zone drawing");
+    await page.keyboard.press("Delete");assert.equal((await page.evaluate(()=>JSON.parse(window.ChartStudioV5Preview.exportLayout()).drawings.filter(row=>row.kind==="FIB_TIME").length)),1,"Delete removes the selected time-zone duplicate");
+   }
    if(kind==="TEXT")assert.equal(placed.drawing.text,"Fixture note");
    if(kind==="MEASURE")assert.ok(Number.isFinite(placed.drawing.startPrice)&&Number.isFinite(placed.drawing.endPrice));
    if(kind==="CHANNEL"){assert.notEqual(placed.drawing.offsetPrice,placed.drawing.startPrice);assert.ok(Number.isSafeInteger(placed.drawing.offsetTime));}
@@ -462,7 +479,8 @@ const server=http.createServer((req,res)=>{
   assert.equal(layoutDownload.suggestedFilename(),"chart-studio-layout-XAUUSD-M15.json");
   const portableLayout=JSON.parse(require("node:fs").readFileSync(layoutPath,"utf8"));
   assert.deepEqual(Object.keys(portableLayout).sort(),["drawings","schemaVersion","symbol","timeframe","view"]);
-  assert.equal(portableLayout.schemaVersion,2);assert.equal(portableLayout.drawings.length,11);
+  assert.equal(portableLayout.schemaVersion,2);assert.equal(portableLayout.drawings.length,12);
+  const portableFibTime=portableLayout.drawings.find(row=>row.kind==="FIB_TIME");assert.ok(portableFibTime,"portable schema carries Fibonacci Time Zones");
   assert.ok(portableLayout.drawings.some(row=>row.kind==="PITCHFORK"),"portable schema carries the three-anchor pitchfork");
   const portableRiskReward=portableLayout.drawings.find(row=>row.kind==="RISK_REWARD");
   assert.ok(portableRiskReward,"portable schema carries the editable risk/reward drawing");
@@ -501,10 +519,10 @@ const server=http.createServer((req,res)=>{
     const afterRejected=preview.exportLayout();
     return {merged,mergedAgain,afterMerge,before,afterRejected,mismatch,timeframeMismatch,account,invalid,invalidPitchfork,oversized,storageBefore,storageAfterValid,storageAfter:localStorage.getItem(key),rollback,afterRollback,rollbackState,cancelled};
   },JSON.stringify(portableLayout));
-  assert.equal(importProbe.merged.importedDrawings,11,"merge imports the complete native drawing set");
-  assert.equal(importProbe.mergedAgain.importedDrawings,11,"a second merge imports the layout again");
-  assert.equal(importProbe.afterMerge.drawings.length,33,"merge retains current drawings and adds imported drawings");
-  assert.equal(new Set(importProbe.afterMerge.drawings.map(row=>row.options.id)).size,33,"merge remaps colliding drawing IDs");
+  assert.equal(importProbe.merged.importedDrawings,12,"merge imports the complete native drawing set");
+  assert.equal(importProbe.mergedAgain.importedDrawings,12,"a second merge imports the layout again");
+  assert.equal(importProbe.afterMerge.drawings.length,36,"merge retains current drawings and adds imported drawings");
+  assert.equal(new Set(importProbe.afterMerge.drawings.map(row=>row.options.id)).size,36,"merge remaps colliding drawing IDs");
   assert.equal(importProbe.afterMerge.view.movingAverages.length,2,"merge combines managed averages");
   assert.equal(importProbe.afterMerge.view.sessionVwaps.length,2,"merge combines session VWAP settings");
   assert.equal(new Set(importProbe.afterMerge.view.sessionVwaps.map(item=>item.id)).size,2,"merge remaps colliding session VWAP IDs");
@@ -533,12 +551,12 @@ const server=http.createServer((req,res)=>{
   assert.equal(await page.locator("#chart-v5-ray-btn").getAttribute("aria-pressed"),"false","Escape cancels a pending drawing tool");
   await page.locator("#chart-v5-pitchfork-btn").click();await page.mouse.click(chartBox.x+280,chartBox.y+160);await page.keyboard.press("Escape");
   assert.equal(await page.locator("#chart-v5-pitchfork-btn").getAttribute("aria-pressed"),"false","Escape cancels an incomplete Pitchfork placement");
-  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),33,"cancel does not persist an incomplete drawing");
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),36,"cancel does not persist an incomplete drawing");
   await page.locator("#chart-v5-layout-replace-btn").click();
   await page.locator("#chart-v5-layout-import-file").setInputFiles({name:"portable-layout.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify(portableLayout))});
   await page.waitForFunction(()=>document.querySelector("#chart-v5-preview-status")?.textContent.includes("Layout ersetzt"));
-  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),11,"confirmed replace restores the imported layout after renderer remount");
-  await page.waitForFunction(()=>document.querySelectorAll("#chart-v5-object-list [data-drawing-id]").length===11);
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),12,"confirmed replace restores the imported layout after renderer remount");
+  await page.waitForFunction(()=>document.querySelectorAll("#chart-v5-object-list [data-drawing-id]").length===12);
   const storedImport=await page.evaluate(()=>{const key="2eas.chartstudio.v5.drawings:v5:titan:XAUUSD:M15";return JSON.parse(localStorage.getItem(key))});
   assert.equal(storedImport.account,"titan","portable import binds the saved snapshot to the active account");
   assert.equal(storedImport.schemaVersion,5,"portable import reuses the validated local persistence schema");
