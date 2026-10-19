@@ -1,0 +1,272 @@
+{
+  "schemaVersion": 1,
+  "measuredAtUtc": "2026-10-19T23:35:24.150Z",
+  "runtime": {
+    "startupRevision": "d6ae0809c87f8087deceaa614038059a489936b4",
+    "diskRevision": "d6ae0809c87f8087deceaa614038059a489936b4",
+    "restartRequired": false,
+    "applicationCodeDirty": false
+  },
+  "scope": [
+    "titan",
+    "xau5m_m5",
+    "titan_m5",
+    "xau5m_500",
+    "goldm15"
+  ],
+  "method": "GET",
+  "measurementPlan": {
+    "mode": "repeated",
+    "durationSeconds": 840,
+    "intervalSeconds": 60,
+    "cycles": 14,
+    "requestsPerCycle": 5,
+    "maxRequests": 70,
+    "completedCycles": 14
+  },
+  "candles": {
+    "timeframe": "M15",
+    "count": 150
+  },
+  "sampleCount": 70,
+  "diagnosticTraceReads": 80,
+  "totalHttpGets": 152,
+  "byAccount": [
+    {
+      "account": "titan",
+      "requests": 14,
+      "ratesRequests": 14,
+      "historyRequests": 0,
+      "traces": 14,
+      "backgroundTraces": 10,
+      "clientMs": {
+        "median": 670.721,
+        "p95": 1559.659,
+        "max": 1559.659
+      },
+      "spanMs": {
+        "mt5_lock_wait": {
+          "count": 14,
+          "median": 0.001,
+          "p95": 0.002,
+          "max": 0.002
+        },
+        "mt5_initialize": {
+          "count": 14,
+          "median": 0.728,
+          "p95": 0.927,
+          "max": 0.927
+        },
+        "mt5_identity_verify": {
+          "count": 14,
+          "median": 0.646,
+          "p95": 0.887,
+          "max": 0.887
+        },
+        "mt5_rates": {
+          "count": 14,
+          "median": 0.098,
+          "p95": 0.141,
+          "max": 0.141
+        },
+        "mt5_history": {
+          "count": 0,
+          "median": null,
+          "p95": null,
+          "max": null
+        }
+      }
+    },
+    {
+      "account": "xau5m_m5",
+      "requests": 14,
+      "ratesRequests": 14,
+      "historyRequests": 0,
+      "traces": 14,
+      "backgroundTraces": 10,
+      "clientMs": {
+        "median": 124.11,
+        "p95": 199.418,
+        "max": 199.418
+      },
+      "spanMs": {
+        "mt5_lock_wait": {
+          "count": 14,
+          "median": 0.001,
+          "p95": 0.001,
+          "max": 0.001
+        },
+        "mt5_initialize": {
+          "count": 14,
+          "median": 0.731,
+          "p95": 1.007,
+          "max": 1.007
+        },
+        "mt5_identity_verify": {
+          "count": 14,
+          "median": 0.712,
+          "p95": 0.948,
+          "max": 0.948
+        },
+        "mt5_rates": {
+          "count": 14,
+          "median": 0.089,
+          "p95": 0.141,
+          "max": 0.141
+        },
+        "mt5_history": {
+          "count": 0,
+          "median": null,
+          "p95": null,
+          "max": null
+        }
+      }
+    },
+    {
+      "account": "titan_m5",
+      "requests": 14,
+      "ratesRequests": 14,
+      "historyRequests": 0,
+      "traces": 14,
+      "backgroundTraces": 10,
+      "clientMs": {
+        "median": 93.804,
+        "p95": 177.436,
+        "max": 177.436
+      },
+      "spanMs": {
+        "mt5_lock_wait": {
+          "count": 14,
+          "median": 0.001,
+          "p95": 0.002,
+          "max": 0.002
+        },
+        "mt5_initialize": {
+          "count": 14,
+          "median": 0.693,
+          "p95": 0.883,
+          "max": 0.883
+        },
+        "mt5_identity_verify": {
+          "count": 14,
+          "median": 0.525,
+          "p95": 1.081,
+          "max": 1.081
+        },
+        "mt5_rates": {
+          "count": 14,
+          "median": 0.088,
+          "p95": 0.13,
+          "max": 0.13
+        },
+        "mt5_history": {
+          "count": 0,
+          "median": null,
+          "p95": null,
+          "max": null
+        }
+      }
+    },
+    {
+      "account": "xau5m_500",
+      "requests": 14,
+      "ratesRequests": 14,
+      "historyRequests": 0,
+      "traces": 14,
+      "backgroundTraces": 10,
+      "clientMs": {
+        "median": 92.458,
+        "p95": 141.11,
+        "max": 141.11
+      },
+      "spanMs": {
+        "mt5_lock_wait": {
+          "count": 14,
+          "median": 0.001,
+          "p95": 0.002,
+          "max": 0.002
+        },
+        "mt5_initialize": {
+          "count": 14,
+          "median": 0.762,
+          "p95": 1.176,
+          "max": 1.176
+        },
+        "mt5_identity_verify": {
+          "count": 14,
+          "median": 0.592,
+          "p95": 0.772,
+          "max": 0.772
+        },
+        "mt5_rates": {
+          "count": 14,
+          "median": 0.089,
+          "p95": 0.122,
+          "max": 0.122
+        },
+        "mt5_history": {
+          "count": 0,
+          "median": null,
+          "p95": null,
+          "max": null
+        }
+      }
+    },
+    {
+      "account": "goldm15",
+      "requests": 14,
+      "ratesRequests": 14,
+      "historyRequests": 0,
+      "traces": 14,
+      "backgroundTraces": 10,
+      "clientMs": {
+        "median": 161.368,
+        "p95": 247.221,
+        "max": 247.221
+      },
+      "spanMs": {
+        "mt5_lock_wait": {
+          "count": 14,
+          "median": 0.001,
+          "p95": 0.001,
+          "max": 0.001
+        },
+        "mt5_initialize": {
+          "count": 14,
+          "median": 0.632,
+          "p95": 0.933,
+          "max": 0.933
+        },
+        "mt5_identity_verify": {
+          "count": 14,
+          "median": 0.577,
+          "p95": 0.762,
+          "max": 0.762
+        },
+        "mt5_rates": {
+          "count": 14,
+          "median": 0.187,
+          "p95": 0.354,
+          "max": 0.354
+        },
+        "mt5_history": {
+          "count": 0,
+          "median": null,
+          "p95": null,
+          "max": null
+        }
+      }
+    }
+  ],
+  "process": {
+    "cpuSecondsBefore": 15.141,
+    "cpuSecondsAfter": 680.781,
+    "cpuSecondsDelta": 665.64,
+    "privateBytesBefore": 591065088,
+    "privateBytesAfter": 591527936,
+    "workingSetBytesBefore": 214818816,
+    "workingSetBytesAfter": 213868544
+  },
+  "mutations": 0,
+  "blueberryRequests": 0
+}

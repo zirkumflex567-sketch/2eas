@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { performance } = require("node:perf_hooks");
 const { parseOptions, createLoadPlan, demoAccounts } = require("./aud01_load_plan.cjs");
+const { rememberSnapshot, correlateSamples } = require("./aud01_trace_correlation.cjs");
 
 const options = parseOptions(process.argv.slice(2));
 
@@ -16,6 +17,8 @@ if (!["127.0.0.1", "localhost"].includes(base.hostname) || base.protocol !== "ht
 
 const accounts = demoAccounts;
 const samples = [];
+const capturedTracesById = new Map();
+let diagnosticTraceReads = 0;
 
 const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
@@ -40,11 +43,18 @@ function tracePath(account) {
 }
 
 async function getTraces(account) {
+  diagnosticTraceReads += 1;
   const { response, body } = await getJson(tracePath(account));
   assert.equal(response.status, 200, `scoped traces unavailable for ${account}`);
   assert.ok(Array.isArray(body?.traces));
   for (const trace of body.traces) assert.equal(trace.account, account);
   return body.traces;
+}
+
+async function captureSampleTrace(sample) {
+  const traces = await getTraces(sample.account);
+  rememberSnapshot(capturedTracesById, sample.account, traces);
+  correlateSamples([sample], capturedTracesById);
 }
 
 async function readCandles(spec, phase, options) {
@@ -61,7 +71,9 @@ async function readCandles(spec, phase, options) {
   assert.equal(body.candles?.length, 150);
   const traceId = response.headers.get("x-mt5-trace-id");
   assert.match(traceId || "", /^[0-9a-f]{32}$/, `${spec.account}/${phase} did not return a valid MT5 trace ID`);
-  samples.push({ account: spec.account, phase, route: "/api/candles", traceId, clientMs: Number(clientMs.toFixed(3)) });
+  const sample = { account: spec.account, phase, route: "/api/candles", traceId, clientMs: Number(clientMs.toFixed(3)) };
+  samples.push(sample);
+  await captureSampleTrace(sample);
 }
 
 async function readHistory(spec) {
@@ -83,7 +95,9 @@ async function readHistory(spec) {
   assert.equal(body.canExecute, false);
   const traceId = response.headers.get("x-mt5-trace-id");
   assert.match(traceId || "", /^[0-9a-f]{32}$/, `${spec.account}/history-24h did not return a valid MT5 trace ID`);
-  samples.push({ account: spec.account, phase: "history-24h", route: "/api/chart/v1/trades", traceId, clientMs: Number(clientMs.toFixed(3)) });
+  const sample = { account: spec.account, phase: "history-24h", route: "/api/chart/v1/trades", traceId, clientMs: Number(clientMs.toFixed(3)) };
+  samples.push(sample);
+  await captureSampleTrace(sample);
 }
 
 function processSample(pid) {
@@ -151,16 +165,7 @@ function percentile(values, fraction) {
     const accountSamples = samples.filter(sample => sample.account === spec.account);
     const sampleIds = accountSamples.map(sample => sample.traceId);
     assert.equal(new Set(sampleIds).size, sampleIds.length, `${spec.account} returned a duplicate trace ID`);
-    const tracesById = new Map(traces.map(trace => [trace.requestId, trace]));
-    const correlatedTraces = sampleIds.map(traceId => {
-      const trace = tracesById.get(traceId);
-      assert.ok(trace, `${spec.account} trace ${traceId} is missing from the bounded trace snapshot`);
-      const sample = accountSamples.find(item => item.traceId === traceId);
-      assert.equal(trace.account, spec.account);
-      assert.equal(trace.httpMethod, "GET");
-      assert.equal(trace.route, sample.route);
-      return trace;
-    });
+    const correlatedTraces = correlateSamples(accountSamples, capturedTracesById);
     const correlatedIds = new Set(sampleIds);
     const durations = accountSamples.map(sample => sample.clientMs);
     const spans = Object.fromEntries(["mt5_lock_wait", "mt5_initialize", "mt5_identity_verify", "mt5_rates", "mt5_history"]
@@ -203,6 +208,8 @@ function percentile(values, fraction) {
     measurementPlan: { ...measurementPlan, completedCycles: options.durationSeconds === null ? null : repeatedCycles },
     candles: { timeframe: "M15", count: 150 },
     sampleCount: samples.length,
+    diagnosticTraceReads,
+    totalHttpGets: samples.length + diagnosticTraceReads + 2,
     byAccount,
     process: processBefore && processAfter ? {
       cpuSecondsBefore: processBefore.cpuSeconds,

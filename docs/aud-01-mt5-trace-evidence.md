@@ -1,5 +1,19 @@
 # AUD-01 MT5 trace measurement
 
+## Main `d6ae080` sustained repeat with immediate trace capture (2026-10-20)
+
+The local 8050 and 8056 runtimes were guarded-restarted before the run. Runtime identity remained on `d6ae0809c87f8087deceaa614038059a489936b4`, with `restart_required=false` and `applicationCodeDirty=false`. The bounded 840-second run completed all 14 one-minute cycles and 70/70 serial M15 candle reads (14 per authorized demo alias); each response returned 150 `MT5_VERIFIED` XAU M15 candles with `canExecute=false`. For each sample the harness immediately fetched the account-scoped trace snapshot and retained its matching route/method record, so later ring-buffer eviction could not invalidate correlation. This added 70 diagnostic reads; with five initial and five final trace snapshots and two runtime checks, the audit made 152 GETs total. No history reads, broker mutations, or Blueberry requests occurred. The complete machine-readable report is [aud-01-mt5-traces-d6ae0809.json](aud-01-mt5-traces-d6ae0809.json), SHA-256 `03b315400dcbd510b760614951c22ef594f8404bc46c60d5098bab5f83d33f45`.
+
+| Demo alias | Client median / p95 / max (ms) | Lock-wait p95 / max (ms) | New background traces |
+| --- | ---: | ---: | ---: |
+| `titan` | 670.721 / 1559.659 / 1559.659 | 0.002 / 0.002 | 10 |
+| `xau5m_m5` | 124.110 / 199.418 / 199.418 | 0.001 / 0.001 | 10 |
+| `titan_m5` | 93.804 / 177.436 / 177.436 | 0.002 / 0.002 | 10 |
+| `xau5m_500` | 92.458 / 141.110 / 141.110 | 0.002 / 0.002 | 10 |
+| `goldm15` | 161.368 / 247.221 / 247.221 | 0.001 / 0.001 | 10 |
+
+Dashboard process CPU increased by 665.640 seconds over the 840-second window, private bytes by 462,848 bytes, and working set decreased by 950,272 bytes. The additional ten traces per alias confirm unrelated live requests overlapped the run; the CPU figure therefore cannot be attributed to this harness or treated as an isolated service cost. The Titan client p95 outlier also warrants a controlled repeat. Lock spans stayed near zero for this serial run. No approved latency/CPU thresholds exist, so this evidence is a concurrent-load observation rather than a performance-budget pass. Cold-start, controlled-load, approved budgets, and target-hardware/endurance acceptance remain open. No backtest was run.
+
 Live exploratory measurement on 2026-10-16 after the clean `main` runtime restarted at `551365945f60b77106bef96b4d971c050026da62`. The dashboard returned the same PID and startup/disk revision locally and through htown `/stt`; `restart_required=false`, `applicationCodeDirty=false`, nginx active, and `nginx -t` successful.
 
 The bounded run made 20 GET requests: four M15 candle reads of 150 bars and one 24-hour trade-history read per demo account. Each account had two serial warm reads followed by two concurrent candle reads. The script checked account and symbol provenance, `MT5_VERIFIED`, `canExecute=false`, and a stable process/revision throughout. No writes or order methods ran. Blueberry had zero requests and was denied before its trace data could be read. The machine-readable snapshot is [aud-01-mt5-traces-5513659.json](aud-01-mt5-traces-5513659.json); the harness also writes an ignored local raw report. Reproduce with `node scripts/measure_live_mt5_traces.cjs` against the local 8056 dashboard.
