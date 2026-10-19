@@ -390,9 +390,14 @@ bool CSWriteReadySegment(const string line,const ulong sequence)
       return false;
      }
    ResetLastError();
-   uint written=FileWriteString(handle,line+"\n");
+   string payload=line+"\r\n";
+   uchar expected_bytes[];
+   int expected_count=StringToCharArray(payload,expected_bytes,0,WHOLE_ARRAY,CP_UTF8);
+   uint written=FileWriteString(handle,payload);
    FileFlush(handle);
-   bool complete=(written==StringLen(line)+1 && FileSize(handle)<=CS_SEGMENT_MAX_BYTES);
+   ulong actual_size=FileSize(handle);
+   bool complete=(expected_count>1 && written==(uint)(expected_count-1) &&
+                    actual_size==(ulong)written && actual_size<=CS_SEGMENT_MAX_BYTES);
    int write_error=GetLastError();
    FileClose(handle);
    if(!complete)

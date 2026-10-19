@@ -75,6 +75,36 @@ def test_failed_segment_write_removes_its_unimportable_temporary_file():
     assert "if(!FileMove(temp,FILE_COMMON,ready,FILE_COMMON))\n     {\n      int error=GetLastError();\n      CSLogWriteFailure(\"rename\",sequence,error);\n      CSDeleteFailedTemp(temp,sequence);\n      return false;\n     }" in write
 
 
+def test_text_segment_write_validates_complete_utf8_payload_and_actual_file_size():
+    spool = SPOOL.read_text(encoding="utf-8-sig")
+    write = _function(spool, "CSWriteReadySegment")
+
+    normalized = re.sub(r"\s+", " ", write)
+    assert 'string payload=line+"\\r\\n";' in normalized
+    assert "uchar expected_bytes[];" in normalized
+    assert "StringToCharArray(payload,expected_bytes,0,WHOLE_ARRAY,CP_UTF8)" in normalized
+    assert "FileWriteString(handle,payload)" in normalized
+    assert "written==(uint)(expected_count-1)" in normalized
+    assert "actual_size==(ulong)written" in normalized
+    assert "actual_size<=CS_SEGMENT_MAX_BYTES" in normalized
+    assert "StringLen(line)+1" not in write
+
+
+def test_utf8_record_length_model_rejects_truncation_and_counts_crlf():
+    payload = ('{"symbol":"XAUUSD.p","note":"Münze 🚀"}' + "\r\n").encode("utf-8")
+    expected_size = len(payload)
+
+    def complete(written: int, actual_size: int, cap: int) -> bool:
+        return written == expected_size and actual_size == written and actual_size <= cap
+
+    assert complete(expected_size, expected_size, expected_size)
+    assert not complete(expected_size - 1, expected_size - 1, expected_size)
+    assert not complete(expected_size, expected_size - 1, expected_size)
+    assert not complete(expected_size, expected_size, expected_size - 1)
+    assert payload.endswith(b"\r\n")
+    assert len(payload) > len(payload.decode("utf-8"))
+
+
 def test_failed_segment_rename_emits_throttled_actionable_diagnostic():
     spool = SPOOL.read_text(encoding="utf-8-sig")
     write = _function(spool, "CSWriteReadySegment")
