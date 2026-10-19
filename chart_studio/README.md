@@ -309,7 +309,9 @@ Paired creation/update/setup seconds and milliseconds must agree on the second;
 inconsistent pairs fail closed while actual millisecond precision is retained.
 Quotes expose `rawBrokerEpoch`/`rawBrokerEpochMs`, corrected `quoteTimeUtc`/
 `quoteTimeUtcMs`, `ageSeconds`, and `freshness` (`FRESH`, `STALE` after 30 seconds,
-or `FUTURE` when more than one second ahead). Valid stale quotes retain the
+or `FUTURE` when more than 1.5 seconds ahead). Quote display and analytics allow
+that bounded server-clock skew; position-stop previews and commits independently
+reject quotes more than one second ahead. Valid stale quotes retain the
 broker book and explicitly disable execution. Invalid or absent clock policies
 fail closed. The legacy XAUUSD quote endpoint keeps numeric `bid`, `ask`, and
 `tickSize` for the existing UI while using the same clock and quote validation.

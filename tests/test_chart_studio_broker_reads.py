@@ -700,6 +700,22 @@ def test_order_expiration_clock_and_future_quote(client, fake):
     assert quote['canExecute'] is False
 
 
+def test_quote_future_clock_skew_is_bounded_at_1_5_seconds(fake):
+    from chart_studio.broker_reads import quote_model
+    spec = gateway.ACCOUNTS['titan']
+
+    near_skew = quote_model(fake.tick, spec, symbol='XAUUSD', now=NOW-1.30)
+    beyond_skew = quote_model(fake.tick, spec, symbol='XAUUSD', now=NOW-1.40)
+
+    assert near_skew['freshness'] == 'FRESH'
+    assert near_skew['stale'] is False
+    assert near_skew['ageSeconds'] == 0.
+    assert near_skew['canExecute'] is False
+    assert beyond_skew['freshness'] == 'FUTURE'
+    assert beyond_skew['stale'] is True
+    assert beyond_skew['canExecute'] is False
+
+
 def test_exception_response_is_safe_and_does_not_leak_broker_details(client, fake):
     def explode(**kwargs):
         raise RuntimeError('password=secret balance=100000')

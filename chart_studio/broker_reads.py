@@ -17,6 +17,9 @@ from chart_studio.currency_conversion import convert_amounts_to_usd
 SOURCE = 'MT5_VERIFIED'
 SYMBOL_PATTERN = r'^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$'
 FRESH_SECONDS = 30
+# Read-model tolerance for measured MT5 server/local clock skew. Stop-preview and
+# commit services independently retain their stricter 1,000 ms future bound.
+QUOTE_FUTURE_TOLERANCE_SECONDS = 1.5
 PENDING_TYPES = {2:'BUY_LIMIT', 3:'SELL_LIMIT', 4:'BUY_STOP', 5:'SELL_STOP',
                  6:'BUY_STOP_LIMIT', 7:'SELL_STOP_LIMIT'}
 
@@ -113,7 +116,7 @@ def quote_model(tick, spec, *, symbol='', now=None):
     if not Decimal(str(observed)).is_finite():
         raise BrokerReadError('invalid observation clock')
     delta = observed-clock['utcEpochMs']/1000
-    freshness = 'FUTURE' if delta < -1 else ('STALE' if delta > FRESH_SECONDS else 'FRESH')
+    freshness = 'FUTURE' if delta < -QUOTE_FUTURE_TOLERANCE_SECONDS else ('STALE' if delta > FRESH_SECONDS else 'FRESH')
     result = {**provenance(spec), 'bid': bid, 'ask': ask, 'quoteTimeUtc': utc,
             'quoteTimeUtcMs': clock['utcEpochMs'], 'rawBrokerEpoch': raw,
             'rawBrokerEpochMs': raw_ms, 'brokerUtcOffsetSeconds': clock['brokerUtcOffsetSeconds'],
