@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 
 const base = (process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056").replace(/\/+$/, "");
-const accounts = Object.freeze(["titan", "xau5m_m5", "titan_m5", "xau5m_500"]);
+const accounts = Object.freeze(["titan", "xau5m_m5", "titan_m5", "xau5m_500", "goldm15"]);
 
 async function requestJson(path, options) {
   const response = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(20000), cache: "no-store", ...options });
@@ -21,12 +21,19 @@ function alignToTick(value, tick, digits, direction) {
   return Number((steps * tickUnits / scale).toFixed(digits));
 }
 
-async function preview(account, request) {
-  return requestJson(`/api/chart/v1/scenarios/preview?account=${encodeURIComponent(account)}`, {
+async function preview(account, request, { allowRiskBelowMinimum = false } = {}) {
+  const response = await fetch(`${base}/api/chart/v1/scenarios/preview?account=${encodeURIComponent(account)}`, {
+    signal: AbortSignal.timeout(20000),
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ account, feesPerLot: 0, slippageTicks: 0, ...request }),
   });
+  const body = await response.json();
+  if (allowRiskBelowMinimum && response.status === 422 && body.detail?.code === "RISK_BELOW_MINIMUM") {
+    return { expectedRejection: true, rejection: body.detail };
+  }
+  assert.equal(response.ok, true, `/api/chart/v1/scenarios/preview?account=${account}: HTTP ${response.status}: ${JSON.stringify(body)}`);
+  return body;
 }
 
 function verifySizing(account, response, expectedMode, currency, budget, percent, symbolInfo) {
@@ -73,6 +80,8 @@ function verifySizing(account, response, expectedMode, currency, budget, percent
   let previewRequests = 0;
   let freshAccounts = 0;
   let skippedStaleQuotes = 0;
+  let percentSizingRequests = 0;
+  let skippedMinimumPercentSizing = 0;
   for (const account of accounts) {
     const candles = await requestJson(`/api/candles?account=${encodeURIComponent(account)}`);
     assert.equal(candles.accountId, account);
@@ -131,21 +140,44 @@ function verifySizing(account, response, expectedMode, currency, budget, percent
       previewRequests += 1;
       const budgetSizing = verifySizing(account, budgetResult, "RISK_BUDGET", "USD", riskBudget, null, info);
 
-      const riskPercent = Math.min(1, Number((100 * minRisk * 1.5 / equity).toFixed(4)));
+      const riskPercent = Math.min(1, Math.ceil((100 * minRisk * 1.5 / equity) * 10000) / 10000);
       assert.ok(riskPercent > 0 && riskPercent <= 1);
       const expectedPercentBudget = equity * riskPercent / 100;
-      const percentResult = await preview(account, { ...geometry, riskPercent });
+      const percentResult = await preview(account, { ...geometry, riskPercent }, { allowRiskBelowMinimum: true });
       previewRequests += 1;
-      const percentSizing = verifySizing(account, percentResult, "EQUITY_PERCENT", "USD", expectedPercentBudget, riskPercent, info);
-      sides.push({ side, minimumLotRisk: minRisk, riskBudget: budgetSizing, equityPercent: percentSizing });
+      percentSizingRequests += 1;
+      let equityPercent;
+      if (percentResult.expectedRejection === true) {
+        assert.ok(expectedPercentBudget + 1e-8 < minRisk,
+          `${account}/${side}: backend rejected a percentage budget that should cover the minimum lot`);
+        skippedMinimumPercentSizing += 1;
+        equityPercent = {
+          state: "SKIPPED_RISK_BELOW_MINIMUM",
+          minimumLotRisk: minRisk,
+          riskPercentCeiling: 1,
+          maximumPercentBudget: expectedPercentBudget,
+          reason: percentResult.rejection.code,
+        };
+      } else {
+        assert.ok(expectedPercentBudget + 1e-8 >= minRisk,
+          `${account}/${side}: backend sized below the broker minimum-risk threshold`);
+        equityPercent = verifySizing(account, percentResult, "EQUITY_PERCENT", "USD", expectedPercentBudget, riskPercent, info);
+      }
+      sides.push({ side, minimumLotRisk: minRisk, riskBudget: budgetSizing, equityPercent });
     }
     results.push({ account, symbol, quoteFreshness: quote.freshness, equity, currency: portfolio.margin.currency, sides });
   }
 
-  assert.equal(previewRequests, freshAccounts * 2 * 3, "stale quotes must never reach scenario preview");
-  assert.equal(previewRequests + skippedStaleQuotes * 2 * 3, accounts.length * 2 * 3,
-    "each demo must be either fully sized from a fresh quote or skipped before preview");
+  assert.equal(previewRequests, freshAccounts * 4 + percentSizingRequests,
+    "stale quotes and under-minimum equity sizing must never reach scenario preview");
+  assert.equal(freshAccounts + skippedStaleQuotes, accounts.length,
+    "each demo must be either sized from a fresh quote or skipped before preview");
+  assert.equal(percentSizingRequests, freshAccounts * 2,
+    "each fresh demo side must exercise percentage sizing exactly once");
+  assert.ok(skippedMinimumPercentSizing <= percentSizingRequests,
+    "minimum-risk rejections cannot exceed percentage sizing previews");
   console.log(JSON.stringify({ results, brokerCalculationPreviews: previewRequests, skippedStaleQuotes,
+    skippedMinimumPercentSizing,
     ordersSent: 0, positionMutations: 0, protectedAccountQueried: false }, null, 2));
 })().catch(error => {
   console.error(error.stack || error);

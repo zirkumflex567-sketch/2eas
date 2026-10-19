@@ -20,3 +20,7 @@ Verify FR-027's actual MT5 risk-budget and equity-percent lot sizing for BUY and
 ## Equity snapshot basis
 
 Each EQUITY_PERCENT sizing response now includes `equityBasis`, the account equity returned by the same MT5 read used by the preview calculation. The What-if result displays both the percentage and this amount; fixed-budget responses return a null basis; fixed-lot responses do not include this field. The browser and live smoke validate that `riskBudget` = equityBasis × riskPercent / 100, avoiding comparisons against a separate portfolio read that can already be stale while the demo account changes.
+
+## Five-demo follow-up (19 October 2026)
+
+The live calculation smoke now includes `goldm15` alongside the four ticket demos. All five accounts returned fresh XAU quotes and USD currency; 30 broker-calculation-only previews covered BUY/SELL minimum-lot, fixed-budget and equity-percent scenarios. Four demos passed every mode. On `xau5m_m5`, equity was USD 36.11 and the 1% cap (USD 0.36) was below the minimum-lot stop risk (USD 0.50), so the backend returned the expected `RISK_BELOW_MINIMUM` for both sides. The smoke explicitly verifies this fail-closed outcome and rounds requested percentages upward to the accepted precision. There were zero orders or position mutations and no Blueberry read. All five observed demo currencies are USD, so non-USD live acceptance remains unavailable.
