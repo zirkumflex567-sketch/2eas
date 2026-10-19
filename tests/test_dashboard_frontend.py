@@ -684,6 +684,7 @@ class DashboardFrontendTests(unittest.TestCase):
         form.locator('[name="slPrice"]').fill('4001.00'); form.locator('button[type="submit"]').click()
         confirm=self.page.locator('#cs-position-stop-confirm'); expect(confirm).to_be_visible(timeout=5000)
         confirm.locator('#cs-position-stop-confirm-check').check(); confirm.locator('#cs-position-stop-confirm-button').click()
+        expect(self.page.locator('#cs-position-stop-draft-status')).to_contain_text('Brokerstatus UNKNOWN (READBACK_MISMATCH)',timeout=10000)
         expect(self.page.locator('#cs-broker-positions tbody')).to_contain_text('3998.00',timeout=10000)
         self.assertNotIn('4001.00',self.page.locator('#cs-broker-positions tbody').inner_text())
         self.assertEqual(self.stop_commit_requests,1); self.assertEqual(self.errors,[])
