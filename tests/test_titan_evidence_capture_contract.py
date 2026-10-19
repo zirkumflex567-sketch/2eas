@@ -99,7 +99,7 @@ def test_order_attempt_capture_is_post_request_opt_in_and_contains_event_time_qu
     assert "request_time_utc" in spool
     assert "quoteSnapshot" in spool and "tickValuePerLot" in spool
     assert "MT5_VERIFIED" in spool and "canExecute" in spool
-    assert "CSUtcFromMillis(cs_tick.time_msc)" in decision
+    assert decision.count("CSUtcFromBrokerMillis(cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS)") == 2
     assert "return CSUtc(seconds);" in spool
     assert re.search(r"#ifdef CS_EVIDENCE_CAPTURE_ENABLED\s+MqlTick cs_tick=\{\};.*?bool order_sent=m_trade\.Buy", decision, re.S)
     assert "SymbolInfoTick(_Symbol,cs_tick)" in decision

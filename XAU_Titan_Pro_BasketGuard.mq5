@@ -978,7 +978,7 @@ void CheckSignalAndTrade()
             bool cs_quote_ok=SymbolInfoTick(_Symbol,cs_tick) && cs_tick.time_msc>0 &&
                              cs_tick.bid>0.0 && cs_tick.ask>=cs_tick.bid;
             double cs_bid=cs_tick.bid,cs_ask=cs_tick.ask;
-            string cs_quote_time=CSUtcFromMillis(cs_tick.time_msc);
+            string cs_quote_time=CSUtcFromBrokerMillis(cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS);
             datetime cs_request_utc=TimeGMT();
             string cs_request_time=CSUtc(cs_request_utc);
             double cs_tick_size=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
@@ -1058,7 +1058,7 @@ void CheckSignalAndTrade()
             bool cs_quote_ok=SymbolInfoTick(_Symbol,cs_tick) && cs_tick.time_msc>0 &&
                              cs_tick.bid>0.0 && cs_tick.ask>=cs_tick.bid;
             double cs_bid=cs_tick.bid,cs_ask=cs_tick.ask;
-            string cs_quote_time=CSUtcFromMillis(cs_tick.time_msc);
+            string cs_quote_time=CSUtcFromBrokerMillis(cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS);
             datetime cs_request_utc=TimeGMT();
             string cs_request_time=CSUtc(cs_request_utc);
             double cs_tick_size=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
