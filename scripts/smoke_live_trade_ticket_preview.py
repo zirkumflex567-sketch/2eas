@@ -10,6 +10,7 @@ import math
 import os
 from decimal import Decimal, ROUND_FLOOR
 from http.cookiejar import CookieJar
+from urllib.error import HTTPError
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPCookieProcessor, Request, build_opener
@@ -48,6 +49,29 @@ def _private_proxy_identity():
     return secret, sorted(trade_users)[0]
 
 
+def validate_preview_response(account, symbol, http_status, result):
+    """Accept a valid read-only preview or the known fail-closed margin denial."""
+    if http_status == 422:
+        detail = result.get("detail", {}) if isinstance(result, dict) else {}
+        if (detail.get("code") != "INSUFFICIENT_FREE_MARGIN"
+                or detail.get("canExecute") is not False
+                or detail.get("canCommit") is not False
+                or detail.get("guard") != {"state": "UNKNOWN", "source": "NONE"}):
+            raise AssertionError(f"{account}: unexpected preview rejection")
+        return "REJECTED_INSUFFICIENT_FREE_MARGIN"
+
+    if http_status != 200:
+        raise AssertionError(f"{account}: preview returned HTTP {http_status}")
+    if (result.get("account") != account or result.get("symbol") != symbol
+            or result.get("status") != "PREVIEW_ONLY"
+            or result.get("canExecute") is not False
+            or result.get("canCommit") is not False
+            or result.get("guard") != {"state": "UNKNOWN", "source": "NONE"}
+            or "previewId" in result):
+        raise AssertionError(f"{account}: preview scope or write-safety contract failed")
+    return "PREVIEW_ONLY"
+
+
 def main():
     base = _local_base_url()
     origin = base
@@ -69,10 +93,18 @@ def main():
         if csrf is not None:
             headers["X-Dashboard-CSRF"] = csrf
         request = Request(base + path, data=data, headers=headers, method=method)
-        with opener.open(request, timeout=15) as response:
-            if response.status != 200:
-                raise AssertionError(f"{method} {path} returned HTTP {response.status}")
-            return json.load(response)
+        try:
+            with opener.open(request, timeout=15) as response:
+                body = json.load(response)
+                if path == PREVIEW_PATH and method == "POST":
+                    return response.status, body
+                if response.status != 200:
+                    raise AssertionError(f"{method} {path} returned HTTP {response.status}")
+                return body
+        except HTTPError as error:
+            if path == PREVIEW_PATH and method == "POST":
+                return error.code, json.loads(error.read().decode("utf-8"))
+            raise
 
     session = call("/api/control_session")
     assert session.get("role") == "trade" and session.get("control_enabled") is True
@@ -99,7 +131,7 @@ def main():
         ask = Decimal(str(quote["ask"]))
         entry = ((ask - distance) / step).to_integral_value(rounding=ROUND_FLOOR) * step
         assert entry > distance
-        result = call(
+        status, result = call(
             PREVIEW_PATH,
             method="POST",
             csrf=csrf,
@@ -114,17 +146,24 @@ def main():
                 "tpPrice": float(entry + distance),
             },
         )
-        assert result.get("account") == account and result.get("symbol") == symbol
-        assert result.get("status") == "PREVIEW_ONLY"
-        assert result.get("canExecute") is False and result.get("canCommit") is False
-        assert result.get("guard") == {"state": "UNKNOWN", "source": "NONE"}
-        assert "previewId" not in result
+        outcome = validate_preview_response(account, symbol, status, result)
+        if outcome == "REJECTED_INSUFFICIENT_FREE_MARGIN":
+            results.append({
+                "account": account,
+                "outcome": outcome,
+                "authenticatedRoute": "TRADE_ROLE",
+                "quote": "FRESH",
+                "canExecute": False,
+                "canCommit": False,
+                "previewTokenIssued": False,
+            })
+            continue
         risk = result.get("brokerRisk", {})
         assert math.isfinite(float(risk["margin"])) and float(risk["margin"]) >= 0
         assert float(risk["pnlAtSl"]) < 0 < float(risk["pnlAtTp"])
         results.append({
             "account": account,
-            "outcome": "PASSED",
+            "outcome": outcome,
             "authenticatedRoute": "TRADE_ROLE",
             "quote": "FRESH",
             "brokerMath": "VALID",

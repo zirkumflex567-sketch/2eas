@@ -31,7 +31,7 @@
 - [x] Resolve the exact verified demo session; read fresh quote and symbol rules; validate pending-order geometry and broker lot/margin.
 - [x] Bind proposal and guard evidence into a short-lived one-time server token; reject stale quotes, changed account/symbol, invalid price, unknown guard and unsupported broker modes.
 
-Task 2 has fake-MT5 service coverage. A direct read-only probe against all four allowed demo terminals returned `QUOTE_NOT_FRESH`; no risk/margin calculation could proceed. The production app does not install this service, and all trade-ticket routes remain disabled there. Repeat live preview acceptance when broker quotes are fresh; this is not a write-release approval.
+Task 2 has fake-MT5 service coverage. On 19 October, the guarded main runtime authenticated the preview route with fresh quotes on all four allowed demo terminals. `titan`, `titan_m5` and `xau5m_500` returned valid `PREVIEW_ONLY` broker risk/margin calculations. `xau5m_m5` correctly failed closed with `INSUFFICIENT_FREE_MARGIN` at 0.01 lot. Every response kept `canExecute=false`, `canCommit=false`, guard `UNKNOWN`, and issued no preview token. The smoke did not call commit and observed zero broker writes or Blueberry requests. This live preview acceptance is not a write-release approval.
 
 ### Task 3: Durable single-send commit
 
@@ -47,7 +47,7 @@ Task 3 currently has fake-MT5 tests only. The app does not install this commit s
 - [x] Show scope, order type, lots, stop-risk, margin, quote freshness and guard state; require a deliberate confirmation screen plus trade-role session before calling the distinct commit route.
 - [x] On scope change, stale data, failed confirmation or unavailable guard, clear/disable the draft and explain why.
 
-The headless Chromium contract proves chart-price transfer is draft-only; the send control requires a current committable preview, trade-session request headers, exact typed confirmation, and a separate commit request. Scope changes clear draft and preview state. The dedicated smoke intercepts all APIs and uses a fixture preview: it does not perform a broker write. Main still does not install live ticket services, and the earlier read-only quote probe returned stale quotes on all four demo terminals.
+The headless Chromium contract proves chart-price transfer is draft-only; the send control requires a current committable preview, trade-session request headers, exact typed confirmation, and a separate commit request. Scope changes clear draft and preview state. The dedicated browser smoke intercepts APIs and uses a fixture preview; the live server-side preview smoke separately confirms the authenticated read-only API behavior with fresh data. Neither smoke calls commit or performs a broker write.
 
 ### Task 5: Review and release gate
 

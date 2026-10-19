@@ -228,3 +228,36 @@ def test_preview_calls_only_bound_service_and_returns_no_store(monkeypatch):
     assert commit_response.json()['detail']['code'] == 'TRADE_TICKET_DISABLED'
     assert app.state.trade_ticket_preview_capable is True
     assert app.state.trade_ticket_write_capable is False
+
+
+def test_live_preview_smoke_accepts_explicit_insufficient_margin_denial():
+    from runpy import run_path
+
+    smoke = run_path(str(Path(__file__).parents[1] / 'scripts' / 'smoke_live_trade_ticket_preview.py'))
+    result = smoke['validate_preview_response'](
+        'xau5m_m5', 'XAUUSD.p', 422,
+        {'detail': {
+            'code': 'INSUFFICIENT_FREE_MARGIN',
+            'canExecute': False,
+            'canCommit': False,
+            'guard': {'state': 'UNKNOWN', 'source': 'NONE'},
+        }},
+    )
+
+    assert result == 'REJECTED_INSUFFICIENT_FREE_MARGIN'
+
+
+def test_live_preview_smoke_rejects_any_other_http_422():
+    from runpy import run_path
+
+    smoke = run_path(str(Path(__file__).parents[1] / 'scripts' / 'smoke_live_trade_ticket_preview.py'))
+    with pytest.raises(AssertionError, match='unexpected preview rejection'):
+        smoke['validate_preview_response'](
+            'xau5m_m5', 'XAUUSD.p', 422,
+            {'detail': {
+                'code': 'EA_GUARD_HARD_LOCK',
+                'canExecute': False,
+                'canCommit': False,
+                'guard': {'state': 'UNKNOWN', 'source': 'NONE'},
+            }},
+        )
