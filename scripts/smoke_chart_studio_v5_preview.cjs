@@ -7,8 +7,8 @@ const {chromium}=require("playwright");
 
 const root=path.resolve(__dirname,"..");
 const html=enabled=>`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<script>window.CHART_STUDIO_V5_PREVIEW_ENABLED=${enabled};window.__v4Updates=0;window.__v5AverageAccount="titan";window.__v5AverageConfigs=[{id:"trend-ema",type:"EMA",period:21,source:"close",color:"#68dfff",lineWidth:2,visible:true,label:"Trend EMA",displayShift:0}];window.ChartStudioAverages={getConfigs:()=>window.__v5AverageConfigs.map(item=>({...item})),getAccount:()=>window.__v5AverageAccount};window.__v5IndicatorScope={account:"titan",symbol:"XAUUSD",timeframe:"M15"};window.__v5IndicatorSettings={rsi:{enabled:false,period:14},macd:{enabled:false,fast:12,slow:26,signal:9},atr:{enabled:false,period:14},adx:{enabled:false,period:14},stochastic:{enabled:true,period:14,smoothK:3,smoothD:3}};window.__v5OscillatorInstances=[{id:"macd-one",kind:"macd",fast:8,slow:21,signal:5,visible:true,color:"#44ffaa",lineWidth:3,label:"Fast MACD"}];const cloneLocal=value=>JSON.parse(JSON.stringify(value));window.ChartStudioIndicators={getScope:()=>({...window.__v5IndicatorScope}),settings:()=>cloneLocal(window.__v5IndicatorSettings)};window.ChartStudioOscillators={getAccount:()=>window.__v5IndicatorScope.account,settings:()=>cloneLocal(window.__v5OscillatorInstances)};</script>
-<script src="static/chart-level-visibility.js"></script><script src="static/chart-studio-v5-feed.js"></script><script src="static/chart-studio-v5-indicator-feed.js"></script><script src="static/chart-studio-v5-oscillator-feed.js"></script><script src="static/chart-studio-v5-preview.js"></script>
+<script>window.CHART_STUDIO_V5_PREVIEW_ENABLED=${enabled};window.__v4Updates=0;window.__v5AverageAccount="titan";window.__v5AverageConfigs=[{id:"trend-ema",type:"EMA",period:21,source:"close",color:"#68dfff",lineWidth:2,visible:true,label:"Trend EMA",displayShift:0}];window.ChartStudioAverages={getConfigs:()=>window.__v5AverageConfigs.map(item=>({...item})),getAccount:()=>window.__v5AverageAccount,normalizeList:list=>Array.isArray(list)?list.map(item=>({...item})):null,applySettings:list=>{window.__v5AverageConfigs=list.map(item=>({...item}));return true}};window.__v5IndicatorScope={account:"titan",symbol:"XAUUSD",timeframe:"M15"};window.__v5IndicatorSettings={rsi:{enabled:false,period:14},macd:{enabled:false,fast:12,slow:26,signal:9},atr:{enabled:false,period:14},adx:{enabled:false,period:14},stochastic:{enabled:true,period:14,smoothK:3,smoothD:3}};window.__v5OscillatorInstances=[{id:"macd-one",kind:"macd",fast:8,slow:21,signal:5,visible:true,color:"#44ffaa",lineWidth:3,label:"Fast MACD"}];const cloneLocal=value=>JSON.parse(JSON.stringify(value));window.ChartStudioIndicators={getScope:()=>({...window.__v5IndicatorScope}),settings:()=>cloneLocal(window.__v5IndicatorSettings),registry:Object.fromEntries(Object.keys(window.__v5IndicatorSettings).map(key=>[key,{max:300}])),applySettings:value=>{window.__v5IndicatorSettings=cloneLocal(value)}};window.ChartStudioOscillators={getAccount:()=>window.__v5IndicatorScope.account,settings:()=>cloneLocal(window.__v5OscillatorInstances),normalizeList:list=>Array.isArray(list)?list.map(item=>({...item})):null,applySettings:list=>{window.__v5OscillatorInstances=list.map(item=>({...item}));return true}};</script>
+<script src="static/chart-level-visibility.js"></script><script src="static/chart-studio-v5-feed.js"></script><script src="static/chart-studio-v5-indicator-feed.js"></script><script src="static/chart-studio-v5-oscillator-feed.js"></script><script src="static/chart-studio-v5-indicator-templates.js"></script><script src="static/chart-studio-v5-preview.js"></script>
 <style>body{margin:0;background:#07111a;color:#e6f4f8;font:14px sans-serif}#tv-chart{height:300px;width:500px}#chart-v5-preview-host{height:700px;width:700px}</style></head><body>
 <div id="tv-chart"><canvas id="v4-sentinel" width="500" height="300"></canvas></div>
 <button type="button" id="chart-v5-preview-btn" aria-controls="chart-v5-preview-panel" aria-expanded="false" hidden>V5 Vorschau</button>
@@ -131,6 +131,48 @@ const server=http.createServer((req,res)=>{
   const syncedOscillators=await page.evaluate(()=>({stochastic:window.ChartStudioV5Preview.readOscillator("catalog-stochastic"),macd:window.ChartStudioV5Preview.readOscillator("instance-macd-one")}));
   assert.deepEqual(syncedOscillators.stochastic,{id:"preview-osc-c-stochastic",kind:"stochastic",settings:{period:14,smoothK:3,smoothD:3},color:"#55d7ee",lineWidth:2,visible:true,title:"Stochastic %K/%D"});
   assert.deepEqual(syncedOscillators.macd,{id:"preview-osc-i-pzbd09",kind:"macd",settings:{fast:8,slow:21,signal:5},color:"#44ffaa",lineWidth:3,visible:true,title:"Fast MACD"});
+  await page.locator("#chart-v5-indicator-template-manager > summary").click();
+  assert.equal(await page.locator("#chart-v5-indicator-template-save").isEnabled(),true,"verified native v5 enables scoped indicator-template saving");
+  await page.locator("#chart-v5-indicator-template-name").fill("Momentum indicators");
+  await page.locator("#chart-v5-indicator-template-save").click();
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-indicator-template-status")?.textContent.includes("gespeichert"));
+  assert.deepEqual(await page.locator("#chart-v5-indicator-template-list option:not([value=''])").allTextContents(),["Momentum indicators"]);
+  const indicatorTemplateState=await page.evaluate(()=>{
+    const key="2eas.chartstudio.v5.indicator-templates:v1:titan:XAUUSD:M15",saved=JSON.parse(localStorage.getItem(key));
+    const settings=window.ChartStudioIndicators.settings();for(const item of Object.values(settings))item.enabled=false;
+    window.ChartStudioAverages.applySettings([]);window.ChartStudioIndicators.applySettings(settings);window.ChartStudioOscillators.applySettings([]);
+    window.ChartStudioV5Preview.syncMovingAverages();window.ChartStudioV5Preview.syncOscillators();window.confirm=()=>true;
+    return {key,saved,cleared:window.ChartStudioV5Preview.inspect()};
+  });
+  assert.equal(indicatorTemplateState.saved.templates.length,1,"template stores one immutable, scope-bound indicator set");
+  assert.equal(indicatorTemplateState.saved.templates[0].snapshot.movingAverages.length,1);
+  assert.equal(indicatorTemplateState.saved.templates[0].snapshot.oscillatorInstances.length,1);
+  assert.equal(indicatorTemplateState.cleared.customMovingAverageCount,0);
+  assert.equal(indicatorTemplateState.cleared.customOscillatorCount,0);
+  await page.locator("#chart-v5-indicator-template-list").selectOption(indicatorTemplateState.saved.templates[0].id);
+  await page.locator("#chart-v5-indicator-template-apply").click();
+  await page.waitForFunction(()=>{const text=document.querySelector("#chart-v5-indicator-template-status")?.textContent||"";return text.includes("angewendet")||text.includes("Templateaktion nicht ausgeführt")});
+  assert.match(await page.locator("#chart-v5-indicator-template-status").textContent(),/angewendet/);
+  const reapplied=await page.evaluate(()=>({state:window.ChartStudioV5Preview.inspect(),averages:window.ChartStudioAverages.getConfigs(),oscillators:window.ChartStudioOscillators.settings(),stochastic:window.ChartStudioIndicators.settings().stochastic}));
+  assert.equal(reapplied.state.customMovingAverageCount,1,"template application restores the native-v5 overlay");
+  assert.equal(reapplied.state.customOscillatorCount,2,"template application restores catalog and custom oscillator panes");
+  assert.equal(reapplied.averages[0].period,21);assert.equal(reapplied.oscillators[0].fast,8);assert.equal(reapplied.stochastic.enabled,true);
+  await page.evaluate(({key,saved})=>{const broken=JSON.parse(JSON.stringify(saved));broken.templates[0].snapshot.indicators.stochastic.period=1;localStorage.setItem(key,JSON.stringify(broken))},indicatorTemplateState);
+  await page.locator("#chart-v5-indicator-template-apply").click();
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-indicator-template-status")?.textContent.includes("INVALID_INDICATOR_SETTINGS"));
+  const afterBadTemplate=await page.evaluate(()=>({state:window.ChartStudioV5Preview.inspect(),average:window.ChartStudioAverages.getConfigs()[0],stochastic:window.ChartStudioIndicators.settings().stochastic}));
+  assert.equal(afterBadTemplate.state.customMovingAverageCount,1,"invalid local template cannot partially clear native overlays");
+  assert.equal(afterBadTemplate.average.period,21);assert.equal(afterBadTemplate.stochastic.enabled,true);
+  await page.evaluate(({key,saved})=>localStorage.setItem(key,JSON.stringify(saved)),indicatorTemplateState);
+  await page.locator("#chart-v5-indicator-template-name").fill("Momentum indicators v2");
+  await page.locator("#chart-v5-indicator-template-rename").click();
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-indicator-template-list")?.selectedOptions[0]?.textContent==="Momentum indicators v2");
+  await page.locator("#chart-v5-indicator-template-name").fill("Momentum copy");
+  await page.locator("#chart-v5-indicator-template-copy").click();
+  await page.waitForFunction(()=>document.querySelector("#chart-v5-indicator-template-list")?.options.length===3);
+  assert.deepEqual(await page.locator("#chart-v5-indicator-template-list option:not([value=''])").allTextContents(),["Momentum indicators v2","Momentum copy"]);
+  await page.locator("#chart-v5-indicator-template-delete").click();
+  assert.deepEqual(await page.locator("#chart-v5-indicator-template-list option:not([value=''])").allTextContents(),["Momentum indicators v2"]);
   const initialMovingAverage=await page.evaluate(()=>window.ChartStudioV5Preview.readMovingAverage("trend-ema"));
   assert.equal(initialMovingAverage.period,21);
   assert.equal(initialMovingAverage.source,"close");
@@ -539,15 +581,15 @@ const server=http.createServer((req,res)=>{
   assert.equal(scopeSwitch.state.brokerDealMarkerCount,0,"account changes clear prior account deal markers");
   assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.readAutoFibonacci()),null,"a scope switch clears Auto-Fibonacci along with the prior account's candles");
   const profileScope=await page.evaluate(({candles,asOfUtc})=>{
-   const preview=window.ChartStudioV5Preview,names=()=>[...document.querySelectorAll("#chart-v5-profile-list option")].filter(option=>option.value).map(option=>option.textContent);
-   preview.setScope({account:"titan",symbol:"XAUUSD",timeframe:"M15"});const titan=names();
-   preview.setScope({account:"titan",symbol:"EURUSD",timeframe:"M15"});const otherSymbol=names();
-   preview.setScope({account:"titan",symbol:"XAUUSD",timeframe:"M5"});const otherTimeframe=names();
-   preview.setScope({account:"goldm15",symbol:"XAUUSD",timeframe:"M15"});const otherAccount=names();
+   const preview=window.ChartStudioV5Preview,names=()=>[...document.querySelectorAll("#chart-v5-profile-list option")].filter(option=>option.value).map(option=>option.textContent),templateNames=()=>[...document.querySelectorAll("#chart-v5-indicator-template-list option")].filter(option=>option.value).map(option=>option.textContent);
+   preview.setScope({account:"titan",symbol:"XAUUSD",timeframe:"M15"});const titan=names(),titanTemplates=templateNames();
+   preview.setScope({account:"titan",symbol:"EURUSD",timeframe:"M15"});const otherSymbol=names(),otherSymbolTemplates=templateNames();
+   preview.setScope({account:"titan",symbol:"XAUUSD",timeframe:"M5"});const otherTimeframe=names(),otherTimeframeTemplates=templateNames();
+   preview.setScope({account:"goldm15",symbol:"XAUUSD",timeframe:"M15"});const otherAccount=names(),otherAccountTemplates=templateNames();
     preview.setScope({account:"xau5m_m5",symbol:"XAUUSD",timeframe:"M15"});const token=preview.beginRead();preview.update({accountId:"xau5m_m5",symbol:"XAUUSD",timeframe:"M15",source:"MT5_VERIFIED",canExecute:false,snapshotAsOfUtc:asOfUtc,candles},token);
-   return {titan,otherSymbol,otherTimeframe,otherAccount};
+   return {titan,otherSymbol,otherTimeframe,otherAccount,titanTemplates,otherSymbolTemplates,otherTimeframeTemplates,otherAccountTemplates};
   },{candles,asOfUtc});
-  assert.deepEqual(profileScope,{titan:["Morning layout v2"],otherSymbol:[],otherTimeframe:[],otherAccount:[]},"saved named layouts are isolated by account, symbol and timeframe");
+  assert.deepEqual(profileScope,{titan:["Morning layout v2"],otherSymbol:[],otherTimeframe:[],otherAccount:[],titanTemplates:["Momentum indicators v2"],otherSymbolTemplates:[],otherTimeframeTemplates:[],otherAccountTemplates:[]},"saved layouts and indicator templates are isolated by account, symbol and timeframe");
   await page.locator("#chart-v5-profile-manager > summary").click();
   const hostBox=await page.locator("#chart-v5-preview-host").boundingBox();
   await page.mouse.move(hostBox.x+hostBox.width*0.45,hostBox.y+hostBox.height*0.45);

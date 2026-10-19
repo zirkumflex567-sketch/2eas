@@ -1871,6 +1871,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="static/chart-studio-v5-feed.js"></script>
   <script src="static/chart-studio-v5-indicator-feed.js"></script>
   <script src="static/chart-studio-v5-oscillator-feed.js"></script>
+  <script src="static/chart-studio-v5-indicator-templates.js"></script>
   <script src="static/chart-studio-v5-preview.js"></script>
   <script src="static/stone-celebrations.js"></script>
   <style>

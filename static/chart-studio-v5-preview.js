@@ -3,9 +3,9 @@
 (function(){
   "use strict";
   if(window.CHART_STUDIO_V5_PREVIEW_ENABLED!==true)return;
-  let button=null,panel=null,host=null,status=null,title=null,dataWindow=null,dataWindowPinButton=null,liveQuote=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,priceButton=null,timeButton=null,rectButton=null,fiboButton=null,measureButton=null,channelButton=null,pitchforkButton=null,riskRewardButton=null,textButton=null,textInput=null,drawingStatus=null,layoutButton=null,layoutImportButton=null,layoutReplaceButton=null,layoutImportFile=null,profileSummary=null,profileName=null,profileList=null,profileSaveButton=null,profileLoadButton=null,profileRenameButton=null,profileCopyButton=null,profileDeleteButton=null,layoutResetButton=null,profileStatus=null;
+  let button=null,panel=null,host=null,status=null,title=null,dataWindow=null,dataWindowPinButton=null,liveQuote=null,autoFibButton=null,autoFibStatus=null,trendButton=null,rayButton=null,priceButton=null,timeButton=null,rectButton=null,fiboButton=null,measureButton=null,channelButton=null,pitchforkButton=null,riskRewardButton=null,textButton=null,textInput=null,drawingStatus=null,layoutButton=null,layoutImportButton=null,layoutReplaceButton=null,layoutImportFile=null,profileSummary=null,profileName=null,profileList=null,profileSaveButton=null,profileLoadButton=null,profileRenameButton=null,profileCopyButton=null,profileDeleteButton=null,layoutResetButton=null,profileStatus=null,indicatorTemplateManager=null,indicatorTemplateName=null,indicatorTemplateList=null,indicatorTemplateSaveButton=null,indicatorTemplateApplyButton=null,indicatorTemplateRenameButton=null,indicatorTemplateCopyButton=null,indicatorTemplateDeleteButton=null,indicatorTemplateStatus=null;
 
-  let scope=null,latest=null,engine=null,bridge=null,indicatorBridge=null,oscillatorBridge=null,active=false,loading=null,autoFibEnabled=false,dataWindowHover=null,dataWindowPinned=null,dataWindowCrosshairActive=false;
+  let scope=null,latest=null,engine=null,bridge=null,indicatorBridge=null,oscillatorBridge=null,active=false,loading=null,autoFibEnabled=false,dataWindowHover=null,dataWindowPinned=null,dataWindowCrosshairActive=false,indicatorTemplateStore=null;
   let generation=0,sequence=0,latestSequence=0,positionSequence=0,positionsSnapshot=null,brokerDealMarkersSnapshot=null,positionsEnabled=true,drawingTool=null,pendingImportMode=null,quoteTimer=null,quoteRequest=0;
   const setStatus=value=>{if(status)status.textContent=value};
   function renderDataWindow(event){
@@ -185,7 +185,119 @@
     try{engine?.destroy()}catch(_){}
     engine=null;bridge=null;autoFibEnabled=false;drawingTool=null;if(autoFibButton){autoFibButton.setAttribute("aria-pressed","false");autoFibButton.textContent="Auto-Fibonacci einblenden";autoFibButton.disabled=!latest}if(autoFibStatus)autoFibStatus.textContent="";updateDrawingButtons();if(drawingStatus)drawingStatus.textContent="Zeichenwerkzeug aus.";if(host)host.replaceChildren();refreshDrawingManager();
   }
-  function updateDrawingButtons(){for(const [button,kind] of [[trendButton,"TREND"],[rayButton,"RAY"],[priceButton,"PRICE"],[timeButton,"TIME"],[rectButton,"RECT"],[fiboButton,"FIBO"],[measureButton,"MEASURE"],[channelButton,"CHANNEL"],[pitchforkButton,"PITCHFORK"],[riskRewardButton,"RISK_REWARD"],[textButton,"TEXT"]])if(button){button.disabled=!engine||!latest||(kind==="TEXT"&&!/^[\x20-\x7E]{1,40}$/.test(textInput?.value||""));button.setAttribute("aria-pressed",drawingTool===kind?"true":"false")}for(const item of [layoutButton,layoutImportButton,layoutReplaceButton,profileSaveButton,layoutResetButton])if(item)item.disabled=!engine||!latest;updateProfileButtons()}
+  function updateDrawingButtons(){for(const [button,kind] of [[trendButton,"TREND"],[rayButton,"RAY"],[priceButton,"PRICE"],[timeButton,"TIME"],[rectButton,"RECT"],[fiboButton,"FIBO"],[measureButton,"MEASURE"],[channelButton,"CHANNEL"],[pitchforkButton,"PITCHFORK"],[riskRewardButton,"RISK_REWARD"],[textButton,"TEXT"]])if(button){button.disabled=!engine||!latest||(kind==="TEXT"&&!/^[\x20-\x7E]{1,40}$/.test(textInput?.value||""));button.setAttribute("aria-pressed",drawingTool===kind?"true":"false")}for(const item of [layoutButton,layoutImportButton,layoutReplaceButton,profileSaveButton,layoutResetButton])if(item)item.disabled=!engine||!latest;updateProfileButtons();updateIndicatorTemplateButtons()}
+  function exactObject(value){return !!value&&typeof value==="object"&&!Array.isArray(value)&&(Object.getPrototypeOf(value)===Object.prototype||Object.getPrototypeOf(value)===null)}
+  function normalizeTemplateIndicators(raw){
+    const api=window.ChartStudioIndicators;
+    if(!api||typeof api.settings!=="function"||!api.registry)throw new Error("INDICATORS_UNAVAILABLE");
+    const defaults=api.settings(),keys=Object.keys(defaults);
+    if(!exactObject(raw)||Object.keys(raw).sort().join(",")!==keys.slice().sort().join(","))throw new Error("INVALID_INDICATOR_SETTINGS");
+    const result={};
+    for(const kind of keys){
+      const source=raw[kind],schema=defaults[kind];
+      if(!exactObject(source)||!exactObject(schema))throw new Error("INVALID_INDICATOR_SETTINGS");
+      const expected=Object.keys(schema).filter(key=>!(kind==="pivots"&&key==="sourceWindow"));
+      if(Object.keys(source).some(key=>key==="sourceWindow")||Object.keys(source).sort().join(",")!==expected.slice().sort().join(","))throw new Error("INVALID_INDICATOR_SETTINGS");
+      const item={};
+      for(const key of expected){
+        const value=source[key],baseline=schema[key];
+        if(typeof value!==typeof baseline||typeof value==="number"&&!Number.isFinite(value))throw new Error("INVALID_INDICATOR_SETTINGS");
+        if(typeof value==="number"){
+          const minimum=key==="multiplier"?.1:key==="step"||key==="maxStep"?.01:key==="smoothK"||key==="smoothD"?1:key==="displacement"?0:2;
+          const maximum=key==="multiplier"?10:key==="step"||key==="maxStep"?.5:key==="slow"?300:key==="smoothK"||key==="smoothD"?100:key==="displacement"?200:["period","atrPeriod","tenkanPeriod","kijunPeriod","senkouBPeriod","signal","fast"].includes(key)?api.registry[kind]?.max||200:300;
+          if(value<minimum||value>maximum||["period","atrPeriod","fast","slow","signal","smoothK","smoothD","displacement","tenkanPeriod","kijunPeriod","senkouBPeriod"].includes(key)&&!Number.isInteger(value)||key==="multiplier"&&Math.abs(value*10-Math.round(value*10))>1e-8||["step","maxStep"].includes(key)&&Math.abs(value*100-Math.round(value*100))>1e-8)throw new Error("INVALID_INDICATOR_SETTINGS");
+        }else if(typeof value==="string"){
+          if(["upColor","downColor"].includes(key)&&!/^#[0-9a-fA-F]{6}$/.test(value))throw new Error("INVALID_INDICATOR_SETTINGS");
+          if(key==="timeZone"){try{new Intl.DateTimeFormat("en-US",{timeZone:value})}catch(_){throw new Error("INVALID_INDICATOR_SETTINGS")}}
+          if(key==="sessionStart"&&!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))throw new Error("INVALID_INDICATOR_SETTINGS");
+          if(key==="basis"&&!(["D1","W1"].includes(value)))throw new Error("INVALID_INDICATOR_SETTINGS");
+          if(!["upColor","downColor","timeZone","sessionStart","basis"].includes(key)&&value!==baseline)throw new Error("INVALID_INDICATOR_SETTINGS");
+        }else if(typeof value==="boolean"){}else if(value!==baseline)throw new Error("INVALID_INDICATOR_SETTINGS");
+        item[key]=value;
+      }
+      if(kind==="macd"&&item.fast>=item.slow||kind==="sar"&&(item.step>item.maxStep||item.step>.1))throw new Error("INVALID_INDICATOR_SETTINGS");
+      result[kind]=item;
+    }
+    return result;
+  }
+  function normalizeIndicatorTemplateSnapshot(raw){
+    if(!exactObject(raw)||Object.keys(raw).sort().join(",")!=="indicators,movingAverages,oscillatorInstances")throw new Error("INVALID_SNAPSHOT");
+    const indicators=normalizeTemplateIndicators(raw.indicators),averages=window.ChartStudioAverages,oscillators=window.ChartStudioOscillators;
+    if(!averages||typeof averages.normalizeList!=="function"||typeof averages.getAccount!=="function"||averages.getAccount()!==scope?.account)throw new Error("AVERAGES_UNAVAILABLE");
+    if(!oscillators||typeof oscillators.normalizeList!=="function"||typeof oscillators.getAccount!=="function"||oscillators.getAccount()!==scope?.account)throw new Error("OSCILLATORS_UNAVAILABLE");
+    const movingAverages=averages.normalizeList(raw.movingAverages),oscillatorInstances=oscillators.normalizeList(raw.oscillatorInstances);
+    if(!movingAverages||movingAverages.length!==raw.movingAverages.length||!oscillatorInstances||oscillatorInstances.length!==raw.oscillatorInstances.length)throw new Error("INVALID_INDICATOR_INSTANCES");
+    const serialized=JSON.stringify({indicators,movingAverages,oscillatorInstances});
+    if(new TextEncoder().encode(serialized).length>512*1024)throw new Error("SNAPSHOT_LIMIT");
+    return JSON.parse(serialized);
+  }
+  function currentIndicatorTemplateSnapshot(){
+    const indicators=window.ChartStudioIndicators?.settings?.(),movingAverages=window.ChartStudioAverages?.getConfigs?.(),oscillatorInstances=window.ChartStudioOscillators?.settings?.();
+    if(!indicators||!Array.isArray(movingAverages)||!Array.isArray(oscillatorInstances))throw new Error("INDICATORS_UNAVAILABLE");
+    const copy=JSON.parse(JSON.stringify(indicators));
+    if(copy.pivots)delete copy.pivots.sourceWindow;
+    return normalizeIndicatorTemplateSnapshot({indicators:copy,movingAverages,oscillatorInstances});
+  }
+  function applyIndicatorTemplateSnapshot(snapshot){
+    const normalized=normalizeIndicatorTemplateSnapshot(snapshot),averages=window.ChartStudioAverages,indicators=window.ChartStudioIndicators,oscillators=window.ChartStudioOscillators;
+    if(averages.applySettings(normalized.movingAverages)===false)throw new Error("APPLY_FAILED");
+    indicators.applySettings(normalized.indicators);
+    if(oscillators.applySettings(normalized.oscillatorInstances)===false)throw new Error("APPLY_FAILED");
+    syncMovingAverages();syncOscillators();
+    return true;
+  }
+  function ensureIndicatorTemplateStore(){
+    if(!scope||!window.ChartStudioV5IndicatorTemplates?.createStore)throw new Error("TEMPLATE_STORE_UNAVAILABLE");
+    indicatorTemplateStore=window.ChartStudioV5IndicatorTemplates.createStore({storage:window.localStorage,scope});
+    return indicatorTemplateStore;
+  }
+  function selectedIndicatorTemplateId(){return indicatorTemplateList?.value||""}
+  function indicatorTemplateCount(){try{return indicatorTemplateStore?.list?.().length||0}catch(_){return 0}}
+  function updateIndicatorTemplateButtons(){
+    const ready=!!engine&&!!latest,selected=!!selectedIndicatorTemplateId();
+    if(indicatorTemplateSaveButton)indicatorTemplateSaveButton.disabled=!ready;
+    for(const item of [indicatorTemplateApplyButton,indicatorTemplateRenameButton,indicatorTemplateCopyButton,indicatorTemplateDeleteButton])if(item)item.disabled=!ready||!selected;
+  }
+  function refreshIndicatorTemplateList(){
+    if(!indicatorTemplateList)return;
+    const previous=indicatorTemplateList.value;indicatorTemplateList.replaceChildren();
+    const placeholder=document.createElement("option");placeholder.value="";placeholder.textContent="Template auswählen …";indicatorTemplateList.append(placeholder);
+    try{
+      const store=ensureIndicatorTemplateStore();
+      if(indicatorTemplateManager&&scope)indicatorTemplateManager.querySelector("summary").textContent=`Indikator-Templates · ${scope.account} · ${scope.symbol} · ${scope.timeframe}`;
+      for(const item of store.list()){const option=document.createElement("option");option.value=item.id;option.textContent=item.name;indicatorTemplateList.append(option)}
+      if([...indicatorTemplateList.options].some(item=>item.value===previous))indicatorTemplateList.value=previous;
+      if(indicatorTemplateStatus&&!indicatorTemplateStatus.textContent)indicatorTemplateStatus.textContent="Enthält nur Indikatoreinstellungen; lokale Speicherung pro Konto, Symbol und Zeitraum.";
+    }catch(error){if(indicatorTemplateStatus)indicatorTemplateStatus.textContent="Template-Liste nicht verfügbar · "+String(error?.message||error).slice(0,120)}
+    updateIndicatorTemplateButtons();
+  }
+  function installIndicatorTemplateControls(){
+    const anchor=document.getElementById("chart-v5-profile-manager");if(!anchor||document.getElementById("chart-v5-indicator-template-manager"))return;
+    indicatorTemplateManager=document.createElement("details");indicatorTemplateManager.id="chart-v5-indicator-template-manager";indicatorTemplateManager.className="w-full rounded border border-violet-400/20 bg-slate-950/50 p-2";
+    const summary=document.createElement("summary");summary.className="cursor-pointer select-none font-bold text-violet-100";summary.textContent="Native v5 Indikator-Templates";indicatorTemplateManager.append(summary);
+    const row=document.createElement("div");row.className="mt-2 flex flex-wrap items-end gap-2";
+    const nameLabel=document.createElement("label");nameLabel.className="flex flex-col gap-1";nameLabel.append(document.createTextNode("Name "));
+    indicatorTemplateName=document.createElement("input");indicatorTemplateName.id="chart-v5-indicator-template-name";indicatorTemplateName.maxLength=40;indicatorTemplateName.autocomplete="off";indicatorTemplateName.className="w-48 rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-100";nameLabel.append(indicatorTemplateName);
+    const listLabel=document.createElement("label");listLabel.className="flex flex-col gap-1";listLabel.append(document.createTextNode("Indikator-Template "));
+    indicatorTemplateList=document.createElement("select");indicatorTemplateList.id="chart-v5-indicator-template-list";indicatorTemplateList.setAttribute("aria-label","Gespeichertes natives v5 Indikator-Template");indicatorTemplateList.className="min-w-40 rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-100";listLabel.append(indicatorTemplateList);
+    const makeButton=(id,label)=>{const item=document.createElement("button");item.type="button";item.id=id;item.textContent=label;item.className="rounded border border-violet-400/40 bg-violet-900/20 px-2 py-1 font-bold text-violet-100";return item};
+    indicatorTemplateSaveButton=makeButton("chart-v5-indicator-template-save","Aktuelle Indikatoren speichern");
+    indicatorTemplateApplyButton=makeButton("chart-v5-indicator-template-apply","Anwenden…");
+    indicatorTemplateRenameButton=makeButton("chart-v5-indicator-template-rename","Umbenennen");
+    indicatorTemplateCopyButton=makeButton("chart-v5-indicator-template-copy","Kopieren");
+    indicatorTemplateDeleteButton=makeButton("chart-v5-indicator-template-delete","Löschen");
+    row.append(nameLabel,listLabel,indicatorTemplateSaveButton,indicatorTemplateApplyButton,indicatorTemplateRenameButton,indicatorTemplateCopyButton,indicatorTemplateDeleteButton);
+    indicatorTemplateManager.append(row);indicatorTemplateStatus=document.createElement("output");indicatorTemplateStatus.id="chart-v5-indicator-template-status";indicatorTemplateStatus.setAttribute("role","status");indicatorTemplateStatus.setAttribute("aria-live","polite");indicatorTemplateStatus.className="mt-1 block text-slate-300";indicatorTemplateManager.append(indicatorTemplateStatus);
+    anchor.insertAdjacentElement("afterend",indicatorTemplateManager);
+    indicatorTemplateSaveButton.addEventListener("click",()=>indicatorTemplateAction(()=>{const result=ensureIndicatorTemplateStore().save(indicatorTemplateName.value,currentIndicatorTemplateSnapshot());refreshIndicatorTemplateList();indicatorTemplateList.value=result.id;indicatorTemplateStatus.textContent=`Indikator-Template „${result.name}“ gespeichert.`}));
+    indicatorTemplateApplyButton.addEventListener("click",()=>indicatorTemplateAction(()=>{const store=ensureIndicatorTemplateStore(),entry=store.get(selectedIndicatorTemplateId());if(!window.confirm(`Indikator-Template „${entry.name}“ für ${scope.account} · ${scope.symbol} · ${scope.timeframe} anwenden und aktuelle Indikatoreinstellungen ersetzen?`))return;store.apply(entry.id,{current:currentIndicatorTemplateSnapshot(),apply:applyIndicatorTemplateSnapshot});indicatorTemplateStatus.textContent=`Indikator-Template „${entry.name}“ angewendet.`}));
+    indicatorTemplateRenameButton.addEventListener("click",()=>indicatorTemplateAction(()=>{const result=ensureIndicatorTemplateStore().rename(selectedIndicatorTemplateId(),indicatorTemplateName.value);refreshIndicatorTemplateList();indicatorTemplateList.value=result.id;indicatorTemplateStatus.textContent=`Indikator-Template in „${result.name}“ umbenannt.`}));
+    indicatorTemplateCopyButton.addEventListener("click",()=>indicatorTemplateAction(()=>{const result=ensureIndicatorTemplateStore().copy(selectedIndicatorTemplateId(),indicatorTemplateName.value);refreshIndicatorTemplateList();indicatorTemplateList.value=result.id;indicatorTemplateStatus.textContent=`Indikator-Template „${result.name}“ kopiert.`}));
+    indicatorTemplateDeleteButton.addEventListener("click",()=>indicatorTemplateAction(()=>{const entry=ensureIndicatorTemplateStore().get(selectedIndicatorTemplateId());if(!window.confirm(`Indikator-Template „${entry.name}“ löschen?`))return;ensureIndicatorTemplateStore().remove(entry.id);indicatorTemplateName.value="";refreshIndicatorTemplateList();indicatorTemplateStatus.textContent=`Indikator-Template „${entry.name}“ gelöscht.`}));
+    indicatorTemplateList.addEventListener("change",()=>{try{indicatorTemplateName.value=selectedIndicatorTemplateId()?ensureIndicatorTemplateStore().get(selectedIndicatorTemplateId()).name:""}catch(_){indicatorTemplateName.value=""}updateIndicatorTemplateButtons()});
+    indicatorTemplateSaveButton.disabled=true;updateIndicatorTemplateButtons();
+  }
+  function indicatorTemplateAction(action){try{action()}catch(error){if(indicatorTemplateStatus)indicatorTemplateStatus.textContent="Templateaktion nicht ausgeführt · "+String(error?.message||error).slice(0,140)}}
   function exportLayout(){
     if(!engine||!scope)return null;
     const serialized=engine.exportLayout(),layout=JSON.parse(serialized);
@@ -525,7 +637,7 @@
     if(same(scope,next))return true;
     scope={account:next.account,symbol:next.symbol,timeframe:next.timeframe};
     if(title)title.textContent=`Native v5 · ${scope.symbol} ${scope.timeframe} · ${scope.account}`;
-    refreshProfileList();
+    refreshProfileList();refreshIndicatorTemplateList();
     generation++;sequence=0;latestSequence=0;positionSequence=0;positionsSnapshot=null;brokerDealMarkersSnapshot=null;latest=null;
     if(bridge)bridge.clear();
     destroyRenderer();
@@ -569,7 +681,7 @@
     setDrawingTool(null);updateDrawingButtons();
     setStatus(message||"MT5-Kerzen derzeit nicht verfügbar");
   }
-  window.ChartStudioV5Preview=Object.freeze({setScope,beginRead,update,clear,renderAutoFib,clearAutoFib,beginPositionRead,setPositions,showPositions,readPositions,clearPositions,setBrokerDealMarkers,readBrokerDealMarkers,readMarketLevels:()=>engine?.readMarketLevels?.()||{source:"NONE",asOfUtc:null,count:0,levels:{}},syncMarketLevels,setDrawingTool,syncMovingAverages,syncOscillators,readMovingAverage:id=>engine?.movingAverageOptions?.("preview-ma-"+id)||null,readOscillator:id=>oscillatorBridge?.read(id)||null,exportLayout,importLayout,readDrawing:id=>engine?.readDrawing?.(id)||null,drawingAnchorPosition:(id,anchor)=>engine?.drawingAnchorPosition?.(id,anchor)||null,drawingGeometry:id=>engine?.drawingGeometry?.(id)||null,readAutoFibonacci:()=>engine?.readAutoFibonacci?.()||null,inspect:()=>({active,scope:currentScope(),generation,status:status?.textContent||"",autoFibonacci:!!engine?.readAutoFibonacci?.(),priceAxisWidth:engine?.inspect?.().priceAxisWidth||0,customMovingAverageCount:indicatorBridge?.inspect?.().count||0,customOscillatorCount:oscillatorBridge?.inspect?.().count||0,positionOverlayCount:readPositions().count,marketLevelCount:engine?.readMarketLevels?.().count||0,brokerDealMarkerCount:readBrokerDealMarkers().plotted,nativeDrawingCount:engine?.inspect?.().nativeDrawingCount||0,selectedDrawingIds:engine?.inspect?.().selectedDrawingIds||[],persistenceStatus:engine?.inspect?.().persistenceStatus||null,persistenceError:engine?.inspect?.().persistenceError||null,drawingTool,placement:engine?.drawingToolState?.()||null,positionsEnabled,dataWindowPinned:!!dataWindowPinned,brokerDealMarkers:readBrokerDealMarkers()})});
+  window.ChartStudioV5Preview=Object.freeze({setScope,beginRead,update,clear,renderAutoFib,clearAutoFib,beginPositionRead,setPositions,showPositions,readPositions,clearPositions,setBrokerDealMarkers,readBrokerDealMarkers,readMarketLevels:()=>engine?.readMarketLevels?.()||{source:"NONE",asOfUtc:null,count:0,levels:{}},syncMarketLevels,setDrawingTool,syncMovingAverages,syncOscillators,readMovingAverage:id=>engine?.movingAverageOptions?.("preview-ma-"+id)||null,readOscillator:id=>oscillatorBridge?.read(id)||null,exportLayout,importLayout,readDrawing:id=>engine?.readDrawing?.(id)||null,drawingAnchorPosition:(id,anchor)=>engine?.drawingAnchorPosition?.(id,anchor)||null,drawingGeometry:id=>engine?.drawingGeometry?.(id)||null,readAutoFibonacci:()=>engine?.readAutoFibonacci?.()||null,inspect:()=>({active,scope:currentScope(),generation,status:status?.textContent||"",autoFibonacci:!!engine?.readAutoFibonacci?.(),priceAxisWidth:engine?.inspect?.().priceAxisWidth||0,customMovingAverageCount:indicatorBridge?.inspect?.().count||0,customOscillatorCount:oscillatorBridge?.inspect?.().count||0,indicatorTemplateCount:indicatorTemplateCount(),positionOverlayCount:readPositions().count,marketLevelCount:engine?.readMarketLevels?.().count||0,brokerDealMarkerCount:readBrokerDealMarkers().plotted,nativeDrawingCount:engine?.inspect?.().nativeDrawingCount||0,selectedDrawingIds:engine?.inspect?.().selectedDrawingIds||[],persistenceStatus:engine?.inspect?.().persistenceStatus||null,persistenceError:engine?.inspect?.().persistenceError||null,drawingTool,placement:engine?.drawingToolState?.()||null,positionsEnabled,dataWindowPinned:!!dataWindowPinned,brokerDealMarkers:readBrokerDealMarkers()})});
   function boot(){
     button=document.getElementById("chart-v5-preview-btn");panel=document.getElementById("chart-v5-preview-panel");
     host=document.getElementById("chart-v5-preview-host");status=document.getElementById("chart-v5-preview-status");dataWindow=document.getElementById("chart-v5-data-window");dataWindowPinButton=document.getElementById("chart-v5-data-window-pin");liveQuote=document.getElementById("chart-v5-live-quote");
@@ -577,6 +689,7 @@
     autoFibButton=document.getElementById("chart-v5-auto-fib-btn");autoFibStatus=document.getElementById("chart-v5-auto-fib-status");
     trendButton=document.getElementById("chart-v5-trend-btn");rayButton=document.getElementById("chart-v5-ray-btn");priceButton=document.getElementById("chart-v5-price-btn");timeButton=document.getElementById("chart-v5-time-btn");rectButton=document.getElementById("chart-v5-rect-btn");fiboButton=document.getElementById("chart-v5-fibo-btn");measureButton=document.getElementById("chart-v5-measure-btn");channelButton=document.getElementById("chart-v5-channel-btn");pitchforkButton=document.getElementById("chart-v5-pitchfork-btn");riskRewardButton=document.getElementById("chart-v5-risk-reward-btn");textButton=document.getElementById("chart-v5-text-btn");textInput=document.getElementById("chart-v5-text-input");drawingStatus=document.getElementById("chart-v5-drawing-status");layoutButton=document.getElementById("chart-v5-layout-export-btn");
     profileSummary=document.querySelector("#chart-v5-profile-manager > summary");profileName=document.getElementById("chart-v5-profile-name");profileList=document.getElementById("chart-v5-profile-list");profileSaveButton=document.getElementById("chart-v5-profile-save");profileLoadButton=document.getElementById("chart-v5-profile-load");profileRenameButton=document.getElementById("chart-v5-profile-rename");profileCopyButton=document.getElementById("chart-v5-profile-copy");profileDeleteButton=document.getElementById("chart-v5-profile-delete");layoutResetButton=document.getElementById("chart-v5-layout-reset");profileStatus=document.getElementById("chart-v5-profile-status");
+    installIndicatorTemplateControls();
     if(!button||!panel||!host||!status)return;
     window.addEventListener("chart-studio-averages-change",onAverageConfigsChanged);
     window.addEventListener("chart-studio-indicators-change",onOscillatorConfigsChanged);
@@ -609,7 +722,7 @@
     if(profileDeleteButton)profileDeleteButton.addEventListener("click",()=>profileAction(deleteProfile));
     if(layoutResetButton)layoutResetButton.addEventListener("click",()=>profileAction(resetCurrentLayout));
     if(profileName)profileName.addEventListener("input",updateProfileButtons);
-    refreshProfileList();updateProfileButtons();
+    refreshProfileList();refreshIndicatorTemplateList();updateProfileButtons();
     if(layoutButton)layoutButton.addEventListener("click",downloadLayout);
     if(layoutImportButton)layoutImportButton.addEventListener("click",()=>chooseLayoutFile("merge"));
     if(layoutReplaceButton)layoutReplaceButton.addEventListener("click",()=>chooseLayoutFile("replace"));
