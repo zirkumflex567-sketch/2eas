@@ -4,7 +4,12 @@ const assert = require("node:assert/strict");
 const { chromium } = require("playwright");
 
 const base = (process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056").replace(/\/+$/, "");
-const accounts = Object.freeze(["titan", "xau5m_m5", "titan_m5", "xau5m_500"]);
+const allowedAccounts = Object.freeze(["titan", "xau5m_m5", "titan_m5", "xau5m_500", "goldm15"]);
+const accounts = Object.freeze(process.env.CHART_STUDIO_ACCOUNTS
+  ? process.env.CHART_STUDIO_ACCOUNTS.split(",").map(value => value.trim()).filter(Boolean)
+  : ["titan", "xau5m_m5", "titan_m5", "xau5m_500"]);
+assert.ok(accounts.length > 0 && accounts.every(account => allowedAccounts.includes(account)),
+  "CHART_STUDIO_ACCOUNTS must contain only configured non-Blueberry demo aliases");
 const scopedPaths = new Set([
   "/api/status",
   "/api/candles",
