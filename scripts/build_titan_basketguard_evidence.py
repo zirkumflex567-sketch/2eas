@@ -174,6 +174,92 @@ def _instrument_source(source_text: str, alias: str, producer: str,
     if generated.count(init_anchor) != 1:
         raise ValueError("expected unique BasketGuard recorder initialization anchor")
     generated = generated.replace(init_anchor, guarded_init, 1)
+
+    deinit_anchor = "#ifdef CS_EVIDENCE_CAPTURE_ENABLED\n   EventKillTimer();"
+    if generated.count(deinit_anchor) != 1:
+        raise ValueError("expected unique BasketGuard capture timer shutdown point")
+    generated = generated.replace(
+        deinit_anchor,
+        "#ifdef CS_EVIDENCE_CAPTURE_ENABLED\n   CSFlushEvidenceQueueOnShutdown();\n   EventKillTimer();",
+        1,
+    )
+
+    order_registration_anchor = '''#endif
+            if(entry_accepted)'''
+    if generated.count(order_registration_anchor) != 2:
+        raise ValueError("expected one accepted-order registration point per trade direction")
+    generated = generated.replace(
+        order_registration_anchor,
+        '''if(entry_accepted && cs_order_ticket>0)
+               CSRegisterOrderAttempt(cs_order_ticket,cs_attempt_id,rates[0].time);
+#endif
+            if(entry_accepted)''',
+    )
+
+    transaction_stub = '''// Deal/lifecycle recording remains owned by the broker-side evidence adapter;
+// this EA hook intentionally performs no duplicate history or file I/O.
+void OnTradeTransaction(const MqlTradeTransaction &trans,
+                        const MqlTradeRequest &request,
+                        const MqlTradeResult &result)
+  {
+  }'''
+    transaction_capture = '''#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+#define CS_ORDER_CORRELATION_CAPACITY 64
+ulong CSOrderTickets[CS_ORDER_CORRELATION_CAPACITY];
+string CSOrderAttemptIds[CS_ORDER_CORRELATION_CAPACITY];
+datetime CSOrderSignalBars[CS_ORDER_CORRELATION_CAPACITY];
+int CSOrderCorrelationNext=0;
+
+void CSRegisterOrderAttempt(const ulong order_ticket,const string attempt_id,const datetime signal_bar)
+  {
+   if(order_ticket==0 || attempt_id=="" || signal_bar<=0)
+      return;
+   int slot=CSOrderCorrelationNext%CS_ORDER_CORRELATION_CAPACITY;
+   CSOrderTickets[slot]=order_ticket;
+   CSOrderAttemptIds[slot]=attempt_id;
+   CSOrderSignalBars[slot]=signal_bar;
+   CSOrderCorrelationNext++;
+  }
+
+bool CSFindOrderAttempt(const ulong order_ticket,string &attempt_id,datetime &signal_bar)
+  {
+   if(order_ticket==0)
+      return false;
+   for(int i=0;i<CS_ORDER_CORRELATION_CAPACITY;i++)
+      if(CSOrderTickets[i]==order_ticket && CSOrderAttemptIds[i]!="")
+        {
+         attempt_id=CSOrderAttemptIds[i];
+         signal_bar=CSOrderSignalBars[i];
+         return signal_bar>0;
+        }
+   return false;
+  }
+
+void OnTradeTransaction(const MqlTradeTransaction &trans,
+                        const MqlTradeRequest &request,
+                        const MqlTradeResult &result)
+  {
+   if(!CSRecorderReady || CSRecorderDisabled || trans.type!=TRADE_TRANSACTION_DEAL_ADD ||
+      trans.symbol!=_Symbol || trans.order==0 || trans.deal==0 || trans.position==0 ||
+      trans.volume<=0.0 || trans.price<=0.0)
+      return;
+   string cs_attempt_id="";
+   datetime cs_signal_bar=0;
+   if(!CSFindOrderAttempt(trans.order,cs_attempt_id,cs_signal_bar))
+      return;
+   string cs_features=CSFeature("deal_volume",CSNumber(trans.volume,8),"lots","M15")+","+
+      CSFeature("deal_price",CSNumber(trans.price,_Digits),"price","M15")+","+
+      CSFeature("deal_type_code",IntegerToString((int)trans.deal_type),"enum","M15")+","+
+      CSFeature("deal_stop_loss",CSNumber(trans.price_sl,_Digits),"price","M15")+","+
+      CSFeature("deal_take_profit",CSNumber(trans.price_tp,_Digits),"price","M15");
+   string cs_predicates=CSPredicate("broker_deal_observed","1","EQ","1","PASS","TRADE_TRANSACTION_DEAL_ADD");
+   CSEnqueueDecision("BROKER_RESULT","PASS",cs_signal_bar,cs_features,cs_predicates,"",
+                     cs_attempt_id,trans.order,"",trans.deal,trans.position);
+  }
+#endif'''
+    if generated.count(transaction_stub) != 1:
+        raise ValueError("expected unique empty BasketGuard transaction hook")
+    generated = generated.replace(transaction_stub, transaction_capture, 1)
     return generated
 
 

@@ -82,6 +82,8 @@ def test_capture_variant_binds_demo_identity_and_full_effective_parameter_hash()
     assert '#define CS_EVIDENCE_EXPECTED_PARAMETER_SET_HASH' in generated
     assert "CSParameterSetHash!=CS_EVIDENCE_EXPECTED_PARAMETER_SET_HASH" in generated
     assert "CSInitializeEvidenceProducer()" in generated
+    deinit = _function_body(generated, "OnDeinit")
+    assert deinit.index("CSFlushEvidenceQueueOnShutdown();") < deinit.index("EventKillTimer();")
     assert "IsBlueberryChallengeAccount()" in generated
     assert "if(IsBlueberryChallengeAccount())" in generated
     for marker in (
@@ -94,6 +96,29 @@ def test_capture_variant_binds_demo_identity_and_full_effective_parameter_hash()
     assert generated.count("bool order_sent=m_trade.Buy(") == source.count("m_trade.Buy(")
     assert generated.count("bool order_sent=m_trade.Sell(") == source.count("m_trade.Sell(")
     assert generated.count("CSUtcFromBrokerMillis(cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS)") == 2
+
+
+def test_capture_variant_correlates_real_deal_adds_to_accepted_order_attempts():
+    source = SOURCE.read_text(encoding="utf-8-sig")
+    values = {name: default.strip().strip('"') for _kind, name, default in _source_inputs(source)}
+    generated = BUILD._instrument_source(
+        source, "titan_m5", "titan_puprime500", "a" * 64, "b" * 64,
+        BUILD._expected_parameter_hash(source, values, "titan_m5"), 700184986,
+        "PUPrime-Demo", r"C:\demo\terminal", 10800,
+    )
+
+    assert "CSRegisterOrderAttempt(cs_order_ticket,cs_attempt_id,rates[0].time);" in generated
+    assert "CSFindOrderAttempt(trans.order,cs_attempt_id,cs_signal_bar)" in generated
+    assert "trans.type!=TRADE_TRANSACTION_DEAL_ADD" in generated
+    assert "trans.deal,trans.position" in generated
+    assert 'CSEnqueueDecision("BROKER_RESULT","PASS"' in generated
+    assert "HistoryDealSelect" not in generated
+    assert "OrderSend(" not in generated
+    instrumented_body = _function_body(generated, "CheckSignalAndTrade")
+    instrumented_body = instrumented_body.replace(
+        "if(entry_accepted && cs_order_ticket>0)\n               CSRegisterOrderAttempt(cs_order_ticket,cs_attempt_id,rates[0].time);\n", ""
+    )
+    assert instrumented_body == _function_body(source, "CheckSignalAndTrade")
 
 
 def test_demo_parameter_hash_ignores_legacy_global_protection_toggle():
@@ -114,7 +139,10 @@ def test_capture_build_preserves_strategy_and_broker_write_functions_byte_for_by
         "PUPrime-Demo", r"C:\demo\terminal", 10800,
     )
     for function in ("CheckSignalAndTrade", "OnTick", "CanOpenWithinBasketRisk", "CloseAllPositionsForMagic"):
-        assert _function_body(generated, function) == _function_body(source, function)
+        generated_body = _function_body(generated, function).replace(
+            "if(entry_accepted && cs_order_ticket>0)\n               CSRegisterOrderAttempt(cs_order_ticket,cs_attempt_id,rates[0].time);\n", ""
+        )
+        assert generated_body == _function_body(source, function)
 
 
 def test_manifest_records_source_preset_and_effective_schema_hashes(tmp_path):
