@@ -47,3 +47,21 @@ The new route wrapper records only the HTTP method and canonical FastAPI path te
 The one-shot audit then made 25 read-only broker requests across five demos (four 150-bar M15 reads plus one 24-hour history read per alias). Client p95 (five samples, therefore the maximum) ranged from 358 ms to 1,764 ms; the reported lock-wait p95 reached 1,466 ms. The runner found six traces per alias against five planned requests, which shows other live activity overlapped the sample. This is an exploratory concurrency signal, not a controlled endpoint comparison or SLO result. The machine-readable aggregate is [aud-01-mt5-one-shot-3cd6fe2.json](aud-01-mt5-one-shot-3cd6fe2.json). A five-demo chart smoke completed 95 GETs with visible candles, ten native v5 levels and seven Auto-Fibonacci levels; a separate what-if smoke returned ten `READ_ONLY_DRAFT` scenarios with zero broker writes. The decision recorder still has no imported Titan decision events, and the Marketplace EX5 does not expose source for instrumentation.
 
 AUD-01 remains partial until cold-start and controlled-load runs isolate route timings, performance budgets are approved, and hardware/endurance checks pass. No orders or backtests were run and Blueberry was not queried.
+
+## Main `1f18e8e` sustained repeat (2026-10-19)
+
+The 8056 runtime used for this measurement kept its PID and clean startup/disk revision `1f18e8efefa972a3cef53bd5341456bcf4e104be` through the run. Local 8056 and hTown's SSH upstream 8055 returned the same runtime identity and digest `1e398d5e976f65dbec32df4e055f6acd4615b687f3bbf67d3884f01080737a3a`; hTown's checkout was clean on `main`, nginx and the backend guard were active, and `nginx -t` passed. Both workflows for `1f18e8e` passed (Chart Studio [39201689092](https://github.com/zirkumflex567-sketch/2eas/actions/runs/39201689092), Performance/UX [39201689112](https://github.com/zirkumflex567-sketch/2eas/actions/runs/39201689112)).
+
+The bounded 840-second repeat completed all 14 one-minute cycles: 70 serial GETs, 14 per each of the five authorized non-Blueberry demo aliases; each returned 150 `MT5_VERIFIED` XAU M15 candles. It issued no history requests, no mutations, and no Blueberry requests. Client median/p95/max and MT5 lock-wait p95/max were:
+
+| Demo alias | Client median / p95 / max (ms) | Lock-wait p95 / max (ms) | New traces |
+| --- | ---: | ---: | ---: |
+| `titan` | 455.664 / 1858.293 / 1858.293 | 1231.328 / 1231.328 | 17 |
+| `xau5m_m5` | 177.823 / 2094.253 / 2094.253 | 1455.433 / 1455.433 | 17 |
+| `titan_m5` | 164.361 / 2229.260 / 2229.260 | 1362.709 / 1362.709 | 18 |
+| `xau5m_500` | 165.932 / 435.369 / 435.369 | 1257.475 / 1464.280 | 21 |
+| `goldm15` | 255.893 / 829.074 / 829.074 | 1708.323 / 1737.856 | 28 |
+
+Each demo produced more traces than the 14 scheduled requests, so background requests overlapped the measurement; the high lock waits are a concurrency signal and do not isolate the serial request budget. Dashboard CPU increased 555.438 seconds, private bytes 13,787,136 bytes, and working set 11,382,784 bytes during the window. No approved latency/CPU thresholds exist, and cold-start, controlled concurrency and hardware/endurance acceptance remain open. The complete report is [aud-01-mt5-traces-1f18e8ef.json](aud-01-mt5-traces-1f18e8ef.json), SHA-256 `a5b9b3ee2943863eeeb186391e05fb61fc3767bc55db7f9d4ab5642792a42125f`.
+
+After the measurement, the duplicate 8050 runtime was guarded-restarted with an isolated private spool root: direct status reads report `IDLE` with zero spool files for both Titan producers, while 8056 remains the sole consumer of the shared MT5 spool and reports the preserved temporary backlog. No temp file was opened, moved, or removed.
