@@ -493,6 +493,7 @@ const server=http.createServer((req,res)=>{
   await page.locator("#chart-v5-layout-import-file").setInputFiles({name:"portable-layout.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify(portableLayout))});
   await page.waitForFunction(()=>document.querySelector("#chart-v5-preview-status")?.textContent.includes("Layout ersetzt"));
   assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),11,"confirmed replace restores the imported layout after renderer remount");
+  await page.waitForFunction(()=>document.querySelectorAll("#chart-v5-object-list [data-drawing-id]").length===11);
   const storedImport=await page.evaluate(()=>{const key="2eas.chartstudio.v5.drawings:v5:titan:XAUUSD:M15";return JSON.parse(localStorage.getItem(key))});
   assert.equal(storedImport.account,"titan","portable import binds the saved snapshot to the active account");
   assert.equal(storedImport.schemaVersion,5,"portable import reuses the validated local persistence schema");
@@ -501,11 +502,13 @@ const server=http.createServer((req,res)=>{
   await page.locator("#chart-v5-layout-reset").click();
   await page.waitForFunction(()=>document.querySelector("#chart-v5-profile-status")?.textContent.includes("zurückgesetzt"));
   assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),0,"reset returns only the current scoped workspace to its default state");
+  await page.waitForFunction(()=>document.querySelectorAll("#chart-v5-object-list [data-drawing-id]").length===0);
   assert.deepEqual(await page.locator("#chart-v5-profile-list option:not([value=''])").allTextContents(),["Morning layout v2"],"reset preserves explicitly saved named layouts");
   await page.locator("#chart-v5-profile-list").selectOption({label:"Morning layout v2"});
   await page.locator("#chart-v5-profile-load").click();
   await page.waitForFunction(()=>document.querySelector("#chart-v5-profile-status")?.textContent.includes("geladen"));
   assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),0,"loading a saved scoped layout restores its saved drawing state");
+  await page.waitForFunction(()=>document.querySelectorAll("#chart-v5-object-list [data-drawing-id]").length===0);
   const v4After=await page.locator("#tv-chart").evaluate(el=>({visible:!!el.getClientRects().length,canvas:el.querySelector("canvas#v4-sentinel")?.width}));
   assert.deepEqual(v4After,v4Before,"v5 owns a separate host and leaves v4 mounted");
   assert.match(await page.locator("#chart-v5-preview-title").textContent(),/XAUUSD M15/);
