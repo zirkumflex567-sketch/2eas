@@ -75,6 +75,15 @@ def test_trade_ticket_preview_is_a_separate_exact_control_path():
     assert PREVIEW_PATH in CONTROL_PATHS
 
 
+def test_goldm15_is_preview_enabled_but_stays_outside_the_trade_commit_allowlist():
+    from pydantic import ValidationError
+    from chart_studio.trade_ticket_api import TradeTicketCommitRequest, TradeTicketPreviewRequest
+
+    TradeTicketPreviewRequest.model_validate({**PREVIEW_PAYLOAD, 'account': 'goldm15'})
+    with pytest.raises(ValidationError, match='Authorized demo account required'):
+        TradeTicketCommitRequest.model_validate({**PAYLOAD, 'account': 'goldm15'})
+
+
 @pytest.mark.parametrize('changes', [
     {'userConfirmed': False},
     {'previewId': 'too-short'},
@@ -261,3 +270,19 @@ def test_live_preview_smoke_rejects_any_other_http_422():
                 'guard': {'state': 'UNKNOWN', 'source': 'NONE'},
             }},
         )
+
+
+def test_live_preview_smoke_accepts_only_unique_non_blueberry_demo_aliases(monkeypatch):
+    from runpy import run_path
+
+    smoke = run_path(str(Path(__file__).parents[1] / 'scripts' / 'smoke_live_trade_ticket_preview.py'))
+    monkeypatch.setenv('CHART_STUDIO_ACCOUNTS', 'titan,goldm15')
+    assert smoke['_selected_demo_symbols']() == {'titan': 'XAUUSD', 'goldm15': 'XAUUSD'}
+
+    monkeypatch.setenv('CHART_STUDIO_ACCOUNTS', 'titan,blueberry')
+    with pytest.raises(RuntimeError, match='approved non-Blueberry demo aliases'):
+        smoke['_selected_demo_symbols']()
+
+    monkeypatch.setenv('CHART_STUDIO_ACCOUNTS', 'titan,titan')
+    with pytest.raises(RuntimeError, match='approved non-Blueberry demo aliases'):
+        smoke['_selected_demo_symbols']()

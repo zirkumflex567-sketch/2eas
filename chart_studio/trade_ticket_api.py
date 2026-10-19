@@ -11,6 +11,7 @@ from chart_studio.position_preview import PreviewLimiter
 
 
 TRADE_TICKET_ACCOUNTS = frozenset({'titan', 'xau5m_m5', 'titan_m5', 'xau5m_500'})
+TRADE_TICKET_PREVIEW_ACCOUNTS = TRADE_TICKET_ACCOUNTS | {'goldm15'}
 TRADE_TICKET_PATH = '/api/chart/v1/trade-ticket/commit'
 TRADE_TICKET_PREVIEW_PATH = '/api/chart/v1/trade-ticket/preview'
 
@@ -37,7 +38,7 @@ class TradeTicketPreviewRequest(BaseModel):
     @field_validator('account')
     @classmethod
     def demo_account(cls, value):
-        if value not in TRADE_TICKET_ACCOUNTS:
+        if value not in TRADE_TICKET_PREVIEW_ACCOUNTS:
             raise ValueError('Authorized demo account required')
         return value
 

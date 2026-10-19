@@ -16,12 +16,28 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 
-DEMO_SYMBOLS = {
+ALL_DEMO_SYMBOLS = {
     "titan": "XAUUSD",
     "xau5m_m5": "XAUUSD.p",
     "titan_m5": "XAUUSD.p",
     "xau5m_500": "XAUUSD.p",
+    "goldm15": "XAUUSD",
 }
+
+
+def _selected_demo_symbols():
+    raw = os.environ.get("CHART_STUDIO_ACCOUNTS")
+    if raw is None:
+        selected = list(ALL_DEMO_SYMBOLS)
+    else:
+        selected = [item.strip() for item in raw.split(",") if item.strip()]
+    if (not selected or len(selected) != len(set(selected))
+            or any(account not in ALL_DEMO_SYMBOLS for account in selected)):
+        raise RuntimeError("CHART_STUDIO_ACCOUNTS must contain only unique approved non-Blueberry demo aliases.")
+    return {account: ALL_DEMO_SYMBOLS[account] for account in selected}
+
+
+DEMO_SYMBOLS = _selected_demo_symbols()
 PREVIEW_PATH = "/api/chart/v1/trade-ticket/preview"
 
 
@@ -52,12 +68,15 @@ def _private_proxy_identity():
 def validate_preview_response(account, symbol, http_status, result):
     """Accept a valid read-only preview or the known fail-closed margin denial."""
     if http_status == 422:
-        detail = result.get("detail", {}) if isinstance(result, dict) else {}
-        if (detail.get("code") != "INSUFFICIENT_FREE_MARGIN"
+        detail = result.get("detail") if isinstance(result, dict) else None
+        if not isinstance(detail, dict):
+            raise AssertionError(f"{account}: unexpected preview rejection: {result}")
+        if (
+                detail.get("code") != "INSUFFICIENT_FREE_MARGIN"
                 or detail.get("canExecute") is not False
                 or detail.get("canCommit") is not False
                 or detail.get("guard") != {"state": "UNKNOWN", "source": "NONE"}):
-            raise AssertionError(f"{account}: unexpected preview rejection")
+            raise AssertionError(f"{account}: unexpected preview rejection: {result}")
         return "REJECTED_INSUFFICIENT_FREE_MARGIN"
 
     if http_status != 200:
