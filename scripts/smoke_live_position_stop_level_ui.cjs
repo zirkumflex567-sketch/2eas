@@ -33,12 +33,6 @@ function ticks(value, tick, digits) {
     ((position.side === "BUY" && Number(position.sl) < Number(quote.bid)) ||
      (position.side === "SELL" && Number(position.sl) > Number(quote.ask))));
   assert.ok(target, "a protected open demo position is required");
-  const candidate = target.side === "BUY"
-    ? ticks(Number(quote.bid) - Number(info.tickSize), info.tickSize, info.digits)
-    : ticks(Number(quote.ask) + Number(info.tickSize), info.tickSize, info.digits);
-  assert.ok(target.side === "BUY" ? Number(candidate) > Number(target.sl) : Number(candidate) < Number(target.sl),
-    "candidate must reduce risk while violating only the broker stop distance");
-
   const browser = await chromium.launch({ headless: true,
     executablePath: process.env.CHART_STUDIO_CHROMIUM_PATH || undefined });
   try {
@@ -83,11 +77,32 @@ function ticks(value, tick, digits) {
     await row.locator("button[data-cmd='position-draft']").click();
     const form = page.locator("#cs-position-stop-draft");
     await form.waitFor({ state: "visible" });
-    await form.locator("[name='slPrice']").fill(candidate);
-    const previewResponsePromise = page.waitForResponse(response => new URL(response.url()).pathname === previewPath);
-    await form.locator("button[type='submit']").click();
-    const previewResponse = await previewResponsePromise;
-    const preview = await previewResponse.json();
+    let candidate = null;
+    let previewResponse = null;
+    let preview = null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const latestQuote = await get(`/api/chart/v1/quotes?account=${account}&symbol=${encodeURIComponent(candles.symbol)}`);
+      assert.equal(latestQuote.freshness, "FRESH");
+      const insideGap = Math.max(Number(info.tickSize), Number(info.stopsLevel) * Number(info.point) * 0.5);
+      candidate = target.side === "BUY"
+        ? ticks(Number(latestQuote.bid) - insideGap, info.tickSize, info.digits)
+        : ticks(Number(latestQuote.ask) + insideGap, info.tickSize, info.digits);
+      assert.ok(target.side === "BUY" ? Number(candidate) > Number(target.sl) : Number(candidate) < Number(target.sl),
+        "candidate must reduce risk while violating only the broker stop distance");
+      const previewResponsePromise = page.waitForResponse(response => new URL(response.url()).pathname === previewPath);
+      await form.locator("[name='slPrice']").fill(candidate);
+      await form.locator("button[type='submit']").click();
+      previewResponse = await previewResponsePromise;
+      if (previewResponse.status() !== 200) {
+        preview = await previewResponse.json();
+        if (preview.detail?.code === "POSITION_CHANGED" || preview.detail?.code === "QUOTE_NOT_FRESH") continue;
+        assert.fail(`unexpected preview error: ${JSON.stringify(preview)}`);
+      }
+      preview = await previewResponse.json();
+      if (preview.geometry?.reasons?.includes("SL_WRONG_SIDE")) continue;
+      break;
+    }
+    assert.ok(previewResponse && preview, "preview attempt missing");
     assert.equal(previewResponse.status(), 200);
     assert.equal(preview.account, account);
     assert.equal(preview.positionTicket, target.ticket);
@@ -99,7 +114,8 @@ function ticks(value, tick, digits) {
     await page.waitForFunction(() => document.querySelector("#cs-position-stop-draft-status")?.textContent
       .includes("Vorschau ungültig · SL_STOPS_LEVEL"));
     assert.equal(await page.locator("#cs-position-stop-confirm").isVisible(), false);
-    assert.deepEqual(writes, [{ method: "POST", path: previewPath }]);
+    assert.deepEqual(writes, Array.from({ length: writes.length }, () => ({ method: "POST", path: previewPath })));
+    assert.ok(writes.length >= 1 && writes.length <= 4);
     assert.deepEqual(forbidden, []);
     assert.deepEqual(errors, []);
 
@@ -113,7 +129,7 @@ function ticks(value, tick, digits) {
       side: target.side, priorSL: target.sl, rejectedCandidate: candidate,
       geometryReasons: preview.geometry.reasons,
       visibleDenial: "Vorschau ungültig · SL_STOPS_LEVEL",
-      previewPosts: 1, commitPosts: 0, marketOrders: 0,
+      previewPosts: writes.length, commitPosts: 0, marketOrders: 0,
       brokerReadbackUnchanged: true, blueberryQueried: false, browserErrors: errors,
     }, null, 2));
   } finally {
