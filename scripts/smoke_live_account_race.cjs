@@ -30,6 +30,11 @@ assert.ok(accounts.includes("titan") && accounts.length >= 2
     const titanReady = new Promise(resolve => { heldTitanReady = resolve; });
     const titanGate = new Promise(resolve => { releaseTitan = resolve; });
     let heldTitanRequest = false;
+    let heldTitanStatusReady;
+    let releaseTitanStatus;
+    const titanStatusReady = new Promise(resolve => { heldTitanStatusReady = resolve; });
+    const titanStatusGate = new Promise(resolve => { releaseTitanStatus = resolve; });
+    let heldTitanStatusRequest = false;
     let currentAccountResponse;
     let holdTitanM5Request = false;
     let heldTitanM5Ready;
@@ -83,6 +88,15 @@ assert.ok(accounts.includes("titan") && accounts.length >= 2
           await route.fulfill({ response, body });
           return;
         }
+        if (scope.endpoint === "/api/status" && scope.account === "titan" && !heldTitanStatusRequest) {
+          heldTitanStatusRequest = true;
+          const response = await route.fetch();
+          const body = await response.body();
+          heldTitanStatusReady({ route, response, body });
+          await titanStatusGate;
+          await route.fulfill({ response, body });
+          return;
+        }
         if (scope.endpoint === "/api/candles" && scope.account === "titan" && holdTitanM5Request
           && url.searchParams.get("tf") === "M5") {
           holdTitanM5Request = false;
@@ -106,22 +120,43 @@ assert.ok(accounts.includes("titan") && accounts.length >= 2
     await page.goto(`${base}/?account=titan`, { waitUntil: "domcontentloaded" });
     const held = await titanReady;
     assert.equal(held.response.status(), 200, "delayed Titan response was read successfully");
+    const heldStatus = await titanStatusReady;
+    assert.equal(heldStatus.response.status(), 200, "delayed Titan position snapshot was read successfully");
+    const staleTitanStatus = JSON.parse(heldStatus.body.toString("utf8"));
+    assert.equal(staleTitanStatus.account?.id, "titan");
+    assert.ok(Array.isArray(staleTitanStatus.positions));
 
     const currentAccount = accounts.find(account => account !== "titan");
     const currentCandle = page.waitForResponse(response => {
       const url = new URL(response.url());
       return url.pathname === "/api/candles" && url.searchParams.get("account") === currentAccount;
     });
+    const currentStatus = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.pathname === `${basePath}/api/status` && url.searchParams.get("account") === currentAccount;
+    });
     await page.locator(`#account-switcher [data-account="${currentAccount}"]`).click();
     await page.locator(`#account-switcher [data-account="${currentAccount}"][aria-pressed="true"]`).waitFor();
     currentAccountResponse = await currentCandle;
     assert.equal(currentAccountResponse.status(), 200, `current ${currentAccount} response loaded while the prior account was delayed`);
+    const currentStatusResponse = await currentStatus;
+    assert.equal(currentStatusResponse.status(), 200, `current ${currentAccount} positions loaded while the prior account was delayed`);
+    const verifiedCurrentStatus = await currentStatusResponse.json();
+    assert.equal(verifiedCurrentStatus.account?.id, currentAccount);
+    assert.ok(Array.isArray(verifiedCurrentStatus.positions));
+    const expectedTickets = verifiedCurrentStatus.positions.map(position => String(position.ticket)).sort();
+    await page.waitForFunction(expected => {
+      const visible = [...document.querySelectorAll("#positions-list [data-position-ticket]")]
+        .map(row => row.dataset.positionTicket).sort();
+      return JSON.stringify(visible) === JSON.stringify(expected);
+    }, expectedTickets);
     const verified = await currentAccountResponse.json();
     assert.equal(verified.accountId, currentAccount);
     assert.equal(verified.source, "MT5_VERIFIED");
     assert.equal(verified.canExecute, false);
     await page.waitForFunction(account => window.__mainCandleSeriesCaptures.some(item => item.active === account && item.data.length > 0), currentAccount);
 
+    releaseTitanStatus();
     releaseTitan();
     await page.waitForTimeout(500);
     const state = await page.evaluate(() => ({
@@ -139,6 +174,10 @@ assert.ok(accounts.includes("titan") && accounts.length >= 2
     })).sort((a, b) => Number(a.time) - Number(b.time));
     const actual = [...latest].sort((a, b) => Number(a.time) - Number(b.time));
     assert.deepEqual(actual, expected, `late Titan data must never overwrite the active ${currentAccount} chart series`);
+    const displayedTickets = await page.locator("#positions-list [data-position-ticket]").evaluateAll(rows => rows.map(row => row.dataset.positionTicket).sort());
+    assert.deepEqual(displayedTickets, expectedTickets,
+      `late Titan positions must not replace the active ${currentAccount} broker positions`);
+    assert.equal(state.account, currentAccount, "late Titan positions must not change active chart account");
 
     const aliases = accounts;
     const timeframes = ["M5", "M15"];
@@ -272,6 +311,8 @@ assert.ok(accounts.includes("titan") && accounts.length >= 2
       delayedAccount: "titan", activeAccount: state.account, symbol: verified.symbol,
       verifiedBars: expected.length, apiRequests: apiRequests.length,
       verifiedScopeCycles: completedCycles, verifiedAccounts, delayedTimeframeRace: "Titan M5 behind Titan M15",
+      heldTitanPositionRows: staleTitanStatus.positions.length,
+      currentPositionRows: expectedTickets.length,
       brokerWrites: 0, protectedAccountQueried: false, browserErrors,
     }, null, 2));
   } finally {
