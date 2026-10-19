@@ -678,6 +678,7 @@ class ApiAccessTests(unittest.TestCase):
         import app
         from fastapi.testclient import TestClient
         self.server = app
+        self.original_audit_store = app.app.state.mutation_audit_store
         self.audit_store = MutationAuditStore(
             Path(self.tmp.name) / "private" / "mutations.sqlite",
             checkout_root=Path(app.__file__).resolve().parent,
@@ -691,6 +692,7 @@ class ApiAccessTests(unittest.TestCase):
     def tearDown(self):
         self.client.close()
         self.server._chart_store_at.cache_clear()
+        self.server.app.state.mutation_audit_store = self.original_audit_store
         self.settings.stop()
         self.tmp.cleanup()
 

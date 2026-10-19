@@ -48,7 +48,7 @@ def sync_client(monkeypatch, tmp_path):
         checkout_root=Path(app.__file__).resolve().parent,
         allowed_accounts=app.app.state.mutation_audit_store.allowed_accounts,
     )
-    app.app.state.mutation_audit_store = audit_store
+    monkeypatch.setattr(app.app.state, 'mutation_audit_store', audit_store)
     client = TestClient(app.app, base_url="https://" + HOST,
                         client=("127.0.0.1", 4321))
     yield app, client

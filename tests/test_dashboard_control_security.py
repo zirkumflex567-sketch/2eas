@@ -396,7 +396,7 @@ def test_disabled_real_app_commit_attempt_is_audited_without_broker_access(tmp_p
     root = Path(live_app.__file__).resolve().parent
     store = MutationAuditStore(tmp_path / 'private' / 'audit.sqlite', checkout_root=root,
                                allowed_accounts={'titan', 'xau5m_m5', 'titan_m5', 'xau5m_500', 'goldm15'})
-    live_app.app.state.mutation_audit_store = store
+    monkeypatch.setattr(live_app.app.state, 'mutation_audit_store', store)
     token = 'runtime-test-token-that-must-not-be-stored'
     monkeypatch.setenv('DASHBOARD_CONTROL_TOKEN', token)
     client = TestClient(live_app.app)
