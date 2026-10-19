@@ -280,6 +280,12 @@ class DashboardFrontendTests(unittest.TestCase):
         self.marketplace_mode = False
         self.lifecycle_status = 200
         self.scenario_preview_result = None
+        self.stop_position = None
+        self.stop_preview_result = None
+        self.stop_commit_result = None
+        self.stop_commit_requests = 0
+        self.stop_positions_fail = False
+        self.stop_fail_after_commit = False
         self.lifecycle_record = dict(id='mt5_deal_201',type='LIFECYCLE',accountId='titan',provenance='RECORDED',
             payload=dict(accountId='titan',dealTicket=201,source='MT5_DEAL',dataQuality='OBSERVED',
             eventType='EXIT',asOfUtc='2026-10-15T18:00:00Z',capturedAtUtc='2026-10-15T18:00:01Z'))
@@ -301,6 +307,20 @@ class DashboardFrontendTests(unittest.TestCase):
                     capturedAtUtc='2026-10-19T12:00:00Z',note='Snapshot estimate; order_calc_margin excludes existing positions and pending orders.'),
                 usdConversion=dict(state='AVAILABLE',source='ACCOUNT_CURRENCY'),netEstimate=dict(pnlAtSl=dict(amount=-10),pnlAtTp=dict(amount=20)),
                 estimatedCosts=dict(feesPerLot=0,slippageTicks=0),dailyDrawdownProjection=dict(state='UNAVAILABLE',reason='fixture')))); return
+        if request.method == 'POST' and parsed.path == '/api/chart/v1/position/preview-stop':
+            payload=request.post_data_json or {}
+            result=copy.deepcopy(self.stop_preview_result or {})
+            result.setdefault('clientRequestId',payload.get('clientRequestId'))
+            route.fulfill(json=result); return
+        if request.method == 'POST' and parsed.path == '/api/chart/v1/position/commit-stop':
+            self.mutations.append(dict(url=request.url,body=request.post_data,headers=request.headers))
+            self.stop_commit_requests+=1
+            result=copy.deepcopy(self.stop_commit_result or {})
+            if result.get('status')=='SAVED' and self.stop_position:
+                self.stop_position.update(sl=result.get('slPrice'),tp=result.get('tpPrice'),revision=result.get('positionRevision'))
+            if self.stop_fail_after_commit:
+                self.stop_positions_fail=True
+            route.fulfill(json=result); return
         if request.method not in ('GET', 'HEAD'):
             if parsed.path != '/api/chart/v1/scenarios/preview':
                 self.mutations.append(dict(url=request.url, body=request.post_data, headers=request.headers))
@@ -349,7 +369,13 @@ class DashboardFrontendTests(unittest.TestCase):
                 bid=4000.0,ask=4000.2,quoteTimeUtc=1791918000,ageSeconds=0.0,freshness='FRESH',digits=2,currency='USD')); return
         if parsed.path == '/api/chart/v1/positions':
             symbol=parse_qs(parsed.query).get('symbol',['XAUUSD'])[0]
-            route.fulfill(json=dict(account=account,symbol=symbol,source='MT5_VERIFIED',canExecute=False,currency='USD',marginMode=2,positions=[],orders=[])); return
+            if self.stop_positions_fail:
+                route.fulfill(status=503,json=dict(detail='fixture position reload failure')); return
+            positions=[copy.deepcopy(self.stop_position)] if self.stop_position and account=='titan' and symbol=='XAUUSD' else []
+            route.fulfill(json=dict(account=account,symbol=symbol,source='MT5_VERIFIED',canExecute=False,currency='USD',marginMode=2,positions=positions,orders=[])); return
+        if parsed.path == '/api/chart/v1/symbol-info':
+            symbol=parse_qs(parsed.query).get('symbol',['XAUUSD'])[0]
+            route.fulfill(json=dict(account=account,symbol=symbol,source='MT5_VERIFIED',canExecute=False,tickSize='0.01',digits=2)); return
         if parsed.path == '/api/chart/v1/decisions/capture/status':
             capture_status=dict(code='IDLE',importedTotal=0,gapCount=0,storeLostCount=0,
                 gapObserved=False,recordingState='NOT_RECORDED')
@@ -614,6 +640,79 @@ class DashboardFrontendTests(unittest.TestCase):
         expect(self.page.locator('#chart-title-text')).to_have_text('EURUSD M5 Chart',timeout=10000)
         expect(self.page.locator('#account-detail')).to_contain_text('EURUSD / M5')
         self.assertEqual(self.mutations,[])
+    def test_position_stop_commit_requires_checkbox_and_displays_broker_readback(self):
+        revision='a'*64; readback_revision='b'*64
+        self.stop_position=dict(account='titan',symbol='XAUUSD',ticket='101',revision=revision,
+            type='BUY',side='BUY',priceOpen='4000.00',priceCurrent='4010.00',volume='0.10',
+            profit='1.00',swap='0.00',currency='USD',sl='3998.00',tp='4015.00',
+            source='MT5_VERIFIED',canExecute=False)
+        self.stop_preview_result=dict(schemaVersion=1,account='titan',symbol='XAUUSD',
+            positionTicket='101',positionRevision=revision,valid=True,canExecute=False,
+            canCommit=True,guard=dict(state='ALLOW',source='NON_CHALLENGE_DEMO_POLICY'),
+            geometry=dict(state='VALID',reasons=[]),brokerPreview=dict(slPrice='4001.00',tpPrice='4015.00'),
+            previewId='preview-token-012345678901234567890123456789')
+        self.stop_commit_result=dict(status='SAVED',verified=True,positionRevision=readback_revision,
+            slPrice='4002.00',tpPrice='4015.00')
+        self.load(); self.page.locator('#cs-beta-toggle').click()
+        self.page.locator('.cs-broker-read-panel > summary').click()
+        button=self.page.locator('#cs-broker-positions [data-cmd="position-draft"]')
+        expect(button).to_be_visible(timeout=10000); button.click()
+        form=self.page.locator('#cs-position-stop-draft')
+        form.locator('[name="slPrice"]').fill('4001.00')
+        form.locator('button[type="submit"]').click()
+        confirm=self.page.locator('#cs-position-stop-confirm')
+        expect(confirm).to_be_visible(timeout=5000)
+        self.assertEqual(self.stop_commit_requests,0)
+        confirm.locator('#cs-position-stop-confirm-button').click()
+        self.assertEqual(self.stop_commit_requests,0)
+        confirm.locator('#cs-position-stop-confirm-check').check()
+        confirm.locator('#cs-position-stop-confirm-button').click()
+        expect(self.page.locator('#cs-broker-positions tbody')).to_contain_text('4002.00',timeout=10000)
+        self.assertEqual(self.stop_commit_requests,1)
+        commits=[item for item in self.mutations if urlparse(item['url']).path=='/api/chart/v1/position/commit-stop']
+        self.assertEqual(len(commits),1)
+        self.assertEqual(json.loads(commits[0]['body'])['userConfirmed'],True)
+        self.assertEqual(self.errors,[])
+    def test_position_stop_unknown_keeps_broker_values_authoritative(self):
+        revision='c'*64
+        self.stop_position=dict(account='titan',symbol='XAUUSD',ticket='102',revision=revision,type='BUY',side='BUY',priceOpen='4000.00',priceCurrent='4010.00',volume='0.10',profit='1.00',swap='0.00',currency='USD',sl='3998.00',tp='4015.00',source='MT5_VERIFIED',canExecute=False)
+        self.stop_preview_result=dict(schemaVersion=1,account='titan',symbol='XAUUSD',positionTicket='102',positionRevision=revision,valid=True,canExecute=False,canCommit=True,guard=dict(state='ALLOW',source='NON_CHALLENGE_DEMO_POLICY'),geometry=dict(state='VALID',reasons=[]),brokerPreview=dict(slPrice='4001.00',tpPrice='4015.00'),previewId='preview-token-012345678901234567890123456789')
+        self.stop_commit_result=dict(status='UNKNOWN',verified=False,code='READBACK_MISMATCH',slPrice='3998.00',tpPrice='4015.00')
+        self.load(); self.page.locator('#cs-beta-toggle').click(); self.page.locator('.cs-broker-read-panel > summary').click()
+        self.page.locator('#cs-broker-positions [data-cmd="position-draft"]').click(); form=self.page.locator('#cs-position-stop-draft')
+        form.locator('[name="slPrice"]').fill('4001.00'); form.locator('button[type="submit"]').click()
+        confirm=self.page.locator('#cs-position-stop-confirm'); expect(confirm).to_be_visible(timeout=5000)
+        confirm.locator('#cs-position-stop-confirm-check').check(); confirm.locator('#cs-position-stop-confirm-button').click()
+        expect(self.page.locator('#cs-broker-positions tbody')).to_contain_text('3998.00',timeout=10000)
+        self.assertNotIn('4001.00',self.page.locator('#cs-broker-positions tbody').inner_text())
+        self.assertEqual(self.stop_commit_requests,1); self.assertEqual(self.errors,[])
+    def test_position_stop_keeps_verified_commit_readback_when_reload_fails(self):
+        revision='d'*64
+        self.stop_position=dict(account='titan',symbol='XAUUSD',ticket='103',revision=revision,type='BUY',side='BUY',priceOpen='4000.00',priceCurrent='4010.00',volume='0.10',profit='1.00',swap='0.00',currency='USD',sl='3998.00',tp='4015.00',source='MT5_VERIFIED',canExecute=False)
+        self.stop_preview_result=dict(schemaVersion=1,account='titan',symbol='XAUUSD',positionTicket='103',positionRevision=revision,valid=True,canExecute=False,canCommit=True,guard=dict(state='ALLOW',source='NON_CHALLENGE_DEMO_POLICY'),geometry=dict(state='VALID',reasons=[]),brokerPreview=dict(slPrice='4001.00',tpPrice='4015.00'),previewId='preview-token-012345678901234567890123456789')
+        self.stop_commit_result=dict(status='SAVED',verified=True,positionRevision='e'*64,slPrice='4002.00',tpPrice='4015.00'); self.stop_fail_after_commit=True
+        self.load(); self.page.locator('#cs-beta-toggle').click(); self.page.locator('.cs-broker-read-panel > summary').click()
+        self.page.locator('#cs-broker-positions [data-cmd="position-draft"]').click(); form=self.page.locator('#cs-position-stop-draft')
+        form.locator('[name="slPrice"]').fill('4001.00'); form.locator('button[type="submit"]').click()
+        confirm=self.page.locator('#cs-position-stop-confirm'); expect(confirm).to_be_visible(timeout=5000)
+        confirm.locator('#cs-position-stop-confirm-check').check(); confirm.locator('#cs-position-stop-confirm-button').click()
+        expect(self.page.locator('#cs-broker-positions-status')).to_contain_text('Brokerdaten sind nicht verfügbar',timeout=10000)
+        expect(self.page.locator('#cs-position-stop-draft-status')).to_contain_text('SL 4002.00 · TP 4015.00',timeout=5000)
+        self.assertEqual(self.stop_commit_requests,1); self.assertEqual(self.errors,[])
+    def test_position_stop_scope_switch_discards_late_commit_ui(self):
+        revision='f'*64
+        self.stop_position=dict(account='titan',symbol='XAUUSD',ticket='104',revision=revision,type='BUY',side='BUY',priceOpen='4000.00',priceCurrent='4010.00',volume='0.10',profit='1.00',swap='0.00',currency='USD',sl='3998.00',tp='4015.00',source='MT5_VERIFIED',canExecute=False)
+        self.stop_preview_result=dict(schemaVersion=1,account='titan',symbol='XAUUSD',positionTicket='104',positionRevision=revision,valid=True,canExecute=False,canCommit=True,guard=dict(state='ALLOW',source='NON_CHALLENGE_DEMO_POLICY'),geometry=dict(state='VALID',reasons=[]),brokerPreview=dict(slPrice='4001.00',tpPrice='4015.00'),previewId='preview-token-012345678901234567890123456789')
+        self.stop_commit_result=dict(status='SAVED',verified=True,positionRevision='1'*64,slPrice='4002.00',tpPrice='4015.00')
+        self.load(); self.page.locator('#cs-beta-toggle').click(); self.page.locator('.cs-broker-read-panel > summary').click()
+        self.page.locator('#cs-broker-positions [data-cmd="position-draft"]').click(); form=self.page.locator('#cs-position-stop-draft')
+        form.locator('[name="slPrice"]').fill('4001.00'); form.locator('button[type="submit"]').click()
+        confirm=self.page.locator('#cs-position-stop-confirm'); expect(confirm).to_be_visible(timeout=5000)
+        self.page.evaluate('''() => { const original=window.fetch.bind(window); window.fetch=async (...args)=>{ if(String(args[0]).includes('/api/chart/v1/position/commit-stop')) await new Promise(r=>setTimeout(r,500)); return original(...args); }; }''')
+        confirm.locator('#cs-position-stop-confirm-check').check(); confirm.locator('#cs-position-stop-confirm-button').click()
+        self.page.wait_for_timeout(50); self.page.locator('#tf-btn-M5').click()
+        expect(self.page.locator('#chart-title-text')).to_contain_text('M5',timeout=5000); self.page.wait_for_timeout(700)
+        self.assertEqual(self.stop_commit_requests,1); self.assertTrue(self.page.locator('#cs-position-stop-confirm').is_hidden()); self.assertEqual(self.errors,[])
     def test_scenario_quote_accepts_mt5_unix_timestamp(self):
         self.load()
         self.page.locator('#cs-beta-toggle').click()

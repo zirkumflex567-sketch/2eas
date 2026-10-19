@@ -85,7 +85,7 @@ class PreviewRoute(TelemetryAPIRoute):
 
 def utc(seconds): return datetime.fromtimestamp(seconds,timezone.utc).isoformat().replace('+00:00','Z')
 
-def install_preview_routes(app, mt5, *, now=None, monotonic=None):
+def install_preview_routes(app, mt5, *, now=None, monotonic=None, guard_provider=None):
     clock = now or time.time
     mono = monotonic or time.monotonic
     registry, limiter = PreviewRegistry(monotonic=mono), PreviewLimiter(monotonic=mono)
@@ -182,6 +182,33 @@ def install_preview_routes(app, mt5, *, now=None, monotonic=None):
                             rr=(canonical(Decimal(money['tp'])/-Decimal(money['sl']))
                                 if money['sl'] is not None and money['tp'] is not None and
                                 Decimal(money['sl'])<0<Decimal(money['tp']) else None)
+                        guard={'state':'UNKNOWN','source':'NONE'}
+                        can_commit=False
+                        if identity[2]=='trade' and guard_provider is not None and not reasons:
+                            increasing=False
+                            changed=False
+                            for leg in ('sl','tp'):
+                                proposed,old=final[leg],final_position[leg]
+                                changed = changed or (proposed is None) != (old is None) or (
+                                    proposed is not None and old is not None and Decimal(proposed) != Decimal(old))
+                                if proposed is None:
+                                    increasing=increasing or old is not None
+                                elif old is not None:
+                                    if leg=='sl':
+                                        increasing=increasing or (Decimal(proposed)<Decimal(old) if final_position['side']=='BUY' else Decimal(proposed)>Decimal(old))
+                                    else:
+                                        increasing=increasing or (Decimal(proposed)>Decimal(old) if final_position['side']=='BUY' else Decimal(proposed)<Decimal(old))
+                            try:
+                                decision=guard_provider.evaluate(
+                                    spec=spec,position=final_position,
+                                    action='RISK_INCREASING_PROTECTION' if increasing else 'RISK_REDUCING_PROTECTION',
+                                    riskIncreasing=increasing,
+                                    changes={'slPrice':final['sl'],'tpPrice':final['tp']})
+                                if isinstance(decision,dict) and decision.get('state') in ('ALLOW','BLOCK') and isinstance(decision.get('source'),str):
+                                    guard={'state':decision['state'],'source':decision['source']}
+                                    can_commit=changed and decision['state']=='ALLOW' and decision.get('hardLock') is False
+                            except Exception:
+                                pass
                         result={'schemaVersion':1,'clientRequestId':payload.clientRequestId,
                             'positionTicket':payload.positionTicket,'positionRevision':position['revision'],
                             'account':spec['id'],'symbol':payload.symbol,'brokerPreview':{'slPrice':final['sl'],'tpPrice':final['tp']},
@@ -197,10 +224,11 @@ def install_preview_routes(app, mt5, *, now=None, monotonic=None):
                             'geometry':{'state':'VALID' if not reasons else 'INVALID','reasons':reasons,
                                         'tradeMode':final_metadata.trade_mode},
                             'marketSession':{'state':'UNKNOWN','source':'NONE'},
-                            'guard':{'state':'UNKNOWN','source':'NONE'},'canExecute':False,'canCommit':False,
+                            'guard':guard,'canExecute':False,'canCommit':can_commit,
                             'asOfServerUtc':utc(asof),'expiresAtUtc':utc(asof+10),
                             'warnings':['GROSS_EXCLUDES_FEES_SWAP_GAPS_SLIPPAGE','MARKET_SESSION_UNKNOWN',
-                                        'GUARD_UNKNOWN','CALCULATION_IS_NOT_PERMISSION','CONSERVATIVE_EXISTING_FREEZE_POLICY']}
+                                        'GUARD_'+guard['state'],'CALCULATION_IS_NOT_PERMISSION',
+                                        'CONSERVATIVE_EXISTING_FREEZE_POLICY']}
                         scope=scope_hash(identity,peer,spec,payload.symbol,payload.positionTicket,position['revision'])
                         return JSONResponse(registry.put(scope,result),headers={'Cache-Control':'no-store'})
         except HTTPException as exc:

@@ -47,29 +47,28 @@ class ControlSecurityTests(unittest.TestCase):
         response = client.post('/api/close_position', json={'ticket': 999})
         self.assertEqual(response.status_code, 403)
         self.assertEqual(client.get('/api/control_session').status_code, 200)
-        self.assertFalse(app.app.state.position_commit_write_capable)
-        from unittest.mock import patch
-        with tempfile.TemporaryDirectory() as audit_dir:
-            isolated_audit_store = MutationAuditStore(
-                Path(audit_dir) / 'audit.sqlite',
-                checkout_root=Path(audit_dir) / 'checkout',
-                allowed_accounts=production_audit_store.allowed_accounts,
-            )
-            with patch.object(app.app.state, 'mutation_audit_store', isolated_audit_store):
-                self._assert_real_app_commit_routes_stay_disabled(client, app, patch)
+        self.assertTrue(app.app.state.position_commit_write_capable)
+        self.assertTrue(app.app.state.position_commit_dependencies_supplied)
+        self.assertIs(app.app.state.position_commit_service.store, app.app.state.position_commit_store)
+        self.assertIs(app.app.state.position_commit_service.previews, app.app.state.position_preview_registry)
+        self.assertEqual(app.app.state.position_commit_service.guard.__class__.__name__, 'DemoPositionGuard')
+        self.assertFalse(app.app.state.trade_ticket_write_capable)
+        self._assert_real_app_commit_routes_reject_blueberry(client, app)
 
-    def _assert_real_app_commit_routes_stay_disabled(self, client, app, patch):
+    def _assert_real_app_commit_routes_reject_blueberry(self, client, app):
         payload = {
             'schemaVersion': 1, 'account': 'titan', 'symbol': 'XAUUSD',
             'positionTicket': '123456', 'expectedRevision': 'a' * 64,
             'previewId': 'valid-preview-token-at-least-32-characters',
             'userConfirmed': True, 'idempotencyKey': 'b98d71dc-bd22-4a68-8d45-935a5e4b1cf1',
         }
+        payload['account'] = 'blueberry'
+        payload['symbol'] = 'XAUUSD.pi'
+        from unittest.mock import patch
         with patch.dict('os.environ', {'DASHBOARD_CONTROL_TOKEN': 'real-app-test-token'}):
             response = client.post('/api/chart/v1/position/commit-stop', json=payload,
                                    headers={'Authorization': 'Bearer real-app-test-token'})
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.json()['detail']['code'], 'COMMIT_DISABLED')
+        self.assertEqual(response.status_code, 403)
         self.assertFalse(app.app.state.trade_ticket_write_capable)
         ticket_payload = {
             'schemaVersion': 1, 'account': 'titan', 'symbol': 'XAUUSD',

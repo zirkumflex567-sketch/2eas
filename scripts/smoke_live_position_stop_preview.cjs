@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const { randomUUID } = require("node:crypto");
 
 const base = (process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056").replace(/\/+$/, "");
-const accounts = Object.freeze(["titan", "xau5m_m5", "titan_m5", "xau5m_500"]);
+const accounts = Object.freeze(["titan", "xau5m_m5", "titan_m5", "xau5m_500", "goldm15"]);
 
 async function get(path) {
   const response = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(15000), cache: "no-store" });
@@ -75,8 +75,10 @@ async function get(path) {
       assert.equal(preview.positionTicket, position.ticket, `${account}: preview ticket mismatch`);
       assert.equal(preview.positionRevision, position.revision, `${account}: preview revision mismatch`);
       assert.equal(preview.canExecute, false, `${account}: preview must not be executable`);
-      assert.equal(preview.canCommit, false, `${account}: preview must not be committable`);
-      assert.deepEqual(preview.guard, { state: "UNKNOWN", source: "NONE" }, `${account}: guard must remain unknown`);
+      assert.equal(preview.canCommit, false, `${account}: unchanged stops must not be committable`);
+      assert.ok((preview.guard?.state === "UNKNOWN" && preview.guard?.source === "NONE") ||
+        (preview.guard?.state === "ALLOW" && preview.guard?.source === "NON_CHALLENGE_DEMO_POLICY"),
+      `${account}: unexpected unchanged-stop guard state`);
       assert.equal(preview.geometry.state, "VALID", `${account}: unchanged broker stop did not validate`);
       if (position.sl !== null) assert.equal(preview.brokerPreview.slPrice, String(position.sl));
       if (position.tp !== null) assert.equal(preview.brokerPreview.tpPrice, String(position.tp));

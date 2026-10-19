@@ -34,6 +34,8 @@ from chart_studio.broker_reads import broker_symbol, legacy_quote, require_symbo
 from chart_studio.read_api import install_read_routes, Symbol
 from chart_studio.preview_api import install_preview_routes
 from chart_studio.position_commit_api import install_position_commit_routes
+from chart_studio.demo_position_guard import DemoPositionGuard
+from chart_studio.position_commit_runtime import create_process_position_commit_runtime
 from chart_studio.trade_ticket_api import install_trade_ticket_routes
 from chart_studio.trade_ticket import TradeTicketPreviewRegistry, TradeTicketPreviewService
 from chart_studio.mutation_audit import MutationAuditStore
@@ -73,8 +75,21 @@ app.state.mutation_audit_store = MutationAuditStore(
 install_control_security(app)
 install_runtime(app, BASE_DIR)
 install_read_routes(app, mt5)
-install_preview_routes(app, mt5)
-install_position_commit_routes(app, mt5, enabled=False)
+_position_guard = DemoPositionGuard()
+install_preview_routes(app, mt5, guard_provider=_position_guard)
+_position_commit_store, _position_commit_service = create_process_position_commit_runtime(
+    mt5=mt5,
+    previews=app.state.position_preview_registry,
+    guard=_position_guard,
+    private_dir=Path.home() / '.chartstudio' / 'position-commit',
+    checkout_root=BASE_DIR,
+)
+app.state.position_commit_store = _position_commit_store
+app.state.position_commit_service = _position_commit_service
+install_position_commit_routes(
+    app, mt5, enabled=True, guard_provider=_position_guard,
+    audit_store=_position_commit_store, commit_service=_position_commit_service,
+)
 _trade_ticket_previews = TradeTicketPreviewRegistry()
 _trade_ticket_preview_service = TradeTicketPreviewService(
     mt5, _trade_ticket_previews, guard_provider=None,

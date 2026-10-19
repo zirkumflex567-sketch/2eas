@@ -1,4 +1,4 @@
-"""Server-side stop commit orchestration. Production wiring stays disabled."""
+"""Server-side stop commits restricted by the app to confirmed demo edits."""
 from decimal import Decimal, localcontext
 import time
 from fastapi import HTTPException
@@ -7,7 +7,7 @@ import account_gateway as gateway
 from chart_studio import broker_reads as reads
 from chart_studio.position_preview import actual_number, geometry, scope_hash
 
-DEMO_COMMIT_ACCOUNTS = frozenset({'titan', 'xau5m_m5', 'titan_m5', 'xau5m_500'})
+DEMO_COMMIT_ACCOUNTS = frozenset({'titan', 'xau5m_m5', 'titan_m5', 'xau5m_500', 'goldm15'})
 
 
 class PositionCommitService:

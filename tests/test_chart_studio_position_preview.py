@@ -11,6 +11,129 @@ def test_preview_numeric_policy_is_exact_and_local():
         with pytest.raises(ValueError): number(value)
     assert mt5_float(number('4000.01'), number('0.01')) == 4000.01
     assert getcontext().prec == before.prec
+
+
+@pytest.mark.parametrize('account,changes,risk_increasing,state', [
+    ('titan', {'slPrice': '3999.00'}, False, 'ALLOW'),
+    ('titan', {'slPrice': '3999.00'}, True, 'BLOCK'),
+    ('blueberry', {'slPrice': '3999.00'}, False, 'BLOCK'),
+    ('goldm15', {'slPrice': '3999.00'}, False, 'ALLOW'),
+])
+def test_demo_position_guard_policy(account, changes, risk_increasing, state):
+    from chart_studio.demo_position_guard import DemoPositionGuard
+    spec = dict(gateway.ACCOUNTS[account])
+    guard = DemoPositionGuard()
+    result = guard.evaluate(spec=spec,
+                            position={'ticket': '123', 'symbol': spec['symbol'],
+                                      'side': 'BUY', 'sl': '3998', 'tp': '4002'},
+                            action=('RISK_INCREASING_PROTECTION' if risk_increasing
+                                    else 'RISK_REDUCING_PROTECTION'),
+                            riskIncreasing=risk_increasing, changes=changes)
+    assert result['state'] == state
+    if state == 'ALLOW':
+        assert result['hardLock'] is False
+        assert result['source'] == 'NON_CHALLENGE_DEMO_POLICY'
+
+
+def test_demo_position_guard_rejects_live_or_challenge_accounts():
+    from chart_studio.demo_position_guard import DemoPositionGuard
+    guard = DemoPositionGuard()
+    for spec in (
+        dict(gateway.ACCOUNTS['blueberry']),
+        {**gateway.ACCOUNTS['titan'], 'is_demo': False},
+        {**gateway.ACCOUNTS['titan'], 'challenge_protection': True},
+        {**gateway.ACCOUNTS['titan'], 'challenge_protection': None},
+    ):
+        result = guard.evaluate(spec=spec, position={'ticket': '1','symbol':spec.get('symbol'),
+                                                       'side':'BUY','sl':'3998','tp':'4002'},
+                                action='RISK_REDUCING_PROTECTION',
+                                riskIncreasing=False, changes={'slPrice':'3999'})
+        assert result['state'] == 'BLOCK'
+        assert result['hardLock'] is True
+
+
+def test_trade_preview_can_commit_only_for_guarded_valid_demo(api, monkeypatch):
+    from chart_studio.demo_position_guard import DemoPositionGuard
+    from chart_studio.preview_api import install_preview_routes
+    client, fake, payload = api
+    app = FastAPI()
+    install_control_security(app)
+    install_preview_routes(app, fake, now=lambda: NOW,
+                           guard_provider=DemoPositionGuard())
+    client = TestClient(app)
+    response = client.post('/api/chart/v1/position/preview-stop', json=payload)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data['guard'] == {'state':'ALLOW','source':'NON_CHALLENGE_DEMO_POLICY'}
+    assert data['canCommit'] is True
+    assert data['canExecute'] is False
+    assert fake.writes == 0
+    monkeypatch.setitem(gateway.ACCOUNTS['titan'], 'challenge_protection', True)
+    response = client.post('/api/chart/v1/position/preview-stop', json=payload)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data['canCommit'] is False
+    assert data['guard']['state'] == 'BLOCK'
+    assert fake.writes == 0
+
+
+def test_process_commit_runtime_recovers_only_its_own_reservations(tmp_path):
+    from chart_studio.position_commit_runtime import create_process_position_commit_runtime
+    from chart_studio.position_preview import PreviewRegistry
+    payload = {'account':'titan','symbol':'XAUUSD','ticket':'1',
+               'revision':'a'*64,'previewId':'p'*32}
+    store_a, _ = create_process_position_commit_runtime(
+        mt5=object(), previews=PreviewRegistry(), guard=object(),
+        private_dir=tmp_path/'private', checkout_root=tmp_path/'checkout', process_id=101)
+    store_a.reserve('principal','11111111-1111-4111-8111-111111111111',payload)
+    store_b, _ = create_process_position_commit_runtime(
+        mt5=object(), previews=PreviewRegistry(), guard=object(),
+        private_dir=tmp_path/'private', checkout_root=tmp_path/'checkout', process_id=202,
+        pid_alive=lambda _: True)
+    assert store_a.reserve('principal','11111111-1111-4111-8111-111111111111',payload).state == 'IN_FLIGHT'
+    assert store_b.path != store_a.path
+    restarted_a, _ = create_process_position_commit_runtime(
+        mt5=object(), previews=PreviewRegistry(), guard=object(),
+        private_dir=tmp_path/'private', checkout_root=tmp_path/'checkout', process_id=101,
+        pid_alive=lambda pid: pid == 202)
+    assert restarted_a.reserve('principal','11111111-1111-4111-8111-111111111111',payload).state == 'UNKNOWN'
+    crashed, _ = create_process_position_commit_runtime(
+        mt5=object(), previews=PreviewRegistry(), guard=object(),
+        private_dir=tmp_path/'private', checkout_root=tmp_path/'checkout', process_id=303,
+        pid_alive=lambda _: True)
+    crashed.reserve('principal','22222222-2222-4222-8222-222222222222',payload)
+    create_process_position_commit_runtime(
+        mt5=object(), previews=PreviewRegistry(), guard=object(),
+        private_dir=tmp_path/'private', checkout_root=tmp_path/'checkout', process_id=404,
+        pid_alive=lambda pid: pid != 303)
+    assert crashed.reserve('principal','22222222-2222-4222-8222-222222222222',payload).state == 'UNKNOWN'
+
+
+def test_windows_pid_probe_uses_query_api_without_os_kill(monkeypatch):
+    import ctypes
+    import chart_studio.position_commit_runtime as runtime
+
+    class WinFunction:
+        def __init__(self, callback):
+            self.callback = callback
+
+        def __call__(self, *args):
+            return self.callback(*args)
+
+    class Kernel32:
+        OpenProcess = WinFunction(lambda *_: 123)
+        GetExitCodeProcess = WinFunction(
+            lambda _handle, pointer: (ctypes.cast(
+                pointer, ctypes.POINTER(ctypes.c_ulong)
+            ).contents.__setattr__('value', 259) or 1)
+        )
+        CloseHandle = WinFunction(lambda _handle: 1)
+
+    monkeypatch.setattr(runtime.os, 'name', 'nt')
+    monkeypatch.setattr(ctypes, 'WinDLL', lambda *_args, **_kwargs: Kernel32(), raising=False)
+    monkeypatch.setattr(runtime.os, 'kill', lambda *_args: pytest.fail('os.kill must not run'))
+
+    assert runtime._pid_alive(1234) is True
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastapi import HTTPException

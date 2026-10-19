@@ -71,8 +71,14 @@ async function preview(account, symbol, position, candidate) {
   assert.equal(body.positionTicket, position.ticket);
   assert.equal(body.positionRevision, position.revision);
   assert.equal(body.canExecute, false);
-  assert.equal(body.canCommit, false);
-  assert.deepEqual(body.guard, { state: "UNKNOWN", source: "NONE" });
+  if (body.valid === true && body.guard?.state === "ALLOW") {
+    assert.equal(body.guard.source, "NON_CHALLENGE_DEMO_POLICY");
+    assert.equal(body.canCommit, true);
+  } else {
+    assert.equal(body.canCommit, false);
+    assert.ok((body.guard?.state === "UNKNOWN" && body.guard?.source === "NONE") ||
+      (body.guard?.state === "BLOCK" && body.guard?.source === "NON_CHALLENGE_DEMO_POLICY"));
+  }
   return body;
 }
 

@@ -9,6 +9,7 @@ const accounts = Object.freeze([
   ["titan_m5", "XAUUSD.p"],
   ["titan", "XAUUSD"],
   ["xau5m_500", "XAUUSD.p"],
+  ["goldm15", "XAUUSD"],
 ]);
 const previewPath = "/api/chart/v1/position/preview-stop";
 
@@ -164,10 +165,11 @@ async function positionWithStop(account, symbol) {
         assert.equal(preview.positionRevision, position.revision);
         assert.equal(preview.brokerPreview.slPrice, candidateSl);
         assert.equal(preview.canExecute, false);
-        assert.equal(preview.canCommit, false);
-        assert.deepEqual(preview.guard, { state: "UNKNOWN", source: "NONE" });
+        assert.equal(preview.canCommit, false, "draft/drag acceptance never commits");
+        assert.ok((preview.guard?.state === "UNKNOWN" && preview.guard?.source === "NONE") ||
+          (preview.guard?.state === "BLOCK" && preview.guard?.source === "NON_CHALLENGE_DEMO_POLICY"));
         assert.equal(preview.geometry.state, "VALID");
-        await page.waitForFunction(() => document.querySelector("#cs-position-stop-draft-status")?.textContent.includes("GUARD UNKNOWN · KEINE ÄNDERUNG"));
+        await page.waitForFunction(() => /Guard (UNKNOWN|BLOCK).*keine Änderung möglich/.test(document.querySelector("#cs-position-stop-draft-status")?.textContent || ""));
       }
 
       const readback = await get(`/api/chart/v1/positions?account=${encodeURIComponent(account)}&symbol=${encodeURIComponent(symbol)}`);
