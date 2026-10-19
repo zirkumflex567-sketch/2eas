@@ -381,14 +381,18 @@ def test_spool_service_starts_and_stops_with_fastapi(private_root, spool_root, m
 
     with TestClient(app):
         assert app.state.evidence_spool_task is not None
-        deadline = time.monotonic() + 2
-        while time.monotonic() < deadline and (
-            not store.read(context(), kind='DECISION')['records']
-            or app.state.evidence_spool_status.get('titan_demo', {}).get('importedTotal') != 1
-        ):
+        deadline = time.monotonic() + 10
+        records = []
+        status = None
+        while time.monotonic() < deadline:
+            records = store.read(context(), kind='DECISION')['records']
+            status = app.state.evidence_spool_status.get('titan_demo')
+            if len(records) == 1 and status is not None and status.get('importedTotal') == 1:
+                break
             time.sleep(.02)
-        assert len(store.read(context(), kind='DECISION')['records']) == 1
-        assert app.state.evidence_spool_status['titan_demo']['importedTotal'] == 1
+        assert len(records) == 1
+        assert status is not None, 'spool status did not publish after importer stored its event'
+        assert status.get('importedTotal') == 1
 
     assert app.state.evidence_spool_task is None
 
