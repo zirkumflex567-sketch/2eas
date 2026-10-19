@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import importlib.util
 import json
@@ -87,6 +88,29 @@ def test_preview_verifies_package_and_returns_aligned_caller_supplied_series_wit
         "canExecute": False,
         "series": [{"time": 1, "value": 11.0}, {"time": 2, "value": 12.0}],
     }
+
+
+def test_preview_evaluation_runs_outside_the_asgi_event_loop(monkeypatch):
+    package, trusted, _ = signed_package()
+    extension_api = api()
+    original = extension_api.evaluate_extension
+    observed = {}
+
+    def assert_worker(manifest, bars, parameters):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            observed["outside_event_loop"] = True
+        else:
+            observed["outside_event_loop"] = False
+        return original(manifest, bars, parameters)
+
+    monkeypatch.setattr(extension_api, "evaluate_extension", assert_worker)
+    response = client(trusted).post(
+        "/api/chart/v1/indicator-extensions/preview", json=request_body(package)
+    )
+    assert response.status_code == 200
+    assert observed["outside_event_loop"] is True
 
 
 def test_preview_fails_closed_without_host_trust_keys_and_on_unknown_signer():

@@ -8,6 +8,7 @@ from collections.abc import Mapping
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from chart_studio.indicator_extensions import (
     MAX_BARS,
@@ -110,7 +111,12 @@ def install_indicator_extension_routes(
             _fail("TRUST_STORE_UNAVAILABLE", 503)
         try:
             package = parse_signed_package(value["package"], trusted_keys=trusted_keys)
-            result = evaluate_extension(package["manifest"], value["bars"], value["parameters"])
+            result = await run_in_threadpool(
+                evaluate_extension,
+                package["manifest"],
+                value["bars"],
+                value["parameters"],
+            )
         except ValueError as exc:
             code = str(exc)
             _fail(code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", code) else "INVALID_EXTENSION")
