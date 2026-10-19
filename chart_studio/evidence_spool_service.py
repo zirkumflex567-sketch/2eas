@@ -14,6 +14,7 @@ import stat
 import subprocess
 import threading
 import time
+from datetime import datetime, timezone
 
 from chart_studio.evidence_spool import MAX_LINE_BYTES, SpoolImporter
 from chart_studio.evidence_store import StoreUnavailable, _physical, _private
@@ -336,7 +337,8 @@ class SpoolFileConsumer:
         if now - self._temporary_scan_at < _TEMP_SCAN_INTERVAL_SECONDS:
             return
         self._temporary_scan_at = now
-        counts = {producer: [0, 0] for producer in self.producers}
+        counts = {producer: {'count': 0, 'bytes': 0, 'oldest': None, 'newest': None}
+                  for producer in self.producers}
         try:
             with os.scandir(self.root) as entries:
                 for entry in entries:
@@ -348,12 +350,26 @@ class SpoolFileConsumer:
                     except OSError:
                         continue
                     if stat.S_ISREG(metadata.st_mode):
-                        counts[match.group(1)][0] += 1
-                        counts[match.group(1)][1] += max(0, metadata.st_size)
+                        values = counts[match.group(1)]
+                        values['count'] += 1
+                        values['bytes'] += max(0, metadata.st_size)
+                        mtime = metadata.st_mtime
+                        values['oldest'] = mtime if values['oldest'] is None else min(values['oldest'], mtime)
+                        values['newest'] = mtime if values['newest'] is None else max(values['newest'], mtime)
         except OSError:
             return
+        def as_utc(value):
+            if value is None:
+                return None
+            return datetime.fromtimestamp(value, timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
+
         self._temporary_backlog = {
-            producer: {'temporaryFileCount': values[0], 'temporaryBytes': values[1]}
+            producer: {
+                'temporaryFileCount': values['count'],
+                'temporaryBytes': values['bytes'],
+                'temporaryOldestMtimeUtc': as_utc(values['oldest']),
+                'temporaryNewestMtimeUtc': as_utc(values['newest']),
+            }
             for producer, values in counts.items()
         }
 
@@ -362,7 +378,10 @@ class SpoolFileConsumer:
         status={}
         for producer in self.producers:
             result=self._poll_producer(producer)
-            result.update(self._temporary_backlog.get(producer, {'temporaryFileCount': 0, 'temporaryBytes': 0}))
+            result.update(self._temporary_backlog.get(producer, {
+                'temporaryFileCount': 0, 'temporaryBytes': 0,
+                'temporaryOldestMtimeUtc': None, 'temporaryNewestMtimeUtc': None,
+            }))
             self._reported_store_loss[producer]=max(self._reported_store_loss[producer],result.get('storeLostCount',0))
             self._reported_gap[producer]=self._reported_gap[producer] or bool(result.get('gapObserved'))
             result['storeLostCount']=self._reported_store_loss[producer]

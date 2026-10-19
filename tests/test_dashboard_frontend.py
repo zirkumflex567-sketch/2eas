@@ -343,7 +343,9 @@ class DashboardFrontendTests(unittest.TestCase):
             capture_status=dict(code='IDLE',importedTotal=0,gapCount=0,storeLostCount=0,
                 gapObserved=False,recordingState='NOT_RECORDED')
             if not getattr(self,'legacy_capture_status',False):
-                capture_status.update(temporaryFileCount=3,temporaryBytes=2097152)
+                capture_status.update(temporaryFileCount=3,temporaryBytes=2097152,
+                    temporaryOldestMtimeUtc='2026-10-18T07:00:00Z',
+                    temporaryNewestMtimeUtc='2026-10-19T08:00:00Z')
             route.fulfill(json=dict(schemaVersion=1,account=account,canExecute=False,status=capture_status)); return
         if parsed.path == '/api/chart/v1/lifecycle/capture/status':
             route.fulfill(json=dict(schemaVersion=1,account=account,
@@ -405,6 +407,8 @@ class DashboardFrontendTests(unittest.TestCase):
         self.page.locator('#cs-evidence-panel > summary').click()
         self.page.locator('#cs-evidence-capture-status').click()
         expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text('3 Temp-Dateien / 2.0 MiB', timeout=5000)
+        expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text(
+            'Änderungszeit UTC 2026-10-18 07:00 bis 2026-10-19 08:00', timeout=5000)
         expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text('Lifecycle: OK', timeout=5000)
         status_requests=[url for url in self.requests if '/capture/status?' in url]
         self.assertEqual(len(status_requests), 2, status_requests)

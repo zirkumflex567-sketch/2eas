@@ -1,5 +1,6 @@
 """File-spool reader tests; synthetic records only, never connect to MT5."""
 import asyncio
+from datetime import datetime, timezone
 import os
 import subprocess
 import threading
@@ -52,6 +53,25 @@ def test_idle_status_reports_temporary_segment_metadata_without_importing_it(pri
     assert result['imported'] == 0
     assert store.read(context(), kind='DECISION')['records'] == []
     assert (spool_root / 'titan_demo.1.tmp.ndjson').exists()
+
+
+def test_temporary_segment_status_reports_oldest_and_newest_mtime_without_reading_files(private_root, spool_root):
+    store = evidence_store(private_root)
+    oldest = spool_root / 'titan_demo.1.tmp.ndjson'
+    newest = spool_root / 'titan_demo.2.tmp.ndjson'
+    write_private(oldest, b'private event payload')
+    write_private(newest, b'another private payload')
+    os.utime(oldest, (1_800_000_000, 1_800_000_000))
+    os.utime(newest, (1_800_000_123, 1_800_000_123))
+
+    result = consumer(store, spool_root).poll_once()['titan_demo']
+
+    assert result['temporaryOldestMtimeUtc'] == '2027-01-15T08:00:00Z'
+    assert result['temporaryNewestMtimeUtc'] == '2027-01-15T08:02:03Z'
+    assert result['imported'] == 0
+    assert store.read(context(), kind='DECISION')['records'] == []
+    assert oldest.read_bytes() == b'private event payload'
+    assert newest.read_bytes() == b'another private payload'
 
 
 def test_temporary_segment_scan_is_throttled(private_root, spool_root):

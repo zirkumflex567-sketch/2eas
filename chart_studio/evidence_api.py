@@ -315,6 +315,7 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
             status = {'code': 'NOT_CONFIGURED', 'imported': 0, 'duplicates': 0,
                       'importedTotal': 0, 'duplicatesTotal': 0,
                       'temporaryFileCount': 0, 'temporaryBytes': 0,
+                      'temporaryOldestMtimeUtc': None, 'temporaryNewestMtimeUtc': None,
                       'gapCount': 0, 'gapObserved': False, 'storeLostCount': 0,
                       'recordingState': 'NOT_RECORDED'}
         else:
@@ -336,6 +337,16 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
                         'temporaryFileCount', 'temporaryBytes', 'gapCount', 'storeLostCount'):
                 value = raw_status.get(key, 0)
                 status[key] = value if type(value) is int and value >= 0 else 0
+            for key in ('temporaryOldestMtimeUtc', 'temporaryNewestMtimeUtc'):
+                value = raw_status.get(key)
+                if isinstance(value, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', value):
+                    try:
+                        datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ')
+                    except ValueError:
+                        value = None
+                else:
+                    value = None
+                status[key] = value
             gap_observed = raw_status.get('gapObserved', False)
             status['gapObserved'] = gap_observed if type(gap_observed) is bool else True
             try:

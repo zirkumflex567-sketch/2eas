@@ -448,6 +448,8 @@ def test_decision_capture_status_is_authenticated_demo_scoped_and_redacted(monke
         'titan_puprime250': {'code':'IDLE','imported':0,'duplicates':2,
                              'gapCount':1,'gapObserved':True,'storeLostCount':3,
                              'temporaryFileCount':12,'temporaryBytes':36156,
+                             'temporaryOldestMtimeUtc':'2026-10-18T07:00:00Z',
+                             'temporaryNewestMtimeUtc':'2026-10-19T08:00:00Z',
                              'fileName':'private.ready.ndjson','cursorPath':'private.json'}
     }
     store.has_decision = True
@@ -459,6 +461,8 @@ def test_decision_capture_status_is_authenticated_demo_scoped_and_redacted(monke
         'status':{'code':'IDLE','imported':0,'duplicates':2,'importedTotal':0,
                   'duplicatesTotal':0,'gapCount':1,'temporaryFileCount':12,
                   'temporaryBytes':36156,
+                  'temporaryOldestMtimeUtc':'2026-10-18T07:00:00Z',
+                  'temporaryNewestMtimeUtc':'2026-10-19T08:00:00Z',
                   'gapObserved':True,'storeLostCount':3,'recordingState':'RECORDED'}
     }
     marketplace = client.get('/api/chart/v1/decisions/capture/status', params={'account':'titan'})

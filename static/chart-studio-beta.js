@@ -590,9 +590,12 @@ function captureStatusLine(kind,body,account){
  if(kind==="decision"){
   const temporaryFileCount=Object.prototype.hasOwnProperty.call(state,"temporaryFileCount")?state.temporaryFileCount:0;
   const temporaryBytes=Object.prototype.hasOwnProperty.call(state,"temporaryBytes")?state.temporaryBytes:0;
+  const oldestMtime=typeof state.temporaryOldestMtimeUtc==="string"&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(state.temporaryOldestMtimeUtc)?state.temporaryOldestMtimeUtc:null;
+  const newestMtime=typeof state.temporaryNewestMtimeUtc==="string"&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(state.temporaryNewestMtimeUtc)?state.temporaryNewestMtimeUtc:null;
   if(body.canExecute!==false||!Number.isInteger(state.importedTotal)||state.importedTotal<0||!Number.isInteger(temporaryFileCount)||temporaryFileCount<0||!Number.isInteger(temporaryBytes)||temporaryBytes<0||!Number.isInteger(state.gapCount)||state.gapCount<0||!Number.isInteger(state.storeLostCount)||state.storeLostCount<0||typeof state.gapObserved!=="boolean"||!["RECORDED","NOT_RECORDED","UNKNOWN"].includes(state.recordingState))throw Error("INVALID_DECISION_CAPTURE_STATUS");
   const detail=code==="IDLE"?"aktiv, wartet auf neue Events":code==="NOT_CONFIGURED"?"keine EA-Source eingebunden":code==="NOT_STARTED"?"Service nicht gestartet":code==="RECORDED"?"Events verarbeitet":code;
-  const temporary=temporaryFileCount?" · "+temporaryFileCount+" Temp-Dateien / "+(temporaryBytes/1048576).toFixed(1)+" MiB nicht importiert":"";
+  const temporaryRange=oldestMtime&&newestMtime?" · Änderungszeit UTC "+oldestMtime.slice(0,16).replace("T"," ")+" bis "+newestMtime.slice(0,16).replace("T"," "):"";
+  const temporary=temporaryFileCount?" · "+temporaryFileCount+" Temp-Dateien / "+(temporaryBytes/1048576).toFixed(1)+" MiB nicht importiert"+temporaryRange:"";
   return "Decision-Recorder: "+code+" · "+detail+temporary+" · "+state.importedTotal+" importiert · "+state.recordingState+" · Lücken "+state.gapCount+" / Store-Verluste "+state.storeLostCount;
  }
  const coverage=typeof state.coverage==="string"&&/^[A-Z][A-Z0-9_]{0,63}$/.test(state.coverage)?state.coverage:"UNKNOWN";
