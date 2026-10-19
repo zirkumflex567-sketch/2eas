@@ -20,7 +20,7 @@ Files: modify static/stone-asset-skin.css at only those two rules; add focused t
 - [x] Replace both frame images with plain opaque Stone borders using existing colors, retaining the existing later !important shadow cascade, responsive widths, padding and chart interactions. The focused fixture verifies computed opaque borders, geometry and shadow; rejected images are not layered underneath and source files remain intact.
 - [x] Run the green 12-subtest Playwright fixture and Stone preview smoke; inspect pale/dark desktop and expanded mobile screenshots from ignored output. The screenshot checks make no desktop-hardware claim.
 - [x] Compare all raster hashes and generated nonchart CSS before/after: all 163 raster files are SHA-256-identical (106,589,095 bytes); generated CSS is identical after CRLF normalization. Update only the tracked stylesheet digest in the manifest and verify structurally that all other manifest fields/hashes remain unchanged. No unrelated app.py hash was changed.
-- [ ] Commit scope; independent spec then quality reviews, fix and re-review. No EA/MT5 operations.
+- [x] Commit scope; independent specification and quality reviews completed, and the identified visible side-volume content-fit gap was closed and re-reviewed. The latest review found no issue; computed responsive border widths also match the contract at 800px/360px because the equally specific media rules occur later. No EA/MT5 operations.
 
 ## Release
 

@@ -88,9 +88,11 @@ METRICS = """() => {
       s.borderBottomWidth, s.borderLeftWidth], padding: [s.paddingTop, s.paddingRight,
       s.paddingBottom, s.paddingLeft], image: s.borderImageSource,
       color: s.borderTopColor, style: s.borderTopStyle, shadow: s.boxShadow,
-      display: s.display, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth};
+      display: s.display, overflowY: s.overflowY, scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight};
   };
   return {chart: read('.stone-asset-panel--chart'), volume: read('.stone-side-volume'),
+    volumeCopy: read('.stone-side-volume .fixture-copy'),
     canvas: read('#tv-chart canvas'), pageScroll: document.documentElement.scrollWidth,
     pageWidth: document.documentElement.clientWidth};
 }"""
@@ -147,6 +149,13 @@ class StoneFrameQuarantine(unittest.TestCase):
                             self.assertFalse(any(any(frame in url for frame in FRAME_NAMES) for url in requests), requests)
                             self.assertLessEqual(final["pageScroll"], final["pageWidth"] + 1)
                             self.assertLessEqual(final["chart"]["scrollWidth"], final["chart"]["clientWidth"] + 1)
+                            if final["volume"]["display"] != "none":
+                                self.assertLessEqual(final["volume"]["scrollWidth"], final["volume"]["clientWidth"] + 1)
+                                self.assertLessEqual(final["volumeCopy"]["scrollWidth"], final["volumeCopy"]["clientWidth"] + 1)
+                                if final["volume"]["overflowY"] in ("hidden", "clip"):
+                                    self.assertLessEqual(final["volume"]["scrollHeight"], final["volume"]["clientHeight"] + 1)
+                                if final["volumeCopy"]["overflowY"] in ("hidden", "clip"):
+                                    self.assertLessEqual(final["volumeCopy"]["scrollHeight"], final["volumeCopy"]["clientHeight"] + 1)
                             if expanded and width == 360:
                                 self.assertEqual(final["volume"]["display"], "none")
                             if width == 1400:
