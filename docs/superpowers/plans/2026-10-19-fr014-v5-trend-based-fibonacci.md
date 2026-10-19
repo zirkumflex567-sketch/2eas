@@ -11,6 +11,6 @@
 - [x] Add three-click placement and manager labels in the opt-in preview.
 - [x] Add scoped persistence and schema-v2 portable import/export with strict schema validation and atomic rollback.
 - [x] Run focused Node/Chromium smokes, the existing v5 and Beta suites, build the production bundle, and record precise evidence in `OPEN_TASKS.md`.
-- [ ] Push to `main`, wait for both required workflows, fast-forward hTown and use the guarded runtime restart if application code changed; verify the exact runtime revision and read-only non-Blueberry demo feeds. Do not query or touch Blueberry.
+- [x] Push to `main`, wait for both required workflows, fast-forward hTown and use the guarded runtime restart if application code changed; verify the exact runtime revision and read-only non-Blueberry demo feeds. Do not query or touch Blueberry.
 
 **Still open after this slice:** production cutover/parity, touch/DPI/hardware acceptance, and unrelated open FR/AUD/AT requirements remain open.
