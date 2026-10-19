@@ -7654,6 +7654,7 @@ var ChartStudioV5 = (() => {
       if (!Number.isFinite(value)) return { ...empty, reason: "INVALID_LEVEL_PRICE" };
       lines[keys[i]] = { ratio, value, points: input.filter((bar) => bar.time >= end.confirmedAt && bar.time <= asOfUtc).map((bar) => ({ time: bar.time, value })) };
     }
+    if (lines[keys[0]].points.length === 0) return { ...empty, reason: "NO_POST_CONFIRMATION_CANDLES", direction, start, end, confirmedAt: end.confirmedAt, lines };
     return { ...empty, available: true, reason: null, direction, start, end, confirmedAt: end.confirmedAt, lines };
   }
   function utcDateForTime(time) {

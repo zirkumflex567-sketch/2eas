@@ -213,7 +213,7 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
         `${account} accepts an isolated browser preference for the chart-level toggle`);
       await page.locator("#chart-v5-auto-fib-btn").click();
       const fib = await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci());
-      assert.ok(fib?.result?.available, `${account} has a confirmed swing in the verified M15 history`);
+      assert.ok(fib?.result, `${account} returns an explicit Auto-Fibonacci state`);
       assert.equal(fib.result.source, "MT5_VERIFIED");
       assert.equal(fib.asOf.account, account);
       assert.equal(fib.asOf.symbol, api.symbol);
@@ -222,13 +222,20 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
         `${account}: Auto-Fibonacci cutoff is from the current broker snapshot window`);
       assert.equal(fib.result.timeframe, api.timeframe);
       assert.equal(fib.series.length, 7);
-      assert.ok(fib.series.every(line => line.visible === true && line.points.length > 0));
+      let fibStatus="PASSED";
+      if(fib.result.available){
+        assert.ok(fib.series.every(line => line.visible === true && line.points.length > 0), `${account}: an available Auto-Fibonacci result has seven rendered lines`);
+      }else{
+        assert.equal(fib.result.reason,"NO_POST_CONFIRMATION_CANDLES",`${account}: no line is claimed when the verified feed has no post-confirmation candles`);
+        assert.ok(fib.series.every(line=>line.points.length===0));
+        fibStatus="UNAVAILABLE_NO_POST_CONFIRMATION_CANDLES";
+      }
       await page.locator("#chart-v5-auto-fib-btn").click();
       assert.equal(await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci()), null);
       preview = "PASSED";
       results.push({ account, symbol: api.symbol, timeframe: api.timeframe, renderedBars: rendered.length,
         visibleCandlePixels, latestClose: rendered.at(-1).close, nativeV5MarketLevels: marketLevels.count, nativeV5AutoFibonacciPreview: preview,
-        autoFibDirection: fib.result.direction, autoFibLevels: fib.series.length, v5PositionStatus:positionStatus });
+        autoFibDirection: fib.result.direction, autoFibLevels: fib.series.length, autoFibStatus:fibStatus, v5PositionStatus:positionStatus });
     }
 
     assert.deepEqual(errors, []);

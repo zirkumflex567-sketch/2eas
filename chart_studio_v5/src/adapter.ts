@@ -140,6 +140,7 @@ export function calculateAutoFibonacci(input:readonly Candle[],timeframe="M15",a
  const start=pivots[pivots.length-2],end=pivots[pivots.length-1],direction=start.type==="LOW"&&end.type==="HIGH"?"UP":start.type==="HIGH"&&end.type==="LOW"?"DOWN":null,range=Math.abs(end.price-start.price);
  if(!direction||!Number.isFinite(range)||range<=0)return {...empty,reason:"NO_CONFIRMED_IMPULSE"};
  for(let i=0;i<ratios.length;i++){const ratio=ratios[i],value=direction==="UP"?end.price-range*ratio:end.price+range*ratio;if(!Number.isFinite(value))return {...empty,reason:"INVALID_LEVEL_PRICE"};lines[keys[i]]={ratio,value,points:input.filter(bar=>bar.time>=end.confirmedAt&&bar.time<=asOfUtc).map(bar=>({time:bar.time,value}))}}
+ if(lines[keys[0]].points.length===0)return {...empty,reason:"NO_POST_CONFIRMATION_CANDLES",direction,start,end,confirmedAt:end.confirmedAt,lines};
  return {...empty,available:true,reason:null,direction,start,end,confirmedAt:end.confirmedAt,lines};
 }
 function utcDateForTime(time:Time):Date{
