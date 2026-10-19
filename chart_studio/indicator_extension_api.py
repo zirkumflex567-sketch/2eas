@@ -20,7 +20,7 @@ from chart_studio.indicator_extensions import (
 
 MAX_REQUEST_BYTES = 1_200_000
 MAX_CONCURRENT_EVALUATIONS = 2
-DEMO_ACCOUNTS = frozenset({"titan", "xau5m_m5", "titan_m5", "xau5m_500"})
+DEMO_ACCOUNTS = frozenset({"titan", "xau5m_m5", "titan_m5", "xau5m_500", "goldm15"})
 TIMEFRAMES = frozenset({"M1", "M5", "M15", "M30", "H1", "H4", "D1"})
 SYMBOL_PATTERN = re.compile(r"^XAUUSD(?:\.p|\.pi)?$", re.IGNORECASE)
 

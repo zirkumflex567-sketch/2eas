@@ -92,6 +92,17 @@ def test_preview_verifies_package_and_returns_aligned_caller_supplied_series_wit
     }
 
 
+def test_preview_accepts_marketplace_demo_account():
+    package, trusted, _ = signed_package()
+    response = client(trusted).post(
+        "/api/chart/v1/indicator-extensions/preview",
+        json=request_body(package, account="goldm15"),
+    )
+    assert response.status_code == 200
+    assert response.json()["account"] == "goldm15"
+    assert response.json()["canExecute"] is False
+
+
 def test_preview_evaluation_runs_outside_the_asgi_event_loop(monkeypatch):
     package, trusted, _ = signed_package()
     extension_api = api()

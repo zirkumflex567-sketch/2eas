@@ -110,12 +110,14 @@ local fixture measurements, not target-hardware acceptance.
 
 The Chart Studio Beta now has a session-only signed-package import and preview.
 `POST /api/chart/v1/indicator-extensions/preview` accepts bounded current-chart
-bars and returns `CALLER_SUPPLIED_BARS`; it does not call MT5 or persist input
-or output. The browser plots only the computed line on the active chart and
-removes it on account, symbol, or timeframe changes. The endpoint fails closed
-unless the host injects `CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON`; the package
-cannot supply its own trusted key. This does not make the browser bars
-authoritative evidence or the output a broker signal.
+bars for the five approved demo aliases (`titan`, `xau5m_m5`, `titan_m5`,
+`xau5m_500`, and `goldm15`) and returns `CALLER_SUPPLIED_BARS`; Blueberry remains
+rejected. It does not call MT5 or persist input or output. The browser plots
+only the computed line on the active chart and removes it on account, symbol,
+or timeframe changes. The endpoint fails closed unless the host injects
+`CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON`; the package cannot supply its own
+trusted key. This does not make the browser bars authoritative evidence or the
+output a broker signal.
 
 The environment value is a JSON object keyed by signer ID, with each value the
 base64 encoding of one raw 32-byte Ed25519 public key, for example
