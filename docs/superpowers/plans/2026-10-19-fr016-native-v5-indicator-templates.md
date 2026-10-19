@@ -18,4 +18,4 @@ Close the missing indicator-template slice of FR-016 while native v5 remains an 
 - [x] Implement a bounded, versioned, account/symbol/timeframe-scoped local template store.
 - [x] Add native-v5 template controls and route application through existing MA/indicator/oscillator editors; retain current settings if application fails.
 - [x] Run Node contracts, focused Chromium UI flow, existing v5/profile tests, the 5,000-bar/20-indicator/1,000-drawing capacity smoke, and Python asset/runtime preflight.
-- [ ] Update `OPEN_TASKS.md` with exact evidence and remaining hardware/production gaps; deploy the clean Main commit and verify local and hTown runtime identity.
+- [x] Update `OPEN_TASKS.md` with exact evidence and remaining hardware/production gaps; deploy the clean Main commit and verify local and hTown runtime identity.
