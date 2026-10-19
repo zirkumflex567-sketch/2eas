@@ -1,4 +1,5 @@
 import json
+import re
 import threading
 import time
 from types import SimpleNamespace
@@ -307,6 +308,46 @@ def test_request_trace_records_http_method_and_canonical_route_without_request_v
     assert '123456' not in encoded
     assert 'private-value' not in encoded
     assert '?' not in encoded
+
+
+def test_traced_get_returns_its_trace_id_without_exposing_ids_on_other_requests():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    import app
+
+    recorder = telemetry.TraceRecorder()
+    test_app = FastAPI()
+    test_app.router.route_class = app.app.router.route_class
+
+    @test_app.get('/api/diagnostics/traced')
+    def traced_get():
+        with telemetry.request_trace('titan', recorder=recorder):
+            with telemetry.span('mt5_rates'):
+                pass
+        return {'ok': True}
+
+    @test_app.post('/api/diagnostics/traced-write')
+    def traced_post():
+        with telemetry.request_trace('titan', recorder=recorder):
+            pass
+        return {'ok': True}
+
+    @test_app.get('/api/diagnostics/untraced')
+    def untraced_get():
+        return {'ok': True}
+
+    client = TestClient(test_app)
+    get_response = client.get('/api/diagnostics/traced')
+    post_response = client.post('/api/diagnostics/traced-write')
+    untraced_response = client.get('/api/diagnostics/untraced')
+
+    traces = recorder.snapshot()
+    [get_trace] = [trace for trace in traces if trace['httpMethod'] == 'GET']
+    assert get_response.headers.get('x-mt5-trace-id') == get_trace['requestId']
+    assert re.fullmatch(r'[0-9a-f]{32}', get_response.headers['x-mt5-trace-id'])
+    assert 'traceId' not in get_trace
+    assert post_response.headers.get('x-mt5-trace-id') is None
+    assert untraced_response.headers.get('x-mt5-trace-id') is None
 
 
 def test_preview_custom_route_class_records_canonical_route_attribution():

@@ -59,7 +59,9 @@ async function readCandles(spec, phase, options) {
   assert.equal(body.source, "MT5_VERIFIED");
   assert.equal(body.canExecute, false);
   assert.equal(body.candles?.length, 150);
-  samples.push({ account: spec.account, phase, clientMs: Number(clientMs.toFixed(3)) });
+  const traceId = response.headers.get("x-mt5-trace-id");
+  assert.match(traceId || "", /^[0-9a-f]{32}$/, `${spec.account}/${phase} did not return a valid MT5 trace ID`);
+  samples.push({ account: spec.account, phase, route: "/api/candles", traceId, clientMs: Number(clientMs.toFixed(3)) });
 }
 
 async function readHistory(spec) {
@@ -79,7 +81,9 @@ async function readHistory(spec) {
   assert.equal(body.account, spec.account);
   assert.equal(body.symbol, spec.symbol);
   assert.equal(body.canExecute, false);
-  samples.push({ account: spec.account, phase: "history-24h", clientMs: Number(clientMs.toFixed(3)) });
+  const traceId = response.headers.get("x-mt5-trace-id");
+  assert.match(traceId || "", /^[0-9a-f]{32}$/, `${spec.account}/history-24h did not return a valid MT5 trace ID`);
+  samples.push({ account: spec.account, phase: "history-24h", route: "/api/chart/v1/trades", traceId, clientMs: Number(clientMs.toFixed(3)) });
 }
 
 function processSample(pid) {
@@ -145,16 +149,30 @@ function percentile(values, fraction) {
     const traces = await getTraces(spec.account);
     const newTraces = traces.filter(trace => !beforeTraces.get(spec.account).has(trace.requestId));
     const accountSamples = samples.filter(sample => sample.account === spec.account);
+    const sampleIds = accountSamples.map(sample => sample.traceId);
+    assert.equal(new Set(sampleIds).size, sampleIds.length, `${spec.account} returned a duplicate trace ID`);
+    const tracesById = new Map(traces.map(trace => [trace.requestId, trace]));
+    const correlatedTraces = sampleIds.map(traceId => {
+      const trace = tracesById.get(traceId);
+      assert.ok(trace, `${spec.account} trace ${traceId} is missing from the bounded trace snapshot`);
+      const sample = accountSamples.find(item => item.traceId === traceId);
+      assert.equal(trace.account, spec.account);
+      assert.equal(trace.httpMethod, "GET");
+      assert.equal(trace.route, sample.route);
+      return trace;
+    });
+    const correlatedIds = new Set(sampleIds);
     const durations = accountSamples.map(sample => sample.clientMs);
     const spans = Object.fromEntries(["mt5_lock_wait", "mt5_initialize", "mt5_identity_verify", "mt5_rates", "mt5_history"]
-      .map(name => [name, newTraces.flatMap(trace => trace.spans || []).filter(span => span.name === name)
+      .map(name => [name, correlatedTraces.flatMap(trace => trace.spans || []).filter(span => span.name === name)
         .map(span => span.durationMs)]));
     byAccount.push({
       account: spec.account,
       requests: accountSamples.length,
       ratesRequests: accountSamples.filter(sample => sample.phase !== "history-24h").length,
       historyRequests: accountSamples.filter(sample => sample.phase === "history-24h").length,
-      traces: newTraces.length,
+      traces: correlatedTraces.length,
+      backgroundTraces: newTraces.filter(trace => !correlatedIds.has(trace.requestId)).length,
       clientMs: { median: percentile(durations, 0.5), p95: percentile(durations, 0.95), max: Math.max(...durations) },
       spanMs: Object.fromEntries(Object.entries(spans).map(([name, values]) => [name, {
         count: values.length, median: percentile(values, 0.5), p95: percentile(values, 0.95), max: values.length ? Number(Math.max(...values).toFixed(3)) : null,

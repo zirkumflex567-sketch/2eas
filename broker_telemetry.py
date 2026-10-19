@@ -39,7 +39,7 @@ def request_context(method, route):
         context = {'httpMethod': method, 'route': route}
     token = _active_request.set(context)
     try:
-        yield
+        yield context
     finally:
         _active_request.reset(token)
 
@@ -51,8 +51,12 @@ class TelemetryAPIRoute(APIRoute):
         handler = super().get_route_handler()
 
         async def traced_handler(request):
-            with request_context(request.method, self.path_format):
-                return await handler(request)
+            with request_context(request.method, self.path_format) as context:
+                response = await handler(request)
+                trace_id = context.get('traceId') if context is not None else None
+                if request.method == 'GET' and isinstance(trace_id, str) and re.fullmatch(r'[0-9a-f]{32}', trace_id):
+                    response.headers['X-MT5-Trace-ID'] = trace_id
+                return response
 
         return traced_handler
 
@@ -95,7 +99,8 @@ def request_trace(account, recorder=DEFAULT_RECORDER):
     }
     request = _active_request.get()
     if request is not None:
-        trace.update(request)
+        trace.update({key: request[key] for key in ('httpMethod', 'route') if key in request})
+        request['traceId'] = trace['requestId']
     token = _active_trace.set(trace)
     try:
         yield trace
