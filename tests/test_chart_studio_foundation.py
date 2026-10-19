@@ -228,6 +228,31 @@ class ChartStudioFoundationTests(unittest.TestCase):
         self.assertFalse(r["canExecute"])
         self.assertEqual([x[0] for x in mt5.calls],["profit","profit","margin"])
 
+    def test_margin_assessment_compares_estimate_with_verified_free_margin(self):
+        result_with_free=preview_scenario(MT5Fake(),SimpleNamespace(currency="USD",margin_free=200),SYMBOL,
+            symbol="XAUUSD",side="BUY",volume=.1,entry=4100,stop=4090,target=4120)
+        self.assertEqual(result_with_free["marginAssessment"],{
+            "state":"WITHIN_FREE_MARGIN","required":123.4,"free":200.0,
+            "estimatedFreeAfter":76.6,"currency":"USD","source":"MT5_ACCOUNT_INFO",
+            "note":"Snapshot-Schätzung; order_calc_margin berücksichtigt bestehende Positionen und Pending Orders nicht.",
+        })
+        self.assertFalse(result_with_free["canExecute"])
+
+        shortfall=preview_scenario(MT5Fake(),SimpleNamespace(currency="USD",margin_free=100),SYMBOL,
+            symbol="XAUUSD",side="BUY",volume=.1,entry=4100,stop=4090,target=4120)
+        self.assertEqual(shortfall["marginAssessment"]["state"],"EXCEEDS_FREE_MARGIN")
+        self.assertAlmostEqual(shortfall["marginAssessment"]["estimatedFreeAfter"],-23.4)
+        self.assertFalse(shortfall["canExecute"])
+
+    def test_margin_assessment_is_unavailable_without_valid_free_margin(self):
+        for free in (None, float("nan"), float("inf"), -1, True):
+            account=SimpleNamespace(currency="USD",margin_free=free)
+            preview=preview_scenario(MT5Fake(),account,SYMBOL,symbol="XAUUSD",side="BUY",volume=.1,
+                entry=4100,stop=4090,target=4120)
+            self.assertEqual(preview["marginAssessment"]["state"],"UNAVAILABLE")
+            self.assertIsNone(preview["marginAssessment"]["free"])
+            self.assertFalse(preview["canExecute"])
+
     def test_buy_cost_assumptions_show_gross_and_net_estimates(self):
         r=result(fees_per_lot=3,slippage_ticks=2)
         self.assertAlmostEqual(r["pnlAtSl"]["amount"],-100)

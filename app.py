@@ -1573,6 +1573,7 @@ def api_chart_preview(req: ChartScenarioPreviewRequest, account: str):
     if req.account != account:
         raise HTTPException(status_code=409, detail="Szenario gehört nicht zum angefragten Konto.")
     acc = verify_identity(mt5, selected())
+    margin_read_at_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     sym = require_symbol(mt5, req.symbol)
     try:
         result = preview_scenario(
@@ -1608,6 +1609,7 @@ def api_chart_preview(req: ChartScenarioPreviewRequest, account: str):
         quote_time_utc=quote_time_utc,
     )
     result["account"] = account
+    result["marginAssessment"]["capturedAtUtc"] = margin_read_at_utc
     result["tickSize"] = float(sym.trade_tick_size)
     return result
 

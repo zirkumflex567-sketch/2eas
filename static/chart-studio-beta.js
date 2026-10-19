@@ -784,8 +784,20 @@ function renderPortfolioImpact(preview){
  if(!s)return;
  const host=s.panel.querySelector("#cs-scenario-portfolio-impact");if(!host)return;
  const portfolio=s.portfolio,result=preview?.result;
- if(!portfolio||!result||preview.account!==s.account||preview.symbol!==chartSymbol()||preview.request?.symbol!==chartSymbol()||result.symbol!==chartSymbol()||portfolio.account!==s.account||portfolio.correlation?.scenarioSymbol!==chartSymbol()){host.textContent="Portfolio-Gesamtrisiko UNAVAILABLE · Portfolio und Vorschau für dasselbe Konto und Symbol erforderlich.";return}
  const summary=[];
+ const margin=result?.marginAssessment,formatMargin=value=>String(Number(Number(value).toPrecision(12)));
+ if(margin?.state==="WITHIN_FREE_MARGIN"||margin?.state==="EXCEEDS_FREE_MARGIN"){
+  const currency=margin.currency,required=Number(margin.required),free=Number(margin.free),after=Number(margin.estimatedFreeAfter);
+  if(currency===result?.margin?.currency&&Number.isFinite(required)&&required>=0&&Number.isFinite(free)&&free>=0&&Number.isFinite(after)){
+   const captured=typeof margin.capturedAtUtc==="string"&&Number.isFinite(Date.parse(margin.capturedAtUtc))?margin.capturedAtUtc:"UNAVAILABLE";
+   summary.push("Szenario-Margin (MT5-Berechnung): "+formatMargin(required)+" "+currency+" · Freie Kontomargin (MT5-Read): "+formatMargin(free)+" "+currency+" · Stand "+captured+
+    (margin.state==="WITHIN_FREE_MARGIN"?" · geschätzter Puffer danach: "+formatMargin(after)+" "+currency:" · geschätzter Fehlbetrag: "+formatMargin(Math.abs(after))+" "+currency)+
+    " · Snapshot-Schätzung, keine Ausführungszusage; order_calc_margin berücksichtigt bestehende Positionen und Pending Orders nicht.");
+  }else summary.push("Marginvergleich UNAVAILABLE · Währung oder Brokerwerte stimmen nicht überein.");
+ }else summary.push("Marginvergleich UNAVAILABLE · freie Kontomargin aus dem MT5-Read fehlt oder ist ungültig.");
+ if(!portfolio||!result||preview.account!==s.account||preview.symbol!==chartSymbol()||preview.request?.symbol!==chartSymbol()||result.symbol!==chartSymbol()||portfolio.account!==s.account||portfolio.correlation?.scenarioSymbol!==chartSymbol()){
+  summary.push("Portfolio-Gesamtrisiko UNAVAILABLE · Portfolio und Vorschau für dasselbe Konto und Symbol erforderlich.");host.textContent=summary.join(" ");return;
+ }
  if(portfolio.stopRisk?.state==="AVAILABLE"&&portfolio.currency===result.pnlAtSl?.currency){
   const current=Number(portfolio.stopRisk.lossAtStops),proposed=Math.max(0,-Number(result.pnlAtSl?.amount));
   if(Number.isFinite(current)&&Number.isFinite(proposed))summary.push("Portfolio-Stop-Risiko inkl. neuem Trade: "+String(Number((current+proposed).toPrecision(12)))+" "+portfolio.currency+" · Brutto additiv; keine Korrelation oder Hedging-Anrechnung.");

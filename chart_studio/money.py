@@ -229,6 +229,19 @@ def preview_scenario(mt5, account_info, symbol_info, *, symbol, side, volume=Non
     currency = str(getattr(account_info, "currency", "") or "").upper()
     if not currency:
         raise PreviewError("ACCOUNT_CURRENCY_UNKNOWN", "MT5-Kontowährung nicht verfügbar.")
+    free_margin = getattr(account_info, "margin_free", None)
+    valid_free_margin = (isinstance(free_margin, (int, float)) and not isinstance(free_margin, bool)
+                         and math.isfinite(free_margin) and free_margin >= 0)
+    margin_assessment = {
+        "state": ("WITHIN_FREE_MARGIN" if valid_free_margin and margin <= free_margin else
+                  "EXCEEDS_FREE_MARGIN" if valid_free_margin else "UNAVAILABLE"),
+        "required": round(float(margin), 2),
+        "free": round(float(free_margin), 2) if valid_free_margin else None,
+        "estimatedFreeAfter": round(float(free_margin) - float(margin), 2) if valid_free_margin else None,
+        "currency": currency,
+        "source": "MT5_ACCOUNT_INFO" if valid_free_margin else "NONE",
+        "note": "Snapshot-Schätzung; order_calc_margin berücksichtigt bestehende Positionen und Pending Orders nicht.",
+    }
     usd_conversion = convert_amounts_to_usd(mt5, {"stop":float(pnl_stop),"target":float(pnl_target)},
                                             currency, now_ms=now_ms)
     usd_available = usd_conversion["state"] == "AVAILABLE"
@@ -259,6 +272,7 @@ def preview_scenario(mt5, account_info, symbol_info, *, symbol, side, volume=Non
                                                  "reason":usd_conversion.get("reason"),"source":"NONE"},
         "riskRewardRatio": round(float(pnl_target) / -float(pnl_stop), 3),
         "margin": {"amount": round(float(margin),2), "currency": currency},
+        "marginAssessment": margin_assessment,
         "positionSizing": sizing or {"mode": "FIXED_LOTS", "volumeLots": volume, "currency": currency},
         "estimatedCosts": {
             "source": "USER_ASSUMPTION", "currency": currency,

@@ -279,6 +279,7 @@ class DashboardFrontendTests(unittest.TestCase):
         self.candle_mismatch_symbol = None
         self.marketplace_mode = False
         self.lifecycle_status = 200
+        self.scenario_preview_result = None
         self.lifecycle_record = dict(id='mt5_deal_201',type='LIFECYCLE',accountId='titan',provenance='RECORDED',
             payload=dict(accountId='titan',dealTicket=201,source='MT5_DEAL',dataQuality='OBSERVED',
             eventType='EXIT',asOfUtc='2026-10-15T18:00:00Z',capturedAtUtc='2026-10-15T18:00:01Z'))
@@ -291,8 +292,18 @@ class DashboardFrontendTests(unittest.TestCase):
     def api(self, route):
         request = route.request; parsed = urlparse(request.url); self.requests.append(request.url)
         account = parse_qs(parsed.query).get('account', ['titan'])[0]
+        if request.method == 'POST' and parsed.path == '/api/chart/v1/scenarios/preview':
+            route.fulfill(json=copy.deepcopy(self.scenario_preview_result or dict(
+                account=account,symbol='XAUUSD',canExecute=False,positionSizing=dict(volumeLots=.1,mode='FIXED_LOTS'),
+                pnlAtSl=dict(amount=-10,currency='USD'),pnlAtTp=dict(amount=20,currency='USD'),riskRewardRatio=2,
+                margin=dict(amount=123.4,currency='USD'),marginAssessment=dict(state='WITHIN_FREE_MARGIN',required=123.4,
+                    free=200,estimatedFreeAfter=76.6,currency='USD',source='MT5_ACCOUNT_INFO',
+                    capturedAtUtc='2026-10-19T12:00:00Z',note='Snapshot estimate; order_calc_margin excludes existing positions and pending orders.'),
+                usdConversion=dict(state='AVAILABLE',source='ACCOUNT_CURRENCY'),netEstimate=dict(pnlAtSl=dict(amount=-10),pnlAtTp=dict(amount=20)),
+                estimatedCosts=dict(feesPerLot=0,slippageTicks=0),dailyDrawdownProjection=dict(state='UNAVAILABLE',reason='fixture')))); return
         if request.method not in ('GET', 'HEAD'):
-            self.mutations.append(dict(url=request.url, body=request.post_data, headers=request.headers))
+            if parsed.path != '/api/chart/v1/scenarios/preview':
+                self.mutations.append(dict(url=request.url, body=request.post_data, headers=request.headers))
             route.fulfill(json=dict(success=True, message='INTERCEPTED · NOT SENT TO MT5')); return
         if parsed.path == '/api/accounts':
             if self.account_failures:
@@ -612,6 +623,37 @@ class DashboardFrontendTests(unittest.TestCase):
         expect(self.page.locator('#cs-scenario-form [name="entryPrice"]')).to_have_value('4000.2')
         self.assertEqual(self.mutations, [])
         self.assertEqual(self.errors, [])
+    def test_scenario_margin_projection_shows_mt5_estimate_free_margin_and_snapshot_limit(self):
+        self.load(); self.page.locator('#cs-beta-toggle').click(); self.page.locator('.cs-scenario summary').click()
+        form=self.page.locator('#cs-scenario-form')
+        form.locator('[name="entryPrice"]').fill('4000')
+        form.locator('[name="slPrice"]').fill('3990')
+        form.locator('[name="tpPrice"]').fill('4020')
+        form.locator('button[type="submit"]').click()
+        impact=self.page.locator('#cs-scenario-portfolio-impact')
+        expect(impact).to_contain_text('Szenario-Margin (MT5-Berechnung): 123.4 USD')
+        expect(impact).to_contain_text('Freie Kontomargin (MT5-Read): 200 USD')
+        expect(impact).to_contain_text('geschätzter Puffer danach: 76.6 USD')
+        expect(impact).to_contain_text('Stand 2026-10-19T12:00:00Z')
+        expect(impact).to_contain_text('keine Ausführungszusage')
+        expect(impact).to_have_attribute('role','status'); expect(impact).to_have_attribute('aria-live','polite')
+        self.assertEqual(self.mutations,[]); self.assertEqual(self.errors,[])
+        scenario_urls=[url for url in self.requests if '/api/chart/v1/scenarios/preview' in url]
+        self.assertTrue(scenario_urls); self.assertTrue(all('account=titan' in url for url in scenario_urls))
+
+    def test_scenario_margin_projection_shows_unavailable_when_free_margin_is_missing(self):
+        self.scenario_preview_result=dict(account='titan',symbol='XAUUSD',canExecute=False,
+            positionSizing=dict(volumeLots=.1,mode='FIXED_LOTS'),pnlAtSl=dict(amount=-10,currency='USD'),
+            pnlAtTp=dict(amount=20,currency='USD'),margin=dict(amount=123.4,currency='USD'),
+            marginAssessment=dict(state='UNAVAILABLE',required=123.4,free=None,estimatedFreeAfter=None,
+                currency='USD',source='NONE'))
+        self.load(); self.page.locator('#cs-beta-toggle').click(); self.page.locator('.cs-scenario summary').click()
+        form=self.page.locator('#cs-scenario-form')
+        form.locator('[name="entryPrice"]').fill('4000'); form.locator('[name="slPrice"]').fill('3990')
+        form.locator('[name="tpPrice"]').fill('4020'); form.locator('button[type="submit"]').click()
+        impact=self.page.locator('#cs-scenario-portfolio-impact')
+        expect(impact).to_contain_text('Marginvergleich UNAVAILABLE')
+        self.assertEqual(self.mutations,[]); self.assertEqual(self.errors,[])
     def test_mismatched_symbol_candle_response_is_rejected_after_old_feed_clears(self):
         self.candle_rows=[
             dict(time=1791918000,open=4000.,high=4002.,low=3998.,close=4001.,tick_volume=10,real_volume=0),
