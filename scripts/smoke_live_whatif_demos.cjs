@@ -3,9 +3,14 @@
 const assert = require("node:assert/strict");
 
 const base = (process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056").replace(/\/+$/, "");
-const accounts = Object.freeze([
+const allowedAccounts = Object.freeze([
   "titan", "xau5m_m5", "titan_m5", "xau5m_500", "goldm15",
 ]);
+const accounts = process.env.CHART_STUDIO_ACCOUNTS
+  ? process.env.CHART_STUDIO_ACCOUNTS.split(",").map(value => value.trim()).filter(Boolean)
+  : [...allowedAccounts];
+assert.ok(accounts.length > 0 && accounts.every(account => allowedAccounts.includes(account)),
+  "CHART_STUDIO_ACCOUNTS must contain only approved non-Blueberry demo aliases");
 
 async function get(path) {
   const response = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(15000), cache: "no-store" });
