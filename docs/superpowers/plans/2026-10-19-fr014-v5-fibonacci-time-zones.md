@@ -26,7 +26,7 @@ Bring the existing Beta Fibonacci Time-Zones tool into the isolated native-v5 pr
 - [x] Add two-anchor preview placement, horizontal edit handles and manager actions; verify undo/redo, visibility/lock, duplication/deletion and invalid-anchor rejection.
 - [x] Add schema-v5 scoped persistence and schema-v2 portable transfer with roundtrip, account/timeframe isolation and 1,000-object capacity coverage.
 - [x] Build the production bundle from source and run the v5 API/preview smokes, relevant drawing/persistence regressions and `git diff --check`.
-- [ ] Record exact behavior and open production/touch/DPI/hardware gates in `OPEN_TASKS.md`; commit to `main`, push and verify local/hTown runtime identity.
+- [x] Record exact behavior and open production/touch/DPI/hardware gates in `OPEN_TASKS.md`; commit `7e5a818` to `main`, push and verify local/hTown runtime identity. Local 8050/8056 and hTown `/stt` upstream reported the same revision and digest; hTown checkout is clean on `main`, nginx is active, and `nginx -t` passes. Read-only Chromium chart acceptance passed on three demo aliases (150 verified XAU M15 bars each, 46 GETs, zero writes/errors/Blueberry requests); `xau5m_m5` was excluded after its terminal returned HTTP 503 as not running. Anonymous public `/stt` returned the expected HTTP 401. Main CI workflows were still in progress at this check.
 
 ## Explicitly out of scope
 
