@@ -19,3 +19,19 @@ Current 19 October Experts logs in the demo data folders contain `XAU_Titan_Pro_
 ## Protected-account handling note
 
 Two incidental local reads exceeded the intended demo-only scope: the Windows process inventory included the protected terminal's process metadata and window title, and a bulk hash command computed the supplied Blueberry preset's SHA-256 without opening or printing its contents. No Blueberry MT5 API call, Experts/Journal log read, terminal interaction, preset-content read, or account change was performed. Subsequent checks used the explicit five-demo allowlist. This incident is recorded without reproducing the protected account identifiers or preset hash.
+
+## Read-only drawdown and deal-history cross-check (19 October 2026)
+
+A direct, sequential GET-only check covered only the five configured non-Blueberry demo aliases. It made no MT5 writes and returned `canExecute=false` for every available history. Four accounts returned fresh, scope-verified data; `xau5m_m5` returned HTTP 503 and was unavailable. The 30-day deal-history range was 19 September 16:34 UTC through 19 October 16:34 UTC; net values below sum profit, commission, swap and fee across verified deal rows.
+
+| Demo alias | Initial balance | Current balance / equity | Verified deal rows / exits | 30-day net |
+|---|---:|---:|---:|---:|
+| `titan` | $10,000 | $10,319.72 / $10,347.35 | 59 / 28 | +$186.53 |
+| `titan_m5` | $500 | $231.07 / $211.18 | 40 / 18 | −$268.93 |
+| `xau5m_500` | $500 | $588.91 / $600.13 | 14 / 6 | +$88.91 |
+| `goldm15` | $10,000 | $10,029.75 / $10,029.75 | 38 / 19 | +$29.75 |
+| `xau5m_m5` | $250 | unavailable (HTTP 503) | unavailable | unavailable |
+
+The best-supported current drawdown account is **`titan_m5`, the PU Prime $500 Titan demo**: its $268.93 realized net loss exactly accounts for the fall from $500 initial balance to $231.07 current balance. Current equity is $211.18. Its live status still has `challenge_protection=false`; the checked experts log has `XAU_Titan_Pro_BasketGuard` activity on `XAUUSD.p,M15` on 19 October, but no explicit drawdown-breach message. This proves a large demo drawdown, not a formal challenge-limit event or the in-memory EA/preset identity.
+
+The separate historical `xau5m_m5` demo log still contains explicit 15 October messages of daily DD 3.57% versus 3.50% and total DD 9.21% versus 9.00%; its current terminal is offline. In the `titan_m5` demo's 15 October log, `Copier_Receiver_Blueberry` historically initialized on M15/M5 with Blueberry-branded limits, followed by a reset showing a $382.94 baseline and −$17.06 daily limit. These are entries from that demo's local log only. They do not show that the receiver remains attached or establish that it caused the current drawdown. The direct filesystem scan did not include a process-associated Roaming data path for the non-portable `titan` installation, so no claim about its local expert-log history is made here. No Blueberry account, API, process, terminal, preset or log was queried. No order, chart change or EA change was performed.
