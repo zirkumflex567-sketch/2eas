@@ -22,6 +22,8 @@ function isWeekendGap(previous,next,tf,symbol){
  // XAU feeds close over the weekend. Without broker-session metadata we
  // tolerate only bounded, observed gold bar-open closures; other holes remain UNKNOWN.
  if(tf==="D1")return delta<=4*86400&&day===4&&b.getUTCDay()===0&&delta>=60*3600&&delta<=84*3600;
+ if(tf==="H4")return day===5&&b.getUTCDay()===0&&a.getUTCHours()===17&&a.getUTCMinutes()===0&&
+  a.getUTCSeconds()===0&&b.getUTCHours()===21&&b.getUTCMinutes()===0&&b.getUTCSeconds()===0&&delta===52*3600;
  if(!["H1","M15","M5"].includes(tf)||day!==5||b.getUTCDay()!==0)return false;
  const fridayClose={H1:[20,0],M15:[20,45],M5:[20,55]}[tf];
  const sundayOpen=[22,0];
