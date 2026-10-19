@@ -400,6 +400,9 @@ def current_daily_drawdown(mt5_client, account_info, tick, now, params=None, dd_
     if not tick or not account_info:
         raise HTTPException(503, 'MT5-Quote/Kontodaten für Tages-DD fehlen.')
     current_account = selected()
+    challenge_protection = current_account.get('challenge_protection') is True
+    if current_account.get('id') == 'blueberry' and not challenge_protection:
+        raise HTTPException(503, 'Challenge-Schutzkonfiguration fehlt oder ist deaktiviert; Tagesrisiko unbekannt.')
     params = gold_parameters() if current_account['id'] == 'goldm15' else params
     reset_hour = int(params['RiskResetHourServer']) if params else 0
     dd_cfg = load_dd_config() if dd_cfg is None else dd_cfg
@@ -428,7 +431,6 @@ def current_daily_drawdown(mt5_client, account_info, tick, now, params=None, dd_
         raise HTTPException(503, 'Tageshistorie/-baseline ist ungültig; Risiko unbekannt.')
     daily_ref = max(day_start_bal, account_info.balance)
     daily_loss = max(0.0, daily_ref - account_info.equity)
-    challenge_protection = current_account.get('challenge_protection') is True
     ea_limit_pct, broker_limit_pct = (3.5, 4.0) if challenge_protection else (None, None)
     daily_drawdown = {
         'loss_usd': round(daily_loss, 2),

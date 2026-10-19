@@ -218,6 +218,38 @@ def test_missing_challenge_flag_does_not_enable_protection_for_demo_accounts():
     assert result['buffer_usd'] is None
 
 
+@pytest.mark.parametrize('challenge_flag', [None, False, 'missing'])
+def test_blueberry_drawdown_fails_closed_before_broker_history_if_protection_config_drifts(challenge_flag):
+    import app
+    from fastapi import HTTPException
+    from datetime import datetime, timezone
+    from unittest.mock import Mock, patch
+
+    blueberry = dict(app.ACCOUNTS['blueberry'])
+    if challenge_flag == 'missing':
+        blueberry.pop('challenge_protection')
+    else:
+        blueberry['challenge_protection'] = challenge_flag
+    history = Mock(return_value=[])
+    fake = SimpleNamespace(history_deals_get=history,
+                           DEAL_TYPE_BUY=0, DEAL_TYPE_SELL=1)
+    risk_context = dict(manual_active=False, risk_day='2026-10-14', risk_timezone='UTC', risk_reset_hour=0)
+    with patch.object(app, 'mt5', fake), \
+            patch.object(app, 'selected', return_value=blueberry), \
+            patch.object(app, 'risk_day_context', return_value=(risk_context, datetime(2026, 10, 14, tzinfo=timezone.utc))), \
+            patch.object(app, 'require_fresh_quote', return_value={}):
+        with pytest.raises(HTTPException) as raised:
+            app.current_daily_drawdown(
+                fake, SimpleNamespace(balance=10_000., equity=10_000.),
+                SimpleNamespace(time=1_792_000_000), 1_792_000_000,
+                params=None, dd_cfg={},
+            )
+
+    assert raised.value.status_code == 503
+    assert 'Challenge-Schutz' in str(raised.value.detail)
+    history.assert_not_called()
+
+
 def test_mt5_trace_diagnostics_require_authorized_read_identity(monkeypatch):
     from fastapi.testclient import TestClient
     import app
