@@ -57,6 +57,6 @@
 - Modify: `docs/OPEN_TASKS.md`
 
 - [x] Add a fail-closed smoke that selects one open non-Blueberry demo position, verifies a risk-reducing candidate, confirms it once, and checks exact broker readback; never use market orders and never touch Blueberry.
-- [ ] Run the smoke on one user-authorized non-Blueberry demo only; if quote, identity, guard, or stop geometry is not valid, stop without sending the commit.
-- [ ] Record the exact demo result for AT-013/014, including one `TRADE_ACTION_SLTP` mutation, verified readback, and zero new/market orders.
-- [ ] Keep AT-013/014 open if no authorized demo position meets quote, identity, guard, and geometry checks or if browser evidence is incomplete. Run focused Python/browser checks and `git diff --check`; commit the implementation on `main`.
+- [x] Run the smoke on one user-authorized non-Blueberry demo only; if quote, identity, guard, or stop geometry is not valid, stop without sending the commit.
+- [x] Record the exact demo result for AT-013/014, including one `TRADE_ACTION_SLTP` mutation, verified readback, and zero new/market orders.
+- [x] Keep AT-013/014 open if no authorized demo position meets quote, identity, guard, and geometry checks or if browser evidence is incomplete. Run focused Python/browser checks and `git diff --check`; commit the implementation on `main`.
