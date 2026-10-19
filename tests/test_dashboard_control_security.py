@@ -38,16 +38,27 @@ class ControlSecurityTests(unittest.TestCase):
     def test_real_app_installs_control_gate(self):
         import app
         client = TestClient(app.app)
-        assert app.app.state.mutation_audit_store.allowed_accounts == {
+        production_audit_store = app.app.state.mutation_audit_store
+        assert production_audit_store.allowed_accounts == {
             name for name, spec in app.ACCOUNTS.items()
             if spec.get('is_demo') is True and spec.get('challenge_protection') is not True
         }
-        assert 'blueberry' not in app.app.state.mutation_audit_store.allowed_accounts
+        assert 'blueberry' not in production_audit_store.allowed_accounts
         response = client.post('/api/close_position', json={'ticket': 999})
         self.assertEqual(response.status_code, 403)
         self.assertEqual(client.get('/api/control_session').status_code, 200)
         self.assertFalse(app.app.state.position_commit_write_capable)
         from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as audit_dir:
+            isolated_audit_store = MutationAuditStore(
+                Path(audit_dir) / 'audit.sqlite',
+                checkout_root=Path(audit_dir) / 'checkout',
+                allowed_accounts=production_audit_store.allowed_accounts,
+            )
+            with patch.object(app.app.state, 'mutation_audit_store', isolated_audit_store):
+                self._assert_real_app_commit_routes_stay_disabled(client, app, patch)
+
+    def _assert_real_app_commit_routes_stay_disabled(self, client, app, patch):
         payload = {
             'schemaVersion': 1, 'account': 'titan', 'symbol': 'XAUUSD',
             'positionTicket': '123456', 'expectedRevision': 'a' * 64,
