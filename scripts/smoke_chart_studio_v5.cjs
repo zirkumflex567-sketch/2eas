@@ -1622,6 +1622,23 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(fibonacciFan.badRatiosRejected,true,"fan ratios must be strictly increasing inside (0,1)");
   assert.equal(fibonacciFan.edited.endPrice,4024);assert.equal(fibonacciFan.undone.endPrice,4020);assert.equal(fibonacciFan.redone.endPrice,4024);
   assert.equal(fibonacciFan.hidden,false);assert.equal(fibonacciFan.locked,true);assert.equal(fibonacciFan.duplicateCount,2);assert.equal(fibonacciFan.remaining,1);
+  const fibTrend=await page.evaluate(()=>{
+   const engine=window.__v5Screenshot,base=1700100000,options={id:"visual-fibtrend",startTime:base+30*900,startPrice:4010,endTime:base+32*900,endPrice:4020,thirdTime:base+34*900,thirdPrice:4015,color:"#a78bfa"};
+   engine.addTrendBasedFibonacci(options);
+   const up={drawing:engine.readDrawing(options.id),levels:engine.trendBasedFibonacciLevels(options.id)};
+   engine.updateTrendBasedFibonacci(options.id,{thirdPrice:4014});const edited=engine.readDrawing(options.id);engine.undo();const undone=engine.readDrawing(options.id);engine.redo();const redone=engine.readDrawing(options.id);
+   engine.setDrawingVisible(options.id,false);const hidden=engine.readDrawing(options.id).visible;engine.setDrawingLocked(options.id,true);const locked=engine.readDrawing(options.id).locked;engine.setDrawingLocked(options.id,false);engine.setDrawingVisible(options.id,true);
+   engine.selectDrawings([options.id]);engine.duplicateSelectedDrawings();const duplicateCount=JSON.parse(engine.exportDrawings()).drawings.filter(row=>row.kind==="FIB_TREND").length;engine.deleteSelectedDrawings();const remaining=JSON.parse(engine.exportDrawings()).drawings.filter(row=>row.kind==="FIB_TREND").length;
+   engine.addTrendBasedFibonacci({...options,id:"visual-fibtrend-down",startPrice:4020,endPrice:4010});const down=engine.trendBasedFibonacciLevels("visual-fibtrend-down");
+   let sameCandleRejected=false;try{engine.addTrendBasedFibonacci({...options,id:"visual-fibtrend-invalid",thirdTime:options.endTime})}catch{sameCandleRejected=true}
+   engine.removeTrendBasedFibonacci(options.id);engine.removeTrendBasedFibonacci("visual-fibtrend-down");return {up,edited,undone,redone,hidden,locked,duplicateCount,remaining,down,sameCandleRejected};
+  });
+  assert.deepEqual(fibTrend.up.levels.map(level=>level.ratio),[0,.382,.5,.618,1,1.618,2.618]);
+  assert.deepEqual(fibTrend.up.levels.map(level=>level.price),[4015,4018.82,4020,4021.18,4025,4031.18,4041.18]);
+  assert.deepEqual(fibTrend.down.map(level=>level.price),[4015,4011.18,4010,4008.82,4005,3998.82,3988.82]);
+  assert.equal(fibTrend.sameCandleRejected,true,"Trend-based Fibonacci requires three distinct candle anchors");
+  assert.equal(fibTrend.edited.thirdPrice,4014);assert.equal(fibTrend.undone.thirdPrice,4015);assert.equal(fibTrend.redone.thirdPrice,4014);
+  assert.equal(fibTrend.hidden,false);assert.equal(fibTrend.locked,true);assert.equal(fibTrend.duplicateCount,2);assert.equal(fibTrend.remaining,1);
   const fanDragSetup=await page.evaluate(()=>{const host=document.createElement("div");host.id="isolated-fan-drag";host.style.cssText="position:fixed;left:220px;top:90px;width:640px;height:360px;z-index:1000";document.body.append(host);const engine=ChartStudioV5.createStudioV5(host,"fan-drag-test",{symbol:"XAUUSD",timeframe:"M15"}),base=1700300000,bars=Array.from({length:100},(_,index)=>{const price=4000+index*.2+Math.sin(index/8)*3;return {time:base+index*900,open:price,high:price+4,low:price-4,close:price+1}});engine.setCandles(bars);engine.setVisibleLogicalRange({from:0,to:100});engine.addFibonacciFan({id:"fan-drag",startTime:bars[70].time,startPrice:bars[70].close,endTime:bars[82].time,endPrice:bars[82].close+2,color:"#22d3ee"});window.__fanDragEngine=engine;return {original:engine.readDrawing("fan-drag")}});
   await page.waitForTimeout(150);const fanEndPoint=await page.evaluate(()=>window.__fanDragEngine.drawingAnchorPosition("fan-drag","END"));
   await page.mouse.move(fanEndPoint.x,fanEndPoint.y);await page.mouse.down();await page.mouse.move(fanEndPoint.x+28,fanEndPoint.y-18,{steps:3});await page.mouse.up();
