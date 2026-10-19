@@ -4,6 +4,13 @@ const assert = require("node:assert/strict");
 const { chromium } = require("playwright");
 
 const base = (process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056").replace(/\/$/, "");
+const allowedAccounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500", "goldm15"];
+const accounts = process.env.CHART_STUDIO_ACCOUNTS
+  ? process.env.CHART_STUDIO_ACCOUNTS.split(",").map(value => value.trim()).filter(Boolean)
+  : ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
+assert.ok(accounts.includes("titan") && accounts.length >= 2
+  && accounts.every(account => allowedAccounts.includes(account)),
+  "CHART_STUDIO_ACCOUNTS must include titan and only configured non-Blueberry demo aliases");
 
 (async () => {
   const browser = await chromium.launch({ headless: true });
@@ -16,7 +23,7 @@ const base = (process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056").repl
     const titanReady = new Promise(resolve => { heldTitanReady = resolve; });
     const titanGate = new Promise(resolve => { releaseTitan = resolve; });
     let heldTitanRequest = false;
-    let xau5mResponse;
+    let currentAccountResponse;
 
     page.on("pageerror", error => browserErrors.push(error.message));
     page.on("request", request => {
@@ -54,19 +61,20 @@ const base = (process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056").repl
     const held = await titanReady;
     assert.equal(held.response.status(), 200, "delayed Titan response was read successfully");
 
-    const xau5mCandle = page.waitForResponse(response => {
+    const currentAccount = accounts.find(account => account !== "titan");
+    const currentCandle = page.waitForResponse(response => {
       const url = new URL(response.url());
-      return url.pathname === "/api/candles" && url.searchParams.get("account") === "xau5m_m5";
+      return url.pathname === "/api/candles" && url.searchParams.get("account") === currentAccount;
     });
-    await page.locator('#account-switcher [data-account="xau5m_m5"]').click();
-    await page.locator('#account-switcher [data-account="xau5m_m5"][aria-pressed="true"]').waitFor();
-    xau5mResponse = await xau5mCandle;
-    assert.equal(xau5mResponse.status(), 200, "current XAU demo response loaded while the prior account was delayed");
-    const verified = await xau5mResponse.json();
-    assert.equal(verified.accountId, "xau5m_m5");
+    await page.locator(`#account-switcher [data-account="${currentAccount}"]`).click();
+    await page.locator(`#account-switcher [data-account="${currentAccount}"][aria-pressed="true"]`).waitFor();
+    currentAccountResponse = await currentCandle;
+    assert.equal(currentAccountResponse.status(), 200, `current ${currentAccount} response loaded while the prior account was delayed`);
+    const verified = await currentAccountResponse.json();
+    assert.equal(verified.accountId, currentAccount);
     assert.equal(verified.source, "MT5_VERIFIED");
     assert.equal(verified.canExecute, false);
-    await page.waitForFunction(() => window.__mainCandleSeriesCaptures.some(item => item.active === "xau5m_m5" && item.data.length > 0));
+    await page.waitForFunction(account => window.__mainCandleSeriesCaptures.some(item => item.active === account && item.data.length > 0), currentAccount);
 
     releaseTitan();
     await page.waitForTimeout(500);
@@ -75,18 +83,18 @@ const base = (process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056").repl
       selectedAccount: document.querySelector('#account-switcher [aria-pressed="true"]')?.dataset.account,
       captures: window.__mainCandleSeriesCaptures,
     }));
-    assert.equal(state.account, "xau5m_m5", "late old-account data must not change the current chart account");
-    assert.equal(state.selectedAccount, "xau5m_m5");
-    const activeCaptures = state.captures.filter(item => item.active === "xau5m_m5" && item.data.length > 0);
+    assert.equal(state.account, currentAccount, "late old-account data must not change the current chart account");
+    assert.equal(state.selectedAccount, currentAccount);
+    const activeCaptures = state.captures.filter(item => item.active === currentAccount && item.data.length > 0);
     assert.ok(activeCaptures.length > 0, "current account chart data was rendered");
     const latest = activeCaptures.at(-1).data;
     const expected = verified.candles.map(row => ({
       time: row.time, open: row.open, high: row.high, low: row.low, close: row.close,
     })).sort((a, b) => Number(a.time) - Number(b.time));
     const actual = [...latest].sort((a, b) => Number(a.time) - Number(b.time));
-    assert.deepEqual(actual, expected, "late Titan data must never overwrite the active XAUUSD.p chart series");
+    assert.deepEqual(actual, expected, `late Titan data must never overwrite the active ${currentAccount} chart series`);
 
-    const aliases = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
+    const aliases = accounts;
     const timeframes = ["M5", "M15"];
     let completedCycles = 0;
     for (let index = 0; index < 20; index += 1) {
