@@ -3,9 +3,17 @@
 const assert = require("node:assert/strict");
 const { chromium } = require("playwright");
 const { countCandleInkPixels } = require("./chart_render_pixels.cjs");
+const { classifyLiveDemoRequest } = require("./live_demo_scope_guard.cjs");
 
 const base = process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056";
 const allowedAccounts = ["titan", "xau5m_m5", "titan_m5", "xau5m_500", "goldm15"];
+const demoSymbols = {
+  titan: "XAUUSD",
+  xau5m_m5: "XAUUSD.p",
+  titan_m5: "XAUUSD.p",
+  xau5m_500: "XAUUSD.p",
+  goldm15: "XAUUSD",
+};
 const accounts = process.env.CHART_STUDIO_ACCOUNTS
   ? process.env.CHART_STUDIO_ACCOUNTS.split(",").map(value => value.trim()).filter(Boolean)
   : allowedAccounts;
@@ -48,15 +56,42 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
     });
     await page.route("**/*", async route => {
       const url = new URL(route.request().url());
-      if (url.origin === baseUrl.origin && url.pathname.startsWith(`${basePath}/api/`)) {
+      if (url.origin === baseUrl.origin) {
         const account = url.searchParams.get("account");
-        if (route.request().method() !== "GET" || account === "blueberry") {
-          blockedApiRequests.push({path:url.pathname,method:route.request().method(),account});
+        const scope = classifyLiveDemoRequest({url,method:route.request().method(),basePath,allowedAccounts:accounts});
+        if (!scope.allowed) {
+          blockedApiRequests.push({path:url.pathname,method:route.request().method(),account,reason:scope.reason});
           await route.abort("blockedbyclient");
           return;
         }
-        if (["/api/candles", "/api/status", "/api/positions", "/api/quotes"].includes(url.pathname)) {
-          assert.ok(account, `account-scoped request lacks an explicit account: ${url.pathname}`);
+        if (scope.kind === "global_read" && scope.endpoint === "/api/accounts") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              default: accounts[0],
+              // Keep the browser harness completely independent of the global
+              // account list, which includes protected Blueberry metadata.
+              accounts: accounts.map(id => ({
+                id, name: id, login: "Demo", server: "Demo", symbol: demoSymbols[id], timeframe: "M15",
+                is_demo: true, challenge_protection: false, capacity: 3,
+              })),
+            }),
+          });
+          return;
+        }
+        if (scope.kind === "global_read" && scope.endpoint === "/api/chart/v1/capabilities") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              accountScopes: accounts,
+              symbols: ["XAUUSD", "XAUUSD.p"],
+              timeframes: ["M1", "M5", "M15", "M30", "H1", "H4", "D1"],
+              features: { encryptedDeviceSync: false },
+            }),
+          });
+          return;
         }
       }
       if (url.origin === baseUrl.origin && url.pathname === `${basePath}/` && url.searchParams.has("account")) {
@@ -89,6 +124,7 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
       if (index === 0) {
         candleResponse = waitForCandleResponse(account);
         await page.goto(`${base}/?account=${account}`, { waitUntil: "domcontentloaded" });
+        await page.locator(`#account-switcher [data-account="${account}"][aria-pressed="true"]`).waitFor();
       } else {
         await page.evaluate(id => { window.__chartExpectedAccount = id; }, account);
         candleResponse = waitForCandleResponse(account);
