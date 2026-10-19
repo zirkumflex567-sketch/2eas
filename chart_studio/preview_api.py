@@ -6,11 +6,11 @@ from decimal import Decimal, localcontext
 from typing import Literal
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.routing import APIRoute
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, StrictStr, field_validator, model_validator
 import account_gateway as gateway
+from broker_telemetry import TelemetryAPIRoute
 from chart_studio import broker_reads as reads
 from chart_studio.position_preview import (
     PolicyError, number, actual_number, canonical, mt5_float, geometry,
@@ -73,7 +73,7 @@ def failure(status, code, **fields):
     return HTTPException(status, {'code':code, 'canExecute':False,'canCommit':False,
                                 'guard':{'state':'UNKNOWN','source':'NONE'}, **fields})
 
-class PreviewRoute(APIRoute):
+class PreviewRoute(TelemetryAPIRoute):
     def get_route_handler(self):
         original = super().get_route_handler()
         async def handle(request):

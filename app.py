@@ -58,6 +58,7 @@ if _dashboard_env.is_file():
         pass
 
 app = FastAPI(title="XAU Titan Pro - Institutional Live Cockpit")
+app.router.route_class = broker_telemetry.TelemetryAPIRoute
 install_control_security(app)
 BASE_DIR = Path(__file__).resolve().parent
 install_runtime(app, BASE_DIR)

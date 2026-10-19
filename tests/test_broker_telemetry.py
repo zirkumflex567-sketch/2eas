@@ -279,6 +279,126 @@ def test_mt5_trace_diagnostics_reject_protected_account_before_reading_traces(mo
     assert calls == []
 
 
+def test_request_trace_records_http_method_and_canonical_route_without_request_values():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    import app
+
+    recorder = telemetry.TraceRecorder()
+    test_app = FastAPI()
+    test_app.router.route_class = app.app.router.route_class
+
+    @test_app.get('/api/diagnostics/positions/{ticket}')
+    def traced_route(ticket: int, account: str = 'titan', token: str = ''):
+        with telemetry.request_trace(account, recorder=recorder):
+            with telemetry.span('mt5_rates'):
+                pass
+        return {'ok': True}
+
+    response = TestClient(test_app).get(
+        '/api/diagnostics/positions/123456?account=titan&token=private-value'
+    )
+
+    assert response.status_code == 200
+    [trace] = recorder.snapshot()
+    assert trace['httpMethod'] == 'GET'
+    assert trace['route'] == '/api/diagnostics/positions/{ticket}'
+    encoded = json.dumps(trace).lower()
+    assert '123456' not in encoded
+    assert 'private-value' not in encoded
+    assert '?' not in encoded
+
+
+def test_preview_custom_route_class_records_canonical_route_attribution():
+    from fastapi import FastAPI, APIRouter
+    from fastapi.testclient import TestClient
+    from chart_studio.preview_api import PreviewRoute
+
+    recorder = telemetry.TraceRecorder()
+    test_app = FastAPI()
+    router = APIRouter(route_class=PreviewRoute)
+
+    @router.post('/api/chart/v1/position/{ticket}/preview')
+    def preview(ticket: str):
+        with telemetry.request_trace('titan_m5', recorder=recorder):
+            with telemetry.span('mt5_rates', count=1):
+                pass
+        return {'ok': True}
+
+    test_app.include_router(router)
+    response = TestClient(test_app).post('/api/chart/v1/position/987654/preview?secret=private')
+
+    assert response.status_code == 200
+    [trace] = recorder.snapshot()
+    assert trace['httpMethod'] == 'POST'
+    assert trace['route'] == '/api/chart/v1/position/{ticket}/preview'
+    assert '987654' not in json.dumps(trace)
+    assert 'private' not in json.dumps(trace)
+
+
+def test_request_route_context_isolated_between_concurrent_requests_and_reset_after_error():
+    from concurrent.futures import ThreadPoolExecutor
+    from fastapi import FastAPI, HTTPException
+    from fastapi.testclient import TestClient
+    import app
+
+    recorder = telemetry.TraceRecorder()
+    barrier = threading.Barrier(2)
+    test_app = FastAPI()
+
+    class ResetProbeRoute(app.app.router.route_class):
+        def get_route_handler(self):
+            handler = super().get_route_handler()
+
+            async def traced_with_reset_probe(request):
+                try:
+                    return await handler(request)
+                finally:
+                    if request.url.path == '/api/failing':
+                        with telemetry.request_trace('xau5m_500', recorder=recorder):
+                            pass
+
+            return traced_with_reset_probe
+
+    test_app.router.route_class = ResetProbeRoute
+
+    @test_app.get('/api/quotes/{symbol}')
+    def quote(symbol: str):
+        with telemetry.request_trace('titan', recorder=recorder):
+            barrier.wait(timeout=2)
+        return {'ok': True}
+
+    @test_app.get('/api/history/{timeframe}')
+    def history(timeframe: str):
+        with telemetry.request_trace('goldm15', recorder=recorder):
+            barrier.wait(timeout=2)
+        return {'ok': True}
+
+    @test_app.get('/api/failing')
+    def failing():
+        with telemetry.request_trace('titan_m5', recorder=recorder):
+            raise HTTPException(status_code=503, detail='expected test failure')
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        quote_future = pool.submit(TestClient(test_app).get, '/api/quotes/XAUUSD')
+        history_future = pool.submit(TestClient(test_app).get, '/api/history/M15')
+        assert quote_future.result(timeout=5).status_code == 200
+        assert history_future.result(timeout=5).status_code == 200
+
+    failed = TestClient(test_app).get('/api/failing')
+    assert failed.status_code == 503
+    traces = recorder.snapshot(limit=10)
+    by_account = {trace['account']: trace for trace in traces}
+    assert by_account['titan']['route'] == '/api/quotes/{symbol}'
+    assert by_account['goldm15']['route'] == '/api/history/{timeframe}'
+    assert by_account['titan_m5']['route'] == '/api/failing'
+    assert by_account['titan_m5']['outcome'] == 'error'
+    assert 'route' not in by_account['xau5m_500']
+    assert 'httpMethod' not in by_account['xau5m_500']
+    assert 'XAUUSD' not in json.dumps(traces)
+    assert 'M15' not in json.dumps(traces)
+
+
 def test_chart_studio_verified_read_records_its_lock_and_operation_spans():
     import account_gateway as gateway
     from chart_studio.broker_reads import verified_read

@@ -8,6 +8,7 @@ import re
 import threading
 import time
 import uuid
+from fastapi.routing import APIRoute
 
 
 SPAN_NAMES = frozenset({
@@ -23,7 +24,37 @@ ACCOUNT_ALIASES = frozenset({
     'titan_500_2', 'xau5m_m15', 'titan_25k',
 })
 _ALIAS = re.compile(r'^[a-z0-9_]{1,64}$')
+_HTTP_METHODS = frozenset({'GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'})
+_API_ROUTE = re.compile(r'^/api/[A-Za-z0-9_./{}:-]{1,196}$')
 _active_trace = ContextVar('broker_telemetry_trace', default=None)
+_active_request = ContextVar('broker_telemetry_request', default=None)
+
+
+@contextmanager
+def request_context(method, route):
+    """Scope a trace to a safe HTTP method and canonical API route template."""
+    context = None
+    if (isinstance(method, str) and method in _HTTP_METHODS and
+            isinstance(route, str) and _API_ROUTE.fullmatch(route)):
+        context = {'httpMethod': method, 'route': route}
+    token = _active_request.set(context)
+    try:
+        yield
+    finally:
+        _active_request.reset(token)
+
+
+class TelemetryAPIRoute(APIRoute):
+    """Attach canonical route metadata without retaining concrete request data."""
+
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+
+        async def traced_handler(request):
+            with request_context(request.method, self.path_format):
+                return await handler(request)
+
+        return traced_handler
 
 
 class TraceRecorder:
@@ -62,6 +93,9 @@ def request_trace(account, recorder=DEFAULT_RECORDER):
         'spans': [],
         'droppedSpanCount': 0,
     }
+    request = _active_request.get()
+    if request is not None:
+        trace.update(request)
     token = _active_trace.set(trace)
     try:
         yield trace
