@@ -165,4 +165,4 @@ class MutationAuditStore:
                                 FROM audit_events ORDER BY id DESC LIMIT ?''', (limit,)).fetchall()
         keys = {'request_id': 'requestId', 'principal_hash': 'principalHash',
                 'status_code': 'statusCode', 'created_utc': 'createdUtc'}
-        return [{keys.get(key, key): row[key] for key in row.keys()} for row in reversed(rows)]\n
+        return [{keys.get(key, key): row[key] for key in row.keys()} for row in reversed(rows)]

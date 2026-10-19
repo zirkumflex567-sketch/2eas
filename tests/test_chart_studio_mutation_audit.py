@@ -80,4 +80,4 @@ def test_mutation_audit_store_must_be_private_and_outside_checkout(tmp_path):
         MutationAuditStore(Path('relative.sqlite'), checkout_root=root)
     with pytest.raises(ValueError):
         MutationAuditStore(tmp_path / 'audit.sqlite', checkout_root=root,
-                           allowed_accounts={'titan', 'blueberry'})\n
+                           allowed_accounts={'titan', 'blueberry'})
