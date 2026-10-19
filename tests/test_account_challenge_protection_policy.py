@@ -19,8 +19,9 @@ def test_all_configured_gold_chart_feeds_use_the_user_confirmed_m15_view():
     }
 
 
-def test_only_four_non_blueberry_demo_rates_use_verified_broker_server_basis():
-    expected = {"titan", "xau5m_m5", "titan_m5", "xau5m_500"}
+def test_active_demo_feeds_and_goldm15_use_verified_broker_server_basis():
+    active_demo_feeds = {"titan", "xau5m_m5", "titan_m5", "xau5m_500"}
+    expected = active_demo_feeds | {"goldm15"}
     configured = {
         account["id"]
         for account in account_gateway.ACCOUNTS.values()
@@ -28,4 +29,5 @@ def test_only_four_non_blueberry_demo_rates_use_verified_broker_server_basis():
     }
 
     assert configured == expected
+    assert active_demo_feeds <= configured
     assert account_gateway.ACCOUNTS["blueberry"].get("rates_time_basis", "UTC") == "UTC"
