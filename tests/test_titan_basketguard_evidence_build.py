@@ -207,3 +207,23 @@ def test_installed_source_parity_allows_only_reviewed_capture_and_challenge_delt
     drifted = _known_installed_predecessor(source).replace("bool buy_signal  =", "bool buy_signal =", 1)
     with pytest.raises(ValueError, match="differs from main"):
         BUILD._assert_reviewed_semantic_parity(drifted, source)
+
+
+def test_record_only_capture_candidate_fails_closed_at_every_broker_write():
+    source = SOURCE.read_text(encoding="utf-8-sig")
+    values = {name: default.strip().strip('"') for _kind, name, default in _source_inputs(source)}
+    generated = BUILD._instrument_source(
+        source, "titan_m5", "titan_puprime500", "a" * 64, "b" * 64,
+        BUILD._expected_parameter_hash(source, values, "titan_m5"), 700184986,
+        "PUPrime-Demo", r"C:\\demo\\terminal", 10800, record_only=True,
+    )
+
+    assert "#define CS_EVIDENCE_RECORD_ONLY 1" in generated
+    assert 'PrintFormat("RECORD-ONLY: suppressed broker write %s",operation);' in generated
+    for method in ("Buy", "Sell", "PositionModify", "PositionClose"):
+        calls = re.findall(rf"m_trade\.{method}\(", generated)
+        assert calls
+        for match in re.finditer(rf"m_trade\.{method}\(", generated):
+            prefix = generated[max(0, match.start() - 120):match.start()]
+            assert f'? CSSuppressBrokerWrite("{method.upper()}") : ' in prefix
+    assert "CSEnqueueDecision(\"ORDER_ATTEMPT\"" in generated

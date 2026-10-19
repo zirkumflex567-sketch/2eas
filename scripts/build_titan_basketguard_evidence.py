@@ -119,6 +119,59 @@ def _replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
+def _guard_broker_write_calls(source_text: str) -> str:
+    methods = {"Buy", "Sell", "PositionModify", "PositionClose"}
+    calls = []
+    for match in re.finditer(r"m_trade\.(Buy|Sell|PositionModify|PositionClose)\s*\(", source_text):
+        open_paren = source_text.find("(", match.start())
+        depth = 0
+        quoted = False
+        escaped = False
+        end = None
+        for index in range(open_paren, len(source_text)):
+            char = source_text[index]
+            if quoted:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    quoted = False
+                continue
+            if char == '"':
+                quoted = True
+            elif char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    end = index + 1
+                    break
+        if end is None:
+            raise ValueError(f"unterminated CTrade.{match.group(1)} call")
+        calls.append((match.start(), end, match.group(1), source_text[match.start():end]))
+    expected_counts = {"Buy": 1, "Sell": 1, "PositionModify": 3, "PositionClose": 1}
+    observed = {method: sum(1 for _start, _end, name, _call in calls if name == method)
+                for method in methods}
+    if observed != expected_counts:
+        raise ValueError(f"BasketGuard broker-write call inventory drifted: {observed}")
+    for start, end, method, call in reversed(calls):
+        guarded = f'(CS_EVIDENCE_RECORD_ONLY ? CSSuppressBrokerWrite("{method.upper()}") : {call})'
+        source_text = source_text[:start] + guarded + source_text[end:]
+    helper = '''
+
+bool CSSuppressBrokerWrite(const string operation)
+  {
+   PrintFormat("RECORD-ONLY: suppressed broker write %s",operation);
+   return false;
+  }
+'''
+    include_line = '#include <Trade\\Trade.mqh>'
+    if source_text.count(include_line) != 1:
+        raise ValueError("expected unique Trade.mqh include after write guards")
+    return source_text.replace(include_line, include_line + helper, 1)
+
+
 def _effective_preset(source_text: str, preset_path: Path) -> dict[str, str]:
     _, supplied = COMMON._preset_input_names(Path(preset_path))
     declarations = _input_declarations(source_text)
@@ -139,7 +192,8 @@ def _effective_preset(source_text: str, preset_path: Path) -> dict[str, str]:
 def _instrument_source(source_text: str, alias: str, producer: str,
                        terminal_hash: str, source_hash: str,
                        expected_parameter_hash: str, login: int, server: str,
-                       terminal_path: str, broker_utc_offset_seconds: int) -> str:
+                       terminal_path: str, broker_utc_offset_seconds: int,
+                       record_only: bool = False) -> str:
     if alias not in ALLOWED_ACCOUNTS:
         raise ValueError(f"account {alias!r} is not allowlisted for BasketGuard evidence builds")
     if not re.fullmatch(r"[0-9a-f]{64}", terminal_hash) or not re.fullmatch(r"[0-9a-f]{64}", source_hash):
@@ -153,6 +207,7 @@ def _instrument_source(source_text: str, alias: str, producer: str,
         raise ValueError("expected unique Trade.mqh include")
     definitions = [
         "#define CS_EVIDENCE_CAPTURE",
+        f"#define CS_EVIDENCE_RECORD_ONLY {1 if record_only else 0}",
         f"#define CS_EVIDENCE_ACCOUNT_ID {COMMON._mql_string(alias)}",
         f"#define CS_EVIDENCE_PRODUCER_ID {COMMON._mql_string(producer)}",
         f"#define CS_EVIDENCE_TERMINAL_HASH {COMMON._mql_string(terminal_hash)}",
@@ -164,6 +219,8 @@ def _instrument_source(source_text: str, alias: str, producer: str,
         f"#define CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS {broker_utc_offset_seconds}",
     ]
     generated = source_text.replace(marker, "\n".join(definitions) + "\n" + marker, 1)
+    if record_only:
+        generated = _guard_broker_write_calls(generated)
     init_anchor = '''   else if(CSInitializeEvidenceProducer() && !EventSetTimer(1))'''
     guarded_init = '''   else if(CSParameterSetHash!=CS_EVIDENCE_EXPECTED_PARAMETER_SET_HASH)
      {
@@ -265,7 +322,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 
 def _manifest(source_text: str, source_bytes: bytes, alias: str, preset_path: Path,
               effective_values: dict[str, str], terminal_hash: str,
-              source_hash: str) -> dict:
+              source_hash: str, record_only: bool = False) -> dict:
     return {
         "schemaVersion": 1,
         "accountAlias": alias,
@@ -279,11 +336,13 @@ def _manifest(source_text: str, source_bytes: bytes, alias: str, preset_path: Pa
         "effectiveInputCount": len(effective_values),
         "effectiveParameterSetHash": _expected_parameter_hash(source_text, effective_values, alias),
         "challengeProtection": "account-bound; false on PU Prime demos",
+        "recordOnly": bool(record_only),
         "inputSchemaSha256": hashlib.sha256("\n".join(sorted(effective_values)).encode()).hexdigest(),
     }
 
 
-def prepare_variant(repo_root: Path, alias: str, preset_path: Path) -> COMMON.BuildVariant:
+def prepare_variant(repo_root: Path, alias: str, preset_path: Path,
+                    record_only: bool = False) -> COMMON.BuildVariant:
     if alias not in ALLOWED_ACCOUNTS:
         raise ValueError(f"account {alias!r} is not allowlisted for BasketGuard evidence builds")
     if Path(preset_path).name.casefold() != EXPECTED_PRESETS[alias].casefold():
@@ -331,10 +390,13 @@ def prepare_variant(repo_root: Path, alias: str, preset_path: Path) -> COMMON.Bu
     generated = _instrument_source(
         source_text, alias, producer, context.terminal_identity_hash, source_hash,
         expected_parameter_hash, int(spec["login"]), spec["server"],
-        str(terminal.parent), spec["broker_utc_offset_seconds"],
+        str(terminal.parent), spec["broker_utc_offset_seconds"], record_only=record_only,
     )
 
+    build_name = f"{EA_NAME}_RecordOnly" if record_only else EA_NAME
     output_root = repo_root / "output" / "titan-basketguard-evidence" / alias
+    if record_only:
+        output_root /= "record-only"
     expected_output = (repo_root / "output").resolve()
     directory = output_root
     while directory != repo_root and expected_output in (directory.resolve(), *directory.resolve().parents):
@@ -343,10 +405,13 @@ def prepare_variant(repo_root: Path, alias: str, preset_path: Path) -> COMMON.Bu
         if directory == repo_root / "output":
             break
         directory = directory.parent
-    if output_root.resolve() != expected_output / "titan-basketguard-evidence" / alias:
+    expected_build_root = expected_output / "titan-basketguard-evidence" / alias
+    if record_only:
+        expected_build_root /= "record-only"
+    if output_root.resolve() != expected_build_root:
         raise ValueError("build output must remain under repository output/")
     output_root.mkdir(parents=True, exist_ok=True)
-    source_output = output_root / f"{EA_NAME}.mq5"
+    source_output = output_root / f"{build_name}.mq5"
     helper_output = output_root / "ChartStudioEvidenceSpool.mqh"
     manifest_path = output_root / "build-manifest.json"
     for output_file in (source_output, helper_output, manifest_path,
@@ -358,7 +423,7 @@ def prepare_variant(repo_root: Path, alias: str, preset_path: Path) -> COMMON.Bu
     COMMON._atomic_write(source_output, generated.encode("utf-8-sig"))
     COMMON._atomic_write(helper_output, helper_bytes)
     manifest = _manifest(source_text, source_bytes, alias, Path(preset_path), values,
-                         context.terminal_identity_hash, source_hash)
+                         context.terminal_identity_hash, source_hash, record_only=record_only)
     manifest.update({
         "generatedSourceSha256": hashlib.sha256(source_output.read_bytes()).hexdigest(),
         "installedBinarySha256": hashlib.sha256(installed_binary.read_bytes()).hexdigest(),
@@ -393,9 +458,12 @@ def main() -> int:
     parser.add_argument("account", choices=sorted(ALLOWED_ACCOUNTS))
     parser.add_argument("--preset", required=True, type=Path)
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--record-only", action="store_true",
+                        help="compile a side-by-side diagnostic EA that suppresses every CTrade write")
     args = parser.parse_args()
     try:
-        variant = prepare_variant(Path(__file__).resolve().parents[1], args.account, args.preset)
+        variant = prepare_variant(Path(__file__).resolve().parents[1], args.account, args.preset,
+                                  record_only=args.record_only)
         if args.prepare_only:
             print(f"Prepared {variant.source}; manifest {variant.manifest}")
             return 0
