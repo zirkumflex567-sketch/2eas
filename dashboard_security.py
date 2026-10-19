@@ -12,10 +12,12 @@ import secrets
 import threading
 import time
 from urllib.parse import urlsplit
+from chart_studio.mutation_audit import AuditScopeRejected
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from starlette._utils import get_route_path
+from starlette.routing import Match
 
 CONTROL_PATHS = frozenset({'/api/modify_position', '/api/close_position', '/api/reset_drawdown',
                            '/api/chart/v1/position/commit-stop', '/api/chart/v1/trade-ticket/preview',
@@ -27,6 +29,27 @@ PROXY_IDENTITY_HEADERS = ('x-dashboard-proxy-secret', 'x-dashboard-user')
 FORWARD_HEADERS = ('x-forwarded-proto', 'x-forwarded-for', 'x-forwarded-prefix')
 SINGLE_HEADERS = PROXY_IDENTITY_HEADERS + FORWARD_HEADERS + ('host', 'authorization', 'origin', 'x-dashboard-csrf')
 LOCAL_HOSTS = frozenset({'127.0.0.1', 'localhost', '::1', 'testserver'})
+_QUERY_SCOPED_WRITES = frozenset({
+    ('POST', '/api/modify_position'), ('POST', '/api/close_position'),
+    ('POST', '/api/reset_drawdown'),
+})
+_BODY_SCOPED_WRITES = frozenset({
+    ('PUT', '/api/chart/v1/workspace'), ('DELETE', '/api/chart/v1/workspace'),
+    ('PUT', '/api/chart/v1/position/commit-stop'),
+    ('POST', '/api/chart/v1/position/commit-stop'),
+    ('POST', '/api/chart/v1/trade-ticket/commit'),
+})
+_BODY_SCOPE_LIMITS = {
+    '/api/chart/v1/workspace': 600_000,
+    '/api/chart/v1/position/commit-stop': 65_536,
+    '/api/chart/v1/trade-ticket/commit': 65_536,
+}
+
+
+def _is_state_mutation(method, path):
+    if (method, path) in _QUERY_SCOPED_WRITES | _BODY_SCOPED_WRITES:
+        return True
+    return method == 'PUT' and path.startswith('/api/chart/v1/device-sync/')
 
 
 def _loopback(peer):
@@ -110,6 +133,18 @@ def install_control_security(app):
 
     def reject():
         return JSONResponse(status_code=403, content={'detail': 'Steuerzugriff nicht autorisiert. Dashboard neu laden; Remote-Zugriff benötigt explizite Freigabe.'})
+
+    def audit_route(request):
+        for route in request.app.routes:
+            try:
+                match, _ = route.matches(request.scope)
+            except Exception:
+                continue
+            if match is Match.FULL:
+                value = getattr(route, 'path_format', None)
+                if isinstance(value, str) and value.startswith('/api/'):
+                    return value
+        return '/api/unmatched'
 
     def proxy_identity(request, raw_peer):
         configured = os.environ.get('DASHBOARD_PROXY_SECRET', '')
@@ -206,7 +241,92 @@ def install_control_security(app):
                 token = request.headers.get('x-dashboard-csrf', '')
                 if not saved or saved['expires'] <= time.monotonic() or not token or not secrets.compare_digest(token.encode('utf-8'), saved['csrf'].encode('utf-8')):
                     return reject()
-        return await call_next(request)
+
+        # Journal every authenticated or token-gated API write before dispatch.
+        # Only an allowlisted route template, account alias and hashed principal
+        # are stored; request headers and bodies are never persisted.
+        mutation = _is_state_mutation(request.method, route_path)
+        store = getattr(request.app.state, 'mutation_audit_store', None) if mutation else None
+        request_id = None
+        if mutation:
+            if store is None:
+                return JSONResponse(status_code=503, content={
+                    'detail': {'code': 'AUDIT_UNAVAILABLE', 'canExecute': False, 'canCommit': False},
+                }, headers={'Cache-Control': 'no-store'})
+            try:
+                account = request.query_params.get('account')
+                body_scoped = ((request.method, route_path) in _BODY_SCOPED_WRITES or
+                               (request.method == 'PUT' and route_path.startswith('/api/chart/v1/device-sync/')))
+                if body_scoped:
+                    body_limit = (1_000_000 if request.method == 'PUT' and
+                                  route_path.startswith('/api/chart/v1/device-sync/') else
+                                  _BODY_SCOPE_LIMITS.get(route_path, 65_536))
+                    content_length = request.headers.get('content-length')
+                    if content_length and (not content_length.isdigit() or int(content_length) > body_limit):
+                        return JSONResponse(status_code=413, content={
+                            'detail': {'code': 'AUDIT_SCOPE_REQUIRED', 'canExecute': False, 'canCommit': False},
+                        }, headers={'Cache-Control': 'no-store'})
+                    chunks = []
+                    body_size = 0
+                    async for chunk in request.stream():
+                        body_size += len(chunk)
+                        if body_size > body_limit:
+                            return JSONResponse(status_code=413, content={
+                                'detail': {'code': 'AUDIT_SCOPE_REQUIRED', 'canExecute': False, 'canCommit': False},
+                            }, headers={'Cache-Control': 'no-store'})
+                        chunks.append(chunk)
+                    raw_body = b''.join(chunks)
+                    request._body = raw_body
+                    request._stream_consumed = False
+                    async def replay_body():
+                        return {'type': 'http.request', 'body': raw_body, 'more_body': False}
+                    request._receive = replay_body
+                    try:
+                        payload = json.loads(raw_body) if raw_body else None
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        payload = None
+                    body_account = payload.get('account') if isinstance(payload, dict) else None
+                    if not isinstance(body_account, str) or (account is not None and account != body_account):
+                        raise AuditScopeRejected('Configured non-protected demo alias required')
+                    account = body_account
+                request_id = store.begin_request(
+                    method=request.method,
+                    route=audit_route(request),
+                    account=account,
+                    principal=identity,
+                )
+            except AuditScopeRejected:
+                return JSONResponse(status_code=403, content={
+                    'detail': {'code': 'AUDIT_SCOPE_FORBIDDEN', 'canExecute': False, 'canCommit': False},
+                }, headers={'Cache-Control': 'no-store'})
+            except Exception:
+                return JSONResponse(status_code=503, content={
+                    'detail': {'code': 'AUDIT_UNAVAILABLE', 'canExecute': False, 'canCommit': False},
+                }, headers={'Cache-Control': 'no-store'})
+
+        try:
+            response = await call_next(request)
+        except BaseException:
+            if request_id is not None:
+                try:
+                    store.finish_request(request_id, status_code=500, outcome='unknown')
+                except Exception:
+                    pass
+            raise
+        if request_id is not None:
+            explicit_outcome = response.headers.get('X-Dashboard-Audit-Outcome')
+            if explicit_outcome is not None:
+                del response.headers['X-Dashboard-Audit-Outcome']
+            outcome = explicit_outcome if explicit_outcome in ('ok', 'rejected', 'unknown') else (
+                'ok' if response.status_code < 400 else 'rejected' if response.status_code < 500 else 'unknown'
+            )
+            try:
+                store.finish_request(request_id, status_code=response.status_code, outcome=outcome)
+            except Exception:
+                return JSONResponse(status_code=503, content={
+                    'detail': {'code': 'AUDIT_RESULT_UNAVAILABLE', 'canExecute': False, 'canCommit': False},
+                }, headers={'Cache-Control': 'no-store'})
+        return response
 
     @app.get('/api/control_session')
     def control_session(request: Request):
@@ -240,3 +360,20 @@ def install_control_security(app):
                                  'role': identity[2]}, headers={'Cache-Control': 'no-store'})
         response.set_cookie(COOKIE, cookie, max_age=TTL_SECONDS, httponly=True, secure=request.url.scheme == 'https', samesite='strict', path='/')
         return response
+
+    @app.get('/api/audit/mutations')
+    def mutation_audit(request: Request, limit: int = Query(100, ge=1, le=500)):
+        identity = getattr(request.state, 'control_identity', None)
+        if (not isinstance(identity, tuple) or len(identity) != 3 or
+                any(not isinstance(part, str) or not part.strip() for part in identity) or
+                identity[2] not in ('read', 'layout', 'trade')):
+            raise HTTPException(403, {'code': 'IDENTITY_REQUIRED'})
+        store = getattr(request.app.state, 'mutation_audit_store', None)
+        if store is None:
+            raise HTTPException(503, {'code': 'AUDIT_UNAVAILABLE'})
+        try:
+            events = store.recent(limit=limit)
+        except Exception:
+            raise HTTPException(503, {'code': 'AUDIT_UNAVAILABLE'}) from None
+        return JSONResponse({'schemaVersion': 1, 'events': events},
+                            headers={'Cache-Control': 'no-store'})

@@ -1,7 +1,10 @@
 import pytest
+import tempfile
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from dashboard_security import CONTROL_PATHS, install_control_security
+from chart_studio.mutation_audit import MutationAuditStore
 
 PAYLOAD = {
     'schemaVersion': 1,
@@ -19,11 +22,20 @@ class NoTouchGateway:
         pytest.fail(f'gateway touched while commit route disabled: {name}')
 
 
+def _install_security(app):
+    install_control_security(app)
+    temp = tempfile.TemporaryDirectory(prefix='position-commit-audit-')
+    app.state.audit_tempdir = temp
+    app.state.mutation_audit_store = MutationAuditStore(
+        Path(temp.name) / 'audit.sqlite', checkout_root=Path(temp.name) / 'checkout'
+    )
+
+
 def test_disabled_commit_route_rejects_before_gateway_access(monkeypatch):
     monkeypatch.setenv('DASHBOARD_CONTROL_TOKEN', 'unit-test-control-token')
     from chart_studio.position_commit_api import install_position_commit_routes
     app = FastAPI()
-    install_control_security(app)
+    _install_security(app)
     install_position_commit_routes(app, NoTouchGateway())
     response = TestClient(app).post('/api/chart/v1/position/commit-stop', json=PAYLOAD, headers={'Authorization': 'Bearer unit-test-control-token'})
     assert response.status_code == 503
@@ -35,7 +47,7 @@ def test_commit_route_requires_production_dependencies_even_when_enabled(monkeyp
     monkeypatch.setenv('DASHBOARD_CONTROL_TOKEN', 'unit-test-control-token')
     from chart_studio.position_commit_api import install_position_commit_routes
     app = FastAPI()
-    install_control_security(app)
+    _install_security(app)
     install_position_commit_routes(app, NoTouchGateway(), enabled=True)
     response = TestClient(app).post('/api/chart/v1/position/commit-stop', json=PAYLOAD, headers={'Authorization': 'Bearer unit-test-control-token'})
     assert response.status_code == 503
@@ -56,7 +68,7 @@ def test_malformed_or_unconfirmed_commit_is_rejected_before_gateway(monkeypatch,
     monkeypatch.setenv('DASHBOARD_CONTROL_TOKEN', 'unit-test-control-token')
     from chart_studio.position_commit_api import install_position_commit_routes
     app = FastAPI()
-    install_control_security(app)
+    _install_security(app)
     install_position_commit_routes(app, NoTouchGateway())
     payload = {**PAYLOAD, **changes}
     response = TestClient(app).post(

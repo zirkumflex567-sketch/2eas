@@ -7,19 +7,24 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from dashboard_security import install_control_security
+from chart_studio.mutation_audit import MutationAuditStore
 
 SECRET = 'test-proxy-secret-' + 'x' * 32
 HOST = 'dashboard.example'
 
 
 @pytest.fixture
-def proxy(monkeypatch):
+def proxy(monkeypatch, tmp_path):
     monkeypatch.setenv('DASHBOARD_PROXY_SECRET', SECRET)
     monkeypatch.setenv('DASHBOARD_PROXY_USERS', json.dumps({'viewer': 'read', 'designer': 'layout', 'operator': 'trade'}))
     monkeypatch.setenv('DASHBOARD_ALLOWED_HOSTS', HOST)
     monkeypatch.delenv('DASHBOARD_CONTROL_TOKEN', raising=False)
     app = FastAPI()
     install_control_security(app)
+    audit_root = tmp_path / 'audit'
+    app.state.mutation_audit_store = MutationAuditStore(
+        audit_root / 'audit.sqlite', checkout_root=audit_root / 'checkout'
+    )
     writes = []
     for path in ('modify_position', 'close_position', 'reset_drawdown',
                  'chart/v1/position/commit-stop', 'chart/v1/trade-ticket/preview',
@@ -54,8 +59,11 @@ def test_verified_proxy_gets_role_and_only_trade_can_mutate(proxy, user, role):
     for route in ('modify_position', 'close_position', 'reset_drawdown',
                   'chart/v1/position/commit-stop', 'chart/v1/trade-ticket/preview',
                   'chart/v1/trade-ticket/commit'):
+        payload = {'account': 'titan'} if route in (
+            'chart/v1/position/commit-stop', 'chart/v1/trade-ticket/commit'
+        ) else None
         result = client.post('/api/' + route, headers={**headers(user), 'Origin': 'https://' + HOST,
-                             'X-Dashboard-CSRF': response.json()['csrf_token']})
+                             'X-Dashboard-CSRF': response.json()['csrf_token']}, json=payload)
         assert result.status_code == (200 if role == 'trade' else 403)
     assert len(writes) == (6 if role == 'trade' else 0)
 

@@ -38,6 +38,30 @@ arriving over loopback cannot receive a local operator capability. Local session
 require both a local peer and a loopback Host (or the `testserver` test host).
 Forwarding headers alone neither grant a capability nor change request metadata.
 
+## Mutation audit journal
+
+The application keeps an append-only SQLite journal at
+`~/.chartstudio/mutation-audit.sqlite`, outside the Git checkout. On POSIX
+systems the store creates a `0700` directory and a `0600` database; on Windows
+it inherits the current user's profile ACL. State-changing dashboard API routes
+(position modify/close/reset, commit attempts, workspace writes, and device-sync
+writes) are journaled before route dispatch and get a second event with their
+HTTP outcome. Read-only preview POSTs are not state changes. The records contain
+only the canonical route template, the demo alias read from the query or scoped
+JSON account field, role, a stable hash of the principal, UTC timestamps, and status.
+Request bodies, headers, cookies, passwords, control tokens, broker logins,
+server names, and path IDs are not retained.
+
+Read the latest 1–500 events with the authenticated
+`GET /api/audit/mutations?limit=100` route. A failed start append returns
+`AUDIT_UNAVAILABLE` before the handler runs, including when the store is missing.
+A failed result append returns
+`AUDIT_RESULT_UNAVAILABLE`; the durable start event remains for reconciliation.
+An account alias outside the configured non-protected demo allowlist is
+rejected before dispatch. This API journal records dashboard requests; MT5 EA
+activity and manual terminal actions require their own recorder or broker
+history evidence.
+
 Only a verified proxy may supply one literal IPv4/IPv6 `X-Forwarded-For`, an
 `http`/`https` scheme and the exact configured prefix. nginx must terminate HTTPS
 for public use. The normalized HTTPS scheme supplies the external origin and a

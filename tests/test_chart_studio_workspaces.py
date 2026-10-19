@@ -11,6 +11,7 @@ from chart_studio.workspaces import (
     WorkspaceStore, StoreError, RevisionConflict, WorkspaceMissing,
     validate_document,
 )
+from chart_studio.mutation_audit import MutationAuditStore
 
 def example():
     return {
@@ -677,6 +678,12 @@ class ApiAccessTests(unittest.TestCase):
         import app
         from fastapi.testclient import TestClient
         self.server = app
+        self.audit_store = MutationAuditStore(
+            Path(self.tmp.name) / "private" / "mutations.sqlite",
+            checkout_root=Path(app.__file__).resolve().parent,
+            allowed_accounts=app.app.state.mutation_audit_store.allowed_accounts,
+        )
+        app.app.state.mutation_audit_store = self.audit_store
         app._chart_store_at.cache_clear()
         self.client = TestClient(app.app)
         self.headers = {"Authorization": "Bearer testing-secret-0123456789abcdefABCDEFG"}

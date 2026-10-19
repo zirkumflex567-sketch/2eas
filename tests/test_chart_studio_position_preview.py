@@ -15,12 +15,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastapi import HTTPException
 from dashboard_security import install_control_security
+from chart_studio.mutation_audit import MutationAuditStore
 import account_gateway as gateway
 from test_chart_studio_broker_reads import MT5Fake, NOW
 from chart_studio.broker_reads import position_model
 
 @pytest.fixture
-def api(monkeypatch):
+def api(monkeypatch, tmp_path):
     assert importlib.util.find_spec('chart_studio.preview_api') is not None
     from chart_studio.preview_api import install_preview_routes
     monkeypatch.setattr(gateway, 'terminal_running', lambda _: True)
@@ -32,6 +33,9 @@ def api(monkeypatch):
     fake.order_check = lambda *a,**k: pytest.fail('order_check forbidden')
     app = FastAPI()
     install_control_security(app)
+    app.state.mutation_audit_store = MutationAuditStore(
+        tmp_path / 'audit' / 'mutations.sqlite', checkout_root=tmp_path / 'checkout'
+    )
     install_preview_routes(app, fake, now=lambda:NOW)
     spec=gateway.ACCOUNTS['titan']
     request=dict(account='titan',symbol='XAUUSD',positionTicket=str(fake.positions[0].ticket),

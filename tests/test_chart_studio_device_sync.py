@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from chart_studio.mutation_audit import MutationAuditStore
 
 
 SECRET = "device-sync-proxy-secret-0123456789abcdef"
@@ -42,6 +43,12 @@ def sync_client(monkeypatch, tmp_path):
     import app
 
     app._chart_store_at.cache_clear()
+    audit_store = MutationAuditStore(
+        tmp_path / "private" / "mutations.sqlite",
+        checkout_root=Path(app.__file__).resolve().parent,
+        allowed_accounts=app.app.state.mutation_audit_store.allowed_accounts,
+    )
+    app.app.state.mutation_audit_store = audit_store
     client = TestClient(app.app, base_url="https://" + HOST,
                         client=("127.0.0.1", 4321))
     yield app, client

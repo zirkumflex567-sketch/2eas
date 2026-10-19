@@ -36,6 +36,7 @@ from chart_studio.preview_api import install_preview_routes
 from chart_studio.position_commit_api import install_position_commit_routes
 from chart_studio.trade_ticket_api import install_trade_ticket_routes
 from chart_studio.trade_ticket import TradeTicketPreviewRegistry, TradeTicketPreviewService
+from chart_studio.mutation_audit import MutationAuditStore
 from chart_studio.evidence_api import install_evidence_routes
 from chart_studio.indicator_extension_api import install_indicator_extension_routes
 from dashboard_security import install_control_security
@@ -59,8 +60,17 @@ if _dashboard_env.is_file():
 
 app = FastAPI(title="XAU Titan Pro - Institutional Live Cockpit")
 app.router.route_class = broker_telemetry.TelemetryAPIRoute
-install_control_security(app)
 BASE_DIR = Path(__file__).resolve().parent
+_audit_demo_accounts = {
+    name for name, spec in ACCOUNTS.items()
+    if spec.get('is_demo') is True and spec.get('challenge_protection') is not True
+}
+app.state.mutation_audit_store = MutationAuditStore(
+    Path.home() / '.chartstudio' / 'mutation-audit.sqlite',
+    checkout_root=BASE_DIR,
+    allowed_accounts=_audit_demo_accounts,
+)
+install_control_security(app)
 install_runtime(app, BASE_DIR)
 install_read_routes(app, mt5)
 install_preview_routes(app, mt5)
@@ -1691,7 +1701,10 @@ def api_modify_position(req: ModifyPositionRequest, account: str):
     if res is None:
         raise HTTPException(503, 'MT5 hat die Änderung nicht bestätigt; Status neu laden.')
     if res.retcode != mt5.TRADE_RETCODE_DONE:
-        return {"success": False, "retcode": res.retcode, "comment": res.comment}
+        return JSONResponse(
+            {"success": False, "retcode": res.retcode, "comment": res.comment},
+            headers={"X-Dashboard-Audit-Outcome": "rejected"},
+        )
     return {"success": True, "comment": res.comment}
 
 @app.post("/api/close_position")
@@ -1746,7 +1759,10 @@ def api_close_position(req: ClosePositionRequest, account: str):
     if res is None:
         raise HTTPException(503, 'MT5 hat die Schließung nicht bestätigt; Status neu laden.')
     if res.retcode != mt5.TRADE_RETCODE_DONE:
-        return {"success": False, "retcode": res.retcode, "comment": res.comment}
+        return JSONResponse(
+            {"success": False, "retcode": res.retcode, "comment": res.comment},
+            headers={"X-Dashboard-Audit-Outcome": "rejected"},
+        )
     return {"success": True, "comment": res.comment}
 
 @app.post("/api/reset_drawdown")

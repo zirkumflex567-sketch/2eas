@@ -1,8 +1,11 @@
 import pytest
+import tempfile
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from dashboard_security import CONTROL_PATHS, install_control_security
+from chart_studio.mutation_audit import MutationAuditStore
 
 
 PATH = '/api/chart/v1/trade-ticket/commit'
@@ -28,6 +31,15 @@ PREVIEW_PAYLOAD = {
 }
 
 
+def _install_security(app):
+    install_control_security(app)
+    temp = tempfile.TemporaryDirectory(prefix='trade-ticket-audit-')
+    app.state.audit_tempdir = temp
+    app.state.mutation_audit_store = MutationAuditStore(
+        Path(temp.name) / 'audit.sqlite', checkout_root=Path(temp.name) / 'checkout'
+    )
+
+
 class NoTouchGateway:
     def __getattr__(self, name):
         pytest.fail(f'gateway touched while trade ticket is disabled: {name}')
@@ -37,7 +49,7 @@ def _client(monkeypatch):
     monkeypatch.setenv('DASHBOARD_CONTROL_TOKEN', 'unit-test-control-token')
     from chart_studio.trade_ticket_api import install_trade_ticket_routes
     app = FastAPI()
-    install_control_security(app)
+    _install_security(app)
     install_trade_ticket_routes(app, NoTouchGateway())
     return TestClient(app)
 
@@ -74,14 +86,14 @@ def test_trade_ticket_preview_is_a_separate_exact_control_path():
 ])
 def test_invalid_or_client_modified_trade_ticket_is_rejected_before_gateway(monkeypatch, changes):
     response = _post(_client(monkeypatch), {**PAYLOAD, **changes})
-    assert response.status_code == 422
+    assert response.status_code == (403 if changes.get('account') == 'blueberry' else 422)
 
 
 def test_enabled_flag_alone_does_not_enable_order_sending(monkeypatch):
     monkeypatch.setenv('DASHBOARD_CONTROL_TOKEN', 'unit-test-control-token')
     from chart_studio.trade_ticket_api import install_trade_ticket_routes
     app = FastAPI()
-    install_control_security(app)
+    _install_security(app)
     install_trade_ticket_routes(app, NoTouchGateway(), enabled=True)
     response = TestClient(app).post(
         PATH, json=PAYLOAD,
@@ -113,7 +125,7 @@ def test_trade_ticket_requires_all_exactly_bound_dependencies(monkeypatch):
             return {'status': 'READ_ONLY_DRAFT', 'canCommit': False}
 
     app = FastAPI()
-    install_control_security(app)
+    _install_security(app)
     gateway = NoTouchGateway()
     previews, guard, store = object(), object(), object()
     service = Service(gateway, previews, guard, store)
@@ -142,7 +154,7 @@ def test_misbound_commit_service_remains_disabled(monkeypatch):
         store = object()
 
     app = FastAPI()
-    install_control_security(app)
+    _install_security(app)
     install_trade_ticket_routes(
         app, object(), enabled=True, preview_registry=object(),
         guard_provider=object(), audit_store=object(), commit_service=Service(),
@@ -180,7 +192,7 @@ def test_preview_calls_only_bound_service_and_returns_no_store(monkeypatch):
     monkeypatch.setenv('DASHBOARD_CONTROL_TOKEN', 'unit-test-control-token')
     from chart_studio.trade_ticket_api import install_trade_ticket_routes
     app = FastAPI()
-    install_control_security(app)
+    _install_security(app)
     gateway = NoTouchGateway()
     registry = object()
 
