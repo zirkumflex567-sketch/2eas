@@ -100,6 +100,28 @@ def test_ticket_commit_order_check_rejection_is_terminal_and_never_sends(monkeyp
     assert mt5.sent == []
 
 
+def test_ticket_commit_rejects_request_changed_after_order_check(monkeypatch, tmp_path):
+    mt5, preview, commit = _services(monkeypatch, tmp_path)
+    checked_requests = []
+
+    def order_check(request):
+        checked_requests.append(dict(request))
+        # Simulate broker metadata changing after preflight. The rebuilt request
+        # would use this different filling policy if it were sent unchecked.
+        mt5.ORDER_FILLING_RETURN = 7
+        return SimpleNamespace(retcode=0)
+
+    mt5.order_check = order_check
+    proposal = _make_preview(preview)
+    with pytest.raises(HTTPException) as changed:
+        commit.commit(_commit_payload(proposal['previewId']),
+                      ('proxy', 'operator', 'trade'), '203.0.113.5')
+    assert changed.value.status_code == 409
+    assert changed.value.detail['code'] == 'ORDER_REQUEST_CHANGED'
+    assert len(checked_requests) == 1
+    assert mt5.sent == []
+
+
 def test_ticket_commit_ambiguous_send_is_unknown_and_never_retried(monkeypatch, tmp_path):
     mt5, preview, commit = _services(monkeypatch, tmp_path)
     def timeout(_request):

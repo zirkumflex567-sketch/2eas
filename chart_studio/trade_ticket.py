@@ -489,7 +489,10 @@ class TradeTicketCommitService:
                                  retcode=retcode if type(retcode) is int else None)
                     reserved = False
                     raise self._error(422, 'ORDER_CHECK_REJECTED')
+                checked_request = dict(request)
                 request = current_request()
+                if request != checked_request:
+                    raise self._error(409, 'ORDER_REQUEST_CHANGED')
                 account_info = gateway.verify_identity(self.mt5, spec)
                 send = getattr(self.mt5, 'order_send', None)
                 if not callable(send):
