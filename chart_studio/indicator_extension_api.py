@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 from collections.abc import Mapping
 
 from fastapi import FastAPI, HTTPException, Request
@@ -18,6 +19,7 @@ from chart_studio.indicator_extensions import (
 )
 
 MAX_REQUEST_BYTES = 1_200_000
+MAX_CONCURRENT_EVALUATIONS = 2
 DEMO_ACCOUNTS = frozenset({"titan", "xau5m_m5", "titan_m5", "xau5m_500"})
 TIMEFRAMES = frozenset({"M1", "M5", "M15", "M30", "H1", "H4", "D1"})
 SYMBOL_PATTERN = re.compile(r"^XAUUSD(?:\.p|\.pi)?$", re.IGNORECASE)
@@ -97,6 +99,7 @@ def install_indicator_extension_routes(
     trusted_keys_provider=_trusted_keys_from_environment,
 ):
     """Install a stateless preview route. It has no MT5 or persistence dependency."""
+    evaluation_slots = threading.BoundedSemaphore(MAX_CONCURRENT_EVALUATIONS)
 
     @app.post("/api/chart/v1/indicator-extensions/preview")
     async def preview(request: Request):
@@ -111,12 +114,17 @@ def install_indicator_extension_routes(
             _fail("TRUST_STORE_UNAVAILABLE", 503)
         try:
             package = parse_signed_package(value["package"], trusted_keys=trusted_keys)
-            result = await run_in_threadpool(
-                evaluate_extension,
-                package["manifest"],
-                value["bars"],
-                value["parameters"],
-            )
+            if not evaluation_slots.acquire(blocking=False):
+                _fail("EVALUATION_CAPACITY", 503)
+            try:
+                result = await run_in_threadpool(
+                    evaluate_extension,
+                    package["manifest"],
+                    value["bars"],
+                    value["parameters"],
+                )
+            finally:
+                evaluation_slots.release()
         except ValueError as exc:
             code = str(exc)
             _fail(code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", code) else "INVALID_EXTENSION")

@@ -2,6 +2,8 @@ import asyncio
 import base64
 import importlib.util
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from fastapi import FastAPI
@@ -111,6 +113,47 @@ def test_preview_evaluation_runs_outside_the_asgi_event_loop(monkeypatch):
     )
     assert response.status_code == 200
     assert observed["outside_event_loop"] is True
+
+
+def test_preview_rejects_evaluations_over_the_concurrency_limit(monkeypatch):
+    package, trusted, _ = signed_package()
+    extension_api = api()
+    original = extension_api.evaluate_extension
+    both_started = threading.Event()
+    release = threading.Event()
+    lock = threading.Lock()
+    active = 0
+
+    def hold_two(manifest, bars, parameters):
+        nonlocal active
+        with lock:
+            active += 1
+            if active == 2:
+                both_started.set()
+        try:
+            assert release.wait(5), "test did not release blocked evaluations"
+            return original(manifest, bars, parameters)
+        finally:
+            with lock:
+                active -= 1
+
+    monkeypatch.setattr(extension_api, "evaluate_extension", hold_two)
+    test_client = client(trusted)
+    body = request_body(package)
+    try:
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            first = pool.submit(test_client.post, "/api/chart/v1/indicator-extensions/preview", json=body)
+            second = pool.submit(test_client.post, "/api/chart/v1/indicator-extensions/preview", json=body)
+            assert both_started.wait(5), "two evaluations did not start"
+            third = pool.submit(test_client.post, "/api/chart/v1/indicator-extensions/preview", json=body)
+            rejected = third.result(timeout=5)
+            assert rejected.status_code == 503
+            assert rejected.json()["detail"]["code"] == "EVALUATION_CAPACITY"
+            release.set()
+            assert first.result(timeout=5).status_code == 200
+            assert second.result(timeout=5).status_code == 200
+    finally:
+        release.set()
 
 
 def test_preview_fails_closed_without_host_trust_keys_and_on_unknown_signer():
