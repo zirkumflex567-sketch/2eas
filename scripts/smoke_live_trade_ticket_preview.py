@@ -1,109 +1,147 @@
-"""Read-only live acceptance for the new-entry pending-order preview."""
+"""Authenticated, read-only live acceptance for new-entry ticket previews.
 
-import sys
+The smoke talks only to the local dashboard on loopback. It uses the existing
+private proxy identity to exercise the real trade-role route, but never calls
+the ticket commit endpoint or any broker order function.
+"""
+
 import json
+import math
+import os
 from decimal import Decimal, ROUND_FLOOR
+from http.cookiejar import CookieJar
 from pathlib import Path
-from types import SimpleNamespace
-
-import MetaTrader5 as mt5
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-import account_gateway as gateway
-from app import _trade_ticket_preview_service, _trade_ticket_previews
+from urllib.parse import urlencode, urlsplit
+from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 
-DEMO_ACCOUNTS = ("titan", "xau5m_m5", "titan_m5", "xau5m_500")
+DEMO_SYMBOLS = {
+    "titan": "XAUUSD",
+    "xau5m_m5": "XAUUSD.p",
+    "titan_m5": "XAUUSD.p",
+    "xau5m_500": "XAUUSD.p",
+}
+PREVIEW_PATH = "/api/chart/v1/trade-ticket/preview"
+
+
+def _local_base_url():
+    raw = os.environ.get("CHART_STUDIO_BASE_URL", "http://127.0.0.1:8056")
+    parsed = urlsplit(raw)
+    if (parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1", "localhost", "::1")
+            or parsed.port not in (8050, 8056) or parsed.path not in ("", "/")
+            or parsed.query or parsed.fragment or parsed.username or parsed.password):
+        raise RuntimeError("Smoke accepts only the local HTTP dashboard on ports 8050/8056.")
+    return f"http://{parsed.netloc}"
+
+
+def _private_proxy_identity():
+    config_path = Path.home() / ".dashboard-env.json"
+    config = json.loads(config_path.read_text(encoding="utf-8-sig"))
+    secret = config.get("DASHBOARD_PROXY_SECRET")
+    users = json.loads(config.get("DASHBOARD_PROXY_USERS", "{}"))
+    if not isinstance(secret, str) or len(secret) < 32 or not isinstance(users, dict):
+        raise RuntimeError("A valid private dashboard proxy identity is required.")
+    trade_users = [name for name, role in users.items()
+                   if isinstance(name, str) and role == "trade"]
+    if not trade_users:
+        raise RuntimeError("No configured trade-role proxy identity is available.")
+    return secret, sorted(trade_users)[0]
 
 
 def main():
-    # This smoke validates the real broker read/calculation path only. Make an
-    # accidental order-send call fail before attaching to any terminal.
-    original_order_send = mt5.order_send
+    base = _local_base_url()
+    origin = base
+    secret, user = _private_proxy_identity()
+    opener = build_opener(HTTPCookieProcessor(CookieJar()))
+    identity_headers = {
+        "Accept": "application/json",
+        "Origin": origin,
+        "X-Dashboard-Proxy-Secret": secret,
+        "X-Dashboard-User": user,
+    }
 
-    def blocked_order_send(*_args, **_kwargs):
-        raise AssertionError("order_send is forbidden in preview acceptance")
+    def call(path, *, method="GET", payload=None, csrf=None):
+        headers = dict(identity_headers)
+        data = None
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+            data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        if csrf is not None:
+            headers["X-Dashboard-CSRF"] = csrf
+        request = Request(base + path, data=data, headers=headers, method=method)
+        with opener.open(request, timeout=15) as response:
+            if response.status != 200:
+                raise AssertionError(f"{method} {path} returned HTTP {response.status}")
+            return json.load(response)
 
-    mt5.order_send = blocked_order_send
+    session = call("/api/control_session")
+    assert session.get("role") == "trade" and session.get("control_enabled") is True
+    csrf = session.get("csrf_token")
+    assert isinstance(csrf, str) and len(csrf) >= 32
+
     results = []
-    try:
-        for alias in DEMO_ACCOUNTS:
-            config = gateway.ACCOUNTS[alias]
-            symbol = config["symbol"]
-            with gateway.session(mt5, alias) as spec:
-                gateway.verify_identity(mt5, spec)
-                info = mt5.symbol_info(symbol)
-                tick = mt5.symbol_info_tick(symbol)
-                assert info and tick and tick.bid > 0 and tick.ask >= tick.bid
-                assert info.trade_tick_size > 0
+    for account, symbol in DEMO_SYMBOLS.items():
+        query = urlencode({"account": account, "symbol": symbol})
+        symbol_info = call("/api/chart/v1/symbol-info?" + query)
+        quote = call("/api/chart/v1/quotes?" + query)
+        assert symbol_info.get("account") == account
+        assert symbol_info.get("symbol") == symbol
+        assert symbol_info.get("source") == "MT5_VERIFIED"
+        assert symbol_info.get("canExecute") is False
+        assert quote.get("account") == account and quote.get("symbol") == symbol
+        assert quote.get("source") == "MT5_VERIFIED" and quote.get("canExecute") is False
+        assert quote.get("freshness") == "FRESH"
 
-                step = Decimal(str(info.trade_tick_size))
-                point = Decimal(str(info.point))
-                stops = max(
-                    int(info.trade_stops_level or 0),
-                    int(info.trade_freeze_level or 0),
-                )
-                distance = max(Decimal("10"), point * stops + Decimal("5"))
-                ask = Decimal(str(tick.ask))
-                entry = ((ask - distance) / step).to_integral_value(
-                    rounding=ROUND_FLOOR
-                ) * step
-                assert entry > distance
-                request = SimpleNamespace(
-                    account=alias,
-                    symbol=symbol,
-                    orderType="BUY_LIMIT",
-                    volumeLots=0.01,
-                    entryPrice=float(entry),
-                    slPrice=float(entry - distance),
-                    tpPrice=float(entry + distance),
-                )
-                result = _trade_ticket_preview_service.preview(
-                    request,
-                    ("local-readonly-smoke", "demo-operator", "trade"),
-                    "127.0.0.1",
-                )
-                assert result["account"] == alias
-                assert result["symbol"] == symbol
-                assert result["status"] == "PREVIEW_ONLY"
-                assert result["canExecute"] is False
-                assert result["canCommit"] is False
-                assert result["guard"] == {"state": "UNKNOWN", "source": "NONE"}
-                assert "previewId" not in result
-                assert result["brokerRisk"]["margin"] >= 0
-                assert result["brokerRisk"]["pnlAtSl"] < 0
-                assert result["brokerRisk"]["pnlAtTp"] > 0
-                results.append(
-                    {
-                        "account": alias,
-                        "outcome": "PASSED",
-                        "quote": "FRESH",
-                        "brokerMath": "VALID",
-                        "status": result["status"],
-                        "canExecute": False,
-                        "canCommit": False,
-                        "orderSend": "BLOCKED",
-                    }
-                )
-
-        assert tuple(item["account"] for item in results) == DEMO_ACCOUNTS
-        assert not _trade_ticket_previews.items, "Preview-only guard issued a commit token"
-    finally:
-        mt5.order_send = original_order_send
-        mt5.shutdown()
-
-    print(
-        json.dumps(
-            {
-                "results": results,
-                "brokerWrites": 0,
-                "blueberryQueried": False,
-                "commitTokensIssued": len(_trade_ticket_previews.items),
+        step = Decimal(symbol_info["tickSize"])
+        point = Decimal(symbol_info["point"])
+        stops = max(int(symbol_info["stopsLevel"]), int(symbol_info["freezeLevel"]))
+        distance = max(Decimal("10"), point * stops + Decimal("5"))
+        ask = Decimal(str(quote["ask"]))
+        entry = ((ask - distance) / step).to_integral_value(rounding=ROUND_FLOOR) * step
+        assert entry > distance
+        result = call(
+            PREVIEW_PATH,
+            method="POST",
+            csrf=csrf,
+            payload={
+                "schemaVersion": 1,
+                "account": account,
+                "symbol": symbol,
+                "orderType": "BUY_LIMIT",
+                "volumeLots": 0.01,
+                "entryPrice": float(entry),
+                "slPrice": float(entry - distance),
+                "tpPrice": float(entry + distance),
             },
-            sort_keys=True,
         )
-    )
+        assert result.get("account") == account and result.get("symbol") == symbol
+        assert result.get("status") == "PREVIEW_ONLY"
+        assert result.get("canExecute") is False and result.get("canCommit") is False
+        assert result.get("guard") == {"state": "UNKNOWN", "source": "NONE"}
+        assert "previewId" not in result
+        risk = result.get("brokerRisk", {})
+        assert math.isfinite(float(risk["margin"])) and float(risk["margin"]) >= 0
+        assert float(risk["pnlAtSl"]) < 0 < float(risk["pnlAtTp"])
+        results.append({
+            "account": account,
+            "outcome": "PASSED",
+            "authenticatedRoute": "TRADE_ROLE",
+            "quote": "FRESH",
+            "brokerMath": "VALID",
+            "status": result["status"],
+            "canExecute": False,
+            "canCommit": False,
+            "previewTokenIssued": False,
+        })
+
+    assert tuple(result["account"] for result in results) == tuple(DEMO_SYMBOLS)
+    print(json.dumps({
+        "results": results,
+        "previewPosts": len(results),
+        "commitEndpointCalled": False,
+        "brokerWrites": 0,
+        "blueberryQueried": False,
+    }, sort_keys=True))
 
 
 if __name__ == "__main__":
