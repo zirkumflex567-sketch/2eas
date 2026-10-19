@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const { randomUUID } = require("node:crypto");
 
 const base = (process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056").replace(/\/+$/, "");
-const accounts = Object.freeze(["titan", "xau5m_m5", "titan_m5", "xau5m_500"]);
+const accounts = Object.freeze(["titan", "xau5m_m5", "titan_m5", "xau5m_500", "goldm15"]);
 
 async function get(path) {
   const response = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(15000), cache: "no-store" });
