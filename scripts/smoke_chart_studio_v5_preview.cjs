@@ -16,7 +16,7 @@ const html=enabled=>`<!doctype html><html><head><meta charset="utf-8"><meta name
 <button type="button" id="chart-v5-auto-fib-btn" aria-pressed="false" disabled>Auto-Fibonacci einblenden</button><output id="chart-v5-auto-fib-status" aria-live="polite"></output><button type="button" id="chart-v5-layout-export-btn" disabled>Layout exportieren</button><button type="button" id="chart-v5-layout-import-btn" disabled>Layout zusammenführen</button><button type="button" id="chart-v5-layout-replace-btn" disabled>Layout ersetzen</button><input id="chart-v5-layout-import-file" type="file" accept="application/json,.json" hidden>
 <details id="chart-v5-profile-manager"><summary>Lokale v5-Layouts</summary><label>Name <input id="chart-v5-profile-name" maxlength="40"></label><select id="chart-v5-profile-list" aria-label="Gespeichertes v5-Layout"></select><button id="chart-v5-profile-save" type="button">Speichern</button><button id="chart-v5-profile-load" type="button">Laden</button><button id="chart-v5-profile-rename" type="button">Umbenennen</button><button id="chart-v5-profile-copy" type="button">Kopieren</button><button id="chart-v5-profile-delete" type="button">Löschen</button><button id="chart-v5-layout-reset" type="button">Aktuelles Layout zurücksetzen</button><output id="chart-v5-profile-status" role="status"></output></details>
 <div id="chart-v5-drawing-tools" role="group" aria-label="Native v5 Zeichnungen"><button type="button" id="chart-v5-trend-btn" aria-pressed="false" disabled>Trendlinie</button><button type="button" id="chart-v5-ray-btn" aria-pressed="false" disabled>Strahl</button><button type="button" id="chart-v5-price-btn" aria-pressed="false" disabled>Preislinie</button><button type="button" id="chart-v5-time-btn" aria-pressed="false" disabled>Zeitlinie</button><button type="button" id="chart-v5-rect-btn" aria-pressed="false" disabled>Rechteck</button><button type="button" id="chart-v5-fibo-btn" aria-pressed="false" disabled>Fibonacci</button><button type="button" id="chart-v5-measure-btn" aria-pressed="false" disabled>Messung</button><button type="button" id="chart-v5-channel-btn" aria-pressed="false" disabled>Kanal</button><button type="button" id="chart-v5-pitchfork-btn" aria-pressed="false" disabled>Pitchfork</button><button type="button" id="chart-v5-risk-reward-btn" aria-pressed="false" disabled>Risiko/Ertrag</button><input id="chart-v5-text-input" aria-label="Textbeschriftung" maxlength="40" value="Fixture note"><button type="button" id="chart-v5-text-btn" aria-pressed="false" disabled>Text</button><output id="chart-v5-drawing-status" role="status" aria-live="polite">Zeichenwerkzeug aus.</output></div>
-<div id="chart-v5-preview-host"></div><output id="chart-v5-data-window" aria-label="Kerzendaten am Fadenkreuz">Fadenkreuz auf eine Kerze bewegen.</output><output id="chart-v5-live-quote" aria-label="Aktuelle MT5-Quote beim Abruf">Aktuelle MT5-Quote: noch nicht abgerufen.</output><button type="button" id="chart-v5-data-window-pin" aria-pressed="false">Kerze fixieren</button><p>Read only. Powered by <a href="https://www.tradingview.com/">TradingView Lightweight Charts™</a></p></section><script>document.addEventListener("DOMContentLoaded",()=>{const host=document.querySelector("#chart-v5-preview-host");host.addEventListener("chartstudio-v5-drawing-state",e=>window.__v5LastDrawing=e.detail);host.addEventListener("chartstudio-v5-data-window",e=>window.__v5DataWindow=e.detail)});</script></body></html>`;
+<div id="chart-v5-preview-host"></div><details id="chart-v5-object-manager"><summary>Zeichnungsobjekte</summary><div role="group" aria-label="Ausgewählte Zeichnungen"><button type="button" id="chart-v5-object-hide" disabled>Ausblenden</button><button type="button" id="chart-v5-object-show" disabled>Einblenden</button><button type="button" id="chart-v5-object-lock" disabled>Sperren</button><button type="button" id="chart-v5-object-unlock" disabled>Entsperren</button><button type="button" id="chart-v5-object-duplicate" disabled>Duplizieren</button><button type="button" id="chart-v5-object-delete" disabled>Löschen</button><button type="button" id="chart-v5-object-undo" disabled>Rückgängig</button><button type="button" id="chart-v5-object-redo" disabled>Wiederholen</button></div><ul id="chart-v5-object-list" aria-label="Zeichnungsobjekte"></ul><output id="chart-v5-object-status" role="status" aria-live="polite"></output></details><output id="chart-v5-data-window" aria-label="Kerzendaten am Fadenkreuz">Fadenkreuz auf eine Kerze bewegen.</output><output id="chart-v5-live-quote" aria-label="Aktuelle MT5-Quote beim Abruf">Aktuelle MT5-Quote: noch nicht abgerufen.</output><button type="button" id="chart-v5-data-window-pin" aria-pressed="false">Kerze fixieren</button><p>Read only. Powered by <a href="https://www.tradingview.com/">TradingView Lightweight Charts™</a></p></section><script>document.addEventListener("DOMContentLoaded",()=>{const host=document.querySelector("#chart-v5-preview-host");host.addEventListener("chartstudio-v5-drawing-state",e=>window.__v5LastDrawing=e.detail);host.addEventListener("chartstudio-v5-data-window",e=>window.__v5DataWindow=e.detail)});</script></body></html>`;
 
 const quoteRequests=[];
 const server=http.createServer((req,res)=>{
@@ -274,7 +274,7 @@ const server=http.createServer((req,res)=>{
   await page.locator("#chart-v5-trend-btn").click();
   assert.equal(await page.locator("#chart-v5-trend-btn").getAttribute("aria-pressed"),"true",`drawing tool activation; browser errors: ${errors.join(" | ")}; status: ${await page.locator("#chart-v5-drawing-status").textContent()}`);
   assert.match(await page.locator("#chart-v5-drawing-status").textContent(),/ersten Anker/i);
-  const chartBox=await page.locator("#chart-v5-preview-host").boundingBox();
+  let chartBox=await page.locator("#chart-v5-preview-host").boundingBox();
   assert.ok(chartBox&&chartBox.width>300&&chartBox.height>200);
   await page.mouse.click(chartBox.x+680,chartBox.y+100);
   assert.match(await page.locator("#chart-v5-drawing-status").textContent(),/ungültig/i,"price-scale clicks are rejected as drawing anchors");
@@ -292,6 +292,32 @@ const server=http.createServer((req,res)=>{
   assert.notEqual(trend.drawing.startTime,trend.drawing.endTime,"anchors stay bound to distinct loaded candle times");
   assert.ok(Number.isFinite(trend.drawing.startPrice)&&Number.isFinite(trend.drawing.endPrice));
   assert.equal(trend.count,1,"interactive drawing participates in native drawing storage/count");
+  await page.waitForFunction(()=>document.querySelectorAll("#chart-v5-object-list [data-drawing-id]").length===1);
+  await page.locator("#chart-v5-object-manager > summary").click();
+  const trendRow=page.locator(`#chart-v5-object-list [data-drawing-id="${trend.drawing.id}"]`);
+  assert.match(await trendRow.textContent(),/Trendlinie/);
+  await trendRow.locator("input[type=checkbox]").check();
+  assert.deepEqual(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().selectedDrawingIds),[trend.drawing.id],"object manager selection updates the native drawing selection");
+  await page.locator("#chart-v5-object-hide").click();
+  assert.equal((await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),trend.drawing.id)).visible,false,"selected drawing can be hidden from the object manager");
+  await page.locator("#chart-v5-object-show").click();
+  assert.equal((await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),trend.drawing.id)).visible,true,"selected drawing can be shown again");
+  await page.locator("#chart-v5-object-lock").click();
+  assert.equal((await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),trend.drawing.id)).locked,true,"selected drawing can be locked from the object manager");
+  await page.locator("#chart-v5-object-unlock").click();
+  assert.equal((await page.evaluate(id=>window.ChartStudioV5Preview.readDrawing(id),trend.drawing.id)).locked,false,"selected drawing can be unlocked from the object manager");
+  await page.locator("#chart-v5-object-duplicate").click();
+  await page.waitForFunction(()=>document.querySelectorAll("#chart-v5-object-list [data-drawing-id]").length===2,null,{timeout:5000}).catch(async()=>{throw new Error(`drawing duplicate not listed: ${JSON.stringify(await page.evaluate(()=>({rows:[...document.querySelectorAll("#chart-v5-object-list [data-drawing-id]")].map(row=>row.dataset.drawingId),status:document.querySelector("#chart-v5-object-status")?.textContent,selection:window.ChartStudioV5Preview.inspect().selectedDrawingIds,drawings:window.ChartStudioV5Preview.inspect().nativeDrawingCount})) )}`)});
+  const duplicatedIds=await page.evaluate(()=>window.ChartStudioV5Preview.inspect().selectedDrawingIds);
+  assert.equal(duplicatedIds.length,1,"duplicate selects only the newly created copy");
+  assert.notEqual(duplicatedIds[0],trend.drawing.id);
+  await page.locator("#chart-v5-object-delete").click();
+  await page.waitForFunction(()=>document.querySelectorAll("#chart-v5-object-list [data-drawing-id]").length===1);
+  await page.locator("#chart-v5-object-undo").click();
+  await page.waitForFunction(()=>document.querySelectorAll("#chart-v5-object-list [data-drawing-id]").length===2,null,{timeout:5000}).catch(async()=>{throw new Error(`undo did not restore deleted drawing: ${JSON.stringify(await page.evaluate(()=>({count:window.ChartStudioV5Preview.inspect().nativeDrawingCount,rows:document.querySelectorAll("#chart-v5-object-list [data-drawing-id]").length,status:document.querySelector("#chart-v5-object-status")?.textContent})))}`)});
+  await page.locator("#chart-v5-object-redo").click();
+  await page.waitForFunction(()=>document.querySelectorAll("#chart-v5-object-list [data-drawing-id]").length===1,null,{timeout:5000});
+  chartBox=await page.locator("#chart-v5-preview-host").boundingBox();
   assert.equal(await page.locator("#chart-v5-trend-btn").getAttribute("aria-pressed"),"false","completed tool returns to cursor mode");
   await page.locator("#chart-v5-ray-btn").click();
   await page.mouse.click(chartBox.x+220,chartBox.y+130);
@@ -326,7 +352,7 @@ const server=http.createServer((req,res)=>{
     throw new Error(`${kind} placement did not complete: ${JSON.stringify(state)}`);
    });
    const placed=await page.evaluate(()=>({kind:window.__v5LastDrawing?.kind,drawing:window.ChartStudioV5Preview.readDrawing(window.__v5LastDrawing?.id),count:window.ChartStudioV5Preview.inspect().nativeDrawingCount}));
-   assert.equal(placed.kind,kind);assert.ok(placed.drawing?.id);assert.equal(placed.count,++expectedPlacementCount);
+   assert.equal(placed.kind,kind);assert.ok(placed.drawing?.id,`${kind} has no drawing readback: ${JSON.stringify(placed)}`);assert.equal(placed.count,++expectedPlacementCount);
    if(clicks===2)assert.notEqual(placed.drawing.startTime,placed.drawing.endTime);
    if(kind==="PRICE")assert.ok(Number.isFinite(placed.drawing.price));
    if(kind==="TIME")assert.ok(Number.isSafeInteger(placed.drawing.time));
