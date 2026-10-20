@@ -5,8 +5,8 @@ const assert = require("node:assert/strict");
 const { chromium } = require("playwright");
 
 const BASE_URL = (process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056").replace(/\/$/, "");
-const ACCOUNTS = ["titan", "xau5m_m5", "titan_m5", "xau5m_500"];
-const SYMBOLS = { titan: "XAUUSD", xau5m_m5: "XAUUSD.p", titan_m5: "XAUUSD.p", xau5m_500: "XAUUSD.p" };
+const ACCOUNTS = ["titan", "xau5m_m5", "titan_m5", "xau5m_500", "goldm15"];
+const SYMBOLS = { titan: "XAUUSD", xau5m_m5: "XAUUSD.p", titan_m5: "XAUUSD.p", xau5m_500: "XAUUSD.p", goldm15: "XAUUSD" };
 const FORBIDDEN = new Set(["blueberry"]);
 
 (async () => {

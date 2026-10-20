@@ -1,0 +1,204 @@
+{
+  "generatedAt": "2026-10-20T03:22:46.941Z",
+  "base": "http://127.0.0.1:8056",
+  "account": "titan",
+  "chartState": {
+    "account": "titan",
+    "stoneTheme": true,
+    "chartVisible": true,
+    "fxModes": [
+      "off",
+      "mystic",
+      "chaos",
+      "ritual"
+    ]
+  },
+  "browser": "141.0.7390.37",
+  "platform": "win32",
+  "os": "10.0.26200",
+  "cpu": "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz",
+  "runtime": {
+    "startupRevision": "7332f209ab2483a92e433b6dcfa5ec03b7cd779f",
+    "diskRevision": "7332f209ab2483a92e433b6dcfa5ec03b7cd779f",
+    "applicationCodeDirty": false
+  },
+  "phases": [
+    {
+      "name": "off-idle",
+      "fxMode": "off",
+      "durationSeconds": 300,
+      "celebrationTriggered": false,
+      "frames": {
+        "count": 17818,
+        "fps": 59.39333333333333,
+        "medianMs": 16.7,
+        "p95Ms": 16.8,
+        "p99Ms": 16.8,
+        "over16_7ms": 6239,
+        "over33_3ms": 85,
+        "maxMs": 216.6
+      },
+      "longTasks": {
+        "count": 19,
+        "totalMs": 1976,
+        "maxMs": 234
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "start": 524,
+          "duration": 0
+        },
+        {
+          "name": "first-contentful-paint",
+          "start": 524,
+          "duration": 0
+        }
+      ],
+      "layoutShiftCount": 7,
+      "heap": {
+        "samples": 61,
+        "startBytes": 10000000,
+        "endBytes": 10000000,
+        "minBytes": 10000000,
+        "maxBytes": 10000000
+      },
+      "cdpDelta": {
+        "TaskDuration": 12.725,
+        "ScriptDuration": 1.522,
+        "LayoutDuration": 0.884,
+        "RecalcStyleDuration": 1.153,
+        "JSHeapUsedSize": 4112864,
+        "Nodes": 8922,
+        "Documents": -2
+      }
+    },
+    {
+      "name": "mystic-idle",
+      "fxMode": "mystic",
+      "durationSeconds": 300,
+      "celebrationTriggered": false,
+      "frames": {
+        "count": 7053,
+        "fps": 23.51,
+        "medianMs": 33.4,
+        "p95Ms": 66.7,
+        "p99Ms": 83.4,
+        "over16_7ms": 6920,
+        "over33_3ms": 5041,
+        "maxMs": 183.3
+      },
+      "longTasks": {
+        "count": 44,
+        "totalMs": 2671,
+        "maxMs": 137
+      },
+      "paints": [],
+      "layoutShiftCount": 0,
+      "heap": {
+        "samples": 60,
+        "startBytes": 10000000,
+        "endBytes": 10000000,
+        "minBytes": 10000000,
+        "maxBytes": 10000000
+      },
+      "cdpDelta": {
+        "TaskDuration": 34.602,
+        "ScriptDuration": 1.849,
+        "LayoutDuration": 1.041,
+        "RecalcStyleDuration": 5.182,
+        "JSHeapUsedSize": -2087716,
+        "Nodes": -5472,
+        "Documents": 0
+      }
+    },
+    {
+      "name": "ritual-idle",
+      "fxMode": "ritual",
+      "durationSeconds": 300,
+      "celebrationTriggered": false,
+      "frames": {
+        "count": 7460,
+        "fps": 24.866666666666667,
+        "medianMs": 33.4,
+        "p95Ms": 66.6,
+        "p99Ms": 66.8,
+        "over16_7ms": 7327,
+        "over33_3ms": 5988,
+        "maxMs": 116.7
+      },
+      "longTasks": {
+        "count": 35,
+        "totalMs": 2037,
+        "maxMs": 77
+      },
+      "paints": [],
+      "layoutShiftCount": 0,
+      "heap": {
+        "samples": 60,
+        "startBytes": 10000000,
+        "endBytes": 10000000,
+        "minBytes": 10000000,
+        "maxBytes": 10000000
+      },
+      "cdpDelta": {
+        "TaskDuration": 33.592,
+        "ScriptDuration": 1.722,
+        "LayoutDuration": 1.02,
+        "RecalcStyleDuration": 5.264,
+        "JSHeapUsedSize": 2566276,
+        "Nodes": -5358,
+        "Documents": 0
+      }
+    },
+    {
+      "name": "mystic-demo-celebration",
+      "fxMode": "mystic",
+      "durationSeconds": 300,
+      "celebrationTriggered": true,
+      "frames": {
+        "count": 7175,
+        "fps": 23.916666666666668,
+        "medianMs": 33.4,
+        "p95Ms": 66.7,
+        "p99Ms": 100,
+        "over16_7ms": 7034,
+        "over33_3ms": 6074,
+        "maxMs": 266.7
+      },
+      "longTasks": {
+        "count": 114,
+        "totalMs": 8220,
+        "maxMs": 188
+      },
+      "paints": [],
+      "layoutShiftCount": 23,
+      "heap": {
+        "samples": 60,
+        "startBytes": 10000000,
+        "endBytes": 11900000,
+        "minBytes": 10000000,
+        "maxBytes": 11900000
+      },
+      "cdpDelta": {
+        "TaskDuration": 40.213,
+        "ScriptDuration": 2.182,
+        "LayoutDuration": 1.061,
+        "RecalcStyleDuration": 5.695,
+        "JSHeapUsedSize": -1327760,
+        "Nodes": -2226,
+        "Documents": 0
+      }
+    }
+  ],
+  "apiRequests": 1098,
+  "apiMethods": [
+    "GET"
+  ],
+  "apiAccounts": [
+    "titan",
+    null
+  ],
+  "blockedRequests": [],
+  "pageErrors": []
+}
