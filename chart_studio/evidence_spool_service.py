@@ -28,7 +28,7 @@ MAX_STABLE_TEMPORARY_CANDIDATES = 5000
 _READY = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)-([1-9][0-9]*)\.ready\.ndjson\Z')
 _TEMP_SEGMENT = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)\.tmp\.ndjson\Z')
 _TEMP_SCAN_INTERVAL_SECONDS = 60.0
-_FILE_INDEX_REFRESH_SECONDS = 10.0
+_FILE_INDEX_REFRESH_SECONDS = 60.0
 
 
 class FileIdentityChanged(Exception):
@@ -378,6 +378,10 @@ class SpoolFileConsumer:
                     self._save_cursor(account,producer,cursor)
                     self._remove_cursor(account,producer)
                     return {'code':'ARCHIVED','imported':imported,'duplicates':duplicates,'gapCount':importer.gap_count,'gapObserved':gap_observed,'storeLostCount':store_lost}
+                if state=='active' and not lines and not partial:
+                    recovered=self._poll_stable_temporary(producer,importer)
+                    if recovered is not None:
+                        return recovered
                 return {'code':'IMPORTED' if imported or duplicates else 'IDLE','imported':imported,'duplicates':duplicates,'waitingForNewline':partial,'morePending':bool(remaining),'gapCount':importer.gap_count,'gapObserved':gap_observed,'storeLostCount':store_lost}
             except FileIdentityChanged:
                 return {'code':'FILE_IDENTITY_CHANGED','imported':0,'gapCount':importer.gap_count,'gapObserved':importer.gap_count>0,'storeLostCount':0}

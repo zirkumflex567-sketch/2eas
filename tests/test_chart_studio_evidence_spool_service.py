@@ -39,7 +39,7 @@ def consumer(store, root):
     return SpoolFileConsumer(store, root, producers={'titan': 'titan_demo'}, excluded_roots=[Path.cwd()])
 
 
-def test_ready_segment_discovery_is_shared_and_refreshed_within_ten_seconds(private_root, spool_root, monkeypatch):
+def test_ready_segment_discovery_is_shared_and_refreshed_within_sixty_seconds(private_root, spool_root, monkeypatch):
     store = evidence_store(private_root)
     service = SpoolFileConsumer(store, spool_root,
                                 producers={'titan': 'titan_demo', 'goldm15': 'market_demo'},
@@ -62,7 +62,7 @@ def test_ready_segment_discovery_is_shared_and_refreshed_within_ten_seconds(priv
 
     ready = spool_root / 'titan_demo.1-1.ready.ndjson'
     ready.touch()
-    clock[0] += 9.0
+    clock[0] += 59.0
     assert service._files('titan_demo') == []
     assert len(scans) == 1
 
@@ -382,6 +382,26 @@ def test_temporary_segment_index_retains_only_oldest_bounded_candidates(private_
     service._scan_temporary_segments()
     assert [sequence for sequence, _path, _signature in service._stable_temporary_files['titan_demo']] == [1, 2, 3]
     assert all(path.exists() for path in paths)
+
+
+def test_stable_temporary_files_are_recovered_when_active_segment_is_idle(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    write_private(spool_root / 'titan_demo.active.ndjson', b'')
+    write_private(spool_root / 'titan_demo.1.tmp.ndjson', line(record(seq=1)).encode())
+    clock = [100.0]
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    service = consumer(store, spool_root)
+
+    initial = service.poll_once()['titan_demo']
+    assert initial['code'] == 'IDLE'
+    assert store.read(context(), kind='DECISION')['records'] == []
+
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+    recovered = service.poll_once()['titan_demo']
+    assert recovered['code'] == 'ARCHIVED'
+    assert recovered['imported'] == 1
+    assert (spool_root / 'titan_demo.active.ndjson').exists()
+    assert [row['id'] for row in store.read(context(), kind='DECISION')['records']] == ['event_1']
 
 
 def write_private(path, data):
