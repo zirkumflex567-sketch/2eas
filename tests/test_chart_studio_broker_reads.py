@@ -271,6 +271,48 @@ def test_footprint_denies_blueberry_before_gateway_or_mt5_access(client, fake):
     assert fake.calls == []
 
 
+@pytest.mark.parametrize(('account', 'is_demo', 'challenge_protection'), [
+    ('funded_shadow', False, False),
+    ('protected_shadow', True, True),
+])
+def test_footprint_denies_accounts_outside_demo_policy_before_gateway_or_mt5_access(
+        client, fake, monkeypatch, account, is_demo, challenge_protection):
+    spec = dict(gateway.ACCOUNTS['titan'])
+    spec.update(id=account, login=999999, is_demo=is_demo,
+                challenge_protection=challenge_protection)
+    monkeypatch.setitem(gateway.ACCOUNTS, account, spec)
+
+    response = client.get('/api/chart/v1/footprint', params={
+        'account':account, 'symbol':'XAUUSD', 'timeframe':'M15'})
+
+    assert response.status_code == 403
+    assert fake.calls == []
+
+
+def test_footprint_denies_unapproved_demo_alias_before_gateway_or_mt5_access(client, fake, monkeypatch):
+    spec = dict(gateway.ACCOUNTS['titan'])
+    spec.update(id='unapproved_demo', login=999998, is_demo=True, challenge_protection=False)
+    monkeypatch.setitem(gateway.ACCOUNTS, 'unapproved_demo', spec)
+
+    response = client.get('/api/chart/v1/footprint', params={
+        'account':'unapproved_demo', 'symbol':'XAUUSD', 'timeframe':'M15'})
+
+    assert response.status_code == 403
+    assert fake.calls == []
+
+
+@pytest.mark.parametrize('account', ['titan', 'xau5m_m5', 'titan_m5', 'xau5m_500', 'goldm15'])
+def test_footprint_allows_each_explicit_demo_alias(client, fake, account):
+    footprint_bar(fake)
+
+    response = client.get('/api/chart/v1/footprint', params={
+        'account':account, 'symbol':'XAUUSD', 'timeframe':'M15'})
+
+    assert response.status_code == 200
+    assert response.json()['account'] == account
+    assert any(call[0] == 'ticks' for call in fake.calls)
+
+
 def test_footprint_fails_closed_when_history_reader_is_unavailable(client, fake):
     footprint_bar(fake)
     fake.copy_ticks_range = None

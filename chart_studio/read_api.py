@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Annotated
 from fastapi import HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+import account_gateway as gateway
 import broker_clock
 from chart_studio.broker_reads import (
     SYMBOL_PATTERN, BrokerReadError, broker_rows, symbol_summary, symbol_model, require_symbol,
@@ -19,6 +20,7 @@ Symbol = Annotated[str, Query(min_length=1, max_length=64, pattern=SYMBOL_PATTER
 Search = Annotated[str, Query(max_length=64, pattern=r'^[A-Za-z0-9_.# /+:-]*$')]
 Ticket = Annotated[str | None, Query(pattern=r'^[1-9][0-9]{0,19}$')]
 Magic = Annotated[str | None, Query(pattern=r'^(0|[1-9][0-9]{0,19})$')]
+FOOTPRINT_DEMO_ALLOWLIST = frozenset({'titan', 'xau5m_m5', 'titan_m5', 'xau5m_500', 'goldm15'})
 
 
 def install_read_routes(app, mt5, *, now=None, calendar_path_resolver=None):
@@ -68,8 +70,12 @@ def install_read_routes(app, mt5, *, now=None, calendar_path_resolver=None):
     @app.get('/api/chart/v1/footprint')
     def footprint(request: Request, account: Account, symbol: Symbol,
                   timeframe: Annotated[str, Query(pattern=r'^(M1|M5|M15)$')]):
-        # Do not expose funded-account market data through this experimental feed.
-        if account == 'blueberry':
+        # Footprint is demo-only and must reject before the MT5 gateway attaches.
+        spec = gateway.ACCOUNTS.get(account)
+        if spec is None:
+            raise HTTPException(400, 'UNKNOWN_ACCOUNT')
+        if (account not in FOOTPRINT_DEMO_ALLOWLIST or spec.get('is_demo') is not True or
+                spec.get('challenge_protection') is True):
             raise HTTPException(403, 'Footprint-Demodaten sind für diesen Account gesperrt.')
         if set(request.query_params) != {'account','symbol','timeframe'} or any(
                 len(request.query_params.getlist(key)) != 1 for key in request.query_params):
