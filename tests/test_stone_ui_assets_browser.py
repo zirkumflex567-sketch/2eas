@@ -19,6 +19,15 @@ ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / 'output/stone-ui-assets'
 
 
+def unique_resource_body_sizes(resources):
+    """Keep the largest observed body transfer when a URL appears more than once."""
+    unique = {}
+    for resource in resources:
+        url, encoded = resource['url'], resource['encoded']
+        unique[url] = max(unique.get(url, 0), encoded)
+    return unique
+
+
 def fixture(optimized, nonchart_only):
     tree = ast.parse((ROOT/'app.py').read_text(encoding='utf-8'))
     html = next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
@@ -88,6 +97,15 @@ READ_PROTECTED = """() => [...document.querySelectorAll('.stone-asset-panel--cha
 
 
 class BrowserBudget(unittest.TestCase):
+    def test_duplicate_cached_resource_timing_does_not_erase_cold_body(self):
+        self.assertEqual(
+            unique_resource_body_sizes([
+                {'url': 'http://test/asset.webp', 'encoded': 903720},
+                {'url': 'http://test/asset.webp', 'encoded': 0},
+            ]),
+            {'http://test/asset.webp': 903720},
+        )
+
     @classmethod
     def setUpClass(cls):
         OUTPUT.mkdir(parents=True, exist_ok=True)
@@ -135,7 +153,7 @@ class BrowserBudget(unittest.TestCase):
                 baseline_context,baseline=self.load(optimized=False,width=width,nonchart=True)
                 try:
                     resources=baseline.evaluate("performance.getEntriesByType('resource').filter(r=>r.name.includes('stone-assets/')).map(r=>({url:r.name,encoded:r.encodedBodySize,transfer:r.transferSize}))")
-                    unique={r['url']:r['encoded'] for r in resources}
+                    unique=unique_resource_body_sizes(resources)
                     # Responsive paint/lazy loading can legitimately omit an
                     # offscreen original. Check completed transfer sizes against
                     # actual files; the historical 19,665,638-byte full baseline
@@ -157,7 +175,7 @@ class BrowserBudget(unittest.TestCase):
                     resources=page.evaluate("performance.getEntriesByType('resource').filter(r=>r.name.includes('stone-assets/')).map(r=>({url:r.name,encoded:r.encodedBodySize,transfer:r.transferSize}))")
                     originals=[r for r in resources if '/ready/' in r['url']]
                     self.assertEqual(originals,[], 'Cold Nonchart requests must not include originals')
-                    unique={r['url']:r['encoded'] for r in resources}
+                    unique=unique_resource_body_sizes(resources)
                     self.assertLessEqual(sum(unique.values()),3*1024*1024)
                     self.assertGreater(len(unique),0)
                     self.metrics.append(dict(width=width,nonchart=True,resources=resources,
