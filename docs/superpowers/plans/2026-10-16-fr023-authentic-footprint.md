@@ -43,3 +43,4 @@
 - [x] Read-only check the four explicitly authorized demo feeds through the new route; Blueberry was not queried.
 - [x] Record the result and limits without raw ticks or price-level details. One closed M15 bar per demo returned zero verified executions after explicit broker-time normalization; FR-023 remains partial pending more samples and feed capability evidence.
 - [x] Commit to main, push, verify runtime identity locally and on htown `/stt`; GitHub checks were not yet confirmed. No Strategy Tester/backtests started.
+- [x] 20.10.2026 follow-up: add `scripts/smoke_live_footprint_demos.cjs` and run one bounded M15 read on each of the five authorized demos. All returned `UNAVAILABLE/NO_VERIFIED_EXECUTIONS`; 5 GETs, zero mutations, zero Blueberry requests, and no raw ticks printed. Positive real-execution data remains unavailable, so FR-023 stays partial.
