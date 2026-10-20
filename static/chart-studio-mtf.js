@@ -44,7 +44,7 @@ function isWeekendGap(previous,next,tf,symbol){
 function isDailyMaintenanceGap(previous,next,tf,symbol){
  if(!isGoldSymbol(symbol)||!["H1","M15","M5"].includes(tf))return false;
  const a=new Date(previous*1000),b=new Date(next*1000),day=a.getUTCDay();
- // All five demo feeds share a verified UTC daily maintenance pause; candle close
+ // All five demo feeds show the same UTC daily maintenance pause; candle close
  // differs by timeframe while the next observed bar opens at 01:00 UTC.
  const observedDailyClose={H1:[23,0,2*3600],M15:[23,45,75*60],M5:[23,55,65*60]}[tf];
  if(day>=1&&day<=4&&a.getUTCHours()===observedDailyClose[0]&&a.getUTCMinutes()===observedDailyClose[1]&&
