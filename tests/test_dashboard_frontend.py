@@ -271,6 +271,7 @@ class DashboardFrontendTests(unittest.TestCase):
         self.account_overrides = {}
         self.candle_fail = False
         self.candle_delay_seconds = 0
+        self.positions_delay_seconds = 0
         self.candle_error_detail = 'fixture candle failure'
         self.candle_rows = []
         self.history_rows = []
@@ -371,6 +372,8 @@ class DashboardFrontendTests(unittest.TestCase):
             route.fulfill(json=dict(account=account,symbol=symbol,source='MT5_VERIFIED',canExecute=False,
                 bid=4000.0,ask=4000.2,quoteTimeUtc=1791918000,ageSeconds=0.0,freshness='FRESH',digits=2,currency='USD')); return
         if parsed.path == '/api/chart/v1/positions':
+            if self.positions_delay_seconds:
+                time.sleep(self.positions_delay_seconds)
             symbol=parse_qs(parsed.query).get('symbol',['XAUUSD'])[0]
             if self.stop_positions_fail:
                 route.fulfill(status=503,json=dict(detail='fixture position reload failure')); return
@@ -529,6 +532,15 @@ class DashboardFrontendTests(unittest.TestCase):
         candle_urls=[url for url in self.requests if '/api/candles?' in url]
         counts=[parse_qs(urlparse(url).query).get('count') for url in candle_urls]
         self.assertEqual(counts.count(['1001']),1,candle_urls)
+        self.assertEqual(self.mutations,[])
+        self.assertEqual(self.errors,[])
+    def test_slow_read_only_position_snapshot_survives_broker_lock_wait(self):
+        self.load()
+        self.positions_delay_seconds=5.2
+        result=self.page.evaluate("async()=>{const response=await accountFetch('/api/chart/v1/positions?symbol=XAUUSD');return response.json()}")
+        self.assertEqual(result['account'],'titan')
+        self.assertEqual(result['source'],'MT5_VERIFIED')
+        self.assertFalse(result['canExecute'])
         self.assertEqual(self.mutations,[])
         self.assertEqual(self.errors,[])
     def test_chart_requests_older_bars_when_scrolled_to_history_edge(self):
