@@ -275,6 +275,29 @@ class SpoolFileConsumer:
         if not sequences or sequences[0]!=first or sequences[-1]!=last:raise SegmentInvalid()
         return data,sequences
 
+    def _next_segment_sequence(self, cursor, path, first, last, state):
+        if state=='ready':
+            data,sequences=self._segment_sequences(path,first,last)
+            offset=cursor['offset']
+            prefix=data[:offset]
+            if len(prefix)!=offset or prefix and not prefix.endswith(b'\n'):
+                raise FileIdentityChanged()
+            index=prefix.count(b'\n')
+            return sequences[index] if index<len(sequences) else None
+        with path.open('rb') as stream:
+            stream.seek(cursor['offset'])
+            raw=stream.readline(MAX_LINE_BYTES+1)
+        if not raw or not raw.endswith(b'\n'):
+            return None
+        try:
+            row=json.loads(raw[:-1])
+        except (ValueError,UnicodeError,RecursionError):
+            raise SegmentInvalid() from None
+        sequence=row.get('sequence') if type(row) is dict else None
+        if type(sequence) is not int or sequence<1:
+            raise SegmentInvalid()
+        return sequence
+
     def _choose(self, account, importer):
         saved=self._load_cursor(account,importer)
         rows=self._files(importer.producer_id)
@@ -326,6 +349,14 @@ class SpoolFileConsumer:
                     recovered=self._poll_stable_temporary(producer,importer)
                     return recovered or {'code':'IDLE','imported':0,'gapCount':importer.gap_count,'gapObserved':importer.gap_count>0}
                 cursor,path,(first,last,state)=chosen
+                candidates=self._stable_temporary_files[producer]
+                if candidates and not importer.pending:
+                    next_sequence=self._next_segment_sequence(cursor,path,first,last,state)
+                    if next_sequence is not None and candidates[0][0]<next_sequence:
+                        recovered=self._poll_stable_temporary(producer,importer,
+                                                               before_sequence=next_sequence)
+                        if recovered is not None:
+                            return recovered
                 _physical(path);_private(path,False)
                 size=path.stat().st_size
                 if size>MAX_SEGMENT_BYTES or size<cursor['offset']:raise StoreUnavailable()
@@ -390,13 +421,14 @@ class SpoolFileConsumer:
             except (OSError, ValueError, TypeError, StoreUnavailable, json.JSONDecodeError):
                 return {'code':'SPOOL_UNAVAILABLE','imported':0,'gapCount':importer.gap_count,'gapObserved':importer.gap_count>0,'storeLostCount':0}
 
-    def _poll_stable_temporary(self, producer, importer):
+    def _poll_stable_temporary(self, producer, importer, *, before_sequence=None):
         """Recover one-record temp files only after two unchanged metadata scans."""
         candidates=self._stable_temporary_files[producer]
-        imported=duplicates=archived=archived_bytes=store_lost=0
+        imported=duplicates=archived=archived_bytes=store_lost=stale_temporary=0
         gap_observed=importer.gap_count>0
         temporary_budget=min(self.records_per_poll,MAX_TEMPORARY_RECORDS_PER_POLL)
-        while candidates and archived<temporary_budget:
+        while (candidates and archived<temporary_budget and
+               (before_sequence is None or candidates[0][0]<before_sequence)):
             sequence,path,signature=candidates[0]
             try:
                 if not os.path.lexists(path):
@@ -445,11 +477,13 @@ class SpoolFileConsumer:
                 outcome=importer.import_line(raw)
                 store_lost=max(store_lost,outcome.get('storeLostCount',0))
                 gap_observed=gap_observed or bool(outcome.get('gapObserved'))
-                if not outcome.get('ok'):
+                is_stale=not outcome.get('ok') and outcome.get('code')=='OUT_OF_ORDER'
+                if not outcome.get('ok') and not is_stale:
                     return {'code':outcome.get('code','IMPORT_FAILED'),'imported':imported,
                             'duplicates':duplicates,'gapCount':outcome.get('gapCount',importer.gap_count),
                             'gapObserved':gap_observed,'storeLostCount':store_lost}
-                if outcome.get('code') in ('DUPLICATE','IDEMPOTENT'):duplicates+=1
+                if is_stale:stale_temporary+=1
+                elif outcome.get('code') in ('DUPLICATE','IDEMPOTENT'):duplicates+=1
                 else:imported+=1
                 archive=self.archive/path.name
                 if os.path.lexists(archive):
@@ -496,7 +530,8 @@ class SpoolFileConsumer:
                     backlog['temporaryNewestMtimeUtc']=None
             return {'code':'ARCHIVED','imported':imported,'duplicates':duplicates,
                     'gapCount':importer.gap_count,'gapObserved':gap_observed,
-                    'storeLostCount':store_lost,'morePending':bool(candidates)}
+                    'storeLostCount':store_lost,'staleTemporaryCount':stale_temporary,
+                    'morePending':bool(candidates)}
         return None
 
     def _scan_temporary_segments(self):
@@ -586,7 +621,8 @@ class SpoolFileConsumer:
 async def run_spool_service(app, consumer, *, interval=1.0, poll=asyncio.to_thread):
     """Poll off-loop and retain process-lifetime import counters between polls."""
     app.state.evidence_spool_status = {}
-    totals = {name: {'importedTotal': 0, 'duplicatesTotal': 0} for name in consumer.producers}
+    totals = {name: {'importedTotal': 0, 'duplicatesTotal': 0,
+                     'staleTemporaryTotal': 0} for name in consumer.producers}
 
     def publish(result):
         if not isinstance(result, dict):
@@ -596,7 +632,8 @@ async def run_spool_service(app, consumer, *, interval=1.0, poll=asyncio.to_thre
             entry = result.get(name)
             if not isinstance(entry, dict):
                 raise ValueError('invalid producer status')
-            counts = (entry.get('imported', 0), entry.get('duplicates', 0))
+            counts = (entry.get('imported', 0), entry.get('duplicates', 0),
+                      entry.get('staleTemporaryCount', 0))
             if any(type(count) is not int or count < 0 for count in counts):
                 raise ValueError('invalid spool count')
             pending[name] = (entry, counts)
@@ -605,10 +642,12 @@ async def run_spool_service(app, consumer, *, interval=1.0, poll=asyncio.to_thre
         for name, (entry, counts) in pending.items():
             totals[name]['importedTotal'] += counts[0]
             totals[name]['duplicatesTotal'] += counts[1]
+            totals[name]['staleTemporaryTotal'] += counts[2]
             status[name] = {
                 **entry,
                 'importedTotal': totals[name]['importedTotal'],
                 'duplicatesTotal': totals[name]['duplicatesTotal'],
+                'staleTemporaryTotal': totals[name]['staleTemporaryTotal'],
             }
         app.state.evidence_spool_status = status
 

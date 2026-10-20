@@ -600,7 +600,8 @@ def test_decision_capture_status_is_authenticated_demo_scoped_and_redacted(monke
     assert allowed.json() == {
         'schemaVersion':1,'account':'xau5m_m5','canExecute':False,
         'status':{'code':'IDLE','imported':0,'duplicates':2,'importedTotal':0,
-                  'duplicatesTotal':0,'gapCount':1,'temporaryFileCount':12,
+                  'duplicatesTotal':0,'staleTemporaryCount':0,'staleTemporaryTotal':0,
+                  'gapCount':1,'temporaryFileCount':12,
                   'temporaryBytes':36156,
                   'temporaryOldestMtimeUtc':'2026-10-18T07:00:00Z',
                   'temporaryNewestMtimeUtc':'2026-10-19T08:00:00Z',
@@ -641,12 +642,14 @@ def test_decision_capture_status_aggregates_independent_record_only_producer(mon
     app.state.evidence_spool_status = {
         'titan_puprime250': {
             'code':'IDLE','imported':0,'duplicates':1,'importedTotal':2,'duplicatesTotal':3,
+            'staleTemporaryCount':1,'staleTemporaryTotal':4,
             'gapCount':1,'gapObserved':False,'storeLostCount':0,
             'temporaryFileCount':10,'temporaryBytes':100,
             'temporaryOldestMtimeUtc':'2026-10-18T06:00:00Z',
             'temporaryNewestMtimeUtc':'2026-10-20T07:00:00Z'},
         'titan_puprime250_recordonly': {
             'code':'IMPORTED','imported':1,'duplicates':0,'importedTotal':3,'duplicatesTotal':1,
+            'staleTemporaryCount':2,'staleTemporaryTotal':6,
             'gapCount':2,'gapObserved':True,'storeLostCount':4,
             'temporaryFileCount':2,'temporaryBytes':30,
             'temporaryOldestMtimeUtc':'2026-10-19T06:00:00Z',
@@ -661,6 +664,7 @@ def test_decision_capture_status_aggregates_independent_record_only_producer(mon
     assert status['code'] == 'IMPORTED'
     assert (status['imported'], status['duplicates']) == (1, 1)
     assert (status['importedTotal'], status['duplicatesTotal']) == (5, 4)
+    assert (status['staleTemporaryCount'], status['staleTemporaryTotal']) == (3, 10)
     assert (status['temporaryFileCount'], status['temporaryBytes']) == (12, 130)
     assert (status['temporaryOldestMtimeUtc'], status['temporaryNewestMtimeUtc']) == (
         '2026-10-18T06:00:00Z', '2026-10-20T09:00:00Z')

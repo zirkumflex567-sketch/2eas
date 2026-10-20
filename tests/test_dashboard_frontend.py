@@ -393,6 +393,7 @@ class DashboardFrontendTests(unittest.TestCase):
                 gapObserved=False,recordingState='NOT_RECORDED')
             if not getattr(self,'legacy_capture_status',False):
                 capture_status.update(temporaryFileCount=3,temporaryBytes=2097152,
+                    staleTemporaryCount=1,staleTemporaryTotal=2,
                     temporaryOldestMtimeUtc='2026-10-18T07:00:00Z',
                     temporaryNewestMtimeUtc='2026-10-19T08:00:00Z')
             route.fulfill(json=dict(schemaVersion=1,account=account,canExecute=False,status=capture_status)); return
@@ -468,6 +469,8 @@ class DashboardFrontendTests(unittest.TestCase):
             'Spool-Rückstand · zur Prüfung', timeout=5000)
         expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text(
             'Änderungszeit UTC 2026-10-18 07:00 bis 2026-10-19 08:00', timeout=5000)
+        expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text(
+            '2 veraltete Temp-Dateien archiviert', timeout=5000)
         expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text('Lifecycle: OK', timeout=5000)
         status_requests=[url for url in self.requests if '/capture/status?' in url]
         self.assertEqual(len(status_requests), 2, status_requests)

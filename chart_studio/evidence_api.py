@@ -55,6 +55,7 @@ def _merge_capture_producer_statuses(rows):
         code = next((value for value in codes if isinstance(value, str)), None)
     merged = {'code': code}
     for key in ('imported', 'duplicates', 'importedTotal', 'duplicatesTotal',
+                'staleTemporaryCount', 'staleTemporaryTotal',
                 'temporaryFileCount', 'temporaryBytes', 'gapCount', 'storeLostCount'):
         merged[key] = sum(row.get(key, 0) for row in rows
                           if isinstance(row, dict) and type(row.get(key, 0)) is int and row.get(key, 0) >= 0)
@@ -358,6 +359,7 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
         if producer is None:
             status = {'code': 'NOT_CONFIGURED', 'imported': 0, 'duplicates': 0,
                       'importedTotal': 0, 'duplicatesTotal': 0,
+                      'staleTemporaryCount': 0, 'staleTemporaryTotal': 0,
                       'temporaryFileCount': 0, 'temporaryBytes': 0,
                       'temporaryOldestMtimeUtc': None, 'temporaryNewestMtimeUtc': None,
                       'gapCount': 0, 'gapObserved': False, 'storeLostCount': 0,
@@ -385,6 +387,7 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
                     code = 'NOT_RECORDED'
             status = {'code': code}
             for key in ('imported', 'duplicates', 'importedTotal', 'duplicatesTotal',
+                        'staleTemporaryCount', 'staleTemporaryTotal',
                         'temporaryFileCount', 'temporaryBytes', 'gapCount', 'storeLostCount'):
                 value = raw_status.get(key, 0)
                 status[key] = value if type(value) is int and value >= 0 else 0

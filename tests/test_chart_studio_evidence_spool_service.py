@@ -462,6 +462,69 @@ def test_stable_temporary_files_are_recovered_when_active_segment_is_idle(privat
     assert [row['id'] for row in store.read(context(), kind='DECISION')['records']] == ['event_1']
 
 
+def test_stable_out_of_order_temp_is_preserved_and_archived_before_new_active_events(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    stale = record(seq=1)
+    current = record(seq=2)
+    current['envelope']['id'] = current['envelope']['payload']['eventId'] = 'event_2'
+    current['envelope']['payload']['correlationId'] = 'corr_2'
+    active = spool_root / 'titan_demo.active.ndjson'
+    temporary = spool_root / 'titan_demo.1.tmp.ndjson'
+    write_private(active, line(current).encode())
+    write_private(temporary, line(stale).encode())
+    clock = [100.0]
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    service = consumer(store, spool_root)
+
+    first = service.poll_once()['titan_demo']
+    assert first['imported'] == 1
+    assert first['gapCount'] == 1
+
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+    later = record(seq=3)
+    later['envelope']['id'] = later['envelope']['payload']['eventId'] = 'event_3'
+    later['envelope']['payload']['correlationId'] = 'corr_3'
+    with active.open('ab') as stream:
+        stream.write(line(later).encode())
+    recovered = service.poll_once()['titan_demo']
+
+    assert recovered['code'] == 'ARCHIVED'
+    assert recovered['imported'] == 0
+    assert recovered['staleTemporaryCount'] == 1
+    assert recovered['gapCount'] == 1
+    assert (spool_root / 'archive' / temporary.name).read_bytes() == line(stale).encode()
+    assert service.poll_once()['titan_demo']['imported'] == 1
+    assert [row['id'] for row in store.read(context(), kind='DECISION')['records']] == ['event_2', 'event_3']
+
+
+def test_stable_temp_before_pending_ready_sequence_is_imported_in_order(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    earlier = record(seq=1)
+    later = record(seq=2)
+    later['envelope']['id'] = later['envelope']['payload']['eventId'] = 'event_2'
+    later['envelope']['payload']['correlationId'] = 'corr_2'
+    temporary = spool_root / 'titan_demo.1.tmp.ndjson'
+    ready = spool_root / 'titan_demo.2-2.ready.ndjson'
+    write_private(temporary, line(earlier).encode())
+    write_private(ready, line(later).encode())
+    clock = [100.0]
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    service = consumer(store, spool_root)
+
+    service._scan_temporary_segments()
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+    recovered = service.poll_once()['titan_demo']
+
+    assert recovered['code'] == 'ARCHIVED'
+    assert recovered['imported'] == 1
+    assert recovered['gapCount'] == 0
+    assert [row['id'] for row in store.read(context(), kind='DECISION')['records']] == ['event_1']
+    following = service.poll_once()['titan_demo']
+    assert following['imported'] == 1
+    assert following['gapCount'] == 0
+    assert [row['id'] for row in store.read(context(), kind='DECISION')['records']] == ['event_1', 'event_2']
+
+
 def write_private(path, data):
     path.write_bytes(data)
     if os.name == 'posix': path.chmod(0o600)
@@ -805,9 +868,11 @@ def test_spool_service_keeps_import_count_visible_after_idle_poll():
             self.polls += 1
             if self.polls == 1:
                 return {'titan_demo': {'code': 'IMPORTED', 'imported': 1, 'duplicates': 2,
+                                      'staleTemporaryCount': 2,
                                       'gapCount': 0, 'gapObserved': False, 'storeLostCount': 0}}
             second_poll.set()
             return {'titan_demo': {'code': 'IDLE', 'imported': 0, 'duplicates': 0,
+                                   'staleTemporaryCount': 0,
                                    'gapCount': 0, 'gapObserved': False, 'storeLostCount': 0}}
 
     async def scenario():
@@ -827,6 +892,7 @@ def test_spool_service_keeps_import_count_visible_after_idle_poll():
     assert status['imported'] == 0
     assert status['importedTotal'] == 1
     assert status['duplicatesTotal'] == 2
+    assert status['staleTemporaryTotal'] == 2
 
 
 def test_spool_service_is_disabled_without_explicit_root(private_root, monkeypatch):
