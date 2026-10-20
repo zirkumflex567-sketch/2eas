@@ -272,6 +272,7 @@ class DashboardFrontendTests(unittest.TestCase):
         self.candle_fail = False
         self.candle_delay_seconds = 0
         self.positions_delay_seconds = 0
+        self.status_delay_seconds = 0
         self.candle_error_detail = 'fixture candle failure'
         self.candle_rows = []
         self.history_rows = []
@@ -337,6 +338,8 @@ class DashboardFrontendTests(unittest.TestCase):
         if parsed.path == '/api/control_session':
             route.fulfill(json=dict(csrf_token='fixture-control-csrf', control_enabled=True)); return
         if parsed.path == '/api/status':
+            if self.status_delay_seconds:
+                time.sleep(self.status_delay_seconds)
             payload = status(account)
             if account == 'titan' and self.marketplace_mode:
                 payload.update(analysis_mode='INDICATORS_ONLY', signal_mode='INDICATORS_ONLY',
@@ -541,6 +544,13 @@ class DashboardFrontendTests(unittest.TestCase):
         self.assertEqual(result['account'],'titan')
         self.assertEqual(result['source'],'MT5_VERIFIED')
         self.assertFalse(result['canExecute'])
+        self.assertEqual(self.mutations,[])
+        self.assertEqual(self.errors,[])
+    def test_slow_account_status_read_can_confirm_live_data(self):
+        self.load()
+        self.status_delay_seconds=5.2
+        result=self.page.evaluate("async()=>{await updateStatus();return document.querySelector('#account-connection').textContent}")
+        self.assertIn('LIVE',result)
         self.assertEqual(self.mutations,[])
         self.assertEqual(self.errors,[])
     def test_chart_requests_older_bars_when_scrolled_to_history_edge(self):
