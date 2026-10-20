@@ -204,7 +204,7 @@ def test_cursor_failure_logs_only_safe_windows_error_category(private_root, monk
     result = importer.import_line(line(record()))
 
     assert result['code'] == 'CURSOR_UNAVAILABLE'
-    assert 'cursor save failed: WINDOWS_ACCESS_DENIED' in caplog.text
+    assert 'cursor save failed at cursor_replace: WINDOWS_ACCESS_DENIED' in caplog.text
     assert str(private_root) not in caplog.text
     assert store.read(AccountContext.from_config('titan'), kind='DECISION')['records'] == []
 

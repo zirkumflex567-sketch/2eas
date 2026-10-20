@@ -148,31 +148,43 @@ class SpoolImporter:
             'lastDigest': self.last_digest, 'gapCount': self.gap_count,
             'pending': self.pending,
         }
+        stage = 'root_identity'
         try:
             if _physical(path.parent) != self.store._root_identity:
                 raise StoreUnavailable()
+            stage = 'directory_acl'
             _private(path.parent, True)
+            stage = 'temporary_cleanup'
             if os.path.lexists(temp):
                 _physical(temp)
                 _private(temp, False)
                 temp.unlink()
+            stage = 'cursor_cleanup'
             if os.path.lexists(path):
                 _physical(path)
                 _private(path, False)
+            stage = 'temporary_create'
             with open(temp, 'xb') as stream:
+                stage = 'temporary_write'
                 stream.write(json.dumps(state, sort_keys=True, separators=(',', ':')).encode('utf-8'))
                 stream.flush()
                 os.fsync(stream.fileno())
             if os.name == 'posix':
+                stage = 'temporary_mode'
                 os.chmod(temp, 0o600)
+            stage = 'temporary_acl'
             _private(temp, False)
+            stage = 'cursor_replace'
             _replace_cursor_with_retry(temp, path)
             if os.name == 'posix':
+                stage = 'directory_sync_open'
                 directory = os.open(path.parent, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
                 try:
+                    stage = 'directory_sync'
                     os.fsync(directory)
                 finally:
                     os.close(directory)
+            stage = 'cursor_verify'
             _physical(path)
             _private(path, False)
             self._last_cursor_failure_category = None
@@ -180,7 +192,7 @@ class SpoolImporter:
             self._cursor_fault = True
             category = _cursor_failure_category(exc)
             if category != self._last_cursor_failure_category:
-                _LOGGER.warning('evidence cursor save failed: %s', category)
+                _LOGGER.warning('evidence cursor save failed at %s: %s', stage, category)
                 self._last_cursor_failure_category = category
             try:
                 if os.path.lexists(temp):
