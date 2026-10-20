@@ -153,7 +153,12 @@ int OnInit()
       Print("ChartStudio calendar bridge: unsupported alias or account; initialization rejected.");
       return INIT_FAILED;
      }
-   EventSetTimer(InpRefreshSeconds);
+   ResetLastError();
+   if(!EventSetTimer(InpRefreshSeconds))
+     {
+      PrintFormat("ChartStudio calendar bridge: refresh timer setup failed (%d); initialization rejected.",GetLastError());
+      return INIT_FAILED;
+     }
    WriteSnapshot();
    return INIT_SUCCEEDED;
   }

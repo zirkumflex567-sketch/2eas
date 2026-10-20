@@ -37,6 +37,16 @@ def test_bridge_source_keeps_the_calendar_preset_allowlist_demo_only():
     assert ".Sell(" not in source
 
 
+def test_calendar_bridge_rejects_initialization_when_refresh_timer_cannot_start():
+    source = (ROOT / "ChartStudioCalendarBridge.mq5").read_text(encoding="utf-8")
+    init = source.split("int OnInit()", 1)[1].split("void OnDeinit", 1)[0]
+
+    assert "ResetLastError();" in init
+    assert "if(!EventSetTimer(InpRefreshSeconds))" in init
+    assert "return INIT_FAILED;" in init
+    assert "GetLastError()" in init
+
+
 def test_calendar_setup_ui_maps_goldm15_to_its_account_bound_preset():
     source = (ROOT / "static" / "chart-studio-market-structure.js").read_text(encoding="utf-8")
     assert 'goldm15:"goldm15.set"' in source
