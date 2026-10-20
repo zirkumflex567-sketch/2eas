@@ -22,3 +22,7 @@ Show broker-verified historical deal fills in the native v5 chart preview, with 
 ## Boundaries
 
 Do not enable the production v5 cutover. Do not claim that arbitrary prior history exists outside returned MT5 deals or loaded candles. Do not instrument, reinitialize, or trade any EA; Blueberry is excluded. Strategy Tester/backtests remain deferred.
+
+## Live acceptance 20.10.2026
+
+- [x] On Main `6d4879e`, `scripts/smoke_live_v5_deal_markers.cjs` passed on `titan`, `xau5m_m5`, `titan_m5`, and `xau5m_500`: 121/121 verified history deals validated into the isolated v5 preview, 64 matched exact loaded candle timestamps and 57 remained unplotted because they were outside the loaded window. 88 API requests, zero mutations, forbidden requests, browser errors or Blueberry requests. Production v5 remained disabled.
