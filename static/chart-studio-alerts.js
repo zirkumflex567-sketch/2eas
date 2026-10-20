@@ -1,6 +1,6 @@
 (()=>{
 "use strict";
-const PREFIX="2eas:studio:alerts:v1:",MAX_RULES=20,MAX_PRICE=1e9,POLL_MS=5000,MAX_AGE=30;
+const PREFIX="2eas:studio:alerts:v1:",MAX_RULES=20,MAX_PRICE=1e9,POLL_MS=5000,MAX_AGE=30,MAX_FUTURE_SKEW_SECONDS=1.5;
 function cleanScope(value){
  if(!value||typeof value!=="object"||Array.isArray(value))return null;
  const result={};for(const key of ["account","symbol","timeframe"]){const raw=value[key];if(typeof raw!=="string"||!raw.trim()||raw.length>64||/[\u0000-\u001f\u007f]/.test(raw))return null;result[key]=raw.trim()}
@@ -20,7 +20,7 @@ function quotePrice(quote,scope,now){
  const bid=Number(quote.bid),ask=Number(quote.ask),age=Number(quote.ageSeconds),stamp=quoteTimestampMillis(Number.isFinite(quote.quoteTimeUtcMs)?quote.quoteTimeUtcMs:quote.quoteTimeUtc);
  if(!Number.isFinite(bid)||bid<=0||!Number.isFinite(ask)||ask<bid||!Number.isFinite(age)||age<0||age>MAX_AGE||!Number.isFinite(stamp))return null;
  const computedAge=(now-stamp)/1000;
- if(computedAge< -1||computedAge>MAX_AGE||Math.abs(computedAge-age)>5)return null;
+ if(computedAge< -MAX_FUTURE_SKEW_SECONDS||computedAge>MAX_AGE||Math.abs(computedAge-age)>5)return null;
  return {price:(bid+ask)/2,time:new Date(stamp).toISOString()};
 }
 function createEngine({account,symbol,timeframe,initial=[],now=()=>Date.now()}={}){
