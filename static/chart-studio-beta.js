@@ -33,6 +33,7 @@ function resolveShortcut(event,raw){
 }
 const MAX_DRAWINGS=1000,MAX_VISIBLE_DRAWINGS=2000;
 const MAX_EVIDENCE_ROWS=500;
+const EVIDENCE_READ_TIMEOUT_MS=30000;
 const ratios=[0,.236,.382,.5,.618,.786,1];
 let s=null,requestId=0,scenarioGeneration=0,portfolioGeneration=0,ticketGeneration=0,planTimer=null;
 function createChartCoordinates({apiVersion,chart,series,scope}){
@@ -614,7 +615,7 @@ async function loadEvidenceCaptureStatus(){
   const get=async kind=>{
    const url=root+"/api/chart/v1/"+(kind==="decision"?"decisions":"lifecycle")+"/capture/status?account="+encodeURIComponent(account);
    const response=window.DashboardRuntime?.request
-    ? await window.DashboardRuntime.request(url,{method:"GET",cache:"no-store"},10000,false)
+    ? await window.DashboardRuntime.request(url,{method:"GET",cache:"no-store"},EVIDENCE_READ_TIMEOUT_MS,false)
     : await fetch(url,{method:"GET",cache:"no-store",credentials:"same-origin"});
    const body=await response.json();if(!response.ok)throw Error("CAPTURE_STATUS_UNAVAILABLE");return captureStatusLine(kind,body,account);
   };
@@ -635,7 +636,7 @@ async function loadEvidence(morePage=false){
  const url=(window.location.pathname.startsWith("/stt")?"/stt":"")+"/api/chart/v1/"+paths[kind]+"?"+params.toString();
  s.evidence.loading=true;renderEvidence();
  try{
-  let response;if(window.DashboardRuntime?.request)response=await window.DashboardRuntime.request(url,{method:"GET",cache:"no-store"},10000,false);
+  let response;if(window.DashboardRuntime?.request)response=await window.DashboardRuntime.request(url,{method:"GET",cache:"no-store"},EVIDENCE_READ_TIMEOUT_MS,false);
   else{const raw=await fetch(url,{method:"GET",cache:"no-store",credentials:"same-origin"});const body=await raw.json();response={ok:raw.ok,status:raw.status,json:async()=>body}}
   const data=await response.json();if(!response.ok)throw Error(data?.detail?.code||data?.detail||("HTTP "+response.status));
   if(!s?.evidence||s.account!==account||s.evidence.generation!==generation)return;

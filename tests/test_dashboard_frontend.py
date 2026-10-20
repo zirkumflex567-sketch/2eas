@@ -273,6 +273,7 @@ class DashboardFrontendTests(unittest.TestCase):
         self.candle_delay_seconds = 0
         self.positions_delay_seconds = 0
         self.status_delay_seconds = 0
+        self.evidence_delay_seconds = 0
         self.candle_error_detail = 'fixture candle failure'
         self.candle_rows = []
         self.history_rows = []
@@ -386,6 +387,8 @@ class DashboardFrontendTests(unittest.TestCase):
             symbol=parse_qs(parsed.query).get('symbol',['XAUUSD'])[0]
             route.fulfill(json=dict(account=account,symbol=symbol,source='MT5_VERIFIED',canExecute=False,tickSize='0.01',digits=2)); return
         if parsed.path == '/api/chart/v1/decisions/capture/status':
+            if self.evidence_delay_seconds:
+                time.sleep(self.evidence_delay_seconds)
             capture_status=dict(code='IDLE',importedTotal=0,gapCount=0,storeLostCount=0,
                 gapObserved=False,recordingState='NOT_RECORDED')
             if not getattr(self,'legacy_capture_status',False):
@@ -394,8 +397,16 @@ class DashboardFrontendTests(unittest.TestCase):
                     temporaryNewestMtimeUtc='2026-10-19T08:00:00Z')
             route.fulfill(json=dict(schemaVersion=1,account=account,canExecute=False,status=capture_status)); return
         if parsed.path == '/api/chart/v1/lifecycle/capture/status':
+            if self.evidence_delay_seconds:
+                time.sleep(self.evidence_delay_seconds)
             route.fulfill(json=dict(schemaVersion=1,account=account,
                 status=dict(code='OK',coverage='ROLLING_WINDOW',appended=0,storeLostCount=0,gapObserved=False))); return
+        if parsed.path == '/api/chart/v1/decisions':
+            if self.evidence_delay_seconds:
+                time.sleep(self.evidence_delay_seconds)
+            route.fulfill(json=dict(schemaVersion=1,accountId=account,canExecute=False,
+                availability='NOT_RECORDED',storeState='INITIALIZED',coverage='UNKNOWN',
+                gaps=dict(knownLossSinceStart=0,unrecordedHistory=True),records=[],nextCursor=None)); return
         if parsed.path == '/api/chart/v1/lifecycle/mt5_deal_201':
             route.fulfill(status=self.lifecycle_status, json=dict(record=copy.deepcopy(self.lifecycle_record)) if self.lifecycle_status == 200 else dict(detail=dict(code='RECORD_NOT_FOUND'))); return
         route.fulfill(status=404, json=dict(detail='unexpected fixture API'))
@@ -472,6 +483,27 @@ class DashboardFrontendTests(unittest.TestCase):
         self.page.locator('#cs-evidence-capture-status').click()
         expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text('Decision-Recorder: IDLE', timeout=5000)
         self.assertNotIn('nicht verfügbar', self.page.locator('#cs-evidence-capture-status-result').inner_text())
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.errors, [])
+    def test_evidence_inspector_waits_for_slow_read_only_store_response(self):
+        self.evidence_delay_seconds = 12
+        self.page.goto(self.url+'?account=goldm15')
+        expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=10000)
+        self.page.locator('#cs-beta-toggle').click()
+        self.page.locator('#cs-evidence-panel > summary').click()
+        self.page.locator('#cs-evidence-load').click()
+        expect(self.page.locator('#cs-evidence-status')).to_contain_text('Store: INITIALIZED', timeout=20000)
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.errors, [])
+    def test_evidence_capture_status_waits_for_slow_read_only_store_response(self):
+        self.evidence_delay_seconds = 12
+        self.page.goto(self.url+'?account=goldm15')
+        expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=10000)
+        self.page.locator('#cs-beta-toggle').click()
+        self.page.locator('#cs-evidence-panel > summary').click()
+        self.page.locator('#cs-evidence-capture-status').click()
+        expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text(
+            'Decision-Recorder: IDLE', timeout=20000)
         self.assertEqual(self.mutations, [])
         self.assertEqual(self.errors, [])
     def test_bootstrap_uses_configured_broker_symbol_for_chart_feed(self):
