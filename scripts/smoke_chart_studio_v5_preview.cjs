@@ -200,6 +200,7 @@ const server=http.createServer((req,res)=>{
   const initialPreviewLayout=await page.evaluate(()=>JSON.parse(window.ChartStudioV5Preview.exportLayout()));
   assert.equal(initialPreviewLayout.view.movingAverages.length,0,"temporary production-editor averages do not enter v5 portable layout storage");
   assert.ok(initialPreviewLayout.view.paneHeights.every(Number.isFinite),"portable pane heights exclude empty transient preview panes");
+  await page.locator("#chart-v5-chart-type").selectOption("line");
   await page.locator("#chart-v5-profile-manager > summary").click();
   assert.equal(await page.locator("#chart-v5-profile-save").isEnabled(),true,"verified v5 chart enables local named layout saving");
   await page.locator("#chart-v5-profile-name").fill("Morning layout");
@@ -619,6 +620,7 @@ const server=http.createServer((req,res)=>{
   await page.locator("#chart-v5-profile-load").click();
   await page.waitForFunction(()=>document.querySelector("#chart-v5-profile-status")?.textContent.includes("geladen"));
   assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().nativeDrawingCount),0,"loading a saved scoped layout restores its saved drawing state");
+  assert.equal(await page.locator("#chart-v5-chart-type").inputValue(),"line","named profile load restores its saved chart presentation");
   await page.waitForFunction(()=>document.querySelectorAll("#chart-v5-object-list [data-drawing-id]").length===0);
   const v4After=await page.locator("#tv-chart").evaluate(el=>({visible:!!el.getClientRects().length,canvas:el.querySelector("canvas#v4-sentinel")?.width}));
   assert.deepEqual(v4After,v4Before,"v5 owns a separate host and leaves v4 mounted");
