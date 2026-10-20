@@ -219,7 +219,9 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
       await page.waitForFunction(() => {
         const status = document.querySelector("#chart-v5-position-status")?.textContent || "";
         return /\d+ MT5-Positionen · read-only|Positionen nur für freigegebene Demokonten|Positionen nicht verfügbar/.test(status);
-      }, null, {timeout:5000}).catch(async error => {
+      // The production read is explicitly bounded at 20 seconds because the
+      // shared MT5 session lock can queue a response; leave room for UI paint.
+      }, null, {timeout:25000}).catch(async error => {
         const state = await page.evaluate(() => ({status:document.querySelector("#chart-v5-position-status")?.textContent || null,
           preview:window.ChartStudioV5Preview?.inspect?.() || null,activeAccount:typeof activeAccount==="string"?activeAccount:null}));
         throw new Error(`${error.message}; v5 position state=${JSON.stringify(state)}`);
