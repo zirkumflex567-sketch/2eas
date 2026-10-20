@@ -118,6 +118,14 @@ const server=http.createServer((req,res)=>{
   assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.readPricePresentation().bars.length),150,"Heikin view derives from the verified candle set");
   await page.locator("#chart-v5-chart-type").selectOption("hollow");
   await page.waitForFunction(()=>window.ChartStudioV5Preview?.inspect().chartType==="hollow");
+  for(const type of ["bars","line","area"]){
+   await page.locator("#chart-v5-chart-type").selectOption(type);
+   await page.waitForFunction(value=>window.ChartStudioV5Preview?.inspect().chartType===value,type);
+   const view=await page.evaluate(()=>window.ChartStudioV5Preview.readPricePresentation());
+   assert.equal(view.bars.length,150,`${type} preserves the verified raw candle range`);
+   assert.equal(view.seriesData.length,150,`${type} renders a complete native series`);
+   if(type==="line"||type==="area")assert.equal(view.seriesData[0].value,view.bars[0].close,`${type} uses source close values`);
+  }
   await page.locator("#chart-v5-chart-type").selectOption("candles");
   const marketLevels=await page.evaluate(()=>window.ChartStudioV5Preview.readMarketLevels?.());
   const priceAxisWidth=await page.evaluate(()=>window.ChartStudioV5Preview.inspect().priceAxisWidth);

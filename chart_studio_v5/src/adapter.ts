@@ -3,7 +3,7 @@
  * No execution routes, broker writes, credentials or global MT5 state.
  * Rendering remains isolated until the v4 -> v5 migration acceptance gate.
  */
-import {createChart, CandlestickSeries, LineSeries, HistogramSeries, TickMarkType, type ISeriesPrimitive, type LogicalRange, type Time, type UTCTimestamp} from "lightweight-charts";
+import {createChart, CandlestickSeries, BarSeries, AreaSeries, LineSeries, HistogramSeries, TickMarkType, type ISeriesPrimitive, type LogicalRange, type Time, type UTCTimestamp} from "lightweight-charts";
 import type {CanvasRenderingTarget2D} from "fancy-canvas";
 import {calculateOscillator,createIncrementalOscillator,MAX_OSCILLATOR_BARS,type IncrementalOscillator,type OscillatorKind,type OscillatorSettings} from "./oscillators";
 import {calculateVolumeZones,type VolumeZone,type VolumeZoneResult} from "./volume-zones";
@@ -11,9 +11,9 @@ export {createIncrementalOscillator};
 export {calculateVolumeZones};
 export const VERSION = "5.2.1";
 export type Candle = {time:UTCTimestamp;open:number;high:number;low:number;close:number;tick_volume?:number;real_volume?:number};
-export type PricePresentationType = "candles"|"heikin"|"hollow";
+export type PricePresentationType = "candles"|"heikin"|"hollow"|"bars"|"line"|"area";
 type PresentationCandle = Candle&{color?:string;borderColor?:string;wickColor?:string};
-const pricePresentationTypes:readonly PricePresentationType[]=["candles","heikin","hollow"];
+const pricePresentationTypes:readonly PricePresentationType[]=["candles","heikin","hollow","bars","line","area"];
 function heikinAshiCandles(bars:readonly Candle[]):Candle[]{
  let previousOpen:number|null=null,previousClose:number|null=null;
  return bars.map(bar=>{
@@ -983,6 +983,10 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   crosshair:{mode:0}});
  const price=chart.addSeries(CandlestickSeries,{upColor:"#1bca99",downColor:"#f16b8d",
   borderVisible:false,wickUpColor:"#1bca99",wickDownColor:"#f16b8d"});
+ const barPresentation=chart.addSeries(BarSeries,{upColor:"#1bca99",downColor:"#f16b8d",visible:false,thinBars:true,priceLineVisible:false});
+ const linePresentation=chart.addSeries(LineSeries,{color:"#49c6ff",lineWidth:2,visible:false,priceLineVisible:false,lastValueVisible:true});
+ const areaPresentation=chart.addSeries(AreaSeries,{lineColor:"#49c6ff",topColor:"rgba(73,198,255,0.35)",bottomColor:"rgba(73,198,255,0.02)",lineWidth:2,visible:false,priceLineVisible:false,lastValueVisible:true});
+ const transparentCandle="rgba(0,0,0,0)";
  const brokerDealPrimitive=new BrokerDealMarkersPrimitive(chart,price);price.attachPrimitive(brokerDealPrimitive);
  let brokerDealMarkers:ReadOnlyBrokerDealMarker[]=[];
  const positionOverlayLines=new Map<string,{line:ReturnType<typeof price.createPriceLine>;readback:PositionOverlayLine}>();
@@ -1464,11 +1468,23 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  function pricePresentationBars():PresentationCandle[]{
   if(pricePresentation==="heikin")return heikinAshiCandles(bars);
   if(pricePresentation==="hollow")return hollowCandles(bars);
+  if(pricePresentation==="bars"||pricePresentation==="line"||pricePresentation==="area")return bars.map(bar=>({...bar,color:transparentCandle,borderColor:transparentCandle,wickColor:transparentCandle}));
   return bars.map(bar=>({...bar}));
+ }
+ function syncPresentationSeries(){
+  price.setData(pricePresentationBars() as never);
+  barPresentation.setData(bars as never);
+  const closes=bars.map(bar=>({time:bar.time,value:bar.close}));
+  linePresentation.setData(closes);areaPresentation.setData(closes);
+  barPresentation.applyOptions({visible:pricePresentation==="bars"});
+  linePresentation.applyOptions({visible:pricePresentation==="line"});
+  areaPresentation.applyOptions({visible:pricePresentation==="area"});
  }
  function readPricePresentation(){
   guard();const displayed=pricePresentationBars();
-  return {type:pricePresentation,source:"CHART_FEED",bars:displayed.map(bar=>({...bar})),
+  const seriesData=pricePresentation==="line"||pricePresentation==="area"?bars.map(bar=>({time:bar.time,value:bar.close})):displayed.map(bar=>({...bar}));
+  return {type:pricePresentation,source:"CHART_FEED",bars:displayed.map(bar=>({...bar})),seriesData,
+   renderedSeries:{candles:pricePresentation==="candles"||pricePresentation==="heikin"||pricePresentation==="hollow",bars:pricePresentation==="bars",line:pricePresentation==="line",area:pricePresentation==="area"},
    styles:displayed.map(bar=>({bodyColor:bar.color??null,borderColor:bar.borderColor??null,wickColor:bar.wickColor??null}))};
  }
  function setPricePresentation(value:unknown){
@@ -1476,7 +1492,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   const next=value as PricePresentationType,key=chartTypeStorageKey(),storage=localStorageApi();
   pricePresentation=next;
   if(storage&&key)try{storage.setItem(key,next)}catch(_){}
-  price.setData(pricePresentationBars() as never);
+  syncPresentationSeries();
   return readPricePresentation();
  }
  function drawingSnapshots():DrawingSnapshot[]{
@@ -1985,7 +2001,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   for(const group of oscillators.values())for(const series of group.series.values())series.setData([] as never);
   for(const group of supertrendOverlays.values()){group.up.setData([]);group.down.setData([])}
   for(const group of parabolicSarOverlays.values()){group.up.setData([]);group.down.setData([])}
-  readoutIndicators.clear();price.setData(pricePresentationBars() as never);refreshManagedMovingAverages();refreshDonchianOverlays();refreshBollingerOverlays();refreshSessionVwapOverlays();refreshKeltnerOverlays();refreshAtrBandsOverlays();refreshLinearRegressionOverlays();
+  readoutIndicators.clear();syncPresentationSeries();refreshManagedMovingAverages();refreshDonchianOverlays();refreshBollingerOverlays();refreshSessionVwapOverlays();refreshKeltnerOverlays();refreshAtrBandsOverlays();refreshLinearRegressionOverlays();
   refreshSupertrendOverlays();refreshParabolicSar();refreshIchimokuOverlays();refreshPivotOverlays();refreshOscillators();refreshVolumeZones();refreshAutoFibonacci();
   if(volume)volume.setData(volumeRows());
   hydrateDrawings();
@@ -3159,7 +3175,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   barsByTime.set(c.time,{...c});
   brokerDealMarkers=brokerDealMarkers.map(row=>({...row,plotted:barsByTime.has(row.chartTimeSeconds)}));brokerDealPrimitive.set(brokerDealMarkers);
   for(const indicator of readoutIndicators.values()){indicator.values.delete(c.time);indicator.directions?.delete(c.time)}
-  if(pricePresentation==="candles")price.update(c);else price.setData(pricePresentationBars() as never);if(volume)volume.update(volumeRows()[bars.length-1]);
+  if(pricePresentation==="candles"||pricePresentation==="bars"||pricePresentation==="line"||pricePresentation==="area")price.update(pricePresentationBars()[bars.length-1] as never);else price.setData(pricePresentationBars() as never);
+  barPresentation.update(c);linePresentation.update({time:c.time,value:c.close});areaPresentation.update({time:c.time,value:c.close});if(volume)volume.update(volumeRows()[bars.length-1]);
   for(const [id,state] of managedMovingAverages)updateManagedMovingAverage(id,state);
   refreshDonchianOverlays();refreshBollingerOverlays();refreshSessionVwapOverlays();refreshKeltnerOverlays();refreshAtrBandsOverlays();refreshLinearRegressionOverlays();refreshIchimokuOverlays();refreshPivotOverlays();
   refreshVolumeZones();refreshAutoFibonacci();for(const group of supertrendOverlays.values())updateSupertrendLast(group,c,bars.length-1,replacing&&group.lastTime===c.time);
@@ -3196,7 +3213,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   finishDrag(true);selectDrawing(null);hoveredDrawingId=null;
   undoStack.length=0;redoStack.length=0;
   drawingsHydrated=false;lastPersistedSnapshot=null;persistenceError=null;persistenceStatus=drawingScope?"PENDING":"DISABLED";
-  activeAccount=next;pricePresentation=restorePricePresentation(next);bars=[];barsByTime.clear();price.setData([]);
+  activeAccount=next;pricePresentation=restorePricePresentation(next);bars=[];barsByTime.clear();syncPresentationSeries();
   for(const item of priceLevels.values())price.detachPrimitive(item.primitive);priceLevels.clear();
   for(const item of timeMarkers.values())price.detachPrimitive(item.primitive);timeMarkers.clear();selectedDrawingId=null;
   for(const item of textAnnotations.values())price.detachPrimitive(item.primitive);textAnnotations.clear();

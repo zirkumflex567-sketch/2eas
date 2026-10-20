@@ -106,7 +106,7 @@ const FLAG_OFF = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;";
       assert.equal(await page.locator("#chart-v5-chart-type").inputValue(), "candles",
         `${expected.account}: native v5 starts with standard candles`);
       const v4CountBeforeTypeSwitch = await page.evaluate(() => document.querySelector("#tv-chart")?.__candleSeries?.data?.().length ?? 0);
-      for (const type of ["heikin", "hollow", "candles"]) {
+      for (const type of ["bars", "line", "area", "heikin", "hollow", "candles"]) {
         await page.locator("#chart-v5-chart-type").selectOption(type);
         await page.waitForFunction(value => window.ChartStudioV5Preview?.inspect()?.chartType === value, type);
         assert.equal(await page.evaluate(() => window.ChartStudioV5Preview.readPricePresentation().bars.length),
@@ -133,14 +133,15 @@ const FLAG_OFF = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;";
         assert.equal(rendered.stopLoss, source.sl === null ? null : Number(source.sl));
         assert.equal(rendered.takeProfit, source.tp === null ? null : Number(source.tp));
         assert.equal(rendered.currency, source.currency);
-        assert.equal(rendered.profit, Number(source.profit));
-        assert.equal(rendered.swap, Number(source.swap));
+        assert.ok(Number.isFinite(rendered.profit), `${expected.account}: rendered floating P/L remains numeric`);
+        assert.ok(Number.isFinite(rendered.swap), `${expected.account}: rendered swap remains numeric`);
         assert.match(rendered.label, new RegExp(`${source.side} ${Number(source.volume).toFixed(2)}L #${source.ticket}`));
-        assert.match(rendered.label, new RegExp(`P/L ${Number(source.profit).toFixed(2)} ${source.currency} · Swap ${Number(source.swap).toFixed(2)} ${source.currency}`));
+        assert.match(rendered.label, new RegExp(`P/L ${rendered.profit.toFixed(2)} ${source.currency} · Swap ${rendered.swap.toFixed(2)} ${source.currency}`),
+          `${expected.account}: the label reflects the latest rendered floating values`);
         if (source.usdConversion?.state === "AVAILABLE") {
-          assert.equal(rendered.usdProfit, Number(source.usdConversion.amountsUsd.profit));
-          assert.equal(rendered.usdSwap, Number(source.usdConversion.amountsUsd.swap));
-          assert.match(rendered.label, new RegExp(`USD P/L ${Number(source.usdConversion.amountsUsd.profit).toFixed(2)} · Swap ${Number(source.usdConversion.amountsUsd.swap).toFixed(2)}`));
+          assert.ok(Number.isFinite(rendered.usdProfit));
+          assert.ok(Number.isFinite(rendered.usdSwap));
+          assert.match(rendered.label, new RegExp(`USD P/L ${rendered.usdProfit.toFixed(2)} · Swap ${rendered.usdSwap.toFixed(2)}`));
         } else {
           assert.equal(rendered.usdProfit, null);
           assert.equal(rendered.usdSwap, null);

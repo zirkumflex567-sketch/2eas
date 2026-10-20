@@ -6784,6 +6784,135 @@ var ChartStudioV5 = (() => {
     }
   };
   var ye = { type: "Line", isBuiltIn: true, defaultOptions: { color: "#2196f3", lineStyle: 0, lineWidth: 3, lineType: 0, lineVisible: true, crosshairMarkerVisible: true, crosshairMarkerRadius: 4, crosshairMarkerBorderColor: "", crosshairMarkerBorderWidth: 2, crosshairMarkerBackgroundColor: "", lastPriceAnimation: 0, pointMarkersVisible: false }, mb: (t, i) => new Ce(t, i) };
+  function Ae(t, i, n, s, e2) {
+    const { context: r2, horizontalPixelRatio: h2, verticalPixelRatio: a2 } = i;
+    r2.lineTo(e2._t * h2, t * a2), r2.lineTo(s._t * h2, t * a2), r2.closePath(), r2.fillStyle = n, r2.fill();
+  }
+  var Le = class extends R {
+    constructor() {
+      super(...arguments), this.rt = null;
+    }
+    ht(t) {
+      this.rt = t;
+    }
+    et(t) {
+      if (null === this.rt) return;
+      const { ot: i, lt: n, Cb: s, ct: e2, Gt: r2, yb: h2 } = this.rt, l2 = this.rt.Lb ?? (this.rt.zb ? 0 : t.mediaSize.height);
+      if (null === n) return;
+      const o2 = t.context;
+      o2.lineCap = "butt", o2.lineJoin = "round", o2.lineWidth = e2, a(o2, r2), o2.lineWidth = 1, ue(t, i, h2, n, s, this.Ob.bind(this), Ae.bind(null, l2));
+    }
+  };
+  var ze = class {
+    Nb(t, i) {
+      const n = this.Fb, { Wb: s, Hb: e2, Ub: r2, $b: h2, Lb: a2, jb: l2, qb: o2 } = i;
+      if (void 0 === this.Yb || void 0 === n || n.Wb !== s || n.Hb !== e2 || n.Ub !== r2 || n.$b !== h2 || n.Lb !== a2 || n.jb !== l2 || n.qb !== o2) {
+        const { verticalPixelRatio: n2 } = t, _2 = a2 || l2 > 0 ? n2 : 1, u2 = l2 * _2, c2 = o2 === t.bitmapSize.height ? o2 : o2 * _2, d2 = (a2 ?? 0) * _2, f2 = t.context.createLinearGradient(0, u2, 0, c2);
+        if (f2.addColorStop(0, s), null != a2) {
+          const t2 = ni((d2 - u2) / (c2 - u2), 0, 1);
+          f2.addColorStop(t2, e2), f2.addColorStop(t2, r2);
+        }
+        f2.addColorStop(1, h2), this.Yb = f2, this.Fb = i;
+      }
+      return this.Yb;
+    }
+  };
+  var Fe = class {
+    constructor(t, i, n, s) {
+      this.Zb = t, this.Xb = i, this.Jb = n, this.Qb = s;
+    }
+    st(t, i, n) {
+      this.Zb.st(t, i, n), !this.Jb() || i && this.Qb() || this.Xb.st(t, i, n);
+    }
+  };
+  var We = class {
+    constructor(t, i) {
+      this.Xb = t, this.tS = i;
+    }
+    Tt() {
+      return this.tS() ? this.Xb : null;
+    }
+  };
+  var $e = class extends Le {
+    constructor() {
+      super(...arguments), this.Kb = new ze();
+    }
+    Ob(t, i) {
+      return this.Kb.Nb(t, { Wb: i.ah, Hb: "", Ub: "", $b: i.oh, jb: this.rt?.jb ?? 0, qb: t.bitmapSize.height });
+    }
+  };
+  var je = class extends xe {
+    constructor(t, i) {
+      super(t, i), this.lS = new $e(), this.Xb = new we(), this.sS = new We(this.Xb, (() => this.Jb())), this.eS = [this], this.rS = [this.sS], this.hS = { Za: this.eS, qa: this.rS }, this.Vg = new Fe(this.lS, this.Xb, (() => this.Jb()), (() => this.le.N().hoveredSeriesOnTop));
+    }
+    Ga() {
+      return this.hS;
+    }
+    Rb(t, i, n) {
+      return { ...this.Tb(t, i), ...n.Sh(t) };
+    }
+    Ng() {
+      const t = this.ae.N();
+      if (null === this.Tg || 0 === this.kg.length) return;
+      let i;
+      if (t.relativeGradient) {
+        i = this.kg[this.Tg.from].ut;
+        for (let t2 = this.Tg.from; t2 < this.Tg.to; t2++) {
+          const n = this.kg[t2];
+          n.ut < i && (i = n.ut);
+        }
+      }
+      this.lS.ht({ yb: t.lineType, ot: this.kg, Gt: t.lineStyle, ct: t.lineWidth, Lb: null, jb: i, zb: t.invertFilledArea, lt: this.Tg, Cb: this.le.Et().ml() }), this.Xb.ht({ yb: t.lineVisible ? t.lineType : void 0, ot: this.kg, Gt: t.lineStyle, ct: t.lineWidth, lt: this.Tg, Cb: this.le.Et().ml(), Pb: t.pointMarkersVisible ? t.pointMarkersRadius || t.lineWidth / 2 + 2 : void 0 });
+    }
+    Jb() {
+      return this.ae.It() && null !== this.Tg && this.aS();
+    }
+    aS() {
+      const t = this.ae.N();
+      return t.lineVisible || t.pointMarkersVisible;
+    }
+  };
+  var qe = { type: "Area", isBuiltIn: true, defaultOptions: { topColor: "rgba( 46, 220, 135, 0.4)", bottomColor: "rgba( 40, 221, 100, 0)", invertFilledArea: false, relativeGradient: false, lineColor: "#33D778", lineStyle: 0, lineWidth: 3, lineType: 0, lineVisible: true, crosshairMarkerVisible: true, crosshairMarkerRadius: 4, crosshairMarkerBorderColor: "", crosshairMarkerBorderWidth: 2, crosshairMarkerBackgroundColor: "", lastPriceAnimation: 0, pointMarkersVisible: false }, mb: (t, i) => new je(t, i) };
+  var Ye = class extends R {
+    constructor() {
+      super(...arguments), this.qt = null, this.oS = 0, this._S = 0;
+    }
+    ht(t) {
+      this.qt = t;
+    }
+    et({ context: t, horizontalPixelRatio: i, verticalPixelRatio: n }) {
+      if (null === this.qt || 0 === this.qt.Un.length || null === this.qt.lt) return;
+      if (this.oS = this.uS(i), this.oS >= 2) {
+        Math.max(1, Math.floor(i)) % 2 != this.oS % 2 && this.oS--;
+      }
+      this._S = this.qt.cS ? Math.min(this.oS, Math.floor(i)) : this.oS;
+      let s = null;
+      const e2 = this._S <= this.oS && this.qt.ml >= Math.floor(1.5 * i);
+      for (let r2 = this.qt.lt.from; r2 < this.qt.lt.to; ++r2) {
+        const h2 = this.qt.Un[r2];
+        s !== h2.sh && (t.fillStyle = h2.sh, s = h2.sh);
+        const a2 = Math.floor(0.5 * this._S), l2 = Math.round(h2._t * i), o2 = l2 - a2, _2 = this._S, u2 = o2 + _2 - 1, c2 = Math.min(h2.n_, h2.s_), d2 = Math.max(h2.n_, h2.s_), f2 = Math.round(c2 * n) - a2, p2 = Math.round(d2 * n) + a2, v2 = Math.max(p2 - f2, this._S);
+        t.fillRect(o2, f2, _2, v2);
+        const m2 = Math.ceil(1.5 * this.oS);
+        if (e2) {
+          if (this.qt.dS) {
+            const i3 = l2 - m2;
+            let s3 = Math.max(f2, Math.round(h2.i_ * n) - a2), e4 = s3 + _2 - 1;
+            e4 > f2 + v2 - 1 && (e4 = f2 + v2 - 1, s3 = e4 - _2 + 1), t.fillRect(i3, s3, o2 - i3, e4 - s3 + 1);
+          }
+          const i2 = l2 + m2;
+          let s2 = Math.max(f2, Math.round(h2.e_ * n) - a2), e3 = s2 + _2 - 1;
+          e3 > f2 + v2 - 1 && (e3 = f2 + v2 - 1, s2 = e3 - _2 + 1), t.fillRect(u2 + 1, s2, i2 - u2, e3 - s2 + 1);
+        }
+      }
+    }
+    uS(t) {
+      const i = Math.floor(t);
+      return Math.max(i, Math.floor((function(t2, i2) {
+        return Math.floor(0.3 * t2 * i2);
+      })(u(this.qt).ml, t)));
+    }
+  };
   var Ke = class extends Ds {
     constructor(t, i) {
       super(t, i, false);
@@ -6804,6 +6933,19 @@ var ChartStudioV5 = (() => {
       this.kg = this.ae.Ua().Bh().map(((i) => this.Rb(i.$n, i, t)));
     }
   };
+  var Ge = class extends Ke {
+    constructor() {
+      super(...arguments), this.Vg = new Ye();
+    }
+    Rb(t, i, n) {
+      return { ...this.fS(t, i, n), ...n.Sh(t) };
+    }
+    Ng() {
+      const t = this.ae.N();
+      this.Vg.ht({ Un: this.kg, ml: this.le.Et().ml(), dS: t.openVisible, cS: t.thinBars, lt: this.Tg });
+    }
+  };
+  var Ze = { type: "Bar", isBuiltIn: true, defaultOptions: { upColor: "#26a69a", downColor: "#ef5350", openVisible: true, thinBars: true }, mb: (t, i) => new Ge(t, i) };
   var Xe = class extends R {
     constructor() {
       super(...arguments), this.qt = null, this.oS = 0;
@@ -7531,7 +7673,7 @@ var ChartStudioV5 = (() => {
 
   // src/adapter.ts
   var VERSION2 = "5.2.1";
-  var pricePresentationTypes = ["candles", "heikin", "hollow"];
+  var pricePresentationTypes = ["candles", "heikin", "hollow", "bars", "line", "area"];
   function heikinAshiCandles(bars) {
     let previousOpen = null, previousClose = null;
     return bars.map((bar) => {
@@ -9427,6 +9569,10 @@ var ChartStudioV5 = (() => {
       wickUpColor: "#1bca99",
       wickDownColor: "#f16b8d"
     });
+    const barPresentation = chart.addSeries(Ze, { upColor: "#1bca99", downColor: "#f16b8d", visible: false, thinBars: true, priceLineVisible: false });
+    const linePresentation = chart.addSeries(ye, { color: "#49c6ff", lineWidth: 2, visible: false, priceLineVisible: false, lastValueVisible: true });
+    const areaPresentation = chart.addSeries(qe, { lineColor: "#49c6ff", topColor: "rgba(73,198,255,0.35)", bottomColor: "rgba(73,198,255,0.02)", lineWidth: 2, visible: false, priceLineVisible: false, lastValueVisible: true });
+    const transparentCandle = "rgba(0,0,0,0)";
     const brokerDealPrimitive = new BrokerDealMarkersPrimitive(chart, price);
     price.attachPrimitive(brokerDealPrimitive);
     let brokerDealMarkers = [];
@@ -10178,15 +10324,29 @@ var ChartStudioV5 = (() => {
     function pricePresentationBars() {
       if (pricePresentation === "heikin") return heikinAshiCandles(bars);
       if (pricePresentation === "hollow") return hollowCandles(bars);
+      if (pricePresentation === "bars" || pricePresentation === "line" || pricePresentation === "area") return bars.map((bar) => ({ ...bar, color: transparentCandle, borderColor: transparentCandle, wickColor: transparentCandle }));
       return bars.map((bar) => ({ ...bar }));
+    }
+    function syncPresentationSeries() {
+      price.setData(pricePresentationBars());
+      barPresentation.setData(bars);
+      const closes = bars.map((bar) => ({ time: bar.time, value: bar.close }));
+      linePresentation.setData(closes);
+      areaPresentation.setData(closes);
+      barPresentation.applyOptions({ visible: pricePresentation === "bars" });
+      linePresentation.applyOptions({ visible: pricePresentation === "line" });
+      areaPresentation.applyOptions({ visible: pricePresentation === "area" });
     }
     function readPricePresentation() {
       guard();
       const displayed = pricePresentationBars();
+      const seriesData = pricePresentation === "line" || pricePresentation === "area" ? bars.map((bar) => ({ time: bar.time, value: bar.close })) : displayed.map((bar) => ({ ...bar }));
       return {
         type: pricePresentation,
         source: "CHART_FEED",
         bars: displayed.map((bar) => ({ ...bar })),
+        seriesData,
+        renderedSeries: { candles: pricePresentation === "candles" || pricePresentation === "heikin" || pricePresentation === "hollow", bars: pricePresentation === "bars", line: pricePresentation === "line", area: pricePresentation === "area" },
         styles: displayed.map((bar) => ({ bodyColor: bar.color ?? null, borderColor: bar.borderColor ?? null, wickColor: bar.wickColor ?? null }))
       };
     }
@@ -10199,7 +10359,7 @@ var ChartStudioV5 = (() => {
         storage.setItem(key, next);
       } catch (_2) {
       }
-      price.setData(pricePresentationBars());
+      syncPresentationSeries();
       return readPricePresentation();
     }
     function drawingSnapshots() {
@@ -11186,7 +11346,7 @@ var ChartStudioV5 = (() => {
         group.down.setData([]);
       }
       readoutIndicators.clear();
-      price.setData(pricePresentationBars());
+      syncPresentationSeries();
       refreshManagedMovingAverages();
       refreshDonchianOverlays();
       refreshBollingerOverlays();
@@ -13428,8 +13588,11 @@ var ChartStudioV5 = (() => {
         indicator.values.delete(c2.time);
         indicator.directions?.delete(c2.time);
       }
-      if (pricePresentation === "candles") price.update(c2);
+      if (pricePresentation === "candles" || pricePresentation === "bars" || pricePresentation === "line" || pricePresentation === "area") price.update(pricePresentationBars()[bars.length - 1]);
       else price.setData(pricePresentationBars());
+      barPresentation.update(c2);
+      linePresentation.update({ time: c2.time, value: c2.close });
+      areaPresentation.update({ time: c2.time, value: c2.close });
       if (volume) volume.update(volumeRows()[bars.length - 1]);
       for (const [id, state] of managedMovingAverages) updateManagedMovingAverage(id, state);
       refreshDonchianOverlays();
@@ -13514,7 +13677,7 @@ var ChartStudioV5 = (() => {
       pricePresentation = restorePricePresentation(next);
       bars = [];
       barsByTime.clear();
-      price.setData([]);
+      syncPresentationSeries();
       for (const item of priceLevels.values()) price.detachPrimitive(item.primitive);
       priceLevels.clear();
       for (const item of timeMarkers.values()) price.detachPrimitive(item.primitive);
