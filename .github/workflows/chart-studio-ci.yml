@@ -54,6 +54,7 @@ jobs:
           node --check static/chart-studio-beta.js
           node --check static/chart-studio-main-data-window.js
           node --check static/chart-studio-indicator-extensions.js
+          node --check scripts/smoke_live_position_order_tables.cjs
           node --check static/chart-studio-v5-indicator-feed.js
           node --check static/chart-studio-v5-oscillator-feed.js
           node scripts/smoke_chart_studio_v5_oscillator_feed.cjs
