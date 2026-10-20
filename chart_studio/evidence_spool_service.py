@@ -7,6 +7,7 @@ import asyncio
 from collections import deque
 from contextlib import contextmanager
 import hashlib
+import heapq
 import json
 import os
 from pathlib import Path
@@ -501,8 +502,8 @@ class SpoolFileConsumer:
         self._temporary_scan_at = now
         counts = {producer: {'count': 0, 'bytes': 0, 'oldest': None, 'newest': None}
                   for producer in self.producers}
-        current_signatures={producer:{} for producer in self.producers}
-        stable={producer:[] for producer in self.producers}
+        candidate_heaps={producer:[] for producer in self.producers}
+        candidate_limit=max(1,MAX_STABLE_TEMPORARY_CANDIDATES + MAX_TEMPORARY_RECORDS_PER_POLL)
         try:
             with os.scandir(self.root) as entries:
                 for entry in entries:
@@ -517,9 +518,13 @@ class SpoolFileConsumer:
                         producer=match.group(1);sequence=int(match.group(2))
                         signature=(int(self._temporary_device),int(entry.inode()),int(metadata.st_size),
                                    int(getattr(metadata,'st_mtime_ns',metadata.st_mtime*1_000_000_000)))
-                        if self._temporary_signatures[producer].get(sequence)==signature:
-                            stable[producer].append((sequence,Path(entry.path),signature))
-                        current_signatures[producer][sequence]=signature
+                        unchanged=self._temporary_signatures[producer].get(sequence)==signature
+                        heap=candidate_heaps[producer]
+                        candidate=(-sequence,sequence,entry.path,signature,unchanged)
+                        if len(heap)<candidate_limit:
+                            heapq.heappush(heap,candidate)
+                        elif sequence<heap[0][1]:
+                            heapq.heapreplace(heap,candidate)
                         values = counts[producer]
                         values['count'] += 1
                         values['bytes'] += max(0, metadata.st_size)
@@ -528,11 +533,15 @@ class SpoolFileConsumer:
                         values['newest'] = mtime if values['newest'] is None else max(values['newest'], mtime)
         except OSError:
             return
-        self._temporary_signatures=current_signatures
-        self._stable_temporary_files={
-            producer:deque(sorted(rows,key=lambda row:row[0])[:MAX_STABLE_TEMPORARY_CANDIDATES])
-            for producer,rows in stable.items()
-        }
+        self._temporary_signatures={}
+        self._stable_temporary_files={}
+        for producer,heap in candidate_heaps.items():
+            selected=sorted(heap,key=lambda row:row[1])
+            self._temporary_signatures[producer]={sequence:signature for _,sequence,_path,signature,_ in selected}
+            self._stable_temporary_files[producer]=deque(
+                (sequence,Path(path),signature)
+                for _,sequence,path,signature,unchanged in selected[:MAX_STABLE_TEMPORARY_CANDIDATES]
+                if unchanged)
         def as_utc(value):
             if value is None:
                 return None

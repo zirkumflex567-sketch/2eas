@@ -362,6 +362,28 @@ def test_temporary_segment_scan_is_throttled(private_root, spool_root):
     assert refreshed['temporaryFileCount'] == 1
 
 
+def test_temporary_segment_index_retains_only_oldest_bounded_candidates(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    service = consumer(store, spool_root)
+    monkeypatch.setattr(spool_service, 'MAX_STABLE_TEMPORARY_CANDIDATES', 3)
+    clock = [100.0]
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    paths = []
+    for sequence in range(1, 8):
+        path = spool_root / f'titan_demo.{sequence}.tmp.ndjson'
+        write_private(path, b'pending')
+        paths.append(path)
+
+    service._scan_temporary_segments()
+    assert len(service._temporary_signatures['titan_demo']) <= 3 + spool_service.MAX_TEMPORARY_RECORDS_PER_POLL
+    assert service._temporary_backlog['titan_demo']['temporaryFileCount'] == 7
+
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+    service._scan_temporary_segments()
+    assert [sequence for sequence, _path, _signature in service._stable_temporary_files['titan_demo']] == [1, 2, 3]
+    assert all(path.exists() for path in paths)
+
+
 def write_private(path, data):
     path.write_bytes(data)
     if os.name == 'posix': path.chmod(0o600)
