@@ -42,13 +42,13 @@ def _cursor_failure_category(error):
 
 
 def _replace_cursor_with_retry(source, destination):
-    """Retry only brief Windows sharing locks around the atomic cursor swap."""
+    """Retry brief Windows access or sharing denials around the atomic cursor swap."""
     for attempt in range(len(_CURSOR_REPLACE_RETRY_DELAYS) + 1):
         try:
             os.replace(source, destination)
             return
         except OSError as exc:
-            if getattr(exc, 'winerror', None) not in (32, 33) or attempt == len(_CURSOR_REPLACE_RETRY_DELAYS):
+            if getattr(exc, 'winerror', None) not in (5, 32, 33) or attempt == len(_CURSOR_REPLACE_RETRY_DELAYS):
                 raise
             time.sleep(_CURSOR_REPLACE_RETRY_DELAYS[attempt])
 

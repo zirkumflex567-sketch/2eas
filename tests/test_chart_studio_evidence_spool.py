@@ -164,7 +164,8 @@ def test_spool_import_fails_closed_after_ambiguous_cursor_write():
     assert store.calls == []
 
 
-def test_spool_import_retries_transient_windows_cursor_replace_lock(private_root, monkeypatch):
+@pytest.mark.parametrize('winerror', [5, 32])
+def test_spool_import_retries_transient_windows_cursor_replace_denial(private_root, monkeypatch, winerror):
     store = evidence_store(private_root)
     importer = SpoolImporter(store, account_id='titan', producer_id='titan_demo')
     real_replace = evidence_spool_module.os.replace
@@ -175,7 +176,7 @@ def test_spool_import_retries_transient_windows_cursor_replace_lock(private_root
             attempts.append(destination)
             if len(attempts) <= 4:
                 error = PermissionError('sharing violation')
-                error.winerror = 32
+                error.winerror = winerror
                 raise error
         return real_replace(source, destination)
 
