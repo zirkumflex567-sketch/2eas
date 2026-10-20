@@ -30,4 +30,11 @@ Add real, isolated Lightweight Charts 5.2.1 drawing primitives to the migration 
 
 ## Acceptance still required
 
-Multi-select, keyboard movement, full-layout schema migration/merge, full layout transfer, additional drawing types, touch/DPI acceptance, full drawing catalog and production v5 parity require separate slices and full acceptance tests. Persistent scoped v5 undo/redo is covered by the FR-009 plan.
+- [x] Multi-select through the native selection API and object manager, including toggling membership, group visibility/locking, and selected-object operations; `node scripts/smoke_chart_studio_v5.cjs` passed on 20.10.2026.
+- [x] Keyboard movement for mixed, multi-anchor selections: arrow keys move one loaded candle or one price-axis pixel, Shift applies the larger step, and locked/out-of-range/history-cap failures reject the whole group without partial mutation. Undo/redo and composite-anchor invariants are covered by the same Chromium smoke.
+- [x] Native rectangle and ellipse placement, editing, selection, persistence, transfer and undo/redo are covered by the fixture; ellipse also passed the separate five-demo live-candle smoke on 20.10.2026.
+- [ ] Complete full-layout schema migration/merge and full transfer parity against the production Beta.
+- [ ] Finish the remaining drawing catalog and indicator/style parity; keep unverified tools/series explicitly unavailable.
+- [ ] Run physical touch, Windows DPI/scaling, hardware, full-screen and production-v5 parity acceptance. V4 remains the production renderer until these gates pass.
+
+The isolated capacity contract in the same smoke loaded 5,000 bars, 20 indicator instances and 1,000 drawings; it preserved all 1,000 after reload and enforced its configured limits. Persistent scoped v5 undo/redo is also covered by the [FR-009 plan](2026-10-14-fr009-v5-persistent-undo-history.md). These fixture/contract results do not substitute for hardware acceptance.
