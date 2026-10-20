@@ -1,5 +1,6 @@
 """Opt-in, read-only capture of verified MT5 deal facts for demo accounts."""
 import asyncio
+import copy
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
@@ -20,6 +21,7 @@ PAGE_SIZE = 500
 MAX_PAGES_PER_ACCOUNT = 100
 MONEY_QUANTUM = Decimal('0.000000000001')
 SNAPSHOT_MAX_BARS = 150
+DECISION_LOOKBACK_SECONDS = 48 * 60 * 60
 TIMEFRAME_SECONDS = {'M1':60, 'M5':300, 'M15':900, 'M30':1800, 'H1':3600, 'H4':14400,
                      'D1':86400, 'W1':604800}
 
@@ -64,7 +66,8 @@ def trade_snapshot_id(context, row):
     return 'snap_' + identity
 
 
-def trade_snapshot_envelope(context, row, raw_bars, *, captured_at_utc, timeframe, digits):
+def trade_snapshot_envelope(context, row, raw_bars, *, captured_at_utc, timeframe, digits,
+                            decision_event_ids=None):
     """Freeze completed MT5 bars for a verified entry/exit deal."""
     if not isinstance(context, models.AccountContext) or type(row) is not dict:
         raise ValueError('invalid snapshot source')
@@ -110,7 +113,7 @@ def trade_snapshot_envelope(context, row, raw_bars, *, captured_at_utc, timefram
         marketDataRef=dict(id=market_ref_id,sourceType='MARKET_BAR',accountId=context.account_id,
             brokerServer=context.broker_server,symbol=row['symbol'],eventTimeUtc=normalized[-1]['timeUtc'],
             recordedAtUtc=captured,sourceRevision=digest,confidenceKind='OBSERVED'),
-        indicatorInstanceRevisions=[],decisionEventIds=[],lifecycleEventIds=[dict(type='LIFECYCLE',
+        indicatorInstanceRevisions=[],decisionEventIds=list(decision_event_ids or []),lifecycleEventIds=[dict(type='LIFECYCLE',
             id='mt5_deal_'+models.ticket(row['ticket']),dataRevision=1)],renderStatus='DATA_ONLY',renderAssetRef=None,
         createdAtUtc=captured,marketData=dict(source='MT5_COMPLETED_BARS',bars=normalized,sha256=digest))
     envelope = dict(schemaVersion=1,type='SNAPSHOT',id=body['snapshotId'],accountId=context.account_id,
@@ -148,6 +151,84 @@ def _deal_time(value):
     seconds, milliseconds = divmod(value, 1000)
     return models.utc_timestamp((datetime.fromtimestamp(seconds, timezone.utc) +
                                  timedelta(milliseconds=milliseconds)).isoformat(timespec='microseconds'))
+
+
+def _exact_decision_refs(context, deal_row, records, *, has_more, fill_utc):
+    """Return one unambiguous recorded decision bound to this exact broker deal."""
+    if has_more or not isinstance(records, list):
+        return []
+    fill_us = models.utc_microseconds(fill_utc)
+    start_us = fill_us - DECISION_LOOKBACK_SECONDS * 1_000_000
+    deal_ticket = models.ticket(deal_row['ticket'])
+    position_ticket = models.ticket(deal_row['positionIdentifier'])
+    latest_by_id = {}
+    for record in records:
+        if (not isinstance(record, dict) or record.get('type') != 'DECISION' or
+                not isinstance(record.get('id'), str) or not isinstance(record.get('dataRevision'), int)):
+            continue
+        prior = latest_by_id.get(record['id'])
+        if prior is None or record['dataRevision'] > prior['dataRevision']:
+            latest_by_id[record['id']] = record
+    matching = {}
+    for record in latest_by_id.values():
+        payload = record.get('payload')
+        if not isinstance(payload, dict):
+            continue
+        try:
+            decision_us = models.utc_microseconds(payload['decisionTimeUtc'])
+            revision = record['dataRevision']
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not isinstance(revision, int) or decision_us < start_us or decision_us > fill_us:
+            continue
+        tickets_match = False
+        if payload.get('stage') == 'BROKER_RESULT':
+            try:
+                tickets_match = (models.ticket(payload['brokerDealTicket']) == deal_ticket and
+                                 models.ticket(payload['brokerPositionTicket']) == position_ticket)
+            except (KeyError, TypeError, ValueError):
+                tickets_match = False
+        elif payload.get('stage') == 'ORDER_ATTEMPT' and payload.get('outcome') == 'PASS':
+            attempt = payload.get('orderAttempt')
+            try:
+                order_ticket = models.ticket(deal_row['orderTicket'])
+                tickets_match = (models.ticket(payload['brokerTicket']) == order_ticket and
+                                 isinstance(attempt, dict) and
+                                 models.ticket(attempt['brokerTicket']) == order_ticket and
+                                 models.utc_microseconds(attempt['requestTimeUtc']) <= fill_us and
+                                 models.utc_microseconds(attempt['ackTimeUtc']) <= fill_us)
+            except (KeyError, TypeError, ValueError):
+                tickets_match = False
+        if (payload.get('accountId') != context.account_id or
+                payload.get('terminalIdentityHash') != context.terminal_identity_hash or
+                payload.get('stage') not in ('BROKER_RESULT', 'ORDER_ATTEMPT') or
+                payload.get('symbol') != deal_row['symbol'] or
+                payload.get('timeframe') != deal_row.get('timeframe', 'M15') or not tickets_match):
+            continue
+        matching[record['id']] = record
+    if len(matching) != 1:
+        return []
+    record = next(iter(matching.values()))
+    return [dict(type='DECISION', id=record['id'], dataRevision=record['dataRevision'])]
+
+
+def _snapshot_revision_with_decisions(context, record, decision_refs, captured_at):
+    """Append only decision references while preserving all frozen snapshot facts."""
+    payload = record.get('payload')
+    if not isinstance(payload, dict):
+        raise ValueError('invalid existing snapshot payload')
+    prior_refs = payload.get('decisionEventIds', [])
+    merged = {(ref['id'], ref['dataRevision']): ref for ref in prior_refs}
+    merged.update({(ref['id'], ref['dataRevision']): ref for ref in decision_refs})
+    if len(merged) == len(prior_refs):
+        return None
+    revised = copy.deepcopy(record)
+    revised['dataRevision'] = record['dataRevision'] + 1
+    revised['supersedes'] = dict(type='SNAPSHOT', id=record['id'],
+        dataRevision=record['dataRevision'])
+    revised['payload']['decisionEventIds'] = list(merged.values())
+    revised['payload']['createdAtUtc'] = captured_at
+    return models.validate_envelope(revised, context=context)
 
 
 def _money_string(value):
@@ -338,11 +419,24 @@ class DemoBrokerLifecycleCapture:
                         record = existing_rows[0]
                         if (len(existing_rows) != 1 or not isinstance(record, dict) or
                                 record.get('type') != 'SNAPSHOT' or record.get('id') != snapshot_id or
-                                record.get('accountId') != account or record.get('dataRevision') != 1):
+                                record.get('accountId') != account or not isinstance(record.get('dataRevision'), int)):
                             raise ValueError('invalid existing snapshot record')
+                        decision_refs = self._decision_refs_for_deal(context, deal_row, spec)
+                        revised = _snapshot_revision_with_decisions(context, record, decision_refs, captured_at)
+                        if revised is not None:
+                            outcome = self.store.append(context, revised)
+                            if outcome.get('ok') is True and outcome.get('code') == 'APPENDED':
+                                aggregate['snapshotsAppended'] += 1
+                            elif outcome.get('ok') is not True:
+                                aggregate['snapshotStoreLostCount'] += max(1, outcome.get('lostCount', 0))
+                                aggregate['snapshotCoverage'] = 'UNKNOWN'
+                            else:
+                                aggregate['snapshotDuplicates'] += 1
+                            continue
                         aggregate['snapshotDuplicates'] += 1
                         continue
-                    snapshot = self._snapshot_for_deal(account, deal_row, captured_at, spec)
+                    decision_refs = self._decision_refs_for_deal(context, deal_row, spec)
+                    snapshot = self._snapshot_for_deal(account, deal_row, captured_at, spec, decision_refs)
                     outcome = self.store.append(context, snapshot)
                     if outcome.get('ok') is not True:
                         aggregate['snapshotStoreLostCount'] += max(1, outcome.get('lostCount', 0))
@@ -368,7 +462,29 @@ class DemoBrokerLifecycleCapture:
         self._gap_observed[account] = True
         return aggregate
 
-    def _snapshot_for_deal(self, account, row, captured_at, spec):
+    def _decision_refs_for_deal(self, context, row, spec):
+        fill_utc = _deal_time(row['fillTime']['utcEpochMs'])
+        fill_us = models.utc_microseconds(fill_utc)
+        result = self.store.read(context, kind='DECISION',
+            start=max(0, fill_us - DECISION_LOOKBACK_SECONDS * 1_000_000), end=fill_us,
+            filters={'symbol': row['symbol']}, limit=500)
+        if not isinstance(result, dict):
+            return []
+        records = result.get('records')
+        if result.get('hasMore') is True or not isinstance(records, list):
+            return []
+        latest = []
+        for event_id in dict.fromkeys(item.get('id') for item in records
+                                      if isinstance(item, dict) and item.get('type') == 'DECISION'
+                                      and isinstance(item.get('id'), str)):
+            current = self.store.read(context, kind='DECISION', record_id=event_id)
+            current_rows = current.get('records') if isinstance(current, dict) else None
+            if not isinstance(current_rows, list) or len(current_rows) != 1:
+                return []
+            latest.append(current_rows[0])
+        return _exact_decision_refs(context, row, latest, has_more=False, fill_utc=fill_utc)
+
+    def _snapshot_for_deal(self, account, row, captured_at, spec, decision_refs=None):
         timeframe = spec.get('timeframe', 'M15')
         seconds = TIMEFRAME_SECONDS.get(timeframe)
         reader = getattr(self.mt5, 'copy_rates_range', None)
@@ -392,7 +508,8 @@ class DemoBrokerLifecycleCapture:
         if raw is None:
             raise ValueError('broker bar history unavailable')
         return trade_snapshot_envelope(models.AccountContext.from_config(account),row,list(raw),
-            captured_at_utc=captured_at,timeframe=timeframe,digits=digits)
+            captured_at_utc=captured_at,timeframe=timeframe,digits=digits,
+            decision_event_ids=decision_refs)
 
 
 async def run_demo_broker_lifecycle_capture(app, service, *, interval=POLL_SECONDS, poll=asyncio.to_thread):

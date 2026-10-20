@@ -107,6 +107,143 @@ def test_trade_snapshot_normalizes_explicit_broker_server_bar_times(monkeypatch)
         '2026-10-15T17:45:00.000000Z','2026-10-15T18:00:00.000000Z']
 
 
+def test_exact_decision_link_requires_unique_broker_result_with_deal_and_position_tickets():
+    service = api()
+    fill = '2026-10-15T18:15:00.000000Z'
+    ctx = context()
+    def event(event_id, **updates):
+        payload = dict(eventId=event_id, decisionTimeUtc='2026-10-15T18:14:00.000000Z',
+            stage='BROKER_RESULT', symbol='XAUUSD', timeframe='M15',
+            brokerDealTicket='8712345', brokerPositionTicket='8712300',
+            accountId=ctx.account_id, terminalIdentityHash=ctx.terminal_identity_hash)
+        payload.update(updates)
+        return dict(type='DECISION', id=event_id, dataRevision=1, payload=payload)
+    assert service._exact_decision_refs(ctx, deal(), [event('decision-1')],
+        has_more=False, fill_utc=fill) == [dict(type='DECISION', id='decision-1', dataRevision=1)]
+    order_attempt = event('titan_order_attempt', stage='ORDER_ATTEMPT', outcome='PASS',
+        brokerTicket='8712344', orderAttempt=dict(brokerTicket='8712344',
+            requestTimeUtc='2026-10-15T18:14:00.000000Z', ackTimeUtc='2026-10-15T18:14:01.000000Z'))
+    assert service._exact_decision_refs(ctx, deal(), [order_attempt],
+        has_more=False, fill_utc=fill) == [dict(type='DECISION', id='titan_order_attempt', dataRevision=1)]
+    assert service._exact_decision_refs(ctx, deal(), [event('wrong-order', stage='ORDER_ATTEMPT',
+        outcome='PASS', brokerTicket='7', orderAttempt=dict(brokerTicket='7',
+            requestTimeUtc='2026-10-15T18:14:00.000000Z', ackTimeUtc='2026-10-15T18:14:01.000000Z'))],
+        has_more=False, fill_utc=fill) == []
+    wrong = [event('wrong-deal', brokerDealTicket='9'),
+             event('wrong-position', brokerPositionTicket='9'),
+             event('wrong-symbol', symbol='EURUSD'),
+             event('wrong-timeframe', timeframe='M5'),
+             event('wrong-stage', stage='ORDER_ATTEMPT'),
+             event('after-fill', decisionTimeUtc='2026-10-15T18:16:00.000000Z')]
+    assert service._exact_decision_refs(ctx, deal(), wrong,
+        has_more=False, fill_utc=fill) == []
+    assert service._exact_decision_refs(ctx, deal(), [event('one'), event('two')],
+        has_more=False, fill_utc=fill) == []
+    corrected = event('corrected', brokerDealTicket='9')
+    corrected_v2 = copy.deepcopy(corrected); corrected_v2['dataRevision'] = 2
+    corrected_v2['payload']['brokerDealTicket'] = '8712345'
+    assert service._exact_decision_refs(ctx, deal(), [corrected, corrected_v2],
+        has_more=False, fill_utc=fill) == [dict(type='DECISION', id='corrected', dataRevision=2)]
+    invalidated_v2 = copy.deepcopy(event('invalidated')); invalidated_v2['dataRevision'] = 2
+    invalidated_v2['payload']['stage'] = 'ORDER_ATTEMPT'
+    assert service._exact_decision_refs(ctx, deal(), [event('invalidated'), invalidated_v2],
+        has_more=False, fill_utc=fill) == []
+    assert service._exact_decision_refs(ctx, deal(), [event('only')],
+        has_more=True, fill_utc=fill) == []
+
+
+def test_late_decision_adds_immutable_snapshot_revision_and_is_idempotent():
+    service = api(); asof = deal()['fillTime']['utcEpochMs'] // 1000
+    bars = [dict(time=asof-1800,open=4150.,high=4155.,low=4149.,close=4151.,
+                 tick_volume=10,spread=18,real_volume=0)]
+    original = service.trade_snapshot_envelope(context(), deal(), bars,
+        captured_at_utc='2026-10-15T18:16:00Z', timeframe='M15', digits=2)
+    ref = dict(type='DECISION', id='decision_late', dataRevision=1)
+    revised = service._snapshot_revision_with_decisions(context(), original, [ref],
+        '2026-10-15T18:17:00Z')
+    assert revised['dataRevision'] == 2
+    assert revised['supersedes'] == dict(type='SNAPSHOT', id=original['id'], dataRevision=1)
+    assert revised['payload']['decisionEventIds'] == [ref]
+    assert revised['payload']['asOfUtc'] == original['payload']['asOfUtc']
+    assert revised['payload']['marketData'] == original['payload']['marketData']
+    assert original['payload']['decisionEventIds'] == []
+    assert service._snapshot_revision_with_decisions(context(), revised, [ref],
+        '2026-10-15T18:18:00Z') is None
+
+
+def test_poller_appends_late_decision_as_snapshot_revision_once(monkeypatch):
+    from contextlib import contextmanager
+    service=api(); ctx=context(); spec=importlib.import_module('account_gateway').ACCOUNTS['titan']
+    asof=deal()['fillTime']['utcEpochMs']//1000
+    class Store:
+        root=Path('private')
+        def __init__(self): self.records={}
+        def append(self,_ctx,envelope):
+            key=(envelope['type'],envelope['id']); rows=self.records.setdefault(key,[])
+            if rows and envelope['dataRevision']==rows[-1]['dataRevision']:
+                return {'ok':True,'code':'IDEMPOTENT','lostCount':0}
+            if rows and (envelope['dataRevision']!=rows[-1]['dataRevision']+1 or
+                         envelope['supersedes']!=dict(type=envelope['type'],id=envelope['id'],
+                                                       dataRevision=rows[-1]['dataRevision'])):
+                return {'ok':False,'code':'CONFLICT','lostCount':1}
+            rows.append(copy.deepcopy(envelope))
+            return {'ok':True,'code':'APPENDED','lostCount':0}
+        def read(self,_ctx,*,kind,record_id=None,start=None,end=None,filters=None,limit=200):
+            if record_id is not None:
+                rows=self.records.get((kind,record_id),[])
+                return {'records':[rows[-1]] if rows else [],'hasMore':False}
+            rows=[row for (record_kind,_),versions in self.records.items() if record_kind==kind
+                  for row in versions]
+            if filters and 'symbol' in filters:
+                rows=[row for row in rows if row['payload'].get('symbol')==filters['symbol']]
+            if start is not None:
+                rows=[row for row in rows if start<=importlib.import_module('chart_studio.evidence_models').event_metadata(row,context=_ctx)['eventTimeUs']<=end]
+            return {'records':rows[:limit],'hasMore':len(rows)>limit}
+    class MT5:
+        TIMEFRAME_M15=15
+        def symbol_info(self,symbol): return type('Info',(),{'name':symbol,'digits':2})()
+        def copy_rates_range(self,*_args):
+            return [dict(time=asof-1800,open=4150.,high=4155.,low=4149.,close=4151.,
+                         tick_volume=10,spread=18,real_volume=0)]
+        def order_send(self,*_args,**_kwargs): raise AssertionError('broker mutation called')
+    @contextmanager
+    def verified(_mt5,_account): yield spec
+    monkeypatch.setattr(service.gateway,'traced_session',verified)
+    monkeypatch.setattr(service.broker_reads,'trades_read',lambda *_a,**_k:{'trades':[deal()],'nextCursor':None})
+    store=Store(); times=iter((1792088160.,1792088170.,1792088180.))
+    poller=service.DemoBrokerLifecycleCapture(store,MT5(),['titan'],clock=lambda:next(times))
+    first=poller.poll_once()['titan']
+    snapshot_id=next(key[1] for key in store.records if key[0]=='SNAPSHOT')
+    revision_one=copy.deepcopy(store.records[('SNAPSHOT',snapshot_id)][0])
+    decision_time='2026-10-15T18:14:00.000000Z'
+    payload=dict(eventId='late_decision',accountId=ctx.account_id,
+        terminalIdentityHash=ctx.terminal_identity_hash,symbol='XAUUSD',strategyId='strategy',
+        strategyVersion='v1',parameterSetHash='a'*64,decisionTimeUtc=decision_time,
+        evaluatedBarCloseUtc='2026-10-15T18:00:00.000000Z',timeframe='M15',barIsClosed=True,
+        featureVector=[],predicates=[],stage='ORDER_ATTEMPT',outcome='PASS',dataProvenance='recorded',
+        dataRevision=1,capturedAtUtc='2026-10-15T18:14:01.000000Z',correlationId='corr',
+        orderAttemptId='attempt_1',brokerTicket='8712344',orderAttempt=dict(
+            brokerTicket='8712344',brokerRetcode=10009,ackTimeUtc='2026-10-15T18:14:01.000000Z',
+            sessionId='session_1',orderAttemptId='attempt_1',side='BUY',intendedPrice='4153.92',
+            requestedVolume='0.1',requestTimeUtc=decision_time,
+            quoteSnapshot=dict(symbol='XAUUSD',bid='4153.90',ask='4153.92',tickSize='0.01',
+                tickValuePerLot='1',currency='USD',quoteTimeUtc='2026-10-15T18:13:59.000000Z',
+                source='MT5_VERIFIED',canExecute=False)))
+    decision=dict(schemaVersion=1,type='DECISION',id='late_decision',accountId=ctx.account_id,
+        brokerServer=ctx.broker_server,terminalIdentityHash=ctx.terminal_identity_hash,
+        dataRevision=1,provenance='RECORDED',supersedes=None,payload=payload)
+    decision=importlib.import_module('chart_studio.evidence_models').validate_envelope(decision,context=ctx)
+    assert store.append(ctx,decision)['code']=='APPENDED'
+    second=poller.poll_once()['titan']; third=poller.poll_once()['titan']
+    versions=store.records[('SNAPSHOT',snapshot_id)]
+    assert first['snapshotsAppended']==1 and second['snapshotsAppended']==1
+    assert third['snapshotDuplicates']==1 and len(versions)==2
+    assert versions[0]==revision_one and versions[1]['supersedes']['dataRevision']==1
+    assert versions[1]['payload']['decisionEventIds']==[
+        dict(type='DECISION',id='late_decision',dataRevision=1)]
+    assert versions[1]['payload']['marketData']==revision_one['payload']['marketData']
+
+
 def test_demo_poll_persists_entry_snapshot_without_browser_and_retries_idempotently(monkeypatch):
     from contextlib import contextmanager
     service=api(); spec=importlib.import_module('account_gateway').ACCOUNTS['titan']; asof=deal()['fillTime']['utcEpochMs']//1000
@@ -121,10 +258,14 @@ def test_demo_poll_persists_entry_snapshot_without_browser_and_retries_idempoten
             duplicate=existing is not None
             self.records[key]=envelope
             return {'ok':True,'code':'IDEMPOTENT' if duplicate else 'APPENDED','lostCount':0}
-        def read(self,ctx,*,kind,record_id):
-            row=self.records.get((kind,record_id))
-            return {'records':[row] if row else [],'availability':'RECORDED' if row else 'NOT_RECORDED',
-                    'storeState':'INITIALIZED'}
+        def read(self,ctx,*,kind,record_id=None,start=None,end=None,filters=None,limit=200):
+            if record_id is not None:
+                row=self.records.get((kind,record_id))
+                rows=[row] if row else []
+            else:
+                rows=[row for (row_kind,_),row in self.records.items() if row_kind==kind]
+            return {'records':rows,'hasMore':False,
+                    'availability':'RECORDED' if rows else 'NOT_RECORDED','storeState':'INITIALIZED'}
     class MT5:
         TIMEFRAME_M15=15
         def __init__(self): self.bar_reads=0
