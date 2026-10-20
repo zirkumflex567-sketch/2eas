@@ -291,6 +291,7 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
         fibStatus="UNAVAILABLE_NO_POST_CONFIRMATION_CANDLES";
       }
       await page.locator("#chart-v5-auto-fib-btn").click();
+      await page.waitForFunction(() => document.querySelector("#chart-v5-auto-fib-btn")?.getAttribute("aria-pressed") === "false");
       assert.equal(await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci()), null);
       preview = "PASSED";
       results.push({ account, symbol: api.symbol, timeframe: api.timeframe, renderedBars: rendered.length,

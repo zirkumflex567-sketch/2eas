@@ -238,7 +238,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   const captureStatusText=await page.locator("#cs-evidence-capture-status-result").textContent();
   assert.match(captureStatusText,/Decision-Recorder: IMPORTED · Spool-Wiederherstellung/);
   assert.match(captureStatusText,/123 Temp-Dateien \/ 1\.0 MiB zur Prüfung/);
-  assert.match(captureStatusText,/12 neue Imports · 1\.350 Duplikate gesamt \(50 zuletzt\) · RECORDED/);
+  assert.match(captureStatusText,/12 neue Imports · 1\.350 Duplikate seit Start \(50 zuletzt\) · RECORDED/);
   assert.match(captureStatusText,/Lifecycle: OK · ROLLING_WINDOW · 0 neue/);
   assert.deepEqual(captureStatusRequests,[{path:"/api/chart/v1/decisions/capture/status",method:"GET",account:"titan"},{path:"/api/chart/v1/lifecycle/capture/status",method:"GET",account:"titan"}]);
   await page.evaluate(()=>ChartStudioBeta.account("xau5m_500"));

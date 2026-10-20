@@ -599,7 +599,7 @@ function captureStatusLine(kind,body,account){
   const detail=code==="IDLE"?(temporaryFileCount>0?"Spool-Rückstand · zur Prüfung":"aktiv, wartet auf neue Events"):code==="IMPORTED"?(temporaryFileCount>0?"Spool-Wiederherstellung":"Events verarbeitet"):code==="NOT_CONFIGURED"?"keine EA-Source eingebunden":code==="NOT_STARTED"?"Service nicht gestartet":code==="RECORDED"?"Events verarbeitet":code;
   const temporaryRange=oldestMtime&&newestMtime?" · Änderungszeit UTC "+oldestMtime.slice(0,16).replace("T"," ")+" bis "+newestMtime.slice(0,16).replace("T"," "):"";
   const temporary=temporaryFileCount?" · "+temporaryFileCount+" Temp-Dateien / "+(temporaryBytes/1048576).toFixed(1)+" MiB zur Prüfung"+temporaryRange:"";
-  return "Decision-Recorder: "+code+" · "+detail+temporary+" · "+state.importedTotal+" neue Imports · "+duplicatesTotal.toLocaleString("de-DE")+" Duplikate gesamt ("+duplicates.toLocaleString("de-DE")+" zuletzt) · "+state.recordingState+" · Lücken "+state.gapCount+" / Store-Verluste "+state.storeLostCount;
+  return "Decision-Recorder: "+code+" · "+detail+temporary+" · "+state.importedTotal+" neue Imports · "+duplicatesTotal.toLocaleString("de-DE")+" Duplikate seit Start ("+duplicates.toLocaleString("de-DE")+" zuletzt) · "+state.recordingState+" · Lücken "+state.gapCount+" / Store-Verluste "+state.storeLostCount;
  }
  const coverage=typeof state.coverage==="string"&&/^[A-Z][A-Z0-9_]{0,63}$/.test(state.coverage)?state.coverage:"UNKNOWN";
  if(code==="NOT_STARTED")return "Lifecycle: NOT_STARTED · "+coverage;
