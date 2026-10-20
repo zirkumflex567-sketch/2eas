@@ -88,6 +88,8 @@ def test_goldm15_record_only_variant_suppresses_every_trade_write_but_keeps_capt
     assert 'CSSuppressBrokerWrite(side==1 ? "Buy" : "Sell")' in generated
     assert "RECORD-ONLY: suppressed broker write operation=%s reason=RECORD_ONLY_SUPPRESSED" in generated
     assert 'CS_EVIDENCE_PRODUCER_ID "goldm15_demo_recordonly"' in generated
+    assert 'RECORD_ONLY_SUPPRESSED' in generated
+    assert '"BROKER_REJECTED"' not in generated
     assert 'CSEnqueueDecision("SIGNAL",cs_outcome,cs_bar,cs_features,cs_predicates);' in generated
     assert 'RECORD_ONLY_SUPPRESSED' in generated + generated_risk
 

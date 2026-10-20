@@ -163,6 +163,14 @@ def _instrument_risk_helper(source_text: str, *, record_only: bool = False) -> s
         raise ValueError("expected unique GoldM15 risk close request")
     source_text = source_text.replace(close_anchor, close_capture, 1)
     if record_only:
+        source_text = source_text.replace("uint cs_cancel_retcode=closer.ResultRetcode();", "uint cs_cancel_retcode=0;", 1)
+        source_text = source_text.replace('CSFeature("broker_retcode",CSNumber((double)cs_cancel_retcode,0),"code","M15")+', "", 1)
+        source_text = source_text.replace("cs_cancel_outcome,reason);", 'cs_cancel_outcome,"RECORD_ONLY_SUPPRESSED");', 1)
+        source_text = source_text.replace(
+            '         if(!cs_cancelled || !GoldAcceptedResult(cs_cancel_retcode))\n            PrintFormat("RISK cancel retry %I64u: %u",ticket,cs_cancel_retcode);\n',
+            "",
+            1,
+        )
         source_text = source_text.replace("closer.OrderDelete(ticket)", 'CSSuppressBrokerWrite("OrderDelete")')
         source_text = source_text.replace("closer.PositionClose(ticket)", 'CSSuppressBrokerWrite("PositionClose")')
     return source_text
@@ -328,11 +336,15 @@ def _instrument_source(source_text: str, *, account_alias: str, producer: str,
         raise ValueError("expected unique GoldM15 market-order submission")
     source_text = source_text.replace(order_anchor, order_capture, 1)
     if record_only:
+        source_text = source_text.replace("uint cs_retcode=trade.ResultRetcode();", "uint cs_retcode=0;", 1)
+        source_text = source_text.replace('cs_accepted ? "BROKER_ACCEPTED" : "BROKER_REJECTED"',
+                                          'cs_accepted ? "BROKER_ACCEPTED" : "RECORD_ONLY_SUPPRESSED"', 1)
         source_text = source_text.replace(
             "bool sent=side==1 ? trade.Buy(lots,_Symbol,0.0,NormalizeDouble(stop,_Digits),0.0,comment)\n                       : trade.Sell(lots,_Symbol,0.0,NormalizeDouble(stop,_Digits),0.0,comment);",
             'bool sent=CSSuppressBrokerWrite(side==1 ? "Buy" : "Sell");',
             1,
         )
+        source_text = source_text.replace("uint result=trade.ResultRetcode();", "uint result=0;", 1)
 
     close_anchor = """         last_attempt[i]=TimeCurrent();
          bool closed=trade.PositionClose(ticket);
@@ -391,6 +403,10 @@ def _instrument_source(source_text: str, *, account_alias: str, producer: str,
         raise ValueError("expected unique GoldM15 strategy position-close call")
     source_text = source_text.replace(close_anchor, close_capture, 1)
     if record_only:
+        source_text = source_text.replace("uint cs_close_retcode=trade.ResultRetcode();", "uint cs_close_retcode=0;", 1)
+        source_text = source_text.replace('cs_close_accepted ? "BROKER_ACCEPTED" : "BROKER_REJECTED"',
+                                          'cs_close_accepted ? "BROKER_ACCEPTED" : "RECORD_ONLY_SUPPRESSED"', 1)
+        source_text = source_text.replace("uint close_result=trade.ResultRetcode();", "uint close_result=0;", 1)
         source_text = source_text.replace(
             "         bool closed=trade.PositionClose(ticket);",
             '         Print("RECORD-ONLY: suppressed broker write operation=PositionClose reason=RECORD_ONLY_SUPPRESSED");\n         bool closed=false;',
@@ -583,6 +599,11 @@ void CSCaptureGoldRiskCloseAttempt(const string reason,const ulong ticket,const 
   }
 
 '''
+    if record_only:
+        risk_capture_handler = risk_capture_handler.replace(
+            'CSPredicate("risk_guard_close",CSBoolNumber(accepted),"EQ","1",outcome,reason)',
+            'CSPredicate("risk_guard_close",CSBoolNumber(accepted),"EQ","1",outcome,"RECORD_ONLY_SUPPRESSED")',
+        )
     source_text = source_text.replace(timer_anchor, event_handlers + risk_capture_handler + timer_anchor, 1)
     return source_text
 
