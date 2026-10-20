@@ -36,11 +36,13 @@
 
 #define CS_QUEUE_CAPACITY 64
 #define CS_QUEUE_BATCH 8
-#define CS_SHUTDOWN_FLUSH_PASSES ((CS_QUEUE_CAPACITY+CS_QUEUE_BATCH-1)/CS_QUEUE_BATCH)
+#define CS_SHUTDOWN_FLUSH_PASSES ((CS_QUEUE_CAPACITY+1+CS_QUEUE_BATCH-1)/CS_QUEUE_BATCH)
 #define CS_SEGMENT_FOLDER "ChartStudioEvidence"
 #define CS_SEGMENT_MAX_BYTES 131072
 
 string CSQueue[CS_QUEUE_CAPACITY];
+bool CSQueueIsGap[CS_QUEUE_CAPACITY];
+ulong CSQueueGapCounts[CS_QUEUE_CAPACITY];
 int CSQueueHead=0;
 int CSQueueCount=0;
 ulong CSQueueOverflowCount=0;
@@ -50,6 +52,7 @@ ulong CSQueueOverflowEntryFilterCount=0;
 ulong CSQueueOverflowRiskGuardCount=0;
 ulong CSQueueOverflowOrderAttemptCount=0;
 ulong CSQueueOverflowOtherCount=0;
+ulong CSQueueOverflowSequenceApplied=0;
 ulong CSSequence=0;
 bool CSRecorderReady=false;
 bool CSRecorderDisabled=false;
@@ -160,6 +163,8 @@ void CSEnqueueEnvelope(const string envelope,const string stage)
      }
    int slot=(CSQueueHead+CSQueueCount)%CS_QUEUE_CAPACITY;
    CSQueue[slot]=envelope;
+   CSQueueIsGap[slot]=false;
+   CSQueueGapCounts[slot]=0;
    CSQueueCount++;
 #endif
   }
@@ -437,6 +442,51 @@ bool CSWriteReadySegment(const string line,const ulong sequence)
    return true;
   }
 
+void CSQueuePendingOverflowGapMarker()
+  {
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+   if(!CSRecorderReady || CSRecorderDisabled ||
+      CSQueueOverflowCount<=CSQueueOverflowSequenceApplied || CSQueueCount>=CS_QUEUE_CAPACITY)
+      return;
+   int gapSlot=(CSQueueHead+CSQueueCount)%CS_QUEUE_CAPACITY;
+   CSQueue[gapSlot]="";
+   CSQueueIsGap[gapSlot]=true;
+   CSQueueGapCounts[gapSlot]=CSQueueOverflowCount-CSQueueOverflowSequenceApplied;
+   CSQueueCount++;
+   CSQueueOverflowSequenceApplied=CSQueueOverflowCount;
+#endif
+  }
+
+bool CSApplyQueueGapMarker(const int slot)
+  {
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+   if(!CSRecorderReady || CSRecorderDisabled || slot<0 || slot>=CS_QUEUE_CAPACITY ||
+      !CSQueueIsGap[slot] || CSQueueGapCounts[slot]==0)
+      return false;
+   ulong pending=CSQueueGapCounts[slot];
+   if(pending>2147483647-CSSequence)
+     {
+      CSRecorderDisabled=true;
+      Print("ChartStudio evidence recorder disabled: queue-loss sequence limit reached.");
+      return false;
+     }
+   ulong previous=CSSequence;
+   CSSequence+=pending;
+   if(!CSPersistSequence())
+     {
+      CSSequence=previous;
+      CSRecorderDisabled=true;
+      Print("ChartStudio evidence recorder disabled: queue-loss sequence persistence failed.");
+      return false;
+     }
+   PrintFormat("ChartStudio evidence recorder persisted queue loss: dropped=%I64u cumulative=%I64u; next imported record will expose the sequence gap.",
+               pending,CSQueueOverflowSequenceApplied);
+   return true;
+#else
+   return false;
+#endif
+  }
+
 void CSFlushEvidenceQueue()
   {
 #ifdef CS_EVIDENCE_CAPTURE_ENABLED
@@ -454,6 +504,18 @@ void CSFlushEvidenceQueue()
    int sent=0;
    while(CSQueueCount>0 && sent<CS_QUEUE_BATCH)
      {
+      if(CSQueueIsGap[CSQueueHead])
+        {
+         if(!CSApplyQueueGapMarker(CSQueueHead))
+            return;
+         CSQueue[CSQueueHead]="";
+         CSQueueIsGap[CSQueueHead]=false;
+         CSQueueGapCounts[CSQueueHead]=0;
+         CSQueueHead=(CSQueueHead+1)%CS_QUEUE_CAPACITY;
+         CSQueueCount--;
+         sent++;
+         continue;
+        }
       if(CSSequence>=2147483647)
         {
          CSRecorderDisabled=true;
@@ -480,13 +542,17 @@ void CSFlushEvidenceQueue()
         {
          // Keep this event queued. The next attempt advances sequence again,
          // making a lost write visible as an importer gap.
+         CSQueuePendingOverflowGapMarker();
          return;
         }
       CSQueue[CSQueueHead]="";
+      CSQueueIsGap[CSQueueHead]=false;
+      CSQueueGapCounts[CSQueueHead]=0;
       CSQueueHead=(CSQueueHead+1)%CS_QUEUE_CAPACITY;
       CSQueueCount--;
       sent++;
      }
+   CSQueuePendingOverflowGapMarker();
 #endif
   }
 

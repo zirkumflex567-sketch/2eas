@@ -68,7 +68,7 @@ def test_titan_deinit_flushes_bounded_recorder_queue_before_killing_timer():
     assert "CSFlushEvidenceQueueOnShutdown();" in body
     assert body.index("CSFlushEvidenceQueueOnShutdown();") < body.index("EventKillTimer();")
     helper = (ROOT / "ChartStudioEvidenceSpool.mqh").read_text()
-    assert "#define CS_SHUTDOWN_FLUSH_PASSES ((CS_QUEUE_CAPACITY+CS_QUEUE_BATCH-1)/CS_QUEUE_BATCH)" in helper
+    assert "#define CS_SHUTDOWN_FLUSH_PASSES ((CS_QUEUE_CAPACITY+1+CS_QUEUE_BATCH-1)/CS_QUEUE_BATCH)" in helper
     drain = re.search(r"void CSFlushEvidenceQueueOnShutdown\(\)\s*\{(.*?)^  \}", helper, re.S | re.M)
     assert drain, "shared spool must provide a bounded shutdown drain"
     assert "pass<CS_SHUTDOWN_FLUSH_PASSES" in drain.group(1)

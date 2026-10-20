@@ -92,6 +92,38 @@ def test_queue_overflow_diagnostics_preserve_event_stage_and_queue_depth():
     ))
 
 
+def test_queue_overflow_is_inserted_in_fifo_before_later_events_and_persisted_by_timer():
+    spool = SPOOL.read_text(encoding="utf-8-sig")
+    enqueue = _function(spool, "CSEnqueueEnvelope")
+    flush = _function(spool, "CSFlushEvidenceQueue")
+    queue_gap = _function(spool, "CSQueuePendingOverflowGapMarker")
+    apply_gap = _function(spool, "CSApplyQueueGapMarker")
+
+    assert "ulong CSQueueOverflowSequenceApplied=0;" in spool
+    assert "bool CSQueueIsGap[CS_QUEUE_CAPACITY];" in spool
+    assert "ulong CSQueueGapCounts[CS_QUEUE_CAPACITY];" in spool
+    assert "CSQueueIsGap[slot]=false;" in enqueue
+    assert "CSQueueGapCounts[slot]=0;" in enqueue
+    assert not re.search(r"\b(FileOpen|FileWrite|FileWriteString|FileFlush|FileMove)\s*\(", enqueue)
+    assert "if(CSQueueIsGap[CSQueueHead])" in flush
+    assert flush.index("if(CSQueueIsGap[CSQueueHead])") < flush.index("string envelope=CSQueue[CSQueueHead];")
+    assert "CSApplyQueueGapMarker(CSQueueHead)" in flush
+    assert "CSQueueIsGap[CSQueueHead]=false;" in flush
+    assert "CSQueueOverflowCount<=CSQueueOverflowSequenceApplied" in queue_gap
+    assert "int gapSlot=(CSQueueHead+CSQueueCount)%CS_QUEUE_CAPACITY;" in queue_gap
+    assert "CSQueueIsGap[gapSlot]=true;" in queue_gap
+    assert "CSQueueOverflowSequenceApplied=CSQueueOverflowCount;" in queue_gap
+    assert not re.search(r"\b(FileOpen|FileWrite|FileWriteString|FileFlush|FileMove)\s*\(", queue_gap)
+    assert "CSQueuePendingOverflowGapMarker();" in flush
+    failed_write = flush[flush.index("if(!CSWriteReadySegment(line,next))"):]
+    assert failed_write.index("CSQueuePendingOverflowGapMarker();") < failed_write.index("return;")
+    assert "#define CS_SHUTDOWN_FLUSH_PASSES ((CS_QUEUE_CAPACITY+1+CS_QUEUE_BATCH-1)/CS_QUEUE_BATCH)" in spool
+    assert "pending>2147483647-CSSequence" in apply_gap
+    assert "CSSequence+=pending;" in apply_gap
+    assert "if(!CSPersistSequence())" in apply_gap
+    assert "CSRecorderDisabled=true;" in apply_gap
+
+
 def test_failed_segment_write_removes_its_unimportable_temporary_file():
     spool = SPOOL.read_text(encoding="utf-8-sig")
     write = _function(spool, "CSWriteReadySegment")
