@@ -140,6 +140,19 @@ def test_private_environment_v5_preview_flag_accepts_only_binary_values(checkout
         private.unlink(missing_ok=True)
 
 
+def test_private_environment_trade_ticket_flag_accepts_only_binary_values(checkout, tmp_path):
+    private = tmp_path.parent / (tmp_path.name + '-trade-ticket.json')
+    try:
+        for value in ('0', '1'):
+            private.write_text(json.dumps({'CHART_STUDIO_TRADE_TICKET_ENABLED': value}))
+            runtime_module().validate_environment_file(checkout, private)
+        private.write_text(json.dumps({'CHART_STUDIO_TRADE_TICKET_ENABLED': 'true'}))
+        with pytest.raises(ValueError, match='Invalid private environment'):
+            runtime_module().validate_environment_file(checkout, private)
+    finally:
+        private.unlink(missing_ok=True)
+
+
 def test_private_environment_trusted_indicator_keys_require_bounded_canonical_ed25519_map(checkout, tmp_path):
     import base64
 

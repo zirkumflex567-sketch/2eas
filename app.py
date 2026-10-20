@@ -38,6 +38,7 @@ from chart_studio.demo_position_guard import DemoPositionGuard
 from chart_studio.position_commit_runtime import create_process_position_commit_runtime
 from chart_studio.trade_ticket_api import install_trade_ticket_routes
 from chart_studio.trade_ticket import TradeTicketPreviewRegistry, TradeTicketPreviewService
+from chart_studio.trade_ticket_runtime import create_trade_ticket_runtime
 from chart_studio.mutation_audit import MutationAuditStore
 from chart_studio.evidence_api import install_evidence_routes
 from chart_studio.indicator_extension_api import install_indicator_extension_routes
@@ -91,11 +92,19 @@ install_position_commit_routes(
     audit_store=_position_commit_store, commit_service=_position_commit_service,
 )
 _trade_ticket_previews = TradeTicketPreviewRegistry()
+_trade_ticket_runtime = create_trade_ticket_runtime(
+    mt5, _trade_ticket_previews, BASE_DIR,
+    enabled=os.getenv("CHART_STUDIO_TRADE_TICKET_ENABLED", "0") == "1",
+)
 _trade_ticket_preview_service = TradeTicketPreviewService(
-    mt5, _trade_ticket_previews, guard_provider=None,
+    mt5, _trade_ticket_previews, guard_provider=_trade_ticket_runtime.guard,
 )
 install_trade_ticket_routes(
-    app, mt5, enabled=False, preview_registry=_trade_ticket_previews,
+    app, mt5, enabled=_trade_ticket_runtime.enabled,
+    preview_registry=_trade_ticket_previews,
+    guard_provider=_trade_ticket_runtime.guard,
+    audit_store=_trade_ticket_runtime.store,
+    commit_service=_trade_ticket_runtime.commit_service,
     preview_service=_trade_ticket_preview_service,
 )
 

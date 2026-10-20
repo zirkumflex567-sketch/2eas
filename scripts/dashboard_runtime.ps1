@@ -130,7 +130,8 @@ try {
                      'CHART_STUDIO_STORAGE_ENABLED','CHART_STUDIO_DB','CHART_STUDIO_EVIDENCE_ROOT',
                      'CHART_STUDIO_EVIDENCE_DB','CHART_STUDIO_EVIDENCE_SPOOL_ROOT',
                      'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS','CHART_STUDIO_DEVICE_SYNC_ENABLED',
-                     'CHART_STUDIO_V5_PREVIEW_ENABLED','CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON')
+                     'CHART_STUDIO_V5_PREVIEW_ENABLED','CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON',
+                     'CHART_STUDIO_TRADE_TICKET_ENABLED')
     $environment = @{}
     if ($PrivateEnvJson) {
         $privatePath = (Resolve-Path -LiteralPath $PrivateEnvJson).Path
@@ -152,6 +153,9 @@ try {
             }
             if ($property.Name -ceq 'CHART_STUDIO_V5_PREVIEW_ENABLED' -and $property.Value -cnotin @('0','1')) {
                 Reject 'Private environment contains an invalid v5 preview feature flag.'
+            }
+            if ($property.Name -ceq 'CHART_STUDIO_TRADE_TICKET_ENABLED' -and $property.Value -cnotin @('0','1')) {
+                Reject 'Private environment contains an invalid trade-ticket feature flag.'
             }
             $environment[$property.Name] = $property.Value
         }

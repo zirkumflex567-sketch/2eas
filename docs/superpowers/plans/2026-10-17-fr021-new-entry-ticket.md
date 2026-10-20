@@ -39,7 +39,7 @@ Task 2 has fake-MT5 service coverage. On 19 October, the guarded main runtime au
 - [x] Re-read quote/account/EA guard and symbol rules under the gateway lock; preflight with `order_check`; then send once.
 - [x] Verify exact pending order or resulting deal/position by broker readback; handle reject, timeout, restart and duplicate cases without resending.
 
-Task 3 currently has fake-MT5 tests only. The app does not install this commit service and no demo order was sent. The front-end now targets the distinct service contract, but production wiring and the separate release gate remain mandatory.
+Task 3 has fake-MT5 tests only; no demo order was sent. The application now constructs the commit service only when the private `CHART_STUDIO_TRADE_TICKET_ENABLED=1` gate is explicitly set. The gate is accepted only as a binary private environment value and defaults to `0`; the idempotency/audit database stays outside the checkout. The independent `DemoEntryGuard` allows only the four non-challenge demo aliases, verified matching terminal identity, USD account data, pending LIMIT/STOP orders at no more than 0.01 lots, stop-risk capped at the lower of USD 5 or 1% equity, reward at least equal to risk, and margin at most half of free margin. The guard denies Blueberry before any broker risk calculation. Unit/API/runtime tests prove the default is inert and all dependencies are bound to the same MT5 gateway. Live write/readback acceptance and independent review remain open; no private production flag was changed.
 
 ### Task 4: Chart transfer and explicit confirmation UI
 
@@ -52,10 +52,11 @@ The headless Chromium contract proves chart-price transfer is draft-only; the se
 ### Task 5: Review and release gate
 
 - [x] Complete denial/race/idempotency/audit tests and independent review of all write paths and proxy controls.
-- [x] Demonstrate production wiring remains disabled and preserve rollback evidence.
+- [x] Wire the production commit service behind a private, binary feature gate that defaults to disabled; keep the store outside the checkout.
+- [x] Demonstrate default production capability remains disabled and preserve rollback evidence.
 - [ ] Only after presenting the exact reviewed candidate, demo account/order list and rollback evidence may a separate user release approval enable controlled demo write/readback acceptance.
 
-Fake-MT5 denial/race/idempotency/audit tests pass and the disabled production wiring is verified. The UI security review found no ticket-write bypass; live service installation, fresh-quote acceptance, candidate-specific release approval, and any controlled demo write/readback test remain open.
+Fake-MT5 denial/race/idempotency/audit tests pass; the new risk guard and private runtime factory tests pass. The UI security review found no ticket-write bypass. The product flag remains off on all live runtimes. Live service activation, a controlled order candidate, post-send/cancel readback and operational rollback remain open. The user's broad authorization permits demo use except Blueberry; do not query Blueberry. No broker order has been sent.
 
 ## Verification
 
