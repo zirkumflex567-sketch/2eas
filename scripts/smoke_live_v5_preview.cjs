@@ -103,6 +103,17 @@ const FLAG_OFF = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;";
       snapshot.candles.length);
       await page.waitForFunction(count => window.ChartStudioV5Preview?.inspect()?.positionOverlayCount === count,
         expectedOverlayLines);
+      assert.equal(await page.locator("#chart-v5-chart-type").inputValue(), "candles",
+        `${expected.account}: native v5 starts with standard candles`);
+      const v4CountBeforeTypeSwitch = await page.evaluate(() => document.querySelector("#tv-chart")?.__candleSeries?.data?.().length ?? 0);
+      for (const type of ["heikin", "hollow", "candles"]) {
+        await page.locator("#chart-v5-chart-type").selectOption(type);
+        await page.waitForFunction(value => window.ChartStudioV5Preview?.inspect()?.chartType === value, type);
+        assert.equal(await page.evaluate(() => window.ChartStudioV5Preview.readPricePresentation().bars.length),
+          snapshot.candles.length, `${expected.account}: ${type} retains the verified candle range`);
+        assert.equal(await page.evaluate(() => document.querySelector("#tv-chart")?.__candleSeries?.data?.().length ?? 0),
+          v4CountBeforeTypeSwitch, `${expected.account}: changing native v5 presentation leaves v4 intact`);
+      }
       const positionOverlay = await page.evaluate(() => window.ChartStudioV5Preview.readPositions());
       const expectedZones = positions.positions.reduce((count, row) => count +
         (Number(row.sl) > 0 ? 1 : 0) + (Number(row.tp) > 0 ? 1 : 0), 0);
@@ -150,7 +161,7 @@ const FLAG_OFF = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;";
       await page.mouse.click(drawingCanvas.x + drawingCanvas.width * 0.4,
         drawingCanvas.y + drawingCanvas.height * 0.4);
       await page.mouse.click(drawingCanvas.x + drawingCanvas.width * 0.6,
-        drawingCanvas.y + drawingCanvas.height * 0.6);
+        drawingCanvas.y + drawingCanvas.height * 0.45);
       const ellipse = await page.waitForFunction(scope => {
         const key = `2eas.chartstudio.v5.drawings:v5:${encodeURIComponent(scope.account)}:${encodeURIComponent(scope.symbol)}:M15`;
         const raw = window.localStorage.getItem(key);
