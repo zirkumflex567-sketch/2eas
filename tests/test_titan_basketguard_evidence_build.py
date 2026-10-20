@@ -78,6 +78,9 @@ def test_capture_variant_binds_demo_identity_and_full_effective_parameter_hash()
     )
 
     assert '#define CS_EVIDENCE_CAPTURE' in generated
+    deinit = _function_body(generated, "OnDeinit")
+    assert deinit.count("CSFlushEvidenceQueueOnShutdown();") == 1
+    assert deinit.index("CSFlushEvidenceQueueOnShutdown();") < deinit.index("EventKillTimer();")
     assert '#define CS_EVIDENCE_ACCOUNT_ID "xau5m_m5"' in generated
     assert '#define CS_EVIDENCE_EXPECTED_PARAMETER_SET_HASH' in generated
     assert "CSParameterSetHash!=CS_EVIDENCE_EXPECTED_PARAMETER_SET_HASH" in generated
@@ -203,7 +206,14 @@ def _known_installed_predecessor(source):
 
 def test_installed_source_parity_allows_only_reviewed_capture_and_challenge_deltas():
     source = SOURCE.read_text(encoding="utf-8-sig")
-    BUILD._assert_reviewed_semantic_parity(_known_installed_predecessor(source), source)
+    predecessor = _known_installed_predecessor(source)
+    BUILD._assert_reviewed_semantic_parity(predecessor, source)
+    legacy_shutdown = predecessor.replace(
+        "#ifdef CS_EVIDENCE_CAPTURE_ENABLED\n   CSFlushEvidenceQueueOnShutdown();\n   EventKillTimer();",
+        "#ifdef CS_EVIDENCE_CAPTURE_ENABLED\n   EventKillTimer();",
+        1,
+    )
+    BUILD._assert_reviewed_semantic_parity(legacy_shutdown, source)
     drifted = _known_installed_predecessor(source).replace("bool buy_signal  =", "bool buy_signal =", 1)
     with pytest.raises(ValueError, match="differs from main"):
         BUILD._assert_reviewed_semantic_parity(drifted, source)

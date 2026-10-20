@@ -65,6 +65,14 @@ def test_market_and_transaction_callbacks_enqueue_only_while_timer_flushes_disk(
     assert "CSQueueOverflowCount>=CSQueueOverflowNextLog" in _function(spool, "CSFlushEvidenceQueue")
 
 
+def test_deinit_bounded_flushes_queued_evidence_before_stopping_timer():
+    ea = EA.read_text(encoding="utf-8-sig")
+    deinit = _function(ea, "OnDeinit")
+
+    assert "CSFlushEvidenceQueueOnShutdown();" in deinit
+    assert deinit.index("CSFlushEvidenceQueueOnShutdown();") < deinit.index("EventKillTimer();")
+
+
 def test_queue_overflow_diagnostics_preserve_event_stage_and_queue_depth():
     spool = SPOOL.read_text(encoding="utf-8-sig")
     enqueue = _function(spool, "CSEnqueueEnvelope")

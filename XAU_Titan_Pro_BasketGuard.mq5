@@ -593,6 +593,7 @@ int OnInit()
 void OnDeinit(const int reason)
 {
 #ifdef CS_EVIDENCE_CAPTURE_ENABLED
+   CSFlushEvidenceQueueOnShutdown();
    EventKillTimer();
 #endif
    if(m_trend_ema_handle != INVALID_HANDLE) IndicatorRelease(m_trend_ema_handle);

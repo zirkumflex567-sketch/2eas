@@ -44,7 +44,7 @@ def _input_declarations(source_text: str) -> list[tuple[str, str, str]]:
 
 
 def _function_definition(source_text: str, name: str) -> str:
-    match = re.search(rf"(?m)^bool\s+{re.escape(name)}\s*\([^)]*\)\s*\{{", source_text)
+    match = re.search(rf"(?m)^\w+\s+{re.escape(name)}\s*\([^)]*\)\s*\{{", source_text)
     if not match:
         raise ValueError(f"expected unique {name} definition in BasketGuard source")
     start = match.start()
@@ -105,6 +105,16 @@ def _normalize_reviewed_installed_source(installed_text: str, main_source_text: 
         raise ValueError("installed BasketGuard quote-clock capture points drifted")
     normalized = normalized.replace(old_quote_clock,
                                     "CSUtcFromBrokerMillis(cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS)")
+    prior_shutdown = "#ifdef CS_EVIDENCE_CAPTURE_ENABLED\n   EventKillTimer();"
+    flushed_shutdown = ("#ifdef CS_EVIDENCE_CAPTURE_ENABLED\n"
+                        "   CSFlushEvidenceQueueOnShutdown();\n"
+                        "   EventKillTimer();")
+    if normalized.count(flushed_shutdown) == 1:
+        pass
+    elif normalized.count(prior_shutdown) == 1:
+        normalized = normalized.replace(prior_shutdown, flushed_shutdown, 1)
+    else:
+        raise ValueError("installed BasketGuard shutdown hook is ambiguous or unreviewed")
     return normalized
 
 
@@ -232,14 +242,10 @@ def _instrument_source(source_text: str, alias: str, producer: str,
         raise ValueError("expected unique BasketGuard recorder initialization anchor")
     generated = generated.replace(init_anchor, guarded_init, 1)
 
-    deinit_anchor = "#ifdef CS_EVIDENCE_CAPTURE_ENABLED\n   EventKillTimer();"
-    if generated.count(deinit_anchor) != 1:
-        raise ValueError("expected unique BasketGuard capture timer shutdown point")
-    generated = generated.replace(
-        deinit_anchor,
-        "#ifdef CS_EVIDENCE_CAPTURE_ENABLED\n   CSFlushEvidenceQueueOnShutdown();\n   EventKillTimer();",
-        1,
-    )
+    deinit = _function_definition(generated, "OnDeinit")
+    if (deinit.count("CSFlushEvidenceQueueOnShutdown();") != 1 or
+            deinit.index("CSFlushEvidenceQueueOnShutdown();") > deinit.index("EventKillTimer();")):
+        raise ValueError("BasketGuard source must flush recorder queue before stopping its timer")
 
     order_registration_anchor = '''#endif
             if(entry_accepted)'''
