@@ -45,6 +45,11 @@ int CSQueueHead=0;
 int CSQueueCount=0;
 ulong CSQueueOverflowCount=0;
 ulong CSQueueOverflowNextLog=1;
+ulong CSQueueOverflowSignalCount=0;
+ulong CSQueueOverflowEntryFilterCount=0;
+ulong CSQueueOverflowRiskGuardCount=0;
+ulong CSQueueOverflowOrderAttemptCount=0;
+ulong CSQueueOverflowOtherCount=0;
 ulong CSSequence=0;
 bool CSRecorderReady=false;
 bool CSRecorderDisabled=false;
@@ -127,7 +132,21 @@ string CSPredicate(const string id,const string observed,const string comparator
           ",\"outcome\":"+CSJsonQuote(outcome)+",\"reasonCode\":"+CSJsonQuote(reason)+"}";
   }
 
-void CSEnqueueEnvelope(const string envelope)
+void CSRecordQueueOverflow(const string stage)
+  {
+   if(stage=="SIGNAL")
+      CSQueueOverflowSignalCount++;
+   else if(stage=="ENTRY_FILTER")
+      CSQueueOverflowEntryFilterCount++;
+   else if(stage=="RISK_GUARD")
+      CSQueueOverflowRiskGuardCount++;
+   else if(stage=="ORDER_ATTEMPT")
+      CSQueueOverflowOrderAttemptCount++;
+   else
+      CSQueueOverflowOtherCount++;
+  }
+
+void CSEnqueueEnvelope(const string envelope,const string stage)
   {
 #ifdef CS_EVIDENCE_CAPTURE_ENABLED
    if(!CSRecorderReady || CSRecorderDisabled || StringLen(envelope)==0)
@@ -136,6 +155,7 @@ void CSEnqueueEnvelope(const string envelope)
      {
       if(CSQueueOverflowCount<2147483647)
          CSQueueOverflowCount++;
+      CSRecordQueueOverflow(stage);
       return;
      }
    int slot=(CSQueueHead+CSQueueCount)%CS_QUEUE_CAPACITY;
@@ -187,7 +207,7 @@ void CSEnqueueDecision(const string stage,const string outcome,const datetime ba
       ",\"brokerServer\":"+CSJsonQuote(CS_EVIDENCE_EXPECTED_SERVER)+
       ",\"terminalIdentityHash\":"+CSJsonQuote(CS_EVIDENCE_TERMINAL_HASH)+
       ",\"dataRevision\":1,\"provenance\":\"RECORDED\",\"supersedes\":null,\"payload\":"+payload+"}";
-   CSEnqueueEnvelope(envelope);
+   CSEnqueueEnvelope(envelope,stage);
 #endif
   }
 
@@ -424,8 +444,11 @@ void CSFlushEvidenceQueue()
       return;
    if(CSQueueOverflowCount>=CSQueueOverflowNextLog)
      {
-      PrintFormat("ChartStudio evidence recorder queue loss: dropped=%I64u (in-memory counter).",
-                  CSQueueOverflowCount);
+      PrintFormat("ChartStudio evidence recorder queue loss: dropped=%I64u queue=%d/%d signal=%I64u entryFilter=%I64u riskGuard=%I64u orderAttempt=%I64u other=%I64u (in-memory counters).",
+                  CSQueueOverflowCount,CSQueueCount,CS_QUEUE_CAPACITY,
+                  CSQueueOverflowSignalCount,CSQueueOverflowEntryFilterCount,
+                  CSQueueOverflowRiskGuardCount,CSQueueOverflowOrderAttemptCount,
+                  CSQueueOverflowOtherCount);
       CSQueueOverflowNextLog=CSQueueOverflowCount+100;
      }
    int sent=0;

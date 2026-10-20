@@ -65,6 +65,25 @@ def test_market_and_transaction_callbacks_enqueue_only_while_timer_flushes_disk(
     assert "CSQueueOverflowCount>=CSQueueOverflowNextLog" in _function(spool, "CSFlushEvidenceQueue")
 
 
+def test_queue_overflow_diagnostics_preserve_event_stage_and_queue_depth():
+    spool = SPOOL.read_text(encoding="utf-8-sig")
+    enqueue = _function(spool, "CSEnqueueEnvelope")
+    overflow = _function(spool, "CSRecordQueueOverflow")
+    flush = _function(spool, "CSFlushEvidenceQueue")
+
+    assert "const string stage" in spool[spool.index("void CSEnqueueEnvelope"):spool.index("void CSEnqueueDecision")]
+    assert "CSRecordQueueOverflow(stage)" in enqueue
+    assert all(name in overflow for name in (
+        'stage=="SIGNAL"', 'stage=="ENTRY_FILTER"',
+        'stage=="RISK_GUARD"', 'stage=="ORDER_ATTEMPT"',
+    ))
+    assert "queue=%d/%d" in flush
+    assert all(name in flush for name in (
+        "signal=%I64u", "entryFilter=%I64u", "riskGuard=%I64u",
+        "orderAttempt=%I64u", "other=%I64u",
+    ))
+
+
 def test_failed_segment_write_removes_its_unimportable_temporary_file():
     spool = SPOOL.read_text(encoding="utf-8-sig")
     write = _function(spool, "CSWriteReadySegment")
