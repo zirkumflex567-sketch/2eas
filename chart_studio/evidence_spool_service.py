@@ -343,7 +343,7 @@ class SpoolFileConsumer:
                     gap_observed=gap_observed or bool(outcome.get('gapObserved'))
                     if not outcome.get('ok'):
                         return {'code':outcome.get('code','IMPORT_FAILED'),'imported':imported,'gapCount':outcome.get('gapCount',importer.gap_count),'gapObserved':gap_observed,'storeLostCount':store_lost}
-                    if outcome.get('code')=='DUPLICATE':duplicates+=1
+                    if outcome.get('code') in ('DUPLICATE','IDEMPOTENT'):duplicates+=1
                     else:imported+=1
                     cursor['offset']+=len(raw);prefix_hasher.update(raw);cursor['prefixDigest']=prefix_hasher.hexdigest()
                     self._save_cursor(account,producer,cursor)
@@ -442,7 +442,7 @@ class SpoolFileConsumer:
                     return {'code':outcome.get('code','IMPORT_FAILED'),'imported':imported,
                             'duplicates':duplicates,'gapCount':outcome.get('gapCount',importer.gap_count),
                             'gapObserved':gap_observed,'storeLostCount':store_lost}
-                if outcome.get('code')=='DUPLICATE':duplicates+=1
+                if outcome.get('code') in ('DUPLICATE','IDEMPOTENT'):duplicates+=1
                 else:imported+=1
                 archive=self.archive/path.name
                 if os.path.lexists(archive):

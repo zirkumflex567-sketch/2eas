@@ -134,6 +134,25 @@ def test_stable_complete_temporary_records_are_imported_and_archived_in_sequence
     assert {row['id'] for row in store.read(context(), kind='DECISION')['records']} == {'event_1', 'event_2'}
 
 
+def test_stable_temporary_idempotent_store_append_counts_as_duplicate(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    first, redelivery = record(seq=1), record(seq=2)
+    write_private(spool_root / 'titan_demo.1.tmp.ndjson', line(first).encode())
+    write_private(spool_root / 'titan_demo.2.tmp.ndjson', line(redelivery).encode())
+    clock = [100.0]
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    service = consumer(store, spool_root)
+    service.poll_once()
+
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+    recovered = service.poll_once()['titan_demo']
+
+    assert recovered['code'] == 'ARCHIVED'
+    assert recovered['imported'] == 1
+    assert recovered['duplicates'] == 1
+    assert len(store.read(context(), kind='DECISION')['records']) == 1
+
+
 def test_stable_incomplete_temporary_record_is_reported_and_left_untouched(private_root, spool_root, monkeypatch):
     store = evidence_store(private_root)
     path = spool_root / 'titan_demo.1.tmp.ndjson'
