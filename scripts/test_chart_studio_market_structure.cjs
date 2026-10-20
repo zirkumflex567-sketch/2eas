@@ -3,6 +3,20 @@ const assert=require("node:assert/strict"),vm=require("node:vm"),fs=require("nod
 const window={};
 vm.runInNewContext(fs.readFileSync("static/chart-studio-market-structure.js","utf8"),{window,Date,Intl,Number,Math,Set,Map,JSON,Object,Array,String,RegExp});
 const api=window.ChartStudioMarketStructure.core;
+const brokerReadGate=api.createBrokerReadGate();
+const initialScope={account:"titan",symbol:"XAUUSD",timeframe:"M15"};
+const loadedBars=[{time:1,open:1,high:2,low:1,close:2}];
+brokerReadGate.setScope(initialScope);
+assert.equal(brokerReadGate.claim(initialScope,[]),false,"Calendar and quote reads wait until the primary chart bars are ready");
+assert.equal(brokerReadGate.claim(initialScope,loadedBars),false,"Chart bars must first be explicitly marked ready");
+brokerReadGate.markBarsReady(initialScope,loadedBars);
+assert.equal(brokerReadGate.claim(initialScope,loadedBars),true,"Ancillary broker reads start once chart bars are ready");
+assert.equal(brokerReadGate.claim(initialScope,loadedBars),false,"A ready scope is read at most once");
+const nextScope={account:"goldm15",symbol:"XAUUSD",timeframe:"M15"};
+brokerReadGate.setScope(nextScope);
+assert.equal(brokerReadGate.claim(nextScope,loadedBars),false,"A scope switch must wait for its own chart bars");
+brokerReadGate.markBarsReady(nextScope,loadedBars);
+assert.equal(brokerReadGate.claim(nextScope,loadedBars),true,"The switched scope starts its own reads after new bars are marked ready");
 const stamp=value=>Date.parse(value)/1000;
 
 const calendarBaseline=[

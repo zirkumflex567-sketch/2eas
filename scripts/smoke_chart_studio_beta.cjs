@@ -206,16 +206,23 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await thirdCalendar;
   assert.match(await page.locator('[data-testid="economic-calendar"]').textContent(),/Nicht mehr im MT5-Feed \(Status UNKNOWN\): Employment/);
   calendarMissingSnapshot=true;
+  const marketReadsBeforeScopeSwitch={calendar:calendarRequests.length,regime:regimeRequests.length};
   await page.evaluate(()=>ChartStudioBeta.account("xau5m_m5","XAUUSD.p"));
   await page.waitForFunction(()=>ChartStudioBeta.getState().marketStructure?.scope.account==="xau5m_m5");
+  await page.waitForTimeout(50);
+  assert.deepEqual({calendar:calendarRequests.length,regime:regimeRequests.length},marketReadsBeforeScopeSwitch,
+    "Calendar and regime reads must wait until the selected account's new chart candles are ready");
+  await page.evaluate(()=>ChartStudioBeta.updateCandles(window.__chartSmokeCandles));
   await page.waitForFunction(()=>document.querySelector('[data-testid="economic-calendar"]')?.textContent.includes("Bridge"));
   const setupHelp=await page.locator('[data-testid="economic-calendar"]').textContent();
   assert.match(setupHelp,/separaten XAUUSD-M15-Chart/);assert.match(setupHelp,/xau5m_m5\.set/);assert.match(setupHelp,/Event-\/News-Risk bleibt UNKNOWN/);
   await page.evaluate(()=>ChartStudioBeta.account("goldm15","XAUUSD"));
   await page.waitForFunction(()=>ChartStudioBeta.getState().marketStructure?.scope.account==="goldm15");
+  await page.evaluate(()=>ChartStudioBeta.updateCandles(window.__chartSmokeCandles));
   await page.waitForFunction(()=>document.querySelector('[data-testid="economic-calendar"]')?.textContent.includes("Event-/News-Risk bleibt UNKNOWN"));
   assert.match(await page.locator('[data-testid="economic-calendar"]').textContent(),/presets\/chart-studio-calendar-bridge\/goldm15\.set/,"GoldM15 setup instructions use its account-bound bridge preset");
   await page.evaluate(()=>ChartStudioBeta.account("titan","XAUUSD"));
+  await page.evaluate(()=>ChartStudioBeta.updateCandles(window.__chartSmokeCandles));
   await page.locator('[aria-label="Sweep ConfirmTF"]').selectOption("3600");
   await page.waitForFunction(()=>document.querySelector('[data-testid="market-structure"] > div > p[role="status"]')?.textContent.includes("keine geschlossenen ConfirmTF-Kerzen"));
   assert.match(await page.locator('[data-testid="market-structure"] > div > p[role="status"]').textContent(),/ConfirmTF UNKNOWN · keine geschlossenen ConfirmTF-Kerzen/,
