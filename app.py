@@ -2537,7 +2537,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     let isInitialLoad = true;
     let lastCandleTime = 0;
     let currentCandlesCount = 0;
-    let candleHistory = {scope:null,pages:[],latest:null,hasMore:false,loading:false};
+    let candleHistory = {scope:null,pages:[],latest:null,hasMore:null,loading:false};
     let currentVPTab = 'daily';
     let currentData = null;
     const BASE_PATH = window.location.pathname.startsWith('/stt') ? '/stt' : '';
@@ -2791,7 +2791,12 @@ HTML_CONTENT = """<!DOCTYPE html>
       }
       const targetUrl = url.startsWith('/') ? (BASE_PATH + url) : url;
       const requestUrl = targetUrl + (targetUrl.includes('?') ? '&' : '?') + 'account=' + encodeURIComponent(account);
-      const response = await DashboardRuntime.request(requestUrl, options, 4500, true);
+      const requestPath = targetUrl.split('?')[0];
+      const requestQuery = new URLSearchParams(targetUrl.split('?')[1] || '');
+      const requestTimeout = requestPath.endsWith('/api/candles')
+        ? (Number(requestQuery.get('count') || 150) > 150 ? 45000 : 15000)
+        : 4500;
+      const response = await DashboardRuntime.request(requestUrl, options, requestTimeout, true);
       const body = await response.json();
       if (generation !== accountGeneration || account !== activeAccount) throw staleRequest();
       if (!response.ok) {
@@ -2949,7 +2954,10 @@ HTML_CONTENT = """<!DOCTYPE html>
       if (chartTitle) chartTitle.textContent = (meta.symbol || 'XAUUSD') + ' ' + activeTimeframe + ' Chart';
 
       clearAccountView();
-      await Promise.all([updateStatus(),loadCandles()]);
+      // Start the chart feed first on the shared MT5 session. Keep bootstrap
+      // responsive if that broker read hangs; the per-request guard owns it.
+      void loadCandles();
+      await updateStatus();
     }
 
     function escapeHTML(value) {
@@ -3690,7 +3698,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       const reqSymbol = activeChartSymbol;
       const reqAccount = activeAccount;
       const historyScope = candleHistoryScope(activeAccount, reqSymbol, reqTf);
-      if (candleHistory.scope !== historyScope) candleHistory = {scope:historyScope,pages:[],latest:null,hasMore:false,loading:false};
+      if (candleHistory.scope !== historyScope) candleHistory = {scope:historyScope,pages:[],latest:null,hasMore:null,loading:false};
       const v5Preview = window.ChartStudioV5Preview;
       v5Preview?.setScope({account:reqAccount,symbol:reqSymbol,timeframe:reqTf});
       const requestKey = generation + '/' + reqSymbol + '/' + reqTf;
@@ -3739,7 +3747,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           if (expired.candles.length) candleHistory.pages.push(expired);
         }
         candleHistory.latest = data;
-        if (!candleHistory.pages.length) candleHistory.hasMore = data.page?.hasMore === true;
+        if (!candleHistory.pages.length && candleHistory.hasMore !== false) candleHistory.hasMore = data.page?.hasMore === true;
         const renderData = mergeCandleHistory(data);
         v5Preview?.update({...data,candles:renderData.candles},v5Request);
         if (v5Preview?.inspect?.().active) refreshV5PreviewPositions(true);

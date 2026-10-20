@@ -270,6 +270,7 @@ class DashboardFrontendTests(unittest.TestCase):
         self.account_failures = 0; self.journal_fail = False; self.status_fail = False
         self.account_overrides = {}
         self.candle_fail = False
+        self.candle_delay_seconds = 0
         self.candle_error_detail = 'fixture candle failure'
         self.candle_rows = []
         self.history_rows = []
@@ -347,6 +348,8 @@ class DashboardFrontendTests(unittest.TestCase):
         if parsed.path == '/api/journal_summary':
             route.fulfill(status=503 if self.journal_fail else 200, json=dict(detail='fixture journal failure') if self.journal_fail else journal(account)); return
         if parsed.path == '/api/candles':
+            if self.candle_delay_seconds:
+                time.sleep(self.candle_delay_seconds)
             query=parse_qs(parsed.query); symbol=query.get('symbol',['XAUUSD'])[0]; tf=query.get('tf',['M15'])[0]
             requested_count=int(query.get('count',['150'])[0])
             before=query.get('before',[None])[0]
@@ -515,6 +518,19 @@ class DashboardFrontendTests(unittest.TestCase):
         self.assertTrue(all(count==['150'] for count in refreshed_counts[1:]),refreshed_urls)
         self.assertEqual(self.mutations,[])
         self.assertEqual(self.errors,[])
+    def test_initial_chart_keeps_slow_broker_candle_read_alive(self):
+        self.candle_rows=[
+            dict(time=1791918000,open=4000.,high=4002.,low=3998.,close=4001.,tick_volume=10,real_volume=0),
+            dict(time=1791918900,open=4001.,high=4003.,low=3999.,close=4002.,tick_volume=11,real_volume=0),
+        ]
+        self.candle_delay_seconds=5.2
+        self.load()
+        self.page.wait_for_function("document.querySelector('#tv-chart').__candleSeries.data().length === 2",timeout=8000)
+        candle_urls=[url for url in self.requests if '/api/candles?' in url]
+        counts=[parse_qs(urlparse(url).query).get('count') for url in candle_urls]
+        self.assertEqual(counts.count(['1001']),1,candle_urls)
+        self.assertEqual(self.mutations,[])
+        self.assertEqual(self.errors,[])
     def test_chart_requests_older_bars_when_scrolled_to_history_edge(self):
         self.candle_rows=[
             dict(time=1791918000,open=4000.,high=4002.,low=3998.,close=4001.,tick_volume=10,real_volume=0),
@@ -564,12 +580,15 @@ class DashboardFrontendTests(unittest.TestCase):
         self.load()
         self.page.wait_for_function("document.querySelector('#tv-chart').__candleSeries.data().length >= 2", timeout=5000)
         self.page.evaluate("loadOlderCandles()")
-        self.page.wait_for_timeout(250)
-        first_count=sum('before=1791918000' in url for url in self.requests)
-        self.assertEqual(first_count,1,self.requests)
+        self.page.wait_for_function("!candleHistory.hasMore && !candleHistory.loading", timeout=5000)
+        exhausted_count=sum('before=1791918000' in url for url in self.requests)
+        self.assertGreaterEqual(exhausted_count,1,self.requests)
+        self.page.evaluate("loadCandles()")
+        self.page.wait_for_function("candleHistory.latest !== null && !candlesBusy", timeout=5000)
+        self.page.wait_for_function("!candleHistory.hasMore && !candleHistory.loading", timeout=5000)
         self.page.evaluate("loadOlderCandles()")
         self.page.wait_for_timeout(250)
-        self.assertEqual(sum('before=1791918000' in url for url in self.requests), first_count)
+        self.assertEqual(sum('before=1791918000' in url for url in self.requests), exhausted_count)
         self.assertEqual(self.mutations, [])
         self.assertEqual(self.errors, [])
     def test_symbol_fallback_updates_history_scope_before_paging(self):

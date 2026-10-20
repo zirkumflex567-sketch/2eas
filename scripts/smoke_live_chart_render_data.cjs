@@ -120,7 +120,7 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
         return url.pathname === "/api/candles"
           && url.searchParams.get("account") === id
           && url.searchParams.get("count") === "1001";
-      }, {timeout:15000}).then(response => ({response}), error => ({error}));
+      }, {timeout:45000}).then(response => ({response}), error => ({error}));
       if (index === 0) {
         candleResponse = waitForCandleResponse(account);
         await page.goto(`${base}/?account=${account}`, { waitUntil: "domcontentloaded" });

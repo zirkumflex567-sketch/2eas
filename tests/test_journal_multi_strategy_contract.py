@@ -50,7 +50,7 @@ class CombinedJournalContractTests(unittest.TestCase):
         self.assertIn("two_eas_journal_filter", self.app)
         self.assertIn("setInterval(() => { void refreshJournal(); }, 30000)", self.app)
         self.assertNotIn("renderJournal(data.journal);", self.app)
-        self.assertIn("await Promise.all([updateStatus(),loadCandles()]);", self.app)
+        self.assertIn("void loadCandles();\n      await updateStatus();", self.app)
 
 
 if __name__ == "__main__":
