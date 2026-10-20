@@ -9,6 +9,7 @@ const ACCOUNTS = [
   { account: "xau5m_m5", symbol: "XAUUSD.p" },
   { account: "titan_m5", symbol: "XAUUSD.p" },
   { account: "xau5m_500", symbol: "XAUUSD.p" },
+  { account: "goldm15", symbol: "XAUUSD" },
 ];
 const ALLOWLIST = new Set(ACCOUNTS.map(({ account }) => account));
 const ACCOUNT_NEUTRAL_GETS = new Set(["/api/accounts", "/api/chart/v1/capabilities"]);

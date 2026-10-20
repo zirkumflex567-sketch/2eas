@@ -25,4 +25,4 @@ Do not enable the production v5 cutover. Do not claim that arbitrary prior histo
 
 ## Live acceptance 20.10.2026
 
-- [x] On Main `6d4879e`, `scripts/smoke_live_v5_deal_markers.cjs` passed on `titan`, `xau5m_m5`, `titan_m5`, and `xau5m_500`: 121/121 verified history deals validated into the isolated v5 preview, 64 matched exact loaded candle timestamps and 57 remained unplotted because they were outside the loaded window. 88 API requests, zero mutations, forbidden requests, browser errors or Blueberry requests. Production v5 remained disabled.
+- [x] On Main `62123c5`, `scripts/smoke_live_v5_deal_markers.cjs` passed on all five authorized aliases: the four accounts with history validated 121/121 deals into the isolated v5 preview, 64 matched exact loaded candle timestamps and 57 remained unplotted because they were outside the loaded window. `goldm15` returned 0 history deals and 0 markers. Across five aliases: 110 API requests, zero mutations, forbidden requests, browser errors or Blueberry requests. Production v5 remained disabled.
