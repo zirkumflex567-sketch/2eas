@@ -1541,7 +1541,9 @@ class DashboardFrontendTests(unittest.TestCase):
         self.assertTrue(all(right<=768 for right in bounds),bounds)
     def test_deadline_includes_hung_json_body(self):
         self.load()
-        self.page.evaluate('''() => {const original=window.fetch; window.fetch=(url,options)=>String(url).includes('/api/status')?Promise.resolve({ok:true,status:200,json:()=>new Promise(()=>{})}):original(url,options);void updateStatus()}''')
+        self.page.wait_for_function('statusBusy === null')
+        self.page.evaluate('''() => {const original=window.fetch; window.fetch=(url,options)=>{if(!String(url).includes('/api/status'))return original(url,options);window.hungStatusBodyStarted=true;return Promise.resolve({ok:true,status:200,json:()=>new Promise(()=>{})})};void updateStatus()}''')
+        self.page.wait_for_function('window.hungStatusBodyStarted === true')
         expect(self.page.locator('#account-connection')).to_contain_text('STALE',timeout=7000)
         self.assertIsNone(self.page.evaluate('statusBusy'))
     def test_optional_initialization_failure_keeps_nonchart_features_alive(self):
