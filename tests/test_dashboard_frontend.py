@@ -465,7 +465,7 @@ class DashboardFrontendTests(unittest.TestCase):
         self.page.locator('#cs-evidence-capture-status').click()
         expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text('3 Temp-Dateien / 2.0 MiB', timeout=5000)
         expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text(
-            'Temp-Rückstand · nicht importiert', timeout=5000)
+            'Spool-Rückstand · zur Prüfung', timeout=5000)
         expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text(
             'Änderungszeit UTC 2026-10-18 07:00 bis 2026-10-19 08:00', timeout=5000)
         expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text('Lifecycle: OK', timeout=5000)
