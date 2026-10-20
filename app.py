@@ -2795,7 +2795,7 @@ HTML_CONTENT = """<!DOCTYPE html>
       const requestQuery = new URLSearchParams(targetUrl.split('?')[1] || '');
       const requestTimeout = requestPath.endsWith('/api/candles')
         ? (Number(requestQuery.get('count') || 150) > 150 ? 45000 : 15000)
-        : requestPath.endsWith('/api/status') ? 15000
+        : requestPath.endsWith('/api/status') ? 20000
         : requestPath.endsWith('/api/chart/v1/positions') ? 20000
         : 4500;
       const response = await DashboardRuntime.request(requestUrl, options, requestTimeout, true);

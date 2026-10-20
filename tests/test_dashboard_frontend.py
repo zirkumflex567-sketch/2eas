@@ -882,7 +882,7 @@ class DashboardFrontendTests(unittest.TestCase):
         self.page.wait_for_function('window.hungStatusStarted === true')
         expect(self.page.locator('#account-connection')).to_contain_text('STALE', timeout=7500)
         self.assertIsNotNone(self.page.evaluate('statusBusy'))
-        self.page.wait_for_function('statusBusy === null', timeout=18000)
+        self.page.wait_for_function('statusBusy === null', timeout=23000)
         expect(self.page.locator('#live-bid')).to_have_text('4010.00')
         expect(self.page.locator('#dd-reset-button')).to_be_disabled()
         self.assertTrue(self.page.evaluate("[...document.querySelectorAll('#positions-list button')].every(b=>b.disabled)"))
@@ -1547,7 +1547,7 @@ class DashboardFrontendTests(unittest.TestCase):
         self.page.wait_for_function('window.hungStatusBodyStarted === true')
         expect(self.page.locator('#account-connection')).to_contain_text('STALE',timeout=7000)
         self.assertIsNotNone(self.page.evaluate('statusBusy'))
-        self.page.wait_for_function('statusBusy === null',timeout=18000)
+        self.page.wait_for_function('statusBusy === null',timeout=23000)
     def test_optional_initialization_failure_keeps_nonchart_features_alive(self):
         self.context.add_init_script("window.addEventListener('DOMContentLoaded',()=>{window.initChart=()=>{throw new Error('fixture chart initialization failure')}})")
         self.load()
