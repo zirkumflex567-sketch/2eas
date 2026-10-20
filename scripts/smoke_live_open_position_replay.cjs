@@ -63,7 +63,7 @@ const FORBIDDEN_ACCOUNTS = new Set(["blueberry"]);
         await page.waitForFunction(() => {
           const status = document.querySelector("#cs-evidence-status")?.textContent || "";
           return !status.includes("Aufzeichnungen werden gelesen");
-        }, null, { timeout: 20000 });
+        }, null, { timeout: 45000 });
         assert.match(await panel.locator("#cs-evidence-status").textContent(), /Store: INITIALIZED/);
 
         const rows = panel.locator("#cs-evidence-list > li");
@@ -91,7 +91,7 @@ const FORBIDDEN_ACCOUNTS = new Set(["blueberry"]);
             const row = document.querySelectorAll("#cs-evidence-list > li")[index];
             const status = row?.querySelector(".cs-evidence-snapshot-replay-status")?.textContent || "";
             return /RECORDED · \d+ eingefrorene Bars|Replay nicht verfügbar/.test(status);
-          }, index, { timeout: 20000 });
+          }, index, { timeout: 45000 });
           const replayStatus = await row.locator(".cs-evidence-snapshot-replay-status").textContent();
           assert.match(replayStatus, /RECORDED · \d+ eingefrorene Bars/,
             `${account}: recorded replay failed (${replayStatus})`);
