@@ -6,6 +6,7 @@ import os
 import subprocess
 
 from chart_studio.evidence_models import AccountContext
+from chart_studio import evidence_spool as evidence_spool_module
 from chart_studio.evidence_spool import SpoolImporter
 from test_chart_studio_evidence_models import envelope
 from test_chart_studio_evidence_store import store as evidence_store
@@ -160,6 +161,31 @@ def test_spool_import_fails_closed_after_ambiguous_cursor_write():
     assert first['code'] == 'CURSOR_UNAVAILABLE'
     assert later['code'] == 'CURSOR_UNAVAILABLE'
     assert store.calls == []
+
+
+def test_spool_import_retries_transient_windows_cursor_replace_lock(private_root, monkeypatch):
+    store = evidence_store(private_root)
+    importer = SpoolImporter(store, account_id='titan', producer_id='titan_demo')
+    real_replace = evidence_spool_module.os.replace
+    attempts = []
+
+    def replace_with_transient_lock(source, destination):
+        if destination == importer.cursor_path:
+            attempts.append(destination)
+            if len(attempts) == 1:
+                error = PermissionError('sharing violation')
+                error.winerror = 32
+                raise error
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(evidence_spool_module.os, 'replace', replace_with_transient_lock)
+
+    result = importer.import_line(line(record()))
+
+    assert result['ok'] is True
+    assert result['code'] == 'APPENDED'
+    assert len(attempts) == 3
+    assert len(store.read(AccountContext.from_config('titan'), kind='DECISION')['records']) == 1
 
 
 def test_spool_import_counts_initial_gap_and_propagates_store_loss():

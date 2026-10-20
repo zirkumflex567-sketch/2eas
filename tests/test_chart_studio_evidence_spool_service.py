@@ -356,9 +356,10 @@ def test_temporary_segment_scan_is_throttled(private_root, spool_root):
     assert service._temporary_scan_at == first_scan
     assert cached['temporaryFileCount'] == 0
 
-    service._temporary_scan_at -= 61
+    expired_scan = service._temporary_scan_at - 61
+    service._temporary_scan_at = expired_scan
     refreshed = service.poll_once()['titan_demo']
-    assert service._temporary_scan_at > first_scan
+    assert service._temporary_scan_at > expired_scan
     assert refreshed['temporaryFileCount'] == 1
 
 

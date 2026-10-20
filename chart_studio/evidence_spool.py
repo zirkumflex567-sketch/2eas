@@ -8,6 +8,7 @@ launcher remain separate deployment work.
 import hashlib
 import json
 import os
+import time
 from collections import OrderedDict
 from pathlib import Path
 
@@ -17,6 +18,19 @@ from chart_studio.evidence_store import EvidenceStore, StoreUnavailable, _physic
 
 MAX_LINE_BYTES = models.MAX_BYTES + 4096
 SEEN_LIMIT = 512
+_CURSOR_REPLACE_RETRY_DELAYS = (0.01, 0.04)
+
+
+def _replace_cursor_with_retry(source, destination):
+    """Retry only brief Windows sharing locks around the atomic cursor swap."""
+    for attempt in range(len(_CURSOR_REPLACE_RETRY_DELAYS) + 1):
+        try:
+            os.replace(source, destination)
+            return
+        except OSError as exc:
+            if getattr(exc, 'winerror', None) not in (32, 33) or attempt == len(_CURSOR_REPLACE_RETRY_DELAYS):
+                raise
+            time.sleep(_CURSOR_REPLACE_RETRY_DELAYS[attempt])
 
 
 def _unique_object(pairs):
@@ -131,7 +145,7 @@ class SpoolImporter:
             if os.name == 'posix':
                 os.chmod(temp, 0o600)
             _private(temp, False)
-            os.replace(temp, path)
+            _replace_cursor_with_retry(temp, path)
             if os.name == 'posix':
                 directory = os.open(path.parent, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
                 try:
