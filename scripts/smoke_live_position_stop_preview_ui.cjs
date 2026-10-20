@@ -106,7 +106,6 @@ async function positionWithStop(account, symbol) {
       });
       await page.locator("#cs-position-stop-draft button[data-cmd='drag']").click();
       await page.locator("#tv-chart").scrollIntoViewIfNeeded();
-      await page.evaluate(() => window.scrollBy(0, 700));
       const drag = await page.evaluate(({ side, sl }) => {
         const series = window.__liveStopChartSeries;
         const canvas = document.querySelector("#tv-chart canvas.cs-beta-canvas");
