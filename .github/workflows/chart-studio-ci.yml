@@ -66,6 +66,7 @@ jobs:
           node --check scripts/chart_render_pixels.cjs
           node scripts/test_chart_render_pixels.cjs
           node --check scripts/smoke_live_account_race.cjs
+          node --check scripts/smoke_live_multi_chart_demos.cjs
           node --check scripts/smoke_live_chart_render_data.cjs
           node --check scripts/smoke_live_v5_measure_text.cjs
           node --check scripts/smoke_live_account_deeplink.cjs
