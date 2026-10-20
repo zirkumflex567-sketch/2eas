@@ -62,14 +62,23 @@ class SpoolFileConsumer:
         _physical(self.archive); _private(self.archive, True)
         self.producers = {}
         self._thread_locks = {}
-        for account, producer_id in producers.items():
-            importer = SpoolImporter(store, account_id=account, producer_id=producer_id)
-            if producer_id in self.producers:
+        for account, configured in producers.items():
+            if isinstance(configured, str):
+                producer_ids = (configured,)
+            elif isinstance(configured, tuple) and 1 <= len(configured) <= 8:
+                producer_ids = configured
+            else:
+                raise ValueError('invalid producer list')
+            if len(set(producer_ids)) != len(producer_ids):
                 raise ValueError('duplicate producer')
-            self.producers[producer_id] = (account, importer)
-            self._thread_locks[producer_id] = threading.Lock()
-            self._reported_store_loss[producer_id] = 0
-            self._reported_gap[producer_id] = False
+            for producer_id in producer_ids:
+                importer = SpoolImporter(store, account_id=account, producer_id=producer_id)
+                if producer_id in self.producers:
+                    raise ValueError('duplicate producer')
+                self.producers[producer_id] = (account, importer)
+                self._thread_locks[producer_id] = threading.Lock()
+                self._reported_store_loss[producer_id] = 0
+                self._reported_gap[producer_id] = False
 
     def _verify_root(self):
         try:

@@ -474,3 +474,54 @@ def test_decision_capture_status_is_authenticated_demo_scoped_and_redacted(monke
     assert funded.json()['detail']['code'] == 'DEMO_ACCOUNT_REQUIRED'
     duplicate = client.get('/api/chart/v1/decisions/capture/status?account=xau5m_m5&account=titan_m5')
     assert duplicate.status_code == 422
+
+
+def test_decision_capture_status_aggregates_independent_record_only_producer(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from chart_studio import evidence_api
+    from chart_studio.evidence_api import install_evidence_routes
+    from dashboard_security import install_control_security
+    monkeypatch.delenv('CHART_STUDIO_EVIDENCE_SPOOL_ROOT', raising=False)
+
+    class Store:
+        root = Path('private-test-root')
+        def gaps(self, account=None):
+            return {'knownLossSinceStart':0,'lifetime':'PROCESS_ONLY','unrecordedHistory':True}
+        def read(self, context, *, kind, limit):
+            return {'records':[{}] if kind == 'DECISION' else []}
+
+    monkeypatch.setattr(evidence_api, 'DEFAULT_EVIDENCE_RECORD_ONLY_PRODUCERS', {
+        'xau5m_m5': 'titan_puprime250_recordonly'})
+    app = FastAPI()
+    install_control_security(app)
+    install_evidence_routes(app, store=Store(), mt5=object())
+    app.state.evidence_spool_service = object()
+    app.state.evidence_spool_status = {
+        'titan_puprime250': {
+            'code':'IDLE','imported':0,'duplicates':1,'importedTotal':2,'duplicatesTotal':3,
+            'gapCount':1,'gapObserved':False,'storeLostCount':0,
+            'temporaryFileCount':10,'temporaryBytes':100,
+            'temporaryOldestMtimeUtc':'2026-10-18T06:00:00Z',
+            'temporaryNewestMtimeUtc':'2026-10-20T07:00:00Z'},
+        'titan_puprime250_recordonly': {
+            'code':'IMPORTED','imported':1,'duplicates':0,'importedTotal':3,'duplicatesTotal':1,
+            'gapCount':2,'gapObserved':True,'storeLostCount':4,
+            'temporaryFileCount':2,'temporaryBytes':30,
+            'temporaryOldestMtimeUtc':'2026-10-19T06:00:00Z',
+            'temporaryNewestMtimeUtc':'2026-10-20T09:00:00Z'},
+    }
+
+    response = TestClient(app).get(
+        '/api/chart/v1/decisions/capture/status', params={'account':'xau5m_m5'})
+
+    assert response.status_code == 200
+    status = response.json()['status']
+    assert status['code'] == 'IMPORTED'
+    assert (status['imported'], status['duplicates']) == (1, 1)
+    assert (status['importedTotal'], status['duplicatesTotal']) == (5, 4)
+    assert (status['temporaryFileCount'], status['temporaryBytes']) == (12, 130)
+    assert (status['temporaryOldestMtimeUtc'], status['temporaryNewestMtimeUtc']) == (
+        '2026-10-18T06:00:00Z', '2026-10-20T09:00:00Z')
+    assert (status['gapCount'], status['gapObserved'], status['storeLostCount']) == (3, True, 4)
+    assert status['recordingState'] == 'RECORDED'

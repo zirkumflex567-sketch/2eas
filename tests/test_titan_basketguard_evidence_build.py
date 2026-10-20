@@ -158,10 +158,18 @@ def test_manifest_records_source_preset_and_effective_schema_hashes(tmp_path):
     manifest = BUILD._manifest(source, SOURCE.read_bytes(), "xau5m_m5", preset, values, "a" * 64, "b" * 64)
 
     assert manifest["accountAlias"] == "xau5m_m5"
+    assert manifest["producerId"] == "titan_puprime250"
     assert manifest["sourceSha256"] == hashlib.sha256(SOURCE.read_bytes()).hexdigest()
     assert manifest["effectiveInputCount"] == len(declared)
     assert manifest["effectiveParameterSetHash"] == BUILD._expected_parameter_hash(source, values)
     assert manifest["presetSha256"] == hashlib.sha256(preset.read_bytes()).hexdigest()
+
+    record_only_manifest = BUILD._manifest(
+        source, SOURCE.read_bytes(), "xau5m_m5", preset, values,
+        "a" * 64, "b" * 64, record_only=True,
+    )
+    assert record_only_manifest["producerId"] == "titan_puprime250_recordonly"
+    assert record_only_manifest["recordOnly"] is True
 
 
 def _known_installed_predecessor(source):
@@ -237,3 +245,10 @@ def test_record_only_capture_candidate_fails_closed_at_every_broker_write():
             prefix = generated[max(0, match.start() - 120):match.start()]
             assert f'? CSSuppressBrokerWrite("{method.upper()}") : ' in prefix
     assert "CSEnqueueDecision(\"ORDER_ATTEMPT\"" in generated
+
+
+def test_record_only_candidates_use_a_distinct_spool_producer():
+    assert BUILD._producer_for_build("xau5m_m5", record_only=False) == "titan_puprime250"
+    assert BUILD._producer_for_build("xau5m_m5", record_only=True) == "titan_puprime250_recordonly"
+    assert BUILD._producer_for_build("titan_m5", record_only=False) == "titan_puprime500"
+    assert BUILD._producer_for_build("titan_m5", record_only=True) == "titan_puprime500_recordonly"

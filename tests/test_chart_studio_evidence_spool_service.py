@@ -164,6 +164,29 @@ def test_active_file_reads_complete_lines_and_resumes_partial_tail(private_root,
     assert len(store.read(context(), kind='DECISION')['records']) == 2
 
 
+def test_one_demo_can_import_separate_active_and_record_only_producers(private_root, spool_root):
+    store = evidence_store(private_root)
+    active = record(seq=1)
+    diagnostic = record(seq=1)
+    active['envelope']['id'] = active['envelope']['payload']['eventId'] = 'active_event'
+    active['envelope']['payload']['correlationId'] = 'active_correlation'
+    diagnostic['producerId'] = 'titan_record_only'
+    diagnostic['envelope']['id'] = diagnostic['envelope']['payload']['eventId'] = 'diagnostic_event'
+    diagnostic['envelope']['payload']['correlationId'] = 'diagnostic_correlation'
+    write_private(spool_root / 'titan_demo.active.ndjson', line(active).encode())
+    write_private(spool_root / 'titan_record_only.active.ndjson', line(diagnostic).encode())
+    service = SpoolFileConsumer(
+        store, spool_root, producers={'titan': ('titan_demo', 'titan_record_only')},
+        excluded_roots=[Path.cwd()])
+
+    result = service.poll_once()
+
+    assert result['titan_demo']['imported'] == 1
+    assert result['titan_record_only']['imported'] == 1
+    records = store.read(context(), kind='DECISION')['records']
+    assert {row['id'] for row in records} == {'active_event', 'diagnostic_event'}
+
+
 def test_preexisting_consumers_reload_sequence_cursor_under_producer_lock(private_root, spool_root):
     store = evidence_store(private_root)
     active = spool_root / 'titan_demo.active.ndjson'
@@ -497,7 +520,11 @@ def test_default_producers_bind_demo_titans_and_goldm15_but_exclude_blueberry(pr
     class Consumer:
         def __init__(self, store, root, *, producers, excluded_roots):
             captured.update(producers)
-            self.producers = {producer: (account, None) for account, producer in producers.items()}
+            self.producers = {
+                producer: (account, None)
+                for account, configured in producers.items()
+                for producer in ((configured,) if isinstance(configured, str) else configured)
+            }
 
     monkeypatch.setattr(evidence_api, 'SpoolFileConsumer', Consumer)
     monkeypatch.setenv('CHART_STUDIO_EVIDENCE_SPOOL_ROOT', str(spool_root))
@@ -505,9 +532,9 @@ def test_default_producers_bind_demo_titans_and_goldm15_but_exclude_blueberry(pr
     install_evidence_routes(app, store=evidence_store(private_root))
 
     assert captured == {
-        'xau5m_m5': 'titan_puprime250',
-        'titan_m5': 'titan_puprime500',
-        'goldm15': 'goldm15_demo',
+        'xau5m_m5': ('titan_puprime250', 'titan_puprime250_recordonly'),
+        'titan_m5': ('titan_puprime500', 'titan_puprime500_recordonly'),
+        'goldm15': ('goldm15_demo',),
     }
     assert not {'blueberry', 'titan', 'xau5m_500'}.intersection(captured)
     assert app.state.evidence_spool_service is not None

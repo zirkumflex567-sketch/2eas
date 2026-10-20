@@ -59,6 +59,16 @@ def _function_definition(source_text: str, name: str) -> str:
     raise ValueError(f"unterminated {name} definition")
 
 
+def _producer_for_build(alias: str, *, record_only: bool) -> str:
+    from chart_studio.evidence_api import (DEFAULT_EVIDENCE_PRODUCERS,
+        DEFAULT_EVIDENCE_RECORD_ONLY_PRODUCERS)
+    producers = DEFAULT_EVIDENCE_RECORD_ONLY_PRODUCERS if record_only else DEFAULT_EVIDENCE_PRODUCERS
+    producer = producers.get(alias)
+    if not producer:
+        raise ValueError(f"evidence producer is not configured for {alias}")
+    return producer
+
+
 def _normalize_reviewed_installed_source(installed_text: str, main_source_text: str) -> str:
     """Allow only known identity, challenge-binding, and capture-clock deltas."""
     normalized = installed_text.replace("\r\n", "\n").replace("\r", "\n")
@@ -332,7 +342,7 @@ def _manifest(source_text: str, source_bytes: bytes, alias: str, preset_path: Pa
     return {
         "schemaVersion": 1,
         "accountAlias": alias,
-        "producerId": "titan_puprime250" if alias == "xau5m_m5" else "titan_puprime500",
+        "producerId": _producer_for_build(alias, record_only=record_only),
         "sourceSha256": hashlib.sha256(source_bytes).hexdigest(),
         "sourceAndIncludeSha256": source_hash,
         "terminalIdentityHash": terminal_hash,
@@ -366,7 +376,6 @@ def prepare_variant(repo_root: Path, alias: str, preset_path: Path,
 
     sys.path.insert(0, str(repo_root))
     import account_gateway
-    from chart_studio.evidence_api import DEFAULT_EVIDENCE_PRODUCERS
     from chart_studio.evidence_models import AccountContext
 
     spec = account_gateway.ACCOUNTS[alias]
@@ -390,9 +399,7 @@ def prepare_variant(repo_root: Path, alias: str, preset_path: Path,
     context = AccountContext.from_config(alias)
     source_hash = hashlib.sha256(source_bytes + b"\0" + helper_bytes).hexdigest()
     expected_parameter_hash = _expected_parameter_hash(source_text, values, alias)
-    producer = DEFAULT_EVIDENCE_PRODUCERS.get(alias)
-    if not producer:
-        raise ValueError(f"evidence producer is not configured for {alias}")
+    producer = _producer_for_build(alias, record_only=record_only)
     generated = _instrument_source(
         source_text, alias, producer, context.terminal_identity_hash, source_hash,
         expected_parameter_hash, int(spec["login"]), spec["server"],

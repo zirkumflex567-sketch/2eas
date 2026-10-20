@@ -29,6 +29,49 @@ DEFAULT_EVIDENCE_PRODUCERS = {
     'titan_m5': 'titan_puprime500',
     'goldm15': 'goldm15_demo',
 }
+DEFAULT_EVIDENCE_RECORD_ONLY_PRODUCERS = {
+    'xau5m_m5': 'titan_puprime250_recordonly',
+    'titan_m5': 'titan_puprime500_recordonly',
+}
+
+
+def _evidence_spool_producers():
+    return {
+        account: tuple(producer for producer in (
+            DEFAULT_EVIDENCE_PRODUCERS[account],
+            DEFAULT_EVIDENCE_RECORD_ONLY_PRODUCERS.get(account),
+        ) if producer)
+        for account in DEFAULT_EVIDENCE_PRODUCERS
+    }
+
+
+def _merge_capture_producer_statuses(rows):
+    codes = [row.get('code') if isinstance(row, dict) else None for row in rows]
+    known_idle_codes = {'IDLE', 'IMPORTED', 'ARCHIVED'}
+    if all(code in known_idle_codes for code in codes):
+        code = 'IMPORTED' if any(value in ('IMPORTED', 'ARCHIVED') for value in codes) else 'IDLE'
+    else:
+        code = next((value for value in codes if isinstance(value, str)), None)
+    merged = {'code': code}
+    for key in ('imported', 'duplicates', 'importedTotal', 'duplicatesTotal',
+                'temporaryFileCount', 'temporaryBytes', 'gapCount', 'storeLostCount'):
+        merged[key] = sum(row.get(key, 0) for row in rows
+                          if isinstance(row, dict) and type(row.get(key, 0)) is int and row.get(key, 0) >= 0)
+    merged['gapObserved'] = any(
+        row.get('gapObserved', False) is True for row in rows if isinstance(row, dict)) or any(
+        isinstance(row, dict) and type(row.get('gapObserved', False)) is not bool for row in rows)
+    for key in ('temporaryOldestMtimeUtc', 'temporaryNewestMtimeUtc'):
+        values = []
+        for row in rows:
+            value = row.get(key) if isinstance(row, dict) else None
+            if isinstance(value, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', value):
+                try:
+                    datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ')
+                except ValueError:
+                    continue
+                values.append(value)
+        merged[key] = (min(values) if key.endswith('OldestMtimeUtc') else max(values)) if values else None
+    return merged
 
 
 class CursorInvalid(Exception):
@@ -101,7 +144,7 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
             if not getattr(store, 'root', None) or not getattr(store, 'path', None):
                 raise ValueError('evidence store is not configured')
             app.state.evidence_spool_service = SpoolFileConsumer(
-                store, spool_root, producers=DEFAULT_EVIDENCE_PRODUCERS, excluded_roots=excluded)
+                store, spool_root, producers=_evidence_spool_producers(), excluded_roots=excluded)
         except (OSError, ValueError, StoreUnavailable):
             # Keep the dashboard available but expose only a generic internal state.
             app.state.evidence_spool_status = {'service': {'code':'CONFIG_INVALID'}}
@@ -319,7 +362,14 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
                       'gapCount': 0, 'gapObserved': False, 'storeLostCount': 0,
                       'recordingState': 'NOT_RECORDED'}
         else:
-            raw_status = app.state.evidence_spool_status.get(producer)
+            producer_ids = (producer,)
+            record_only_producer = DEFAULT_EVIDENCE_RECORD_ONLY_PRODUCERS.get(account)
+            if record_only_producer:
+                producer_ids += (record_only_producer,)
+            producer_rows = [app.state.evidence_spool_status.get(producer_id)
+                             for producer_id in producer_ids]
+            raw_status = (_merge_capture_producer_statuses(producer_rows)
+                          if len(producer_rows) > 1 else producer_rows[0])
             if raw_status is None:
                 raw_status = {}
             code = raw_status.get('code')
