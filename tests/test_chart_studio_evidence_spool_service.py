@@ -300,6 +300,21 @@ def test_large_stable_temp_index_is_bounded_and_refills_after_scan(private_root,
     assert {row['id'] for row in store.read(context(), kind='DECISION')['records']} == {'event_1', 'event_2', 'event_3'}
 
 
+def test_large_temp_scan_yields_between_bounded_entry_batches(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    for index in range(1, 4):
+        write_private(spool_root / f'titan_demo.{index}.tmp.ndjson', line(record(seq=index)).encode())
+    monkeypatch.setattr(spool_service, 'MAX_SCAN_ENTRIES_WITHOUT_YIELD', 2)
+    yielded = []
+    monkeypatch.setattr(spool_service.time, 'sleep', lambda delay: yielded.append(delay))
+    service = consumer(store, spool_root)
+
+    service._scan_temporary_segments()
+
+    assert yielded
+    assert set(yielded) == {0.001}
+
+
 def test_temporary_file_change_between_stability_scans_restarts_stability_window(private_root, spool_root, monkeypatch):
     store = evidence_store(private_root)
     path = spool_root / 'titan_demo.1.tmp.ndjson'

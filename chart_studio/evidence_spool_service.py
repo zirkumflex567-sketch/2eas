@@ -25,6 +25,7 @@ MAX_SEGMENT_BYTES = 8 * 1024 * 1024
 MAX_RECORDS_PER_POLL = 50
 MAX_TEMPORARY_RECORDS_PER_POLL = MAX_RECORDS_PER_POLL
 MAX_STABLE_TEMPORARY_CANDIDATES = 5000
+MAX_SCAN_ENTRIES_WITHOUT_YIELD = 1024
 _READY = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)-([1-9][0-9]*)\.ready\.ndjson\Z')
 _TEMP_SEGMENT = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)\.tmp\.ndjson\Z')
 _TEMP_SCAN_INTERVAL_SECONDS = 60.0
@@ -507,7 +508,9 @@ class SpoolFileConsumer:
         candidate_limit=max(1,MAX_STABLE_TEMPORARY_CANDIDATES + MAX_TEMPORARY_RECORDS_PER_POLL)
         try:
             with os.scandir(self.root) as entries:
-                for entry in entries:
+                for index,entry in enumerate(entries,1):
+                    if index % MAX_SCAN_ENTRIES_WITHOUT_YIELD == 0:
+                        time.sleep(0.001)
                     match = _TEMP_SEGMENT.fullmatch(entry.name)
                     if not match or match.group(1) not in counts:
                         continue
