@@ -617,6 +617,7 @@ const server=http.createServer((req,res)=>{
   const scopeSwitch=await page.evaluate(({candles,asOfUtc})=>{
    const stale=window.ChartStudioV5Preview.beginRead();
    const stalePositions=window.ChartStudioV5Preview.beginPositionRead();
+   localStorage.setItem("2eas.chartstudio.v5.price-presentation:v1:xau5m_m5:XAUUSD.p:M15","line");
    window.ChartStudioV5Preview.setScope({account:"xau5m_m5",symbol:"XAUUSD.p",timeframe:"M15"});
    const staleResult=window.ChartStudioV5Preview.update({accountId:"titan",symbol:"XAUUSD",timeframe:"M15",source:"MT5_VERIFIED",canExecute:false,candles},stale);
    const stalePositionResult=window.ChartStudioV5Preview.setPositions({scope:{account:"titan",symbol:"XAUUSD",timeframe:"M15"},source:"MT5_VERIFIED",canExecute:false,positions:[{ticket:"71001",side:"BUY",priceOpen:4161}]},stalePositions);
@@ -624,11 +625,12 @@ const server=http.createServer((req,res)=>{
    const updated=window.ChartStudioV5Preview.update({accountId:"xau5m_m5",symbol:"XAUUSD.p",timeframe:"M15",source:"MT5_VERIFIED",canExecute:false,snapshotAsOfUtc:asOfUtc,candles},current);
    window.__v5AverageAccount="xau5m_m5";window.__v5AverageConfigs=[];window.__v5IndicatorScope={account:"xau5m_m5",symbol:"XAUUSD.p",timeframe:"M15"};window.__v5IndicatorSettings={stochastic:{enabled:false,period:14,smoothK:3,smoothD:3}};window.__v5OscillatorInstances=[];
    window.dispatchEvent(new CustomEvent("chart-studio-averages-change",{detail:{account:"xau5m_m5",symbol:"XAUUSD"}}));
-   return {staleResult,stalePositionResult,updated,state:window.ChartStudioV5Preview.inspect()};
+   return {staleResult,stalePositionResult,updated,state:window.ChartStudioV5Preview.inspect(),selectedChartType:document.querySelector("#chart-v5-chart-type")?.value};
   },{candles,asOfUtc});
   assert.deepEqual(scopeSwitch.staleResult,{applied:false,reason:"STALE_SCOPE"});
   assert.deepEqual(scopeSwitch.stalePositionResult,{applied:false,reason:"STALE_SCOPE"},"late position reads cannot cross account changes");
   assert.deepEqual(scopeSwitch.updated,{applied:true,candleCount:150});
+  assert.equal(scopeSwitch.selectedChartType,"line","the visible selector follows the new scope's saved native presentation after verified data arrives");
   assert.equal(scopeSwitch.state.marketLevelCount,0,"account/symbol scope changes clear prior market-level lines");
   assert.equal(scopeSwitch.state.scope.account,"xau5m_m5");
   assert.equal(scopeSwitch.state.positionOverlayCount,0,"account changes clear prior account position lines");

@@ -582,7 +582,7 @@
     try{renderPositions();return true}catch(_){positionsSnapshot=null;clearRenderedPositions();return false}
   }
   function readPositions(){return engine?.readPositionOverlays?.()||{count:0,lines:[]}}
-  function syncChartType(){if(!chartTypeSelect)return;const value=engine?.readPricePresentation?.();chartTypeSelect.disabled=!engine||!latest||!value;if(value&&["candles","heikin","hollow"].includes(value.type))chartTypeSelect.value=value.type}
+  function syncChartType(){if(!chartTypeSelect)return;const value=engine?.readPricePresentation?.();chartTypeSelect.disabled=!engine||!latest||!value;if(value&&["candles","bars","line","area","heikin","hollow"].includes(value.type))chartTypeSelect.value=value.type}
   function renderBrokerDealMarkers(){
     if(!engine||!scope||!brokerDealMarkersSnapshot)return {plotted:0,unplotted:0,markers:[]};
     return engine.setBrokerDealMarkers(brokerDealMarkersSnapshot);
