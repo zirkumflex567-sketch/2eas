@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
+from fastapi import HTTPException
 
 
 class MultiAccountTests(unittest.TestCase):
@@ -78,6 +79,19 @@ class MultiAccountTests(unittest.TestCase):
             with self.gateway.session(fake, 'unknown'):
                 pass
         self.assertFalse(fake.calls)
+
+    def test_challenge_protected_account_with_shared_demo_path_fails_before_initialize(self):
+        fake = self.fake()
+        calls = []
+        fake.initialize = lambda path, **kwargs: calls.append(path) or False
+
+        with patch.dict(self.gateway.ACCOUNTS['blueberry'],
+                        terminal=self.gateway.ACCOUNTS['xau5m_m5']['terminal']):
+            with self.assertRaisesRegex(HTTPException, 'Terminalpfad'):
+                with self.gateway.session(fake, 'blueberry'):
+                    self.fail('shared challenge/demo terminal path must fail closed')
+
+        self.assertEqual(calls, [])
 
     def test_parallel_sessions_cannot_cross_accounts(self):
         fake = self.fake()

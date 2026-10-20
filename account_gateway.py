@@ -144,6 +144,22 @@ def verify_identity(mt5, account):
     return info
 
 
+def _protected_terminal_path_conflicts(account_id, account):
+    if account.get('challenge_protection') is not True:
+        return False
+    terminal = account.get('terminal')
+    if not isinstance(terminal, str) or not terminal.strip():
+        return True
+    expected = ntpath.normcase(ntpath.normpath(terminal))
+    for alias, other in ACCOUNTS.items():
+        if alias == account_id or other.get('id') == account.get('id'):
+            continue
+        candidate = other.get('terminal')
+        if isinstance(candidate, str) and candidate.strip() and ntpath.normcase(ntpath.normpath(candidate)) == expected:
+            return True
+    return False
+
+
 @contextmanager
 def session(mt5, account='blueberry'):
     """Reuse a verified terminal between reads; isolate every account under one lock.
@@ -155,6 +171,8 @@ def session(mt5, account='blueberry'):
     if account not in ACCOUNTS:
         raise HTTPException(400, 'Unbekannter Account.')
     spec = ACCOUNTS[account]
+    if _protected_terminal_path_conflicts(account, spec):
+        raise HTTPException(503, 'Challenge-Schutz: Terminalpfad ist mehrfach zugeordnet; Zugriff verweigert.')
     with broker_telemetry.measured_lock(_lock):
         if not terminal_running(spec['terminal']):
             if _attached_mt5 is mt5:
