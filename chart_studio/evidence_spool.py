@@ -18,7 +18,7 @@ from chart_studio.evidence_store import EvidenceStore, StoreUnavailable, _physic
 
 MAX_LINE_BYTES = models.MAX_BYTES + 4096
 SEEN_LIMIT = 512
-_CURSOR_REPLACE_RETRY_DELAYS = (0.01, 0.04)
+_CURSOR_REPLACE_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4)
 
 
 def _replace_cursor_with_retry(source, destination):

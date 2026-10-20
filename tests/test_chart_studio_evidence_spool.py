@@ -172,7 +172,7 @@ def test_spool_import_retries_transient_windows_cursor_replace_lock(private_root
     def replace_with_transient_lock(source, destination):
         if destination == importer.cursor_path:
             attempts.append(destination)
-            if len(attempts) == 1:
+            if len(attempts) <= 4:
                 error = PermissionError('sharing violation')
                 error.winerror = 32
                 raise error
@@ -184,7 +184,7 @@ def test_spool_import_retries_transient_windows_cursor_replace_lock(private_root
 
     assert result['ok'] is True
     assert result['code'] == 'APPENDED'
-    assert len(attempts) == 3
+    assert len(attempts) == 6
     assert len(store.read(AccountContext.from_config('titan'), kind='DECISION')['records']) == 1
 
 
