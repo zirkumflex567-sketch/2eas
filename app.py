@@ -2520,6 +2520,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <!-- 4. JAVASCRIPT ENGINE -->
   <script src="static/dashboard-runtime.js"></script>
   <script src="static/chart-level-visibility.js"></script>
+  <script src="static/chart-axis-badge-layout.js"></script>
   <script>
     const localStorage = DashboardRuntime.storage; // Optional preferences must never stop the dashboard.
     let chart, candleSeries, ema9Series, ema20Series, ema50Series, ema200Series;
@@ -2528,6 +2529,10 @@ HTML_CONTENT = """<!DOCTYPE html>
     let currentSRLevels = null;
     let currentSRPrice = 0;
     let positionLines = {};
+    const positionBadgeMeta = new Map();
+    let positionBadgeLayoutReadback = [];
+    let positionBadgeLayoutFrame = null;
+    let positionBadgeLayoutPositionCount = 0;
     let lastKnownPositions = [];
     let isInitialLoad = true;
     let lastCandleTime = 0;
@@ -3163,12 +3168,16 @@ HTML_CONTENT = """<!DOCTYPE html>
       ema200Series = chart.addLineSeries({ color: '#a55eea', lineWidth: 2, title: 'EMA200' });
       container.__chart = chart;
       container.__candleSeries = candleSeries;
+      container.addEventListener('wheel', schedulePositionAxisBadgeLayout, { passive: true });
+      container.addEventListener('pointerup', schedulePositionAxisBadgeLayout);
+      container.addEventListener('pointercancel', schedulePositionAxisBadgeLayout);
       try { window.StoneCockpit?.attachChart?.({chart, candleSeries}); } catch (_) {}
       try { window.StoneChartFX?.attach({chart, host:container, candleSeries, emaSeries:[ema9Series,ema20Series,ema50Series,ema200Series]}); } catch (_) {}
       try { window.StoneCelebration?.applyChartSettings(); } catch (_) {}
       try { window.ChartStudioBeta?.mount({chart,host:container,candleSeries,emaSeries:[ema20Series,ema50Series,ema200Series],account:activeAccount,timeframe:activeTimeframe}); } catch (err) { console.warn("Chart Studio Beta konnte nicht gestartet werden:",err); }
       try { window.__chartStudioMainDataWindow = window.ChartStudioMainDataWindow?.mount({chart,host:container,candleSeries,emaSeries:[{label:"EMA20",series:ema20Series},{label:"EMA50",series:ema50Series},{label:"EMA200",series:ema200Series}],symbol:activeChartSymbol,timeframe:activeTimeframe}); } catch (err) { console.warn("Hauptchart-Datenfenster konnte nicht gestartet werden:",err); }
       chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+        schedulePositionAxisBadgeLayout();
         if (range && range.from <= 2) void loadOlderCandles();
       });
 
@@ -3178,6 +3187,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         for (let entry of entries) {
           if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
             chart.applyOptions({ width: entry.contentRect.width, height: entry.contentRect.height });
+            schedulePositionAxisBadgeLayout();
             if (!chartInitiallySized && currentCandlesCount > 0) {
               chartInitiallySized = true;
               applyOptimalChartView(currentCandlesCount);
@@ -3420,8 +3430,51 @@ HTML_CONTENT = """<!DOCTYPE html>
         }
       }
       positionLines = {};
+      positionBadgeMeta.clear();
+      positionBadgeLayoutReadback = [];
+      positionBadgeLayoutPositionCount = 0;
       const posLegend = document.getElementById('chart-pos-legend');
       if (posLegend) { posLegend.classList.add('hidden'); posLegend.classList.remove('inline-flex'); }
+    }
+
+    function applyPositionAxisBadgeLayout() {
+      if (!chart || !candleSeries || !window.ChartAxisBadgeLayout) return;
+      const host = document.getElementById('tv-chart');
+      const paneHeight = host?.clientHeight || 0;
+      const candidates = Object.entries(positionLines).map(([key]) => {
+        const meta = positionBadgeMeta.get(key);
+        return meta ? { id: key, y: candleSeries.priceToCoordinate(meta.price), priority: meta.priority, lineVisible: true } : null;
+      }).filter(Boolean);
+      const layout = window.ChartAxisBadgeLayout.layoutAxisBadges(candidates, { paneHeight, minGapPx: 32 });
+      const byId = new Map(layout.map(row => [row.id, row]));
+      for (const [key, row] of byId) {
+        const meta = positionBadgeMeta.get(key);
+        if (!meta || !positionLines[key] || meta.axisLabelVisible === row.visible) continue;
+        try {
+          positionLines[key].applyOptions({ axisLabelVisible: row.visible });
+          meta.axisLabelVisible = row.visible;
+        } catch (_) {}
+      }
+      positionBadgeLayoutReadback = layout.map(row => {
+        const meta = positionBadgeMeta.get(row.id);
+        return { role: meta?.role || 'UNKNOWN', price: meta?.price ?? null, y: Number.isFinite(row.y) ? row.y : null, visible: meta?.axisLabelVisible === true };
+      });
+      positionBadgeLayoutPositionCount = showChartPositions ? lastKnownPositions.length : 0;
+      if (host) host.__positionAxisBadgeState = () => ({
+        candidateCount: positionBadgeLayoutReadback.length,
+        lineCount: Object.keys(positionLines).length,
+        positionCount: positionBadgeLayoutPositionCount,
+        paneHeight: host.clientHeight,
+        rows: positionBadgeLayoutReadback.map(row => ({ ...row })),
+      });
+    }
+
+    function schedulePositionAxisBadgeLayout() {
+      if (positionBadgeLayoutFrame !== null) return;
+      positionBadgeLayoutFrame = requestAnimationFrame(() => {
+        positionBadgeLayoutFrame = null;
+        applyPositionAxisBadgeLayout();
+      });
     }
 
     function updateChartPositionLines(positions) {
@@ -3435,11 +3488,13 @@ HTML_CONTENT = """<!DOCTYPE html>
       const posLegend = document.getElementById('chart-pos-legend');
       let hasVisibleLines = false;
 
-      function setPosLine(key, price, color, title, lineStyle = 0) {
+      function setPosLine(key, price, color, title, role, priority, lineStyle = 0) {
         const p = Number(price);
         if (!Number.isFinite(p) || p <= 0) return;
         activeKeys.add(key);
         hasVisibleLines = true;
+        if (!positionBadgeMeta.has(key)) positionBadgeMeta.set(key, { price: p, role, priority, axisLabelVisible: true });
+        else Object.assign(positionBadgeMeta.get(key), { price: p, role, priority });
 
         if (positionLines[key]) {
           positionLines[key].applyOptions({ price: p, color, title, lineStyle });
@@ -3465,7 +3520,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           const entryKey = 'pos_' + ticket + '_entry';
           const entryColor = isBuy ? '#10b981' : '#f43f5e';
           const entryTitle = `${pos.type} ${vol} #${ticket}`;
-          setPosLine(entryKey, pos.open_price, entryColor, entryTitle, 0); // 0 = Solid
+          setPosLine(entryKey, pos.open_price, entryColor, entryTitle, 'ENTRY', 10, 0); // 0 = Solid
         }
 
         // 2. Stop-Loss-Linie (SL)
@@ -3473,7 +3528,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           const slKey = 'pos_' + ticket + '_sl';
           const slColor = '#ef4444';
           const slTitle = `SL #${ticket}`;
-          setPosLine(slKey, pos.sl_price, slColor, slTitle, 2); // 2 = Dashed
+          setPosLine(slKey, pos.sl_price, slColor, slTitle, 'SL', 0, 2); // 2 = Dashed
         }
 
         // 3. Take-Profit-Linie (TP) nur wenn vorhanden (> 0)
@@ -3481,7 +3536,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           const tpKey = 'pos_' + ticket + '_tp';
           const tpColor = '#10b981';
           const tpTitle = `TP #${ticket}`;
-          setPosLine(tpKey, pos.tp_price, tpColor, tpTitle, 2); // 2 = Dashed
+          setPosLine(tpKey, pos.tp_price, tpColor, tpTitle, 'TP', 1, 2); // 2 = Dashed
         }
       }
 
@@ -3490,6 +3545,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (!activeKeys.has(key)) {
           try { candleSeries.removePriceLine(positionLines[key]); } catch (_) {}
           delete positionLines[key];
+          positionBadgeMeta.delete(key);
         }
       }
 
@@ -3502,6 +3558,7 @@ HTML_CONTENT = """<!DOCTYPE html>
           posLegend.classList.remove('inline-flex');
         }
       }
+      schedulePositionAxisBadgeLayout();
     }
 
     const v5PositionDemoAccounts = new Set(['titan','xau5m_m5','titan_m5','xau5m_500','goldm15']);

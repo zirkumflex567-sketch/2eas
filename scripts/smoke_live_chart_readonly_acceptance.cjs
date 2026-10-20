@@ -78,6 +78,26 @@ fs.mkdirSync(outputDir, { recursive: true });
         const canvas = document.querySelector("#tv-chart canvas");
         return canvas && canvas.width > 300 && canvas.height > 300;
       });
+      await page.waitForFunction(() => {
+        const host = document.querySelector("#tv-chart");
+        const state = host?.__positionAxisBadgeState?.();
+        const positions = Number(document.querySelector("#pos-count-badge")?.textContent?.match(/\d+/)?.[0] || 0);
+        return state && state.positionCount === positions;
+      });
+      const axisBadges = await page.locator("#tv-chart").evaluate(host => host.__positionAxisBadgeState());
+      assert.equal(axisBadges.lineCount, axisBadges.candidateCount, `${account} keeps every broker position line`);
+      assert.ok(axisBadges.lineCount >= axisBadges.positionCount, `${account} retains at least one line per position`);
+      assert.ok(axisBadges.rows.every(row => Number.isFinite(row.price) && row.price > 0),
+        `${account} keeps full position prices in the readback`);
+      const visibleBadgeYs = axisBadges.rows.filter(row => row.visible).map(row => row.y);
+      assert.ok(visibleBadgeYs.every(y => y >= 16 && y <= axisBadges.paneHeight - 16),
+        `${account} hides labels outside the visible price pane`);
+      for (let first = 0; first < visibleBadgeYs.length; first += 1) {
+        for (let second = first + 1; second < visibleBadgeYs.length; second += 1) {
+          assert.ok(Math.abs(visibleBadgeYs[first] - visibleBadgeYs[second]) >= 32,
+            `${account} position price-axis labels overlap`);
+        }
+      }
       const canvas = await page.locator("#tv-chart canvas").evaluateAll(items =>
         items.map(item => ({ width: item.width, height: item.height }))
       );
@@ -96,7 +116,7 @@ fs.mkdirSync(outputDir, { recursive: true });
         return { opaqueSamples, distinctColors: colors.size };
       });
       assert.ok(pixels.opaqueSamples > 100 && pixels.distinctColors > 10, `${account} chart canvas has no rendered price data`);
-      results.push({ account, symbol: candles.body.symbol, timeframe: candles.body.timeframe, bars: candles.body.candles.length, status: statusText, chartCanvasPixels: pixels });
+      results.push({ account, symbol: candles.body.symbol, timeframe: candles.body.timeframe, bars: candles.body.candles.length, status: statusText, chartCanvasPixels: pixels, positionAxisBadges: { positions: axisBadges.positionCount, lines: axisBadges.lineCount, visible: visibleBadgeYs.length, hidden: axisBadges.lineCount - visibleBadgeYs.length } });
       if (index === 0) {
         await page.locator("#tv-chart").screenshot({ path: path.join(outputDir, "chart-main-titan-canvas.png") });
         await page.screenshot({ path: path.join(outputDir, "chart-main-titan-current.png"), fullPage: true });
