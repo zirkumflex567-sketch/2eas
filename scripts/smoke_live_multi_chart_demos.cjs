@@ -80,7 +80,8 @@ async function main() {
           const candleResponse = page.waitForResponse(response => {
             const url = new URL(response.url());
             return url.pathname === "/api/candles" && url.searchParams.get("account") === account &&
-              url.searchParams.get("symbol") === expected.symbol && url.searchParams.get("tf") === frames[index];
+              url.searchParams.get("symbol") === expected.symbol && url.searchParams.get("tf") === frames[index] &&
+              url.searchParams.get("count") === "300";
           }, { timeout: 20000 });
           await pane.locator("[data-load]").click();
           const response = await candleResponse;
