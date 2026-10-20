@@ -315,6 +315,56 @@ def test_large_temp_scan_yields_between_bounded_entry_batches(private_root, spoo
     assert set(yielded) == {0.001}
 
 
+def test_incremental_temp_scan_keeps_processing_previous_stable_candidates(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    path = spool_root / 'titan_demo.1.tmp.ndjson'
+    write_private(path, line(record(seq=1)).encode())
+    clock = [100.0]
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(spool_service, 'MAX_SCAN_ENTRIES_PER_POLL', 64)
+    service = consumer(store, spool_root)
+
+    service._scan_temporary_segments()
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+    service._scan_temporary_segments()
+    assert [sequence for sequence, _path, _signature in service._stable_temporary_files['titan_demo']] == [1]
+
+    for index in range(8):
+        write_private(spool_root / f'noise-{index}.dat', b'ignored')
+    monkeypatch.setattr(spool_service, 'MAX_SCAN_ENTRIES_PER_POLL', 2)
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+
+    result = service.poll_once()['titan_demo']
+
+    assert result['code'] == 'ARCHIVED'
+    assert result['imported'] == 1
+    assert not path.exists()
+    assert service._temporary_scan is not None
+    assert len(store.read(context(), kind='DECISION')['records']) == 1
+    service.close()
+
+
+def test_archiving_temp_event_keeps_ready_segment_index_cached(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    path = spool_root / 'titan_demo.1.tmp.ndjson'
+    write_private(path, line(record(seq=1)).encode())
+    clock = [100.0]
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    service = consumer(store, spool_root)
+    service._files('titan_demo')
+    first_index_at = service._file_index_at
+
+    service._scan_temporary_segments()
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+    service._scan_temporary_segments()
+    assert len(service._stable_temporary_files['titan_demo']) == 1
+
+    result = service.poll_once()['titan_demo']
+
+    assert result['code'] == 'ARCHIVED'
+    assert service._file_index_at == first_index_at + spool_service._TEMP_SCAN_INTERVAL_SECONDS
+
+
 def test_temporary_file_change_between_stability_scans_restarts_stability_window(private_root, spool_root, monkeypatch):
     store = evidence_store(private_root)
     path = spool_root / 'titan_demo.1.tmp.ndjson'

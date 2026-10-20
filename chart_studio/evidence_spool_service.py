@@ -26,6 +26,7 @@ MAX_RECORDS_PER_POLL = 50
 MAX_TEMPORARY_RECORDS_PER_POLL = MAX_RECORDS_PER_POLL
 MAX_STABLE_TEMPORARY_CANDIDATES = 5000
 MAX_SCAN_ENTRIES_WITHOUT_YIELD = 1024
+MAX_SCAN_ENTRIES_PER_POLL = 4096
 _READY = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)-([1-9][0-9]*)\.ready\.ndjson\Z')
 _TEMP_SEGMENT = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)\.tmp\.ndjson\Z')
 _TEMP_SCAN_INTERVAL_SECONDS = 60.0
@@ -51,6 +52,7 @@ class SpoolFileConsumer:
         self.excluded_roots = [Path(p).resolve() for p in excluded_roots]
         self.records_per_poll = records_per_poll
         self._temporary_scan_at = 0.0
+        self._temporary_scan = None
         self._temporary_backlog = {}
         self._temporary_signatures = {}
         self._stable_temporary_files = {}
@@ -246,6 +248,15 @@ class SpoolFileConsumer:
     def _invalidate_file_index(self):
         self._file_index_at = 0.0
 
+    def close(self):
+        scan = self._temporary_scan
+        self._temporary_scan = None
+        if scan is not None:
+            try:
+                scan['entries'].close()
+            except OSError:
+                pass
+
     def _files(self, producer):
         self._refresh_file_index()
         if producer in self._invalid_ready_producers:
@@ -408,7 +419,7 @@ class SpoolFileConsumer:
                     cursor['fileName']=archive.name;cursor['fileState']='archive'
                     self._save_cursor(account,producer,cursor)
                     self._remove_cursor(account,producer)
-                    return {'code':'ARCHIVED','imported':imported,'duplicates':duplicates,'gapCount':importer.gap_count,'gapObserved':gap_observed,'storeLostCount':store_lost}
+                    return {'code':'ARCHIVED','imported':imported,'duplicates':duplicates,'gapCount':importer.gap_count,'gapObserved':gap_observed,'storeLostCount':store_lost,'readySegmentArchived':True}
                 if state=='active' and not lines and not partial:
                     recovered=self._poll_stable_temporary(producer,importer)
                     if recovered is not None:
@@ -535,67 +546,85 @@ class SpoolFileConsumer:
         return None
 
     def _scan_temporary_segments(self):
-        if time.monotonic() - self._temporary_scan_at < _TEMP_SCAN_INTERVAL_SECONDS:
-            return
-        counts = {producer: {'count': 0, 'bytes': 0, 'oldest': None, 'newest': None}
-                  for producer in self.producers}
-        candidate_heaps={producer:[] for producer in self.producers}
+        scan = self._temporary_scan
+        if scan is None:
+            if time.monotonic() - self._temporary_scan_at < _TEMP_SCAN_INTERVAL_SECONDS:
+                return
+            try:
+                entries = os.scandir(self.root)
+            except OSError:
+                return
+            scan = {
+                'entries': entries,
+                'counts': {producer: {'count': 0, 'bytes': 0, 'oldest': None, 'newest': None}
+                           for producer in self.producers},
+                'candidateHeaps': {producer: [] for producer in self.producers},
+                'processed': 0,
+            }
+            self._temporary_scan = scan
+
         candidate_limit=max(1,MAX_STABLE_TEMPORARY_CANDIDATES + MAX_TEMPORARY_RECORDS_PER_POLL)
         try:
-            with os.scandir(self.root) as entries:
-                for index,entry in enumerate(entries,1):
-                    if index % MAX_SCAN_ENTRIES_WITHOUT_YIELD == 0:
-                        time.sleep(0.001)
-                    match = _TEMP_SEGMENT.fullmatch(entry.name)
-                    if not match or match.group(1) not in counts:
-                        continue
-                    try:
-                        metadata = entry.stat(follow_symlinks=False)
-                    except OSError:
-                        continue
-                    if stat.S_ISREG(metadata.st_mode):
-                        producer=match.group(1);sequence=int(match.group(2))
-                        signature=(int(self._temporary_device),int(entry.inode()),int(metadata.st_size),
-                                   int(getattr(metadata,'st_mtime_ns',metadata.st_mtime*1_000_000_000)))
-                        unchanged=self._temporary_signatures[producer].get(sequence)==signature
-                        heap=candidate_heaps[producer]
-                        candidate=(-sequence,sequence,entry.path,signature,unchanged)
-                        if len(heap)<candidate_limit:
-                            heapq.heappush(heap,candidate)
-                        elif sequence<heap[0][1]:
-                            heapq.heapreplace(heap,candidate)
-                        values = counts[producer]
-                        values['count'] += 1
-                        values['bytes'] += max(0, metadata.st_size)
-                        mtime = metadata.st_mtime
-                        values['oldest'] = mtime if values['oldest'] is None else min(values['oldest'], mtime)
-                        values['newest'] = mtime if values['newest'] is None else max(values['newest'], mtime)
-        except OSError:
-            return
-        self._temporary_signatures={}
-        self._stable_temporary_files={}
-        for producer,heap in candidate_heaps.items():
-            selected=sorted(heap,key=lambda row:row[1])
-            self._temporary_signatures[producer]={sequence:signature for _,sequence,_path,signature,_ in selected}
-            self._stable_temporary_files[producer]=deque(
-                (sequence,Path(path),signature)
-                for _,sequence,path,signature,unchanged in selected[:MAX_STABLE_TEMPORARY_CANDIDATES]
-                if unchanged)
-        def as_utc(value):
-            if value is None:
-                return None
-            return datetime.fromtimestamp(value, timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
+            while scan['processed'] < MAX_SCAN_ENTRIES_PER_POLL:
+                try:
+                    entry = next(scan['entries'])
+                except StopIteration:
+                    scan['entries'].close()
+                    self._temporary_scan = None
+                    self._temporary_signatures={}
+                    self._stable_temporary_files={}
+                    for producer,heap in scan['candidateHeaps'].items():
+                        selected=sorted(heap,key=lambda row:row[1])
+                        self._temporary_signatures[producer]={sequence:signature for _,sequence,_path,signature,_ in selected}
+                        self._stable_temporary_files[producer]=deque(
+                            (sequence,Path(path),signature)
+                            for _,sequence,path,signature,unchanged in selected[:MAX_STABLE_TEMPORARY_CANDIDATES]
+                            if unchanged)
+                    def as_utc(value):
+                        if value is None:
+                            return None
+                        return datetime.fromtimestamp(value, timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
 
-        self._temporary_backlog = {
-            producer: {
-                'temporaryFileCount': values['count'],
-                'temporaryBytes': values['bytes'],
-                'temporaryOldestMtimeUtc': as_utc(values['oldest']),
-                'temporaryNewestMtimeUtc': as_utc(values['newest']),
-            }
-            for producer, values in counts.items()
-        }
-        self._temporary_scan_at = time.monotonic()
+                    self._temporary_backlog = {
+                        producer: {
+                            'temporaryFileCount': values['count'],
+                            'temporaryBytes': values['bytes'],
+                            'temporaryOldestMtimeUtc': as_utc(values['oldest']),
+                            'temporaryNewestMtimeUtc': as_utc(values['newest']),
+                        }
+                        for producer, values in scan['counts'].items()
+                    }
+                    self._temporary_scan_at = time.monotonic()
+                    return
+                scan['processed'] += 1
+                if scan['processed'] % MAX_SCAN_ENTRIES_WITHOUT_YIELD == 0:
+                    time.sleep(0.001)
+                match = _TEMP_SEGMENT.fullmatch(entry.name)
+                if not match or match.group(1) not in scan['counts']:
+                    continue
+                try:
+                    metadata = entry.stat(follow_symlinks=False)
+                except OSError:
+                    continue
+                if stat.S_ISREG(metadata.st_mode):
+                    producer=match.group(1);sequence=int(match.group(2))
+                    signature=(int(self._temporary_device),int(entry.inode()),int(metadata.st_size),
+                               int(getattr(metadata,'st_mtime_ns',metadata.st_mtime*1_000_000_000)))
+                    unchanged=self._temporary_signatures[producer].get(sequence)==signature
+                    heap=scan['candidateHeaps'][producer]
+                    candidate=(-sequence,sequence,entry.path,signature,unchanged)
+                    if len(heap)<candidate_limit:
+                        heapq.heappush(heap,candidate)
+                    elif sequence<heap[0][1]:
+                        heapq.heapreplace(heap,candidate)
+                    values = scan['counts'][producer]
+                    values['count'] += 1
+                    values['bytes'] += max(0, metadata.st_size)
+                    mtime = metadata.st_mtime
+                    values['oldest'] = mtime if values['oldest'] is None else min(values['oldest'], mtime)
+                    values['newest'] = mtime if values['newest'] is None else max(values['newest'], mtime)
+        except OSError:
+            self.close()
 
     def poll_once(self):
         self._scan_temporary_segments()
@@ -603,7 +632,7 @@ class SpoolFileConsumer:
         invalidate_file_index = False
         for producer in self.producers:
             result=self._poll_producer(producer)
-            invalidate_file_index = invalidate_file_index or result.get('code') == 'ARCHIVED'
+            invalidate_file_index = invalidate_file_index or result.get('readySegmentArchived') is True
             result.update(self._temporary_backlog.get(producer, {
                 'temporaryFileCount': 0, 'temporaryBytes': 0,
                 'temporaryOldestMtimeUtc': None, 'temporaryNewestMtimeUtc': None,
@@ -667,3 +696,7 @@ async def run_spool_service(app, consumer, *, interval=1.0, poll=asyncio.to_thre
             await asyncio.sleep(interval)
     except asyncio.CancelledError:
         raise
+    finally:
+        close = getattr(consumer, 'close', None)
+        if callable(close):
+            close()
