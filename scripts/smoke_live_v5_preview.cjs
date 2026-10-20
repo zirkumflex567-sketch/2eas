@@ -12,6 +12,7 @@ const ACCOUNTS = [
   { account: "xau5m_m5", symbol: "XAUUSD.p" },
   { account: "titan_m5", symbol: "XAUUSD.p" },
   { account: "xau5m_500", symbol: "XAUUSD.p" },
+  { account: "goldm15", symbol: "XAUUSD" },
 ];
 const ALLOWLIST = new Set(ACCOUNTS.map(item => item.account));
 const FLAG_OFF = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;";
@@ -138,6 +139,31 @@ const FLAG_OFF = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;";
       }
       await page.waitForFunction(() => [...document.querySelectorAll("#chart-v5-preview-host canvas")]
         .some(canvas => canvas.width > 300 && canvas.height > 200));
+      await page.locator("#chart-v5-ellipse-btn").click();
+      const drawingCanvas = await page.locator("#chart-v5-preview-host canvas").evaluateAll(canvases => {
+        const canvas = canvases.find(item => item.width > 300 && item.height > 200);
+        if (!canvas) return null;
+        const rect = canvas.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      });
+      assert.ok(drawingCanvas, `${expected.account}: native v5 drawing canvas is measurable`);
+      await page.mouse.click(drawingCanvas.x + drawingCanvas.width * 0.4,
+        drawingCanvas.y + drawingCanvas.height * 0.4);
+      await page.mouse.click(drawingCanvas.x + drawingCanvas.width * 0.6,
+        drawingCanvas.y + drawingCanvas.height * 0.6);
+      const ellipse = await page.waitForFunction(scope => {
+        const key = `2eas.chartstudio.v5.drawings:v5:${encodeURIComponent(scope.account)}:${encodeURIComponent(scope.symbol)}:M15`;
+        const raw = window.localStorage.getItem(key);
+        if (!raw) return null;
+        const layout = JSON.parse(raw);
+        const row = layout.drawings?.find(item => item.kind === "ELLIPSE");
+        return row ? { kind: row.kind, options: row.options } : null;
+      }, expected, { timeout: 5000 }).then(handle => handle.jsonValue());
+      assert.equal(ellipse.kind, "ELLIPSE", `${expected.account}: live verified bars accept a native ellipse`);
+      assert.ok(Number.isSafeInteger(ellipse.options.startTime) && ellipse.options.startTime > 0);
+      assert.ok(Number.isSafeInteger(ellipse.options.endTime) && ellipse.options.endTime > ellipse.options.startTime);
+      assert.ok(Number.isFinite(ellipse.options.startPrice) && ellipse.options.startPrice > 0);
+      assert.ok(Number.isFinite(ellipse.options.endPrice) && ellipse.options.endPrice > 0);
       const state = await page.evaluate(() => ({
         preview: window.ChartStudioV5Preview.inspect(),
         v4CanvasCount: document.querySelectorAll("#tv-chart canvas").length,
@@ -173,6 +199,7 @@ const FLAG_OFF = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;";
         v5Canvas: state.v5Canvases.find(canvas => canvas.width > 300 && canvas.height > 200),
         positionCount: positions.positions.length,
         positionOverlayLines: state.preview.positionOverlayCount,
+        ellipse: { kind: ellipse.kind, startTime: ellipse.options.startTime, endTime: ellipse.options.endTime },
         apiRequests: apiRequests.length,
         staleRiskResponses: apiResponses.filter(item => item.status === 503),
       });
