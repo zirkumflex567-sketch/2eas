@@ -139,6 +139,41 @@ const server=http.createServer((req,res)=>{
   assert.equal(marketLevels?.levels.daily_poc.price,4105);
   assert.equal(marketLevels?.levels.daily_poc.label,"D-POC","concise native axis labels retain readable level identity without long clipped titles");
   assert.equal(marketLevels?.levels.weekly_poc.price,4106);
+  const crowdedLevels={daily_high:4105.01,daily_low:4105.02,daily_poc:4105,daily_vah:4105.03,daily_val:4105.04,
+   weekly_high:4105.05,weekly_low:4105.06,weekly_poc:4105.001,weekly_vah:4105.07,weekly_val:4105.08};
+  const crowdedAxisLabels=await page.evaluate(({candles,asOfUtc,crowdedLevels})=>{
+   const preview=window.ChartStudioV5Preview,scope={account:"titan",symbol:"XAUUSD",timeframe:"M15"},token=preview.beginRead();
+   for(const key of Object.keys(crowdedLevels))window.DashboardChartLevelVisibility.set("titan",key,true);
+   preview.update({accountId:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,source:"MT5_VERIFIED",canExecute:false,snapshotAsOfUtc:asOfUtc,candles,sr_levels:crowdedLevels},token);
+   return preview.inspect().priceAxisLabels;
+  },{candles,asOfUtc,crowdedLevels});
+  assert.equal(crowdedAxisLabels.length,10,"every market level remains represented in axis layout readback");
+  assert.equal(crowdedAxisLabels.find(item=>item.id==="market:daily_poc")?.axisLabelVisible,true,"daily POC keeps priority in a crowded price-axis cluster");
+  assert.ok(crowdedAxisLabels.some(item=>!item.axisLabelVisible),"crowded market-level labels are hidden instead of overlapping");
+  const shownAxisLabels=crowdedAxisLabels.filter(item=>item.axisLabelVisible);
+  assert.ok(shownAxisLabels.every(item=>Number.isFinite(item.y)&&item.y>=16&&item.y<=item.paneHeight-16),"visible price labels remain inside the price pane");
+  assert.ok(shownAxisLabels.every((item,index)=>shownAxisLabels.slice(index+1).every(other=>Math.abs(item.y-other.y)>=32)),"visible axis labels keep a 32px collision margin");
+  assert.ok(crowdedAxisLabels.filter(item=>!item.axisLabelVisible).every(item=>item.lineVisible),"collision suppression keeps every requested market level line visible");
+  const beforeResizeRevision=await page.evaluate(()=>window.ChartStudioV5Preview.inspect().priceAxisLayoutRevision);
+  await page.locator("#chart-v5-preview-host").evaluate(host=>{host.style.height="560px"});
+  await page.waitForFunction(before=>window.ChartStudioV5Preview.inspect().priceAxisLayoutRevision>before,beforeResizeRevision);
+  await page.locator("#chart-v5-preview-host").evaluate(host=>{host.style.height="700px"});
+  await page.waitForFunction(before=>window.ChartStudioV5Preview.inspect().priceAxisLayoutRevision>before,beforeResizeRevision+1);
+  const beforePriceRangeMove=crowdedAxisLabels.find(item=>item.id==="market:daily_poc").y;
+  const narrowRangeCandles=Array.from({length:150},(_,index)=>({time:candles[index].time,open:4105,high:4105.3,low:4104.7,close:4105.1,tick_volume:20,real_volume:0}));
+  await page.evaluate(({narrowRangeCandles,crowdedLevels,asOfUtc})=>{
+   const preview=window.ChartStudioV5Preview,scope={account:"titan",symbol:"XAUUSD",timeframe:"M15"},token=preview.beginRead();
+   preview.update({accountId:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,source:"MT5_VERIFIED",canExecute:false,snapshotAsOfUtc:asOfUtc,candles:narrowRangeCandles,sr_levels:crowdedLevels},token);
+  },{narrowRangeCandles,crowdedLevels,asOfUtc});
+  await page.waitForFunction(before=>Math.abs((window.ChartStudioV5Preview.inspect().priceAxisLabels.find(item=>item.id==="market:daily_poc")?.y??before)-before)>30,beforePriceRangeMove);
+  const rangeUpdatedAxisLabels=await page.evaluate(()=>window.ChartStudioV5Preview.inspect().priceAxisLabels);
+  assert.ok(rangeUpdatedAxisLabels.filter(item=>item.axisLabelVisible).every(item=>item.y>=16&&item.y<=item.paneHeight-16),"price-range updates reflow axis labels within the price pane");
+  assert.ok(rangeUpdatedAxisLabels.filter(item=>item.axisLabelVisible).every((item,index,visible)=>visible.slice(index+1).every(other=>Math.abs(item.y-other.y)>=32)),"price-range updates preserve the 32px axis-label collision margin");
+  await page.evaluate(({candles,crowdedLevels,asOfUtc})=>{
+   const preview=window.ChartStudioV5Preview,scope={account:"titan",symbol:"XAUUSD",timeframe:"M15"},token=preview.beginRead();
+   preview.update({accountId:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,source:"MT5_VERIFIED",canExecute:false,snapshotAsOfUtc:asOfUtc,candles,sr_levels:crowdedLevels},token);
+  },{candles,crowdedLevels,asOfUtc});
+  await page.evaluate(()=>window.ChartStudioV5Preview.syncMarketLevels());
   const levelPreferences=await page.evaluate(()=>{
    const visibility=window.DashboardChartLevelVisibility,preview=window.ChartStudioV5Preview;
    visibility.set("titan","daily_poc",false);preview.syncMarketLevels();
@@ -298,13 +333,20 @@ const server=http.createServer((req,res)=>{
   const positions=await page.evaluate(()=>{
    const scope={account:"titan",symbol:"XAUUSD",timeframe:"M15"},token=window.ChartStudioV5Preview.beginPositionRead();
    return window.ChartStudioV5Preview.setPositions({scope,source:"MT5_VERIFIED",canExecute:false,currency:"USD",marginMode:2,positions:[
-    {ticket:"71001",side:"BUY",priceOpen:4161,sl:4158,tp:4168,volume:.2,profit:4.5,swap:-.25,currency:"USD",usdConversion:{state:"AVAILABLE",source:"ACCOUNT_CURRENCY",amountsUsd:{profit:4.5,swap:-.25}}},
-    {ticket:"71002",side:"SELL",priceOpen:4165,sl:4169,tp:null,volume:.1,profit:-2,swap:0,currency:"USD",usdConversion:{state:"AVAILABLE",source:"ACCOUNT_CURRENCY",amountsUsd:{profit:-2,swap:0}}},
+    {ticket:"71001",side:"BUY",priceOpen:4105,sl:4104.99,tp:4105.02,volume:.2,profit:4.5,swap:-.25,currency:"USD",usdConversion:{state:"AVAILABLE",source:"ACCOUNT_CURRENCY",amountsUsd:{profit:4.5,swap:-.25}}},
+    {ticket:"71002",side:"SELL",priceOpen:4105.03,sl:4105.04,tp:null,volume:.1,profit:-2,swap:0,currency:"USD",usdConversion:{state:"AVAILABLE",source:"ACCOUNT_CURRENCY",amountsUsd:{profit:-2,swap:0}}},
    ]},token);
   });
   assert.deepEqual(positions,{applied:true,count:5},"verified position entry/SL/TP overlays render in v5");
   const positionReadback=await page.evaluate(()=>window.ChartStudioV5Preview.readPositions());
   assert.equal(positionReadback.count,5);assert.equal(positionReadback.positionCount,2);assert.equal(positionReadback.zoneCount,3);
+  const orderAxisLabels=(await page.evaluate(()=>window.ChartStudioV5Preview.inspect().priceAxisLabels)).filter(item=>item.id.startsWith("position:"));
+  assert.equal(orderAxisLabels.length,5,"all broker position price lines remain represented in axis layout readback");
+  assert.ok(orderAxisLabels.every(item=>item.lineVisible&&typeof item.axisLabelVisible==="boolean"),"crowding only suppresses order axis badges; broker price lines remain visible");
+  assert.ok(orderAxisLabels.some(item=>item.id.endsWith(":SL")&&item.axisLabelVisible),"protective stop labels retain priority when order and market badges cluster");
+  assert.ok(orderAxisLabels.some(item=>!item.axisLabelVisible),"colliding order badges are suppressed while the full read-only position panel remains available");
+  const allVisibleAxisLabels=await page.evaluate(()=>window.ChartStudioV5Preview.inspect().priceAxisLabels.filter(item=>item.axisLabelVisible));
+  assert.ok(allVisibleAxisLabels.every((item,index)=>allVisibleAxisLabels.slice(index+1).every(other=>Math.abs(item.y-other.y)>=32)),"market and order axis badges never overlap after positions are added");
   assert.equal(positionReadback.currency,"USD");assert.equal(positionReadback.marginMode,"HEDGING");
   assert.match(positionReadback.positions[0].label,/P\/L 4\.50 USD · Swap -0\.25 USD · USD P\/L 4\.50 · Swap -0\.25/);
   assert.equal((await page.evaluate(()=>window.ChartStudioV5Preview.readBrokerDealMarkers())).plotted,2,"rendering position lines preserves separate historical deal markers");

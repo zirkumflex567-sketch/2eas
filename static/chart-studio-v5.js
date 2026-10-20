@@ -9585,12 +9585,56 @@ var ChartStudioV5 = (() => {
     const marketLevelStyles = { daily_high: 2, daily_low: 2, daily_poc: 0, daily_vah: 1, daily_val: 1, weekly_high: 1, weekly_low: 1, weekly_poc: 0, weekly_vah: 1, weekly_val: 1 };
     const marketLevelKeys = Object.keys(marketLevelLabels);
     const marketLevelLines = /* @__PURE__ */ new Map();
+    const PRICE_AXIS_LABEL_MIN_GAP_PX = 32;
+    let priceAxisLabelRows = [];
+    let priceAxisLayoutRevision = 0;
+    function applyPriceAxisLabelLayout() {
+      priceAxisLayoutRevision++;
+      const paneHeight = Math.max(0, chart.panes()[0]?.getHeight() ?? 0);
+      const candidates = [];
+      for (const [key, item] of marketLevelLines) {
+        const priority = key.endsWith("_poc") ? key.startsWith("daily_") ? 20 : 21 : key.endsWith("_high") || key.endsWith("_low") ? key.startsWith("daily_") ? 30 : 40 : key.startsWith("daily_") ? 50 : 60;
+        candidates.push({ id: `market:${key}`, price: item.price, label: item.label, priority, line: item.line, lineVisible: item.visible, apply: (visible) => {
+          if (item.axisLabelVisible === visible) return;
+          item.axisLabelVisible = visible;
+          item.line.applyOptions({ axisLabelVisible: visible, title: item.visible ? item.label : "" });
+        } });
+      }
+      for (const [key, item] of positionOverlayLines) {
+        const priority = item.readback.role === "SL" ? 0 : item.readback.role === "TP" ? 1 : 10;
+        candidates.push({ id: `position:${key}`, price: item.readback.price, label: item.readback.label, priority, line: item.line, lineVisible: true, apply: (visible) => {
+          if (item.readback.axisLabelVisible === visible) return;
+          item.readback.axisLabelVisible = visible;
+          item.line.applyOptions({ axisLabelVisible: visible, title: item.readback.label });
+        } });
+      }
+      const positioned = candidates.map((item) => ({ ...item, y: price.priceToCoordinate(item.price) })).sort((a2, b2) => a2.priority - b2.priority || a2.id.localeCompare(b2.id));
+      const reserved = [], result = [];
+      for (const item of positioned) {
+        const y2 = typeof item.y === "number" && Number.isFinite(item.y) ? item.y : null;
+        const visible = item.lineVisible && y2 !== null && paneHeight >= PRICE_AXIS_LABEL_MIN_GAP_PX && y2 >= PRICE_AXIS_LABEL_MIN_GAP_PX / 2 && y2 <= paneHeight - PRICE_AXIS_LABEL_MIN_GAP_PX / 2 && reserved.every((other) => Math.abs(y2 - other) >= PRICE_AXIS_LABEL_MIN_GAP_PX);
+        item.apply(visible);
+        if (visible) reserved.push(y2);
+        result.push({ id: item.id, price: item.price, y: y2, paneHeight, priority: item.priority, lineVisible: item.lineVisible, axisLabelVisible: visible });
+      }
+      priceAxisLabelRows = result;
+      return result.map((item) => ({ ...item }));
+    }
+    let axisLabelFrame = null;
+    const schedulePriceAxisLabelLayout = () => {
+      if (axisLabelFrame !== null || destroyed) return;
+      axisLabelFrame = requestAnimationFrame(() => {
+        axisLabelFrame = null;
+        if (!destroyed) applyPriceAxisLabelLayout();
+      });
+    };
     let marketLevelAsOfUtc = null;
     function clearMarketLevels() {
       guard();
       for (const item of marketLevelLines.values()) price.removePriceLine(item.line);
       marketLevelLines.clear();
       marketLevelAsOfUtc = null;
+      applyPriceAxisLabelLayout();
     }
     function setMarketLevels(snapshot) {
       guard();
@@ -9612,14 +9656,15 @@ var ChartStudioV5 = (() => {
         throw error;
       }
       clearMarketLevels();
-      for (const item of candidate) marketLevelLines.set(item.key, { line: item.line, price: item.price, label: item.label, visible: item.visible });
+      for (const item of candidate) marketLevelLines.set(item.key, { line: item.line, price: item.price, label: item.label, visible: item.visible, axisLabelVisible: item.visible });
       marketLevelAsOfUtc = snapshot.asOfUtc;
+      applyPriceAxisLabelLayout();
       return readMarketLevels();
     }
     function readMarketLevels() {
       guard();
       const levels = {};
-      for (const [key, item] of marketLevelLines) levels[key] = { price: item.price, label: item.label, visible: item.visible };
+      for (const [key, item] of marketLevelLines) levels[key] = { price: item.price, label: item.label, visible: item.visible, axisLabelVisible: item.axisLabelVisible };
       return { source: marketLevelAsOfUtc !== null ? "MT5_VERIFIED" : "NONE", asOfUtc: marketLevelAsOfUtc, count: marketLevelLines.size, levels };
     }
     function clearPositionOverlays() {
@@ -9630,6 +9675,7 @@ var ChartStudioV5 = (() => {
       positionOverlayCurrency = "";
       positionOverlayMarginMode = "UNKNOWN";
       positionZonesPrimitive.set([]);
+      applyPriceAxisLabelLayout();
     }
     function setPositionOverlays(snapshot) {
       guard();
@@ -9654,7 +9700,7 @@ var ChartStudioV5 = (() => {
         for (const [role, value] of [["Entry", row.entryPrice], ["SL", row.stopLoss], ["TP", row.takeProfit]]) {
           if ((role === "Entry" || value !== void 0 && value !== null) && (!Number.isFinite(value) || value <= 0)) throw Error("Invalid position overlay price");
           if (value === void 0 || value === null) continue;
-          candidate.push({ ticket: row.ticket, side: row.side, role, price: value, label: `${row.side} ${role}` });
+          candidate.push({ ticket: row.ticket, side: row.side, role, price: value, label: `${row.side} ${role}`, axisLabelVisible: true });
         }
         const fmt = (value) => value.toFixed(2), usdLabel = usdProfit === null ? "" : ` \xB7 USD P/L ${fmt(usdProfit)} \xB7 Swap ${fmt(usdSwap)}`;
         positionModels.push({
@@ -9676,7 +9722,7 @@ var ChartStudioV5 = (() => {
       try {
         for (const item of candidate) {
           const line = price.createPriceLine({ price: item.price, color: item.role === "SL" ? "#ff657a" : item.role === "TP" ? "#35d6c2" : item.side === "BUY" ? "#49c6ff" : "#ffb84d", lineWidth: item.role === "Entry" ? 2 : 1, lineStyle: item.role === "SL" ? 2 : item.role === "TP" ? 1 : 0, axisLabelVisible: true, title: item.label });
-          created.push({ line, readback: item });
+          created.push({ line, readback: { ...item, axisLabelVisible: true } });
         }
       } catch (error) {
         for (const item of created) price.removePriceLine(item.line);
@@ -9688,6 +9734,7 @@ var ChartStudioV5 = (() => {
       positionOverlayCurrency = snapshot.currency;
       positionOverlayMarginMode = mode;
       positionZonesPrimitive.set(positionModels);
+      applyPriceAxisLabelLayout();
       return readPositionOverlays();
     }
     function readPositionOverlays() {
@@ -10336,6 +10383,7 @@ var ChartStudioV5 = (() => {
       barPresentation.applyOptions({ visible: pricePresentation === "bars" });
       linePresentation.applyOptions({ visible: pricePresentation === "line" });
       areaPresentation.applyOptions({ visible: pricePresentation === "area" });
+      schedulePriceAxisLabelLayout();
     }
     function readPricePresentation() {
       guard();
@@ -11372,6 +11420,7 @@ var ChartStudioV5 = (() => {
       if (volume) volume.setData(volumeRows());
       hydrateDrawings();
       if (drawingsHydrated && persistenceStatus === "READY") persistDrawings();
+      schedulePriceAxisLabelLayout();
     }
     function volumeRows() {
       return bars.map((c2) => ({
@@ -13616,6 +13665,7 @@ var ChartStudioV5 = (() => {
       for (const group of supertrendOverlays.values()) updateSupertrendLast(group, c2, bars.length - 1, replacing && group.lastTime === c2.time);
       for (const group of parabolicSarOverlays.values()) updateParabolicSarLast(group, c2, bars.length - 1, replacing && group.lastTime === c2.time);
       refreshOscillators(true);
+      schedulePriceAxisLabelLayout();
     }
     function removeAverage(id) {
       guard();
@@ -13776,6 +13826,8 @@ var ChartStudioV5 = (() => {
         account: activeAccount,
         chartType: pricePresentation,
         priceAxisWidth: chart.priceScale("right").width(),
+        priceAxisLayoutRevision,
+        priceAxisLabels: priceAxisLabelRows.map((item) => ({ ...item })),
         positionOverlayCount: positionOverlayLines.size,
         positionOverlays: readPositionOverlays().lines,
         marketLevelCount: marketLevelLines.size,
@@ -13820,6 +13872,10 @@ var ChartStudioV5 = (() => {
         persistenceError
       };
     }
+    const priceAxisResizeObserver = new ResizeObserver(schedulePriceAxisLabelLayout);
+    priceAxisResizeObserver.observe(host);
+    host.addEventListener("wheel", schedulePriceAxisLabelLayout, { passive: true, capture: true });
+    chart.timeScale().subscribeVisibleLogicalRangeChange(schedulePriceAxisLabelLayout);
     function destroy() {
       if (destroyed) return;
       cancelDrawingTool(false);
@@ -13830,6 +13886,10 @@ var ChartStudioV5 = (() => {
         volumeZones = null;
       }
       destroyed = true;
+      if (axisLabelFrame !== null) cancelAnimationFrame(axisLabelFrame);
+      priceAxisResizeObserver.disconnect();
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(schedulePriceAxisLabelLayout);
+      host.removeEventListener("wheel", schedulePriceAxisLabelLayout, true);
       host.removeEventListener("pointerdown", onPointerDown, true);
       host.removeEventListener("pointermove", onPointerMove, true);
       host.removeEventListener("pointerup", onPointerUp, true);

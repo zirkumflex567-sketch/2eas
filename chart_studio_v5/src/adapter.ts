@@ -75,7 +75,7 @@ export type MarketLevelKey = "daily_high"|"daily_low"|"daily_poc"|"daily_vah"|"d
 export type ReadOnlyMarketLevelsSnapshot = {scope:PositionOverlayScope;source:"MT5_VERIFIED";canExecute:false;asOfUtc:number;levels:Record<MarketLevelKey,number|null>;visible?:Partial<Record<MarketLevelKey,boolean>>};
 export type ReadOnlyPositionOverlayPosition = {ticket:string;side:"BUY"|"SELL";entryPrice:number;stopLoss?:number|null;takeProfit?:number|null;volume:number;profit:number;swap:number;currency:string;usdConversion?:{state:"AVAILABLE";source:"ACCOUNT_CURRENCY"|"MT5_FX_QUOTE";amountsUsd:{profit:number;swap:number}}|{state:"UNAVAILABLE";source:"NONE";reason:string}};
 export type ReadOnlyPositionOverlaySnapshot = {scope:PositionOverlayScope;source:"MT5_VERIFIED";canExecute:false;currency:string;marginMode:0|1|2;positions:ReadOnlyPositionOverlayPosition[]};
-export type PositionOverlayLine = {ticket:string;side:"BUY"|"SELL";role:"Entry"|"SL"|"TP";price:number;label:string};
+export type PositionOverlayLine = {ticket:string;side:"BUY"|"SELL";role:"Entry"|"SL"|"TP";price:number;label:string;axisLabelVisible:boolean};
 export type PositionOverlayLabel = {ticket:string;side:"BUY"|"SELL";volume:number;entryPrice:number;stopLoss:number|null;takeProfit:number|null;profit:number;swap:number;currency:string;label:string;usdProfit:number|null;usdSwap:number|null};
 export type ReadOnlyBrokerDealMarker = {ticket:string;account:string;symbol:string;timeframe:string;side:"BUY"|"SELL";entry:"IN"|"OUT"|"INOUT"|"OUT_BY";price:number;fillTimeUtcMs:number;chartTimeSeconds:number;plotted:boolean;label:string};
 export type ReadOnlyBrokerDealMarkerSnapshot = {scope:PositionOverlayScope;source:"MT5_VERIFIED";canExecute:false;markers:ReadOnlyBrokerDealMarker[]};
@@ -996,9 +996,38 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  const marketLevelColors:Record<MarketLevelKey,string>={daily_high:"#f43f5e",daily_low:"#10b981",daily_poc:"#f59e0b",daily_vah:"#fb923c",daily_val:"#fbbf24",weekly_high:"#e11d48",weekly_low:"#059669",weekly_poc:"#06b6d4",weekly_vah:"#38bdf8",weekly_val:"#67e8f9"};
  const marketLevelStyles:Record<MarketLevelKey,0|1|2>={daily_high:2,daily_low:2,daily_poc:0,daily_vah:1,daily_val:1,weekly_high:1,weekly_low:1,weekly_poc:0,weekly_vah:1,weekly_val:1};
  const marketLevelKeys=Object.keys(marketLevelLabels) as MarketLevelKey[];
- const marketLevelLines=new Map<MarketLevelKey,{line:ReturnType<typeof price.createPriceLine>;price:number;label:string;visible:boolean}>();
+ const marketLevelLines=new Map<MarketLevelKey,{line:ReturnType<typeof price.createPriceLine>;price:number;label:string;visible:boolean;axisLabelVisible:boolean}>();
+ const PRICE_AXIS_LABEL_MIN_GAP_PX=32;
+ type PriceAxisLabelRow={id:string;price:number;y:number|null;paneHeight:number;priority:number;lineVisible:boolean;axisLabelVisible:boolean};
+ let priceAxisLabelRows:PriceAxisLabelRow[]=[];
+ let priceAxisLayoutRevision=0;
+ function applyPriceAxisLabelLayout(){
+  priceAxisLayoutRevision++;
+  const paneHeight=Math.max(0,chart.panes()[0]?.getHeight()??0);
+  const candidates:Array<{id:string;price:number;label:string;priority:number;line:ReturnType<typeof price.createPriceLine>;lineVisible:boolean;apply:(visible:boolean)=>void}>=[];
+  for(const [key,item] of marketLevelLines){
+   const priority=key.endsWith("_poc")?(key.startsWith("daily_")?20:21):key.endsWith("_high")||key.endsWith("_low")?(key.startsWith("daily_")?30:40):(key.startsWith("daily_")?50:60);
+   candidates.push({id:`market:${key}`,price:item.price,label:item.label,priority,line:item.line,lineVisible:item.visible,apply:visible=>{if(item.axisLabelVisible===visible)return;item.axisLabelVisible=visible;item.line.applyOptions({axisLabelVisible:visible,title:item.visible?item.label:""})}});
+  }
+  for(const [key,item] of positionOverlayLines){
+   const priority=item.readback.role==="SL"?0:item.readback.role==="TP"?1:10;
+   candidates.push({id:`position:${key}`,price:item.readback.price,label:item.readback.label,priority,line:item.line,lineVisible:true,apply:visible=>{if(item.readback.axisLabelVisible===visible)return;item.readback.axisLabelVisible=visible;item.line.applyOptions({axisLabelVisible:visible,title:item.readback.label})}});
+  }
+  const positioned=candidates.map(item=>({...item,y:price.priceToCoordinate(item.price)})).sort((a,b)=>a.priority-b.priority||a.id.localeCompare(b.id));
+  const reserved:number[]=[],result:PriceAxisLabelRow[]=[];
+  for(const item of positioned){
+   const y=typeof item.y==="number"&&Number.isFinite(item.y)?item.y:null;
+   const visible=item.lineVisible&&y!==null&&paneHeight>=PRICE_AXIS_LABEL_MIN_GAP_PX&&y>=PRICE_AXIS_LABEL_MIN_GAP_PX/2&&y<=paneHeight-PRICE_AXIS_LABEL_MIN_GAP_PX/2&&reserved.every(other=>Math.abs(y-other)>=PRICE_AXIS_LABEL_MIN_GAP_PX);
+   item.apply(visible);if(visible)reserved.push(y!);
+   result.push({id:item.id,price:item.price,y,paneHeight,priority:item.priority,lineVisible:item.lineVisible,axisLabelVisible:visible});
+  }
+  priceAxisLabelRows=result;
+  return result.map(item=>({...item}));
+ }
+ let axisLabelFrame:number|null=null;
+ const schedulePriceAxisLabelLayout=()=>{if(axisLabelFrame!==null||destroyed)return;axisLabelFrame=requestAnimationFrame(()=>{axisLabelFrame=null;if(!destroyed)applyPriceAxisLabelLayout()})};
  let marketLevelAsOfUtc:number|null=null;
- function clearMarketLevels(){guard();for(const item of marketLevelLines.values())price.removePriceLine(item.line);marketLevelLines.clear();marketLevelAsOfUtc=null}
+ function clearMarketLevels(){guard();for(const item of marketLevelLines.values())price.removePriceLine(item.line);marketLevelLines.clear();marketLevelAsOfUtc=null;applyPriceAxisLabelLayout()}
  function setMarketLevels(snapshot:ReadOnlyMarketLevelsSnapshot){
   guard();const expected={account:activeAccount,symbol:drawingScope?.symbol??"",timeframe:drawingScope?.timeframe??""},received=snapshot?.scope;
   if(!received||received.account!==expected.account||received.symbol!==expected.symbol||received.timeframe!==expected.timeframe)throw Error("Market-level scope mismatch");
@@ -1009,11 +1038,11 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    const visible=snapshot.visible?.[key]!==false,label=marketLevelLabels[key];
    candidate.push({key,price:value,label,visible,line:price.createPriceLine({price:value,color:marketLevelColors[key],lineWidth:key.endsWith("_poc")?2:1,lineStyle:marketLevelStyles[key],axisLabelVisible:visible,title:visible?label:"",lineVisible:visible})});
   }}catch(error){for(const item of candidate)price.removePriceLine(item.line);throw error}
-  clearMarketLevels();for(const item of candidate)marketLevelLines.set(item.key,{line:item.line,price:item.price,label:item.label,visible:item.visible});marketLevelAsOfUtc=snapshot.asOfUtc;
+  clearMarketLevels();for(const item of candidate)marketLevelLines.set(item.key,{line:item.line,price:item.price,label:item.label,visible:item.visible,axisLabelVisible:item.visible});marketLevelAsOfUtc=snapshot.asOfUtc;applyPriceAxisLabelLayout();
   return readMarketLevels();
  }
- function readMarketLevels(){guard();const levels:Partial<Record<MarketLevelKey,{price:number;label:string;visible:boolean}>>={};for(const [key,item] of marketLevelLines)levels[key]={price:item.price,label:item.label,visible:item.visible};return {source:marketLevelAsOfUtc!==null?"MT5_VERIFIED":"NONE",asOfUtc:marketLevelAsOfUtc,count:marketLevelLines.size,levels}}
- function clearPositionOverlays(){guard();for(const item of positionOverlayLines.values())price.removePriceLine(item.line);positionOverlayLines.clear();positionOverlayPositions=[];positionOverlayCurrency="";positionOverlayMarginMode="UNKNOWN";positionZonesPrimitive.set([])}
+ function readMarketLevels(){guard();const levels:Partial<Record<MarketLevelKey,{price:number;label:string;visible:boolean;axisLabelVisible:boolean}>>={};for(const [key,item] of marketLevelLines)levels[key]={price:item.price,label:item.label,visible:item.visible,axisLabelVisible:item.axisLabelVisible};return {source:marketLevelAsOfUtc!==null?"MT5_VERIFIED":"NONE",asOfUtc:marketLevelAsOfUtc,count:marketLevelLines.size,levels}}
+ function clearPositionOverlays(){guard();for(const item of positionOverlayLines.values())price.removePriceLine(item.line);positionOverlayLines.clear();positionOverlayPositions=[];positionOverlayCurrency="";positionOverlayMarginMode="UNKNOWN";positionZonesPrimitive.set([]);applyPriceAxisLabelLayout()}
  function setPositionOverlays(snapshot:ReadOnlyPositionOverlaySnapshot){
   guard();const expected={account:activeAccount,symbol:drawingScope?.symbol??"",timeframe:drawingScope?.timeframe??""},received=snapshot?.scope;
   if(!received||received.account!==expected.account||received.symbol!==expected.symbol||received.timeframe!==expected.timeframe){clearPositionOverlays();throw Error("Position overlay scope mismatch")}
@@ -1030,16 +1059,16 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    }else if(row.usdConversion!==undefined&&(row.usdConversion.state!=="UNAVAILABLE"||row.usdConversion.source!=="NONE"||typeof row.usdConversion.reason!=="string"))throw Error("Invalid unavailable USD conversion");
    for(const [role,value] of [["Entry",row.entryPrice],["SL",row.stopLoss],["TP",row.takeProfit]] as const){
     if((role==="Entry"||value!==undefined&&value!==null)&&(!Number.isFinite(value)||value!<=0))throw Error("Invalid position overlay price");
-    if(value===undefined||value===null)continue;candidate.push({ticket:row.ticket,side:row.side,role,price:value,label:`${row.side} ${role}`});
+   if(value===undefined||value===null)continue;candidate.push({ticket:row.ticket,side:row.side,role,price:value,label:`${row.side} ${role}`,axisLabelVisible:true});
    }
    const fmt=(value:number)=>value.toFixed(2),usdLabel=usdProfit===null?"":` · USD P/L ${fmt(usdProfit)} · Swap ${fmt(usdSwap!)}`;
    positionModels.push({ticket:row.ticket,side:row.side,volume:row.volume,entryPrice:row.entryPrice,stopLoss:row.stopLoss??null,takeProfit:row.takeProfit??null,profit:row.profit,swap:row.swap,currency:row.currency,usdProfit,usdSwap,
     label:`${mode} · ${row.side} ${row.volume.toFixed(2)}L #${row.ticket} @ ${fmt(row.entryPrice)} · P/L ${fmt(row.profit)} ${row.currency} · Swap ${fmt(row.swap)} ${row.currency}${usdLabel}`});
   }
   const created:Array<{line:ReturnType<typeof price.createPriceLine>;readback:PositionOverlayLine}>=[];
-  try{for(const item of candidate){const line=price.createPriceLine({price:item.price,color:item.role==="SL"?"#ff657a":item.role==="TP"?"#35d6c2":item.side==="BUY"?"#49c6ff":"#ffb84d",lineWidth:item.role==="Entry"?2:1,lineStyle:item.role==="SL"?2:item.role==="TP"?1:0,axisLabelVisible:true,title:item.label});created.push({line,readback:item})}}
+  try{for(const item of candidate){const line=price.createPriceLine({price:item.price,color:item.role==="SL"?"#ff657a":item.role==="TP"?"#35d6c2":item.side==="BUY"?"#49c6ff":"#ffb84d",lineWidth:item.role==="Entry"?2:1,lineStyle:item.role==="SL"?2:item.role==="TP"?1:0,axisLabelVisible:true,title:item.label});created.push({line,readback:{...item,axisLabelVisible:true}})}}
   catch(error){for(const item of created)price.removePriceLine(item.line);throw error}
-  clearPositionOverlays();for(const item of created)positionOverlayLines.set(`${item.readback.ticket}:${item.readback.role}`,item);positionOverlayPositions=positionModels;positionOverlayCurrency=snapshot.currency;positionOverlayMarginMode=mode;positionZonesPrimitive.set(positionModels);
+  clearPositionOverlays();for(const item of created)positionOverlayLines.set(`${item.readback.ticket}:${item.readback.role}`,item);positionOverlayPositions=positionModels;positionOverlayCurrency=snapshot.currency;positionOverlayMarginMode=mode;positionZonesPrimitive.set(positionModels);applyPriceAxisLabelLayout();
   return readPositionOverlays();
  }
  function readPositionOverlays(){guard();return {count:positionOverlayLines.size,lines:Array.from(positionOverlayLines.values(),item=>({...item.readback})),positionCount:positionOverlayPositions.length,zoneCount:positionOverlayPositions.reduce((count,row)=>count+(row.stopLoss!==null?1:0)+(row.takeProfit!==null?1:0),0),currency:positionOverlayCurrency,marginMode:positionOverlayMarginMode,positions:positionOverlayPositions.map(row=>({...row}))}}
@@ -1479,6 +1508,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   barPresentation.applyOptions({visible:pricePresentation==="bars"});
   linePresentation.applyOptions({visible:pricePresentation==="line"});
   areaPresentation.applyOptions({visible:pricePresentation==="area"});
+  schedulePriceAxisLabelLayout();
  }
  function readPricePresentation(){
   guard();const displayed=pricePresentationBars();
@@ -2008,7 +2038,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   refreshSupertrendOverlays();refreshParabolicSar();refreshIchimokuOverlays();refreshPivotOverlays();refreshOscillators();refreshVolumeZones();refreshAutoFibonacci();
   if(volume)volume.setData(volumeRows());
   hydrateDrawings();
-  if(drawingsHydrated&&persistenceStatus==="READY")persistDrawings();
+  if(drawingsHydrated&&persistenceStatus==="READY")persistDrawings();schedulePriceAxisLabelLayout();
  }
  function volumeRows(){
   return bars.map(c=>({time:c.time,value:Math.max(0,(c.real_volume??0)>0?c.real_volume!:c.tick_volume??0),
@@ -3184,7 +3214,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   refreshDonchianOverlays();refreshBollingerOverlays();refreshSessionVwapOverlays();refreshKeltnerOverlays();refreshAtrBandsOverlays();refreshLinearRegressionOverlays();refreshIchimokuOverlays();refreshPivotOverlays();
   refreshVolumeZones();refreshAutoFibonacci();for(const group of supertrendOverlays.values())updateSupertrendLast(group,c,bars.length-1,replacing&&group.lastTime===c.time);
   for(const group of parabolicSarOverlays.values())updateParabolicSarLast(group,c,bars.length-1,replacing&&group.lastTime===c.time);
-  refreshOscillators(true);
+  refreshOscillators(true);schedulePriceAxisLabelLayout();
  }
  function removeAverage(id:string){
   guard();const s=averages.get(id);if(!s)return false;
@@ -3257,13 +3287,16 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function setDrawingTool(tool:PlacementTool|null,text?:string){guard();if(tool!==null&&!["TREND","RAY","PRICE","TIME","RECT","ELLIPSE","FIBO","FIB_FAN","FIB_TREND","FIB_TIME","MEASURE","CHANNEL","PITCHFORK","RISK_REWARD","TEXT"].includes(tool))throw Error("Invalid drawing tool");if(tool==="TEXT"&&(typeof text!=="string"||!/^[\x20-\x7E]{1,40}$/.test(text)))throw Error("Text placement requires 1-40 printable ASCII characters");cancelDrawingTool(false);placementTool=tool;placementAnchors=[];placementText=tool==="TEXT"?text!:null;if(tool)drawingState("SECOND_ANCHOR");return true}
  function drawingToolState(){return {tool:placementTool,hasFirstAnchor:placementAnchors.length>0,anchorCount:placementAnchors.length}}
- function inspect(){guard();return {version:VERSION,account:activeAccount,chartType:pricePresentation,priceAxisWidth:chart.priceScale("right").width(),positionOverlayCount:positionOverlayLines.size,positionOverlays:readPositionOverlays().lines,marketLevelCount:marketLevelLines.size,marketLevels:readMarketLevels(),brokerDealMarkerCount:brokerDealMarkers.filter(row=>row.plotted).length,nativeDrawingCount:drawingCount(),drawingTool:placementTool,
+ function inspect(){guard();return {version:VERSION,account:activeAccount,chartType:pricePresentation,priceAxisWidth:chart.priceScale("right").width(),priceAxisLayoutRevision,priceAxisLabels:priceAxisLabelRows.map(item=>({...item})),positionOverlayCount:positionOverlayLines.size,positionOverlays:readPositionOverlays().lines,marketLevelCount:marketLevelLines.size,marketLevels:readMarketLevels(),brokerDealMarkerCount:brokerDealMarkers.filter(row=>row.plotted).length,nativeDrawingCount:drawingCount(),drawingTool:placementTool,
   displayTimeZone,volumeZoneStatus:volumeZones?.result.status??"DISABLED",volumeZoneCount:volumeZones?.result.zones.length??0,
   candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
   sessionVwapCount:sessionVwapOverlays.size,sessionVwapSeries:[...sessionVwapOverlays.entries()].map(([id,group])=>({id,options:{...group.options},points:group.result.points.map(point=>({...point})),volumeSource:group.result.volumeSource,visible:group.series.options().visible})),
     averageCount:averages.size,nativePaneLines:paneLines.size,oscillatorCount:oscillators.size,supertrendCount:supertrendOverlays.size,parabolicSarCount:parabolicSarOverlays.size,ichimokuCount:ichimokuOverlays.size,pivotCount:pivotOverlays.size,pivotSeries:[...pivotOverlays.entries()].map(([id,group])=>({id,options:{...group.options,sourceWindow:{...group.options.sourceWindow}},lines:Object.fromEntries((["p","r1","r2","r3","s1","s2","s3"] as const).map(key=>[key,group.values.lines[key].map(point=>({...point}))])),visible:Array.from(group.series.values(),series=>series.options().visible)})),ichimokuSeries:[...ichimokuOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:Object.fromEntries((["tenkan","kijun","senkouA","senkouB","chikou"] as const).map(key=>[key,group.values[key].map(point=>({...point}))])),visible:group.series.map(series=>series.options().visible)})),bollingerCount:bollingerOverlays.size,bollingerSeries:[...bollingerOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),atrBandsCount:atrBandsOverlays.size,atrBandsSeries:[...atrBandsOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),linearRegressionCount:linearRegressionOverlays.size,linearRegressionLineCount:[...linearRegressionOverlays.values()].reduce((count,group)=>count+group.series.length,0),linearRegressionSeries:[...linearRegressionOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),oscillatorPaneCount:new Set(Array.from(oscillators.values(),group=>{const series=group.series.values().next().value;return series?chart.panes().findIndex(pane=>pane.getSeries().includes(series)):-1}).filter(index=>index>=0)).size,nativePrimitives:drawingCount(),selectedDrawingId,selectedDrawingIds:[...selectedDrawingIds],hoveredDrawingId,
   paneCount:chart.panes().length,volumeVisible:!!volume,persistenceStatus,persistenceError}}
- function destroy(){if(destroyed)return;cancelDrawingTool(false);finishDrag(true);clearPositionOverlays();if(volumeZones){price.detachPrimitive(volumeZones.primitive);volumeZones=null}destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();managedMovingAverages.clear();transientMovingAverages.clear();donchianOverlays.clear();bollingerOverlays.clear();sessionVwapOverlays.clear();keltnerOverlays.clear();atrBandsOverlays.clear();ichimokuOverlays.clear();pivotOverlays.clear();linearRegressionOverlays.clear();supertrendOverlays.clear();parabolicSarOverlays.clear();paneLines.clear();oscillators.clear();transientOscillators.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();ellipses.clear();rays.clear();fibonacci.clear();fibonacciFans.clear();trendBasedFibonaccis.clear();channels.clear();measurements.clear();riskRewards.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
+ const priceAxisResizeObserver=new ResizeObserver(schedulePriceAxisLabelLayout);priceAxisResizeObserver.observe(host);
+ host.addEventListener("wheel",schedulePriceAxisLabelLayout,{passive:true,capture:true});
+ chart.timeScale().subscribeVisibleLogicalRangeChange(schedulePriceAxisLabelLayout);
+ function destroy(){if(destroyed)return;cancelDrawingTool(false);finishDrag(true);clearPositionOverlays();if(volumeZones){price.detachPrimitive(volumeZones.primitive);volumeZones=null}destroyed=true;if(axisLabelFrame!==null)cancelAnimationFrame(axisLabelFrame);priceAxisResizeObserver.disconnect();chart.timeScale().unsubscribeVisibleLogicalRangeChange(schedulePriceAxisLabelLayout);host.removeEventListener("wheel",schedulePriceAxisLabelLayout,true);host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();managedMovingAverages.clear();transientMovingAverages.clear();donchianOverlays.clear();bollingerOverlays.clear();sessionVwapOverlays.clear();keltnerOverlays.clear();atrBandsOverlays.clear();ichimokuOverlays.clear();pivotOverlays.clear();linearRegressionOverlays.clear();supertrendOverlays.clear();parabolicSarOverlays.clear();paneLines.clear();oscillators.clear();transientOscillators.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();ellipses.clear();rays.clear();fibonacci.clear();fibonacciFans.clear();trendBasedFibonaccis.clear();channels.clear();measurements.clear();riskRewards.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
   return Object.freeze({setCandles,setPricePresentation,readPricePresentation,addAverage,addMovingAverage,addTransientMovingAverage,addDonchian,removeDonchian,addBollinger,updateBollinger,removeBollinger,bollingerOptions,addSessionVwap,updateSessionVwap,removeSessionVwap,sessionVwapOptions,addKeltner,removeKeltner,addAtrBands,updateAtrBands,removeAtrBands,atrBandsOptions,addLinearRegression,updateLinearRegression,removeLinearRegression,linearRegressionOptions,addIchimoku,updateIchimoku,removeIchimoku,ichimokuOptions,addPivotPoints,updatePivotPoints,pivotOptions,removePivotPoints,addSupertrend,updateSupertrend,removeSupertrend,supertrendOptions,addParabolicSar,updateParabolicSar,removeParabolicSar,parabolicSarOptions,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,deleteSelectedDrawings,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addEllipse,updateEllipse,removeEllipse,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addFibonacciFan,updateFibonacciFan,removeFibonacciFan,fibonacciFanRays,addTrendBasedFibonacci,updateTrendBasedFibonacci,removeTrendBasedFibonacci,trendBasedFibonacciLevels,addFibonacciTimeZones:(options:FibonacciTimeZoneOptions)=>addFibonacciTimeZone(options),updateFibonacciTimeZones:updateFibonacciTimeZone,removeFibonacciTimeZones:removeFibonacciTimeZone,fibonacciTimeZoneGuides,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,addPitchfork:(options:PitchforkOptions)=>addPitchfork(options),updatePitchfork,removePitchfork,drawingPosition,drawingGeometry,drawingAnchorPosition,readDrawing,exportDrawings,exportLayout,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,duplicateSelectedDrawings,
   addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,addOscillator,updateOscillator,removeOscillator,addTransientOscillator,updateTransientOscillator,removeTransientOscillator,moveOscillator,oscillatorOptions,oscillatorPaneLayout,resizePane,paneHeights,showVolume,visibleLogicalRange,setVisibleLogicalRange,setDisplayTimeZone,displayTimeZone:()=>displayTimeZone,formatTimeLabel:formatDisplayTime,formatCrosshairTime,readDataWindow,
