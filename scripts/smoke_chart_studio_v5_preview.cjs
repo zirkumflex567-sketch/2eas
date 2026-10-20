@@ -154,11 +154,21 @@ const server=http.createServer((req,res)=>{
   assert.ok(shownAxisLabels.every(item=>Number.isFinite(item.y)&&item.y>=16&&item.y<=item.paneHeight-16),"visible price labels remain inside the price pane");
   assert.ok(shownAxisLabels.every((item,index)=>shownAxisLabels.slice(index+1).every(other=>Math.abs(item.y-other.y)>=32)),"visible axis labels keep a 32px collision margin");
   assert.ok(crowdedAxisLabels.filter(item=>!item.axisLabelVisible).every(item=>item.lineVisible),"collision suppression keeps every requested market level line visible");
+  const initialPaneHeight=crowdedAxisLabels[0].paneHeight;
   const beforeResizeRevision=await page.evaluate(()=>window.ChartStudioV5Preview.inspect().priceAxisLayoutRevision);
   await page.locator("#chart-v5-preview-host").evaluate(host=>{host.style.height="560px"});
-  await page.waitForFunction(before=>window.ChartStudioV5Preview.inspect().priceAxisLayoutRevision>before,beforeResizeRevision);
+  await page.waitForFunction(({before,paneHeight})=>{
+   const host=document.querySelector("#chart-v5-preview-host"),preview=window.ChartStudioV5Preview,layout=preview.inspect();
+   return host.getBoundingClientRect().height===560&&layout.priceAxisLayoutRevision>before&&
+    layout.priceAxisLabels.length>0&&layout.priceAxisLabels.every(item=>item.paneHeight!==paneHeight);
+  },{before:beforeResizeRevision,paneHeight:initialPaneHeight},{timeout:15000});
+  const beforeRestoreRevision=await page.evaluate(()=>window.ChartStudioV5Preview.inspect().priceAxisLayoutRevision);
   await page.locator("#chart-v5-preview-host").evaluate(host=>{host.style.height="700px"});
-  await page.waitForFunction(before=>window.ChartStudioV5Preview.inspect().priceAxisLayoutRevision>before,beforeResizeRevision+1);
+  await page.waitForFunction(({before,paneHeight})=>{
+   const host=document.querySelector("#chart-v5-preview-host"),preview=window.ChartStudioV5Preview,layout=preview.inspect();
+   return host.getBoundingClientRect().height===700&&layout.priceAxisLayoutRevision>before&&
+    layout.priceAxisLabels.length>0&&layout.priceAxisLabels.every(item=>item.paneHeight===paneHeight);
+  },{before:beforeRestoreRevision,paneHeight:initialPaneHeight},{timeout:15000});
   const beforePriceRangeMove=crowdedAxisLabels.find(item=>item.id==="market:daily_poc").y;
   const narrowRangeCandles=Array.from({length:150},(_,index)=>({time:candles[index].time,open:4105,high:4105.3,low:4104.7,close:4105.1,tick_volume:20,real_volume:0}));
   await page.evaluate(({narrowRangeCandles,crowdedLevels,asOfUtc})=>{
