@@ -1322,7 +1322,14 @@ class DashboardFrontendTests(unittest.TestCase):
         expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=5000)
         expect(self.page.locator('#dd-reset-button')).to_be_enabled()
     def test_independent_candle_failure_does_not_clear_account(self):
-        self.load(); self.candle_fail = True; self.page.evaluate('loadCandles()')
+        self.candle_rows = [dict(time=1791918000,open=4000.,high=4002.,low=3998.,close=4001.,tick_volume=10,real_volume=0)]
+        self.load()
+        self.page.wait_for_function("candleHistory.latest !== null && !candlesBusy", timeout=5000)
+        self.candle_fail = True
+        self.page.evaluate("""async()=>{
+          while(candlesBusy) await new Promise(resolve=>setTimeout(resolve,10));
+          await loadCandles();
+        }""")
         expect(self.page.locator('#account-connection')).to_contain_text('LIVE')
         expect(self.page.locator('#live-bid')).to_have_text('4010.00')
         expect(self.page.locator('#dd-reset-button')).to_be_enabled()
@@ -1346,7 +1353,14 @@ class DashboardFrontendTests(unittest.TestCase):
             dict(time=1791918900,open=4001.,high=4003.,low=3999.,close=4002.,tick_volume=11,real_volume=0),
         ]
         self.candle_error_detail = '<img src=x onerror="window.chartErrorInjected=1"> fixture candle failure'
-        self.load(); self.candle_fail = True; self.page.evaluate('loadCandles()')
+        self.load()
+        self.page.wait_for_function("candleHistory.latest !== null && !candlesBusy", timeout=5000)
+        self.assertEqual(self.page.evaluate("document.querySelector('#tv-chart').__candleSeries.data().length"), 2)
+        self.candle_fail = True
+        self.page.evaluate("""async()=>{
+          while(candlesBusy) await new Promise(resolve=>setTimeout(resolve,10));
+          await loadCandles();
+        }""")
         status = self.page.locator('#chart-load-status')
         expect(status).to_be_visible()
         expect(status).to_contain_text('fixture candle failure')
