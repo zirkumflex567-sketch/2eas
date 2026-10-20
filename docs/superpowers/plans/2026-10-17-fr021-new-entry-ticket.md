@@ -63,3 +63,7 @@ Fake-MT5 denial/race/idempotency/audit tests pass; the new risk guard and privat
 - Focused fake-MT5 API, service, store and proxy-security tests; all deny paths assert zero `order_send` calls.
 - Headless Chromium tests prove price transfer is draft-only and only explicit ticket confirmation targets the separate route.
 - Live acceptance is read-only until the release gate. If later approved, test exactly the listed demo aliases and verify broker readback/audit. Never touch Blueberry.
+
+## Live read-only follow-up (2026-10-20)
+
+`python scripts/smoke_live_trade_ticket_preview.py` passed on all five authorized demo aliases with fresh quotes. `titan`, `titan_m5`, `xau5m_500`, and `goldm15` returned broker-calculated `PREVIEW_ONLY`; `xau5m_m5` returned the expected fail-closed `INSUFFICIENT_FREE_MARGIN` at 0.01 lots. Five authenticated preview POSTs, no preview token, `canExecute=false`, `canCommit=false`, no commit route, zero broker writes and no Blueberry request. This does not satisfy Task 5's distinct explicit write-release gate.
