@@ -23,4 +23,4 @@
 - [x] **Step 3: Implement pure bounded candle transforms** and create the corresponding native alternate series.
 - [x] **Step 4: Keep transformations display-only** across new data, theme colors, account switching and layout persistence.
 - [x] **Step 5: Run Chromium beta smoke, chart-type tests, JavaScript syntax, relevant Python regressions and `git diff --check`.** Chromium beta smoke and JavaScript syntax pass.
-- [x] **Step 6: Update FR-013 evidence and commit.** The native v5 preview now also exposes Bar, Line, and Area series alongside Candles, Heikin Ashi, and Hollow; Engine and Chromium contracts verify raw OHLC preservation and the active rendered series. Remaining: regression for all profile and anchor interactions, full v5 migration, performance/DPI/touch and target-hardware acceptance.
+- [x] **Step 6: Update FR-013 evidence and commit.** The native v5 preview now also exposes Bar, Line, and Area series alongside Candles, Heikin Ashi, and Hollow; Engine and Chromium contracts verify raw OHLC preservation and the active rendered series. Remaining: full v5 migration, performance/DPI/touch and target-hardware acceptance.

@@ -34,14 +34,16 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    engine.setPricePresentation("heikin");const heikin=engine.readPricePresentation(),raw=engine.readDataWindow(start);
    engine.updateLast({...bars[2],open:14,high:18,low:13,close:17});const updated=engine.readPricePresentation();
    engine.setPricePresentation("hollow");const hollow=engine.readPricePresentation();
-   const additionalModes=[];for(const type of ["bars","line","area"]){try{engine.setPricePresentation(type);const view=engine.readPricePresentation();additionalModes.push({requested:type,active:engine.inspect().chartType,barCount:view.bars.length,first:view.bars[0],renderedSeries:view.renderedSeries})}catch(error){additionalModes.push({requested:type,active:engine.inspect().chartType,error:String(error.message||error)})}}engine.setPricePresentation("hollow");
+   engine.addTrendLine({id:"presentation-anchor",startTime:bars[0].time,startPrice:11,endTime:bars[2].time,endPrice:17,color:"#ffffff",visible:true,locked:false});
+   const anchorBefore=engine.drawingAnchorPosition("presentation-anchor","START"),additionalModes=[];
+   for(const type of ["bars","line","area"]){try{engine.setPricePresentation(type);const view=engine.readPricePresentation();additionalModes.push({requested:type,active:engine.inspect().chartType,barCount:view.bars.length,first:view.bars[0],renderedSeries:view.renderedSeries,anchor:engine.drawingAnchorPosition("presentation-anchor","START")})}catch(error){additionalModes.push({requested:type,active:engine.inspect().chartType,error:String(error.message||error)})}}engine.setPricePresentation("hollow");
    let invalidRejected=false;try{engine.setPricePresentation("renko")}catch(_){invalidRejected=true}
    const afterInvalid=engine.readPricePresentation();
    engine.changeAccount("chart-type-goldm15");const otherAccount=engine.inspect().chartType;
    engine.setPricePresentation("heikin");engine.changeAccount("chart-type-titan");const restored=engine.inspect().chartType;
    const timeframeHost=document.createElement("div");timeframeHost.style.cssText="width:320px;height:180px;position:fixed;left:-2000px;top:0";document.body.append(timeframeHost);
    const timeEngine=ChartStudioV5.createStudioV5(timeframeHost,"chart-type-titan",{symbol:"XAUUSD",timeframe:"M5"}),otherTimeframe=timeEngine.inspect().chartType;timeEngine.destroy();
-   const result={available,heikin:heikin.bars,raw:raw.ohlc,updated:updated.bars,hollow:hollow.bars,hollowStyle:hollow.styles,additionalModes,
+   const result={available,heikin:heikin.bars,raw:raw.ohlc,updated:updated.bars,hollow:hollow.bars,hollowStyle:hollow.styles,anchorBefore,additionalModes,
     invalidRejected,afterInvalidType:afterInvalid.type,otherAccount,restored,otherTimeframe,sourceUnchanged:sourceBefore===JSON.stringify(bars)};
    engine.destroy();timeframeHost.remove();host.remove();return result;
   });
@@ -64,6 +66,9 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(chartTypeContract.additionalModes.map(({renderedSeries})=>renderedSeries),[
    {candles:false,bars:true,line:false,area:false},{candles:false,bars:false,line:true,area:false},{candles:false,bars:false,line:false,area:true},
   ],"Each native presentation exposes exactly its intended visible price series");
+  assert.ok(chartTypeContract.anchorBefore,"native drawing anchor is measurable before presentation changes");
+  assert.deepEqual(chartTypeContract.additionalModes.map(({anchor})=>anchor),Array(3).fill(chartTypeContract.anchorBefore),
+   "bar, line, and area presentation changes preserve the UTC/price anchor's screen position");
   assert.deepEqual(chartTypeContract.additionalModes.map(({first})=>({time:first.time,open:first.open,high:first.high,low:first.low,close:first.close})),Array(3).fill({time:1712500000,open:10,high:12,low:8,close:11}),
    "additional presentations preserve the raw MT5 OHLC source for readouts and overlays");
   assert.equal(chartTypeContract.invalidRejected,true);assert.equal(chartTypeContract.afterInvalidType,"hollow");
