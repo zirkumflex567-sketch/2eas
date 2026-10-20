@@ -24,7 +24,7 @@ MAX_RECORDS_PER_POLL = 50
 _READY = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)-([1-9][0-9]*)\.ready\.ndjson\Z')
 _TEMP_SEGMENT = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)\.tmp\.ndjson\Z')
 _TEMP_SCAN_INTERVAL_SECONDS = 60.0
-_FILE_INDEX_REFRESH_SECONDS = 2.0
+_FILE_INDEX_REFRESH_SECONDS = 10.0
 
 
 class FileIdentityChanged(Exception):

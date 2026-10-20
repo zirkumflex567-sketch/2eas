@@ -39,7 +39,7 @@ def consumer(store, root):
     return SpoolFileConsumer(store, root, producers={'titan': 'titan_demo'}, excluded_roots=[Path.cwd()])
 
 
-def test_ready_segment_discovery_is_shared_and_refreshed_within_two_seconds(private_root, spool_root, monkeypatch):
+def test_ready_segment_discovery_is_shared_and_refreshed_within_ten_seconds(private_root, spool_root, monkeypatch):
     store = evidence_store(private_root)
     service = SpoolFileConsumer(store, spool_root,
                                 producers={'titan': 'titan_demo', 'goldm15': 'market_demo'},
@@ -62,11 +62,11 @@ def test_ready_segment_discovery_is_shared_and_refreshed_within_two_seconds(priv
 
     ready = spool_root / 'titan_demo.1-1.ready.ndjson'
     ready.touch()
-    clock[0] += 1.0
+    clock[0] += 9.0
     assert service._files('titan_demo') == []
     assert len(scans) == 1
 
-    clock[0] += 2.0
+    clock[0] += 1.0
     rows = service._files('titan_demo')
     assert [(first, last, path, state) for first, last, path, state in rows] == [(1, 1, ready, 'ready')]
     assert len(scans) == 2
