@@ -21,7 +21,18 @@ function isWeekendGap(previous,next,tf,symbol){
  const delta=next-previous,a=new Date(previous*1000),b=new Date(next*1000),day=a.getUTCDay();
  // XAU feeds close over the weekend. Without broker-session metadata we
  // tolerate only bounded, observed gold bar-open closures; other holes remain UNKNOWN.
- if(tf==="D1")return delta<=4*86400&&day===4&&b.getUTCDay()===0&&delta>=60*3600&&delta<=84*3600;
+ if(tf==="D1"){
+  const observedFridayToMonday=day===5&&a.getUTCHours()===0&&a.getUTCMinutes()===0&&a.getUTCSeconds()===0&&
+   b.getUTCDay()===1&&b.getUTCHours()===0&&b.getUTCMinutes()===0&&b.getUTCSeconds()===0&&delta===72*3600;
+  return observedFridayToMonday||delta<=4*86400&&day===4&&b.getUTCDay()===0&&delta>=60*3600&&delta<=84*3600;
+ }
+ // All five currently connected demo feeds show Friday 23:00 UTC to Monday 01:00 UTC on H1.
+ const observedFridayClose={H1:[23,0,50*3600],M15:[23,45,49*3600+15*60],M5:[23,55,49*3600+5*60]}[tf];
+ if(observedFridayClose&&day===5&&a.getUTCHours()===observedFridayClose[0]&&a.getUTCMinutes()===observedFridayClose[1]&&a.getUTCSeconds()===0&&
+    b.getUTCDay()===1&&b.getUTCHours()===1&&b.getUTCMinutes()===0&&b.getUTCSeconds()===0&&delta===observedFridayClose[2])return true;
+ // The same five feeds show the H4 edge at Friday 20:00 UTC to Monday 00:00 UTC.
+ if(tf==="H4"&&day===5&&a.getUTCHours()===20&&a.getUTCMinutes()===0&&a.getUTCSeconds()===0&&
+    b.getUTCDay()===1&&b.getUTCHours()===0&&b.getUTCMinutes()===0&&b.getUTCSeconds()===0&&delta===52*3600)return true;
  if(tf==="H4")return day===5&&b.getUTCDay()===0&&a.getUTCHours()===17&&a.getUTCMinutes()===0&&
   a.getUTCSeconds()===0&&b.getUTCHours()===21&&b.getUTCMinutes()===0&&b.getUTCSeconds()===0&&delta===52*3600;
  if(!["H1","M15","M5"].includes(tf)||day!==5||b.getUTCDay()!==0)return false;
@@ -33,6 +44,12 @@ function isWeekendGap(previous,next,tf,symbol){
 function isDailyMaintenanceGap(previous,next,tf,symbol){
  if(!isGoldSymbol(symbol)||!["H1","M15","M5"].includes(tf))return false;
  const a=new Date(previous*1000),b=new Date(next*1000),day=a.getUTCDay();
+ // All five demo feeds share a verified UTC daily maintenance pause; candle close
+ // differs by timeframe while the next observed bar opens at 01:00 UTC.
+ const observedDailyClose={H1:[23,0,2*3600],M15:[23,45,75*60],M5:[23,55,65*60]}[tf];
+ if(day>=1&&day<=4&&a.getUTCHours()===observedDailyClose[0]&&a.getUTCMinutes()===observedDailyClose[1]&&
+    a.getUTCSeconds()===0&&Math.floor(next/86400)===Math.floor(previous/86400)+1&&b.getUTCHours()===1&&
+    b.getUTCMinutes()===0&&b.getUTCSeconds()===0&&next-previous===observedDailyClose[2])return true;
  if(day<1||day>4||a.getUTCFullYear()!==b.getUTCFullYear()||a.getUTCMonth()!==b.getUTCMonth()||a.getUTCDate()!==b.getUTCDate()||
     b.getUTCHours()!==22||b.getUTCMinutes()!==0||b.getUTCSeconds()!==0)return false;
  const previousClose={H1:[20,0],M15:[20,45],M5:[20,55]}[tf];
@@ -56,6 +73,8 @@ function frame(candles,tf,asOfUtc,symbol=""){
  if(closed.length){
   result.lastClosedBarTime=closed[closed.length-1].time;result.sourceTime=result.lastClosedBarTime;
   let sessionHeuristic=false;
+  // Every closed candle seeds the EMA, so validate continuity across the full
+  // source window rather than allowing an older hole to alter its starting value.
   for(let i=1;i<closed.length;i++){
    const delta=closed[i].time-closed[i-1].time;
    if(delta>step*1.5){
@@ -69,15 +88,16 @@ function frame(candles,tf,asOfUtc,symbol=""){
   if(asOfUtc-result.lastClosedBarTime>maxAge){result.status="UNKNOWN";result.reason="STALE_OR_MISSING_HISTORY";result.dataQuality="STALE";return result;}
  }
  if(closed.length<WARMUP_BARS)return result;
- const ema=(period,end=closed.length)=>{
-  const alpha=2/(period+1);let value=closed[0].close;
-  for(let i=1;i<end;i++)value+=alpha*(closed[i].close-value);
+ const analysisBars=closed;
+ const ema=(period,end=analysisBars.length)=>{
+  const alpha=2/(period+1);let value=analysisBars[0].close;
+  for(let i=1;i<end;i++)value+=alpha*(analysisBars[i].close-value);
   return value;
  };
  result.ema20=ema(20);result.ema50=ema(50);result.ema200=ema(200);
- const previousEma20=ema(20,closed.length-1);
+ const previousEma20=ema(20,analysisBars.length-1);
  result.ema20SlopePercent=100*(result.ema20-previousEma20)/previousEma20;
- const close=closed[closed.length-1].close;
+ const close=analysisBars[analysisBars.length-1].close;
  result.bias=result.ema20>result.ema50&&result.ema50>result.ema200&&close>result.ema20?"UP":
   result.ema20<result.ema50&&result.ema50<result.ema200&&close<result.ema20?"DOWN":"NEUTRAL";
  result.status="READY";result.reason="CLOSED_BAR_EMA_ALIGNMENT";return result;
@@ -97,7 +117,7 @@ function calculate(input,asOfUtc,symbol=""){
  for(const tf of FRAMES){const r=frames[tf],bars=Array.isArray(input?.[tf])?input[tf]:[];
   const closed=bars.filter(c=>c.time+SECONDS[tf]<=asOfUtc);
   provenanceFrames[tf]={granularitySeconds:SECONDS[tf],firstInputBarTime:closed.length?closed[0].time:null,sourceTime:r.sourceTime,
-   observedClosedBars:r.closedBars,requiredWarmupBars:WARMUP_BARS,emaSeedVersion:"FIRST_CLOSED_CLOSE_V1",
+   observedClosedBars:r.closedBars,requiredWarmupBars:WARMUP_BARS,emaSeedVersion:"FIRST_CLOSED_CLOSE_V1",emaSeedBarCount:r.closedBars,
    emaCalculationVersion:EMA_CALCULATION_VERSION,closedSourceWindow:{startUtc:closed.length?closed[0].time:null,endUtc:closed.length?closed[closed.length-1].time:null},
    status:r.status,reason:r.reason,dataQuality:r.dataQuality};
  }

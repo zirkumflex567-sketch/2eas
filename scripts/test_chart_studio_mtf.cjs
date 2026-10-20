@@ -16,8 +16,10 @@ function sessionBars(tf,count=280){
  const step=M.SECONDS[tf],rows=[];let time=Date.UTC(2025,0,1,tf==="D1"?21:0)/1000;
  while(rows.length<count){
   const date=new Date(time*1000),day=date.getUTCDay(),hour=date.getUTCHours();
-  const weekendClosed=tf==="D1"?day===5||day===6:day===5&&hour>=21||day===6||day===0&&hour<22;
-  const dailyClosed=tf!=="D1"&&day>=1&&day<=4&&hour===21;
+  const weekendClosed=tf==="D1"?day===5||day===6:
+   tf==="H1"?day===6||day===0||day===1&&hour===0:
+   day===5&&hour>=21||day===6||day===0&&hour<22;
+  const dailyClosed=tf==="H1"?day>=1&&day<=4&&hour===0:tf!=="D1"&&day>=1&&day<=4&&hour===21;
   if(!weekendClosed&&!dailyClosed){
    const close=1800+rows.length*.3;
    rows.push({time,open:close-.2,high:close+.4,low:close-.3,close});
@@ -47,6 +49,11 @@ assert.equal(all.featureSnapshot.decisionWindow.endExclusive,true);
 assert.equal(all.featureSnapshot.frames.H4.requiredWarmupBars,250);
 assert.equal(all.featureSnapshot.frames.H4.granularitySeconds,M.SECONDS.H4);
 assert.equal(all.featureSnapshot.frames.H4.emaSeedVersion,"FIRST_CLOSED_CLOSE_V1");
+assert.equal(all.featureSnapshot.frames.H4.emaSeedBarCount,280,"EMA seed provenance must include the full closed source window");
+const longHistoryA=bars("H1",320),longHistoryB=bars("H1",320);
+for(let i=0;i<70;i++){const shift=longHistoryB[i].close-300;longHistoryB[i].open-=shift;longHistoryB[i].high-=shift;longHistoryB[i].low-=shift;longHistoryB[i].close-=shift;}
+const longA=M.frame(longHistoryA,"H1",asOf),longB=M.frame(longHistoryB,"H1",asOf);
+assert.notEqual(longA.ema200,longB.ema200,"EMA200 must retain the influence of closed history before the latest 250 bars");
 assert.equal(all.featureSnapshot.ema20SlopeDefinition,"ONE_CLOSED_BAR_PERCENT_CHANGE_V1");
 assert.equal(all.featureSnapshot.frames.H4.closedSourceWindow.startUtc,input.H4[0].time);
 assert.equal(all.featureSnapshot.frames.H4.closedSourceWindow.endUtc,all.frames.H4.sourceTime);
@@ -69,6 +76,22 @@ const holidayGap=M.frame([...oldWeek,{time:mondayAfterWeek,open:2,high:3,low:1,c
 assert.equal(holidayGap.status,"UNKNOWN");assert.equal(holidayGap.reason,"DATA_GAP","multiweek Friday-to-Monday gaps must not be treated as weekends");
 const normalWeekend=M.frame([{time:friday+8*3600,open:1,high:3,low:.5,close:2},{time:friday+58*3600,open:2,high:3,low:1,close:2}],"H1",friday+59*3600,"XAUUSD");
 assert.equal(normalWeekend.status,"INSUFFICIENT","plausible XAU weekend closure should not look like a weekday data gap");
+const observedH1FridayClose=Date.UTC(2025,0,3,23)/1000,observedH1MondayOpen=Date.UTC(2025,0,6,1)/1000;
+const observedH1Weekend=M.frame([{time:observedH1FridayClose,open:1,high:3,low:.5,close:2},{time:observedH1MondayOpen,open:2,high:3,low:1,close:2}],"H1",observedH1MondayOpen+3600,"XAUUSD");
+assert.equal(observedH1Weekend.status,"INSUFFICIENT","the MT5-observed Friday 23:00 to Monday 01:00 closure is a session heuristic");
+assert.equal(observedH1Weekend.dataQuality,"SESSION_HEURISTIC");
+const observedH1Maintenance=Date.UTC(2025,0,6,23)/1000;
+const h1Maintenance=M.frame([{time:observedH1Maintenance,open:1,high:3,low:.5,close:2},{time:observedH1Maintenance+2*3600,open:2,high:3,low:1,close:2}],"H1",observedH1Maintenance+3*3600,"XAUUSD");
+assert.equal(h1Maintenance.status,"INSUFFICIENT","the MT5-observed 23:00 to 01:00 maintenance pause is a session heuristic");
+assert.equal(h1Maintenance.dataQuality,"SESSION_HEURISTIC");
+const observedM15Maintenance=Date.UTC(2025,0,6,23,45)/1000;
+const m15Maintenance=M.frame([{time:observedM15Maintenance,open:1,high:3,low:.5,close:2},{time:observedM15Maintenance+75*60,open:2,high:3,low:1,close:2}],"M15",observedM15Maintenance+90*60,"XAUUSD");
+assert.equal(m15Maintenance.status,"INSUFFICIENT","the MT5-observed 23:45 to 01:00 M15 pause is a session heuristic");
+assert.equal(m15Maintenance.dataQuality,"SESSION_HEURISTIC");
+const observedM5Maintenance=Date.UTC(2025,0,6,23,55)/1000;
+const m5Maintenance=M.frame([{time:observedM5Maintenance,open:1,high:3,low:.5,close:2},{time:observedM5Maintenance+65*60,open:2,high:3,low:1,close:2}],"M5",observedM5Maintenance+70*60,"XAUUSD");
+assert.equal(m5Maintenance.status,"INSUFFICIENT","the MT5-observed 23:55 to 01:00 M5 pause is a session heuristic");
+assert.equal(m5Maintenance.dataQuality,"SESSION_HEURISTIC");
 const outageFriday=Date.UTC(2025,0,3,0)/1000;
 const outageBars=Array.from({length:250},(_,i)=>({time:outageFriday-(249-i)*3600,open:1,high:3,low:.5,close:2}));
 outageBars.push({time:Date.UTC(2025,0,5,1)/1000,open:2,high:3,low:1,close:2});
@@ -88,6 +111,19 @@ const observedH4FridayClose=Date.UTC(2025,0,3,17)/1000,observedH4SundayOpen=Date
 const observedH4Weekend=M.frame([{time:observedH4FridayClose,open:1,high:3,low:.5,close:2},{time:observedH4SundayOpen,open:2,high:3,low:1,close:2}],"H4",Date.UTC(2025,0,6,1)/1000,"XAUUSD");
 assert.equal(observedH4Weekend.status,"INSUFFICIENT","the exact observed XAU H4 Friday-close/Sunday-open interval is a session heuristic, not a data gap");
 assert.equal(observedH4Weekend.dataQuality,"SESSION_HEURISTIC");
+const observedH4MarketClose=Date.UTC(2025,0,3,20)/1000,observedH4MarketOpen=Date.UTC(2025,0,6,0)/1000;
+const observedH4BrokerWeekend=M.frame([{time:observedH4MarketClose,open:1,high:3,low:.5,close:2},{time:observedH4MarketOpen,open:2,high:3,low:1,close:2}],"H4",observedH4MarketOpen+4*3600,"XAUUSD");
+assert.equal(observedH4BrokerWeekend.status,"INSUFFICIENT","the five live demos show Friday 20:00 to Monday 00:00 H4 closures");
+assert.equal(observedH4BrokerWeekend.dataQuality,"SESSION_HEURISTIC");
+const unverifiedEarlyH4Close=M.frame([{time:Date.UTC(2025,0,3,16)/1000,open:1,high:3,low:.5,close:2},{time:observedH4MarketOpen,open:2,high:3,low:1,close:2}],"H4",observedH4MarketOpen+4*3600,"XAUUSD");
+assert.equal(unverifiedEarlyH4Close.status,"UNKNOWN","unverified early H4 closures must remain data gaps");
+assert.equal(unverifiedEarlyH4Close.reason,"DATA_GAP");
+const observedM15Weekend=M.frame([{time:Date.UTC(2025,0,3,23,45)/1000,open:1,high:3,low:.5,close:2},{time:Date.UTC(2025,0,6,1)/1000,open:2,high:3,low:1,close:2}],"M15",Date.UTC(2025,0,6,1,15)/1000,"XAUUSD");
+assert.equal(observedM15Weekend.status,"INSUFFICIENT");assert.equal(observedM15Weekend.dataQuality,"SESSION_HEURISTIC");
+const observedM5Weekend=M.frame([{time:Date.UTC(2025,0,3,23,55)/1000,open:1,high:3,low:.5,close:2},{time:Date.UTC(2025,0,6,1)/1000,open:2,high:3,low:1,close:2}],"M5",Date.UTC(2025,0,6,1,5)/1000,"XAUUSD");
+assert.equal(observedM5Weekend.status,"INSUFFICIENT");assert.equal(observedM5Weekend.dataQuality,"SESSION_HEURISTIC");
+const observedD1Weekend=M.frame([{time:Date.UTC(2025,0,3,0)/1000,open:1,high:3,low:.5,close:2},{time:Date.UTC(2025,0,6,0)/1000,open:2,high:3,low:1,close:2}],"D1",Date.UTC(2025,0,7,0)/1000,"XAUUSD");
+assert.equal(observedD1Weekend.status,"INSUFFICIENT");assert.equal(observedD1Weekend.dataQuality,"SESSION_HEURISTIC");
 const mismatchedH4Weekend=M.frame([{time:observedH4FridayClose-3600,open:1,high:3,low:.5,close:2},{time:observedH4SundayOpen,open:2,high:3,low:1,close:2}],"H4",Date.UTC(2025,0,6,1)/1000,"XAUUSD");
 assert.equal(mismatchedH4Weekend.status,"UNKNOWN","a non-matching H4 weekend edge remains a data gap");
 assert.equal(mismatchedH4Weekend.reason,"DATA_GAP");
@@ -96,6 +132,10 @@ observedH4Bars.push({time:observedH4SundayOpen,open:1900,high:1901,low:1899,clos
 const observedH4Ready=M.frame(observedH4Bars,"H4",Date.UTC(2025,0,6,1)/1000,"XAUUSD");
 assert.equal(observedH4Ready.status,"READY","the exact observed H4 session edge must preserve complete closed-bar EMA coverage");
 assert.equal(observedH4Ready.dataQuality,"SESSION_HEURISTIC");
+const oldH4Gap=bars("H4",1000);oldH4Gap.splice(100,1);
+const oldH4GapResult=M.frame(oldH4Gap,"H4",asOf,"XAUUSD");
+assert.equal(oldH4GapResult.status,"UNKNOWN","a gap inside the EMA source window must invalidate MTF context");
+assert.equal(oldH4GapResult.reason,"DATA_GAP");
 const nonGoldWeekend=M.frame([{time:friday+9*3600,open:1,high:3,low:.5,close:2},{time:friday+57*3600,open:2,high:3,low:1,close:2}],"H1",friday+58*3600,"EURUSD");
 assert.equal(nonGoldWeekend.status,"UNKNOWN","XAU session heuristics must not certify another symbol");
 assert.equal(nonGoldWeekend.reason,"DATA_GAP");
