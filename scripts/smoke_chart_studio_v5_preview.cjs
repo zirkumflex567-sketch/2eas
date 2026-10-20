@@ -127,6 +127,10 @@ const server=http.createServer((req,res)=>{
    if(type==="line"||type==="area")assert.equal(view.seriesData[0].value,view.bars[0].close,`${type} uses source close values`);
   }
   await page.locator("#chart-v5-chart-type").selectOption("candles");
+  await page.locator("#chart-v5-chart-type").selectOption("area");
+  assert.equal(await page.evaluate(()=>JSON.parse(window.ChartStudioV5Preview.exportLayout()).view.chartType),"area",
+   "portable v5 layouts preserve the selected native price presentation");
+  await page.locator("#chart-v5-chart-type").selectOption("candles");
   const marketLevels=await page.evaluate(()=>window.ChartStudioV5Preview.readMarketLevels?.());
   const priceAxisWidth=await page.evaluate(()=>window.ChartStudioV5Preview.inspect().priceAxisWidth);
   assert.ok(priceAxisWidth>=112,"native v5 reserves enough axis width for concise price and level labels");
@@ -532,6 +536,7 @@ const server=http.createServer((req,res)=>{
   portableLayout.view.paneLines=[{options:{id:"portable-signal",color:"#f7c774",lineWidth:2,title:"Portable signal"},data:candles.slice(0,40).map((bar,index)=>({time:bar.time,value:50+Math.sin(index/5)*10})),paneIndex:1}];
   portableLayout.view.paneHeights=[400,150,140];
   portableLayout.view.volumeVisible=true;portableLayout.view.volumePaneIndex=2;
+  portableLayout.view.chartType="area";
   assert.equal(await page.locator("#chart-v5-layout-import-btn").isEnabled(),true,"verified chart enables portable layout import");
   assert.equal(await page.locator("#chart-v5-layout-replace-btn").isEnabled(),true,"verified chart enables confirmed layout replacement");
   const importProbe=await page.evaluate(async serialized=>{
@@ -548,6 +553,7 @@ const server=http.createServer((req,res)=>{
     let timeframeMismatch="";try{preview.importLayout(JSON.stringify({...JSON.parse(serialized),timeframe:"M5"}),"merge")}catch(error){timeframeMismatch=error.message}
     let account="";try{preview.importLayout(JSON.stringify({...JSON.parse(serialized),account:"blueberry"}),"merge")}catch(error){account=error.message}
     let invalid="";const malformed=JSON.parse(serialized);malformed.view.paneHeights=[-10];try{preview.importLayout(JSON.stringify(malformed),"merge")}catch(error){invalid=error.message}
+    let invalidChartType="";const malformedChartType=JSON.parse(serialized);malformedChartType.view.chartType="renko";try{preview.importLayout(JSON.stringify(malformedChartType),"merge")}catch(error){invalidChartType=error.message}
     let invalidPitchfork="";const malformedPitchfork=JSON.parse(serialized),fork=malformedPitchfork.drawings.find(row=>row.kind==="PITCHFORK");fork.options.thirdTime=fork.options.startTime;try{preview.importLayout(JSON.stringify(malformedPitchfork),"merge")}catch(error){invalidPitchfork=error.message}
     let oversized="";try{preview.importLayout(" ".repeat(512*1024+1),"merge")}catch(error){oversized=error.message}
     const originalFeed=window.ChartStudioV5Feed;let corrupted=false,rollback="";
@@ -555,7 +561,7 @@ const server=http.createServer((req,res)=>{
     try{preview.importLayout(serialized,"replace")}catch(error){rollback=error.message}finally{window.ChartStudioV5Feed=originalFeed}
     const afterRollback=preview.exportLayout(),rollbackState=preview.inspect();
     const afterRejected=preview.exportLayout();
-    return {merged,mergedAgain,afterMerge,before,afterRejected,mismatch,timeframeMismatch,account,invalid,invalidPitchfork,oversized,storageBefore,storageAfterValid,storageAfter:localStorage.getItem(key),rollback,afterRollback,rollbackState,cancelled};
+    return {merged,mergedAgain,afterMerge,before,afterRejected,mismatch,timeframeMismatch,account,invalid,invalidChartType,invalidPitchfork,oversized,storageBefore,storageAfterValid,storageAfter:localStorage.getItem(key),rollback,afterRollback,rollbackState,cancelled,activeType:preview.inspect().chartType};
   },JSON.stringify(portableLayout));
   assert.equal(importProbe.merged.importedDrawings,14,"merge imports the complete native drawing set");
   assert.equal(importProbe.mergedAgain.importedDrawings,14,"a second merge imports the layout again");
@@ -571,10 +577,13 @@ const server=http.createServer((req,res)=>{
   assert.equal(importProbe.afterMerge.view.paneHeights.length,4,"merge preserves existing pane geometry and appends source panes");
   assert.equal(importProbe.afterMerge.view.volumeVisible,true,"merge carries the imported volume pane");
   assert.equal(importProbe.afterMerge.view.volumePaneIndex,3,"repeated merge keeps the shared volume pane after imported indicators");
+  assert.equal(importProbe.afterMerge.view.chartType,"area","portable merge adopts the imported native chart type");
+  assert.equal(importProbe.activeType,"area","rebuilding after layout import restores the imported chart type to the visible renderer");
   assert.match(importProbe.mismatch,/scope/i,"mismatched portable layouts are rejected");
   assert.match(importProbe.timeframeMismatch,/scope/i,"timeframe-mismatched portable layouts are rejected");
   assert.ok(importProbe.account.length>0,"layout files containing account identity are rejected");
   assert.ok(importProbe.invalid.length>0,"invalid view configuration is rejected before mutation");
+  assert.ok(importProbe.invalidChartType.length>0,"unknown native chart types are rejected before layout mutation");
   assert.ok(importProbe.invalidPitchfork.length>0,"malformed pitchfork anchors are rejected before mutation");
   assert.ok(importProbe.oversized.length>0,"files exceeding 512 KiB are rejected");
   assert.match(importProbe.cancelled,/abgebrochen/i,"unconfirmed replace is rejected by the import API");
@@ -597,7 +606,8 @@ const server=http.createServer((req,res)=>{
   await page.waitForFunction(()=>document.querySelectorAll("#chart-v5-object-list [data-drawing-id]").length===14);
   const storedImport=await page.evaluate(()=>{const key="2eas.chartstudio.v5.drawings:v5:titan:XAUUSD:M15";return JSON.parse(localStorage.getItem(key))});
   assert.equal(storedImport.account,"titan","portable import binds the saved snapshot to the active account");
-  assert.equal(storedImport.schemaVersion,5,"portable import reuses the validated local persistence schema");
+  assert.equal(storedImport.schemaVersion,6,"portable import reuses the validated local persistence schema");
+  assert.equal(storedImport.chartType,"area","local schema persists the imported native chart type");
   assert.equal(storedImport.sessionVwaps.length,1,"confirmed replacement restores the imported VWAP settings");
   assert.ok(storedImport.drawings.some(row=>row.kind==="RISK_REWARD"),"confirmed replacement persists the risk/reward drawing in the active scope");
   await page.locator("#chart-v5-layout-reset").click();
@@ -696,7 +706,7 @@ const server=http.createServer((req,res)=>{
   const migratedSchema=await page.evaluate(({oldKey})=>({old:localStorage.getItem(oldKey),current:localStorage.getItem("2eas.chartstudio.v5.drawings:v5:titan:XAUUSD:M15"),legacy:window.ChartStudioV5Preview.readDrawing("legacy-v4-trend")}),{oldKey:legacySchemaV4.key});
   assert.equal(migratedSchema.old,legacySchemaV4.snapshot,"schema-v4 recovery copy remains intact after upgrade");
   assert.ok(migratedSchema.current,"schema-v4 storage migrates to a current snapshot");
-  assert.equal(JSON.parse(migratedSchema.current).schemaVersion,5,"schema-v4 storage migrates to the current schema");
+  assert.equal(JSON.parse(migratedSchema.current).schemaVersion,6,"schema-v4 storage migrates to the current schema");
   assert.ok(JSON.parse(migratedSchema.current).drawings.some(row=>row.options.id==="legacy-v4-trend"),"schema migration preserves existing drawings");
   assert.deepEqual(errors,[]);
   assert.ok(requests.some(row=>row.url.endsWith("/stt/static/chart-studio-v5.js")&&row.method==="GET"),"pinned local v5 bundle loads on click");

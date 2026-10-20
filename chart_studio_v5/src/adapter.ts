@@ -1539,7 +1539,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    paneLines:persistentPaneLines.map(({id,series,paneIndex})=>{const readout=readoutIndicators.get(id);return {options:{id,color:series.options().color as string,lineWidth:series.options().lineWidth,title:series.options().title,visible:series.options().visible},data:readout?[...readout.values].map(([time,value])=>({time,value})):[],paneIndex:portablePaneIndex.get(paneIndex)??0}}),
    paneHeights:orderedPaneIndices.map(paneHeight),volumeVisible:!!volume,
    volumePaneIndex:volume&&volumePaneIndex>=0?(portablePaneIndex.get(volumePaneIndex)??null):null,
-   displayTimeZone,visibleRange:visibleRange?{from:visibleRange.from,to:visibleRange.to}:null};
+   displayTimeZone,visibleRange:visibleRange?{from:visibleRange.from,to:visibleRange.to}:null,chartType:pricePresentation};
  }
  function persistDrawings(protectedUndoEntries=0):boolean{
   if(!drawingScope||!drawingsHydrated||hydratingDrawings)return true;
@@ -1549,7 +1549,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   try{
    if(storage.getItem(key)!==lastPersistedSnapshot){persistenceStatus="CONFLICT";persistenceError="EXTERNAL_CHANGE";return false}
    const drawings=drawingSnapshots();
-   const envelope=()=>JSON.stringify({schemaVersion:5,account:activeAccount,symbol:drawingScope.symbol,
+   const envelope=()=>JSON.stringify({schemaVersion:6,account:activeAccount,symbol:drawingScope.symbol,
    timeframe:drawingScope.timeframe,drawings,undoStack,redoStack,...viewSnapshots()});
    let serialized=envelope();
    while(utf8ByteLength(serialized)>persistenceLimit&&undoStack.length>protectedUndoEntries){undoStack.shift();serialized=envelope()}
@@ -1583,13 +1583,13 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   if(!parsed||typeof parsed!=="object") {persistenceStatus="UNAVAILABLE";persistenceError="INVALID_SNAPSHOT";return}
   const root=parsed as Record<string,unknown>;
   const schemaKeys=Object.keys(root).sort().join(",");
-  if(!root||Array.isArray(parsed)||!new Set(["account,drawings,schemaVersion,symbol,timeframe","account,drawings,redoStack,schemaVersion,symbol,timeframe,undoStack","account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,redoStack,schemaVersion,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible","account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,redoStack,schemaVersion,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible","account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible","account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible","account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,sessionVwaps,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible"]).has(schemaKeys)||
-   (root.schemaVersion!==1&&root.schemaVersion!==2&&root.schemaVersion!==3&&root.schemaVersion!==4&&root.schemaVersion!==5)||(("supertrends" in root||"parabolicSars" in root)&&root.schemaVersion<3)||("sessionVwaps" in root&&root.schemaVersion<4)||root.account!==activeAccount||root.symbol!==drawingScope.symbol||root.timeframe!==drawingScope.timeframe||!Array.isArray(root.drawings)||root.drawings.length>maxNativeDrawings){
+  if(!root||Array.isArray(parsed)||!new Set(["account,drawings,schemaVersion,symbol,timeframe","account,drawings,redoStack,schemaVersion,symbol,timeframe,undoStack","account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,redoStack,schemaVersion,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible","account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,redoStack,schemaVersion,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible","account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible","account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible","account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,sessionVwaps,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible","account,chartType,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,sessionVwaps,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible"]).has(schemaKeys)||
+   (root.schemaVersion!==1&&root.schemaVersion!==2&&root.schemaVersion!==3&&root.schemaVersion!==4&&root.schemaVersion!==5&&root.schemaVersion!==6)||(("supertrends" in root||"parabolicSars" in root)&&root.schemaVersion<3)||("sessionVwaps" in root&&root.schemaVersion<4)||root.account!==activeAccount||root.symbol!==drawingScope.symbol||root.timeframe!==drawingScope.timeframe||!Array.isArray(root.drawings)||root.drawings.length>maxNativeDrawings){
    persistenceStatus="UNAVAILABLE";persistenceError="INVALID_OR_MISMATCHED_SNAPSHOT";return;
   }
-  const isV2=root.schemaVersion>=2,isV3=root.schemaVersion>=3,isV4=root.schemaVersion>=4,isV5=root.schemaVersion===5;
+  const isV2=root.schemaVersion>=2,isV3=root.schemaVersion>=3,isV4=root.schemaVersion>=4,isCurrentSnapshot=root.schemaVersion===6;
   const restoredUndo:DrawingHistory[]=[],restoredRedo:DrawingHistory[]=[];
-  let restoredAverages:MovingAverageOptions[]=[],restoredOscillators:Array<{options:OscillatorOptions;paneIndex:number}>=[],restoredPaneLines:Array<{options:AverageOptions;data:AveragePoint[];paneIndex:number}>=[],restoredSupertrends:SupertrendOptions[]=[],restoredParabolicSars:ParabolicSarOptions[]=[],restoredSessionVwaps:SessionVwapOptions[]=[],restoredPaneHeights:number[]=[],restoredVolume=false,restoredVolumePane:number|null=null,restoredTimeZone="UTC",restoredRange:LogicalRange|null=null;
+  let restoredAverages:MovingAverageOptions[]=[],restoredOscillators:Array<{options:OscillatorOptions;paneIndex:number}>=[],restoredPaneLines:Array<{options:AverageOptions;data:AveragePoint[];paneIndex:number}>=[],restoredSupertrends:SupertrendOptions[]=[],restoredParabolicSars:ParabolicSarOptions[]=[],restoredSessionVwaps:SessionVwapOptions[]=[],restoredPaneHeights:number[]=[],restoredVolume=false,restoredVolumePane:number|null=null,restoredTimeZone="UTC",restoredRange:LogicalRange|null=null,restoredChartType:PricePresentationType=pricePresentation;
   if(isV3){
    try{
     if(!Array.isArray(root.movingAverages)||root.movingAverages.length>16||!Array.isArray(root.oscillators)||root.oscillators.length>8||!Array.isArray(root.paneLines)||root.paneLines.length>8||
@@ -1597,7 +1597,8 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
        (root.parabolicSars!==undefined&&(!Array.isArray(root.parabolicSars)||root.parabolicSars.length>maxIndicatorInstances))||
        !Array.isArray(root.paneHeights)||root.paneHeights.length<1||root.paneHeights.length>10||typeof root.volumeVisible!=="boolean"||
        (root.volumePaneIndex!==null&&(!Number.isInteger(root.volumePaneIndex)||Number(root.volumePaneIndex)<1||Number(root.volumePaneIndex)>=root.paneHeights.length))||
-       (root.volumeVisible!==(root.volumePaneIndex!==null))||typeof root.displayTimeZone!=="string")throw Error();
+       (root.volumeVisible!==(root.volumePaneIndex!==null))||typeof root.displayTimeZone!=="string"||
+       (root.schemaVersion===6&&(!pricePresentationTypes.includes(root.chartType as PricePresentationType))))throw Error();
     const savedPaneHeights=root.paneHeights as unknown[];
     restoredAverages=root.movingAverages.map(raw=>{
      if(!raw||typeof raw!=="object"||Array.isArray(raw))throw Error();const options=raw as Record<string,unknown>;
@@ -1639,6 +1640,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
     const restoredIds=[...restoredAverages.map(item=>item.id),...restoredOscillators.map(item=>item.options.id),...restoredPaneLines.map(item=>item.options.id),...restoredSupertrends.map(item=>item.id),...restoredParabolicSars.map(item=>item.id),...restoredSessionVwaps.map(item=>item.id)];
     if(restoredIds.length>maxIndicatorInstances||new Set(restoredIds).size!==restoredIds.length)throw Error();
     restoredPaneHeights=savedPaneHeights.map(value=>{if(!Number.isInteger(value)||Number(value)<80||Number(value)>600)throw Error();return Number(value)});
+    if(root.schemaVersion===6)restoredChartType=root.chartType as PricePresentationType;
     if(root.volumePaneIndex!==null)restoredVolumePane=Number(root.volumePaneIndex);restoredVolume=root.volumeVisible;
     const zone=root.displayTimeZone;const canonical=new Intl.DateTimeFormat("en-US",{timeZone:zone}).resolvedOptions().timeZone;if(canonical!==zone)throw Error();restoredTimeZone=canonical;
     if(root.visibleRange!==null){if(!root.visibleRange||typeof root.visibleRange!=="object"||Array.isArray(root.visibleRange)||Object.keys(root.visibleRange).sort().join(",")!=="from,to")throw Error();const range=root.visibleRange as Record<string,unknown>;
@@ -1771,6 +1773,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
     if(chart.panes().length!==restoredPaneHeights.length)throw Error();
     for(let index=1;index<restoredPaneHeights.length;index++){chart.panes()[index].setHeight(restoredPaneHeights[index]);paneHeightOverrides.set(index,restoredPaneHeights[index])}
     setDisplayTimeZone(restoredTimeZone);if(restoredRange)setVisibleLogicalRange(restoredRange);
+    if(root.schemaVersion===6){pricePresentation=restoredChartType;syncPresentationSeries();const storage=localStorageApi(),key=chartTypeStorageKey();if(storage&&key)storage.setItem(key,restoredChartType)}
    }
    undoStack.splice(0,undoStack.length,...restoredUndo);redoStack.splice(0,redoStack.length,...restoredRedo);persistenceStatus="READY";persistenceError=null;
   }catch(_){
@@ -1795,7 +1798,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
    if(volume){chart.removeSeries(volume);volume=null}
    undoStack.length=0;redoStack.length=0;persistenceStatus="UNAVAILABLE";persistenceError="RESTORE_FAILED";
   }finally{hydratingDrawings=false}
-  if(!isV5||legacy)persistDrawings();
+  if(!isCurrentSnapshot||legacy)persistDrawings();
  }
  function selectDrawing(id:string|null){
   selectDrawings(id===null?[]:[id]);

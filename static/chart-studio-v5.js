@@ -10425,7 +10425,8 @@ var ChartStudioV5 = (() => {
         volumeVisible: !!volume,
         volumePaneIndex: volume && volumePaneIndex >= 0 ? portablePaneIndex.get(volumePaneIndex) ?? null : null,
         displayTimeZone,
-        visibleRange: visibleRange ? { from: visibleRange.from, to: visibleRange.to } : null
+        visibleRange: visibleRange ? { from: visibleRange.from, to: visibleRange.to } : null,
+        chartType: pricePresentation
       };
     }
     function persistDrawings(protectedUndoEntries = 0) {
@@ -10445,7 +10446,7 @@ var ChartStudioV5 = (() => {
         }
         const drawings = drawingSnapshots();
         const envelope = () => JSON.stringify({
-          schemaVersion: 5,
+          schemaVersion: 6,
           account: activeAccount,
           symbol: drawingScope.symbol,
           timeframe: drawingScope.timeframe,
@@ -10559,17 +10560,17 @@ var ChartStudioV5 = (() => {
       }
       const root = parsed;
       const schemaKeys = Object.keys(root).sort().join(",");
-      if (!root || Array.isArray(parsed) || !(/* @__PURE__ */ new Set(["account,drawings,schemaVersion,symbol,timeframe", "account,drawings,redoStack,schemaVersion,symbol,timeframe,undoStack", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,redoStack,schemaVersion,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,redoStack,schemaVersion,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,sessionVwaps,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible"])).has(schemaKeys) || root.schemaVersion !== 1 && root.schemaVersion !== 2 && root.schemaVersion !== 3 && root.schemaVersion !== 4 && root.schemaVersion !== 5 || ("supertrends" in root || "parabolicSars" in root) && root.schemaVersion < 3 || "sessionVwaps" in root && root.schemaVersion < 4 || root.account !== activeAccount || root.symbol !== drawingScope.symbol || root.timeframe !== drawingScope.timeframe || !Array.isArray(root.drawings) || root.drawings.length > maxNativeDrawings) {
+      if (!root || Array.isArray(parsed) || !(/* @__PURE__ */ new Set(["account,drawings,schemaVersion,symbol,timeframe", "account,drawings,redoStack,schemaVersion,symbol,timeframe,undoStack", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,redoStack,schemaVersion,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,redoStack,schemaVersion,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible", "account,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,sessionVwaps,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible", "account,chartType,displayTimeZone,drawings,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,redoStack,schemaVersion,sessionVwaps,supertrends,symbol,timeframe,undoStack,visibleRange,volumePaneIndex,volumeVisible"])).has(schemaKeys) || root.schemaVersion !== 1 && root.schemaVersion !== 2 && root.schemaVersion !== 3 && root.schemaVersion !== 4 && root.schemaVersion !== 5 && root.schemaVersion !== 6 || ("supertrends" in root || "parabolicSars" in root) && root.schemaVersion < 3 || "sessionVwaps" in root && root.schemaVersion < 4 || root.account !== activeAccount || root.symbol !== drawingScope.symbol || root.timeframe !== drawingScope.timeframe || !Array.isArray(root.drawings) || root.drawings.length > maxNativeDrawings) {
         persistenceStatus = "UNAVAILABLE";
         persistenceError = "INVALID_OR_MISMATCHED_SNAPSHOT";
         return;
       }
-      const isV2 = root.schemaVersion >= 2, isV3 = root.schemaVersion >= 3, isV4 = root.schemaVersion >= 4, isV5 = root.schemaVersion === 5;
+      const isV2 = root.schemaVersion >= 2, isV3 = root.schemaVersion >= 3, isV4 = root.schemaVersion >= 4, isCurrentSnapshot = root.schemaVersion === 6;
       const restoredUndo = [], restoredRedo = [];
-      let restoredAverages = [], restoredOscillators = [], restoredPaneLines = [], restoredSupertrends = [], restoredParabolicSars = [], restoredSessionVwaps = [], restoredPaneHeights = [], restoredVolume = false, restoredVolumePane = null, restoredTimeZone = "UTC", restoredRange = null;
+      let restoredAverages = [], restoredOscillators = [], restoredPaneLines = [], restoredSupertrends = [], restoredParabolicSars = [], restoredSessionVwaps = [], restoredPaneHeights = [], restoredVolume = false, restoredVolumePane = null, restoredTimeZone = "UTC", restoredRange = null, restoredChartType = pricePresentation;
       if (isV3) {
         try {
-          if (!Array.isArray(root.movingAverages) || root.movingAverages.length > 16 || !Array.isArray(root.oscillators) || root.oscillators.length > 8 || !Array.isArray(root.paneLines) || root.paneLines.length > 8 || root.supertrends !== void 0 && (!Array.isArray(root.supertrends) || root.supertrends.length > maxIndicatorInstances) || root.parabolicSars !== void 0 && (!Array.isArray(root.parabolicSars) || root.parabolicSars.length > maxIndicatorInstances) || !Array.isArray(root.paneHeights) || root.paneHeights.length < 1 || root.paneHeights.length > 10 || typeof root.volumeVisible !== "boolean" || root.volumePaneIndex !== null && (!Number.isInteger(root.volumePaneIndex) || Number(root.volumePaneIndex) < 1 || Number(root.volumePaneIndex) >= root.paneHeights.length) || root.volumeVisible !== (root.volumePaneIndex !== null) || typeof root.displayTimeZone !== "string") throw Error();
+          if (!Array.isArray(root.movingAverages) || root.movingAverages.length > 16 || !Array.isArray(root.oscillators) || root.oscillators.length > 8 || !Array.isArray(root.paneLines) || root.paneLines.length > 8 || root.supertrends !== void 0 && (!Array.isArray(root.supertrends) || root.supertrends.length > maxIndicatorInstances) || root.parabolicSars !== void 0 && (!Array.isArray(root.parabolicSars) || root.parabolicSars.length > maxIndicatorInstances) || !Array.isArray(root.paneHeights) || root.paneHeights.length < 1 || root.paneHeights.length > 10 || typeof root.volumeVisible !== "boolean" || root.volumePaneIndex !== null && (!Number.isInteger(root.volumePaneIndex) || Number(root.volumePaneIndex) < 1 || Number(root.volumePaneIndex) >= root.paneHeights.length) || root.volumeVisible !== (root.volumePaneIndex !== null) || typeof root.displayTimeZone !== "string" || root.schemaVersion === 6 && !pricePresentationTypes.includes(root.chartType)) throw Error();
           const savedPaneHeights = root.paneHeights;
           restoredAverages = root.movingAverages.map((raw2) => {
             if (!raw2 || typeof raw2 !== "object" || Array.isArray(raw2)) throw Error();
@@ -10627,6 +10628,7 @@ var ChartStudioV5 = (() => {
             if (!Number.isInteger(value) || Number(value) < 80 || Number(value) > 600) throw Error();
             return Number(value);
           });
+          if (root.schemaVersion === 6) restoredChartType = root.chartType;
           if (root.volumePaneIndex !== null) restoredVolumePane = Number(root.volumePaneIndex);
           restoredVolume = root.volumeVisible;
           const zone = root.displayTimeZone;
@@ -10886,6 +10888,12 @@ var ChartStudioV5 = (() => {
           }
           setDisplayTimeZone(restoredTimeZone);
           if (restoredRange) setVisibleLogicalRange(restoredRange);
+          if (root.schemaVersion === 6) {
+            pricePresentation = restoredChartType;
+            syncPresentationSeries();
+            const storage2 = localStorageApi(), key2 = chartTypeStorageKey();
+            if (storage2 && key2) storage2.setItem(key2, restoredChartType);
+          }
         }
         undoStack.splice(0, undoStack.length, ...restoredUndo);
         redoStack.splice(0, redoStack.length, ...restoredRedo);
@@ -10953,7 +10961,7 @@ var ChartStudioV5 = (() => {
       } finally {
         hydratingDrawings = false;
       }
-      if (!isV5 || legacy) persistDrawings();
+      if (!isCurrentSnapshot || legacy) persistDrawings();
     }
     function selectDrawing(id) {
       selectDrawings(id === null ? [] : [id]);

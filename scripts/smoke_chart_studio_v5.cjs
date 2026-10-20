@@ -1923,13 +1923,13 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(persistenceProbe.migrated.status,"READY");
   assert.equal(persistenceProbe.migrated.drawing.price,4001);
   assert.equal(persistenceProbe.migrated.stored.schemaVersion,1);
-  assert.equal(persistenceProbe.migrated.current.schemaVersion,5);
+  assert.equal(persistenceProbe.migrated.current.schemaVersion,6);
   assert.deepEqual(persistenceProbe.migrated.current.undoStack,[]);
   assert.deepEqual(persistenceProbe.migrated.current.redoStack,[]);
   assert.equal(persistenceProbe.migratedV2.status,"READY");
   assert.equal(persistenceProbe.migratedV2.drawing.price,4002);
   assert.equal(persistenceProbe.migratedV2.stored.schemaVersion,2);
-  assert.equal(persistenceProbe.migratedV2.current.schemaVersion,5);
+  assert.equal(persistenceProbe.migratedV2.current.schemaVersion,6);
   assert.equal(persistenceProbe.malformedHistory.status,"UNAVAILABLE");
   assert.equal(persistenceProbe.malformedHistory.count,0);
   assert.equal(persistenceProbe.malformedHistory.stored,persistenceProbe.badHistory);

@@ -314,14 +314,17 @@
     }catch(error){setStatus("Layoutexport nicht verfügbar: "+String(error?.message||error).slice(0,120));return false}
   }
   const portableKeys="drawings,schemaVersion,symbol,timeframe,view";
-  const viewKeys="displayTimeZone,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,sessionVwaps,supertrends,visibleRange,volumePaneIndex,volumeVisible";
+  const viewKeys="chartType,displayTimeZone,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,sessionVwaps,supertrends,visibleRange,volumePaneIndex,volumeVisible";
+  const legacyViewKeys="displayTimeZone,movingAverages,oscillators,paneHeights,paneLines,parabolicSars,sessionVwaps,supertrends,visibleRange,volumePaneIndex,volumeVisible";
   function parseLayout(serialized){
     if(typeof serialized!=="string"||new TextEncoder().encode(serialized).length>512*1024)throw new Error("Layoutdatei ungültig oder zu groß");
     let layout;try{layout=JSON.parse(serialized)}catch(_){throw new Error("Layout-JSON ist ungültig")}
     if(!layout||typeof layout!=="object"||Array.isArray(layout)||Object.keys(layout).sort().join(",")!==portableKeys||layout.schemaVersion!==2||
        typeof layout.symbol!=="string"||typeof layout.timeframe!=="string"||!Array.isArray(layout.drawings)||!layout.view||typeof layout.view!=="object"||Array.isArray(layout.view)||
-       Object.keys(layout.view).sort().join(",")!==viewKeys)throw new Error("Nicht unterstütztes Layoutformat");
+       ![viewKeys,legacyViewKeys].includes(Object.keys(layout.view).sort().join(",")))throw new Error("Nicht unterstütztes Layoutformat");
     if(!scope||layout.symbol!==scope.symbol||layout.timeframe!==scope.timeframe)throw new Error("Layoutscope stimmt nicht mit dem aktiven Chart überein");
+    if(!Object.hasOwn(layout.view,"chartType"))layout.view.chartType=engine?.readPricePresentation?.().type||"candles";
+    if(!["candles","bars","line","area","heikin","hollow"].includes(layout.view.chartType))throw new Error("Layout enthält einen unbekannten Charttyp");
     return layout;
   }
   function layoutIds(layout){
@@ -367,10 +370,10 @@
     for(const item of incoming.view.supertrends){rename(item);merged.view.supertrends.push(item)}
     for(const item of incoming.view.parabolicSars){rename(item);merged.view.parabolicSars.push(item)}
     for(const item of incoming.view.sessionVwaps){rename(item);merged.view.sessionVwaps.push(item)}
-    merged.view.visibleRange=target.view.visibleRange;merged.view.displayTimeZone=target.view.displayTimeZone;
+    merged.view.visibleRange=target.view.visibleRange;merged.view.displayTimeZone=target.view.displayTimeZone;merged.view.chartType=incoming.view.chartType;
     return merged;
   }
-  function storedLayout(layout){return JSON.stringify({schemaVersion:4,account:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,
+  function storedLayout(layout){return JSON.stringify({schemaVersion:6,account:scope.account,symbol:scope.symbol,timeframe:scope.timeframe,
     drawings:layout.drawings,undoStack:[],redoStack:[],...layout.view})}
   function validateLayoutSnapshot(serialized){
     const frame=document.createElement("iframe");frame.style.cssText="position:absolute;left:-10000px;top:0;width:920px;height:540px;opacity:0;pointer-events:none";document.body.append(frame);
