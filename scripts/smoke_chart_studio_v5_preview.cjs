@@ -112,6 +112,13 @@ const server=http.createServer((req,res)=>{
   await page.waitForFunction(()=>document.querySelector("#chart-v5-live-quote")?.textContent.includes("STALE"));
   await page.waitForFunction(()=>window.ChartStudioV5Preview?.inspect().customMovingAverageCount===1);
   await page.waitForFunction(()=>window.ChartStudioV5Preview?.inspect().customOscillatorCount===2);
+  assert.equal(await page.locator("#chart-v5-chart-type").inputValue(),"candles","native preview exposes the current chart presentation");
+  await page.locator("#chart-v5-chart-type").selectOption("heikin");
+  await page.waitForFunction(()=>window.ChartStudioV5Preview?.inspect().chartType==="heikin");
+  assert.equal(await page.evaluate(()=>window.ChartStudioV5Preview.readPricePresentation().bars.length),150,"Heikin view derives from the verified candle set");
+  await page.locator("#chart-v5-chart-type").selectOption("hollow");
+  await page.waitForFunction(()=>window.ChartStudioV5Preview?.inspect().chartType==="hollow");
+  await page.locator("#chart-v5-chart-type").selectOption("candles");
   const marketLevels=await page.evaluate(()=>window.ChartStudioV5Preview.readMarketLevels?.());
   const priceAxisWidth=await page.evaluate(()=>window.ChartStudioV5Preview.inspect().priceAxisWidth);
   assert.ok(priceAxisWidth>=112,"native v5 reserves enough axis width for concise price and level labels");

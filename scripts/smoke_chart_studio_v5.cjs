@@ -20,6 +20,47 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await page.goto("http://127.0.0.1:8872/chart_studio_v5/fixture.html",{waitUntil:"networkidle"});
   assert.equal(await page.evaluate(()=>window.__chartV5Ready),true);
   await page.addScriptTag({path:path.resolve("static/chart-studio-market-structure.js")});
+  const chartTypeContract=await page.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:640px;height:360px;position:fixed;left:-2000px;top:0";document.body.append(host);
+   const scope={symbol:"XAUUSD",timeframe:"M15"},engine=ChartStudioV5.createStudioV5(host,"chart-type-titan",scope),start=1712500000;
+   const bars=[
+    {time:start,open:10,high:12,low:8,close:11},
+    {time:start+900,open:14,high:14,low:9,close:13},
+    {time:start+1800,open:13,high:16,low:12,close:15},
+   ],sourceBefore=JSON.stringify(bars);engine.setCandles(bars);
+   let missingApi=false;try{engine.setPricePresentation("heikin")}catch(error){missingApi=/setPricePresentation/.test(error.message)}
+   const available=typeof engine.readPricePresentation==="function"&&typeof engine.setPricePresentation==="function";
+   if(!available){engine.destroy();host.remove();return {available,missingApi,sourceUnchanged:sourceBefore===JSON.stringify(bars)}}
+   engine.setPricePresentation("heikin");const heikin=engine.readPricePresentation(),raw=engine.readDataWindow(start);
+   engine.updateLast({...bars[2],open:14,high:18,low:13,close:17});const updated=engine.readPricePresentation();
+   engine.setPricePresentation("hollow");const hollow=engine.readPricePresentation();
+   let invalidRejected=false;try{engine.setPricePresentation("renko")}catch(_){invalidRejected=true}
+   const afterInvalid=engine.readPricePresentation();
+   engine.changeAccount("chart-type-goldm15");const otherAccount=engine.inspect().chartType;
+   engine.setPricePresentation("heikin");engine.changeAccount("chart-type-titan");const restored=engine.inspect().chartType;
+   const timeframeHost=document.createElement("div");timeframeHost.style.cssText="width:320px;height:180px;position:fixed;left:-2000px;top:0";document.body.append(timeframeHost);
+   const timeEngine=ChartStudioV5.createStudioV5(timeframeHost,"chart-type-titan",{symbol:"XAUUSD",timeframe:"M5"}),otherTimeframe=timeEngine.inspect().chartType;timeEngine.destroy();
+   const result={available,heikin:heikin.bars,raw:raw.ohlc,updated:updated.bars,hollow:hollow.bars,hollowStyle:hollow.styles,
+    invalidRejected,afterInvalidType:afterInvalid.type,otherAccount,restored,otherTimeframe,sourceUnchanged:sourceBefore===JSON.stringify(bars)};
+   engine.destroy();timeframeHost.remove();host.remove();return result;
+  });
+  assert.equal(chartTypeContract.available,true,"Native v5 exposes a scoped chart-presentation API");
+  assert.deepEqual(chartTypeContract.heikin.map(({time,open,high,low,close})=>({time,open,high,low,close})),[
+   {time:1712500000,open:10.5,high:12,low:8,close:10.25},
+   {time:1712500900,open:10.375,high:14,low:9,close:12.5},
+   {time:1712501800,open:11.4375,high:16,low:11.4375,close:14},
+  ],"Heikin Ashi uses recursive open and averaged OHLC without changing bar times");
+  assert.deepEqual(chartTypeContract.raw,{open:10,high:12,low:8,close:11},"Data window retains broker OHLC while Heikin is visible");
+  assert.equal(chartTypeContract.updated[2].close,15.5,"Live update recalculates derived bars from raw source bars");
+  assert.deepEqual(chartTypeContract.hollow.map(({open,high,low,close})=>({open,high,low,close})),[
+   {open:10,high:12,low:8,close:11},{open:14,high:14,low:9,close:13},{open:14,high:18,low:13,close:17},
+  ],"Hollow presentation keeps original OHLC and uses style metadata only");
+  assert.equal(chartTypeContract.hollowStyle[0].bodyColor,"rgba(0,0,0,0)");
+  assert.equal(chartTypeContract.hollowStyle[1].bodyColor,"#f16b8d");
+  assert.equal(chartTypeContract.invalidRejected,true);assert.equal(chartTypeContract.afterInvalidType,"hollow");
+  assert.equal(chartTypeContract.otherAccount,"candles");assert.equal(chartTypeContract.restored,"hollow");
+  assert.equal(chartTypeContract.otherTimeframe,"candles","Chart type preferences are isolated by symbol and timeframe");
+  assert.equal(chartTypeContract.sourceUnchanged,true,"Presentation never mutates MT5 source bars");
   const volumeZoneCalculation=await page.evaluate(()=>{
    const start=1712500000,bars=Array.from({length:26},(_,i)=>({time:start+i*900,open:100,high:102,low:99,close:101,tick_volume:i===20?30:10,real_volume:0})),before=JSON.stringify(bars);
    const result=ChartStudioV5.calculateVolumeZones(bars,{timeframeSeconds:900,asOfUtc:start+26*900,lookback:20,multiplier:2});

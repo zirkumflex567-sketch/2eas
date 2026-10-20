@@ -11,6 +11,24 @@ export {createIncrementalOscillator};
 export {calculateVolumeZones};
 export const VERSION = "5.2.1";
 export type Candle = {time:UTCTimestamp;open:number;high:number;low:number;close:number;tick_volume?:number;real_volume?:number};
+export type PricePresentationType = "candles"|"heikin"|"hollow";
+type PresentationCandle = Candle&{color?:string;borderColor?:string;wickColor?:string};
+const pricePresentationTypes:readonly PricePresentationType[]=["candles","heikin","hollow"];
+function heikinAshiCandles(bars:readonly Candle[]):Candle[]{
+ let previousOpen:number|null=null,previousClose:number|null=null;
+ return bars.map(bar=>{
+  const close=(bar.open+bar.high+bar.low+bar.close)/4;
+  const open=previousOpen===null?(bar.open+bar.close)/2:(previousOpen+previousClose!)/2;
+  const result={time:bar.time,open,high:Math.max(bar.high,open,close),low:Math.min(bar.low,open,close),close};
+  previousOpen=open;previousClose=close;return result;
+ });
+}
+function hollowCandles(bars:readonly Candle[]):PresentationCandle[]{
+ return bars.map(bar=>{
+  const up=bar.close>=bar.open,color=up?"#1bca99":"#f16b8d";
+  return {...bar,color:up?"rgba(0,0,0,0)":color,borderColor:color,wickColor:color};
+ });
+}
 export type AveragePoint = {time:UTCTimestamp;value:number};
 export type AverageOptions = {id:string;color:string;lineWidth?:1|2|3|4;visible?:boolean;title?:string};
 export type MovingAverageOptions = AverageOptions&{type:"EMA"|"SMA"|"WMA"|"RMA"|"SMMA";period:number;source?:"close"|"open"|"high"|"low"|"hl2"|"hlc3"|"ohlc4";displayShift?:number};
@@ -1434,6 +1452,33 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  function localStorageApi():Storage|null{
   try{return host.ownerDocument.defaultView?.localStorage??null}catch(_){return null}
  }
+ function chartTypeStorageKey(account=activeAccount){
+  if(!drawingScope)return null;
+  return `2eas.chartstudio.v5.price-presentation:v1:${encodeURIComponent(account)}:${encodeURIComponent(drawingScope.symbol)}:${encodeURIComponent(drawingScope.timeframe)}`;
+ }
+ function restorePricePresentation(account=activeAccount):PricePresentationType{
+  const storage=localStorageApi(),key=chartTypeStorageKey(account);if(!storage||!key)return "candles";
+  try{const value=storage.getItem(key);return pricePresentationTypes.includes(value as PricePresentationType)?value as PricePresentationType:"candles"}catch(_){return "candles"}
+ }
+ let pricePresentation:PricePresentationType=restorePricePresentation(accountId);
+ function pricePresentationBars():PresentationCandle[]{
+  if(pricePresentation==="heikin")return heikinAshiCandles(bars);
+  if(pricePresentation==="hollow")return hollowCandles(bars);
+  return bars.map(bar=>({...bar}));
+ }
+ function readPricePresentation(){
+  guard();const displayed=pricePresentationBars();
+  return {type:pricePresentation,source:"CHART_FEED",bars:displayed.map(bar=>({...bar})),
+   styles:displayed.map(bar=>({bodyColor:bar.color??null,borderColor:bar.borderColor??null,wickColor:bar.wickColor??null}))};
+ }
+ function setPricePresentation(value:unknown){
+  guard();if(typeof value!=="string"||!pricePresentationTypes.includes(value as PricePresentationType))throw Error("Unsupported chart presentation");
+  const next=value as PricePresentationType,key=chartTypeStorageKey(),storage=localStorageApi();
+  pricePresentation=next;
+  if(storage&&key)try{storage.setItem(key,next)}catch(_){}
+  price.setData(pricePresentationBars() as never);
+  return readPricePresentation();
+ }
  function drawingSnapshots():DrawingSnapshot[]{
   return [
    ...[...priceLevels.values()].map(({options})=>({kind:"PRICE" as const,options:{...options}})),
@@ -1940,7 +1985,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   for(const group of oscillators.values())for(const series of group.series.values())series.setData([] as never);
   for(const group of supertrendOverlays.values()){group.up.setData([]);group.down.setData([])}
   for(const group of parabolicSarOverlays.values()){group.up.setData([]);group.down.setData([])}
-  readoutIndicators.clear();price.setData(bars);refreshManagedMovingAverages();refreshDonchianOverlays();refreshBollingerOverlays();refreshSessionVwapOverlays();refreshKeltnerOverlays();refreshAtrBandsOverlays();refreshLinearRegressionOverlays();
+  readoutIndicators.clear();price.setData(pricePresentationBars() as never);refreshManagedMovingAverages();refreshDonchianOverlays();refreshBollingerOverlays();refreshSessionVwapOverlays();refreshKeltnerOverlays();refreshAtrBandsOverlays();refreshLinearRegressionOverlays();
   refreshSupertrendOverlays();refreshParabolicSar();refreshIchimokuOverlays();refreshPivotOverlays();refreshOscillators();refreshVolumeZones();refreshAutoFibonacci();
   if(volume)volume.setData(volumeRows());
   hydrateDrawings();
@@ -3114,7 +3159,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   barsByTime.set(c.time,{...c});
   brokerDealMarkers=brokerDealMarkers.map(row=>({...row,plotted:barsByTime.has(row.chartTimeSeconds)}));brokerDealPrimitive.set(brokerDealMarkers);
   for(const indicator of readoutIndicators.values()){indicator.values.delete(c.time);indicator.directions?.delete(c.time)}
-  price.update(c);if(volume)volume.update(volumeRows()[bars.length-1]);
+  if(pricePresentation==="candles")price.update(c);else price.setData(pricePresentationBars() as never);if(volume)volume.update(volumeRows()[bars.length-1]);
   for(const [id,state] of managedMovingAverages)updateManagedMovingAverage(id,state);
   refreshDonchianOverlays();refreshBollingerOverlays();refreshSessionVwapOverlays();refreshKeltnerOverlays();refreshAtrBandsOverlays();refreshLinearRegressionOverlays();refreshIchimokuOverlays();refreshPivotOverlays();
   refreshVolumeZones();refreshAutoFibonacci();for(const group of supertrendOverlays.values())updateSupertrendLast(group,c,bars.length-1,replacing&&group.lastTime===c.time);
@@ -3151,7 +3196,7 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
   finishDrag(true);selectDrawing(null);hoveredDrawingId=null;
   undoStack.length=0;redoStack.length=0;
   drawingsHydrated=false;lastPersistedSnapshot=null;persistenceError=null;persistenceStatus=drawingScope?"PENDING":"DISABLED";
-  activeAccount=next;bars=[];barsByTime.clear();price.setData([]);
+  activeAccount=next;pricePresentation=restorePricePresentation(next);bars=[];barsByTime.clear();price.setData([]);
   for(const item of priceLevels.values())price.detachPrimitive(item.primitive);priceLevels.clear();
   for(const item of timeMarkers.values())price.detachPrimitive(item.primitive);timeMarkers.clear();selectedDrawingId=null;
   for(const item of textAnnotations.values())price.detachPrimitive(item.primitive);textAnnotations.clear();
@@ -3192,14 +3237,14 @@ export function createStudioV5(host:HTMLElement,accountId:string,scope?:ChartSto
  }
  function setDrawingTool(tool:PlacementTool|null,text?:string){guard();if(tool!==null&&!["TREND","RAY","PRICE","TIME","RECT","ELLIPSE","FIBO","FIB_FAN","FIB_TREND","FIB_TIME","MEASURE","CHANNEL","PITCHFORK","RISK_REWARD","TEXT"].includes(tool))throw Error("Invalid drawing tool");if(tool==="TEXT"&&(typeof text!=="string"||!/^[\x20-\x7E]{1,40}$/.test(text)))throw Error("Text placement requires 1-40 printable ASCII characters");cancelDrawingTool(false);placementTool=tool;placementAnchors=[];placementText=tool==="TEXT"?text!:null;if(tool)drawingState("SECOND_ANCHOR");return true}
  function drawingToolState(){return {tool:placementTool,hasFirstAnchor:placementAnchors.length>0,anchorCount:placementAnchors.length}}
- function inspect(){guard();return {version:VERSION,account:activeAccount,priceAxisWidth:chart.priceScale("right").width(),positionOverlayCount:positionOverlayLines.size,positionOverlays:readPositionOverlays().lines,marketLevelCount:marketLevelLines.size,marketLevels:readMarketLevels(),brokerDealMarkerCount:brokerDealMarkers.filter(row=>row.plotted).length,nativeDrawingCount:drawingCount(),drawingTool:placementTool,
+ function inspect(){guard();return {version:VERSION,account:activeAccount,chartType:pricePresentation,priceAxisWidth:chart.priceScale("right").width(),positionOverlayCount:positionOverlayLines.size,positionOverlays:readPositionOverlays().lines,marketLevelCount:marketLevelLines.size,marketLevels:readMarketLevels(),brokerDealMarkerCount:brokerDealMarkers.filter(row=>row.plotted).length,nativeDrawingCount:drawingCount(),drawingTool:placementTool,
   displayTimeZone,volumeZoneStatus:volumeZones?.result.status??"DISABLED",volumeZoneCount:volumeZones?.result.zones.length??0,
   candleCount:bars.length,lastTime:bars[bars.length-1]?.time??null,
   sessionVwapCount:sessionVwapOverlays.size,sessionVwapSeries:[...sessionVwapOverlays.entries()].map(([id,group])=>({id,options:{...group.options},points:group.result.points.map(point=>({...point})),volumeSource:group.result.volumeSource,visible:group.series.options().visible})),
     averageCount:averages.size,nativePaneLines:paneLines.size,oscillatorCount:oscillators.size,supertrendCount:supertrendOverlays.size,parabolicSarCount:parabolicSarOverlays.size,ichimokuCount:ichimokuOverlays.size,pivotCount:pivotOverlays.size,pivotSeries:[...pivotOverlays.entries()].map(([id,group])=>({id,options:{...group.options,sourceWindow:{...group.options.sourceWindow}},lines:Object.fromEntries((["p","r1","r2","r3","s1","s2","s3"] as const).map(key=>[key,group.values.lines[key].map(point=>({...point}))])),visible:Array.from(group.series.values(),series=>series.options().visible)})),ichimokuSeries:[...ichimokuOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:Object.fromEntries((["tenkan","kijun","senkouA","senkouB","chikou"] as const).map(key=>[key,group.values[key].map(point=>({...point}))])),visible:group.series.map(series=>series.options().visible)})),bollingerCount:bollingerOverlays.size,bollingerSeries:[...bollingerOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),atrBandsCount:atrBandsOverlays.size,atrBandsSeries:[...atrBandsOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),linearRegressionCount:linearRegressionOverlays.size,linearRegressionLineCount:[...linearRegressionOverlays.values()].reduce((count,group)=>count+group.series.length,0),linearRegressionSeries:[...linearRegressionOverlays.entries()].map(([id,group])=>({id,options:{...group.options},lines:{upper:group.values.upper.map(point=>({...point})),middle:group.values.middle.map(point=>({...point})),lower:group.values.lower.map(point=>({...point}))},visible:group.series.map(series=>series.options().visible)})),oscillatorPaneCount:new Set(Array.from(oscillators.values(),group=>{const series=group.series.values().next().value;return series?chart.panes().findIndex(pane=>pane.getSeries().includes(series)):-1}).filter(index=>index>=0)).size,nativePrimitives:drawingCount(),selectedDrawingId,selectedDrawingIds:[...selectedDrawingIds],hoveredDrawingId,
   paneCount:chart.panes().length,volumeVisible:!!volume,persistenceStatus,persistenceError}}
  function destroy(){if(destroyed)return;cancelDrawingTool(false);finishDrag(true);clearPositionOverlays();if(volumeZones){price.detachPrimitive(volumeZones.primitive);volumeZones=null}destroyed=true;host.removeEventListener("pointerdown",onPointerDown,true);host.removeEventListener("pointermove",onPointerMove,true);host.removeEventListener("pointerup",onPointerUp,true);host.removeEventListener("pointercancel",onPointerCancel,true);host.removeEventListener("lostpointercapture",onLostPointerCapture,true);host.removeEventListener("keydown",onKeyDown,true);chart.remove();averages.clear();managedMovingAverages.clear();transientMovingAverages.clear();donchianOverlays.clear();bollingerOverlays.clear();sessionVwapOverlays.clear();keltnerOverlays.clear();atrBandsOverlays.clear();ichimokuOverlays.clear();pivotOverlays.clear();linearRegressionOverlays.clear();supertrendOverlays.clear();parabolicSarOverlays.clear();paneLines.clear();oscillators.clear();transientOscillators.clear();priceLevels.clear();timeMarkers.clear();textAnnotations.clear();trendLines.clear();rectangles.clear();ellipses.clear();rays.clear();fibonacci.clear();fibonacciFans.clear();trendBasedFibonaccis.clear();channels.clear();measurements.clear();riskRewards.clear();readoutIndicators.clear();volume=null;bars=[];barsByTime.clear()}
-  return Object.freeze({setCandles,addAverage,addMovingAverage,addTransientMovingAverage,addDonchian,removeDonchian,addBollinger,updateBollinger,removeBollinger,bollingerOptions,addSessionVwap,updateSessionVwap,removeSessionVwap,sessionVwapOptions,addKeltner,removeKeltner,addAtrBands,updateAtrBands,removeAtrBands,atrBandsOptions,addLinearRegression,updateLinearRegression,removeLinearRegression,linearRegressionOptions,addIchimoku,updateIchimoku,removeIchimoku,ichimokuOptions,addPivotPoints,updatePivotPoints,pivotOptions,removePivotPoints,addSupertrend,updateSupertrend,removeSupertrend,supertrendOptions,addParabolicSar,updateParabolicSar,removeParabolicSar,parabolicSarOptions,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,deleteSelectedDrawings,addPriceLevel,updatePriceLevel,removePriceLevel,
+  return Object.freeze({setCandles,setPricePresentation,readPricePresentation,addAverage,addMovingAverage,addTransientMovingAverage,addDonchian,removeDonchian,addBollinger,updateBollinger,removeBollinger,bollingerOptions,addSessionVwap,updateSessionVwap,removeSessionVwap,sessionVwapOptions,addKeltner,removeKeltner,addAtrBands,updateAtrBands,removeAtrBands,atrBandsOptions,addLinearRegression,updateLinearRegression,removeLinearRegression,linearRegressionOptions,addIchimoku,updateIchimoku,removeIchimoku,ichimokuOptions,addPivotPoints,updatePivotPoints,pivotOptions,removePivotPoints,addSupertrend,updateSupertrend,removeSupertrend,supertrendOptions,addParabolicSar,updateParabolicSar,removeParabolicSar,parabolicSarOptions,movingAverageOptions,moveAverage,removeAverage,selectDrawings,toggleDrawingSelection,setSelectedDrawingsVisible,setSelectedDrawingsLocked,deleteSelectedDrawings,addPriceLevel,updatePriceLevel,removePriceLevel,
   addTimeMarker:(options:TimeMarkerOptions)=>addTimeMarker(options),updateTimeMarker,removeTimeMarker,addTextAnnotation:(options:TextAnnotationOptions)=>addTextAnnotation(options),updateTextAnnotation,removeTextAnnotation,addTrendLine:(options:TrendLineOptions)=>addTrendLine(options),updateTrendLine,removeTrendLine,addRectangle:(options:RectangleOptions)=>addRectangle(options),updateRectangle,removeRectangle,addEllipse,updateEllipse,removeEllipse,addRay:(options:RayOptions)=>addRay(options),updateRay,removeRay,addFibonacci:(options:FibonacciOptions)=>addFibonacci(options),updateFibonacci,removeFibonacci,fibonacciLevels,addFibonacciFan,updateFibonacciFan,removeFibonacciFan,fibonacciFanRays,addTrendBasedFibonacci,updateTrendBasedFibonacci,removeTrendBasedFibonacci,trendBasedFibonacciLevels,addFibonacciTimeZones:(options:FibonacciTimeZoneOptions)=>addFibonacciTimeZone(options),updateFibonacciTimeZones:updateFibonacciTimeZone,removeFibonacciTimeZones:removeFibonacciTimeZone,fibonacciTimeZoneGuides,addChannel:(options:ChannelOptions)=>addChannel(options),updateChannel,removeChannel,addPitchfork:(options:PitchforkOptions)=>addPitchfork(options),updatePitchfork,removePitchfork,drawingPosition,drawingGeometry,drawingAnchorPosition,readDrawing,exportDrawings,exportLayout,importDrawings,setDrawingVisible,setDrawingLocked,undo,redo,deleteSelectedDrawing,duplicateSelectedDrawing,duplicateSelectedDrawings,
   addMeasurement,updateMeasurement,removeMeasurement,measurementReadout,addPaneLine,movePaneLine,removePaneLine,addOscillator,updateOscillator,removeOscillator,addTransientOscillator,updateTransientOscillator,removeTransientOscillator,moveOscillator,oscillatorOptions,oscillatorPaneLayout,resizePane,paneHeights,showVolume,visibleLogicalRange,setVisibleLogicalRange,setDisplayTimeZone,displayTimeZone:()=>displayTimeZone,formatTimeLabel:formatDisplayTime,formatCrosshairTime,readDataWindow,
   updateLast,changeAccount,averageOptions,setVolumeZones,readVolumeZones,clearVolumeZones,setAutoFibonacci,readAutoFibonacci,clearAutoFibonacci,setMarketLevels,readMarketLevels,clearMarketLevels,setPositionOverlays,readPositionOverlays,clearPositionOverlays,setBrokerDealMarkers,readBrokerDealMarkers,setDrawingTool,drawingToolState,verifyPersistence,inspect,destroy});

@@ -7531,6 +7531,24 @@ var ChartStudioV5 = (() => {
 
   // src/adapter.ts
   var VERSION2 = "5.2.1";
+  var pricePresentationTypes = ["candles", "heikin", "hollow"];
+  function heikinAshiCandles(bars) {
+    let previousOpen = null, previousClose = null;
+    return bars.map((bar) => {
+      const close = (bar.open + bar.high + bar.low + bar.close) / 4;
+      const open = previousOpen === null ? (bar.open + bar.close) / 2 : (previousOpen + previousClose) / 2;
+      const result = { time: bar.time, open, high: Math.max(bar.high, open, close), low: Math.min(bar.low, open, close), close };
+      previousOpen = open;
+      previousClose = close;
+      return result;
+    });
+  }
+  function hollowCandles(bars) {
+    return bars.map((bar) => {
+      const up = bar.close >= bar.open, color = up ? "#1bca99" : "#f16b8d";
+      return { ...bar, color: up ? "rgba(0,0,0,0)" : color, borderColor: color, wickColor: color };
+    });
+  }
   function calculateLinearRegressionChannel(input, period, multiplier) {
     const upper = [], middle = [], lower = [];
     if (!Number.isInteger(period) || period < 2 || period > 200 || !Number.isFinite(multiplier) || multiplier < 0.1 || multiplier > 10 || Math.abs(multiplier * 10 - Math.round(multiplier * 10)) > 1e-8) return { upper, middle, lower };
@@ -10142,6 +10160,48 @@ var ChartStudioV5 = (() => {
         return null;
       }
     }
+    function chartTypeStorageKey(account = activeAccount) {
+      if (!drawingScope) return null;
+      return `2eas.chartstudio.v5.price-presentation:v1:${encodeURIComponent(account)}:${encodeURIComponent(drawingScope.symbol)}:${encodeURIComponent(drawingScope.timeframe)}`;
+    }
+    function restorePricePresentation(account = activeAccount) {
+      const storage = localStorageApi(), key = chartTypeStorageKey(account);
+      if (!storage || !key) return "candles";
+      try {
+        const value = storage.getItem(key);
+        return pricePresentationTypes.includes(value) ? value : "candles";
+      } catch (_2) {
+        return "candles";
+      }
+    }
+    let pricePresentation = restorePricePresentation(accountId);
+    function pricePresentationBars() {
+      if (pricePresentation === "heikin") return heikinAshiCandles(bars);
+      if (pricePresentation === "hollow") return hollowCandles(bars);
+      return bars.map((bar) => ({ ...bar }));
+    }
+    function readPricePresentation() {
+      guard();
+      const displayed = pricePresentationBars();
+      return {
+        type: pricePresentation,
+        source: "CHART_FEED",
+        bars: displayed.map((bar) => ({ ...bar })),
+        styles: displayed.map((bar) => ({ bodyColor: bar.color ?? null, borderColor: bar.borderColor ?? null, wickColor: bar.wickColor ?? null }))
+      };
+    }
+    function setPricePresentation(value) {
+      guard();
+      if (typeof value !== "string" || !pricePresentationTypes.includes(value)) throw Error("Unsupported chart presentation");
+      const next = value, key = chartTypeStorageKey(), storage = localStorageApi();
+      pricePresentation = next;
+      if (storage && key) try {
+        storage.setItem(key, next);
+      } catch (_2) {
+      }
+      price.setData(pricePresentationBars());
+      return readPricePresentation();
+    }
     function drawingSnapshots() {
       return [
         ...[...priceLevels.values()].map(({ options }) => ({ kind: "PRICE", options: { ...options } })),
@@ -11126,7 +11186,7 @@ var ChartStudioV5 = (() => {
         group.down.setData([]);
       }
       readoutIndicators.clear();
-      price.setData(bars);
+      price.setData(pricePresentationBars());
       refreshManagedMovingAverages();
       refreshDonchianOverlays();
       refreshBollingerOverlays();
@@ -13368,7 +13428,8 @@ var ChartStudioV5 = (() => {
         indicator.values.delete(c2.time);
         indicator.directions?.delete(c2.time);
       }
-      price.update(c2);
+      if (pricePresentation === "candles") price.update(c2);
+      else price.setData(pricePresentationBars());
       if (volume) volume.update(volumeRows()[bars.length - 1]);
       for (const [id, state] of managedMovingAverages) updateManagedMovingAverage(id, state);
       refreshDonchianOverlays();
@@ -13450,6 +13511,7 @@ var ChartStudioV5 = (() => {
       persistenceError = null;
       persistenceStatus = drawingScope ? "PENDING" : "DISABLED";
       activeAccount = next;
+      pricePresentation = restorePricePresentation(next);
       bars = [];
       barsByTime.clear();
       price.setData([]);
@@ -13541,6 +13603,7 @@ var ChartStudioV5 = (() => {
       return {
         version: VERSION2,
         account: activeAccount,
+        chartType: pricePresentation,
         priceAxisWidth: chart.priceScale("right").width(),
         positionOverlayCount: positionOverlayLines.size,
         positionOverlays: readPositionOverlays().lines,
@@ -13639,6 +13702,8 @@ var ChartStudioV5 = (() => {
     }
     return Object.freeze({
       setCandles,
+      setPricePresentation,
+      readPricePresentation,
       addAverage,
       addMovingAverage,
       addTransientMovingAverage,
