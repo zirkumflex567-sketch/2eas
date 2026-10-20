@@ -534,7 +534,7 @@ def test_default_producers_bind_demo_titans_and_goldm15_but_exclude_blueberry(pr
     assert captured == {
         'xau5m_m5': ('titan_puprime250', 'titan_puprime250_recordonly'),
         'titan_m5': ('titan_puprime500', 'titan_puprime500_recordonly'),
-        'goldm15': ('goldm15_demo',),
+        'goldm15': ('goldm15_demo', 'goldm15_demo_recordonly'),
     }
     assert not {'blueberry', 'titan', 'xau5m_500'}.intersection(captured)
     assert app.state.evidence_spool_service is not None

@@ -56,6 +56,42 @@ def test_goldm15_candidate_captures_computed_signal_values_without_changing_trad
     assert generated.index("CSFlushEvidenceQueue();") < generated.index("risk_guard.Service(trade,MagicBase);", generated.index("void OnTimer()"))
 
 
+def test_goldm15_record_only_variant_suppresses_every_trade_write_but_keeps_capture():
+    source = (ROOT / "goldm15" / "GoldM15_Reconstruction.mq5").read_text(encoding="utf-8-sig")
+    risk = (ROOT / "goldm15" / "GoldM15_Risk.mqh").read_text(encoding="utf-8-sig")
+    generated = BUILD._instrument_source(
+        source,
+        account_alias="goldm15",
+        producer="goldm15_demo_recordonly",
+        terminal_hash="a" * 64,
+        source_hash="b" * 64,
+        expected_parameter_hash="c" * 64,
+        login=53090070,
+        server="ICMarketsEU-Demo",
+        terminal_path=r"C:\demo\terminal64.exe",
+        broker_utc_offset_seconds=10800,
+        record_only=True,
+    )
+    generated_risk = BUILD._instrument_risk_helper(risk, record_only=True)
+
+    assert '#define CS_EVIDENCE_RECORD_ONLY' in generated
+    for operation in (
+        "trade.Buy(lots,_Symbol,0.0,NormalizeDouble(stop,_Digits),0.0,comment)",
+        "trade.Sell(lots,_Symbol,0.0,NormalizeDouble(stop,_Digits),0.0,comment)",
+        "trade.PositionClose(ticket)",
+        "closer.OrderDelete(ticket)",
+        "closer.PositionClose(ticket)",
+    ):
+        assert operation not in generated + generated_risk
+    assert 'CSSuppressBrokerWrite("OrderDelete")' in generated_risk
+    assert 'CSSuppressBrokerWrite("PositionClose")' in generated_risk
+    assert 'CSSuppressBrokerWrite(side==1 ? "Buy" : "Sell")' in generated
+    assert "RECORD-ONLY: suppressed broker write operation=%s reason=RECORD_ONLY_SUPPRESSED" in generated
+    assert 'CS_EVIDENCE_PRODUCER_ID "goldm15_demo_recordonly"' in generated
+    assert 'CSEnqueueDecision("SIGNAL",cs_outcome,cs_bar,cs_features,cs_predicates);' in generated
+    assert 'RECORD_ONLY_SUPPRESSED' in generated + generated_risk
+
+
 def test_goldm15_deinit_flushes_before_timer_and_risk_guard_shutdown():
     source = (ROOT / "goldm15" / "GoldM15_Reconstruction.mq5").read_text(encoding="utf-8-sig")
     generated = BUILD._instrument_source(

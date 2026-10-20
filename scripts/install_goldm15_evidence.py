@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import account_gateway
 from chart_studio.evidence_models import AccountContext
-from build_goldm15_evidence import EA_NAME, EXPECTED_HASHES, HELPERS, PRESET_NAME
+from build_goldm15_evidence import EA_NAME, RECORD_ONLY_EA_NAME, EXPECTED_HASHES, HELPERS, PRESET_NAME
 
 ALLOWED_ACCOUNT = "goldm15"
 TARGET_DIRECTORY = "ChartStudioEvidence_goldm15"
@@ -87,7 +87,11 @@ def _read_manifest(package: Path) -> dict:
 def _candidate_files(package: Path, manifest: dict) -> dict[str, Path]:
     if manifest.get("schemaVersion") != 1 or manifest.get("accountAlias") != ALLOWED_ACCOUNT:
         raise ValueError("candidate is not bound to the allowlisted GoldM15 account")
-    if manifest.get("producerId") != "goldm15_demo":
+    record_only = manifest.get("recordOnly")
+    if type(record_only) is not bool:
+        raise ValueError("candidate record-only mode is invalid")
+    expected_producer = "goldm15_demo_recordonly" if record_only else "goldm15_demo"
+    if manifest.get("producerId") != expected_producer:
         raise ValueError("candidate producer identity is invalid")
     if manifest.get("deployment") not in ("NOT_INSTALLED", INSTALL_STATE):
         raise ValueError("candidate deployment state is invalid")
@@ -102,9 +106,10 @@ def _candidate_files(package: Path, manifest: dict) -> dict[str, Path]:
         if not isinstance(value, str) or len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
             raise ValueError(f"candidate {key} is invalid")
 
+    ea_name = RECORD_ONLY_EA_NAME if record_only else EA_NAME
     files = {
-        f"{EA_NAME}.mq5": ("generatedSourceSha256", None),
-        f"{EA_NAME}.ex5": ("artifactSha256", None),
+        f"{ea_name}.mq5": ("generatedSourceSha256", None),
+        f"{ea_name}.ex5": ("artifactSha256", None),
         SPOOL_NAME: ("spoolHelperSha256", None),
         MANIFEST_NAME: (None, None),
     }
@@ -178,9 +183,11 @@ def _cleanup_staging(experts: Path, staging: Path) -> None:
 
 
 def install_candidate(alias: str, package_path: Path, *, mt5=None,
-                      install_directory: str = TARGET_DIRECTORY) -> InstallResult:
+                      install_directory: str | None = None) -> InstallResult:
     if alias != ALLOWED_ACCOUNT:
         raise ValueError("account is not allowlisted for GoldM15 recorder installation")
+    if install_directory is None:
+        install_directory = TARGET_DIRECTORY
     if (not isinstance(install_directory, str) or
             re.fullmatch(r"ChartStudioEvidence_goldm15(?:_[A-Za-z0-9-]{1,32})?", install_directory) is None):
         raise ValueError("install directory must use the managed GoldM15 evidence name")
@@ -195,6 +202,11 @@ def install_candidate(alias: str, package_path: Path, *, mt5=None,
     if not package.is_dir() or _is_reparse(package):
         raise ValueError("candidate package directory is missing or linked")
     manifest = _read_manifest(package)
+    if manifest.get("recordOnly") is True and install_directory == TARGET_DIRECTORY:
+        artifact_hint = manifest.get("artifactSha256", "")
+        if not isinstance(artifact_hint, str) or re.fullmatch(r"[0-9a-f]{64}", artifact_hint) is None:
+            raise ValueError("record-only candidate artifact hash is invalid")
+        install_directory = f"ChartStudioEvidence_goldm15_recordonly_{artifact_hint[:8]}"
     files = _candidate_files(package, manifest)
     context = AccountContext.from_config(alias)
     if manifest["terminalIdentityHash"] != context.terminal_identity_hash:

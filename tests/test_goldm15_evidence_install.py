@@ -31,6 +31,7 @@ def package_fixture(tmp_path: Path) -> Path:
         "schemaVersion": 1,
         "accountAlias": "goldm15",
         "producerId": "goldm15_demo",
+        "recordOnly": False,
         "terminalIdentityHash": INSTALL.AccountContext.from_config("goldm15").terminal_identity_hash,
         "generatedSourceSha256": sha256(files["GoldM15_EvidenceCapture.mq5"]).hexdigest(),
         "artifactSha256": sha256(files["GoldM15_EvidenceCapture.ex5"]).hexdigest(),

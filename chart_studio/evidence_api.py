@@ -32,6 +32,7 @@ DEFAULT_EVIDENCE_PRODUCERS = {
 DEFAULT_EVIDENCE_RECORD_ONLY_PRODUCERS = {
     'xau5m_m5': 'titan_puprime250_recordonly',
     'titan_m5': 'titan_puprime500_recordonly',
+    'goldm15': 'goldm15_demo_recordonly',
 }
 
 

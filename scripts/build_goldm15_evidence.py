@@ -46,13 +46,15 @@ EXPECTED_HASHES = {
 PRESET_NAME = "GoldM15_Reconstruction.set"
 PRODUCER = "goldm15_demo"
 EA_NAME = "GoldM15_EvidenceCapture"
+RECORD_ONLY_PRODUCER = "goldm15_demo_recordonly"
+RECORD_ONLY_EA_NAME = "GoldM15_EvidenceCapture_RecordOnly"
 
 
 def _source_digest(content: bytes) -> str:
     return hashlib.sha256(content.replace(b"\r\n", b"\n")).hexdigest()
 
 
-def _instrument_risk_helper(source_text: str) -> str:
+def _instrument_risk_helper(source_text: str, *, record_only: bool = False) -> str:
     source_text = source_text.replace("\r\n", "\n")
     cancel_anchor = "void GoldCancelOrders(CTrade &closer,long magic,bool all)"
     if source_text.count(cancel_anchor) != 1:
@@ -159,13 +161,17 @@ def _instrument_risk_helper(source_text: str) -> str:
 #endif"""
     if source_text.count(close_anchor) != 1:
         raise ValueError("expected unique GoldM15 risk close request")
-    return source_text.replace(close_anchor, close_capture, 1)
+    source_text = source_text.replace(close_anchor, close_capture, 1)
+    if record_only:
+        source_text = source_text.replace("closer.OrderDelete(ticket)", 'CSSuppressBrokerWrite("OrderDelete")')
+        source_text = source_text.replace("closer.PositionClose(ticket)", 'CSSuppressBrokerWrite("PositionClose")')
+    return source_text
 
 
 def _instrument_source(source_text: str, *, account_alias: str, producer: str,
                        terminal_hash: str, source_hash: str, expected_parameter_hash: str,
                        login: int, server: str, terminal_path: str,
-                       broker_utc_offset_seconds: int) -> str:
+                       broker_utc_offset_seconds: int, record_only: bool = False) -> str:
     if account_alias not in ALLOWED_ACCOUNTS:
         raise ValueError("account is not allowlisted")
     if type(broker_utc_offset_seconds) is not int or not -86400 <= broker_utc_offset_seconds <= 86400:
@@ -178,6 +184,8 @@ def _instrument_source(source_text: str, *, account_alias: str, producer: str,
     parameter_hash = _parameter_hash_function(source_text, declarations)
     definitions = [
         "#define CS_EVIDENCE_CAPTURE",
+        *( ["#define CS_EVIDENCE_RECORD_ONLY 1"] if record_only else [] ),
+        *( ['bool CSSuppressBrokerWrite(const string operation) { PrintFormat("RECORD-ONLY: suppressed broker write operation=%s reason=RECORD_ONLY_SUPPRESSED",operation); return false; }'] if record_only else [] ),
         '#define CS_EVIDENCE_STRATEGY_ID "goldm15_reconstruction"',
         '#define CS_EVIDENCE_STRATEGY_VERSION "1.22"',
         f"#define CS_EVIDENCE_ACCOUNT_ID {_mql_string(account_alias)}",
@@ -319,6 +327,12 @@ def _instrument_source(source_text: str, *, account_alias: str, producer: str,
     if source_text.count(order_anchor) != 1:
         raise ValueError("expected unique GoldM15 market-order submission")
     source_text = source_text.replace(order_anchor, order_capture, 1)
+    if record_only:
+        source_text = source_text.replace(
+            "bool sent=side==1 ? trade.Buy(lots,_Symbol,0.0,NormalizeDouble(stop,_Digits),0.0,comment)\n                       : trade.Sell(lots,_Symbol,0.0,NormalizeDouble(stop,_Digits),0.0,comment);",
+            'bool sent=CSSuppressBrokerWrite(side==1 ? "Buy" : "Sell");',
+            1,
+        )
 
     close_anchor = """         last_attempt[i]=TimeCurrent();
          bool closed=trade.PositionClose(ticket);
@@ -376,6 +390,12 @@ def _instrument_source(source_text: str, *, account_alias: str, producer: str,
     if source_text.count(close_anchor) != 1:
         raise ValueError("expected unique GoldM15 strategy position-close call")
     source_text = source_text.replace(close_anchor, close_capture, 1)
+    if record_only:
+        source_text = source_text.replace(
+            "         bool closed=trade.PositionClose(ticket);",
+            '         Print("RECORD-ONLY: suppressed broker write operation=PositionClose reason=RECORD_ONLY_SUPPRESSED");\n         bool closed=false;',
+            1,
+        )
 
     event_handlers = '''
 #define CS_GOLD_ORDER_CAPACITY 64
@@ -567,7 +587,8 @@ void CSCaptureGoldRiskCloseAttempt(const string reason,const ulong ticket,const 
     return source_text
 
 
-def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_path: Path) -> BuildVariant:
+def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_path: Path,
+                    record_only: bool = False) -> BuildVariant:
     root = Path(repo_root).resolve()
     if alias not in ALLOWED_ACCOUNTS:
         raise ValueError("account is not allowlisted")
@@ -627,6 +648,8 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_pa
     if output != expected_output and expected_output not in output.parents:
         raise ValueError("build output must remain under repository output/")
     variant_dir = output / "goldm15-evidence" / alias
+    if record_only:
+        variant_dir = variant_dir / "record-only"
     for directory in (variant_dir.parent, variant_dir):
         if _is_link_or_junction(directory):
             raise ValueError("build output cannot traverse a symlink or junction")
@@ -634,7 +657,8 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_pa
         if _is_link_or_junction(directory) or (directory.resolve() != expected_output and expected_output not in directory.resolve().parents):
             raise ValueError("build output must remain under repository output/")
 
-    producer = PRODUCER
+    producer = RECORD_ONLY_PRODUCER if record_only else PRODUCER
+    ea_name = RECORD_ONLY_EA_NAME if record_only else EA_NAME
     generated = _instrument_source(
         source_text,
         account_alias=alias,
@@ -646,8 +670,9 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_pa
         server=spec["server"],
         terminal_path=str(terminal_root),
         broker_utc_offset_seconds=spec["broker_utc_offset_seconds"],
+        record_only=record_only,
     )
-    variant_source = variant_dir / f"{EA_NAME}.mq5"
+    variant_source = variant_dir / f"{ea_name}.mq5"
     helper_output = variant_dir / "ChartStudioEvidenceSpool.mqh"
     helper_outputs = [variant_dir / path.name for path in HELPERS]
     manifest_path = variant_dir / "build-manifest.json"
@@ -664,13 +689,18 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_pa
     for source_helper, output_helper in zip(HELPERS, helper_outputs, strict=True):
         helper_bytes = (root / source_helper).read_bytes()
         if source_helper == Path("goldm15/GoldM15_Risk.mqh"):
-            helper_bytes = _instrument_risk_helper(helper_bytes.decode("utf-8-sig")).encode("utf-8-sig")
+            helper_text = _instrument_risk_helper(helper_bytes.decode("utf-8-sig"))
+            if record_only:
+                helper_text = helper_text.replace("closer.OrderDelete(ticket)", 'CSSuppressBrokerWrite("OrderDelete")')
+                helper_text = helper_text.replace("closer.PositionClose(ticket)", 'CSSuppressBrokerWrite("PositionClose")')
+            helper_bytes = helper_text.encode("utf-8-sig")
         _atomic_write(output_helper, helper_bytes)
         generated_supporting_sources[source_helper.as_posix()] = hashlib.sha256(helper_bytes).hexdigest()
     manifest = {
         "schemaVersion": 1,
         "accountAlias": alias,
         "producerId": producer,
+        "recordOnly": record_only,
         "terminalIdentityHash": context.terminal_identity_hash,
         "sourceAndIncludeSha256": source_and_include_hash,
         "spoolHelperSha256": _source_digest(spool_bytes),
@@ -705,10 +735,11 @@ def main() -> int:
     parser.add_argument("account", choices=sorted(ALLOWED_ACCOUNTS))
     parser.add_argument("--preset", required=True, type=Path)
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--record-only", action="store_true")
     args = parser.parse_args()
     root = REPO_ROOT
     try:
-        variant = prepare_variant(root, args.account, root / "output", preset_path=args.preset)
+        variant = prepare_variant(root, args.account, root / "output", preset_path=args.preset, record_only=args.record_only)
         if not args.prepare_only:
             artifact = compile_candidate(variant)
             print(f"Compiled isolated candidate {artifact}; no MT5 installation changed")
