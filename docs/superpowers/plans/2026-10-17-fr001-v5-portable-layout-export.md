@@ -44,3 +44,12 @@
 - [x] Run TypeScript check/build and the complete `scripts/smoke_chart_studio_v5.cjs` fixture.
 - [x] Record this as portable export support only; import/merge, production migration, target hardware, and production v5 cutover remain open.
 - [x] Run `git diff --check` and inspect the final diff.
+
+### Follow-up: portable import, merge, and replace verification (20 October 2026)
+
+- [x] Import schema-v2 layouts into the isolated preview after strict symbol/timeframe, account-field, 512-KiB, view-state, and drawing-anchor validation.
+- [x] Merge drawings and indicators with collision-free IDs, append imported panes before the shared volume pane, and retain the destination view range/timezone.
+- [x] Require confirmation for replace; reject mismatched or malformed imports without partial mutation; restore the previous rendered layout if applying a valid import fails.
+- [x] Verify these contracts with `node scripts/smoke_chart_studio_v5_preview.cjs` on Main `ef3702bf94f79a21dbdbdf7e559093c88cd0dc6c` (20 October 2026). The smoke passed with 150 verified demo candles, v4 still mounted, zero mutations, and no browser errors.
+
+Production migration/cutover, cross-user conflict resolution, and target-hardware acceptance remain open.
