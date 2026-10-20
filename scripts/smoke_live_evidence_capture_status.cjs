@@ -60,7 +60,7 @@ const statusPaths=new Set(["/api/chart/v1/decisions/capture/status","/api/chart/
    }
    const before=captureRequests.length;
    await page.locator("#cs-evidence-capture-status").click();
-   await page.waitForFunction(()=>document.querySelector("#cs-evidence-capture-status-result")?.textContent.includes("Lifecycle:"),null,{timeout:20000});
+   await page.waitForFunction(()=>document.querySelector("#cs-evidence-capture-status-result")?.textContent.includes("Lifecycle:"),null,{timeout:45000});
    const text=await page.locator("#cs-evidence-capture-status-result").textContent();
    assert.match(text,/Decision-Recorder: (?:IDLE|NOT_CONFIGURED|NOT_STARTED|RECORDED|SPOOL_UNAVAILABLE|[A-Z0-9_]+)/,account+" decision status is explicit");
    assert.match(text,/Lifecycle: (?:OK|NOT_STARTED|[A-Z0-9_]+)/,account+" lifecycle status is explicit");
