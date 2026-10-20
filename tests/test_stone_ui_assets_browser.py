@@ -108,6 +108,10 @@ class BrowserBudget(unittest.TestCase):
         context=self.browser.new_context(viewport={'width':width,'height':844},
                      device_scale_factor=2,reduced_motion='reduce')
         page=context.new_page()
+        # Resource Timing reports encodedBodySize=0 for a cached/revalidated
+        # 304 response. This budget contract measures cold file bodies, so
+        # route the asset requests to disable Chromium's HTTP cache.
+        page.route('**/static/stone-assets/**', lambda route: route.continue_())
         errors=[]
         page.on('pageerror',lambda e:errors.append(str(e)))
         if nonchart:
