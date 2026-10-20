@@ -7,6 +7,7 @@ launcher remain separate deployment work.
 """
 import hashlib
 import json
+import logging
 import os
 import time
 from collections import OrderedDict
@@ -19,6 +20,25 @@ from chart_studio.evidence_store import EvidenceStore, StoreUnavailable, _physic
 MAX_LINE_BYTES = models.MAX_BYTES + 4096
 SEEN_LIMIT = 512
 _CURSOR_REPLACE_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4)
+_LOGGER = logging.getLogger(__name__)
+
+
+def _cursor_failure_category(error):
+    cause = error
+    while getattr(cause, '__cause__', None) is not None and cause.__cause__ is not cause:
+        cause = cause.__cause__
+    winerror = getattr(cause, 'winerror', None)
+    if winerror in (32, 33):
+        return 'WINDOWS_SHARING_LOCK'
+    if winerror == 5:
+        return 'WINDOWS_ACCESS_DENIED'
+    if isinstance(cause, PermissionError):
+        return 'ACCESS_DENIED'
+    if isinstance(cause, OSError):
+        return 'FILESYSTEM_IO'
+    if isinstance(cause, StoreUnavailable):
+        return 'STORE_UNAVAILABLE'
+    return 'INVALID_STATE'
 
 
 def _replace_cursor_with_retry(source, destination):
@@ -71,6 +91,7 @@ class SpoolImporter:
         self.last_digest = None
         self.pending = False
         self._cursor_fault = False
+        self._last_cursor_failure_category = None
         self._seen = OrderedDict()
         if self.cursor_path:
             self._load_cursor()
@@ -154,8 +175,13 @@ class SpoolImporter:
                     os.close(directory)
             _physical(path)
             _private(path, False)
+            self._last_cursor_failure_category = None
         except (OSError, ValueError, TypeError, StoreUnavailable) as exc:
             self._cursor_fault = True
+            category = _cursor_failure_category(exc)
+            if category != self._last_cursor_failure_category:
+                _LOGGER.warning('evidence cursor save failed: %s', category)
+                self._last_cursor_failure_category = category
             try:
                 if os.path.lexists(temp):
                     _physical(temp)

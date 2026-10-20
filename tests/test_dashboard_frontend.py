@@ -1334,8 +1334,10 @@ class DashboardFrontendTests(unittest.TestCase):
           window.fetch=(input,init)=>String(input).includes('/api/candles')
             ? new Promise((_,reject)=>{window.rejectCandleAbort=()=>reject(new DOMException('Account wurde gewechselt','AbortError'))})
             : originalFetch(input,init);
-          loadCandles(); accountGeneration++; window.rejectCandleAbort();
+          loadCandles();
         }''')
+        self.page.wait_for_function("typeof window.rejectCandleAbort === 'function'", timeout=5000)
+        self.page.evaluate('accountGeneration++; window.rejectCandleAbort()')
         self.page.wait_for_timeout(50)
         self.assertEqual(logged, [])
     def test_chart_explains_candle_failure_and_recovers_without_clearing_live_data(self):

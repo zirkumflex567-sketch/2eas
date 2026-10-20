@@ -1,5 +1,6 @@
 import copy
 import json
+import logging
 
 import pytest
 import os
@@ -186,6 +187,26 @@ def test_spool_import_retries_transient_windows_cursor_replace_lock(private_root
     assert result['code'] == 'APPENDED'
     assert len(attempts) == 6
     assert len(store.read(AccountContext.from_config('titan'), kind='DECISION')['records']) == 1
+
+
+def test_cursor_failure_logs_only_safe_windows_error_category(private_root, monkeypatch, caplog):
+    store = evidence_store(private_root)
+    importer = SpoolImporter(store, account_id='titan', producer_id='titan_demo')
+    error = PermissionError('access denied')
+    error.winerror = 5
+
+    def fail_replace(_source, _destination):
+        raise error
+
+    monkeypatch.setattr(evidence_spool_module, '_replace_cursor_with_retry', fail_replace)
+    caplog.set_level(logging.WARNING, logger='chart_studio.evidence_spool')
+
+    result = importer.import_line(line(record()))
+
+    assert result['code'] == 'CURSOR_UNAVAILABLE'
+    assert 'cursor save failed: WINDOWS_ACCESS_DENIED' in caplog.text
+    assert str(private_root) not in caplog.text
+    assert store.read(AccountContext.from_config('titan'), kind='DECISION')['records'] == []
 
 
 def test_spool_import_counts_initial_gap_and_propagates_store_loss():
