@@ -207,8 +207,7 @@ class SpoolFileConsumer:
         if os.path.lexists(path):_physical(path);_private(path,False);path.unlink()
 
     def _refresh_file_index(self):
-        now = time.monotonic()
-        if self._file_index_at and now - self._file_index_at < _FILE_INDEX_REFRESH_SECONDS:
+        if self._file_index_at and time.monotonic() - self._file_index_at < _FILE_INDEX_REFRESH_SECONDS:
             return
         ready = {producer: [] for producer in self.producers}
         archived = {producer: [] for producer in self.producers}
@@ -241,7 +240,7 @@ class SpoolFileConsumer:
         self._ready_files = ready
         self._archived_files = archived
         self._invalid_ready_producers = invalid
-        self._file_index_at = now
+        self._file_index_at = time.monotonic()
 
     def _invalidate_file_index(self):
         self._file_index_at = 0.0
@@ -500,10 +499,8 @@ class SpoolFileConsumer:
         return None
 
     def _scan_temporary_segments(self):
-        now = time.monotonic()
-        if now - self._temporary_scan_at < _TEMP_SCAN_INTERVAL_SECONDS:
+        if time.monotonic() - self._temporary_scan_at < _TEMP_SCAN_INTERVAL_SECONDS:
             return
-        self._temporary_scan_at = now
         counts = {producer: {'count': 0, 'bytes': 0, 'oldest': None, 'newest': None}
                   for producer in self.producers}
         candidate_heaps={producer:[] for producer in self.producers}
@@ -560,6 +557,7 @@ class SpoolFileConsumer:
             }
             for producer, values in counts.items()
         }
+        self._temporary_scan_at = time.monotonic()
 
     def poll_once(self):
         self._scan_temporary_segments()

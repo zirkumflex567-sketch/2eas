@@ -362,6 +362,48 @@ def test_temporary_segment_scan_is_throttled(private_root, spool_root):
     assert refreshed['temporaryFileCount'] == 1
 
 
+def test_temporary_scan_cooldown_starts_after_a_slow_scan(private_root, spool_root, monkeypatch):
+    service = consumer(evidence_store(private_root), spool_root)
+    clock = [100.0]
+    scans = []
+    real_scandir = spool_service.os.scandir
+
+    def slow_scandir(path):
+        scans.append(str(path))
+        entries = real_scandir(path)
+        clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS + 1
+        return entries
+
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(spool_service.os, 'scandir', slow_scandir)
+
+    service._scan_temporary_segments()
+    service._scan_temporary_segments()
+
+    assert len(scans) == 1
+
+
+def test_file_index_cooldown_starts_after_a_slow_scan(private_root, spool_root, monkeypatch):
+    service = consumer(evidence_store(private_root), spool_root)
+    clock = [100.0]
+    scans = []
+    real_scandir = spool_service.os.scandir
+
+    def slow_scandir(path):
+        scans.append(str(path))
+        entries = real_scandir(path)
+        clock[0] += spool_service._FILE_INDEX_REFRESH_SECONDS + 1
+        return entries
+
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(spool_service.os, 'scandir', slow_scandir)
+
+    service._refresh_file_index()
+    service._refresh_file_index()
+
+    assert len(scans) == 2
+
+
 def test_temporary_segment_index_retains_only_oldest_bounded_candidates(private_root, spool_root, monkeypatch):
     store = evidence_store(private_root)
     service = consumer(store, spool_root)
