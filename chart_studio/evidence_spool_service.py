@@ -23,7 +23,7 @@ from chart_studio.evidence_store import StoreUnavailable, _physical, _private
 
 MAX_SEGMENT_BYTES = 8 * 1024 * 1024
 MAX_RECORDS_PER_POLL = 50
-MAX_TEMPORARY_RECORDS_PER_POLL = 5
+MAX_TEMPORARY_RECORDS_PER_POLL = MAX_RECORDS_PER_POLL
 MAX_STABLE_TEMPORARY_CANDIDATES = 5000
 _READY = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)-([1-9][0-9]*)\.ready\.ndjson\Z')
 _TEMP_SEGMENT = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)\.tmp\.ndjson\Z')
