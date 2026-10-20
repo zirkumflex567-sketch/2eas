@@ -1256,7 +1256,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",{symbol:"XAUUSD",timeframe:"M15"});
    const rows=Array.from({length:90},(_,i)=>{
     const p=4000+i*.4+Math.sin(i/10)*16;
-    return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2,tick_volume:100+i*3};
+   return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2,tick_volume:100+i*3};
    });
    e.setCandles(rows);
    e.addAverage({id:"ema21",color:"#61ddf2"},rows.slice(20).map(c=>({time:c.time,value:c.close-1.2})));
@@ -1266,11 +1266,38 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    e.addTextAnnotation({id:"visual-note",time:rows[52].time,price:rows[52].close,text:"Plan is ready",color:"#7dd3fc"});
    e.addTrendLine({id:"visual-trend",startTime:rows[42].time,startPrice:rows[42].close,endTime:rows[64].time,endPrice:rows[64].close,color:"#9be564"});
    e.addRectangle({id:"visual-zone",startTime:rows[25].time,startPrice:rows[25].close+10,endTime:rows[35].time,endPrice:rows[35].close-10,color:"#f59e0b",fill:true});
+   e.addEllipse({id:"visual-ellipse",startTime:rows[70].time,startPrice:rows[70].close+15,endTime:rows[82].time,endPrice:rows[82].close+8,color:"#f472b6"});
    e.addChannel({id:"visual-channel",startTime:rows[30].time,startPrice:rows[30].close,endTime:rows[42].time,endPrice:rows[42].close+8,offsetTime:rows[32].time,offsetPrice:rows[32].close+14,color:"#38bdf8"});
    e.showVolume(true);window.__v5Screenshot=e;
    return {drawing:e.readDrawing("visual-channel"),start:e.drawingAnchorPosition("visual-channel","START"),end:e.drawingAnchorPosition("visual-channel","END"),offset:e.drawingAnchorPosition("visual-channel","OFFSET"),position:e.drawingPosition("visual-channel"),transfer:JSON.parse(e.exportDrawings())};
   });
-  assert.equal(await page.evaluate(()=>window.__v5Screenshot.inspect().nativePrimitives),6);
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.inspect().nativePrimitives),7);
+  const ellipseProbe=await page.evaluate(()=>({drawing:window.__v5Screenshot.readDrawing("visual-ellipse"),start:window.__v5Screenshot.drawingAnchorPosition("visual-ellipse","START"),end:window.__v5Screenshot.drawingAnchorPosition("visual-ellipse","END"),exported:JSON.parse(window.__v5Screenshot.exportDrawings()).drawings.some(item=>item.kind==="ELLIPSE"&&item.options.id==="visual-ellipse")}));
+  assert.deepEqual([ellipseProbe.drawing.startTime,ellipseProbe.drawing.endTime],[1700100000+70*900,1700100000+82*900]);
+  assert.ok(ellipseProbe.start&&ellipseProbe.end,"Ellipse exposes both UTC/price anchor coordinates");
+  assert.equal(ellipseProbe.exported,true,"Ellipse is included in portable drawing transfer");
+  const ellipseBeforeDrag=ellipseProbe.drawing;
+  await page.mouse.move(ellipseProbe.start.x,ellipseProbe.start.y);await page.mouse.down();await page.mouse.move(ellipseProbe.start.x+70,ellipseProbe.start.y-35,{steps:4});await page.mouse.up();
+  const ellipseAfterDrag=await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-ellipse"));
+  assert.notEqual(ellipseAfterDrag.startTime,ellipseBeforeDrag.startTime,"Dragging the ellipse start handle snaps it to a loaded candle");
+  assert.equal(ellipseAfterDrag.endTime,ellipseBeforeDrag.endTime,"Ellipse drag keeps the opposite UTC anchor");
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.undo()),true,"Ellipse handle drag records one undo step");
+  assert.deepEqual(await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-ellipse")),ellipseBeforeDrag);
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.redo()),true,"Ellipse handle drag can be redone");
+  assert.deepEqual(await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-ellipse")),ellipseAfterDrag);
+  const ellipseCopyId=await page.evaluate(()=>{window.__v5Screenshot.selectDrawings(["visual-ellipse"]);return window.__v5Screenshot.duplicateSelectedDrawing()});
+  assert.deepEqual(await page.evaluate(id=>window.__v5Screenshot.readDrawing(id),ellipseCopyId),{...ellipseAfterDrag,id:ellipseCopyId},"Duplicating an ellipse preserves its options and anchors");
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.undo()),true);assert.equal(await page.evaluate(id=>window.__v5Screenshot.readDrawing(id),ellipseCopyId),null);
+  assert.equal(await page.evaluate(()=>window.__v5Screenshot.redo()),true);assert.ok(await page.evaluate(id=>window.__v5Screenshot.readDrawing(id),ellipseCopyId));
+  await page.evaluate(id=>window.__v5Screenshot.removeEllipse(id),ellipseCopyId);assert.equal(await page.evaluate(id=>window.__v5Screenshot.readDrawing(id),ellipseCopyId),null);
+  await page.evaluate(()=>window.__v5Screenshot.undo());assert.ok(await page.evaluate(id=>window.__v5Screenshot.readDrawing(id),ellipseCopyId),"Ellipse deletion is undoable");
+  await page.evaluate(()=>window.__v5Screenshot.redo());assert.equal(await page.evaluate(id=>window.__v5Screenshot.readDrawing(id),ellipseCopyId),null);
+  await page.evaluate(()=>window.__v5Screenshot.setDrawingVisible("visual-ellipse",false));assert.equal(await page.evaluate(()=>window.__v5Screenshot.drawingPosition("visual-ellipse")),null);
+  await page.evaluate(()=>window.__v5Screenshot.setDrawingVisible("visual-ellipse",true));
+  await page.evaluate(()=>window.__v5Screenshot.updateEllipse("visual-ellipse",{locked:true}));
+  const lockedEllipse=await page.evaluate(()=>window.__v5Screenshot.readDrawing("visual-ellipse"));
+  assert.equal(lockedEllipse.locked,true);
+  await page.evaluate(()=>window.__v5Screenshot.updateEllipse("visual-ellipse",{locked:false}));
   const initialChannel=await page.evaluate(()=>({drawing:window.__v5Screenshot.readDrawing("visual-channel"),start:window.__v5Screenshot.drawingAnchorPosition("visual-channel","START"),end:window.__v5Screenshot.drawingAnchorPosition("visual-channel","END"),offset:window.__v5Screenshot.drawingAnchorPosition("visual-channel","OFFSET"),position:window.__v5Screenshot.drawingPosition("visual-channel"),transfer:JSON.parse(window.__v5Screenshot.exportDrawings())}));
   assert.equal(initialChannel.drawing.offsetTime,1700100000+32*900);
   assert.ok(initialChannel.start&&initialChannel.end&&initialChannel.offset&&initialChannel.position);
@@ -1672,7 +1699,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   });
   await page.mouse.move(10,10);
   await page.waitForTimeout(150);
-  const persistedBeforeReload=await page.evaluate(()=>({price:window.__v5Screenshot.readDrawing("visual-level"),priceSecond:window.__v5Screenshot.readDrawing("visual-level-second"),time:window.__v5Screenshot.readDrawing("visual-time"),timeSecond:window.__v5Screenshot.readDrawing("visual-time-second"),text:window.__v5Screenshot.readDrawing("visual-note"),trend:window.__v5Screenshot.readDrawing("visual-trend"),rectangle:window.__v5Screenshot.readDrawing("visual-zone"),channel:window.__v5Screenshot.readDrawing("visual-channel"),ray:window.__v5Screenshot.readDrawing("visual-ray"),fibo:window.__v5Screenshot.readDrawing("visual-fibo"),customFibo:window.__v5Screenshot.readDrawing("visual-fibo-custom")}));
+  const persistedBeforeReload=await page.evaluate(()=>({price:window.__v5Screenshot.readDrawing("visual-level"),priceSecond:window.__v5Screenshot.readDrawing("visual-level-second"),time:window.__v5Screenshot.readDrawing("visual-time"),timeSecond:window.__v5Screenshot.readDrawing("visual-time-second"),text:window.__v5Screenshot.readDrawing("visual-note"),trend:window.__v5Screenshot.readDrawing("visual-trend"),rectangle:window.__v5Screenshot.readDrawing("visual-zone"),ellipse:window.__v5Screenshot.readDrawing("visual-ellipse"),channel:window.__v5Screenshot.readDrawing("visual-channel"),ray:window.__v5Screenshot.readDrawing("visual-ray"),fibo:window.__v5Screenshot.readDrawing("visual-fibo"),customFibo:window.__v5Screenshot.readDrawing("visual-fibo-custom")}));
   await page.evaluate(()=>{
    const rows=Array.from({length:90},(_,i)=>{const p=4000+i*.4+Math.sin(i/10)*16;return {time:1700100000+i*900,open:p,high:p+5,low:p-5,close:p+2}});
    const key="2eas.chartstudio.v5.drawings:v5:historycontract:XAUUSD:M15";localStorage.removeItem(key);
@@ -1749,7 +1776,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const groupFailureRedo=[groupFailure.redo(),groupFailure.redo()],groupFailureRedone=[groupFailure.readDrawing("group-failure-a"),groupFailure.readDrawing("group-failure-b")];
    groupFailure.destroy();groupFailureHost.remove();
    let e=ChartStudioV5.createStudioV5(document.getElementById("chart"),"titan",scope);e.setCandles(rows);
-   const restored={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives,price:e.readDrawing("visual-level"),priceSecond:e.readDrawing("visual-level-second"),time:e.readDrawing("visual-time"),timeSecond:e.readDrawing("visual-time-second"),text:e.readDrawing("visual-note"),trend:e.readDrawing("visual-trend"),rectangle:e.readDrawing("visual-zone"),channel:e.readDrawing("visual-channel"),ray:e.readDrawing("visual-ray"),fibo:e.readDrawing("visual-fibo"),customFibo:e.readDrawing("visual-fibo-custom")};
+   const restored={status:e.inspect().persistenceStatus,count:e.inspect().nativePrimitives,price:e.readDrawing("visual-level"),priceSecond:e.readDrawing("visual-level-second"),time:e.readDrawing("visual-time"),timeSecond:e.readDrawing("visual-time-second"),text:e.readDrawing("visual-note"),trend:e.readDrawing("visual-trend"),rectangle:e.readDrawing("visual-zone"),ellipse:e.readDrawing("visual-ellipse"),channel:e.readDrawing("visual-channel"),ray:e.readDrawing("visual-ray"),fibo:e.readDrawing("visual-fibo"),customFibo:e.readDrawing("visual-fibo-custom")};
    e.changeAccount("goldm15");e.setCandles(rows);const otherAccount=e.inspect().nativePrimitives;
    e.changeAccount("titan");e.setCandles(rows);const returned=e.inspect().nativePrimitives;
    e.destroy();
@@ -1816,7 +1843,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(persistenceProbe.groupFailureAfter.status,"UNAVAILABLE");assert.equal(persistenceProbe.groupFailureAfter.error,"STORAGE_WRITE_FAILED");
   assert.deepEqual(persistenceProbe.groupFailureUndo,[true,true],"The pre-existing scoped history remains undoable after rollback");assert.deepEqual(persistenceProbe.groupFailureUndone,[null,null]);
   assert.deepEqual(persistenceProbe.groupFailureRedo,[true,true],"The pre-existing scoped history remains redoable after rollback");assert.deepEqual(persistenceProbe.groupFailureRedone,[persistenceProbe.groupFailureBefore.a,persistenceProbe.groupFailureBefore.b]);
-  assert.equal(persistenceProbe.restored.count,11);
+  assert.equal(persistenceProbe.restored.count,12);
   assert.deepEqual(persistenceProbe.restored.price,persistedBeforeReload.price);
   assert.deepEqual(persistenceProbe.restored.priceSecond,persistedBeforeReload.priceSecond);
   assert.deepEqual(persistenceProbe.restored.time,persistedBeforeReload.time);
@@ -1824,12 +1851,13 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(persistenceProbe.restored.text,persistedBeforeReload.text);
   assert.deepEqual(persistenceProbe.restored.trend,persistedBeforeReload.trend);
   assert.deepEqual(persistenceProbe.restored.rectangle,persistedBeforeReload.rectangle);
+  assert.deepEqual(persistenceProbe.restored.ellipse,persistedBeforeReload.ellipse);
   assert.deepEqual(persistenceProbe.restored.channel,persistedBeforeReload.channel);
   assert.deepEqual(persistenceProbe.restored.ray,persistedBeforeReload.ray);
   assert.deepEqual(persistenceProbe.restored.fibo,persistedBeforeReload.fibo);
   assert.deepEqual(persistenceProbe.restored.customFibo,persistedBeforeReload.customFibo);
   assert.equal(persistenceProbe.otherAccount,0);
-  assert.equal(persistenceProbe.returned,11);
+  assert.equal(persistenceProbe.returned,12);
   assert.equal(persistenceProbe.otherTimeframe,0);
   assert.equal(persistenceProbe.conflict.status,"CONFLICT");
   assert.equal(persistenceProbe.conflict.stored,persistenceProbe.externalSnapshot);
@@ -1880,7 +1908,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    const scope={symbol:"XAUUSD",timeframe:"M15"};
    const source=window.__v5Screenshot.exportDrawings();
    const target=ChartStudioV5.createStudioV5(document.getElementById("chart"),"importtest",scope);target.setCandles(rows);
-   const imported=target.importDrawings(source),restored={count:target.inspect().nativePrimitives,price:target.readDrawing("visual-level"),priceSecond:target.readDrawing("visual-level-second"),time:target.readDrawing("visual-time"),timeSecond:target.readDrawing("visual-time-second"),text:target.readDrawing("visual-note"),trend:target.readDrawing("visual-trend"),rectangle:target.readDrawing("visual-zone"),channel:target.readDrawing("visual-channel"),ray:target.readDrawing("visual-ray"),fibo:target.readDrawing("visual-fibo"),customFibo:target.readDrawing("visual-fibo-custom")};
+   const imported=target.importDrawings(source),restored={count:target.inspect().nativePrimitives,price:target.readDrawing("visual-level"),priceSecond:target.readDrawing("visual-level-second"),time:target.readDrawing("visual-time"),timeSecond:target.readDrawing("visual-time-second"),text:target.readDrawing("visual-note"),trend:target.readDrawing("visual-trend"),rectangle:target.readDrawing("visual-zone"),ellipse:target.readDrawing("visual-ellipse"),channel:target.readDrawing("visual-channel"),ray:target.readDrawing("visual-ray"),fibo:target.readDrawing("visual-fibo"),customFibo:target.readDrawing("visual-fibo-custom")};
    let fiboPaneCollision="";try{target.addPaneLine({id:"visual-fibo",color:"#ffffff"},rows.map(c=>({time:c.time,value:c.close})))}catch(error){fiboPaneCollision=error.message}
    target.updateTextAnnotation("visual-note",{text:"Edited note"});const edited=target.readDrawing("visual-note");
    target.removeTextAnnotation("visual-note");const removed=target.readDrawing("visual-note");target.undo();
@@ -1950,8 +1978,8 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.equal(transferEnvelope.schemaVersion,1);
   assert.deepEqual(Object.keys(transferEnvelope).sort(),["drawings","schemaVersion","symbol","timeframe"]);
   assert.equal(transferEnvelope.account,undefined);
-  assert.deepEqual(drawingTransfer.imported,{imported:11});
-  assert.equal(drawingTransfer.restored.count,11);
+  assert.deepEqual(drawingTransfer.imported,{imported:12});
+  assert.equal(drawingTransfer.restored.count,12);
   assert.deepEqual(drawingTransfer.restored.price,persistedBeforeReload.price);
   assert.deepEqual(drawingTransfer.restored.priceSecond,persistedBeforeReload.priceSecond);
   assert.deepEqual(drawingTransfer.restored.time,persistedBeforeReload.time);
@@ -1959,6 +1987,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   assert.deepEqual(drawingTransfer.restored.text,persistedBeforeReload.text);
   assert.deepEqual(drawingTransfer.restored.trend,persistedBeforeReload.trend);
   assert.deepEqual(drawingTransfer.restored.rectangle,persistedBeforeReload.rectangle);
+  assert.deepEqual(drawingTransfer.restored.ellipse,persistedBeforeReload.ellipse);
   assert.deepEqual(drawingTransfer.restored.channel,persistedBeforeReload.channel);
   assert.deepEqual(drawingTransfer.restored.ray,persistedBeforeReload.ray);
   assert.deepEqual(drawingTransfer.restored.fibo,persistedBeforeReload.fibo);
