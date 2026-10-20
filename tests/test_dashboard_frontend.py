@@ -1131,8 +1131,8 @@ class DashboardFrontendTests(unittest.TestCase):
                 self.assertEqual(strategy_badge['classification'], 'measured', strategy_badge)
                 self.assertEqual(strategy_badge['probe']['result'], 'pass', strategy_badge)
                 live_badge_text = next(item for item in pixel_audit[theme]
-                    if '.inline-flex.border-emerald-500' in item['target'][0] and
-                    ('span:nth-child(2)' in item['target'][0] or '.stone-rule-state-label' in item['target'][0]))
+                    if '.stone-rule-state-label' in item['target'][0] and
+                    '.inline-flex' in item['target'][0] and '.border-emerald-500' in item['target'][0])
                 self.assertEqual(live_badge_text['classification'], 'measured', live_badge_text)
                 self.assertEqual(live_badge_text['probe']['result'], 'pass', live_badge_text)
                 self.assertEqual(self.page.locator('#vp-summary-badge .vp-summary-separator[aria-hidden="true"]').count(), 4)
