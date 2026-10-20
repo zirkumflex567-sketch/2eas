@@ -9,7 +9,7 @@ Recover complete one-record `.tmp.ndjson` files left behind when a producer cann
 - Only configured demo producers are eligible; the existing protected-account rejection remains authoritative.
 - Require identical file identity, size and modification time across two metadata scans, then require exactly one bounded, newline-terminated record whose embedded sequence matches its filename.
 - Import through the existing `SpoolImporter`; archive only after durable append/duplicate acknowledgement and revalidation of the same file bytes/identity.
-- Process at most the configured per-poll record budget, keep ordering by producer sequence, and leave malformed, changing, incomplete, or unarchivable files in place with an explicit failure state.
+- Process at most five temporary records per producer poll (and no more than the configured general budget), keep ordering by producer sequence, and leave malformed, changing, incomplete, or unarchivable files in place with an explicit failure state.
 - Do not inspect, move, delete or import any live spool during implementation tests. The existing demo spool remains a separate operational acceptance step.
 
 ## Test-first sequence

@@ -250,6 +250,28 @@ def test_stable_temp_recovery_obeys_per_poll_budget_and_resumes_next_batch(priva
     assert {row['id'] for row in store.read(context(), kind='DECISION')['records']} == {'event_1', 'event_2', 'event_3'}
 
 
+def test_stable_temp_recovery_uses_a_smaller_default_batch_than_ready_segments(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    for index in range(1, 8):
+        row = record(seq=index)
+        row['envelope']['id'] = row['envelope']['payload']['eventId'] = f'event_{index}'
+        row['envelope']['payload']['correlationId'] = f'corr_{index}'
+        write_private(spool_root / f'titan_demo.{index}.tmp.ndjson', line(row).encode())
+    clock = [100.0]
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    service = consumer(store, spool_root)
+    service.poll_once()
+
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+    first = service.poll_once()['titan_demo']
+    second = service.poll_once()['titan_demo']
+
+    assert first['imported'] == 5
+    assert first['morePending'] is True
+    assert second['imported'] == 2
+    assert second['morePending'] is False
+
+
 def test_large_stable_temp_index_is_bounded_and_refills_after_scan(private_root, spool_root, monkeypatch):
     store = evidence_store(private_root)
     monkeypatch.setattr(spool_service, 'MAX_STABLE_TEMPORARY_CANDIDATES', 2)

@@ -22,6 +22,7 @@ from chart_studio.evidence_store import StoreUnavailable, _physical, _private
 
 MAX_SEGMENT_BYTES = 8 * 1024 * 1024
 MAX_RECORDS_PER_POLL = 50
+MAX_TEMPORARY_RECORDS_PER_POLL = 5
 MAX_STABLE_TEMPORARY_CANDIDATES = 5000
 _READY = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)-([1-9][0-9]*)\.ready\.ndjson\Z')
 _TEMP_SEGMENT = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)\.tmp\.ndjson\Z')
@@ -389,7 +390,8 @@ class SpoolFileConsumer:
         candidates=self._stable_temporary_files[producer]
         imported=duplicates=archived=archived_bytes=store_lost=0
         gap_observed=importer.gap_count>0
-        while candidates and archived<self.records_per_poll:
+        temporary_budget=min(self.records_per_poll,MAX_TEMPORARY_RECORDS_PER_POLL)
+        while candidates and archived<temporary_budget:
             sequence,path,signature=candidates[0]
             try:
                 if not os.path.lexists(path):
