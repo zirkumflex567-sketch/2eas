@@ -24,6 +24,7 @@ MAX_RECORDS_PER_POLL = 50
 _READY = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)-([1-9][0-9]*)\.ready\.ndjson\Z')
 _TEMP_SEGMENT = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)\.tmp\.ndjson\Z')
 _TEMP_SCAN_INTERVAL_SECONDS = 60.0
+_FILE_INDEX_REFRESH_SECONDS = 2.0
 
 
 class FileIdentityChanged(Exception):
@@ -46,6 +47,10 @@ class SpoolFileConsumer:
         self.records_per_poll = records_per_poll
         self._temporary_scan_at = 0.0
         self._temporary_backlog = {}
+        self._file_index_at = 0.0
+        self._ready_files = {}
+        self._archived_files = {}
+        self._invalid_ready_producers = set()
         self._reported_store_loss = {}
         self._reported_gap = {}
         if type(records_per_poll) is not int or not 1 <= records_per_poll <= MAX_RECORDS_PER_POLL:
@@ -183,26 +188,55 @@ class SpoolFileConsumer:
         path=self._cursor_path(account,producer)
         if os.path.lexists(path):_physical(path);_private(path,False);path.unlink()
 
+    def _refresh_file_index(self):
+        now = time.monotonic()
+        if self._file_index_at and now - self._file_index_at < _FILE_INDEX_REFRESH_SECONDS:
+            return
+        ready = {producer: [] for producer in self.producers}
+        archived = {producer: [] for producer in self.producers}
+        invalid = set()
+        with os.scandir(self.root) as entries:
+            for entry in entries:
+                match = _READY.fullmatch(entry.name)
+                if not match or match.group(1) not in ready:
+                    continue
+                first, last = int(match.group(2)), int(match.group(3))
+                if first > last:
+                    invalid.add(match.group(1))
+                    continue
+                ready[match.group(1)].append((first, last, Path(entry.path), 'ready'))
+        with os.scandir(self.archive) as entries:
+            for entry in entries:
+                match = _READY.fullmatch(entry.name)
+                if not match or match.group(1) not in archived:
+                    continue
+                first, last = int(match.group(2)), int(match.group(3))
+                archived[match.group(1)].append((first, last, Path(entry.path), 'archive'))
+        for producer, rows in ready.items():
+            rows.sort(key=lambda row: (row[0], row[1], row[2].name))
+            previous = 0
+            for first, last, _, _ in rows:
+                if first <= previous:
+                    invalid.add(producer)
+                    break
+                previous = last
+        self._ready_files = ready
+        self._archived_files = archived
+        self._invalid_ready_producers = invalid
+        self._file_index_at = now
+
+    def _invalidate_file_index(self):
+        self._file_index_at = 0.0
+
     def _files(self, producer):
-        ready=[]
-        for path in self.root.iterdir():
-            match=_READY.fullmatch(path.name)
-            if match and match.group(1)==producer:
-                first,last=int(match.group(2)),int(match.group(3))
-                if first>last:raise SegmentInvalid()
-                ready.append((first,last,path,'ready'))
-        ready.sort(key=lambda row:(row[0],row[1],row[2].name))
-        previous=0
-        for first,last,_,_ in ready:
-            if first<=previous:raise SegmentInvalid()
-            previous=last
+        self._refresh_file_index()
+        if producer in self._invalid_ready_producers:
+            raise SegmentInvalid()
+        ready = list(self._ready_files.get(producer, ()))
         active=self.root/(producer+'.active.ndjson')
         rows=[(first,last,path,state) for first,last,path,state in ready]
         if os.path.lexists(active):rows.append((None,None,active,'active'))
-        for path in self.archive.iterdir():
-            match=_READY.fullmatch(path.name)
-            if match and match.group(1)==producer:
-                rows.append((int(match.group(2)),int(match.group(3)),path,'archive'))
+        rows.extend(self._archived_files.get(producer, ()))
         return rows
 
     def _segment_sequences(self, path, first, last):
@@ -376,8 +410,10 @@ class SpoolFileConsumer:
     def poll_once(self):
         self._scan_temporary_segments()
         status={}
+        invalidate_file_index = False
         for producer in self.producers:
             result=self._poll_producer(producer)
+            invalidate_file_index = invalidate_file_index or result.get('code') == 'ARCHIVED'
             result.update(self._temporary_backlog.get(producer, {
                 'temporaryFileCount': 0, 'temporaryBytes': 0,
                 'temporaryOldestMtimeUtc': None, 'temporaryNewestMtimeUtc': None,
@@ -387,6 +423,8 @@ class SpoolFileConsumer:
             result['storeLostCount']=self._reported_store_loss[producer]
             result['gapObserved']=self._reported_gap[producer]
             status[producer]=result
+        if invalidate_file_index:
+            self._invalidate_file_index()
         return status
 
 

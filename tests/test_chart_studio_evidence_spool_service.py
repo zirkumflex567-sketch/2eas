@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import chart_studio.evidence_spool_service as spool_service
 from chart_studio.evidence_spool_service import SpoolFileConsumer, run_spool_service
 from chart_studio.evidence_api import install_evidence_routes
 from test_chart_studio_evidence_spool import line, private_root, record
@@ -36,6 +37,51 @@ def spool_root(private_root):
 
 def consumer(store, root):
     return SpoolFileConsumer(store, root, producers={'titan': 'titan_demo'}, excluded_roots=[Path.cwd()])
+
+
+def test_ready_segment_discovery_is_shared_and_refreshed_within_two_seconds(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    service = SpoolFileConsumer(store, spool_root,
+                                producers={'titan': 'titan_demo', 'goldm15': 'market_demo'},
+                                excluded_roots=[Path.cwd()])
+    clock = [100.0]
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    real_scandir = spool_service.os.scandir
+    scans = []
+
+    def count_root_scans(path):
+        if Path(path).resolve() == service.root.resolve():
+            scans.append(path)
+        return real_scandir(path)
+
+    monkeypatch.setattr(spool_service.os, 'scandir', count_root_scans)
+
+    assert service._files('titan_demo') == []
+    assert service._files('market_demo') == []
+    assert len(scans) == 1
+
+    ready = spool_root / 'titan_demo.1-1.ready.ndjson'
+    ready.touch()
+    clock[0] += 1.0
+    assert service._files('titan_demo') == []
+    assert len(scans) == 1
+
+    clock[0] += 2.0
+    rows = service._files('titan_demo')
+    assert [(first, last, path, state) for first, last, path, state in rows] == [(1, 1, ready, 'ready')]
+    assert len(scans) == 2
+
+
+def test_invalid_ready_range_isolated_to_its_producer(private_root, spool_root):
+    store = evidence_store(private_root)
+    service = SpoolFileConsumer(store, spool_root,
+                                producers={'titan': 'titan_demo', 'goldm15': 'market_demo'},
+                                excluded_roots=[Path.cwd()])
+    (spool_root / 'market_demo.2-1.ready.ndjson').touch()
+
+    assert service._files('titan_demo') == []
+    with pytest.raises(spool_service.SegmentInvalid):
+        service._files('market_demo')
 
 
 def test_idle_status_reports_temporary_segment_metadata_without_importing_it(private_root, spool_root):
