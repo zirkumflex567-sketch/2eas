@@ -101,6 +101,191 @@ def test_idle_status_reports_temporary_segment_metadata_without_importing_it(pri
     assert (spool_root / 'titan_demo.1.tmp.ndjson').exists()
 
 
+def test_stable_complete_temporary_records_are_imported_and_archived_in_sequence(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    first, second = record(seq=1), record(seq=2)
+    second['envelope']['id'] = second['envelope']['payload']['eventId'] = 'event_2'
+    second['envelope']['payload']['correlationId'] = 'corr_2'
+    first_path = spool_root / 'titan_demo.1.tmp.ndjson'
+    second_path = spool_root / 'titan_demo.2.tmp.ndjson'
+    write_private(first_path, line(first).encode())
+    write_private(second_path, line(second).encode())
+    clock = [100.0]
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    service = consumer(store, spool_root)
+
+    initial = service.poll_once()['titan_demo']
+    assert initial['code'] == 'IDLE'
+    assert initial['imported'] == 0
+    assert first_path.exists() and second_path.exists()
+
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+    recovered = service.poll_once()['titan_demo']
+
+    assert recovered['code'] == 'ARCHIVED'
+    assert recovered['imported'] == 2
+    assert recovered['gapCount'] == 0
+    assert recovered['temporaryFileCount'] == 0
+    assert recovered['temporaryOldestMtimeUtc'] is None
+    assert recovered['temporaryNewestMtimeUtc'] is None
+    assert not first_path.exists() and not second_path.exists()
+    assert (spool_root / 'archive' / first_path.name).read_bytes() == line(first).encode()
+    assert (spool_root / 'archive' / second_path.name).read_bytes() == line(second).encode()
+    assert {row['id'] for row in store.read(context(), kind='DECISION')['records']} == {'event_1', 'event_2'}
+
+
+def test_stable_incomplete_temporary_record_is_reported_and_left_untouched(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    path = spool_root / 'titan_demo.1.tmp.ndjson'
+    raw = line(record()).encode()[:-3]
+    write_private(path, raw)
+    clock = [100.0]
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    service = consumer(store, spool_root)
+    service.poll_once()
+
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+    result = service.poll_once()['titan_demo']
+
+    assert result['code'] == 'TEMP_INCOMPLETE'
+    assert result['imported'] == 0
+    assert path.read_bytes() == raw
+    assert store.read(context(), kind='DECISION')['records'] == []
+
+
+def test_temporary_filename_sequence_must_match_record_sequence(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    path = spool_root / 'titan_demo.2.tmp.ndjson'
+    write_private(path, line(record(seq=1)).encode())
+    clock = [100.0]
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    service = consumer(store, spool_root)
+    service.poll_once()
+
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+    result = service.poll_once()['titan_demo']
+
+    assert result['code'] == 'SEGMENT_RANGE_INVALID'
+    assert result['imported'] == 0
+    assert path.exists()
+    assert store.read(context(), kind='DECISION')['records'] == []
+
+
+def test_temp_archive_failure_retries_as_duplicate_without_duplicate_store_append(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    path = spool_root / 'titan_demo.1.tmp.ndjson'
+    write_private(path, line(record()).encode())
+    clock = [100.0]
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    service = consumer(store, spool_root)
+    service.poll_once()
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+    real_replace = os.replace
+    fail_archive = [True]
+
+    def replace(source, destination):
+        if fail_archive[0] and Path(source) == path and Path(destination).parent == spool_root / 'archive':
+            fail_archive[0] = False
+            raise OSError('simulated archive interruption')
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(spool_service.os, 'replace', replace)
+    first = service.poll_once()['titan_demo']
+    assert first['code'] == 'SPOOL_UNAVAILABLE'
+    assert first['imported'] == 1
+    assert path.exists()
+    assert len(store.read(context(), kind='DECISION')['records']) == 1
+
+    second = service.poll_once()['titan_demo']
+    assert second['code'] == 'ARCHIVED'
+    assert second['imported'] == 0
+    assert second['duplicates'] == 1
+    assert not path.exists()
+    assert len(store.read(context(), kind='DECISION')['records']) == 1
+
+
+def test_stable_temp_recovery_obeys_per_poll_budget_and_resumes_next_batch(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    rows = [record(seq=index) for index in range(1, 4)]
+    for index, row in enumerate(rows, 1):
+        row['envelope']['id'] = row['envelope']['payload']['eventId'] = f'event_{index}'
+        row['envelope']['payload']['correlationId'] = f'corr_{index}'
+        write_private(spool_root / f'titan_demo.{index}.tmp.ndjson', line(row).encode())
+    clock = [100.0]
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    service = SpoolFileConsumer(store, spool_root, producers={'titan': 'titan_demo'},
+                                excluded_roots=[Path.cwd()], records_per_poll=2)
+    service.poll_once()
+
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+    first = service.poll_once()['titan_demo']
+    assert first['code'] == 'ARCHIVED'
+    assert first['imported'] == 2
+    assert first['morePending'] is True
+    assert (spool_root / 'titan_demo.3.tmp.ndjson').exists()
+
+    second = service.poll_once()['titan_demo']
+    assert second['code'] == 'ARCHIVED'
+    assert second['imported'] == 1
+    assert second['morePending'] is False
+    assert {row['id'] for row in store.read(context(), kind='DECISION')['records']} == {'event_1', 'event_2', 'event_3'}
+
+
+def test_large_stable_temp_index_is_bounded_and_refills_after_scan(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    monkeypatch.setattr(spool_service, 'MAX_STABLE_TEMPORARY_CANDIDATES', 2)
+    for index in range(1, 4):
+        row = record(seq=index)
+        row['envelope']['id'] = row['envelope']['payload']['eventId'] = f'event_{index}'
+        row['envelope']['payload']['correlationId'] = f'corr_{index}'
+        write_private(spool_root / f'titan_demo.{index}.tmp.ndjson', line(row).encode())
+    clock = [100.0]
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    service = consumer(store, spool_root)
+    service.poll_once()
+
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+    first = service.poll_once()['titan_demo']
+    assert first['imported'] == 2
+    assert len(service._stable_temporary_files['titan_demo']) == 0
+    idle = service.poll_once()['titan_demo']
+    assert idle['code'] == 'IDLE'
+    assert idle['imported'] == 0
+
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+    second = service.poll_once()['titan_demo']
+    assert second['code'] == 'ARCHIVED'
+    assert second['imported'] == 1
+    assert {row['id'] for row in store.read(context(), kind='DECISION')['records']} == {'event_1', 'event_2', 'event_3'}
+
+
+def test_temporary_file_change_between_stability_scans_restarts_stability_window(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    path = spool_root / 'titan_demo.1.tmp.ndjson'
+    first = record(seq=1)
+    write_private(path, line(first).encode())
+    clock = [100.0]
+    monkeypatch.setattr(spool_service.time, 'monotonic', lambda: clock[0])
+    service = consumer(store, spool_root)
+    service.poll_once()
+
+    replacement = record(seq=1)
+    replacement['envelope']['id'] = replacement['envelope']['payload']['eventId'] = 'replacement_event'
+    replacement['envelope']['payload']['correlationId'] = 'replacement_correlation'
+    write_private(path, line(replacement).encode())
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+    changed = service.poll_once()['titan_demo']
+    assert changed['code'] == 'IDLE'
+    assert changed['imported'] == 0
+    assert len(store.read(context(), kind='DECISION')['records']) == 0
+
+    clock[0] += spool_service._TEMP_SCAN_INTERVAL_SECONDS
+    stable = service.poll_once()['titan_demo']
+    assert stable['code'] == 'ARCHIVED'
+    assert stable['imported'] == 1
+    assert [row['id'] for row in store.read(context(), kind='DECISION')['records']] == ['replacement_event']
+
+
 def test_temporary_segment_status_reports_oldest_and_newest_mtime_without_reading_files(private_root, spool_root):
     store = evidence_store(private_root)
     oldest = spool_root / 'titan_demo.1.tmp.ndjson'

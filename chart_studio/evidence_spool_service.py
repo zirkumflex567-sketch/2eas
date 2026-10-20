@@ -4,6 +4,7 @@ This module only reads local files and appends validated evidence. It never
 connects to MT5 and has no HTTP ingestion or broker mutation path.
 """
 import asyncio
+from collections import deque
 from contextlib import contextmanager
 import hashlib
 import json
@@ -21,6 +22,7 @@ from chart_studio.evidence_store import StoreUnavailable, _physical, _private
 
 MAX_SEGMENT_BYTES = 8 * 1024 * 1024
 MAX_RECORDS_PER_POLL = 50
+MAX_STABLE_TEMPORARY_CANDIDATES = 5000
 _READY = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)-([1-9][0-9]*)\.ready\.ndjson\Z')
 _TEMP_SEGMENT = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)\.tmp\.ndjson\Z')
 _TEMP_SCAN_INTERVAL_SECONDS = 60.0
@@ -47,6 +49,8 @@ class SpoolFileConsumer:
         self.records_per_poll = records_per_poll
         self._temporary_scan_at = 0.0
         self._temporary_backlog = {}
+        self._temporary_signatures = {}
+        self._stable_temporary_files = {}
         self._file_index_at = 0.0
         self._ready_files = {}
         self._archived_files = {}
@@ -56,6 +60,7 @@ class SpoolFileConsumer:
         if type(records_per_poll) is not int or not 1 <= records_per_poll <= MAX_RECORDS_PER_POLL:
             raise ValueError('invalid record batch')
         self._verify_root()
+        self._temporary_device=_physical(self.root)[0]
         self.archive = self.root / 'archive'
         if not self.archive.is_dir():
             raise ValueError('private archive directory must pre-exist')
@@ -79,6 +84,8 @@ class SpoolFileConsumer:
                 self._thread_locks[producer_id] = threading.Lock()
                 self._reported_store_loss[producer_id] = 0
                 self._reported_gap[producer_id] = False
+                self._temporary_signatures[producer_id] = {}
+                self._stable_temporary_files[producer_id] = deque()
 
     def _verify_root(self):
         try:
@@ -313,7 +320,9 @@ class SpoolFileConsumer:
             try:
                 importer.reload_cursor()
                 chosen=self._choose(account,importer)
-                if chosen is None:return {'code':'IDLE','imported':0,'gapCount':importer.gap_count,'gapObserved':importer.gap_count>0}
+                if chosen is None:
+                    recovered=self._poll_stable_temporary(producer,importer)
+                    return recovered or {'code':'IDLE','imported':0,'gapCount':importer.gap_count,'gapObserved':importer.gap_count>0}
                 cursor,path,(first,last,state)=chosen
                 _physical(path);_private(path,False)
                 size=path.stat().st_size
@@ -375,6 +384,114 @@ class SpoolFileConsumer:
             except (OSError, ValueError, TypeError, StoreUnavailable, json.JSONDecodeError):
                 return {'code':'SPOOL_UNAVAILABLE','imported':0,'gapCount':importer.gap_count,'gapObserved':importer.gap_count>0,'storeLostCount':0}
 
+    def _poll_stable_temporary(self, producer, importer):
+        """Recover one-record temp files only after two unchanged metadata scans."""
+        candidates=self._stable_temporary_files[producer]
+        imported=duplicates=archived=archived_bytes=store_lost=0
+        gap_observed=importer.gap_count>0
+        while candidates and archived<self.records_per_poll:
+            sequence,path,signature=candidates[0]
+            try:
+                if not os.path.lexists(path):
+                    candidates.popleft()
+                    continue
+                identity=_physical(path);_private(path,False)
+                metadata=path.stat()
+                current=(int(metadata.st_dev),int(metadata.st_ino),int(metadata.st_size),
+                         int(getattr(metadata,'st_mtime_ns',metadata.st_mtime*1_000_000_000)))
+                if not stat.S_ISREG(metadata.st_mode) or current!=signature:
+                    candidates.popleft()
+                    return {'code':'TEMP_UNSTABLE','imported':imported,'duplicates':duplicates,
+                            'gapCount':importer.gap_count,'gapObserved':gap_observed,
+                            'storeLostCount':store_lost}
+                if metadata.st_size>MAX_LINE_BYTES:
+                    return {'code':'SEGMENT_RANGE_INVALID','imported':imported,'duplicates':duplicates,
+                            'gapCount':importer.gap_count,'gapObserved':gap_observed,
+                            'storeLostCount':store_lost}
+                raw=path.read_bytes()
+                after=path.stat()
+                after_signature=(int(after.st_dev),int(after.st_ino),int(after.st_size),
+                                 int(getattr(after,'st_mtime_ns',after.st_mtime*1_000_000_000)))
+                if after_signature!=signature or raw!=path.read_bytes():
+                    candidates.popleft()
+                    return {'code':'TEMP_UNSTABLE','imported':imported,'duplicates':duplicates,
+                            'gapCount':importer.gap_count,'gapObserved':gap_observed,
+                            'storeLostCount':store_lost}
+                if not raw.endswith(b'\n'):
+                    return {'code':'TEMP_INCOMPLETE','imported':imported,'duplicates':duplicates,
+                            'gapCount':importer.gap_count,'gapObserved':gap_observed,
+                            'storeLostCount':store_lost}
+                if raw.count(b'\n')!=1:
+                    return {'code':'SEGMENT_RANGE_INVALID','imported':imported,'duplicates':duplicates,
+                            'gapCount':importer.gap_count,'gapObserved':gap_observed,
+                            'storeLostCount':store_lost}
+                try:
+                    row=json.loads(raw[:-1])
+                except (ValueError,UnicodeError,RecursionError):
+                    return {'code':'SEGMENT_RANGE_INVALID','imported':imported,'duplicates':duplicates,
+                            'gapCount':importer.gap_count,'gapObserved':gap_observed,
+                            'storeLostCount':store_lost}
+                if type(row) is not dict or type(row.get('sequence')) is not int or row['sequence']!=sequence:
+                    return {'code':'SEGMENT_RANGE_INVALID','imported':imported,'duplicates':duplicates,
+                            'gapCount':importer.gap_count,'gapObserved':gap_observed,
+                            'storeLostCount':store_lost}
+                outcome=importer.import_line(raw)
+                store_lost=max(store_lost,outcome.get('storeLostCount',0))
+                gap_observed=gap_observed or bool(outcome.get('gapObserved'))
+                if not outcome.get('ok'):
+                    return {'code':outcome.get('code','IMPORT_FAILED'),'imported':imported,
+                            'duplicates':duplicates,'gapCount':outcome.get('gapCount',importer.gap_count),
+                            'gapObserved':gap_observed,'storeLostCount':store_lost}
+                if outcome.get('code')=='DUPLICATE':duplicates+=1
+                else:imported+=1
+                archive=self.archive/path.name
+                if os.path.lexists(archive):
+                    return {'code':'SPOOL_UNAVAILABLE','imported':imported,'duplicates':duplicates,
+                            'gapCount':importer.gap_count,'gapObserved':gap_observed,
+                            'storeLostCount':store_lost}
+                digest=hashlib.sha256(raw).hexdigest()
+                if _physical(path)!=identity or path.stat().st_size!=len(raw):
+                    return {'code':'FILE_IDENTITY_CHANGED','imported':imported,'duplicates':duplicates,
+                            'gapCount':importer.gap_count,'gapObserved':gap_observed,
+                            'storeLostCount':store_lost}
+                with path.open('rb') as stream:
+                    if hashlib.sha256(stream.read(MAX_LINE_BYTES+1)).hexdigest()!=digest:
+                        return {'code':'FILE_IDENTITY_CHANGED','imported':imported,'duplicates':duplicates,
+                                'gapCount':importer.gap_count,'gapObserved':gap_observed,
+                                'storeLostCount':store_lost}
+                os.replace(path,archive)
+                try:
+                    if (_physical(archive)!=identity or archive.stat().st_size!=len(raw) or
+                            hashlib.sha256(archive.read_bytes()).hexdigest()!=digest):
+                        raise FileIdentityChanged()
+                    _private(archive,False)
+                except FileIdentityChanged:
+                    if not os.path.lexists(path) and os.path.lexists(archive):
+                        os.replace(archive,path)
+                    raise
+                candidates.popleft()
+                archived+=1;archived_bytes+=len(raw)
+            except FileIdentityChanged:
+                return {'code':'FILE_IDENTITY_CHANGED','imported':imported,'duplicates':duplicates,
+                        'gapCount':importer.gap_count,'gapObserved':gap_observed,
+                        'storeLostCount':store_lost}
+            except (OSError,ValueError,TypeError,StoreUnavailable):
+                return {'code':'SPOOL_UNAVAILABLE','imported':imported,'duplicates':duplicates,
+                        'gapCount':importer.gap_count,'gapObserved':gap_observed,
+                        'storeLostCount':store_lost}
+        if archived:
+            backlog=self._temporary_backlog.get(producer)
+            if backlog:
+                backlog['temporaryFileCount']=max(0,backlog['temporaryFileCount']-archived)
+                backlog['temporaryBytes']=max(0,backlog['temporaryBytes']-archived_bytes)
+                if backlog['temporaryFileCount']==0:
+                    backlog['temporaryOldestMtimeUtc']=None
+                    backlog['temporaryNewestMtimeUtc']=None
+            return {'code':'ARCHIVED','imported':imported,'duplicates':duplicates,
+                    'gapCount':importer.gap_count,'gapObserved':gap_observed,
+                    'storeLostCount':store_lost,'morePending':bool(candidates)}
+        return None
+
     def _scan_temporary_segments(self):
         now = time.monotonic()
         if now - self._temporary_scan_at < _TEMP_SCAN_INTERVAL_SECONDS:
@@ -382,6 +499,8 @@ class SpoolFileConsumer:
         self._temporary_scan_at = now
         counts = {producer: {'count': 0, 'bytes': 0, 'oldest': None, 'newest': None}
                   for producer in self.producers}
+        current_signatures={producer:{} for producer in self.producers}
+        stable={producer:[] for producer in self.producers}
         try:
             with os.scandir(self.root) as entries:
                 for entry in entries:
@@ -393,7 +512,13 @@ class SpoolFileConsumer:
                     except OSError:
                         continue
                     if stat.S_ISREG(metadata.st_mode):
-                        values = counts[match.group(1)]
+                        producer=match.group(1);sequence=int(match.group(2))
+                        signature=(int(self._temporary_device),int(entry.inode()),int(metadata.st_size),
+                                   int(getattr(metadata,'st_mtime_ns',metadata.st_mtime*1_000_000_000)))
+                        if self._temporary_signatures[producer].get(sequence)==signature:
+                            stable[producer].append((sequence,Path(entry.path),signature))
+                        current_signatures[producer][sequence]=signature
+                        values = counts[producer]
                         values['count'] += 1
                         values['bytes'] += max(0, metadata.st_size)
                         mtime = metadata.st_mtime
@@ -401,6 +526,11 @@ class SpoolFileConsumer:
                         values['newest'] = mtime if values['newest'] is None else max(values['newest'], mtime)
         except OSError:
             return
+        self._temporary_signatures=current_signatures
+        self._stable_temporary_files={
+            producer:deque(sorted(rows,key=lambda row:row[0])[:MAX_STABLE_TEMPORARY_CANDIDATES])
+            for producer,rows in stable.items()
+        }
         def as_utc(value):
             if value is None:
                 return None
