@@ -600,10 +600,8 @@ def explain_trade_exit(status, p_type, sl_price=0.0, tp_price=0.0, profit_usd=0.
         ]
         if account_id == 'blueberry':
             rules.append("⚠️ Blueberry Notbremse: Sofortiger Hard-Close bei 3.5% Tagesverlust ($350) oder $9.100 Kontoboden.")
-        elif account_id == 'titan_25k':
-            rules.append("⚠️ 25k Notbremse: Hard-Floor Cutoff bei $23.000 Kontowert.")
         else:
-            rules.append("⚠️ Kontoschutz: Hard-Cutoff bei 3.5% Daily Drawdown.")
+            rules.append("ℹ️ Demo/Testkonto: Kein Challenge-Drawdown-Hard-Cutoff aktiv.")
 
         rules.append("(Exakter Ausstiegs-Tick im Voraus marktbedingt variabel/unbekannt).")
         return " | ".join(rules)

@@ -905,6 +905,15 @@ def test_explain_trade_exit_scales_with_volume_and_reports_ema9():
     assert 'Mindestgewinn erreicht: +$120.00 >= $112' in text_004
 
 
+def test_open_trade_explanation_only_claims_challenge_cutoff_for_blueberry():
+    blueberry = app.explain_trade_exit('OPEN', 'BUY', account_id='blueberry')
+    demo = app.explain_trade_exit('OPEN', 'BUY', account_id='goldm15')
+
+    assert 'Blueberry Notbremse' in blueberry
+    assert 'Hard-Cutoff bei 3.5% Daily Drawdown' not in demo
+    assert 'Kein Challenge-Drawdown-Hard-Cutoff aktiv' in demo
+
+
 def test_live_market_data_positions_include_ema9_and_target(isolated, monkeypatch):
     monkeypatch.setitem(gateway.ACCOUNTS['titan'], 'analysis_mode', 'TITAN_REFERENCE')
     data = app.get_live_market_data()
