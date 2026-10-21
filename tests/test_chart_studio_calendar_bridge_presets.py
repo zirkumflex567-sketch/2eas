@@ -70,3 +70,12 @@ def test_calendar_bridge_emits_iso_server_timestamps_accepted_by_the_ui():
 
     assert 'StringReplace(stamp," ","T");' in server_stamp
     assert 'return ServerStamp(value)+"Z";' in utc_stamp
+
+
+def test_calendar_bridge_normalizes_adjacent_clock_reads_to_supported_broker_offsets():
+    source = (ROOT / "ChartStudioCalendarBridge.mq5").read_text(encoding="utf-8")
+    assert "bool CSResolveBrokerUtcOffsetSeconds(" in source
+    assert "MathRound((double)raw_offset/3600.0)*3600.0" in source
+    assert "MathAbs((double)(raw_offset-rounded_offset))>5.0" in source
+    assert "rounded_offset!=7200 && rounded_offset!=10800" in source
+    assert "CSResolveBrokerUtcOffsetSeconds(server_now,utc_now,offset)" in source

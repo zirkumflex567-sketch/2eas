@@ -40,6 +40,18 @@ string UtcStamp(const datetime value)
    return ServerStamp(value)+"Z";
   }
 
+bool CSResolveBrokerUtcOffsetSeconds(const datetime server_clock,const datetime utc_clock,int &offset)
+  {
+   offset=0;
+   if(server_clock<=0 || utc_clock<=0) return false;
+   long raw_offset=(long)server_clock-(long)utc_clock;
+   long rounded_offset=(long)(MathRound((double)raw_offset/3600.0)*3600.0);
+   if(MathAbs((double)(raw_offset-rounded_offset))>5.0) return false;
+   if(rounded_offset!=7200 && rounded_offset!=10800) return false;
+   offset=(int)rounded_offset;
+   return true;
+  }
+
 string ImportanceName(const ENUM_CALENDAR_EVENT_IMPORTANCE value)
   {
    if(value==CALENDAR_IMPORTANCE_HIGH) return "HIGH";
@@ -85,9 +97,8 @@ bool WriteSnapshot()
      }
    datetime server_now=TimeTradeServer();
    datetime utc_now=TimeGMT();
-   if(server_now<=0 || utc_now<=0) return false;
-   int offset=(int)(server_now-utc_now);
-   if(MathAbs(offset)>14*60*60) return false;
+   int offset=0;
+   if(!CSResolveBrokerUtcOffsetSeconds(server_now,utc_now,offset)) return false;
 
    datetime from_time=server_now-60;
    datetime to_time=server_now+14*24*60*60;
