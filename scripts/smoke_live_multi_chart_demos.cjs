@@ -2,8 +2,14 @@
 
 const assert = require("node:assert/strict");
 const { chromium } = require("playwright");
+const { classifyLiveDemoRequest } = require("./live_demo_scope_guard.cjs");
 
 const base = (process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056").replace(/\/+$/, "");
+const baseUrl = new URL(base);
+assert.equal(baseUrl.protocol, "http:");
+assert.ok(["127.0.0.1", "localhost", "::1"].includes(baseUrl.hostname));
+assert.ok([8050, 8056].includes(Number(baseUrl.port)));
+const basePath = baseUrl.pathname.replace(/\/$/, "");
 const allowed = Object.freeze([
   { account: "titan", symbol: "XAUUSD" },
   { account: "xau5m_m5", symbol: "XAUUSD.p" },
@@ -16,6 +22,7 @@ const accounts = process.env.CHART_STUDIO_ACCOUNTS
   : allowed.map(item => item.account);
 assert.ok(accounts.length > 0 && accounts.every(account => allowed.some(item => item.account === account)),
   "CHART_STUDIO_ACCOUNTS must contain only explicitly authorized non-Blueberry demos");
+const allowedAccounts = Object.freeze(allowed.map(item => item.account));
 
 async function main() {
   const browser = await chromium.launch({
@@ -36,17 +43,30 @@ async function main() {
       await page.route("**/*", async route => {
         const request = route.request();
         const url = new URL(request.url());
-        if (url.origin === new URL(base).origin && url.pathname.startsWith("/api/")) {
-          const requestedAccount = url.searchParams.get("account");
-          if (request.method() !== "GET") {
-            mutations.push({ account, method: request.method(), path: url.pathname });
+        if (url.origin === baseUrl.origin) {
+          const scope = classifyLiveDemoRequest({ url, method: request.method(), basePath, allowedAccounts });
+          if (!scope.allowed) {
+            if (request.method() !== "GET") mutations.push({ account, method: request.method(), path: url.pathname });
+            protectedRequests.push({ account, path: url.pathname, reason: scope.reason });
             return route.abort("blockedbyclient");
           }
-          if (requestedAccount === "blueberry") {
-            protectedRequests.push({ account, path: url.pathname });
-            return route.abort("blockedbyclient");
+          if (scope.kind === "global_read" && scope.endpoint === "/api/accounts") {
+            return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+              default: accounts[0],
+              accounts: accounts.map(id => {
+                const demo = allowed.find(item => item.account === id);
+                return { id, name: id, login: "Demo", server: "Demo", symbol: demo.symbol,
+                  timeframe: "M15", is_demo: true, challenge_protection: false, capacity: 3 };
+              }),
+            }) });
           }
-          apiReads += 1;
+          if (scope.kind === "global_read" && scope.endpoint === "/api/chart/v1/capabilities") {
+            return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+              accountScopes: accounts, symbols: ["XAUUSD", "XAUUSD.p"],
+              timeframes: ["M1", "M5", "M15", "M30", "H1", "H4", "D1"], features: { encryptedDeviceSync: false },
+            }) });
+          }
+          if (url.pathname.startsWith(`${basePath}/api/`)) apiReads += 1;
         }
         return route.continue();
       });
