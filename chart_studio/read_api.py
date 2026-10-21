@@ -69,7 +69,7 @@ def install_read_routes(app, mt5, *, now=None, calendar_path_resolver=None):
 
     @app.get('/api/chart/v1/footprint')
     def footprint(request: Request, account: Account, symbol: Symbol,
-                  timeframe: Annotated[str, Query(pattern=r'^(M1|M5|M15)$')]):
+                  timeframe: Annotated[str, Query(pattern=r'^(M1|M5|M15|M30|H1|H4)$')]):
         # Footprint is demo-only and must reject before the MT5 gateway attaches.
         spec = gateway.ACCOUNTS.get(account)
         if spec is None:
@@ -79,10 +79,11 @@ def install_read_routes(app, mt5, *, now=None, calendar_path_resolver=None):
             raise HTTPException(403, 'Footprint-Demodaten sind für diesen Account gesperrt.')
         if set(request.query_params) != {'account','symbol','timeframe'} or any(
                 len(request.query_params.getlist(key)) != 1 for key in request.query_params):
-            raise HTTPException(422, 'Footprint akzeptiert nur Account, Symbol und M1/M5/M15.')
+            raise HTTPException(422, 'Footprint akzeptiert nur Account, Symbol und M1/M5/M15/M30/H1/H4.')
 
-        durations = {'M1':60, 'M5':300, 'M15':900}
-        timeframe_value = getattr(mt5, 'TIMEFRAME_'+timeframe, {'M1':1,'M5':5,'M15':15}[timeframe])
+        durations = {'M1':60, 'M5':300, 'M15':900, 'M30':1800, 'H1':3600, 'H4':14400}
+        timeframe_value = getattr(mt5, 'TIMEFRAME_'+timeframe, {
+            'M1':1, 'M5':5, 'M15':15, 'M30':30, 'H1':16385, 'H4':16388}[timeframe])
         buy_flag = getattr(mt5, 'TICK_FLAG_BUY', None)
         sell_flag = getattr(mt5, 'TICK_FLAG_SELL', None)
         all_ticks_flag = getattr(mt5, 'COPY_TICKS_ALL', None)

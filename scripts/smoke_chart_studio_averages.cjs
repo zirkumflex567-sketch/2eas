@@ -72,12 +72,37 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
    "The searchable catalog lists each registered indicator family");
   assert.equal(await catalog.getByRole("searchbox",{name:"Indikator suchen"}).inputValue(),"");
   await catalog.getByRole("searchbox",{name:"Indikator suchen"}).fill("Footprint");
-  const footprint= catalog.locator('[data-indicator="footprint"]');
-  assert.equal(await footprint.count(),1);
+  assert.equal(await catalog.locator('[data-indicator="footprint"]').count(),1);
+  await page.evaluate(()=>{
+   const panel=document.createElement("div");panel.id="footprint-scope-test";document.body.append(panel);
+   window.__footprintScope={account:"titan",symbol:"XAUUSD",timeframe:"M15"};
+   ChartStudioCatalog.mount({panel,getContext:()=>window.__footprintScope});
+  });
+  const footprint=page.locator('#footprint-scope-test [data-indicator="footprint"]');
   await footprint.getByRole("button",{name:"Footprint-Daten prüfen"}).click();
   await page.getByText(/UNAVAILABLE.*keine verifizierten Ausführungen/i).waitFor();
   assert.deepEqual(footprintReads,[{method:"GET",account:"titan",symbol:"XAUUSD",timeframe:"M15"}],
    "Footprint is an explicit, account/symbol/timeframe-scoped read only");
+  for(const timeframe of ["M30","H1","H4"]){
+   const before=footprintReads.length;
+   const response=page.waitForResponse(res=>{
+    const url=new URL(res.url());
+    return url.pathname==="/api/chart/v1/footprint"&&url.searchParams.get("timeframe")===timeframe;
+   },{timeout:1000});
+   await page.evaluate(value=>{window.__footprintScope.timeframe=value},timeframe);
+   await footprint.getByRole("button",{name:"Footprint-Daten prüfen"}).click();
+   assert.equal((await response).status(),200);
+   assert.equal(footprintReads.length,before+1,`${timeframe} must issue one bounded GET`);
+  }
+  assert.deepEqual(footprintReads.slice(1),["M30","H1","H4"].map(timeframe=>
+   ({method:"GET",account:"titan",symbol:"XAUUSD",timeframe})),
+   "M30/H1/H4 are forwarded as scoped read-only footprint requests");
+  const supportedReadCount=footprintReads.length;
+  await page.evaluate(()=>{window.__footprintScope.timeframe="D1"});
+  await footprint.getByRole("button",{name:"Footprint-Daten prüfen"}).click();
+  assert.equal(footprintReads.length,supportedReadCount,"unsupported D1 never reaches the API");
+  await page.getByText(/UNAVAILABLE.*unterstützt M1, M5, M15, M30, H1 oder H4/).waitFor();
+  await page.evaluate(()=>{window.__footprintScope.timeframe="M15"});
   footprintBody={source:"MT5_VERIFIED",canExecute:false,status:"AVAILABLE",reason:null,executionCount:2,
    tickCount:2,ignoredTickCount:0,barOpenUtc:"2026-10-16T08:00:00Z",
    levels:[{price:"4010.2",buyVolume:"0.3",sellVolume:"0.1",delta:"0.2",trades:2}]};
@@ -98,6 +123,7 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await page.getByText(/UNAVAILABLE.*UTC-Zeitstempel in der Zukunft/i).waitFor();
   assert.deepEqual(footprintReads,[
    {method:"GET",account:"titan",symbol:"XAUUSD",timeframe:"M15"},
+   ...["M30","H1","H4"].map(timeframe=>({method:"GET",account:"titan",symbol:"XAUUSD",timeframe})),
    {method:"GET",account:"titan",symbol:"XAUUSD",timeframe:"M15"},
    {method:"GET",account:"titan",symbol:"XAUUSD",timeframe:"M15"},
    {method:"GET",account:"titan",symbol:"XAUUSD",timeframe:"M15"}

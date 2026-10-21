@@ -50,3 +50,13 @@ Der Dateiname ist in beiden getrennten Terminals gleich, die EX5-Inhalte und Pre
 Der aktuelle GET-only-Folgecheck nach dem Restart auf Main `3677ae1` meldete für alle fünf Demoaliase Lifecycle `OK/ROLLING_WINDOW`, null Lücken und null Storeverluste. `xau5m_m5` und `titan_m5` hatten je 61 Temp-Dateien (ca. 0,2 MiB) und null neue Decision-Imports; `titan` und `xau5m_500` waren `NOT_CONFIGURED`, `goldm15` wartete auf neue Events. Der separate Live-Chart-Smoke bestätigte danach auf allen fünf Demos je 150 sichtbare `MT5_VERIFIED`-M15-Kerzen; What-if lieferte frische Quotes und brokerberechnete BUY-/SELL-Vorschauen als `READ_ONLY_DRAFT`/`canExecute=false`. Blueberry war in beiden Läufen ausgeschlossen. Damit bleibt FR-026 offen.
 
 Für einen frischen Decision-Nachweis muss auf einem zusätzlichen PU-Prime-500-Demo-Chart `XAUUSD.p/M15` der bereits installierte RecordOnly-Kandidat von `titan_m5` initialisiert werden. Der Nutzer hat diese manuelle Chartaktion erbeten, während Computer-Use ausgeschlossen bleibt. Danach kann der Read-only-Status auf einen neuen Import geprüft werden. Keine Backtests, keine Brokerwrites und keine Blueberry-Abfrage.
+
+## ICMarkets demo BasketGuard source/build comparison (2026-10-21)
+
+This follow-up uses the previously authorized non-Blueberry demo read scope. It did not access Blueberry, alter a terminal/chart/preset, attach or reload an EA, or send a broker request.
+
+The saved ICMarkets profile `MQL5/Profiles/Charts/anti/chart01.chr` describes `XAUUSD/M15`, `XAU_Titan_Pro_BasketGuard`, and `InpEnablePropProtection=true`. This is a saved profile snapshot, not an in-memory state proof. The current process-associated logs show BasketGuard activity but do not identify the EA's guard input or EX5 digest.
+
+I copied the current Main source `XAU_Titan_Pro_BasketGuard.mq5` and shared include into an isolated `output/` directory and compiled them with MetaEditor 6230 using the ICMarkets terminal data folder's MQL5 include tree. Result: **0 errors, 0 warnings**. The isolated EX5 SHA-256 is `6d5eeee490e333fbc5f856939be50765265b7525211d7da66f8733e827d9fcfa`; the EX5 at the saved chart's default EA path is `133c9e7eba4f5a318d41553ff49872d8b143337bac3d8587b329cd362a4bb716`. They differ. The current source binds the challenge guard to both the configured Blueberry login and server and does not gate that guard on the saved input. The installed binary is not attested to that source by this compile.
+
+The machine-readable evidence is `output/ea-identity-compile-20261021/audit-manifest.json` (ignored build output). Exact in-memory EA/preset identity and the non-Blueberry runtime guard behavior remain unverified; no terminal was changed to obtain them.

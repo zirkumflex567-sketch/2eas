@@ -328,6 +328,31 @@ def test_footprint_rejects_unbounded_or_unsupported_timeframes_before_mt5(client
     assert not any(call[0] in ('rates','ticks') for call in fake.calls)
 
 
+@pytest.mark.parametrize(('timeframe', 'seconds', 'mt5_timeframe'), [
+    ('M1', 60, 1), ('M5', 300, 5), ('M15', 900, 15),
+    ('M30', 1800, 30), ('H1', 3600, 16385), ('H4', 14400, 16388),
+])
+def test_footprint_reads_exact_last_completed_bar_for_all_supported_timeframes(
+        client, fake, timeframe, seconds, mt5_timeframe):
+    start = NOW // seconds * seconds - seconds
+    fake.rates['XAUUSD'] = (NS(time=start+10800, open=4000., high=4002., low=3998., close=4001.),)
+    fake.footprint_ticks = []
+
+    response = read(client, endpoint='footprint', timeframe=timeframe)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body['timeframe'] == timeframe
+    assert body['status'] == 'UNAVAILABLE'
+    assert body['barOpenUtc'] == datetime.fromtimestamp(start, timezone.utc).isoformat(timespec='seconds').replace('+00:00','Z')
+    rates_call = next(call for call in fake.calls if call[0] == 'rates')
+    assert rates_call[2:] == (mt5_timeframe, 1, 1)
+    tick_call = next(call for call in fake.calls if call[0] == 'ticks')
+    assert tick_call[2].timestamp() == start
+    assert tick_call[3].timestamp() == start+seconds
+    assert fake.writes == 0
+
+
 def test_parallel_accounts_are_locked_and_never_cross(client, fake):
     original = fake.positions_get
     def positions_get(**kwargs):

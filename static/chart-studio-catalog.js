@@ -27,7 +27,7 @@ const entries=Object.freeze([
  {id:"mfi",name:"Money Flow Index (MFI)",group:"Volumen",desc:"Typical-Price-Money-Flow aus Broker-Realvolumen oder ausdrücklich Tickvolumen-Proxy",type:"oscillator",kind:"mfi"},
  {id:"volume",name:"Broker-Volumen",group:"Volumen",desc:"Reales oder Tickvolumen, kein garantierter Orderflow",type:"toggle",kind:"volume"},
  {id:"vwap",name:"VWAP (UTC)",group:"Volumen",desc:"UTC-VWAP, bei Tickvolumen nur Proxy",type:"toggle",kind:"vwap"},
- {id:"footprint",name:"Footprint (echte Ausführungen)",group:"Orderflow",desc:"M1/M5/M15 · MT5-Ausführungsseite mit positivem Last und volume_real; sonst UNAVAILABLE",type:"footprint",kind:"footprint"}
+ {id:"footprint",name:"Footprint (echte Ausführungen)",group:"Orderflow",desc:"M1 bis H4 · MT5-Ausführungsseite mit positivem Last und volume_real; sonst UNAVAILABLE",type:"footprint",kind:"footprint"}
 ]);
 const sessionExtensions=new Map(),catalogRenderers=new Set();
 function search(query){const q=String(query||"").trim().toLocaleLowerCase("de");
@@ -76,8 +76,8 @@ function mount({panel,getContext}={}){
    footprintStatus.textContent="UNAVAILABLE · Blueberry ist für Footprint-Demoprüfungen ausgeschlossen.";
    footprintLevels.replaceChildren();return;
   }
-  if(!["M1","M5","M15"].includes(scope.timeframe)){
-   footprintStatus.textContent="UNAVAILABLE · Footprint-Prüfung unterstützt M1, M5 oder M15.";
+  if(!["M1","M5","M15","M30","H1","H4"].includes(scope.timeframe)){
+   footprintStatus.textContent="UNAVAILABLE · Footprint-Prüfung unterstützt M1, M5, M15, M30, H1 oder H4.";
    footprintLevels.replaceChildren();return;
   }
   footprintStatus.textContent="Footprint wird read-only geprüft …";footprintLevels.replaceChildren();
