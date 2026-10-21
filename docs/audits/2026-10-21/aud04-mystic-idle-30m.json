@@ -1,0 +1,87 @@
+{
+  "generatedAt": "2026-10-21T03:51:59.256Z",
+  "base": "http://127.0.0.1:8056",
+  "account": "titan",
+  "chartState": {
+    "account": "titan",
+    "stoneTheme": true,
+    "chartVisible": true,
+    "fxModes": [
+      "off",
+      "mystic",
+      "chaos",
+      "ritual"
+    ]
+  },
+  "browser": "141.0.7390.37",
+  "platform": "win32",
+  "os": "10.0.26200",
+  "cpu": "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz",
+  "runtime": {
+    "startupRevision": "6c665007e1859da31a1be0b01ee88ed9338efea4",
+    "diskRevision": "6c665007e1859da31a1be0b01ee88ed9338efea4",
+    "applicationCodeDirty": true
+  },
+  "phases": [
+    {
+      "name": "mystic-idle",
+      "fxMode": "mystic",
+      "durationSeconds": 1800,
+      "celebrationTriggered": false,
+      "frames": {
+        "count": 39952,
+        "fps": 22.195555555555554,
+        "medianMs": 50,
+        "p95Ms": 66.7,
+        "p99Ms": 66.8,
+        "over16_7ms": 39097,
+        "over33_3ms": 35346,
+        "maxMs": 200
+      },
+      "longTasks": {
+        "count": 336,
+        "totalMs": 21117,
+        "maxMs": 319
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "start": 1236,
+          "duration": 0
+        },
+        {
+          "name": "first-contentful-paint",
+          "start": 1236,
+          "duration": 0
+        }
+      ],
+      "layoutShiftCount": 7,
+      "heap": {
+        "samples": 361,
+        "startBytes": 10000000,
+        "endBytes": 12700000,
+        "minBytes": 10000000,
+        "maxBytes": 12700000
+      },
+      "cdpDelta": {
+        "TaskDuration": 222.604,
+        "ScriptDuration": 11.255,
+        "LayoutDuration": 6.814,
+        "RecalcStyleDuration": 35.796,
+        "JSHeapUsedSize": 4152192,
+        "Nodes": 2547,
+        "Documents": -1
+      }
+    }
+  ],
+  "apiRequests": 1620,
+  "apiMethods": [
+    "GET"
+  ],
+  "apiAccounts": [
+    null,
+    "titan"
+  ],
+  "blockedRequests": [],
+  "pageErrors": []
+}

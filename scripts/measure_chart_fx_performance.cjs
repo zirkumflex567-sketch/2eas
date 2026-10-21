@@ -3,15 +3,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { chromium } = require('playwright');
+const { parseConfig } = require('./chart_fx_measure_config.cjs');
 const BASE = 'http://127.0.0.1:8056';
-const ACCOUNT = 'titan';
-const OUT = path.resolve('output/aud04_headless_fx_trace_20261020.json');
-const PHASES = [
-  { name: 'off-idle', mode: 'off' },
-  { name: 'mystic-idle', mode: 'mystic' },
-  { name: 'ritual-idle', mode: 'ritual' },
-  { name: 'mystic-demo-celebration', mode: 'mystic', celebrateAtMs: 120000 },
-];
+const config = parseConfig();
+const { account: ACCOUNT, output: OUT, phases: PHASES, durationSeconds } = config;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const percentile = (values, p) => {
   if (!values.length) return null;
@@ -19,6 +14,11 @@ const percentile = (values, p) => {
   return Number(sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * p))].toFixed(3));
 };
 (async () => {
+  if (process.argv.slice(2).some(arg => arg !== '--print-config')) throw new Error('unknown command-line argument');
+  if (process.argv.includes('--print-config')) {
+    console.log(JSON.stringify(config));
+    return;
+  }
   const browser = await chromium.launch({ headless: true, args: ['--disable-background-timer-throttling'] });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
   const page = await context.newPage();
@@ -63,12 +63,13 @@ const percentile = (values, p) => {
     const start = Date.now();
     const cpuStart = await cdp.send('Performance.getMetrics');
     if (phase.celebrateAtMs) await page.locator('[data-fx-test="profit"]').evaluate(el => el.click());
-    while (Date.now() - start < 300000) {
+    const phaseDurationMs = durationSeconds * 1000;
+    while (Date.now() - start < phaseDurationMs) {
       const elapsed = Date.now() - start;
       if (phase.celebrateAtMs && elapsed < phase.celebrateAtMs && elapsed + 60000 >= phase.celebrateAtMs) {
         await sleep(phase.celebrateAtMs - elapsed);
         await page.locator('[data-fx-test="profit"]').evaluate(el => el.click());
-      } else await sleep(Math.min(60000, 300000 - elapsed));
+      } else await sleep(Math.min(60000, phaseDurationMs - elapsed));
       const snap = await page.evaluate(() => ({ frames:window.__aud04.frames.length, heap:window.__aud04.heap.at(-1)?.used, longTasks:window.__aud04.longTasks.length }));
       console.log(JSON.stringify({ event:'progress', phase:phase.name, elapsedSeconds:Math.round((Date.now()-start)/1000), ...snap }));
     }
@@ -78,14 +79,14 @@ const percentile = (values, p) => {
     const raw = await page.evaluate(() => ({frames:window.__aud04.frames.splice(0), longTasks:window.__aud04.longTasks.splice(0), paints:window.__aud04.paints.splice(0), shifts:window.__aud04.shifts.splice(0), heap:window.__aud04.heap.splice(0)}));
     const intervals = raw.frames;
     const frameStats = {
-      count: intervals.length, fps: intervals.length / 300,
+      count: intervals.length, fps: intervals.length / durationSeconds,
       medianMs: percentile(intervals,.5), p95Ms: percentile(intervals,.95), p99Ms: percentile(intervals,.99),
       over16_7ms: intervals.filter(x=>x>16.7).length, over33_3ms: intervals.filter(x=>x>33.3).length,
       maxMs: intervals.length ? Number(Math.max(...intervals).toFixed(3)) : null,
     };
     const metrics = ['TaskDuration','ScriptDuration','LayoutDuration','RecalcStyleDuration','JSHeapUsedSize','Nodes','Documents'];
     const cdpDelta = Object.fromEntries(metrics.filter(k=>a[k]!==undefined&&b[k]!==undefined).map(k=>[k,Number((b[k]-a[k]).toFixed(3))]));
-    samples.push({ name:phase.name, fxMode:phase.mode, durationSeconds:300, celebrationTriggered:!!phase.celebrateAtMs, frames:frameStats,
+    samples.push({ name:phase.name, fxMode:phase.mode, durationSeconds, celebrationTriggered:!!phase.celebrateAtMs, frames:frameStats,
       longTasks:{count:raw.longTasks.length,totalMs:Number(raw.longTasks.reduce((v,x)=>v+x.duration,0).toFixed(3)),maxMs:raw.longTasks.length?Number(Math.max(...raw.longTasks.map(x=>x.duration)).toFixed(3)):0},
       paints:raw.paints, layoutShiftCount:raw.shifts.length, heap:{samples:raw.heap.length,startBytes:raw.heap[0]?.used??null,endBytes:raw.heap.at(-1)?.used??null,minBytes:raw.heap.filter(x=>x.used!==null).length?Math.min(...raw.heap.filter(x=>x.used!==null).map(x=>x.used)):null,maxBytes:raw.heap.filter(x=>x.used!==null).length?Math.max(...raw.heap.filter(x=>x.used!==null).map(x=>x.used)):null}, cdpDelta });
     console.log(JSON.stringify({ event:'phase_complete', name:phase.name, frames:frameStats, longTasks:samples.at(-1).longTasks, cdpDelta }));
