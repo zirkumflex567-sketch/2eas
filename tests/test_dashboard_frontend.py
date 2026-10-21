@@ -1432,7 +1432,11 @@ class DashboardFrontendTests(unittest.TestCase):
         expect(self.page.locator('#live-bid')).to_have_text('4010.00')
         expect(self.page.locator('#dd-reset-button')).to_be_enabled()
     def test_superseded_candle_request_abort_is_not_logged_as_failure(self):
-        self.load(); logged = []
+        self.load()
+        self.page.wait_for_function('lastCandlePollAt > 0 && !candlesBusy', timeout=15000)
+        # Keep the automatic timer from racing the explicitly controlled abort.
+        self.page.evaluate('candlePollRetryAt=Date.now()+60000')
+        logged = []
         self.page.on('console', lambda message: logged.append(message.text) if message.type == 'error' and '[Cockpit] Kerzen-Ladefehler' in message.text else None)
         self.page.evaluate('''() => {
           const originalFetch=window.fetch;
