@@ -53,10 +53,13 @@ ulong CSQueueOverflowRiskGuardCount=0;
 ulong CSQueueOverflowOrderAttemptCount=0;
 ulong CSQueueOverflowOtherCount=0;
 ulong CSQueueOverflowSequenceApplied=0;
+ulong CSQueueOverflowSequenceQueued=0;
 ulong CSSequence=0;
 bool CSRecorderReady=false;
 bool CSRecorderDisabled=false;
 ulong CSEventCounter=0;
+
+bool CSPersistQueueOverflowCount(const ulong count);
 
 string CSJsonQuote(string value)
   {
@@ -157,7 +160,24 @@ void CSEnqueueEnvelope(const string envelope,const string stage)
    if(CSQueueCount>=CS_QUEUE_CAPACITY)
      {
       if(CSQueueOverflowCount<2147483647)
-         CSQueueOverflowCount++;
+        {
+         ulong next_count=CSQueueOverflowCount+1;
+         if(!CSPersistQueueOverflowCount(next_count))
+           {
+            CSRecorderReady=false;
+            CSRecorderDisabled=true;
+            Print("ChartStudio evidence recorder disabled: queue-loss counter could not be persisted.");
+            return;
+           }
+         CSQueueOverflowCount=next_count;
+        }
+      else
+        {
+         CSRecorderReady=false;
+         CSRecorderDisabled=true;
+         Print("ChartStudio evidence recorder disabled: queue-loss counter limit reached.");
+         return;
+        }
       CSRecordQueueOverflow(stage);
       return;
      }
@@ -277,6 +297,32 @@ string CSSeqPath()
    return CS_SEGMENT_FOLDER+"\\"+CS_EVIDENCE_PRODUCER_ID+".sequence.bin";
   }
 
+string CSQueueOverflowGlobalKey()
+  {
+   string digest=CSHashText(CS_EVIDENCE_ACCOUNT_ID+"|"+CS_EVIDENCE_PRODUCER_ID+"|"+CS_EVIDENCE_TERMINAL_HASH);
+   if(StringLen(digest)!=64)
+      return "";
+   return "CSQO."+StringSubstr(digest,0,58);
+  }
+
+bool CSPersistQueueOverflowCount(const ulong count)
+  {
+   string key=CSQueueOverflowGlobalKey();
+   if(key=="")
+      return false;
+   ResetLastError();
+   if(GlobalVariableSet(key,(double)count)==0)
+     {
+      PrintFormat("ChartStudio evidence recorder queue-loss counter write failed: error=%d",GetLastError());
+      return false;
+     }
+   // Overflow is exceptional; force this one counter to disk now so an EA or
+   // terminal crash before the next timer tick cannot erase the pending gap.
+   GlobalVariablesFlush();
+   double persisted=GlobalVariableGet(key);
+   return persisted==(double)count;
+  }
+
 bool CSPersistSequence()
   {
    string target=CSSeqPath();
@@ -285,8 +331,10 @@ bool CSPersistSequence()
    if(handle==INVALID_HANDLE)
       return false;
    FileWriteLong(handle,(long)CSSequence);
+   FileWriteLong(handle,(long)CSQueueOverflowSequenceApplied);
+   FileWriteLong(handle,(long)CSQueueOverflowCount);
    FileFlush(handle);
-   bool complete=(FileSize(handle)==8);
+   bool complete=(FileSize(handle)==24);
    FileClose(handle);
    if(!complete)
       return false;
@@ -332,23 +380,55 @@ ulong CSFindLatestReady(const string folder)
 
 bool CSRecoverSequence()
   {
+   CSSequence=0;
+   CSQueueOverflowCount=0;
+   CSQueueOverflowSequenceApplied=0;
+   CSQueueOverflowSequenceQueued=0;
    string path=CSSeqPath();
    if(FileIsExist(path,FILE_COMMON))
      {
       int handle=FileOpen(path,FILE_READ|FILE_BIN|FILE_COMMON);
       if(handle==INVALID_HANDLE)
          return false;
-      if(FileSize(handle)!=8)
+      ulong state_size=FileSize(handle);
+      if(state_size!=8 && state_size!=16 && state_size!=24)
         {
          FileClose(handle);
          return false;
         }
       long value=FileReadLong(handle);
+      long applied=0;
+      long overflow=0;
+      if(state_size==16)
+         applied=FileReadLong(handle);
+      else if(state_size==24)
+        {
+         applied=FileReadLong(handle);
+         overflow=FileReadLong(handle);
+        }
       FileClose(handle);
-      if(value<0 || value>2147483647)
+      if(value<0 || value>2147483647 || applied<0 || applied>2147483647 ||
+         overflow<0 || overflow>2147483647)
          return false;
       CSSequence=(ulong)value;
+      CSQueueOverflowSequenceApplied=(ulong)applied;
+      CSQueueOverflowCount=(ulong)overflow;
      }
+   string overflow_key=CSQueueOverflowGlobalKey();
+   if(overflow_key=="")
+      return false;
+   if(GlobalVariableCheck(overflow_key))
+     {
+      double overflow_value=GlobalVariableGet(overflow_key);
+      if(!MathIsValidNumber(overflow_value) || overflow_value<0 || overflow_value>2147483647 ||
+         MathFloor(overflow_value)!=overflow_value)
+         return false;
+      if(overflow_value>(double)CSQueueOverflowCount)
+         CSQueueOverflowCount=(ulong)overflow_value;
+     }
+   if(CSQueueOverflowSequenceApplied>CSQueueOverflowCount)
+      return false;
+   CSQueueOverflowSequenceQueued=CSQueueOverflowSequenceApplied;
    ulong latest=CSFindLatestReady(CS_SEGMENT_FOLDER+"\\");
    ulong archived=CSFindLatestReady(CS_SEGMENT_FOLDER+"\\archive\\");
    if(archived>latest)
@@ -446,14 +526,14 @@ void CSQueuePendingOverflowGapMarker()
   {
 #ifdef CS_EVIDENCE_CAPTURE_ENABLED
    if(!CSRecorderReady || CSRecorderDisabled ||
-      CSQueueOverflowCount<=CSQueueOverflowSequenceApplied || CSQueueCount>=CS_QUEUE_CAPACITY)
+      CSQueueOverflowCount<=CSQueueOverflowSequenceQueued || CSQueueCount>=CS_QUEUE_CAPACITY)
       return;
    int gapSlot=(CSQueueHead+CSQueueCount)%CS_QUEUE_CAPACITY;
    CSQueue[gapSlot]="";
    CSQueueIsGap[gapSlot]=true;
-   CSQueueGapCounts[gapSlot]=CSQueueOverflowCount-CSQueueOverflowSequenceApplied;
+   CSQueueGapCounts[gapSlot]=CSQueueOverflowCount-CSQueueOverflowSequenceQueued;
    CSQueueCount++;
-   CSQueueOverflowSequenceApplied=CSQueueOverflowCount;
+   CSQueueOverflowSequenceQueued=CSQueueOverflowCount;
 #endif
   }
 
@@ -464,17 +544,20 @@ bool CSApplyQueueGapMarker(const int slot)
       !CSQueueIsGap[slot] || CSQueueGapCounts[slot]==0)
       return false;
    ulong pending=CSQueueGapCounts[slot];
-   if(pending>2147483647-CSSequence)
+   if(pending>2147483647-CSSequence || pending>2147483647-CSQueueOverflowSequenceApplied)
      {
       CSRecorderDisabled=true;
       Print("ChartStudio evidence recorder disabled: queue-loss sequence limit reached.");
       return false;
      }
    ulong previous=CSSequence;
+   ulong previous_applied=CSQueueOverflowSequenceApplied;
    CSSequence+=pending;
+   CSQueueOverflowSequenceApplied+=pending;
    if(!CSPersistSequence())
      {
       CSSequence=previous;
+      CSQueueOverflowSequenceApplied=previous_applied;
       CSRecorderDisabled=true;
       Print("ChartStudio evidence recorder disabled: queue-loss sequence persistence failed.");
       return false;

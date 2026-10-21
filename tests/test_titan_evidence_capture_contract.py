@@ -10,7 +10,7 @@ SPOOL = ROOT / "ChartStudioEvidenceSpool.mqh"
 
 
 def _function(source: str, name: str) -> str:
-    match = re.search(rf"\b{name}\s*\([^;]*?\)\s*\{{", source)
+    match = re.search(rf"(?m)^[A-Za-z_][\w\s*&<>]*\b{name}\s*\([^;]*?\)\s*\{{", source)
     assert match, f"missing {name}"
     start = match.end() - 1
     depth = 0
@@ -109,10 +109,10 @@ def test_queue_overflow_is_inserted_in_fifo_before_later_events_and_persisted_by
     assert flush.index("if(CSQueueIsGap[CSQueueHead])") < flush.index("string envelope=CSQueue[CSQueueHead];")
     assert "CSApplyQueueGapMarker(CSQueueHead)" in flush
     assert "CSQueueIsGap[CSQueueHead]=false;" in flush
-    assert "CSQueueOverflowCount<=CSQueueOverflowSequenceApplied" in queue_gap
+    assert "CSQueueOverflowCount<=CSQueueOverflowSequenceQueued" in queue_gap
     assert "int gapSlot=(CSQueueHead+CSQueueCount)%CS_QUEUE_CAPACITY;" in queue_gap
     assert "CSQueueIsGap[gapSlot]=true;" in queue_gap
-    assert "CSQueueOverflowSequenceApplied=CSQueueOverflowCount;" in queue_gap
+    assert "CSQueueOverflowSequenceQueued=CSQueueOverflowCount;" in queue_gap
     assert not re.search(r"\b(FileOpen|FileWrite|FileWriteString|FileFlush|FileMove)\s*\(", queue_gap)
     assert "CSQueuePendingOverflowGapMarker();" in flush
     failed_write = flush[flush.index("if(!CSWriteReadySegment(line,next))"):]
@@ -122,6 +122,36 @@ def test_queue_overflow_is_inserted_in_fifo_before_later_events_and_persisted_by
     assert "CSSequence+=pending;" in apply_gap
     assert "if(!CSPersistSequence())" in apply_gap
     assert "CSRecorderDisabled=true;" in apply_gap
+
+
+def test_queue_overflow_count_survives_restart_and_gap_apply_is_exactly_once():
+    spool = SPOOL.read_text(encoding="utf-8-sig")
+    enqueue = _function(spool, "CSEnqueueEnvelope")
+    persist_overflow = _function(spool, "CSPersistQueueOverflowCount")
+    recover = _function(spool, "CSRecoverSequence")
+    persist_sequence = _function(spool, "CSPersistSequence")
+    apply_gap = _function(spool, "CSApplyQueueGapMarker")
+    queue_gap = _function(spool, "CSQueuePendingOverflowGapMarker")
+
+    assert "ulong CSQueueOverflowSequenceQueued=0;" in spool
+    assert "ulong next_count=CSQueueOverflowCount+1;" in enqueue
+    assert "if(!CSPersistQueueOverflowCount(next_count))" in enqueue
+    assert enqueue.index("if(!CSPersistQueueOverflowCount(next_count))") < enqueue.index("CSQueueOverflowCount=next_count;")
+    assert "GlobalVariableSet(" in persist_overflow
+    assert "GlobalVariablesFlush();" in persist_overflow
+    assert len(re.findall(r"CS_EVIDENCE_(?:ACCOUNT_ID|PRODUCER_ID|TERMINAL_HASH)", _function(spool, "CSQueueOverflowGlobalKey"))) == 3
+    assert "GlobalVariableGet(" in recover
+    assert "CSQueueOverflowSequenceApplied" in recover
+    assert "CSQueueOverflowSequenceQueued=CSQueueOverflowSequenceApplied;" in recover
+    assert "FileWriteLong(handle,(long)CSQueueOverflowSequenceApplied);" in persist_sequence
+    assert "FileWriteLong(handle,(long)CSQueueOverflowCount);" in persist_sequence
+    assert "FileSize(handle)==24" in persist_sequence
+    assert re.search(r"state_size\s*!=\s*8\s*&&\s*state_size\s*!=\s*16\s*&&\s*state_size\s*!=\s*24", recover)
+    assert "overflow_value>(double)CSQueueOverflowCount" in recover
+    assert "CSQueueOverflowSequenceQueued" in queue_gap
+    assert "CSQueueOverflowSequenceQueued=CSQueueOverflowCount;" in queue_gap
+    assert apply_gap.index("CSQueueOverflowSequenceApplied+=pending;") < apply_gap.index("if(!CSPersistSequence())")
+    assert "CSQueueOverflowSequenceApplied=previous_applied;" in apply_gap
 
 
 def test_failed_segment_write_removes_its_unimportable_temporary_file():
