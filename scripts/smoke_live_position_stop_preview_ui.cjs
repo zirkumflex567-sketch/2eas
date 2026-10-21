@@ -2,8 +2,16 @@
 
 const assert = require("node:assert/strict");
 const { chromium } = require("playwright");
+const { classifyLiveDemoRequest } = require("./live_demo_scope_guard.cjs");
 
 const base = (process.env.CHART_STUDIO_BASE_URL || "http://127.0.0.1:8056").replace(/\/+$/, "");
+const baseUrl = new URL(base);
+assert.equal(baseUrl.protocol, "http:");
+assert.ok(["127.0.0.1", "localhost", "::1"].includes(baseUrl.hostname));
+assert.ok([8050, 8056].includes(Number(baseUrl.port)));
+const basePath = baseUrl.pathname.replace(/\/$/, "");
+const allowedAccounts = Object.freeze(["titan", "xau5m_m5", "titan_m5", "xau5m_500", "goldm15"]);
+const demoSymbols = { titan: "XAUUSD", xau5m_m5: "XAUUSD.p", titan_m5: "XAUUSD.p", xau5m_500: "XAUUSD.p", goldm15: "XAUUSD" };
 const accounts = Object.freeze([
   ["xau5m_m5", "XAUUSD.p"],
   ["titan_m5", "XAUUSD.p"],
@@ -12,6 +20,26 @@ const accounts = Object.freeze([
   ["goldm15", "XAUUSD"],
 ]);
 const previewPath = "/api/chart/v1/position/preview-stop";
+
+function classifyRequest(request, url) {
+  const scopedUrl = new URL(url);
+  if (request.method() === "POST" && scopedUrl.pathname === `${basePath}${previewPath}`) {
+    try {
+      const payloadAccount = request.postDataJSON()?.account;
+      if (typeof payloadAccount === "string" && allowedAccounts.includes(payloadAccount)) {
+        return { allowed: true, kind: "demo_preview", account: payloadAccount };
+      }
+    } catch (_) {}
+    return { allowed: false, reason: "account_scope" };
+  }
+  if (!scopedUrl.searchParams.has("account") && request.method() !== "GET") {
+    try {
+      const payloadAccount = request.postDataJSON()?.account;
+      if (typeof payloadAccount === "string") scopedUrl.searchParams.set("account", payloadAccount);
+    } catch (_) {}
+  }
+  return classifyLiveDemoRequest({ url: scopedUrl, method: request.method(), basePath, allowedAccounts });
+}
 
 async function get(path) {
   const response = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(15000), cache: "no-store" });
@@ -42,21 +70,54 @@ async function positionWithStop(account, symbol) {
   const browser = await chromium.launch({ headless: true });
   const results = [];
   const violations = [];
+  const apiRequests = [];
+  const blockedApiRequests = [];
+  const failedApiRequests = [];
   let completed = false;
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1800 } });
     const previews = [];
     page.on("pageerror", error => violations.push(`pageerror: ${error.message}`));
+    page.on("requestfailed", request => {
+      const url = new URL(request.url());
+      if (url.origin === baseUrl.origin && url.pathname.startsWith(`${basePath}/api/`)) {
+        failedApiRequests.push({ path: url.pathname, method: request.method(), error: request.failure()?.errorText || "unknown" });
+      }
+    });
     page.on("request", request => {
       const url = new URL(request.url());
-      if (!url.pathname.startsWith("/api/")) return;
-      const account = url.searchParams.get("account") || (() => {
-        try { return JSON.parse(request.postData() || "{}").account; } catch (_) { return null; }
+      if (url.origin !== baseUrl.origin || !url.pathname.startsWith(`${basePath}/api/`)) return;
+      const account = url.searchParams.get("account") ?? (() => {
+        try { return JSON.parse(request.postData() || "{}").account ?? null; } catch (_) { return null; }
       })();
-      if (account === "blueberry") violations.push("protected account was queried");
+      const scope = classifyRequest(request, url);
+      apiRequests.push({ path: url.pathname, method: request.method(), account, scope: scope.kind || scope.reason });
+      if (!scope.allowed) violations.push(`out-of-scope API request: ${request.method()} ${url.pathname} (${scope.reason})`);
       if (request.method() !== "GET" && url.pathname !== previewPath) {
         violations.push(`unexpected non-preview API method ${request.method()} ${url.pathname}`);
       }
+    });
+    await page.route("**/*", async route => {
+      const url = new URL(route.request().url());
+      if (url.origin !== baseUrl.origin) return route.continue();
+      const scope = classifyRequest(route.request(), url);
+      if (!scope.allowed) {
+        blockedApiRequests.push({ path: url.pathname, method: route.request().method(), reason: scope.reason });
+        return route.abort("blockedbyclient");
+      }
+      if (scope.kind === "global_read" && scope.endpoint === "/api/accounts") {
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+          default: accounts[0][0],
+          accounts: allowedAccounts.map(id => ({ id, name: id, login: "Demo", server: "Demo", symbol: demoSymbols[id], timeframe: "M15", is_demo: true, challenge_protection: false, capacity: 3 })),
+        }) });
+      }
+      if (scope.kind === "global_read" && scope.endpoint === "/api/chart/v1/capabilities") {
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+          accountScopes: allowedAccounts, symbols: ["XAUUSD", "XAUUSD.p"],
+          timeframes: ["M1", "M5", "M15", "M30", "H1", "H4", "D1"], features: { encryptedDeviceSync: false },
+        }) });
+      }
+      return route.continue();
     });
     page.on("response", response => {
       if (new URL(response.url()).pathname !== previewPath) return;
@@ -142,8 +203,12 @@ async function positionWithStop(account, symbol) {
 
       const previewRequest = page.waitForRequest(request => new URL(request.url()).pathname === previewPath);
       const previewResponse = page.waitForResponse(response => new URL(response.url()).pathname === previewPath);
-      await page.locator("#cs-position-stop-draft button[type='submit']").click();
-      const [request, response] = await Promise.all([previewRequest, previewResponse]);
+      const submit = page.locator("#cs-position-stop-draft button[type='submit']");
+      assert.equal(await submit.isEnabled(), true, `preview submit must be enabled: ${await page.locator("#cs-position-stop-draft-status").textContent()}`);
+      await submit.click();
+      let request, response;
+      try { [request, response] = await Promise.all([previewRequest, previewResponse]); }
+      catch (error) { throw new Error(`${error.message}; API=${JSON.stringify(apiRequests)}; blocked=${JSON.stringify(blockedApiRequests)}; failed=${JSON.stringify(failedApiRequests)}`); }
       const payload = request.postDataJSON();
       const preview = await response.json();
       assert.equal(payload.account, account);
@@ -183,9 +248,16 @@ async function positionWithStop(account, symbol) {
     }
 
     assert.equal(violations.length, 0, violations.join("; "));
+    assert.equal(blockedApiRequests.length, 0, "the live UI flow must not attempt out-of-scope API requests");
+    const invalidApiRequests = apiRequests.filter(item =>
+      (item.account == null || allowedAccounts.includes(item.account)) &&
+      (item.method === "GET" || item.path === previewPath && item.method === "POST"));
+    assert.ok(apiRequests.length > 0 && invalidApiRequests.length === apiRequests.length,
+      `unexpected API scope or method: ${JSON.stringify(apiRequests.filter(item => !invalidApiRequests.includes(item)))}`);
     assert.equal(completed, true, "No authorized demo position with an existing stop was available for UI acceptance");
     assert.ok(previews.length >= 1);
-    console.log(JSON.stringify({ results, readOnlyPreviewPosts: previews.length, positionMutations: 0, ordersSent: 0, protectedAccountQueried: false }, null, 2));
+    console.log(JSON.stringify({ results, readOnlyPreviewPosts: previews.length, apiRequests: apiRequests.length,
+      blockedApiRequests: blockedApiRequests.length, positionMutations: 0, ordersSent: 0, blueberryQueried: false }, null, 2));
   } finally {
     await browser.close();
   }
