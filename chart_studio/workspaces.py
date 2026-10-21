@@ -17,7 +17,7 @@ from typing import Any
 
 ACCOUNTS = frozenset({"titan", "goldm15"})
 SYMBOL_RE = re.compile(r"^[A-Z0-9._-]{1,32}$")
-DRAWING_TYPES = frozenset({"horizontal", "vertical", "text", "trend", "rect", "fib", "ray", "ruler", "channel"})
+DRAWING_TYPES = frozenset({"horizontal", "vertical", "text", "trend", "rect", "ellipse", "fib", "ray", "ruler", "channel"})
 UI_FLAGS = frozenset({"ema20", "ema50", "ema200", "sma20", "sma50",
                       "bb", "positions"})
 UI_NUMBERS = frozenset({"bbPeriod", "bbStdDev"})
@@ -119,6 +119,11 @@ def validate_document(raw: Any) -> dict:
             if stamp <= 0 or stamp > 7258118400 or price <= 0 or price > 1e15:
                 raise StoreError("Ungültiger Zeitpunkt oder Preis.")
             safe_anchors.append({"time": stamp, "price": price})
+        if kind == "ellipse" and (
+            safe_anchors[0]["time"] == safe_anchors[1]["time"] or
+            safe_anchors[0]["price"] == safe_anchors[1]["price"]
+        ):
+            raise StoreError("Ellipse benötigt zwei unterschiedliche Zeit- und Preisanker.")
         normalized = {"kind": kind, "anchors": safe_anchors}
         if "levels" in drawing:
             if kind != "fib":

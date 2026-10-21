@@ -213,6 +213,9 @@ class SqliteLayoutTests(unittest.TestCase):
     def test_advanced_drawing_shapes_and_revisions(self):
         base = example()
         base["drawings"] = [
+            {"kind": "ellipse", "anchors": [
+                {"time": 1700000000, "price": 4100},
+                {"time": 1700000900, "price": 4120}]},
             {"kind": "ray", "anchors": [
                 {"time": 1700000000, "price": 4100},
                 {"time": 1700000900, "price": 4120}]},
@@ -228,8 +231,11 @@ class SqliteLayoutTests(unittest.TestCase):
         self.assertEqual(saved["revision"], 1)
         self.assertEqual(self.store.get("local-owner", "titan", "XAUUSD", "Advanced")["document"], base)
         for broken in [
-            {"kind": "channel", "anchors": base["drawings"][2]["anchors"][:2]},
-            {"kind": "ruler", "anchors": base["drawings"][2]["anchors"]},
+            {"kind": "ellipse", "anchors": base["drawings"][0]["anchors"][:1]},
+            {"kind": "ellipse", "anchors": [base["drawings"][0]["anchors"][0], {**base["drawings"][0]["anchors"][1], "price": base["drawings"][0]["anchors"][0]["price"]}]},
+            {"kind": "ellipse", "anchors": [base["drawings"][0]["anchors"][0], {**base["drawings"][0]["anchors"][1], "time": base["drawings"][0]["anchors"][0]["time"]}]},
+            {"kind": "channel", "anchors": base["drawings"][3]["anchors"][:2]},
+            {"kind": "ruler", "anchors": base["drawings"][3]["anchors"]},
             {"kind": "ray", "anchors": [{"time": 1, "price": float("inf")}, {"time": 2, "price": 2}]},
         ]:
             with self.subTest(broken=broken["kind"]), self.assertRaises(StoreError):

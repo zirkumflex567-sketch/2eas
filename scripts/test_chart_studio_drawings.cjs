@@ -8,6 +8,7 @@ assert.equal(g.expected("vertical"),1);
 assert.equal(g.expected("text"),1);
 assert.equal(g.expected("channel"),3);
 assert.equal(g.expected("ruler"),2);
+assert.equal(g.expected("ellipse"),2);
 assert.equal(g.expected("fibfan"),2);
 assert.equal(g.expected("fibtime"),2);
 assert.equal(g.expected("fibtrend"),3);
@@ -15,6 +16,9 @@ assert.equal(g.expected("__proto__"),0);
 const a={time:1700000000,price:4100},b={time:1700000900,price:4120},c={time:1700001800,price:4160};
 for(const kind of ["trend","rect","fib","fibfan","fibtime","ray","ruler"])
  assert.equal(g.validDrawing({kind,anchors:[a,b]}),true);
+assert.equal(g.validDrawing({kind:"ellipse",anchors:[a,b]}),true);
+assert.equal(g.validDrawing({kind:"ellipse",anchors:[a,{...b,price:a.price}]}),false);
+assert.equal(g.validDrawing({kind:"ellipse",anchors:[a,{...a,price:a.price+10}]}),false);
 assert.equal(g.validDrawing({kind:"fibtrend",anchors:[a,b,c]}),true);
 assert.equal(g.validDrawing({kind:"channel",anchors:[a,b,c]}),true);
 assert.equal(g.validDrawing({kind:"fibtime",anchors:[a,{...a,price:a.price+1}]}),false);

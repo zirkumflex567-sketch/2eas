@@ -3,7 +3,7 @@
  */
 (()=>{
 "use strict";
-const COUNTS=Object.freeze({horizontal:1,vertical:1,text:1,trend:2,rect:2,fib:2,fibfan:2,fibtime:2,fibtrend:3,ray:2,ruler:2,channel:3});
+const COUNTS=Object.freeze({horizontal:1,vertical:1,text:1,trend:2,rect:2,ellipse:2,fib:2,fibfan:2,fibtime:2,fibtrend:3,ray:2,ruler:2,channel:3});
 function expected(kind){return Object.hasOwn(COUNTS,kind)?COUNTS[kind]:0}
 function validPoint(p){
  return !!p&&Number.isInteger(p.time)&&p.time>0&&p.time<=7258118400&&
@@ -13,6 +13,7 @@ function validDrawing(o){
  return !!o&&typeof o.kind==="string"&&expected(o.kind)>0&&
  Array.isArray(o.anchors)&&o.anchors.length===expected(o.kind)&&
  o.anchors.every(validPoint)&&!(o.kind==="fibtime"&&o.anchors[0].time===o.anchors[1].time)&&
+ !(o.kind==="ellipse"&&(o.anchors[0].time===o.anchors[1].time||o.anchors[0].price===o.anchors[1].price))&&
  !(o.kind==="fibtrend"&&new Set(o.anchors.map(anchor=>anchor.time)).size!==3);
 }
 function clipRay(a,b,limit){

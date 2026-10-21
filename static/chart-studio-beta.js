@@ -3,8 +3,8 @@
    No broker write calls or chart trading mutations in this module. */
 (()=>{
 "use strict";
-const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","vertical","text","trend","rect","fib","fibfan","fibtime","fibtrend","ray","ruler","channel","plan","position-draft","ticket-price"];
-const preferenceTools=["cursor","edit","horizontal","vertical","text","trend","rect","ray","channel","fib","fibfan","fibtime","fibtrend","ruler"];
+const prefix="2eas:studio:beta:", kinds=["cursor","edit","horizontal","vertical","text","trend","rect","ellipse","fib","fibfan","fibtime","fibtrend","ray","ruler","channel","plan","position-draft","ticket-price"];
+const preferenceTools=["cursor","edit","horizontal","vertical","text","trend","rect","ellipse","ray","channel","fib","fibfan","fibtime","fibtrend","ruler"];
 const defaultShortcuts=Object.freeze({cursor:"v",edit:"e",horizontal:"h",vertical:"",text:"",trend:"t",rect:"r",ray:"",channel:"c",fib:"f",fibtrend:"q",ruler:"m"});
 function normalizeFavorites(raw){
  if(!Array.isArray(raw))return [];
@@ -1112,6 +1112,10 @@ function drawObject(ctx,o,d){
  if(o.kind==="text"){ctx.fillStyle=o.selected?"#ffe3a5":o.locked?"#aab8bf":"#f3f7fa";ctx.font="12px sans-serif";ctx.textBaseline="bottom";ctx.fillText(o.label,a.x+5,a.y-5,260)}
  if(b&&o.kind==="trend"){ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
  if(b&&o.kind==="rect"){ctx.fillRect(a.x,a.y,b.x-a.x,b.y-a.y);ctx.strokeRect(a.x,a.y,b.x-a.x,b.y-a.y)}
+ if(b&&o.kind==="ellipse"){
+  const rx=Math.abs(b.x-a.x)/2,ry=Math.abs(b.y-a.y)/2;
+  if(rx>0&&ry>0){ctx.beginPath();ctx.ellipse((a.x+b.x)/2,(a.y+b.y)/2,rx,ry,0,0,Math.PI*2);ctx.fill();ctx.stroke()}
+ }
  if(b&&o.kind==="fib"){for(const k of (o.levels||ratios)){const y=a.y+(b.y-a.y)*k;ctx.strokeStyle=k===.618?"#f7c874":"#8da8f9";
  ctx.beginPath();ctx.moveTo(Math.min(a.x,b.x),y);ctx.lineTo(d.w-2,y);ctx.stroke();ctx.fillStyle="#f7f8ff";ctx.font="11px monospace";ctx.fillText((k*100).toLocaleString("de-DE",{maximumFractionDigits:2})+"%",Math.max(3,d.w-64),y-3)}}
  if(b&&o.kind==="fibfan"){
@@ -1349,6 +1353,10 @@ function pointerdown(e){
   if(s.tool==="fibtime"&&s.pending[0].time===p.time){updateMessage("Fibonacci-Zeitzonen brauchen zwei verschiedene Kerzen.");requestDraw();e.preventDefault();return}
   if(s.tool==="fibtrend"&&s.pending.some(anchor=>anchor.time===p.time)){updateMessage("Trend-Based-Fibonacci braucht drei verschiedene Kerzen.");requestDraw();e.preventDefault();return}
   s.pending.push(p);
+  if(s.tool==="ellipse"&&s.pending.length>=2&&
+   (s.pending[0].time===s.pending[1].time||s.pending[0].price===s.pending[1].price)){
+   s.begin=null;s.pending=[];s.preview=null;updateMessage("Ellipse braucht zwei verschiedene Zeit- und Preisanker.");requestDraw();e.preventDefault();return;
+  }
   if(s.pending.length>=required){
    if(!canAddLocalDrawing()){s.begin=null;s.pending=[];s.preview=null;requestDraw();return}
    snapshot();s.draw.push({kind:s.tool,anchors:s.pending.map(point=>({...point})),
@@ -1597,7 +1605,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  maQuick.append(maOpen,maPeriod,maAdd,maHint);
  toggle.insertAdjacentElement("afterend",maQuick);
  const panel=document.createElement("section");panel.id="cs-beta-panel";panel.className="cs-beta-panel";panel.hidden=true;
- const toolLabels=[["cursor","Navigation"],["edit","Griffe bearbeiten"],["horizontal","Preislinie"],["vertical","Zeitlinie"],["text","Text"],["trend","Trendlinie"],["ray","Strahl"],["rect","Zone"],["channel","Parallelkanal"],["fib","Fibonacci"],["fibfan","Fibonacci-Fächer"],["fibtime","Fibonacci-Zeitzonen"],["fibtrend","Trend-Based-Fibonacci"],["ruler","Preis-/Zeitmessung"]];
+ const toolLabels=[["cursor","Navigation"],["edit","Griffe bearbeiten"],["horizontal","Preislinie"],["vertical","Zeitlinie"],["text","Text"],["trend","Trendlinie"],["ray","Strahl"],["rect","Zone"],["ellipse","Ellipse"],["channel","Parallelkanal"],["fib","Fibonacci"],["fibfan","Fibonacci-Fächer"],["fibtime","Fibonacci-Zeitzonen"],["fibtrend","Trend-Based-Fibonacci"],["ruler","Preis-/Zeitmessung"]];
  const optLabels=[["ema20","EMA20"],["ema50","EMA50"],["ema200","EMA200"],["sma20","SMA20"],["sma50","SMA50"],["bb","Bollinger20"],["positions","Positionen & SL/TP"]];
  panel.innerHTML=
   '<div class="cs-beta-head"><strong>CHART STUDIO · EXPERIMENTELL</strong><span>Keine Handelsausführung</span></div>'+
