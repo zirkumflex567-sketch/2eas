@@ -51,7 +51,7 @@ Each package below follows these steps. The package plan supplies exact files, t
 - [ ] Add revision-bound mouse/touch SL/TP draft overlays and validate EA guard state. Keep all drafts and What-if plans free of MT5 writes.
 - [ ] Complete Long/Short lots, margin, fees/FX assumptions, guard/DD distance, A/B save/export and broker-calculated profit/margin, including non-USD accounts and unavailable data.
 - [ ] Complete the extended position planner with portfolio exposure and correlation scenarios. Use only verified position, price and currency inputs; mark unavailable correlation/history data explicitly.
-- [ ] Exercise all five authorized non-Blueberry demo feeds (`titan`, `xau5m_m5`, `titan_m5`, `xau5m_500`, `goldm15`) and rapid account/symbol/TF changes with no cross-account leakage.
+- [x] Exercise all five authorized non-Blueberry demo feeds and rapid scope changes. Live `scripts/smoke_live_whatif_demos.cjs` on `a1a6917` returned verified M15 candles, fresh quotes, portfolio/read-risk data and ten read-only broker scenarios across all five aliases; the live account-race acceptance separately verified stale-response isolation. Both runs were read-only at the broker and excluded Blueberry. Hardware and remaining broker-model acceptance stay open.
 
 ### 3. Native v5 chart, layouts and drawing parity (P0)
 
