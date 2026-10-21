@@ -59,8 +59,6 @@ bool CSRecorderReady=false;
 bool CSRecorderDisabled=false;
 ulong CSEventCounter=0;
 
-bool CSPersistQueueOverflowCount(const ulong count);
-
 string CSJsonQuote(string value)
   {
    StringReplace(value,"\\","\\\\");
@@ -161,15 +159,9 @@ void CSEnqueueEnvelope(const string envelope,const string stage)
      {
       if(CSQueueOverflowCount<2147483647)
         {
-         ulong next_count=CSQueueOverflowCount+1;
-         if(!CSPersistQueueOverflowCount(next_count))
-           {
-            CSRecorderReady=false;
-            CSRecorderDisabled=true;
-            Print("ChartStudio evidence recorder disabled: queue-loss counter could not be persisted.");
-            return;
-           }
-         CSQueueOverflowCount=next_count;
+         // Keep this callback path memory-only. The timer later converts the
+         // accumulated count into a durable sequence gap marker.
+         CSQueueOverflowCount++;
         }
       else
         {
@@ -297,32 +289,6 @@ string CSSeqPath()
    return CS_SEGMENT_FOLDER+"\\"+CS_EVIDENCE_PRODUCER_ID+".sequence.bin";
   }
 
-string CSQueueOverflowGlobalKey()
-  {
-   string digest=CSHashText(CS_EVIDENCE_ACCOUNT_ID+"|"+CS_EVIDENCE_PRODUCER_ID+"|"+CS_EVIDENCE_TERMINAL_HASH);
-   if(StringLen(digest)!=64)
-      return "";
-   return "CSQO."+StringSubstr(digest,0,58);
-  }
-
-bool CSPersistQueueOverflowCount(const ulong count)
-  {
-   string key=CSQueueOverflowGlobalKey();
-   if(key=="")
-      return false;
-   ResetLastError();
-   if(GlobalVariableSet(key,(double)count)==0)
-     {
-      PrintFormat("ChartStudio evidence recorder queue-loss counter write failed: error=%d",GetLastError());
-      return false;
-     }
-   // Overflow is exceptional; force this one counter to disk now so an EA or
-   // terminal crash before the next timer tick cannot erase the pending gap.
-   GlobalVariablesFlush();
-   double persisted=GlobalVariableGet(key);
-   return persisted==(double)count;
-  }
-
 bool CSPersistSequence()
   {
    string target=CSSeqPath();
@@ -413,18 +379,6 @@ bool CSRecoverSequence()
       CSSequence=(ulong)value;
       CSQueueOverflowSequenceApplied=(ulong)applied;
       CSQueueOverflowCount=(ulong)overflow;
-     }
-   string overflow_key=CSQueueOverflowGlobalKey();
-   if(overflow_key=="")
-      return false;
-   if(GlobalVariableCheck(overflow_key))
-     {
-      double overflow_value=GlobalVariableGet(overflow_key);
-      if(!MathIsValidNumber(overflow_value) || overflow_value<0 || overflow_value>2147483647 ||
-         MathFloor(overflow_value)!=overflow_value)
-         return false;
-      if(overflow_value>(double)CSQueueOverflowCount)
-         CSQueueOverflowCount=(ulong)overflow_value;
      }
    if(CSQueueOverflowSequenceApplied>CSQueueOverflowCount)
       return false;

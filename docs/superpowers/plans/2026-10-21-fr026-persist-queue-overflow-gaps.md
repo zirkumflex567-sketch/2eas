@@ -28,4 +28,9 @@ Ensure Titan recorder events dropped by the bounded in-memory queue become visib
 
 ## Status
 
-- [ ] Focused regression suite, isolated compiles, final review, CI, and release evidence.
+- [x] RED/GREEN source-contract regression: overflow is counted in memory only; enqueue/callback code performs no file or terminal-global-variable I/O.
+- [x] Timer flush inserts the cumulative overflow delta as an ordered FIFO marker and persists the sequence skip before removing it; sequence-limit and persistence failures disable capture fail-closed. Shutdown has one extra bounded batch for the marker.
+- [x] Focused regression suites: **108 passed** across Titan/GoldM15 builders, spool contracts/importer, and spool service. The shared helper pin in the isolated GoldM15 builder was updated to the reviewed helper digest after its existing build-package regression caught the mismatch.
+- [x] Fresh isolated MetaEditor builds: Titan RecordOnly `xau5m_m5` and `titan_m5`, plus GoldM15 normal and RecordOnly, all **0 errors / 0 warnings**. Manifests match the current helper/source and alias-bound presets. Artifacts remain under ignored `output/`; no MT5 installation was changed.
+- [x] Source review confirmed no terminal global-variable persistence remains in the helper and callback paths only enqueue/count in memory. The documented loss boundary is retained: a crash before the next timer persists the marker can lose that still-pending overflow delta.
+- [ ] Commit/push, Main CI, and release evidence. Keep live EA attach, imported DecisionEvent, hardware, order-write, and backtest gates separate.
