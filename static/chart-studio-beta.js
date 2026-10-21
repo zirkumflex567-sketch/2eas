@@ -394,6 +394,12 @@ function drawEvidenceSnapshot(canvas,bars){
  ctx.fillStyle="#a9c5ce";ctx.textAlign="left";ctx.fillText(bars[0].timeUtc.replace("T"," ").replace(".000000Z"," UTC"),left,height-12);
  ctx.textAlign="right";ctx.fillText(bars[bars.length-1].timeUtc.replace("T"," ").replace(".000000Z"," UTC"),width-right,height-12);
 }
+function snapshotDecisionLinkStatus(payload){
+ const refs=payload?.decisionEventIds;
+ if(!Array.isArray(refs))return "Decision-Verknüpfung nicht gespeichert · historischer Zusammenhang unbekannt.";
+ if(refs.length===0)return "Keine exakt verknüpfte Strategieentscheidung im Snapshot gespeichert · EA-Signalgründe für diesen Trade sind unbekannt.";
+ return refs.length+" exakt verknüpfte Strategieentscheidung"+(refs.length===1?"":"en")+" im Snapshot gespeichert.";
+}
 function renderEvidence(){
  if(!s?.panel)return;const state=s.evidence,list=s.panel.querySelector("#cs-evidence-list"),status=s.panel.querySelector("#cs-evidence-status"),more=s.panel.querySelector("#cs-evidence-more");
  if(!list||!status||!more)return;list.replaceChildren();
@@ -408,10 +414,12 @@ function renderEvidence(){
   const p=record.payload||{},type=record.type||"UNKNOWN";let label;
   if(type==="DECISION")label=["DECISION",p.stage,p.outcome,p.symbol,p.timeframe,p.decisionTimeUtc,p.strategyId].filter(Boolean).join(" · ");
   else if(type==="LIFECYCLE")label=["LIFECYCLE",p.eventType,p.dealEntry&&("Deal "+p.dealEntry),p.dealSide,p.positionIdentifier&&("Position "+p.positionIdentifier),p.asOfUtc,p.price&&("@ "+p.price),p.volume&&("Vol "+p.volume),p.source,p.dataQuality].filter(Boolean).join(" · ");
-  else if(type==="SNAPSHOT")label=["SNAPSHOT",p.captureType,p.positionIdentifier,p.asOfUtc,p.renderStatus,p.marketData?.bars?.length&&(""+p.marketData.bars.length+" MT5-Kerzen")].filter(Boolean).join(" · ");
+  else if(type==="SNAPSHOT")label=["SNAPSHOT",p.captureType,p.positionIdentifier,p.asOfUtc,p.renderStatus,p.marketData?.bars?.length&&(""+p.marketData.bars.length+" MT5-Kerzen"),snapshotDecisionLinkStatus(p)].filter(Boolean).join(" · ");
   else label=type+" · "+record.id;
   const li=document.createElement("li"),details=document.createElement("details"),summary=document.createElement("summary"),pre=document.createElement("pre");
   summary.textContent=label;pre.textContent=JSON.stringify(record,null,2);
+  const decisionLinkStatus=type==="SNAPSHOT"?document.createElement("p"):null;
+  if(decisionLinkStatus){decisionLinkStatus.className="cs-evidence-decision-link";decisionLinkStatus.setAttribute("role","status");decisionLinkStatus.textContent=snapshotDecisionLinkStatus(p)}
   if(type==="SNAPSHOT"&&Array.isArray(p.marketData?.bars)&&p.marketData.bars.length){
    const caption=document.createElement("p");caption.className="cs-evidence-chart-caption";caption.textContent=p.marketData.source+" · "+p.chartView.timeframe+" · gespeicherte OHLC bis "+p.asOfUtc+" · historische Indikatoren/Zeichnungen nicht aufgezeichnet.";
    const canvas=document.createElement("canvas");canvas.className="cs-evidence-chart";canvas.setAttribute("role","img");canvas.setAttribute("aria-label","Historischer Candlestick-Snapshot "+p.chartView.symbol+" "+p.chartView.timeframe+" bis "+p.asOfUtc);
@@ -475,8 +483,8 @@ function renderEvidence(){
    mtfButton.setAttribute("aria-label","Read-only D1-, H4-, H1-, M15- und M5-Kontext zum UTC-Zeitpunkt dieses gespeicherten Fills laden");
    const mtfStatus=document.createElement("p");mtfStatus.className="cs-evidence-snapshot-mtf-status";mtfStatus.setAttribute("role","status");mtfStatus.setAttribute("aria-live","polite");mtfStatus.hidden=true;
    mtfButton.addEventListener("click",()=>{mtfStatus.hidden=false;startEvidenceSnapshotMtf(record,mtfButton,mtfStatus)});
-   details.append(summary,compareLabel,caption,canvas,exportButton,excursionButton,excursionStatus,replayButton,replayStatus,mtfButton,mtfStatus,pre);
-  }else details.append(summary,pre);
+   details.append(summary,decisionLinkStatus,compareLabel,caption,canvas,exportButton,excursionButton,excursionStatus,replayButton,replayStatus,mtfButton,mtfStatus,pre);
+  }else details.append(summary,...(decisionLinkStatus?[decisionLinkStatus]:[]),pre);
   li.append(details);list.append(li);
  }
  more.hidden=!state.cursor;more.disabled=state.loading;

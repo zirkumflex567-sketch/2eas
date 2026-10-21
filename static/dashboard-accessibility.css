@@ -9,6 +9,10 @@ body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-pane
 body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal) :is([class*="text-rose-"]) { color:var(--ui-bad) !important; }
 body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal) :is([class*="text-amber-"]) { color:var(--ui-warn) !important; }
 body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal) :is([class*="text-blue-"],[class*="text-sky-"],[class*="text-cyan-"],[class*="text-purple-"]) { color:var(--ui-info) !important; }
+body:not(.theme-stone) .dashboard-panel button[title="Tages-Drawdown Resetten"],
+body:not(.theme-stone) .dashboard-panel button[data-lifecycle-evidence-ticket] { background-color:var(--ui-inset) !important; color:var(--ui-info) !important; border-color:var(--ui-info) !important; }
+body.theme-stone .stone-asset-panel button:not([disabled])[title="Tages-Drawdown Resetten"],
+body.theme-stone .stone-asset-panel button:not([disabled])[data-lifecycle-evidence-ticket] { background-color:var(--ui-inset) !important; color:var(--ui-info) !important; border-color:var(--ui-info) !important; }
 body :is(nav[aria-label="Konto und Strategie"],header.glass-card,.dashboard-panel,#dd-reset-modal) :is([class*="bg-black/"],[class*="bg-emerald-"],[class*="bg-rose-"],[class*="bg-amber-"],[class*="bg-slate-"],[class*="bg-cyan-"]) { background-color:var(--ui-inset) !important; }
 body.theme-stone .dashboard-panel .stone-account-balance-row { color:#e4f4f6 !important; background:#081116 !important; border-radius:4px; padding:2px 4px; }
 body.theme-stone .dashboard-panel #positions-list .stone-position-action-label, body.theme-stone .dashboard-panel #positions-list .stone-position-current-label { color:#e4f4f6 !important; background:#081116 !important; border-radius:4px; padding:2px 4px; }

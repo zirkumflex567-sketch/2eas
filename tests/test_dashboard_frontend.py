@@ -1080,6 +1080,16 @@ class DashboardFrontendTests(unittest.TestCase):
         self.page.locator('[data-account="goldm15"]').click()
         expect(self.page.locator('#account-connection')).to_contain_text('53090070')
         expect(self.page.locator('#diagnose-card')).to_have_class(__import__('re').compile(r'.*stone-asset-panel--diagnostic.*'))
+    def test_reset_and_lifecycle_actions_have_explicit_contrast_backgrounds(self):
+        self.load()
+        for theme in ['dark', 'light', 'stone']:
+            self.page.locator('.stone-theme-dock [data-mode="'+theme+'"]').click()
+            self.page.wait_for_function('''theme => document.querySelector('.stone-theme-dock [data-mode="'+theme+'"]').getAttribute('aria-pressed')==='true' ''', arg=theme)
+            colors = self.page.locator('.dashboard-panel button[title="Tages-Drawdown Resetten"], .dashboard-panel button[data-lifecycle-evidence-ticket]').evaluate_all(
+                'els=>els.map(el=>getComputedStyle(el).backgroundColor)')
+            self.assertTrue(colors, 'contrast-sensitive action fixtures must be present')
+            self.assertTrue(all(color not in {'rgba(0, 0, 0, 0)', 'rgb(240, 240, 240)'} for color in colors),
+                f'{theme} theme left contrast-sensitive actions on a transparent or native button background: {colors}')
     def test_nonchart_contrast_all_themes(self):
         self.load(); expect(self.page.locator('#journal-count-badge')).to_contain_text('2 Trades')
         self.page.evaluate('''async () => {

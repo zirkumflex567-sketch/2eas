@@ -20,7 +20,7 @@ const {createHash}=require("node:crypto");
   const page=await browser.newPage({viewport:{width:1280,height:850},deviceScaleFactor:1.5});
   const consoleErrors=[],brokerMutationRequests=[];page.on("pageerror",e=>consoleErrors.push(e.message));
   let alertPollingEnabled=false,alertQuotePrice=4100.125,alertQuoteRequests=[],quoteReadRequests=[];
-let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,invalidStopGeometry=false,trailingStop=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,deferTitanPositions=false,releaseTitanPositions=null,holdScope=null,heldScopeResolvers=[],completedHeldScopeResponses=0,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,multiPositionRows=false,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badOrderShape=false,badDealRow=false,symbolCatalogTruncated=false,symbolCatalogInvalidRows=0,hideFavoriteSymbol=false,evidenceRequests=[],captureStatusRequests=[],executionQualityRequests=[],mfeRequests=[],historicalMtfRequests=[],lifecycleFixtureEnabled=false;
+let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],rejectStopPreview=false,invalidStopGeometry=false,trailingStop=false,deferStopPreview=false,releaseStopPreview=null,notifyStopPreviewStarted=null,notifyStopPreviewCompleted=null,brokerReadRequests=[],portfolioReadRequests=[],deferTitanPortfolio=false,releaseTitanPortfolio=null,deferTitanPositions=false,releaseTitanPositions=null,holdScope=null,heldScopeResolvers=[],completedHeldScopeResponses=0,portfolioRiskUnavailable=false,portfolioReadUnavailable=false,failBrokerReads=false,cursorExpired=false,multiPositionRows=false,badQuote=false,badSymbolRow=false,badPositionRow=false,badOrderRow=false,badOrderShape=false,badDealRow=false,symbolCatalogTruncated=false,symbolCatalogInvalidRows=0,hideFavoriteSymbol=false,evidenceRequests=[],captureStatusRequests=[],executionQualityRequests=[],mfeRequests=[],historicalMtfRequests=[],lifecycleFixtureEnabled=false,decisionLinkFixture=false;
   page.on("request",req=>{if(req.method()==="POST")requests.push(req.url())});
   const confirmTfReads=[],regimeRequests=[],pivotRequests=[];let historicalMtfEnabled=false,confirmTfHistoryAvailable=false,pivotWrongSymbol=false;
   const calendarRequests=[];
@@ -117,7 +117,7 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
       {timeUtc:"2026-10-14T12:15:00.000000Z",open:"4108",high:"4112",low:"4102",close:"4104",tickVolume:12,spread:18,realVolume:0}];
     const canonical=value=>Array.isArray(value)?"["+value.map(canonical).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+canonical(value[key])).join(",")+"}":JSON.stringify(value);
     const sha256=createHash("sha256").update(canonical(bars)).digest("hex"),accountId=url.searchParams.get("account"),asOfUtc="2026-10-14T12:30:00Z";
-    const record={schemaVersion:1,type:"SNAPSHOT",id:"snap_1",accountId,brokerServer:"ICMarketsEU-Demo",terminalIdentityHash:"a".repeat(64),dataRevision:1,provenance:"RECORDED",payload:{snapshotId:"snap_1",accountId,positionIdentifier:"92990",dealTicket:"93001",captureType:"ENTRY",asOfUtc,chartView:{symbol:"XAUUSD",timeframe:"M15",fromUtc:bars[0].timeUtc,toUtc:bars[1].timeUtc,seriesType:"CANDLE",priceScale:"NORMAL"},marketDataRef:{id:"bars_"+sha256.slice(0,48),sourceType:"MARKET_BAR",accountId,brokerServer:"ICMarketsEU-Demo",symbol:"XAUUSD",eventTimeUtc:bars[1].timeUtc,recordedAtUtc:asOfUtc,sourceRevision:sha256,confidenceKind:"OBSERVED"},marketData:{source:"MT5_COMPLETED_BARS",bars,sha256},decisionEventIds:[],lifecycleEventIds:[{type:"LIFECYCLE",id:"mt5_deal_93001",dataRevision:1}],indicatorInstanceRevisions:[],renderStatus:"DATA_ONLY",renderAssetRef:null,createdAtUtc:asOfUtc}};
+    const record={schemaVersion:1,type:"SNAPSHOT",id:"snap_1",accountId,brokerServer:"ICMarketsEU-Demo",terminalIdentityHash:"a".repeat(64),dataRevision:1,provenance:"RECORDED",payload:{snapshotId:"snap_1",accountId,positionIdentifier:"92990",dealTicket:"93001",captureType:"ENTRY",asOfUtc,chartView:{symbol:"XAUUSD",timeframe:"M15",fromUtc:bars[0].timeUtc,toUtc:bars[1].timeUtc,seriesType:"CANDLE",priceScale:"NORMAL"},marketDataRef:{id:"bars_"+sha256.slice(0,48),sourceType:"MARKET_BAR",accountId,brokerServer:"ICMarketsEU-Demo",symbol:"XAUUSD",eventTimeUtc:bars[1].timeUtc,recordedAtUtc:asOfUtc,sourceRevision:sha256,confidenceKind:"OBSERVED"},marketData:{source:"MT5_COMPLETED_BARS",bars,sha256},decisionEventIds:decisionLinkFixture?[{type:"DECISION",id:"event_1",dataRevision:1}]:[],lifecycleEventIds:[{type:"LIFECYCLE",id:"mt5_deal_93001",dataRevision:1}],indicatorInstanceRevisions:[],renderStatus:"DATA_ONLY",renderAssetRef:null,createdAtUtc:asOfUtc}};
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({schemaVersion:1,accountId:url.searchParams.get("account"),availability:"RECORDED",storeState:"INITIALIZED",coverage:"RECORDED",gaps:0,canExecute:false,records:[record],hasMore:false,nextCursor:null})});
   });
   await page.route("**/api/chart/v1/symbol-info?*",async route=>{
@@ -301,6 +301,8 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   await page.locator("#cs-evidence-kind").selectOption("SNAPSHOT");await page.locator("#cs-evidence-load").click();
   await page.waitForFunction(()=>document.querySelector("#cs-evidence-list")?.textContent.includes("snap_1"));
   assert.ok((await page.locator("#cs-evidence-list").textContent()).includes("DATA_ONLY"));
+  assert.match(await page.locator("#cs-evidence-list").textContent(),/Keine exakt verknüpfte Strategieentscheidung im Snapshot gespeichert/,
+   "Snapshot inspector explicitly shows that no strategy decision is linked to this saved trade");
   assert.equal(await page.locator("#cs-evidence-list canvas.cs-evidence-chart").count(),1,"Recorded market bars render as a historical candle chart");
   await page.locator("#cs-evidence-list > li details > summary").click();
   assert.equal(await page.locator("#cs-evidence-list button.cs-evidence-mfe-mae").count(),1,"A saved position snapshot exposes its read-only MFE/MAE estimate");
@@ -349,6 +351,12 @@ let requests=[],scenarioPayloads=[],scenarioResponses=[],stopPreviewPayloads=[],
   assert.equal(await page.evaluate(()=>ChartStudioBeta.refreshMtfAt({account:"titan",symbol:"EURUSD",timeframe:"M15",asOfUtc:"2026-10-14T12:30:00Z"})),false,"A snapshot for another symbol cannot fall back to the current chart scope");
   assert.equal(await page.evaluate(()=>ChartStudioBeta.refreshMtfAt({account:"blueberry",symbol:"XAUUSD",timeframe:"M15",asOfUtc:"2026-10-14T12:30:00Z"})),false,"Historical MTF navigation remains hard-disabled for the protected Blueberry account");
   assert.equal(historicalMtfRequests.length,5,"A rejected symbol scope sends no extra broker request");
+  decisionLinkFixture=true;
+  await page.locator("#cs-evidence-kind").selectOption("SNAPSHOT");
+  await page.locator("#cs-evidence-load").click();
+  await page.waitForFunction(()=>document.querySelector("#cs-evidence-list .cs-evidence-decision-link")?.textContent.includes("1 exakt verknüpfte Strategieentscheidung"));
+  assert.match(await page.locator("#cs-evidence-list .cs-evidence-decision-link").textContent(),/1 exakt verknüpfte Strategieentscheidung/,
+   "Snapshot inspector shows the count of exact decision links without guessing event reasons");
   await page.evaluate(()=>ChartStudioBeta.account("goldm15"));assert.equal(await page.locator("#cs-evidence-list li").count(),0,"Account switch clears prior-account evidence");
   await page.evaluate(()=>ChartStudioBeta.account("titan"));
   const derivedCandleContract=await page.evaluate(()=>{
