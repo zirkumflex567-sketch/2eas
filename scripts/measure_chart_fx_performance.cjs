@@ -4,6 +4,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { chromium } = require('playwright');
 const { parseConfig } = require('./chart_fx_measure_config.cjs');
+const { maxValue, minValue } = require('./chart_fx_statistics.cjs');
 const BASE = 'http://127.0.0.1:8056';
 const config = parseConfig();
 const { account: ACCOUNT, output: OUT, phases: PHASES, durationSeconds } = config;
@@ -78,17 +79,20 @@ const percentile = (values, p) => {
     const a=metricMap(cpuStart), b=metricMap(cpuEnd);
     const raw = await page.evaluate(() => ({frames:window.__aud04.frames.splice(0), longTasks:window.__aud04.longTasks.splice(0), paints:window.__aud04.paints.splice(0), shifts:window.__aud04.shifts.splice(0), heap:window.__aud04.heap.splice(0)}));
     const intervals = raw.frames;
+    const maxInterval = maxValue(intervals);
+    const longTaskMax = maxValue(raw.longTasks.map(x=>x.duration));
+    const heapValues = raw.heap.filter(x=>x.used!==null).map(x=>x.used);
     const frameStats = {
       count: intervals.length, fps: intervals.length / durationSeconds,
       medianMs: percentile(intervals,.5), p95Ms: percentile(intervals,.95), p99Ms: percentile(intervals,.99),
       over16_7ms: intervals.filter(x=>x>16.7).length, over33_3ms: intervals.filter(x=>x>33.3).length,
-      maxMs: intervals.length ? Number(Math.max(...intervals).toFixed(3)) : null,
+      maxMs: maxInterval === null ? null : Number(maxInterval.toFixed(3)),
     };
     const metrics = ['TaskDuration','ScriptDuration','LayoutDuration','RecalcStyleDuration','JSHeapUsedSize','Nodes','Documents'];
     const cdpDelta = Object.fromEntries(metrics.filter(k=>a[k]!==undefined&&b[k]!==undefined).map(k=>[k,Number((b[k]-a[k]).toFixed(3))]));
     samples.push({ name:phase.name, fxMode:phase.mode, durationSeconds, celebrationTriggered:!!phase.celebrateAtMs, frames:frameStats,
-      longTasks:{count:raw.longTasks.length,totalMs:Number(raw.longTasks.reduce((v,x)=>v+x.duration,0).toFixed(3)),maxMs:raw.longTasks.length?Number(Math.max(...raw.longTasks.map(x=>x.duration)).toFixed(3)):0},
-      paints:raw.paints, layoutShiftCount:raw.shifts.length, heap:{samples:raw.heap.length,startBytes:raw.heap[0]?.used??null,endBytes:raw.heap.at(-1)?.used??null,minBytes:raw.heap.filter(x=>x.used!==null).length?Math.min(...raw.heap.filter(x=>x.used!==null).map(x=>x.used)):null,maxBytes:raw.heap.filter(x=>x.used!==null).length?Math.max(...raw.heap.filter(x=>x.used!==null).map(x=>x.used)):null}, cdpDelta });
+      longTasks:{count:raw.longTasks.length,totalMs:Number(raw.longTasks.reduce((v,x)=>v+x.duration,0).toFixed(3)),maxMs:longTaskMax===null?0:Number(longTaskMax.toFixed(3))},
+      paints:raw.paints, layoutShiftCount:raw.shifts.length, heap:{samples:raw.heap.length,startBytes:raw.heap[0]?.used??null,endBytes:raw.heap.at(-1)?.used??null,minBytes:minValue(heapValues),maxBytes:maxValue(heapValues)}, cdpDelta });
     console.log(JSON.stringify({ event:'phase_complete', name:phase.name, frames:frameStats, longTasks:samples.at(-1).longTasks, cdpDelta }));
   }
   await page.evaluate(()=>{window.__aud04.active=false;clearInterval(window.__aud04.heapTimer)});
