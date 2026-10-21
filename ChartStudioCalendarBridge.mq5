@@ -31,14 +31,13 @@ string ServerStamp(const datetime value)
   {
    string stamp=TimeToString(value,TIME_DATE|TIME_MINUTES|TIME_SECONDS);
    StringReplace(stamp,".","-");
+   StringReplace(stamp," ","T");
    return stamp;
   }
 
 string UtcStamp(const datetime value)
   {
-   string stamp=TimeToString(value,TIME_DATE|TIME_MINUTES|TIME_SECONDS);
-   StringReplace(stamp,".","-");
-   return stamp+"Z";
+   return ServerStamp(value)+"Z";
   }
 
 string ImportanceName(const ENUM_CALENDAR_EVENT_IMPORTANCE value)

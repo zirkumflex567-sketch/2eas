@@ -60,3 +60,12 @@ def test_bridge_json_escape_encodes_every_json_control_character():
     assert 'character<0x20' in escape
     assert 'StringFormat("\\\\u%04X",(int)character)' in escape
     assert 'ShortToString(character)' in escape
+
+
+def test_calendar_bridge_emits_iso_server_timestamps_accepted_by_the_ui():
+    source = (ROOT / "ChartStudioCalendarBridge.mq5").read_text(encoding="utf-8")
+    server_stamp = source.split("string ServerStamp(", 1)[1].split("\nstring UtcStamp(", 1)[0]
+    utc_stamp = source.split("string UtcStamp(", 1)[1].split("\nstring ImportanceName(", 1)[0]
+
+    assert 'StringReplace(stamp," ","T");' in server_stamp
+    assert 'return ServerStamp(value)+"Z";' in utc_stamp
