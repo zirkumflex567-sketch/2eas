@@ -99,7 +99,7 @@ def test_references_rollback_and_loss_lifetime(private_root):
     assert s.read(context(),kind='SNAPSHOT')['records']==[]
     assert s.append(context(),envelope())['ok']
     assert s.append(context(),snap)['ok']
-    assert s.read(context(),kind='DECISION')['gaps']['knownLossSinceStart']==1
+    assert s.read(context(),kind='DECISION')['gaps']['knownLossSinceStart']==0
     assert store(private_root).read(context(),kind='DECISION')['gaps']['knownLossSinceStart']==0
 
 def test_snapshot_journal_link_requires_prior_matching_lifecycle_event(private_root):
@@ -233,7 +233,10 @@ def test_append_detects_external_commit_after_rollback(private_root):
     assert s.append(context(), envelope())['code'] == 'APPENDED'
     missing = envelope(snapshot(), 'SNAPSHOT')
     missing['payload']['decisionEventIds'][0]['id'] = 'missing'
-    assert s.append(context(), missing)['code'] == 'CONFLICT'
+    conflict = s.append(context(), missing)
+    assert conflict['code'] == 'CONFLICT'
+    assert conflict['lostCount'] == 0
+    assert conflict['gapObserved'] is False
     with sqlite3.connect(s.path) as db:
         db.execute("UPDATE records SET sha256='bad' WHERE kind='DECISION'")
 
@@ -241,7 +244,7 @@ def test_append_detects_external_commit_after_rollback(private_root):
     candidate['id'] = candidate['payload']['eventId'] = 'event_2'
     result = s.append(context(), candidate)
     assert result['code'] == 'STORE_UNAVAILABLE'
-    assert result['lostCount'] == 2
+    assert result['lostCount'] == 1
     with sqlite3.connect(s.path) as db:
         assert db.execute('SELECT COUNT(*) FROM records').fetchone()[0] == 1
 

@@ -542,7 +542,7 @@ class EvidenceStore:
                     db.rollback()
                     db.close()
             ok = code in ('APPENDED', 'IDEMPOTENT')
-            if not ok and account in models.gateway.ACCOUNTS:
+            if code in ('STORE_UNAVAILABLE', 'RECORDING_CAPACITY') and account in models.gateway.ACCOUNTS:
                 self._loss[account] = min(2**31-1, self._loss.get(account, 0) + 1)
             loss = self._loss.get(account, 0)
             return {'ok':ok, 'code':code, 'recordRef':ref, 'gapObserved':loss > 0, 'lostCount':loss}
