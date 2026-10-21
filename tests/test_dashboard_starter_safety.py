@@ -90,6 +90,11 @@ class DashboardStarterSafetyTests(unittest.TestCase):
         self.assertIn('8055:127.0.0.1:$BackendPort', tunnel)
         self.assertNotRegex(tunnel, r'8055:127\.0\.0\.1:8050\b')
 
+    def test_supervisor_rechecks_tunnel_within_five_seconds(self):
+        supervisor = (ROOT / 'service_supervisor.ps1').read_text(encoding='utf-8')
+        self.assertIn('[ValidateRange(1,60)][int]$SupervisorIntervalSeconds = 5', supervisor)
+        self.assertIn('Start-Sleep -Seconds $SupervisorIntervalSeconds', supervisor)
+
 
 if __name__ == '__main__':
     unittest.main()

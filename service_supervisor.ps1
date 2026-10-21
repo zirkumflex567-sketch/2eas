@@ -1,4 +1,8 @@
 # Safe local dashboard/tunnel supervisor. MT5 terminals are never started here.
+[CmdletBinding()]
+param(
+    [ValidateRange(1,60)][int]$SupervisorIntervalSeconds = 5
+)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -27,5 +31,5 @@ while ($true) {
             Where-Object { $_.Name -in @('powershell.exe','pwsh.exe') -and $_.CommandLine -like "*$tunnelPath*" }
         if (-not $tunnel) { throw 'SSH reverse tunnel did not start.' }
     }
-    Start-Sleep -Seconds 30
+    Start-Sleep -Seconds $SupervisorIntervalSeconds
 }
