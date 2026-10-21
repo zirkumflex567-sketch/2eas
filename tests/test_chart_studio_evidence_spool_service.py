@@ -869,6 +869,26 @@ def test_successful_append_preserves_recovered_store_loss_status(private_root, s
     assert idle['gapObserved'] is True
 
 
+def test_spool_service_retains_last_non_success_code_after_recovery(private_root, spool_root, monkeypatch):
+    service = consumer(evidence_store(private_root), spool_root)
+    results = iter((
+        {'code': 'STORE_UNAVAILABLE', 'imported': 0, 'duplicates': 0,
+         'gapCount': 0, 'gapObserved': True, 'storeLostCount': 1},
+        {'code': 'IDLE', 'imported': 0, 'duplicates': 0,
+         'gapCount': 0, 'gapObserved': False, 'storeLostCount': 0},
+    ))
+    monkeypatch.setattr(service, '_poll_producer', lambda _producer: next(results))
+
+    failed = service.poll_once()['titan_demo']
+    recovered = service.poll_once()['titan_demo']
+
+    assert failed['lastIssueCode'] == 'STORE_UNAVAILABLE'
+    assert recovered['code'] == 'IDLE'
+    assert recovered['storeLostCount'] == 1
+    assert recovered['gapObserved'] is True
+    assert recovered['lastIssueCode'] == 'STORE_UNAVAILABLE'
+
+
 def test_spool_shutdown_waits_for_inflight_thread_poll():
     started = threading.Event()
     release = threading.Event()

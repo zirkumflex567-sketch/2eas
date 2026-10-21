@@ -657,6 +657,7 @@ def test_decision_capture_status_is_authenticated_demo_scoped_and_redacted(monke
     secure_app.state.evidence_spool_status = {
         'titan_puprime250': {'code':'IDLE','imported':0,'duplicates':2,
                              'gapCount':1,'gapObserved':True,'storeLostCount':3,
+                             'lastIssueCode':'../../private-path',
                              'temporaryFileCount':12,'temporaryBytes':36156,
                              'temporaryOldestMtimeUtc':'2026-10-18T07:00:00Z',
                              'temporaryNewestMtimeUtc':'2026-10-19T08:00:00Z',
@@ -674,7 +675,8 @@ def test_decision_capture_status_is_authenticated_demo_scoped_and_redacted(monke
                   'temporaryBytes':36156,
                   'temporaryOldestMtimeUtc':'2026-10-18T07:00:00Z',
                   'temporaryNewestMtimeUtc':'2026-10-19T08:00:00Z',
-                  'gapObserved':True,'storeLostCount':3,'recordingState':'RECORDED'}
+                  'gapObserved':True,'storeLostCount':3,'lastIssueCode':None,
+                  'recordingState':'RECORDED'}
     }
     marketplace = client.get('/api/chart/v1/decisions/capture/status', params={'account':'titan'})
     assert marketplace.status_code == 200
@@ -720,6 +722,7 @@ def test_decision_capture_status_aggregates_independent_record_only_producer(mon
             'code':'IMPORTED','imported':1,'duplicates':0,'importedTotal':3,'duplicatesTotal':1,
             'staleTemporaryCount':2,'staleTemporaryTotal':6,
             'gapCount':2,'gapObserved':True,'storeLostCount':4,
+            'lastIssueCode':'STORE_UNAVAILABLE',
             'temporaryFileCount':2,'temporaryBytes':30,
             'temporaryOldestMtimeUtc':'2026-10-19T06:00:00Z',
             'temporaryNewestMtimeUtc':'2026-10-20T09:00:00Z'},
@@ -738,4 +741,5 @@ def test_decision_capture_status_aggregates_independent_record_only_producer(mon
     assert (status['temporaryOldestMtimeUtc'], status['temporaryNewestMtimeUtc']) == (
         '2026-10-18T06:00:00Z', '2026-10-20T09:00:00Z')
     assert (status['gapCount'], status['gapObserved'], status['storeLostCount']) == (3, True, 4)
+    assert status['lastIssueCode'] == 'STORE_UNAVAILABLE'
     assert status['recordingState'] == 'RECORDED'

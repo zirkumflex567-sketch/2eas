@@ -390,7 +390,8 @@ class DashboardFrontendTests(unittest.TestCase):
             if self.evidence_delay_seconds:
                 time.sleep(self.evidence_delay_seconds)
             capture_status=dict(code='IDLE',importedTotal=0,gapCount=0,storeLostCount=0,
-                gapObserved=False,recordingState='NOT_RECORDED')
+                gapObserved=False,recordingState='NOT_RECORDED',
+                lastIssueCode=getattr(self,'capture_last_issue_code',None))
             if not getattr(self,'legacy_capture_status',False):
                 capture_status.update(temporaryFileCount=3,temporaryBytes=2097152,
                     staleTemporaryCount=1,staleTemporaryTotal=2,
@@ -490,6 +491,17 @@ class DashboardFrontendTests(unittest.TestCase):
         result=self.page.locator('#cs-evidence-capture-status-result')
         expect(result).to_contain_text('Lücke erkannt · Broker-Lesezugriff fehlgeschlagen', timeout=5000)
         self.assertNotIn('Exception', result.inner_text())
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.errors, [])
+    def test_decision_capture_status_shows_last_spool_issue_code(self):
+        self.capture_last_issue_code='STORE_UNAVAILABLE'
+        self.page.goto(self.url+'?account=goldm15')
+        expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=10000)
+        self.page.locator('#cs-beta-toggle').click()
+        self.page.locator('#cs-evidence-panel > summary').click()
+        self.page.locator('#cs-evidence-capture-status').click()
+        expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text(
+            'Letzter Spool-Fehler: STORE_UNAVAILABLE', timeout=5000)
         self.assertEqual(self.mutations, [])
         self.assertEqual(self.errors, [])
     def test_capture_status_accepts_legacy_schema_one_without_temp_metrics(self):

@@ -62,6 +62,10 @@ def _merge_capture_producer_statuses(rows):
     merged['gapObserved'] = any(
         row.get('gapObserved', False) is True for row in rows if isinstance(row, dict)) or any(
         isinstance(row, dict) and type(row.get('gapObserved', False)) is not bool for row in rows)
+    merged['lastIssueCode'] = next((row.get('lastIssueCode') for row in rows
+                                    if isinstance(row, dict) and isinstance(row.get('lastIssueCode'), str) and
+                                    re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', row['lastIssueCode']) and
+                                    row['lastIssueCode'] not in {'IDLE', 'IMPORTED', 'ARCHIVED'}), None)
     for key in ('temporaryOldestMtimeUtc', 'temporaryNewestMtimeUtc'):
         values = []
         for row in rows:
@@ -363,7 +367,7 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
                       'temporaryFileCount': 0, 'temporaryBytes': 0,
                       'temporaryOldestMtimeUtc': None, 'temporaryNewestMtimeUtc': None,
                       'gapCount': 0, 'gapObserved': False, 'storeLostCount': 0,
-                      'recordingState': 'NOT_RECORDED'}
+                      'lastIssueCode': None, 'recordingState': 'NOT_RECORDED'}
         else:
             producer_ids = (producer,)
             record_only_producer = DEFAULT_EVIDENCE_RECORD_ONLY_PRODUCERS.get(account)
@@ -391,6 +395,10 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
                         'temporaryFileCount', 'temporaryBytes', 'gapCount', 'storeLostCount'):
                 value = raw_status.get(key, 0)
                 status[key] = value if type(value) is int and value >= 0 else 0
+            last_issue_code = raw_status.get('lastIssueCode')
+            status['lastIssueCode'] = (last_issue_code if isinstance(last_issue_code, str) and
+                                       re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', last_issue_code) and
+                                       last_issue_code not in {'IDLE', 'IMPORTED', 'ARCHIVED'} else None)
             for key in ('temporaryOldestMtimeUtc', 'temporaryNewestMtimeUtc'):
                 value = raw_status.get(key)
                 if isinstance(value, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', value):

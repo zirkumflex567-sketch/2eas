@@ -62,6 +62,7 @@ class SpoolFileConsumer:
         self._invalid_ready_producers = set()
         self._reported_store_loss = {}
         self._reported_gap = {}
+        self._last_issue_code = {}
         if type(records_per_poll) is not int or not 1 <= records_per_poll <= MAX_RECORDS_PER_POLL:
             raise ValueError('invalid record batch')
         self._verify_root()
@@ -89,6 +90,7 @@ class SpoolFileConsumer:
                 self._thread_locks[producer_id] = threading.Lock()
                 self._reported_store_loss[producer_id] = 0
                 self._reported_gap[producer_id] = False
+                self._last_issue_code[producer_id] = None
                 self._temporary_signatures[producer_id] = {}
                 self._stable_temporary_files[producer_id] = deque()
 
@@ -641,8 +643,13 @@ class SpoolFileConsumer:
             }))
             self._reported_store_loss[producer]=max(self._reported_store_loss[producer],result.get('storeLostCount',0))
             self._reported_gap[producer]=self._reported_gap[producer] or bool(result.get('gapObserved'))
+            code = result.get('code')
+            if (isinstance(code, str) and re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', code) and
+                    code not in {'IDLE', 'IMPORTED', 'ARCHIVED'}):
+                self._last_issue_code[producer] = code
             result['storeLostCount']=self._reported_store_loss[producer]
             result['gapObserved']=self._reported_gap[producer]
+            result['lastIssueCode']=self._last_issue_code[producer]
             status[producer]=result
         if invalidate_file_index:
             self._invalidate_file_index()
