@@ -190,15 +190,33 @@ const forbiddenAccounts = new Set(["blueberry"]);
         return !status.includes("Aufzeichnungen werden gelesen");
       }, null, { timeout: 20000 });
       const decisionStatus = await panel.locator("#cs-evidence-status").textContent();
-      assert.match(decisionStatus, /Verfügbarkeit: NOT_RECORDED/,
-        `${account}: old demo history must remain explicitly unrecorded (${decisionStatus})`);
-      assert.match(await panel.locator("#cs-evidence-list li").first().textContent(),
-        /NOT_RECORDED · Keine Aufzeichnung im gewählten Zeitraum; daraus folgt keine Aussage über ältere Zeiträume\./,
-        `${account}: inspector must not invent historical decision reasons`);
+      const decisionRows = panel.locator("#cs-evidence-list > li");
+      const decisionCount = await decisionRows.count();
+      const snapshotDecisionRefs = records.flatMap(record => record.payload.decisionEventIds || []);
+      if (decisionStatus.includes("Verfügbarkeit: NOT_RECORDED")) {
+        assert.equal(decisionCount, 1, `${account}: missing-history state must have one explanatory row`);
+        assert.match(await decisionRows.first().textContent(),
+          /NOT_RECORDED · Keine Aufzeichnung im gewählten Zeitraum; daraus folgt keine Aussage über ältere Zeiträume\./,
+          `${account}: inspector must not invent historical decision reasons`);
+        assert.equal(snapshotDecisionRefs.length, 0,
+          `${account}: snapshot unexpectedly links to a decision event when the scoped store says NOT_RECORDED`);
+      } else {
+        assert.match(decisionStatus, /Verfügbarkeit: RECORDED · Store: INITIALIZED/,
+          `${account}: unexpected decision-history state (${decisionStatus})`);
+        assert.ok(decisionCount > 0, `${account}: recorded status must include actual decision records`);
+        const decisions = await decisionRows.locator("pre").evaluateAll(nodes => nodes.map(node => JSON.parse(node.textContent)));
+        assert.ok(decisions.every(record => record.type === "DECISION" && record.provenance === "RECORDED"),
+          `${account}: decision history contains a non-recorded or unexpected event`);
+        const recordedDecisionIds = new Set(decisions.map(record => record.id));
+        assert.ok(snapshotDecisionRefs.every(reference => recordedDecisionIds.has(reference.id || reference)),
+          `${account}: snapshot references a decision outside the exact recorded history response`);
+      }
       assert.ok(apiRequests.some(request => request.path.endsWith("/decisions")
         && request.account === account && request.method === "GET"), `${account}: missing scoped decision-history read`);
       observations.push({ account, snapshots: count, entries, exits, frozenBars: candleCount,
-        historicalDecisions: "NOT_RECORDED", mtfAsOfUtc: snapshot.payload.asOfUtc, mtf: rowsMtf, volatilityReads: exactRegimeReads.length });
+        historicalDecisions: decisionStatus.includes("Verfügbarkeit: NOT_RECORDED") ? "NOT_RECORDED" : "RECORDED",
+        exactSnapshotDecisionLinks: snapshotDecisionRefs.length,
+        mtfAsOfUtc: snapshot.payload.asOfUtc, mtf: rowsMtf, volatilityReads: exactRegimeReads.length });
     }
 
     assert.ok(apiRequests.some(request => request.path.endsWith("/snapshots") && request.method === "GET"),
