@@ -574,6 +574,64 @@ class DashboardFrontendTests(unittest.TestCase):
         self.assertTrue(all(count==['150'] for count in refreshed_counts[1:]),refreshed_urls)
         self.assertEqual(self.mutations,[])
         self.assertEqual(self.errors,[])
+    def test_chart_candle_polling_scales_with_timeframe_and_skips_early_reads(self):
+        self.candle_rows=[
+            dict(time=1791918000,open=4000.,high=4002.,low=3998.,close=4001.,tick_volume=10,real_volume=0),
+            dict(time=1791918900,open=4001.,high=4003.,low=3999.,close=4002.,tick_volume=11,real_volume=0),
+        ]
+        self.load()
+        self.page.wait_for_function("document.querySelector('#tv-chart').__candleSeries.data().length === 2",timeout=10000)
+        intervals=self.page.evaluate("['M1','M5','M15','M30','H1','H4','D1','unknown'].map(tf=>getCandlePollIntervalMs(tf))")
+        self.assertEqual(intervals,[5000,5000,10000,15000,30000,60000,120000,15000])
+        candle_count=lambda:sum('/api/candles?' in url for url in self.requests)
+        initial=candle_count()
+        self.page.evaluate("loadCandles(false)")
+        self.assertEqual(candle_count(),initial,"scheduled M15 poll must wait for its 10-second cadence")
+        self.page.evaluate("lastCandlePollAt = Date.now() - getCandlePollIntervalMs(activeTimeframe) - 1")
+        self.page.evaluate("loadCandles(false)")
+        self.assertEqual(candle_count(),initial+1,"scheduled M15 poll must fetch when its cadence expires")
+        self.assertEqual(self.mutations,[])
+        self.assertEqual(self.errors,[])
+    def test_chart_candle_polling_pauses_when_hidden_and_refreshes_when_visible(self):
+        self.candle_rows=[
+            dict(time=1791918000,open=4000.,high=4002.,low=3998.,close=4001.,tick_volume=10,real_volume=0),
+            dict(time=1791918900,open=4001.,high=4003.,low=3999.,close=4002.,tick_volume=11,real_volume=0),
+        ]
+        self.load()
+        self.page.wait_for_function("document.querySelector('#tv-chart').__candleSeries.data().length === 2",timeout=10000)
+        self.page.wait_for_function("!!accounts[activeAccount]",timeout=10000)
+        candle_count=lambda:sum('/api/candles?' in url for url in self.requests)
+        initial=candle_count()
+        self.page.evaluate("Object.defineProperty(document,'hidden',{configurable:true,value:true}); lastCandlePollAt=0; loadCandles(false)")
+        self.assertEqual(candle_count(),initial,"hidden tabs must not poll the broker candle endpoint")
+        self.page.evaluate("window.__previousCandleSnapshot=candleHistory.latest; Object.defineProperty(document,'hidden',{configurable:true,value:false}); document.dispatchEvent(new Event('visibilitychange'))")
+        self.page.wait_for_function("candleHistory.latest !== window.__previousCandleSnapshot",timeout=5000)
+        self.assertEqual(candle_count(),initial+1,"returning to a visible tab must refresh immediately")
+        self.assertEqual(self.mutations,[])
+        self.assertEqual(self.errors,[])
+    def test_chart_candle_polling_backs_off_after_read_failures(self):
+        self.candle_rows=[
+            dict(time=1791918000,open=4000.,high=4002.,low=3998.,close=4001.,tick_volume=10,real_volume=0),
+            dict(time=1791918900,open=4001.,high=4003.,low=3999.,close=4002.,tick_volume=11,real_volume=0),
+        ]
+        self.load()
+        self.page.wait_for_function("document.querySelector('#tv-chart').__candleSeries.data().length === 2",timeout=10000)
+        self.page.wait_for_function("!!accounts[activeAccount]",timeout=10000)
+        self.candle_fail=True
+        self.page.evaluate("loadCandles()")
+        first_delay=self.page.evaluate("candlePollRetryAt-Date.now()")
+        self.assertEqual(self.page.evaluate("candlePollFailureCount"),1)
+        self.assertGreaterEqual(first_delay,4500); self.assertLessEqual(first_delay,5500)
+        candle_count=lambda:sum('/api/candles?' in url for url in self.requests)
+        after_failure=candle_count()
+        self.page.evaluate("loadCandles(false)")
+        self.assertEqual(candle_count(),after_failure,"scheduled poll must honor the retry backoff")
+        second_delay=self.page.evaluate("async()=>{const now=Date.now,retry=candlePollRetryAt,forcedNow=retry+1;Date.now=()=>forcedNow;try{await loadCandles(false);return candlePollRetryAt-forcedNow}finally{Date.now=now}}")
+        self.assertEqual(candle_count(),after_failure+1)
+        self.assertEqual(self.page.evaluate("candlePollFailureCount"),2)
+        self.assertGreaterEqual(second_delay,9500); self.assertLessEqual(second_delay,10500)
+        self.assertEqual(self.mutations,[])
+        self.assertEqual(self.errors,[])
     def test_initial_chart_keeps_slow_broker_candle_read_alive(self):
         self.candle_rows=[
             dict(time=1791918000,open=4000.,high=4002.,low=3998.,close=4001.,tick_volume=10,real_volume=0),

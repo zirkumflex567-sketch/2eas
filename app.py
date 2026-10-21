@@ -3693,7 +3693,14 @@ HTML_CONTENT = """<!DOCTYPE html>
       } finally { historyState.loading = false; }
     }
 
-    async function loadCandles() {
+    const CANDLE_POLL_INTERVALS_MS = Object.freeze({M1:5000,M5:5000,M15:10000,M30:15000,H1:30000,H4:60000,D1:120000});
+    function getCandlePollIntervalMs(timeframe) {
+      return Object.prototype.hasOwnProperty.call(CANDLE_POLL_INTERVALS_MS, timeframe)
+        ? CANDLE_POLL_INTERVALS_MS[timeframe]
+        : 15000;
+    }
+    let lastCandlePollAt = 0, candlePollScopeKey = '', candlePollFailureCount = 0, candlePollRetryAt = 0;
+    async function loadCandles(force = true) {
       const generation = accountGeneration;
       const reqTf = activeTimeframe;
       const reqSymbol = activeChartSymbol;
@@ -3703,9 +3710,25 @@ HTML_CONTENT = """<!DOCTYPE html>
       const v5Preview = window.ChartStudioV5Preview;
       v5Preview?.setScope({account:reqAccount,symbol:reqSymbol,timeframe:reqTf});
       const requestKey = generation + '/' + reqSymbol + '/' + reqTf;
+      if (candlePollScopeKey !== requestKey) {
+        candlePollScopeKey = requestKey;
+        lastCandlePollAt = 0;
+        candlePollFailureCount = 0;
+        candlePollRetryAt = 0;
+      }
+      if (document.hidden) return;
+      const pollNow = Date.now();
+      if (!force) {
+        if (candlePollRetryAt > 0) {
+          if (pollNow < candlePollRetryAt) return;
+        } else if (lastCandlePollAt > 0 && pollNow - lastCandlePollAt < getCandlePollIntervalMs(reqTf)) {
+          return;
+        }
+      }
       if (candlesBusy === requestKey) return;
       const requestedCount = candleHistory.latest ? 150 : 1001;
       candlesBusy = requestKey;
+      lastCandlePollAt = pollNow;
       let v5Request = v5Preview?.beginRead();
       try {
         const res = await accountFetch('/api/candles?tf=' + encodeURIComponent(reqTf) + '&symbol=' + encodeURIComponent(reqSymbol) + '&count=' + requestedCount);
@@ -3721,6 +3744,8 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (data.accountId !== activeAccount || (data.symbol !== reqSymbol && data.symbol !== expectedSymbol) || data.timeframe !== reqTf || data.source !== 'MT5_VERIFIED' || data.canExecute !== false) {
           throw new Error('Chartdaten haben keinen passenden Account-/Symbol-/Timeframe-Read-Scope.');
         }
+        candlePollFailureCount = 0;
+        candlePollRetryAt = 0;
         if (data.symbol && data.symbol !== activeChartSymbol && accounts[activeAccount]?.symbol === data.symbol) {
           activeChartSymbol = data.symbol;
           candleHistory.scope = candleHistoryScope(activeAccount, activeChartSymbol, reqTf);
@@ -3829,6 +3854,10 @@ HTML_CONTENT = """<!DOCTYPE html>
         } catch (_) { /* Read-only EMA display is optional. */ }
       } catch (err) {
         if (err.name !== 'AbortError') console.error('[Cockpit] Kerzen-Ladefehler:', err);
+        if (err.name !== 'AbortError' && generation === accountGeneration) {
+          candlePollFailureCount = Math.min(candlePollFailureCount + 1, 4);
+          candlePollRetryAt = Date.now() + Math.min(60000, 5000 * (2 ** (candlePollFailureCount - 1)));
+        }
         reportAccountError(err, generation);
         if (generation === accountGeneration && err.name !== 'AbortError') {
           v5Preview?.clear(`MT5-Kerzen derzeit nicht verfügbar: ${String(err.message||'Feed prüfen.').slice(0,120)}`);
@@ -4970,7 +4999,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
         if (!Object.keys(accounts).length) void bootstrapAccounts();
-        else { if (!accountIsFresh()) markStatusStale(); void updateStatus(); void refreshJournal(); }
+        else { if (!accountIsFresh()) markStatusStale(); void updateStatus(); void refreshJournal(); void loadCandles(); }
       }
     });
     let dashboardBootStarted = false;
@@ -4995,7 +5024,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (lastStatusSuccess && !accountIsFresh()) markStatusStale();
         if (!document.hidden) void updateStatus();
       }, 1500); // freshness watchdog also expires a suspended poll
-      setInterval(loadCandles, 5000);   // 5s smooth candle update (no reset)
+      setInterval(() => { void loadCandles(false); }, 5000); // cadence adapts to the active timeframe; hidden tabs make no candle requests
       setInterval(() => { void refreshJournal(); }, 30000); // independent, low-rate journal sync
     };
     if (document.readyState === 'loading') {
