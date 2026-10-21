@@ -116,11 +116,15 @@ int CSBrokerUtcOffsetSeconds()
    long broker_time=(long)server_clock;
    long utc_time=(long)utc_clock;
    long offset=broker_time-utc_time;
+   // Clock calls have second precision and may cross a second boundary.
+   long rounded_offset=(long)(MathRound((double)offset/3600.0)*3600.0);
+   if(MathAbs((double)(offset-rounded_offset))>5.0)
+      return -1;
    // Configured brokers follow the New York close: UTC+2 or UTC+3.
    // Unknown values fail closed instead of stamping a plausible but wrong UTC time.
-   if(!CSIsSupportedBrokerUtcOffsetSeconds((int)offset))
+   if(!CSIsSupportedBrokerUtcOffsetSeconds((int)rounded_offset))
       return -1;
-   return (int)offset;
+   return (int)rounded_offset;
   }
 
 string CSUtcFromBrokerMillis(const long value,const int broker_utc_offset_seconds)

@@ -254,7 +254,9 @@ def test_recorder_resolves_current_broker_offset_from_server_and_gmt_clocks():
     assert "TimeGMT()" in offset
     assert "broker_time-utc_time" in offset
     assert "return -1;" in offset
-    assert "CSIsSupportedBrokerUtcOffsetSeconds((int)offset)" in offset
+    assert "MathRound((double)offset/3600.0)" in offset
+    assert "MathAbs((double)(offset-rounded_offset))>5.0" in offset
+    assert "CSIsSupportedBrokerUtcOffsetSeconds((int)rounded_offset)" in offset
     supported = _function(spool, "CSIsSupportedBrokerUtcOffsetSeconds")
     assert "offset==7200 || offset==10800" in supported
     converter = _function(spool, "CSUtcFromBrokerMillis")
