@@ -2198,6 +2198,13 @@ HTML_CONTENT = """<!DOCTYPE html>
             <button type="button" id="stone-chart-expand-btn" aria-controls="tv-chart" aria-pressed="false"
               aria-label="Chart vergrößern" class="stone-chart-expand-trigger stone-chart-expand-primary"
               title="Chart bildschirmfüllend vergrößern · Esc zum Schließen">⛶ CHART GROSS</button>
+            <span class="flex items-center gap-1.5 text-[10px] text-sub" aria-label="Chartbibliothek und Lizenz">
+              <a id="chart-library-attribution" href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer"
+                class="underline underline-offset-2 hover:text-cyan-300">TradingView</a>
+              <span aria-hidden="true">·</span>
+              <a id="chart-library-license" href="static/lightweight-charts-LICENSE.txt" target="_blank" rel="noopener noreferrer"
+                class="underline underline-offset-2 hover:text-cyan-300">Apache-2.0</a>
+            </span>
             <button type="button" id="chart-v5-preview-btn" aria-controls="chart-v5-preview-panel"
               aria-expanded="false" hidden class="px-2 py-1 rounded border border-cyan-400/40 bg-cyan-900/20 text-cyan-200 text-[10px] font-bold"
               title="Separater read-only v5-Kerzenpreview mit Auto-Fibonacci; v4 bleibt aktiv">V5 Vorschau</button>

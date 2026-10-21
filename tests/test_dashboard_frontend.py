@@ -556,6 +556,33 @@ class DashboardFrontendTests(unittest.TestCase):
         self.assertTrue(portfolio_symbols and set(portfolio_symbols)=={'XAUUSD.pi'},portfolio_symbols)
         self.assertEqual(self.mutations, [])
         self.assertEqual(self.errors, [])
+    def test_main_chart_keeps_upstream_attribution_and_license_visible(self):
+        self.load()
+        attribution = self.page.locator('#chart-library-attribution')
+        license_link = self.page.locator('#chart-library-license')
+        expect(attribution).to_be_visible()
+        expect(attribution).to_have_attribute('href', 'https://www.tradingview.com/')
+        expect(license_link).to_be_visible()
+        expect(license_link).to_have_attribute('href', 'static/lightweight-charts-LICENSE.txt')
+        license_response = self.page.request.get(self.url.rstrip('/') + '/static/lightweight-charts-LICENSE.txt')
+        self.assertEqual(license_response.status, 200)
+        license_text = license_response.text()
+        self.assertIn('TradingView Lightweight Charts v4.1.3', license_text)
+        self.assertIn('TradingView Lightweight Charts v5.2.1', license_text)
+        self.assertIn('Copyright (c) 2024 TradingView, Inc.', license_text)
+        self.assertIn('Copyright 2023 TradingView, Inc.', license_text)
+        self.assertIn('Apache License', license_text)
+        self.page.set_viewport_size({'width': 390, 'height': 844})
+        for link in (attribution, license_link):
+            box = link.bounding_box()
+            self.assertIsNotNone(box)
+            self.assertGreaterEqual(box['x'], 0)
+            self.assertLessEqual(box['x'] + box['width'], 390)
+        self.page.locator('#stone-chart-expand-btn').click()
+        expect(attribution).to_be_visible()
+        expect(license_link).to_be_visible()
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.errors, [])
     def test_initial_chart_load_fetches_full_indicator_warmup_once(self):
         base=1791918000
         self.candle_rows=[]
