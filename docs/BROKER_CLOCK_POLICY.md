@@ -1,16 +1,18 @@
-# Explizite Brokerzeit: UTC+3 für die beiden Demo-Konten
+# Broker clock and risk-day policy
 
-Der Live-GET-Test bestätigte am 09.10.2026 bei Titan/GoldM15 auf ICMarketsEU-Demo einen Tickzeitwert rund 10800 Sekunden vor dem UTC-Epochwert der Systemuhr. Die neue strikte Frischeprüfung sperrte damit zunächst korrekt alle Steueraktionen. Der Benutzer hat ausdrücklich zugestimmt, **UTC+3 pro Konto** zu konfigurieren und weiterzutesten.
+All configured terminals use the broker's New York close: 00:00 server time is 17:00 in New York. The server offset is therefore UTC+2 while New York is on standard time and UTC+3 while New York observes daylight saving time. This is a timezone rule, not a permanent UTC+3 setting or an offset inferred from a quote.
 
-`account_gateway.ACCOUNTS[*].broker_utc_offset_seconds = 10800` ist eine explizite Deployment-Policy, kein automatisch aus laufenden Quotes ermittelter Offset. `broker_clock.py` validiert den Offset. Ein Brokerwechsel auf UTC+2 bleibt ohne bewusste Konfigurationsänderung gesperrt; kein Ausweiten der 30s-Frischegrenze und keine automatische Reparatur der Uhr.
+Official references:
 
-- Tick-Frische: `quote_broker_time_epoch` ist roh; `quote_time_epoch` ist um 10800s normalisierter UTC-Epochwert für den Browser. `quote_age_seconds` vergleicht diesen mit der tatsächlichen UTC-Wanduhr.
-- Header: SERVER zeigt rohe Brokerzeit; DE verwendet normalisierten UTC-Epochwert plus Europe/Berlin. Journal verwendet denselben Vertrag.
-- Risikotag: Broker-Mitternacht/konfigurierte Resetstunde wird von **Wanduhr UTC + konfiguriertem Offset**, nicht vom letzten Tick abgeleitet. Persistierte Resetzeitstempel sind UTC; Risiko-Datum ist das Datum des Broker-Risikotags. Vorherige Konfigurationen werden nicht auf Platte geändert.
-- MT5-Historienabfragen: Datumsgrenzen werden in die konfigurierte Broker-Epochbasis übersetzt. Historischer Cutoff bleibt ausdrücklich `08.10.2026 23:00 UTC`; offene Positionen bleiben unabhängig davon sichtbar.
-- Guarddatei: Tagesvalidierung benutzt Broker-Wanduhrbasis passend zur EA-Datei; daraus wird weiterhin kein EA-Heartbeat oder Ausführungsnachweis behauptet.
-- Charts und EAs: Chart-Zeitdaten/Endpunkte bleiben unverändert. Keine Orders, Resets oder EA-Parameter live geändert.
+- PU Prime states that MT4/MT5 server time follows 17:00 New York, with GMT+2 in standard time and GMT+3 in daylight time: <https://helpcenter.puprime.com/hc/en-001/articles/360004254656-What-is-PU-Prime-GMT-Offset>.
+- IC Markets documents GMT+2/GMT+3 server time to align daily candles with the New York close: <https://cdn.icmarkets.com/uploads/FSA/Forex-Product-Specificiation-Sheet-1000.pdf>.
+- Blueberry Markets describes the same GMT+2/GMT+3 platform clock around the New York close: <https://helpcenter.blueberrymarkets.com/vn/en/articles/16027301-mui-gio-cua-nen-tang-la-gi>.
+- Blueberry Funded's rules page says the daily drawdown resets at 17:00 EST: <https://help.blueberryfunded.com/en/articles/15310153-what-rules-can-breach-my-account-and-where-do-i-find-the-limits>.
 
-Tests: UTC+3 Quote, alte Quote, falscher Offset/DST-Wechsel, Frischegrenze, Broker-Mitternacht, Header-/Journal-Berlin-Zeit und Historienquerygrenzen. Brokerfreie Standardfixtures deklarieren UTC+0; separate Offsettests prüfen die echte UTC+3-Policy. Diese deklarierte Fixturebasis darf nicht als Realbroker-Test missverstanden werden.
+`broker_clock_policy='NEW_YORK_CLOSE'` is explicit on the five demo accounts and the protected Blueberry account. The account's broker offset is resolved from `America/New_York` at the relevant instant. Risk-day midnight therefore maps to 17:00 New York local time, including the United States DST transition dates. The configured UTC+3 value remains a fixed-offset compatibility fallback for accounts without a named policy; an unknown policy fails closed. MQL5 evidence-build scripts still embed that compatibility value at compile time; converting their recorder timestamps dynamically is a remaining AUD-08 item.
 
-Live-Nachweis nach Konfiguration: beide Konten HTTP200, `source_fresh=true`, Quote-Alter etwa 0–1s; Header Server09:54/DE08:54; Gold-Tagesbasis bestätigt. Reine GETs, keine Mutationen.
+Quotes are normalized using the current observed UTC instant. Historical deal and rates timestamps resolve the offset at the timestamp itself. Historical query cursors use the offset at the requested UTC cutoff. When a broker-wall timestamp falls into the repeated hour at the autumn DST rollback, two UTC instants are possible; conversion rejects it as ambiguous rather than selecting one silently. The spring transition has no repeated wall hour.
+
+Blueberry remains the sole `challenge_protection=true` account. Its broker-time rule is configured from public documentation and deterministic unit tests only; the Blueberry terminal, quote feed, positions, and account state are not queried by this work. Existing challenge thresholds, baselines, and stored reset state are not changed. No trading order or reset is sent.
+
+Automated tests cover all five demo aliases plus the Blueberry policy using fixed timestamps, server-epoch conversion, the European-vs-US DST date mismatch, both United States DST boundaries, ambiguous fall-back rejection, and invalid-policy fail-closed behavior. General test fixtures explicitly remove named broker policies and use UTC; dedicated clock tests exercise the production policy.

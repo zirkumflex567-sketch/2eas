@@ -22,7 +22,7 @@ def isolated(monkeypatch, tmp_path):
     account = gateway.ACCOUNTS['titan']
     pos = NS(ticket=11, identifier=11, symbol='XAUUSD', magic=881122, type=0,
              volume=.01, price_open=4000., price_current=4010., sl=3990., tp=0.,
-             profit=10., swap=-1., time=1791504000, comment='fixture')
+             profit=10., swap=-1., time=1791514800, comment='fixture')
     dtype = [('time','i8'), ('open','f8'), ('high','f8'), ('low','f8'), ('close','f8'), ('tick_volume','i8')]
     rates = np.zeros(300, dtype=dtype)
     rates['time'] = 1791244800 + np.arange(300)*900
@@ -34,7 +34,8 @@ def isolated(monkeypatch, tmp_path):
     # Deterministic wall clock independent of the broker source clock.
     clock = NS(now=datetime(2026, 10, 9, 12, tzinfo=timezone.utc).timestamp())
     monkeypatch.setattr(app.time, 'time', lambda: clock.now)
-    tick = NS(time=int(clock.now), bid=4030., ask=4030.05)
+    tick_offset = app.broker_clock.offset_seconds(account, clock.now)
+    tick = NS(time=int(clock.now + tick_offset), bid=4030., ask=4030.05)
     rates['time'] = (tick.time//900 - 299 + np.arange(300))*900
     info = NS(login=account['login'], server=account['server'], balance=10000., equity=10000., currency='USD')
     sym = NS(name='XAUUSD', time=tick.time, spread=5, trade_contract_size=100., digits=2, point=.01,
@@ -179,8 +180,8 @@ def test_chart_candles_normalize_explicit_broker_wall_time(isolated, monkeypatch
     monkeypatch.setitem(gateway.ACCOUNTS['titan'], 'broker_utc_offset_seconds', 10800)
     contexts = []
     original_offset = app.broker_clock.rates_offset_seconds
-    def record_offset(spec):
-        result = original_offset(spec)
+    def record_offset(spec, at_utc_epoch=None):
+        result = original_offset(spec, at_utc_epoch)
         contexts.append(('offset', spec.get('id'), spec.get('rates_time_basis'), spec.get('broker_utc_offset_seconds'), result))
         return result
     monkeypatch.setattr(app.broker_clock, 'rates_offset_seconds', record_offset)
@@ -226,7 +227,7 @@ def test_chart_history_cursor_roundtrips_normalized_utc(isolated, monkeypatch):
 
 def test_chart_candles_supports_exclusive_historical_cursor_with_warmup(isolated, monkeypatch):
     calls=[]
-    cursor=int(isolated.rates['time'][290])
+    cursor=app.broker_clock.rates_to_utc_epoch(int(isolated.rates['time'][290]), gateway.ACCOUNTS['titan'])
     def copy_from(symbol, timeframe, date_from, count):
         calls.append((symbol, timeframe, date_from, count))
         eligible=isolated.rates[isolated.rates['time'] <= int(date_from.timestamp())]
@@ -241,7 +242,7 @@ def test_chart_candles_supports_exclusive_historical_cursor_with_warmup(isolated
     assert calls[0][3]>=260, 'historical indicator warm-up must be fetched in addition to the visible page'
     assert body['candles'] and len(body['candles'])==10
     assert all(row['time'] < cursor for row in body['candles']), 'cursor bar must be excluded'
-    assert body['candles'][-1]['time']==int(isolated.rates['time'][289])
+    assert body['candles'][-1]['time']==app.broker_clock.rates_to_utc_epoch(int(isolated.rates['time'][289]), gateway.ACCOUNTS['titan'])
     assert body['page']['nextBefore']==body['candles'][0]['time']
     assert body['page']['hasMore'] is True
     isolated.send.assert_not_called()
@@ -289,6 +290,7 @@ def test_goldm15_chart_candles_normalize_broker_time_without_future_bars(isolate
     account = gateway.ACCOUNTS['goldm15']
     isolated.info.login = account['login']
     isolated.info.server = account['server']
+    monkeypatch.setitem(account, 'rates_time_basis', 'BROKER_SERVER')
     raw = isolated.rates.copy()
     raw['time'] += 10800
     expected_last_utc = int(isolated.rates[-1]['time'])
@@ -338,7 +340,7 @@ def test_chart_candles_rejects_nonpositive_history_cursor(isolated, monkeypatch)
 
 
 def test_chart_candles_returns_single_bar_on_short_final_history_page(isolated, monkeypatch):
-    cursor=int(isolated.rates['time'][1])
+    cursor=app.broker_clock.rates_to_utc_epoch(int(isolated.rates['time'][1]), gateway.ACCOUNTS['titan'])
     monkeypatch.setattr(app.mt5, 'symbol_info', lambda name: NS(name=name, digits=2, trade_tick_size=.01))
     monkeypatch.setattr(app.mt5, 'copy_rates_from', lambda symbol, timeframe, date_from, count:
                         isolated.rates[isolated.rates['time'] <= int(date_from.timestamp())][-count:].copy(),
@@ -347,9 +349,10 @@ def test_chart_candles_returns_single_bar_on_short_final_history_page(isolated, 
     assert response.status_code==200,response.text
     body=response.json()
     assert len(body['candles'])==1
-    assert body['candles'][0]['time']==int(isolated.rates['time'][0])
+    oldest=app.broker_clock.rates_to_utc_epoch(int(isolated.rates['time'][0]), gateway.ACCOUNTS['titan'])
+    assert body['candles'][0]['time']==oldest
     assert len(body['ema9'])==1
-    assert body['page']=={'requestedCount':10,'oldestTime':int(isolated.rates['time'][0]),'nextBefore':None,'hasMore':False}
+    assert body['page']=={'requestedCount':10,'oldestTime':oldest,'nextBefore':None,'hasMore':False}
 
 
 @pytest.mark.parametrize('account_id', ['titan', 'xau5m_500'])
@@ -556,7 +559,7 @@ def test_none_history_fail_closed_not_zero(route, isolated):
 @pytest.mark.parametrize('stamp', ['2026-10-10T00:00:00+00:00', '2026-10-25T00:00:00+00:00', '2026-03-29T00:00:00+00:00'])
 def test_manual_reset_expires_at_next_utc_risk_day(stamp, isolated):
     now = datetime.fromisoformat(stamp)
-    isolated.tick.time = int(now.timestamp())
+    isolated.tick.time = int(now.timestamp()) + app.broker_clock.offset_seconds(gateway.ACCOUNTS['titan'], now.timestamp())
     isolated.clock.now = now.timestamp()
     before = int(now.timestamp())-60
     config = dict(manual_reset_active=True, reset_balance=11000., reset_timestamp=before,
@@ -571,8 +574,8 @@ def test_manual_reset_expires_at_next_utc_risk_day(stamp, isolated):
 
 
 def test_manual_reset_same_day_is_preserved_after_readback(isolated):
-    day = datetime.fromtimestamp(isolated.tick.time, timezone.utc).date().isoformat()
-    app.save_dd_config(dict(manual_reset_active=True, reset_balance=10100., reset_timestamp=isolated.tick.time-60, reset_date=day))
+    day = app.risk_day_context(isolated.clock.now, 0, {})[0]['risk_day']
+    app.save_dd_config(dict(manual_reset_active=True, reset_balance=10100., reset_timestamp=int(isolated.clock.now)-60, reset_date=day))
     dd = app.get_live_market_data()['daily_drawdown']
     assert dd['manual_active'] is True
     assert dd['day_start_bal'] == 10100.
@@ -585,7 +588,7 @@ def deal(ticket, entry, stamp, *, volume=.01, profit=0., commission=0., swap=0.,
 
 
 def test_journal_unknown_reasons_scope_and_net_swap(isolated):
-    isolated.pos.time = 1791504000
+    isolated.pos.time = 1791514800
     foreign = NS(**vars(isolated.pos)); foreign.ticket=12; foreign.magic=999
     isolated.positions.return_value=[isolated.pos, foreign]
     entries=app.build_trade_journal('titan', datetime.fromtimestamp(isolated.tick.time, timezone.utc), None)
@@ -596,11 +599,12 @@ def test_journal_unknown_reasons_scope_and_net_swap(isolated):
     assert 'unbekannt' in row['profit_goal'].lower()
     assert row['profit_usd'] == 9.
     assert row['net_profit_usd'] == 9.
-    assert row['time_de'] == datetime.fromtimestamp(row['time_ts'], __import__('zoneinfo').ZoneInfo('Europe/Berlin')).strftime('%H:%M:%S')
+    row_utc = app.broker_clock.to_utc_epoch(row['time_ts'], gateway.ACCOUNTS['titan'])
+    assert row['time_de'] == datetime.fromtimestamp(row_utc, __import__('zoneinfo').ZoneInfo('Europe/Berlin')).strftime('%H:%M:%S')
 
 
 def test_journal_partial_close_allocates_older_entry_cost_once(isolated):
-    t=1791504000
+    t=1791514800
     opening=deal(20, app.mt5.DEAL_ENTRY_IN, t-86400*3, volume=.02, commission=-4., price=3990.)
     close1=deal(21, app.mt5.DEAL_ENTRY_OUT, t, volume=.01, profit=10., commission=-1., swap=-.5, fee=-.25, price=4000., kind=1, magic=0)
     close2=deal(22, app.mt5.DEAL_ENTRY_OUT, t+600, volume=.01, profit=20., commission=-1., swap=-.5, fee=-.25, price=4010., kind=1)
@@ -639,7 +643,8 @@ def test_titan_rsi_is_wilder_on_closed_bar(isolated):
     data=app.get_live_market_data()
     reference=gold.wilder_rsi(isolated.rates['close'],14)[-2]
     assert data['indicators']['rsi14'] == pytest.approx(reference)
-    assert data['signal_bar_time_utc'] == datetime.fromtimestamp(int(isolated.rates['time'][-2]),timezone.utc).isoformat()
+    normalized = app.broker_clock.rates_to_utc_epoch(int(isolated.rates['time'][-2]), gateway.ACCOUNTS['titan'])
+    assert data['signal_bar_time_utc'] == datetime.fromtimestamp(normalized,timezone.utc).isoformat()
 
 
 def test_valid_guard_baseline_is_not_live_heartbeat(tmp_path):
@@ -718,15 +723,16 @@ def test_daily_risk_counts_entry_fees_and_swap(isolated):
 def test_gold_expired_manual_baseline_returns_to_verified_guard(isolated,monkeypatch):
     isolated.info.login=gateway.ACCOUNTS['goldm15']['login']
     now=datetime.fromisoformat('2026-10-10T00:00:00+00:00')
-    isolated.tick.time=int(now.timestamp())
+    isolated.tick.time=int(now.timestamp()) + app.broker_clock.offset_seconds(gateway.ACCOUNTS['goldm15'], now.timestamp())
     isolated.clock.now=now.timestamp()
     token=gateway._selected.set('goldm15')
     try:
-        app.save_dd_config(dict(manual_reset_active=True,reset_balance=11000.,reset_timestamp=isolated.tick.time-60,reset_date='2026-10-09'))
+        app.save_dd_config(dict(manual_reset_active=True,reset_balance=11000.,reset_timestamp=int(now.timestamp())-60,reset_date='2026-10-09'))
     finally:
         gateway._selected.reset(token)
     guard=isolated.root/'guard.state'
-    guard.write_bytes(struct.pack('<iqdiiii',121,isolated.tick.time,10100.,1,0,0,0))
+    guard_day = int((now.timestamp()+app.broker_clock.offset_seconds(gateway.ACCOUNTS['goldm15'], now.timestamp()))//86400)*86400
+    guard.write_bytes(struct.pack('<iqdiiii',121,guard_day,10100.,1,0,0,0))
     monkeypatch.setattr(app,'GUARD_FILE',guard)
     data=isolated.client.get('/api/status?account=goldm15&light=true').json()
     dd=data['daily_drawdown']
@@ -740,7 +746,7 @@ def test_gold_expired_manual_baseline_returns_to_verified_guard(isolated,monkeyp
 
 @pytest.mark.parametrize('kind,slot', [(0,1),(1,2),(0,3)])
 def test_gold_journal_long_short_slot_is_evidenced_not_comment_inferred(kind, slot, isolated):
-    t=1791504000
+    t=1791514800
     magic=int(gold.parameters()['MagicBase'])+slot
     opening=deal(1,app.mt5.DEAL_ENTRY_IN,t-10000,kind=kind,magic=magic,comment='arbitrary')
     closing=deal(2,app.mt5.DEAL_ENTRY_OUT,t,kind=1-kind,magic=0,price=4010. if kind==0 else 3990.,profit=10.)
@@ -754,7 +760,7 @@ def test_gold_journal_long_short_slot_is_evidenced_not_comment_inferred(kind, sl
 
 
 def test_incomplete_position_history_returns_unknown_accounting(isolated):
-    t=1791504000
+    t=1791514800
     closing=deal(2,app.mt5.DEAL_ENTRY_OUT,t,profit=10.,kind=1)
     isolated.positions.return_value=[]
     isolated.history.return_value=[closing]
@@ -766,7 +772,7 @@ def test_incomplete_position_history_returns_unknown_accounting(isolated):
 
 
 def test_duplicate_closed_deal_only_appears_once(isolated):
-    t=1791504000
+    t=1791514800
     opening=deal(1,app.mt5.DEAL_ENTRY_IN,t-1000,commission=-1.)
     closing=deal(2,app.mt5.DEAL_ENTRY_OUT,t,profit=10.,kind=1)
     isolated.positions.return_value=[]
@@ -784,7 +790,7 @@ def test_unknown_account_risk_numbers_fail_closed(field, value, isolated):
 
 
 def test_mismatched_position_history_does_not_fabricate_entry(isolated):
-    t=1791504000
+    t=1791514800
     closing=deal(2,app.mt5.DEAL_ENTRY_OUT,t,profit=10.,kind=1)
     other=deal(1,app.mt5.DEAL_ENTRY_IN,t-1000,position=999,price=123.)
     isolated.positions.return_value=[]
@@ -795,7 +801,7 @@ def test_mismatched_position_history_does_not_fabricate_entry(isolated):
 
 
 def test_partial_close_penny_cost_is_not_lost_or_counted_twice(isolated):
-    t=1791504000
+    t=1791514800
     opening=deal(1,app.mt5.DEAL_ENTRY_IN,t-10000,volume=.03,commission=-.01)
     closes=[deal(i,app.mt5.DEAL_ENTRY_OUT,t+i,volume=.01,profit=1.,kind=1) for i in (2,3,4)]
     isolated.positions.return_value=[]
@@ -807,10 +813,11 @@ def test_partial_close_penny_cost_is_not_lost_or_counted_twice(isolated):
 
 @pytest.mark.parametrize('stamp', ['2026-03-29T01:30:00+00:00','2026-10-25T01:30:00+00:00'])
 def test_header_and_journal_berlin_time_are_same_instant(stamp, isolated):
-    isolated.tick.time=int(datetime.fromisoformat(stamp).timestamp())
-    isolated.clock.now=isolated.tick.time
+    now = datetime.fromisoformat(stamp).timestamp()
+    isolated.tick.time=int(now) + app.broker_clock.offset_seconds(gateway.ACCOUNTS['titan'], now)
+    isolated.clock.now=now
     data=app.get_live_market_data(include_journal=False)
-    assert data['times']['german']==__import__('journal_accounting').times(isolated.tick.time)['time_de']
+    assert data['times']['german']==__import__('journal_accounting').times(int(now))['time_de']
 
 
 def test_nonfinite_daily_deal_fails_closed(isolated):

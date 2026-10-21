@@ -267,9 +267,15 @@ def deal_envelope(context, row, captured_at_utc):
     fill_time = row.get('fillTime')
     if type(fill_time) is not dict or set(fill_time) != {'rawBrokerEpochMs', 'utcEpochMs', 'brokerUtcOffsetSeconds', 'offsetSource'}:
         raise ValueError('invalid broker deal time provenance')
+    expected_source = broker_clock.offset_source(spec)
+    try:
+        expected_offset = broker_clock.offset_seconds(spec, fill_time['utcEpochMs']/1000)
+    except (TypeError, ValueError, OverflowError, OSError):
+        raise ValueError('invalid broker deal time provenance')
     if (type(fill_time['rawBrokerEpochMs']) is not int or type(fill_time['utcEpochMs']) is not int or
             type(fill_time['brokerUtcOffsetSeconds']) is not int or
-            abs(fill_time['brokerUtcOffsetSeconds']) > 86400 or fill_time['offsetSource'] != 'ACCOUNT_CONFIG' or
+            abs(fill_time['brokerUtcOffsetSeconds']) > 86400 or fill_time['offsetSource'] != expected_source or
+            fill_time['brokerUtcOffsetSeconds'] != expected_offset or
             fill_time['rawBrokerEpochMs'] - fill_time['brokerUtcOffsetSeconds'] * 1000 != fill_time['utcEpochMs']):
         raise ValueError('invalid broker deal time provenance')
     as_of = _deal_time(fill_time['utcEpochMs'])

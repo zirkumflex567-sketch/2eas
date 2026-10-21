@@ -23,7 +23,7 @@ def deal(**updates):
         'ticket': '8712345', 'orderTicket': '8712344', 'positionIdentifier': '8712300',
         'type': 'BUY', 'status': 'EXECUTED', 'entry': 'IN',
         'fillTime': {'rawBrokerEpochMs': 1792098900000, 'utcEpochMs': 1792088100000,
-                     'brokerUtcOffsetSeconds': 10800, 'offsetSource': 'ACCOUNT_CONFIG'},
+                     'brokerUtcOffsetSeconds': 10800, 'offsetSource': 'BROKER_CLOCK_POLICY'},
         'price': '4153.92', 'volume': '0.1', 'commission': '-0.25',
         'fee': '0', 'swap': '0', 'profit': '-1.35',
     }
@@ -78,7 +78,7 @@ def test_trade_snapshot_freezes_only_completed_broker_candles_with_stable_identi
     def bar(stamp, close):
         return dict(time=stamp,open=4150.0,high=4155.0,low=4149.0,close=close,
                     tick_volume=12,spread=18,real_volume=0)
-    rows=[bar(asof-1800,4151.25),bar(asof-900,4152.5),bar(asof,4153.0)]
+    rows=[bar(asof-1800+10800,4151.25),bar(asof-900+10800,4152.5),bar(asof+10800,4153.0)]
     first=service.trade_snapshot_envelope(context(),deal(),rows,captured_at_utc='2026-10-15T18:16:00Z',timeframe='M15',digits=2)
     again=service.trade_snapshot_envelope(context(),deal(),rows,captured_at_utc='2026-10-15T18:16:10Z',timeframe='M15',digits=2)
     payload=first['payload']

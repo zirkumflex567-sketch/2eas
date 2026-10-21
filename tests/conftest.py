@@ -7,8 +7,11 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def isolated_utc_clock_policy(request,monkeypatch):
-    if request.node.path.name.startswith(('test_broker_clock', 'test_multi_account')):
+    if request.node.path.name.startswith((
+            'test_broker_clock', 'test_multi_account',
+            'test_chart_studio_broker_reads', 'test_chart_studio_broker_lifecycle_capture')):
         return
     import account_gateway
     for account in account_gateway.ACCOUNTS.values():
         monkeypatch.setitem(account,'broker_utc_offset_seconds',0)
+        monkeypatch.delitem(account,'broker_clock_policy',raising=False)

@@ -356,7 +356,7 @@ def quote_metadata(tick, now=None):
     max_age = min(configured_age, QUOTE_MAX_AGE_SECONDS) if math.isfinite(configured_age) and configured_age > 0 else QUOTE_MAX_AGE_SECONDS
     raw_stamp = getattr(tick, 'time', None)
     try:
-        offset = broker_clock.offset_seconds(selected())
+        offset = broker_clock.offset_seconds(selected(), now)
     except ValueError as exc:
         raise HTTPException(503, str(exc)) from exc
     stamp = raw_stamp-offset if isinstance(raw_stamp,(int,float)) and not isinstance(raw_stamp,bool) else None
@@ -391,7 +391,7 @@ def require_fresh_quote(tick, now=None, risk_context=None):
 
 def risk_day_context(now, reset_hour, cfg):
     """The risk policy clock is wall UTC; a frozen quote cannot retain resets."""
-    offset = broker_clock.offset_seconds(selected())
+    offset = broker_clock.offset_seconds(selected(), now)
     wall = datetime.fromtimestamp(now+offset, timezone.utc)
     shifted = wall-timedelta(hours=reset_hour)
     broker_midnight = shifted.replace(hour=0, minute=0, second=0, microsecond=0)+timedelta(hours=reset_hour)
@@ -401,7 +401,7 @@ def risk_day_context(now, reset_hour, cfg):
     requested = cfg.get('manual_reset_active', False)
     active = bool(requested and stamp and midnight.timestamp() <= stamp <= now and cfg.get('reset_date') == day)
     return dict(manual_active=active, manual_expired=bool(requested and not active),
-                risk_day=day, risk_timezone=broker_clock.zone_label(selected()), risk_reset_hour=reset_hour), midnight
+                risk_day=day, risk_timezone=broker_clock.zone_label(selected(), now), risk_reset_hour=reset_hour), midnight
 
 
 def current_daily_drawdown(mt5_client, account_info, tick, now, params=None, dd_cfg=None):
@@ -424,10 +424,11 @@ def current_daily_drawdown(mt5_client, account_info, tick, now, params=None, dd_
     reset_ts = dd_cfg.get('reset_timestamp')
     reset_bal = dd_cfg.get('reset_balance', 10000.0)
     from_dt = max(midnight_dt, datetime.fromtimestamp(reset_ts, timezone.utc)) if manual_active and reset_ts else midnight_dt
-    offset = broker_clock.offset_seconds(selected())
+    start_offset = broker_clock.offset_seconds(current_account, from_dt.timestamp())
+    end_offset = broker_clock.offset_seconds(current_account, now)
     deals = require_mt5_data(_mt5_read('history_deals_get',
-        from_dt + timedelta(seconds=offset),
-        datetime.fromtimestamp(now, timezone.utc) + timedelta(seconds=offset)), 'daily_history')
+        from_dt + timedelta(seconds=start_offset),
+        datetime.fromtimestamp(now, timezone.utc) + timedelta(seconds=end_offset)), 'daily_history')
     realized_today = 0.0
     if deals:
         for deal in deals:
@@ -496,7 +497,7 @@ def get_cached_trade_journal(account_id, server_time, local_time, ema9=None):
 def journal_metadata(account_id):
     return {'cutoff_utc': journal_accounting.CUTOFF.isoformat(),
             'cutoff_label': 'Aufzeichnung seit 08.10.2026 23:00 UTC (09.10.2026 01:00 Europe/Berlin)',
-            'timezone': 'Europe/Berlin', 'timestamp_basis': broker_clock.zone_label(selected()) + ' → UTC', 'broker_utc_offset_seconds': broker_clock.offset_seconds(selected()),
+            'timezone': 'Europe/Berlin', 'timestamp_basis': broker_clock.zone_label(selected(), time.time()) + ' → UTC', 'broker_utc_offset_seconds': broker_clock.offset_seconds(selected(), time.time()),
             'snapshot_age_seconds': max(0., time.monotonic()-JOURNAL_CACHE_AT.get(account_id, time.monotonic()))}
 
 
@@ -651,8 +652,8 @@ def build_trade_journal(account_id, server_time, local_time, ema9=None):
         except Exception:
             ema9 = None
     deals = require_mt5_data(_mt5_read('history_deals_get',
-        journal_accounting.CUTOFF+timedelta(seconds=broker_clock.offset_seconds(selected())),
-        server_time+timedelta(seconds=broker_clock.offset_seconds(selected()))), 'journal_history')
+        journal_accounting.CUTOFF+timedelta(seconds=broker_clock.offset_seconds(selected(), journal_accounting.CUTOFF.timestamp())),
+        server_time+timedelta(seconds=broker_clock.offset_seconds(selected(), server_time.timestamp()))), 'journal_history')
     positions = require_mt5_data(mt5.positions_get(symbol=sym_name), 'journal_positions')
     magics = journal_magics(account_id)
     slot_by_magic = {m:i+1 for i,m in enumerate(sorted(magics))} if (account_id=='goldm15' and isinstance(magics, (set, list))) else {}
@@ -691,7 +692,7 @@ def build_trade_journal(account_id, server_time, local_time, ema9=None):
             'ema9': round(float(ema9), 2) if (ema9 is not None and math.isfinite(ema9)) else None,
             'dist_to_ema9': dist_ema9,
             'target_usd': target_usd,
-            **journal_accounting.times(p.time, broker_clock.offset_seconds(selected()))
+            **journal_accounting.times(p.time, broker_clock.offset_for_broker_epoch(p.time, selected()))
         })
     by_position = {}
     for d in {int(d.ticket):d for d in deals}.values():
@@ -720,7 +721,7 @@ def build_trade_journal(account_id, server_time, local_time, ema9=None):
                 'profit_usd': row['net_profit_usd'], 'pnl_basis': 'realized_net_with_allocated_entry_costs',
                 'reason_verified': False, 'why_triggered': why_trig,
                 'profit_goal': prof_goal,
-                **row, **journal_accounting.times(d.time, broker_clock.offset_seconds(selected()))
+                **row, **journal_accounting.times(d.time, broker_clock.offset_for_broker_epoch(d.time, selected()))
             })
     entries.sort(key=lambda x: x['time_ts'], reverse=True)
     return entries
@@ -1209,7 +1210,7 @@ def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] 
         raise HTTPException(status_code=422, detail="Ungültiger Chart-Timeframe.")
     tf_val = TIMEFRAME_MAP[tf_upper]
     count = min(1001, max(10, count))
-    rates_offset = broker_clock.rates_offset_seconds(current_acc)
+    rates_offset = broker_clock.rates_offset_seconds(current_acc, before)
     fetch_count = 4999 if (account == 'goldm15' and sym_name == SYMBOL and tf_val == mt5.TIMEFRAME_M15) else (count+250)
     if before is None:
         rates = _mt5_read('copy_rates_from_pos', sym_name, tf_val, 0, fetch_count)

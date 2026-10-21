@@ -291,7 +291,7 @@ class MultiAccountTests(unittest.TestCase):
         fake.positions_get=lambda **kw:[]
         fake.history_deals_get=lambda *args:[]
         fake.ORDER_TYPE_BUY=app.mt5.ORDER_TYPE_BUY
-        with patch.object(app,'mt5',fake),patch.object(app,'load_dd_config',return_value={}),patch.object(app.time,'time',return_value=float(tick_time - 10800)):
+        with patch.object(app,'mt5',fake),patch.object(app,'load_dd_config',return_value={}),patch.object(app.time,'time',return_value=float(tick_time - 7200)):
             with self.gateway.session(fake,'titan'):
                 data=app.get_live_market_data()
         for field in ['daily_vp','weekly_vp','sr_levels','positions','indicators','daily_drawdown','rules_matrix','buy_readiness','sell_readiness','analysis_mode']:

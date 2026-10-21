@@ -47,4 +47,4 @@ def test_broker_midnight_risk_day_is_mapped_to_wall_utc():
         context,midnight=app.risk_day_context(now,0,{})
         assert context['risk_day']=='2026-10-10'
         assert midnight.timestamp()==datetime(2026,10,9,21,tzinfo=timezone.utc).timestamp()
-        assert context['risk_timezone']=='Broker UTC+03:00 (explizit konfiguriert)'
+        assert context['risk_timezone']=='Broker UTC+03:00 (New-York-Close/DST-Regel)'

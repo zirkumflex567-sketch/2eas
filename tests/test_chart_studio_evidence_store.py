@@ -55,8 +55,8 @@ def test_repeated_mt5_deal_with_new_capture_time_keeps_first_immutable_record(pr
     row={'account':'titan','login':'53087839','server':'ICMarketsEU-Demo','source':'MT5_VERIFIED',
          'canExecute':False,'symbol':'XAUUSD','ticket':'8712345','orderTicket':'8712344',
          'positionIdentifier':'8712300','type':'BUY','status':'EXECUTED','entry':'IN',
-         'fillTime':{'rawBrokerEpochMs':1792098900000,'utcEpochMs':1792088100000,
-                     'brokerUtcOffsetSeconds':10800,'offsetSource':'ACCOUNT_CONFIG'},
+         'fillTime':{'rawBrokerEpochMs':1792088100000,'utcEpochMs':1792088100000,
+                     'brokerUtcOffsetSeconds':0,'offsetSource':'ACCOUNT_CONFIG'},
          'price':'4153.92','volume':'0.1','commission':'-0.25','fee':'0','swap':'0','profit':'-1.35'}
     s=store(private_root)
     first=capture.capture_deals(s,context(),[row],'2026-10-15T18:16:00Z')

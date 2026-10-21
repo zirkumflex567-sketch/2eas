@@ -73,12 +73,12 @@ def broker_symbol(value):
 
 def timestamp(raw_ms, spec):
     raw_ms = integer(raw_ms, positive=True)
-    offset = broker_clock.offset_seconds(spec)
+    offset = broker_clock.offset_for_broker_epoch(raw_ms/1000, spec)
     utc_ms = raw_ms - offset*1000
     if utc_ms <= 0:
         raise BrokerReadError('invalid clock')
     return {'rawBrokerEpochMs': raw_ms, 'utcEpochMs': utc_ms,
-            'brokerUtcOffsetSeconds': offset, 'offsetSource': 'ACCOUNT_CONFIG'}
+            'brokerUtcOffsetSeconds': offset, 'offsetSource': broker_clock.offset_source(spec)}
 
 
 def paired_timestamp(row, seconds_field, milliseconds_field, spec):
@@ -499,10 +499,11 @@ def deal_model(row, spec, currency):
 def trades_read(mt5, spec, symbol, start, stop, *, limit=100, ticket=None,
                 magic=None, manual=None, cursor=None, now=None):
     """Read actual HISTORY_DEAL only, inside verified_read's shared session lock."""
-    offset = broker_clock.offset_seconds(spec)
     observed = history_cursor.observed_us(time.time() if now is None else now)
+    start_offset = broker_clock.offset_seconds(spec, start/1_000_000)
+    asof_offset = broker_clock.offset_seconds(spec, min(stop, observed)/1_000_000)
     scope = history_cursor.digest({'account':spec['id'], 'login':str(spec['login']),
-        'server':spec['server'], 'terminal':spec['terminal'], 'offset':offset,
+        'server':spec['server'], 'terminal':spec['terminal'], 'offset':(start_offset,asof_offset),
         'symbol':symbol, 'start':start, 'stop':stop,
         'ticket':ticket, 'magic':magic, 'manual':manual})
     state = history_cursor.decode(cursor, scope, stop, observed) if cursor is not None else None
@@ -514,8 +515,8 @@ def trades_read(mt5, spec, symbol, start, stop, *, limit=100, ticket=None,
     if asof >= start:
         with broker_telemetry.span('mt5_history'):
             rows = broker_rows(mt5.history_deals_get(
-                history_cursor.utc_datetime(start+offset*1000000),
-                history_cursor.utc_datetime(asof+offset*1000000)))
+                history_cursor.utc_datetime(start+start_offset*1000000),
+                history_cursor.utc_datetime(asof+broker_clock.offset_seconds(spec, asof/1_000_000)*1000000)))
     else:
         rows = ()
     if len(rows) > HISTORY_MAX_ROWS:

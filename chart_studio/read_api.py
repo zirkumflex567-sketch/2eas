@@ -116,7 +116,6 @@ def install_read_routes(app, mt5, *, now=None, calendar_path_resolver=None):
                 # Live MT5 demo reads show the rates timestamp aligned with the
                 # configured broker wall clock (quote rawBrokerEpoch), not UTC.
                 # Convert through the same explicit per-account policy as ticks.
-                offset_seconds = broker_clock.offset_seconds(spec)
                 open_epoch = broker_clock.rates_to_utc_epoch(int(raw_open), spec)
                 start = datetime.fromtimestamp(open_epoch, timezone.utc)
                 stop = start + timedelta(seconds=durations[timeframe])
@@ -155,7 +154,7 @@ def install_read_routes(app, mt5, *, now=None, calendar_path_resolver=None):
                         ignored += 1
                         continue
                     tick_time = field(tick, 'time_msc')
-                    tick_time_utc = int(tick_time) - offset_seconds*1000
+                    tick_time_utc = int(broker_clock.to_utc_epoch(int(tick_time)/1000, spec)*1000)
                     if (isinstance(tick_time, bool) or not isinstance(tick_time, numbers.Integral) or
                             not int(start.timestamp()*1000) <= tick_time_utc < int(stop.timestamp()*1000)):
                         raise ValueError('tick outside requested bar')
@@ -244,7 +243,7 @@ def install_read_routes(app, mt5, *, now=None, calendar_path_resolver=None):
                 reader = getattr(mt5, 'copy_rates_from', None)
                 if not callable(reader):
                     raise HTTPException(503, 'Historische Regime-Historie nicht verfügbar.')
-                raw_cutoff = cutoff + broker_clock.rates_offset_seconds(spec)
+                raw_cutoff = cutoff + broker_clock.rates_offset_seconds(spec, cutoff)
                 date_from = datetime.fromtimestamp(raw_cutoff, timezone.utc)
                 raw = reader(symbol, timeframe_value, date_from, MAX_BARS)
             else:
@@ -308,7 +307,7 @@ def install_read_routes(app, mt5, *, now=None, calendar_path_resolver=None):
             else:
                 path = None
             result = load_snapshot(path, account=spec['id'], symbol=symbol, now=clock(),
-                                   expected_server_utc_offset=spec.get('broker_utc_offset_seconds'))
+                                   expected_server_utc_offset=broker_clock.offset_seconds(spec, clock()))
             return {**provenance(spec), **result, 'canExecute': False}
 
         return response(verified_read(mt5, account, operation))

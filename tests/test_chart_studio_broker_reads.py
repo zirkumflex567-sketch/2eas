@@ -570,7 +570,7 @@ def test_positions_orders_decimal_ids_nullable_stops_and_provenance(client, fake
     assert quote['quoteTimeUtc'] == NOW and quote['rawBrokerEpoch'] == RAW
     assert quote['quoteTimeUtcMs'] == NOW*1000+123
     assert quote['brokerUtcOffsetSeconds'] == 10800
-    assert quote['offsetSource'] == 'ACCOUNT_CONFIG'
+    assert quote['offsetSource'] == 'BROKER_CLOCK_POLICY'
     assert len(body['positionsRevision']) == len(body['ordersRevision']) == 64
     assert len(quote['revision']) == 64
 
@@ -669,6 +669,7 @@ def test_malformed_quote_fails_closed(client, fake, field, value):
 
 def test_missing_clock_policy_refused(client, fake, monkeypatch):
     monkeypatch.delitem(gateway.ACCOUNTS['titan'], 'broker_utc_offset_seconds')
+    monkeypatch.delitem(gateway.ACCOUNTS['titan'], 'broker_clock_policy')
     assert read(client).status_code == 503
 
 
