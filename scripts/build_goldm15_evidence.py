@@ -41,7 +41,7 @@ EXPECTED_HASHES = {
     "goldm15/GoldM15_RiskCore.mqh": "096d2b4d98da67001b381028c615ad5612135482f7d58cb585574a293968335a",
     "goldm15/GoldM15_News.mqh": "54cf4dd2884d90fb2040b3e78ac246b22d1e8b5a168318ee75814431c2da70b6",
     "goldm15/GoldM15_Reconstruction.set": "e6c517dd9e5fc26a4d257506a493163d43bbc52a3b1032479eb8aed89d6efa40",
-    "ChartStudioEvidenceSpool.mqh": "3f2201c847c768f7fa8063c7774f9e0a9fe877c734b5ad405ee6807567f35b90",
+    "ChartStudioEvidenceSpool.mqh": "1a40a907ab9f7cf0ded5424850afb3b1fabbd4db25194de4118da4161138af27",
 }
 PRESET_NAME = "GoldM15_Reconstruction.set"
 PRODUCER = "goldm15_demo"
@@ -204,7 +204,7 @@ def _instrument_source(source_text: str, *, account_alias: str, producer: str,
         f"#define CS_EVIDENCE_EXPECTED_LOGIN {int(login)}",
         f"#define CS_EVIDENCE_EXPECTED_SERVER {_mql_string(server)}",
         f"#define CS_EVIDENCE_EXPECTED_TERMINAL_PATH {_mql_string(terminal_path)}",
-        f"#define CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS {broker_utc_offset_seconds}",
+        "#define CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS CSBrokerUtcOffsetSeconds()",
         "string CSParameterSetCanonical();",
         "void CSCaptureGoldRiskCloseAttempt(const string reason,const ulong ticket,const long position_type,",
         "   const double volume,const string symbol,const bool quote_ok,const MqlTick &tick,",

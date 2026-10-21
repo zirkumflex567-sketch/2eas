@@ -32,7 +32,7 @@ def test_goldm15_candidate_captures_computed_signal_values_without_changing_trad
     assert '#define CS_EVIDENCE_STRATEGY_ID "goldm15_reconstruction"' in generated
     assert '#define CS_EVIDENCE_STRATEGY_VERSION "1.22"' in generated
     assert "CS_EVIDENCE_EXPECTED_LOGIN 53090070" in generated
-    assert "CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS 10800" in generated
+    assert "CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS CSBrokerUtcOffsetSeconds()" in generated
     assert 'CSEnqueueDecision("SIGNAL",cs_outcome,cs_bar,cs_features,cs_predicates);' in generated
     assert 'CSEnqueueDecision(cs_has_position ? "EXIT_SIGNAL" : "SIGNAL"' not in generated
     assert 'CSFeature("exit_candidate"' in generated

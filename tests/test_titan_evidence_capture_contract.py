@@ -246,6 +246,23 @@ def test_order_attempt_capture_is_post_request_opt_in_and_contains_event_time_qu
     assert "SymbolInfoTick(_Symbol,cs_tick)" in decision
 
 
+def test_recorder_resolves_current_broker_offset_from_server_and_gmt_clocks():
+    spool = SPOOL.read_text(encoding="utf-8-sig")
+    offset = _function(spool, "CSBrokerUtcOffsetSeconds")
+
+    assert "TimeTradeServer()" in offset
+    assert "TimeGMT()" in offset
+    assert "broker_time-utc_time" in offset
+    assert "return -1;" in offset
+    assert "CSIsSupportedBrokerUtcOffsetSeconds((int)offset)" in offset
+    supported = _function(spool, "CSIsSupportedBrokerUtcOffsetSeconds")
+    assert "offset==7200 || offset==10800" in supported
+    converter = _function(spool, "CSUtcFromBrokerMillis")
+    assert "CSIsSupportedBrokerUtcOffsetSeconds(broker_utc_offset_seconds)" in converter
+    order_attempt = _function(spool, "CSOrderAttemptJson")
+    assert "CSIsSupportedBrokerUtcOffsetSeconds(broker_utc_offset_seconds)" in order_attempt
+
+
 def test_parameter_hash_covers_every_ea_input_once():
     ea = EA.read_text(encoding="utf-8-sig")
     canonical = _function(ea, "CSParameterSetCanonical")

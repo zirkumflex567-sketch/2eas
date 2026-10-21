@@ -102,9 +102,30 @@ string CSUtcFromMillis(const long value)
    return CSUtc(seconds);
   }
 
+bool CSIsSupportedBrokerUtcOffsetSeconds(const int offset)
+  {
+   return offset==7200 || offset==10800;
+  }
+
+int CSBrokerUtcOffsetSeconds()
+  {
+   datetime server_clock=TimeTradeServer();
+   datetime utc_clock=TimeGMT();
+   if(server_clock<=0 || utc_clock<=0)
+      return -1;
+   long broker_time=(long)server_clock;
+   long utc_time=(long)utc_clock;
+   long offset=broker_time-utc_time;
+   // Configured brokers follow the New York close: UTC+2 or UTC+3.
+   // Unknown values fail closed instead of stamping a plausible but wrong UTC time.
+   if(!CSIsSupportedBrokerUtcOffsetSeconds((int)offset))
+      return -1;
+   return (int)offset;
+  }
+
 string CSUtcFromBrokerMillis(const long value,const int broker_utc_offset_seconds)
   {
-   if(value<=0 || broker_utc_offset_seconds < -86400 || broker_utc_offset_seconds > 86400)
+   if(value<=0 || !CSIsSupportedBrokerUtcOffsetSeconds(broker_utc_offset_seconds))
       return "";
    datetime seconds=(datetime)(value/1000-broker_utc_offset_seconds);
    return CSUtc(seconds);
@@ -248,7 +269,7 @@ string CSOrderAttemptJson(const string attempt_id,const string side,const double
       ",\"tickSize\":"+CSJsonQuote(CSNumber(tick_size,10))+
       ",\"quoteTimeUtc\":"+CSJsonQuote(quote_time_utc)+
       ",\"source\":\"MT5_VERIFIED\",\"canExecute\":false";
-   if(broker_time_epoch_millis>0)
+   if(broker_time_epoch_millis>0 && CSIsSupportedBrokerUtcOffsetSeconds(broker_utc_offset_seconds))
       value+=",\"brokerTimeEpochMs\":"+IntegerToString(broker_time_epoch_millis)+
              ",\"brokerUtcOffsetSeconds\":"+IntegerToString(broker_utc_offset_seconds);
    if(tick_value>0.0 && currency!="")

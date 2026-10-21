@@ -236,7 +236,7 @@ def _instrument_source(source_text: str, alias: str, producer: str,
         f"#define CS_EVIDENCE_EXPECTED_LOGIN {int(login)}",
         f"#define CS_EVIDENCE_EXPECTED_SERVER {COMMON._mql_string(server)}",
         f"#define CS_EVIDENCE_EXPECTED_TERMINAL_PATH {COMMON._mql_string(terminal_path)}",
-        f"#define CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS {broker_utc_offset_seconds}",
+        "#define CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS CSBrokerUtcOffsetSeconds()",
     ]
     generated = source_text.replace(marker, "\n".join(definitions) + "\n" + marker, 1)
     if record_only:
