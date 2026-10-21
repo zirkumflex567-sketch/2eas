@@ -112,6 +112,31 @@ const server=http.createServer((req,res)=>{
   await page.waitForFunction(()=>document.querySelector("#chart-v5-live-quote")?.textContent.includes("STALE"));
   await page.waitForFunction(()=>window.ChartStudioV5Preview?.inspect().customMovingAverageCount===1);
   await page.waitForFunction(()=>window.ChartStudioV5Preview?.inspect().customOscillatorCount===2);
+  const localOverlaySync=await page.evaluate(()=>{
+   const settings=window.__v5IndicatorSettings;Object.assign(settings,{
+    supertrend:{enabled:true,period:10,multiplier:3},sar:{enabled:false,step:.02,maxStep:.2},donchian:{enabled:false,period:20},
+    keltner:{enabled:false,period:20,atrPeriod:10,multiplier:2},atrBands:{enabled:false,period:20,atrPeriod:14,multiplier:2},
+    linearRegression:{enabled:false,period:20,multiplier:2},ichimoku:{enabled:false,tenkanPeriod:9,kijunPeriod:26,senkouBPeriod:52,displacement:26},
+    vwap:{enabled:false,timeZone:"UTC",sessionStart:"00:00"}
+   });
+   const scope={...window.__v5IndicatorScope};window.dispatchEvent(new CustomEvent("chart-studio-indicators-change",{detail:scope}));
+   const enabled={sync:window.ChartStudioV5Preview.syncLocalOverlays(),count:window.ChartStudioV5Preview.inspect().localOverlayCount,readout:window.ChartStudioV5Preview.readDataWindow(1792108800+120*900)};
+   settings.supertrend.enabled=false;window.dispatchEvent(new CustomEvent("chart-studio-indicators-change",{detail:scope}));
+   const disabled=window.ChartStudioV5Preview.inspect().localOverlayCount;
+   settings.supertrend.enabled=true;window.dispatchEvent(new CustomEvent("chart-studio-indicators-change",{detail:scope}));
+   const beforeMismatch=window.ChartStudioV5Preview.readDataWindow(1792108800+120*900);
+   window.dispatchEvent(new CustomEvent("chart-studio-indicators-change",{detail:{...scope,account:"other"}}));
+   const mismatched=window.ChartStudioV5Preview.inspect().localOverlayCount;
+   const afterMismatch=window.ChartStudioV5Preview.readDataWindow(1792108800+120*900);
+   settings.supertrend.enabled=false;window.dispatchEvent(new CustomEvent("chart-studio-indicators-change",{detail:scope}));
+   return {enabled,disabled,mismatched,beforeMismatch,afterMismatch};
+  });
+  assert.equal(localOverlaySync.enabled.count,1,`Beta config events immediately synchronize native v5 overlays: ${JSON.stringify(localOverlaySync.enabled)}`);
+  assert.ok(localOverlaySync.enabled.readout.indicators.some(item=>item.id==="beta-overlay-supertrend"&&item.state==="AVAILABLE"));
+  assert.equal(localOverlaySync.disabled,0,"Disabling a Beta overlay removes its native transient series");
+  assert.equal(localOverlaySync.mismatched,0,"Scope mismatch clears stale Beta overlays");
+  assert.ok(localOverlaySync.beforeMismatch.indicators.some(item=>item.id==="beta-overlay-supertrend"),"the overlay is present in the Data Window before a scope mismatch");
+  assert.ok(!localOverlaySync.afterMismatch.indicators.some(item=>item.id==="beta-overlay-supertrend"),"scope mismatch refreshes the Data Window and removes stale overlay values immediately");
   assert.equal(await page.locator("#chart-v5-chart-type").inputValue(),"candles","native preview exposes the current chart presentation");
   await page.locator("#chart-v5-chart-type").selectOption("heikin");
   await page.waitForFunction(()=>window.ChartStudioV5Preview?.inspect().chartType==="heikin");
@@ -693,7 +718,7 @@ const server=http.createServer((req,res)=>{
   },{candles,asOfUtc});
   assert.deepEqual(scopeSwitch.staleResult,{applied:false,reason:"STALE_SCOPE"});
   assert.deepEqual(scopeSwitch.stalePositionResult,{applied:false,reason:"STALE_SCOPE"},"late position reads cannot cross account changes");
-  assert.deepEqual(scopeSwitch.updated,{applied:true,candleCount:150});
+  assert.deepEqual(scopeSwitch.updated,{applied:true,candleCount:150},`scope switch remounts: ${JSON.stringify(scopeSwitch.state)}`);
   assert.equal(scopeSwitch.selectedChartType,"line","the visible selector follows the new scope's saved native presentation after verified data arrives");
   assert.equal(scopeSwitch.state.marketLevelCount,0,"account/symbol scope changes clear prior market-level lines");
   assert.equal(scopeSwitch.state.scope.account,"xau5m_m5");

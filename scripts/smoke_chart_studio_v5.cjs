@@ -20,6 +20,48 @@ const assert=require("node:assert/strict"),path=require("node:path"),fs=require(
   await page.goto("http://127.0.0.1:8872/chart_studio_v5/fixture.html",{waitUntil:"networkidle"});
   assert.equal(await page.evaluate(()=>window.__chartV5Ready),true);
   await page.addScriptTag({path:path.resolve("static/chart-studio-market-structure.js")});
+  const transientOverlayContract=await page.evaluate(()=>{
+   const host=document.createElement("div");host.style.cssText="width:640px;height:360px;position:fixed;left:-2000px;top:0";document.body.append(host);
+   const scope={symbol:"XAUUSD",timeframe:"M15"},engine=ChartStudioV5.createStudioV5(host,"transient-overlays",scope),start=1712500000;
+   const bars=Array.from({length:100},(_,i)=>({time:start+i*900,open:100+i*.1,high:102+i*.1,low:99+i*.1,close:101+i*.1,tick_volume:20+i,real_volume:0}));engine.setCandles(bars);
+   engine.addSupertrend({id:"manual-supertrend",period:10,multiplier:2,color:"#ffffff"});
+   const storageWrites=[];const originalSetItem=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){storageWrites.push({key,value});return originalSetItem.call(this,key,value)};
+   const available=typeof engine.setTransientOverlays==="function"&&typeof engine.clearTransientOverlays==="function";
+   if(!available){Storage.prototype.setItem=originalSetItem;engine.destroy();host.remove();return {available,storageWrites}}
+   const configs=[
+    {kind:"supertrend",settings:{period:10,multiplier:3}},{kind:"sar",settings:{step:.02,maxStep:.2}},
+    {kind:"donchian",settings:{period:20}},{kind:"keltner",settings:{period:20,atrPeriod:10,multiplier:2}},
+    {kind:"atrBands",settings:{period:20,atrPeriod:14,multiplier:2}},{kind:"linearRegression",settings:{period:20,multiplier:2}},
+    {kind:"ichimoku",settings:{tenkanPeriod:9,kijunPeriod:26,senkouBPeriod:52,displacement:26}},
+    {kind:"vwap",settings:{timeZone:"UTC",sessionStart:"00:00"}}
+   ];
+   const result=engine.setTransientOverlays(configs),readout=engine.readDataWindow(bars.at(-1).time),layout=JSON.parse(engine.exportLayout()),inspect=engine.inspect();
+   const excessive=engine.setTransientOverlays([...configs,{kind:"supertrend",settings:{period:10,multiplier:3}}]),afterExcessive=engine.inspect().transientOverlayCount;
+   const failedReplacement=engine.setTransientOverlays([{kind:"supertrend",settings:{period:0,multiplier:3}}]),afterFailedReplacement=engine.inspect().transientOverlayCount;
+   const persistent=engine.setTransientOverlays([]),preservedManual=engine.inspect().supertrendCount===1&&JSON.parse(engine.exportLayout()).view.supertrends.some(item=>item.id==="manual-supertrend"),cleared=engine.clearTransientOverlays();engine.setTransientOverlays(configs);engine.changeAccount("other");const afterScopeReset=engine.inspect().transientOverlayCount;
+   Storage.prototype.setItem=originalSetItem;engine.destroy();host.remove();
+   return {available,result,readout,layout,inspect,excessive,afterExcessive,failedReplacement,afterFailedReplacement,persistent,preservedManual,cleared,afterScopeReset,storageWrites};
+  });
+  assert.equal(transientOverlayContract.available,true,"Native v5 exposes isolated transient overlay APIs");
+  assert.equal(transientOverlayContract.result.applied,true);
+  assert.equal(transientOverlayContract.inspect.transientOverlayCount,8);
+  assert.equal(transientOverlayContract.excessive.reason,"INVALID_TRANSIENT_OVERLAYS");
+  assert.equal(transientOverlayContract.afterExcessive,8,"overlay limits reject overflow without changing the accepted set");
+  assert.equal(transientOverlayContract.readout.indicators.length>=8,true,"Transient native indicator values appear in exact-candle readout");
+  assert.ok(transientOverlayContract.readout.indicators.some(item=>item.id==="beta-overlay-supertrend"&&item.state==="AVAILABLE"));
+  assert.ok(transientOverlayContract.readout.indicators.some(item=>item.id==="beta-overlay-vwap"&&item.state==="AVAILABLE"));
+  assert.equal(transientOverlayContract.inspect.sessionVwapSeries.find(item=>item.id==="beta-overlay-vwap").volumeSource,"TICK_VOLUME_PROXY","VWAP preserves volume provenance in the engine read model");
+  assert.equal(transientOverlayContract.inspect.ichimokuSeries.find(item=>item.id==="beta-overlay-ichimoku").options.displacement,26,"Ichimoku displacement remains native");
+  assert.equal(transientOverlayContract.inspect.sessionVwapSeries.find(item=>item.id==="beta-overlay-vwap").options.color,"#ffb84d","Beta VWAP receives its stable native color");
+  assert.equal(transientOverlayContract.failedReplacement.applied,false);
+  assert.equal(transientOverlayContract.afterFailedReplacement,8,"a partial engine failure restores the last accepted overlay set");
+  assert.equal(JSON.stringify(transientOverlayContract.layout).includes("beta-overlay-"),false,"Transient overlays are excluded from exported layouts");
+  assert.deepEqual(transientOverlayContract.layout.view.supertrends.map(item=>item.id),["manual-supertrend"],"the export retains manual indicators while excluding bridge overlays");
+  assert.equal(transientOverlayContract.persistent.applied,true,"An empty desired config removes bridge overlays");
+  assert.equal(transientOverlayContract.preservedManual,true,"Clearing bridge overlays leaves user-managed v5 indicators intact");
+  assert.equal(transientOverlayContract.cleared,true);
+  assert.equal(transientOverlayContract.afterScopeReset,0,"account changes remove transient overlays");
+  assert.deepEqual(transientOverlayContract.storageWrites,[],"Transient overlay changes never write browser storage");
   const chartTypeContract=await page.evaluate(()=>{
    const host=document.createElement("div");host.style.cssText="width:640px;height:360px;position:fixed;left:-2000px;top:0";document.body.append(host);
    const scope={symbol:"XAUUSD",timeframe:"M15"},engine=ChartStudioV5.createStudioV5(host,"chart-type-titan",scope),start=1712500000;

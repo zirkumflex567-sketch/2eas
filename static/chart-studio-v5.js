@@ -9773,6 +9773,7 @@ var ChartStudioV5 = (() => {
     const donchianOverlays = /* @__PURE__ */ new Map();
     const bollingerOverlays = /* @__PURE__ */ new Map();
     const sessionVwapOverlays = /* @__PURE__ */ new Map();
+    const transientOverlayIds = /* @__PURE__ */ new Set(), transientOverlayConfigs = /* @__PURE__ */ new Map();
     const keltnerOverlays = /* @__PURE__ */ new Map();
     const atrBandsOverlays = /* @__PURE__ */ new Map();
     const ichimokuOverlays = /* @__PURE__ */ new Map();
@@ -9882,7 +9883,7 @@ var ChartStudioV5 = (() => {
     const historyLimit = 100;
     const utf8ByteLength = (value) => new TextEncoder().encode(value).byteLength;
     let persistenceStatus = drawingScope ? "PENDING" : "DISABLED";
-    let persistenceError = null, drawingsHydrated = false, hydratingDrawings = false;
+    let persistenceError = null, drawingsHydrated = false, hydratingDrawings = false, suppressDrawingPersistence = 0;
     let lastPersistedSnapshot = null;
     const persistenceLimit = 524288;
     let selectedDrawingId = null, hoveredDrawingId = null;
@@ -10461,9 +10462,9 @@ var ChartStudioV5 = (() => {
       };
       return {
         movingAverages: [...managedMovingAverages.entries()].filter(([id]) => !transientMovingAverages.has(id)).map(([, value]) => ({ ...value.options })),
-        sessionVwaps: [...sessionVwapOverlays.values()].map(({ options }) => ({ ...options })),
-        supertrends: [...supertrendOverlays.values()].map((group) => ({ ...group.options })),
-        parabolicSars: [...parabolicSarOverlays.values()].map((group) => ({ ...group.options })),
+        sessionVwaps: [...sessionVwapOverlays.entries()].filter(([id]) => !transientOverlayIds.has(id)).map(([, group]) => ({ ...group.options })),
+        supertrends: [...supertrendOverlays.entries()].filter(([id]) => !transientOverlayIds.has(id)).map(([, group]) => ({ ...group.options })),
+        parabolicSars: [...parabolicSarOverlays.entries()].filter(([id]) => !transientOverlayIds.has(id)).map(([, group]) => ({ ...group.options })),
         oscillators: persistentOscillators.map(([, group]) => ({ options: { ...group.options, settings: { ...group.options.settings } }, paneIndex: portablePaneIndex.get(group.paneIndex) ?? 0 })),
         paneLines: persistentPaneLines.map(({ id, series, paneIndex }) => {
           const readout = readoutIndicators.get(id);
@@ -10478,6 +10479,7 @@ var ChartStudioV5 = (() => {
       };
     }
     function persistDrawings(protectedUndoEntries = 0) {
+      if (suppressDrawingPersistence > 0) return true;
       if (!drawingScope || !drawingsHydrated || hydratingDrawings) return true;
       if (persistenceStatus === "CONFLICT" || persistenceStatus === "UNAVAILABLE") return false;
       const storage = localStorageApi(), key = persistenceKey();
@@ -13711,9 +13713,84 @@ var ChartStudioV5 = (() => {
         })
       };
     }
+    function applyTransientOverlay(config) {
+      const id = `beta-overlay-${config.kind}`, colors = { supertrend: "#41d89a", sar: "#f47789", donchian: "#49c6ff", keltner: "#f3c56a", atrBands: "#b58aff", linearRegression: "#55d7ee", ichimoku: "#55d7ee", vwap: "#ffb84d" };
+      const options = { color: colors[config.kind], lineWidth: 2, visible: true, ...config.settings, id };
+      if (config.kind === "supertrend") addSupertrend(options);
+      else if (config.kind === "sar") addParabolicSar(options);
+      else if (config.kind === "donchian") addDonchian(options);
+      else if (config.kind === "keltner") addKeltner(options);
+      else if (config.kind === "atrBands") addAtrBands(options);
+      else if (config.kind === "linearRegression") addLinearRegression(options);
+      else if (config.kind === "ichimoku") addIchimoku(options);
+      else if (config.kind === "vwap") addSessionVwap(options);
+      transientOverlayIds.add(id);
+      return id;
+    }
+    function removeTransientOverlay(id) {
+      const kind = id.replace(/^beta-overlay-/, "");
+      if (kind === "supertrend") removeSupertrend(id);
+      else if (kind === "sar") removeParabolicSar(id);
+      else if (kind === "donchian") removeDonchian(id);
+      else if (kind === "keltner") removeKeltner(id);
+      else if (kind === "atrBands") removeAtrBands(id);
+      else if (kind === "linearRegression") removeLinearRegression(id);
+      else if (kind === "ichimoku") removeIchimoku(id);
+      else if (kind === "vwap") removeSessionVwap(id);
+      transientOverlayIds.delete(id);
+    }
+    function clearTransientOverlays() {
+      guard();
+      suppressDrawingPersistence++;
+      try {
+        for (const id of [...transientOverlayIds]) {
+          removeTransientOverlay(id);
+          transientOverlayConfigs.delete(id);
+        }
+      } finally {
+        suppressDrawingPersistence--;
+      }
+      return true;
+    }
+    function setTransientOverlays(configs) {
+      guard();
+      const allowed = /* @__PURE__ */ new Set(["supertrend", "sar", "donchian", "keltner", "atrBands", "linearRegression", "ichimoku", "vwap"]);
+      if (!Array.isArray(configs) || configs.length > allowed.size || configs.some((item) => !item || !allowed.has(item.kind) || !item.settings || typeof item.settings !== "object" || Array.isArray(item.settings)) || new Set(configs.map((item) => item.kind)).size !== configs.length) return { applied: false, reason: "INVALID_TRANSIENT_OVERLAYS" };
+      const previous = [...transientOverlayIds].map((id) => ({ kind: id.replace(/^beta-overlay-/, ""), settings: { ...transientOverlayConfigs.get(id) ?? {} } }));
+      const replace = (next) => {
+        suppressDrawingPersistence++;
+        try {
+          for (const id of [...transientOverlayIds]) {
+            removeTransientOverlay(id);
+            transientOverlayConfigs.delete(id);
+          }
+          for (const config of next) {
+            const id = applyTransientOverlay(config);
+            transientOverlayConfigs.set(id, { ...config.settings });
+          }
+        } finally {
+          suppressDrawingPersistence--;
+        }
+      };
+      try {
+        replace(configs);
+        return { applied: true, count: transientOverlayIds.size };
+      } catch (error) {
+        try {
+          replace(previous);
+        } catch {
+          try {
+            clearTransientOverlays();
+          } catch {
+          }
+        }
+        return { applied: false, reason: "INVALID_TRANSIENT_OVERLAY_CONFIGURATION", error: String(error?.message ?? error) };
+      }
+    }
     function changeAccount(next) {
       guard();
       if (!/^[a-zA-Z0-9_-]{1,50}$/.test(next)) throw Error("Invalid account");
+      clearTransientOverlays();
       clearPositionOverlays();
       brokerDealMarkers = [];
       brokerDealPrimitive.set([]);
@@ -13841,6 +13918,7 @@ var ChartStudioV5 = (() => {
         candleCount: bars.length,
         lastTime: bars[bars.length - 1]?.time ?? null,
         sessionVwapCount: sessionVwapOverlays.size,
+        transientOverlayCount: transientOverlayIds.size,
         sessionVwapSeries: [...sessionVwapOverlays.entries()].map(([id, group]) => ({ id, options: { ...group.options }, points: group.result.points.map((point2) => ({ ...point2 })), volumeSource: group.result.volumeSource, visible: group.series.options().visible })),
         averageCount: averages.size,
         nativePaneLines: paneLines.size,
@@ -13903,6 +13981,8 @@ var ChartStudioV5 = (() => {
       donchianOverlays.clear();
       bollingerOverlays.clear();
       sessionVwapOverlays.clear();
+      transientOverlayIds.clear();
+      transientOverlayConfigs.clear();
       keltnerOverlays.clear();
       atrBandsOverlays.clear();
       ichimokuOverlays.clear();
@@ -13933,6 +14013,8 @@ var ChartStudioV5 = (() => {
     }
     return Object.freeze({
       setCandles,
+      setTransientOverlays,
+      clearTransientOverlays,
       setPricePresentation,
       readPricePresentation,
       addAverage,
