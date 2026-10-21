@@ -39,6 +39,53 @@ async function main() {
       const expected = allowed.find(item => item.account === account);
       const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
       const page = await context.newPage();
+      await context.addInitScript(() => {
+        const registry = { charts: [], visibleRanges: [], crosshairs: [], installError: null };
+        window.__csMultiChartSpy = registry;
+        const timer = setInterval(() => {
+          const library = window.LightweightCharts;
+          if (!library || typeof library.createChart !== "function") return;
+          clearInterval(timer);
+          try {
+            const createChart = library.createChart;
+            const instrumented = Object.assign({}, library, {
+              createChart(...args) {
+              const chart = createChart.apply(this, args);
+              const host = args[0];
+              if (!host?.closest?.("#chart-multi-workspace")) return chart;
+              const index = registry.charts.length;
+              const scale = chart.timeScale();
+              const setVisibleRange = scale.setVisibleRange.bind(scale);
+              scale.setVisibleRange = range => {
+                registry.visibleRanges.push({ index, from: range.from, to: range.to });
+                return setVisibleRange(range);
+              };
+              const setCrosshairPosition = chart.setCrosshairPosition.bind(chart);
+              chart.setCrosshairPosition = (price, time, series) => {
+                registry.crosshairs.push({ index, price, time });
+                return setCrosshairPosition(price, time, series);
+              };
+              const addCandlestickSeries = chart.addCandlestickSeries.bind(chart);
+              chart.addCandlestickSeries = (...seriesArgs) => {
+                const series = addCandlestickSeries(...seriesArgs);
+                const setData = series.setData.bind(series);
+                series.setData = data => {
+                  chart.__csTestCandles = data;
+                  chart.__csTestSeries = series;
+                  return setData(data);
+                };
+                return series;
+              };
+              registry.charts.push(chart);
+              return chart;
+              },
+            });
+            Object.defineProperty(window, "LightweightCharts", { configurable: true, value: instrumented });
+          } catch (error) {
+            registry.installError = error?.message || String(error);
+          }
+        }, 0);
+      });
       page.on("pageerror", error => browserErrors.push({ account, message: error.message }));
       await page.route("**/*", async route => {
         const request = route.request();
@@ -127,8 +174,67 @@ async function main() {
         await workspace.locator("[data-link-crosshair]").check();
         assert.deepEqual(await workspace.locator("[data-link-time]").isChecked(), true);
         assert.deepEqual(await workspace.locator("[data-link-crosshair]").isChecked(), true);
+        await page.waitForFunction(() => window.__csMultiChartSpy?.charts.length === 2, null, { timeout: 10000 });
+        const timeLink = await page.evaluate(() => {
+          const spy = window.__csMultiChartSpy;
+          const [source, target] = spy.charts;
+          const sourceBars = source.__csTestCandles || [];
+          const targetBars = target.__csTestCandles || [];
+          if (spy.installError || sourceBars.length < 2 || targetBars.length < 2) {
+            return { error: spy.installError || "chart bars unavailable" };
+          }
+          const to = Math.min(sourceBars.at(-1).time, targetBars.at(-1).time) - 60;
+          const from = to - 3600;
+          spy.rangeBaseline = spy.visibleRanges.length;
+          source.timeScale().setVisibleRange({ from, to });
+          return { from, to };
+        });
+        try {
+          await page.waitForFunction(() => {
+            const spy = window.__csMultiChartSpy;
+            return spy?.visibleRanges.slice(spy.rangeBaseline).some(call => call.index === 1);
+          }, null, { timeout: 10000 });
+        } catch {
+          const observed = await page.evaluate(() => window.__csMultiChartSpy?.visibleRanges || []);
+          assert.fail(`${account}: source time-range change did not reach the other pane; observed=${JSON.stringify(observed)}`);
+        }
+        const synchronizedRange = await page.evaluate(() => {
+          const spy = window.__csMultiChartSpy;
+          return spy.visibleRanges.slice(spy.rangeBaseline).find(call => call.index === 1) || null;
+        });
+        timeLink.synchronized = !!synchronizedRange &&
+          Math.abs(synchronizedRange.from - timeLink.from) <= 900 &&
+          Math.abs(synchronizedRange.to - timeLink.to) <= 900;
+        assert.ok(timeLink.synchronized,
+          `${account}: linked time range was not close to the source range (${JSON.stringify({ timeLink, synchronizedRange })})`);
+        const pointer = await page.evaluate(() => {
+          const chart = window.__csMultiChartSpy.charts[0];
+          const candles = chart.__csTestCandles || [];
+          const bar = candles.at(-2);
+          if (!bar) return null;
+          const x = chart.timeScale().timeToCoordinate(bar.time);
+          const y = chart.__csTestSeries.priceToCoordinate(bar.close);
+          const rect = document.querySelectorAll("#chart-multi-workspace .cs-multi-plot")[0]?.getBoundingClientRect();
+          if (![x, y, rect?.left, rect?.top].every(Number.isFinite)) return null;
+          return { x: rect.left + x, y: rect.top + y, time: bar.time };
+        });
+        assert.ok(pointer, `${account}: could not locate an actual source-chart candle for crosshair testing`);
+        await page.mouse.move(pointer.x, pointer.y);
+        await page.waitForFunction(() => window.__csMultiChartSpy?.crosshairs.some(call => call.index === 1), null, { timeout: 10000 });
+        const crosshairLink = await page.evaluate(sourceTime => {
+          const spy = window.__csMultiChartSpy;
+          const target = spy.charts[1].__csTestCandles || [];
+          let expected = null;
+          for (const candle of target) if (candle.time <= sourceTime) expected = candle.time;
+          const actual = spy.crosshairs.find(call => call.index === 1)?.time ?? null;
+          return { expected, actual, synchronized: expected !== null && actual === expected };
+        }, pointer.time);
+        assert.ok(crosshairLink.synchronized,
+          `${account}: source pointer crosshair did not reach the nearest prior target candle (${JSON.stringify(crosshairLink)})`);
         results.push({ account, symbol: expected.symbol, panes: paneResults,
-          linkedTime: true, linkedCrosshair: true, primaryFeedBars: main.candles.length });
+          linkedTime: true, timeRangeFrom: timeLink.from, timeRangeTo: timeLink.to,
+          linkedCrosshair: true, linkedCrosshairTime: crosshairLink.actual,
+          primaryFeedBars: main.candles.length });
       } finally {
         await context.close();
       }
