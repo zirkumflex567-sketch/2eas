@@ -1446,6 +1446,17 @@ class DashboardFrontendTests(unittest.TestCase):
         self.status_fail = False
         expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=5000)
         expect(self.page.locator('#dd-reset-button')).to_be_enabled()
+    def test_status_503_is_reported_and_retries_with_backoff(self):
+        self.load()
+        self.status_fail = True
+        self.page.evaluate('updateStatus()')
+        expect(self.page.locator('#account-connection')).to_contain_text('fixture status failure')
+        expect(self.page.locator('#dd-reset-button')).to_be_disabled()
+        self.requests.clear()
+        self.page.wait_for_timeout(2200)
+        self.assertEqual(sum('/api/status' in url for url in self.requests), 0, self.requests)
+        self.status_fail = False
+        expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=5000)
     def test_independent_candle_failure_does_not_clear_account(self):
         self.candle_rows = [dict(time=1791918000,open=4000.,high=4002.,low=3998.,close=4001.,tick_volume=10,real_volume=0)]
         self.load()

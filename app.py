@@ -2581,6 +2581,8 @@ HTML_CONTENT = """<!DOCTYPE html>
     const STATUS_MAX_AGE = 6000;
     let lastStatusSuccess = 0;
     let statusConfirmed = false;
+    let statusPollFailureCount = 0;
+    let statusPollRetryAt = 0;
     function quoteIsFresh() {
       const data = currentData;
       if (!data) return false;
@@ -2879,6 +2881,8 @@ HTML_CONTENT = """<!DOCTYPE html>
       if (!accounts[account]) return;
       activeAccount = account;
       accountGeneration++;
+      statusPollFailureCount = 0;
+      statusPollRetryAt = 0;
       clearChartFX();
       DashboardRuntime.abortAccount();
       localStorage.setItem('gold_dashboard_account', account);
@@ -3876,6 +3880,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     // --- LIVE STATUS & TARGET MATRIX ---
     async function updateStatus() {
       if (document.hidden || !accounts[activeAccount]) return;
+      if (Date.now() < statusPollRetryAt) return;
       const generation = accountGeneration;
       if (statusBusy === generation) return;
       statusBusy = generation;
@@ -3883,10 +3888,22 @@ HTML_CONTENT = """<!DOCTYPE html>
         const res = await accountFetch('/api/status?include_journal=false');
         const data = await res.json();
         if (generation !== accountGeneration) throw staleRequest();
+        if (!res.ok) {
+          const detail = typeof data?.detail === 'string' ? data.detail
+            : typeof data?.detail?.message === 'string' ? data.detail.message : '';
+          const message = detail.replaceAll('<', '').replaceAll('>', '')
+            .split(String.fromCharCode(10)).join(' ').split(String.fromCharCode(13)).join(' ').trim().slice(0, 160);
+          throw new Error(message || `Statusabruf fehlgeschlagen (HTTP ${res.status})`);
+        }
+        if (!data || data.account?.id !== activeAccount) {
+          throw new Error('Statusantwort gehört nicht zum aktiven Konto');
+        }
         const needsCharts = currentData === null;
         currentData = data;
         lastStatusSuccess = Date.now();
         statusConfirmed = true;
+        statusPollFailureCount = 0;
+        statusPollRetryAt = 0;
         try { window.ChartStudioBeta?.updatePositions(data.account.id, data.positions); } catch (_) {}
         try { window.StoneCelebration?.observeTrades(data.account.id,data.journal,data.positions); }
         catch (_) { /* Visual event detection must not affect trading. */ }
@@ -4088,7 +4105,11 @@ HTML_CONTENT = """<!DOCTYPE html>
         if (needsCharts) void loadCandles();
 
       } catch (err) {
-        if (generation === accountGeneration && err.name !== 'AbortError') markStatusStale(err);
+        if (generation === accountGeneration && err.name !== 'AbortError') {
+          statusPollFailureCount = Math.min(statusPollFailureCount + 1, 5);
+          statusPollRetryAt = Date.now() + Math.min(30000, 3000 * (2 ** (statusPollFailureCount - 1)));
+          markStatusStale(err);
+        }
       } finally { if (statusBusy === generation) statusBusy = null; }
     }
 
