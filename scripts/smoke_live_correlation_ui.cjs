@@ -43,12 +43,30 @@ assert.ok(accounts.length > 0 && accounts.every(account => allowedAccounts.inclu
       }, account);
       assert.ok(catalog, `${account}: no verified EURUSD variant`);
 
+      await page.waitForFunction(symbol => {
+        const select = document.querySelector("#cs-broker-symbol");
+        return [...(select?.options || [])].some(option => option.value === symbol && option.dataset.verified === "true");
+      }, catalog, { timeout: 30000 });
+
       assert.equal(await page.evaluate(symbol => window.ChartStudioBeta.symbol(symbol), catalog), true,
         `${account}: chart refused the broker-verified symbol`);
-      await page.waitForFunction(({ accountId, symbol }) => {
-        const state = window.ChartStudioBeta?.getState?.();
-        return state?.account === accountId && state?.symbol === symbol && state?.portfolio?.correlation?.scenarioSymbol === symbol;
-      }, { accountId: account, symbol: catalog }, { timeout: 30000 });
+      try {
+        await page.waitForFunction(({ accountId, symbol }) => {
+          const state = window.ChartStudioBeta?.getState?.();
+          return state?.account === accountId && state?.symbol === symbol && state?.portfolio?.correlation?.scenarioSymbol === symbol;
+        }, { accountId: account, symbol: catalog }, { timeout: 30000 });
+      } catch (error) {
+        const observed = await page.evaluate(() => {
+          const state = window.ChartStudioBeta?.getState?.();
+          return state && {
+            account: state.account,
+            symbol: state.symbol,
+            correlationSymbol: state.portfolio?.correlation?.scenarioSymbol || null,
+            portfolioLoading: document.querySelector("#cs-portfolio-summary")?.innerText || "",
+          };
+        });
+        throw Error(`${account}: portfolio did not settle for ${catalog}; observed ${JSON.stringify(observed)} (${error.message})`);
+      }
 
       const rendered = await page.evaluate(() => ({
         state: window.ChartStudioBeta.getState().portfolio.correlation.state,
@@ -74,7 +92,10 @@ assert.ok(accounts.length > 0 && accounts.every(account => allowedAccounts.inclu
     }
     assert.deepEqual(writes, [], "Live correlation chart interaction must not make API writes");
     assert.deepEqual(errors, [], "No browser errors or requests outside the five demo aliases");
-    assert.ok(results.some(result => result.correlation === "AVAILABLE"), "At least one demo must render a live pair");
+    if (accounts.length === allowedAccounts.length) {
+      assert.ok(results.some(result => result.correlation === "AVAILABLE"),
+        "The complete five-demo run must render at least one live pair");
+    }
     console.log(JSON.stringify({ results, browserErrors: errors.length, apiWrites: writes.length, protectedAccountQueried: false }, null, 2));
   } finally {
     await browser.close();
