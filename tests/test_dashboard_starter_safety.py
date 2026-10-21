@@ -1,4 +1,7 @@
+import os
 import re
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -94,6 +97,20 @@ class DashboardStarterSafetyTests(unittest.TestCase):
         supervisor = (ROOT / 'service_supervisor.ps1').read_text(encoding='utf-8')
         self.assertIn('[ValidateRange(1,60)][int]$SupervisorIntervalSeconds = 5', supervisor)
         self.assertIn('Start-Sleep -Seconds $SupervisorIntervalSeconds', supervisor)
+
+    def test_silent_startup_launcher_uses_its_checkout_not_a_hardcoded_workspace(self):
+        launcher_path = ROOT / 'run_supervisor_silent.vbs'
+        launcher = launcher_path.read_text(encoding='utf-8')
+        self.assertIn('shell.Environment("PROCESS")', launcher)
+        self.assertIn('DASHBOARD_REPO_PATH', launcher)
+        self.assertIn('WScript.ScriptFullName', launcher)
+        self.assertIn('service_supervisor.ps1', launcher)
+        self.assertNotIn('Downloads\\testing', launcher)
+        cscript = shutil.which('cscript.exe')
+        if os.name == 'nt' and cscript:
+            result = subprocess.run([cscript, '//NoLogo', str(launcher_path), '--self-test'],
+                                    capture_output=True, text=True, timeout=10, check=True)
+            self.assertEqual(result.stdout.strip(), f'DASHBOARD_REPO_PATH={ROOT}')
 
 
 if __name__ == '__main__':
