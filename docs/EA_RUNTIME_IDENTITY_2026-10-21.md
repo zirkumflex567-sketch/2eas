@@ -36,8 +36,17 @@ Die isoliert gebauten Titan-RecordOnly-EAs liegen in getrennten Experts-Unterord
 - `xau5m_m5`: `XAU_Titan_Pro_BasketGuard_EvidenceCapture_RecordOnly_xau5m_m5_8cf287e0.ex5`, SHA-256 `8CF287E0C42A891171285CB203918B25CA0960B8E5787C93989B1BB0024F2E45`.
 - `titan_m5`: `XAU_Titan_Pro_BasketGuard_EvidenceCapture_RecordOnly_titan_m5_2cfaae0f.ex5`, SHA-256 `2CFAAE0F62B89E6065A5E0F33FD29295D70ED11D679C7BD07A080BEE33E17F33`.
 
+Die aktuellsten Demo-Kandidaten wurden am 21.10. erneut aliasgebunden kompiliert und side-by-side installiert. Beide MetaEditor-Builds hatten 0 Fehler/0 Warnungen; die Setfiles entsprechen den bestätigten Hashes aus `Downloads/backtest/set`:
+
+| Alias | aktueller EX5 | EX5 SHA-256 | Preset SHA-256 |
+|---|---|---|---|
+| `xau5m_m5` | `XAU_Titan_Pro_BasketGuard_EvidenceCapture_RecordOnly_6e1b368.ex5` | `FC1C8F77F31E154F05FF6A1B73C87DEA28FEF7D59C1F9C387ED5EF1E21C161D2` | `FF92CE8710E151CB73D304E411338C411DB487BC3983F15EEC541138A0AEA286` |
+| `titan_m5` | `XAU_Titan_Pro_BasketGuard_EvidenceCapture_RecordOnly_6e1b368.ex5` | `F6A4572779A0DC1BF3E04A67117519F97DB00BEAC614E103180813FAF697E69` | `FEB3030FEE155BB41E8604A67117519F97DB00BEAC614E103180813FAF697E69` |
+
+Der Dateiname ist in beiden getrennten Terminals gleich, die EX5-Inhalte und Presets sind jedoch konto-/terminalgebunden und verschieden. Die Kandidaten ersetzen keinen bestehenden EA und sind weiterhin nicht angehängt.
+
 ## Ergebnis und nächster Nachweis
 
-Der Recorderstatus nach dem Restart auf Main `2719359` meldete für alle fünf Demoaliase Lifecycle `OK/ROLLING_WINDOW` ohne Lücken oder Storeverluste. `xau5m_m5` und `titan_m5` hatten je 60 Temp-Dateien und null neue Decision-Imports; `titan` und `xau5m_500` waren `NOT_CONFIGURED`, `goldm15` wartete auf neue Events. Damit bleibt FR-026 offen.
+Der aktuelle GET-only-Folgecheck nach dem Restart auf Main `3677ae1` meldete für alle fünf Demoaliase Lifecycle `OK/ROLLING_WINDOW`, null Lücken und null Storeverluste. `xau5m_m5` und `titan_m5` hatten je 61 Temp-Dateien (ca. 0,2 MiB) und null neue Decision-Imports; `titan` und `xau5m_500` waren `NOT_CONFIGURED`, `goldm15` wartete auf neue Events. Der separate Live-Chart-Smoke bestätigte danach auf allen fünf Demos je 150 sichtbare `MT5_VERIFIED`-M15-Kerzen; What-if lieferte frische Quotes und brokerberechnete BUY-/SELL-Vorschauen als `READ_ONLY_DRAFT`/`canExecute=false`. Blueberry war in beiden Läufen ausgeschlossen. Damit bleibt FR-026 offen.
 
 Für einen frischen Decision-Nachweis muss auf einem zusätzlichen PU-Prime-500-Demo-Chart `XAUUSD.p/M15` der bereits installierte RecordOnly-Kandidat von `titan_m5` initialisiert werden. Der Nutzer hat diese manuelle Chartaktion erbeten, während Computer-Use ausgeschlossen bleibt. Danach kann der Read-only-Status auf einen neuen Import geprüft werden. Keine Backtests, keine Brokerwrites und keine Blueberry-Abfrage.
