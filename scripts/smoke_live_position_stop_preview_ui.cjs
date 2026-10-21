@@ -54,11 +54,9 @@ async function positionWithStop(account, symbol) {
   assert.equal(book.symbol, symbol);
   assert.equal(book.source, "MT5_VERIFIED");
   assert.equal(book.canExecute, false);
-  const candles = await get(`/api/candles?account=${encodeURIComponent(account)}`);
-  const bars = candles.candles || candles.bars || [];
-  const low = Math.min(...bars.slice(-250).map(row => Number(row.low)).filter(Number.isFinite));
-  const high = Math.max(...bars.slice(-250).map(row => Number(row.high)).filter(Number.isFinite));
-  const position = book.positions.find(row => typeof row.sl === "string" && Number(row.sl) >= low && Number(row.sl) <= high);
+  // Position overlays expand the chart autoscale. A real broker stop can sit
+  // outside the candle-only high/low range and must still remain draggable.
+  const position = book.positions.find(row => typeof row.sl === "string" && Number.isFinite(Number(row.sl)) && Number(row.sl) > 0);
   if (!position) return null;
   assert.match(position.ticket, /^[1-9][0-9]{0,19}$/);
   assert.match(position.revision, /^[0-9a-f]{64}$/);
@@ -247,6 +245,7 @@ async function positionWithStop(account, symbol) {
       break;
     }
 
+    assert.equal(completed, true, "No authorized demo position with an existing stop was available for UI acceptance");
     assert.equal(violations.length, 0, violations.join("; "));
     assert.equal(blockedApiRequests.length, 0, "the live UI flow must not attempt out-of-scope API requests");
     const invalidApiRequests = apiRequests.filter(item =>
@@ -254,7 +253,6 @@ async function positionWithStop(account, symbol) {
       (item.method === "GET" || item.path === previewPath && item.method === "POST"));
     assert.ok(apiRequests.length > 0 && invalidApiRequests.length === apiRequests.length,
       `unexpected API scope or method: ${JSON.stringify(apiRequests.filter(item => !invalidApiRequests.includes(item)))}`);
-    assert.equal(completed, true, "No authorized demo position with an existing stop was available for UI acceptance");
     assert.ok(previews.length >= 1);
     console.log(JSON.stringify({ results, readOnlyPreviewPosts: previews.length, apiRequests: apiRequests.length,
       blockedApiRequests: blockedApiRequests.length, positionMutations: 0, ordersSent: 0, blueberryQueried: false }, null, 2));
