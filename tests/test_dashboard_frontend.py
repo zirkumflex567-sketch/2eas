@@ -401,7 +401,9 @@ class DashboardFrontendTests(unittest.TestCase):
             if self.evidence_delay_seconds:
                 time.sleep(self.evidence_delay_seconds)
             route.fulfill(json=dict(schemaVersion=1,account=account,
-                status=dict(code='OK',coverage='ROLLING_WINDOW',appended=0,storeLostCount=0,gapObserved=False))); return
+                status=dict(code='OK',coverage='ROLLING_WINDOW',appended=0,storeLostCount=0,
+                    gapObserved=getattr(self,'lifecycle_gap_observed',False),
+                    gapReason=getattr(self,'lifecycle_gap_reason',None)))); return
         if parsed.path == '/api/chart/v1/decisions':
             if self.evidence_delay_seconds:
                 time.sleep(self.evidence_delay_seconds)
@@ -475,6 +477,19 @@ class DashboardFrontendTests(unittest.TestCase):
         status_requests=[url for url in self.requests if '/capture/status?' in url]
         self.assertEqual(len(status_requests), 2, status_requests)
         self.assertTrue(all(parse_qs(urlparse(url).query).get('account') == ['goldm15'] for url in status_requests), status_requests)
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.errors, [])
+    def test_lifecycle_gap_reason_is_visible_without_leaking_broker_details(self):
+        self.lifecycle_gap_observed=True
+        self.lifecycle_gap_reason='BROKER_READ_UNAVAILABLE'
+        self.page.goto(self.url+'?account=goldm15')
+        expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=10000)
+        self.page.locator('#cs-beta-toggle').click()
+        self.page.locator('#cs-evidence-panel > summary').click()
+        self.page.locator('#cs-evidence-capture-status').click()
+        result=self.page.locator('#cs-evidence-capture-status-result')
+        expect(result).to_contain_text('Lücke erkannt · Broker-Lesezugriff fehlgeschlagen', timeout=5000)
+        self.assertNotIn('Exception', result.inner_text())
         self.assertEqual(self.mutations, [])
         self.assertEqual(self.errors, [])
     def test_capture_status_accepts_legacy_schema_one_without_temp_metrics(self):

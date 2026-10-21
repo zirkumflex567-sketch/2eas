@@ -518,10 +518,25 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
                                  'status': {'code': 'NOT_CONFIGURED', 'coverage': 'UNKNOWN'}},
                                 headers={'Cache-Control': 'no-store'})
         status = app.state.evidence_deal_capture_status.get(account, {})
+        if not isinstance(status, dict) or not status:
+            return JSONResponse({'schemaVersion': 1, 'account': account,
+                                 'status': {'code': 'NOT_STARTED', 'coverage': 'UNKNOWN'}},
+                                headers={'Cache-Control': 'no-store'})
         allowed = ('code', 'coverage', 'appended', 'duplicates', 'rejected',
                    'storeLostCount', 'gapObserved', 'windowStartUtc','snapshotCoverage',
                    'snapshotsAppended','snapshotDuplicates','snapshotUnavailable','snapshotStoreLostCount')
         safe_status = {key: status[key] for key in allowed if key in status}
+        gap_observed = status.get('gapObserved', False)
+        if type(gap_observed) is not bool:
+            gap_observed = True
+        safe_status['gapObserved'] = gap_observed
+        if gap_observed:
+            reason = status.get('gapReason')
+            allowed_gap_reasons = {
+                'BROKER_READ_UNAVAILABLE', 'STORE_UNAVAILABLE',
+                'CAPTURE_INCOMPLETE', 'PAGE_LIMIT', 'UNKNOWN'}
+            safe_status['gapReason'] = (reason if isinstance(reason, str)
+                                        and reason in allowed_gap_reasons else 'UNKNOWN')
         if not safe_status:
             safe_status = {'code': 'NOT_STARTED', 'coverage': 'UNKNOWN'}
         return JSONResponse({'schemaVersion': 1, 'account': account, 'status': safe_status},

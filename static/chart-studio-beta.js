@@ -606,7 +606,10 @@ function captureStatusLine(kind,body,account){
  const coverage=typeof state.coverage==="string"&&/^[A-Z][A-Z0-9_]{0,63}$/.test(state.coverage)?state.coverage:"UNKNOWN";
  if(code==="NOT_STARTED")return "Lifecycle: NOT_STARTED · "+coverage;
  if(typeof state.coverage!=="string"||!/^[A-Z][A-Z0-9_]{0,63}$/.test(state.coverage)||!Number.isInteger(state.appended)||state.appended<0||!Number.isInteger(state.storeLostCount)||state.storeLostCount<0||typeof state.gapObserved!=="boolean")throw Error("INVALID_LIFECYCLE_CAPTURE_STATUS");
- return "Lifecycle: "+code+" · "+state.coverage+" · "+state.appended+" neue · "+(state.gapObserved?"Lücke erkannt":"keine Lücke gemeldet")+" · Store-Verluste "+state.storeLostCount;
+ const gapReasons={BROKER_READ_UNAVAILABLE:"Broker-Lesezugriff fehlgeschlagen",STORE_UNAVAILABLE:"Evidence Store nicht verfügbar",CAPTURE_INCOMPLETE:"Lifecycle-Datensatz unvollständig",PAGE_LIMIT:"Historien-Seitenlimit erreicht",UNKNOWN:"Ursache unbekannt"};
+ const knownGapReason=Object.prototype.hasOwnProperty.call(gapReasons,state.gapReason)?gapReasons[state.gapReason]:"";
+ const gapText=state.gapObserved?"Lücke erkannt"+(knownGapReason?" · "+knownGapReason:""):"keine Lücke gemeldet";
+ return "Lifecycle: "+code+" · "+state.coverage+" · "+state.appended+" neue · "+gapText+" · Store-Verluste "+state.storeLostCount;
 }
 async function loadEvidenceCaptureStatus(){
  const button=s?.panel?.querySelector("#cs-evidence-capture-status"),output=s?.panel?.querySelector("#cs-evidence-capture-status-result");

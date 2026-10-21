@@ -416,6 +416,41 @@ def test_broker_read_failure_is_visible_unknown_and_does_not_escape_poll(monkeyp
     assert 'private broker detail' not in str(status)
 
 
+def test_lifecycle_gap_reason_survives_a_later_successful_poll(monkeypatch):
+    service = api()
+    account_spec = importlib.import_module('account_gateway').ACCOUNTS['titan']
+
+    @contextmanager
+    def verified_session(_mt5, _account):
+        yield account_spec
+
+    attempts = iter((RuntimeError('private broker detail'),
+                     {'trades': [], 'nextCursor': None}))
+
+    def read_history(*_args, **_kwargs):
+        outcome = next(attempts)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(service.gateway, 'traced_session', verified_session)
+    monkeypatch.setattr(service.broker_reads, 'trades_read', read_history)
+    poller = service.DemoBrokerLifecycleCapture(
+        type('Store', (), {'root': Path('private'), 'append': lambda *_: None})(),
+        object(), ['titan'], clock=lambda: 1792088160.0,
+    )
+
+    failed = poller.poll_once()['titan']
+    recovered = poller.poll_once()['titan']
+
+    assert failed['code'] == 'BROKER_READ_UNAVAILABLE'
+    assert failed['gapReason'] == 'BROKER_READ_UNAVAILABLE'
+    assert recovered['code'] == 'OK'
+    assert recovered['gapObserved'] is True
+    assert recovered['gapReason'] == 'BROKER_READ_UNAVAILABLE'
+    assert 'private broker detail' not in str(failed | recovered)
+
+
 def test_store_failure_does_not_advance_history_watermark(monkeypatch):
     service = api()
     account_spec = importlib.import_module('account_gateway').ACCOUNTS['titan']
@@ -443,6 +478,7 @@ def test_store_failure_does_not_advance_history_watermark(monkeypatch):
     assert first['code'] == second['code'] == 'STORE_UNAVAILABLE'
     assert first['coverage'] == second['coverage'] == 'UNKNOWN'
     assert first['gapObserved'] and second['gapObserved']
+    assert first['gapReason'] == second['gapReason'] == 'STORE_UNAVAILABLE'
     assert len(start_times) == 2 and start_times[0] == start_times[1]
 
 
@@ -494,10 +530,13 @@ def test_capture_status_is_authenticated_and_limited_to_configured_demos(monkeyp
     app.state.evidence_deal_capture_status = {
         'titan': {'code': 'OK', 'coverage': 'ROLLING_WINDOW', 'appended': 2,
                   'duplicates': 3, 'rejected': 0, 'storeLostCount': 0,
-                  'gapObserved': False, 'windowStartUtc': '2026-10-14T00:00:00.000000Z',
+                  'gapObserved': True, 'gapReason': 'PAGE_LIMIT',
+                  'windowStartUtc': '2026-10-14T00:00:00.000000Z',
                   'snapshotCoverage':'ROLLING_WINDOW','snapshotsAppended':1,'snapshotDuplicates':0,
                   'snapshotUnavailable':0,'snapshotStoreLostCount':0},
         'xau5m_m5': {'code': 'BROKER_READ_UNAVAILABLE', 'coverage': 'UNKNOWN',
+                     'gapObserved': True,
+                     'gapReason': {'detail': 'private broker detail'},
                      'detail': 'must not leak'},
     }
     unauthenticated = TestClient(app).get('/api/chart/v1/lifecycle/capture/status', params={'account': 'titan'})
@@ -511,7 +550,14 @@ def test_capture_status_is_authenticated_and_limited_to_configured_demos(monkeyp
     assert allowed.status_code == 200
     assert allowed.json()['status']['appended'] == 2
     assert allowed.json()['status']['snapshotsAppended'] == 1
+    assert allowed.json()['status']['gapObserved'] is True
+    assert allowed.json()['status']['gapReason'] == 'PAGE_LIMIT'
     assert 'detail' not in allowed.json()['status']
+    redacted = client.get('/api/chart/v1/lifecycle/capture/status', params={'account': 'xau5m_m5'})
+    assert redacted.status_code == 200
+    assert redacted.json()['status']['gapObserved'] is True
+    assert redacted.json()['status']['gapReason'] == 'UNKNOWN'
+    assert 'private broker detail' not in str(redacted.json())
     forbidden = client.get('/api/chart/v1/lifecycle/capture/status', params={'account': 'blueberry'})
     assert forbidden.status_code == 400
 
@@ -548,6 +594,29 @@ def test_lifecycle_capture_status_distinguishes_unconfigured_demo_from_unknown_a
         '/api/chart/v1/lifecycle/capture/status', params={'account': 'not-a-real-account'})
     assert unknown.status_code == 400
     assert unknown.json()['detail']['code'] == 'UNKNOWN_ACCOUNT'
+
+
+def test_lifecycle_capture_status_without_first_poll_remains_not_started(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from chart_studio.evidence_api import install_evidence_routes
+    from dashboard_security import install_control_security
+    monkeypatch.delenv('CHART_STUDIO_EVIDENCE_SPOOL_ROOT', raising=False)
+    monkeypatch.setenv('CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS', 'titan')
+
+    class Store:
+        root = Path('private-test-root')
+
+    app = FastAPI()
+    install_control_security(app)
+    install_evidence_routes(app, store=Store(), mt5=object())
+    app.state.evidence_deal_capture_status = {}
+
+    response = TestClient(app).get(
+        '/api/chart/v1/lifecycle/capture/status', params={'account': 'titan'})
+
+    assert response.status_code == 200
+    assert response.json()['status'] == {'code': 'NOT_STARTED', 'coverage': 'UNKNOWN'}
 
 
 def test_decision_capture_status_is_authenticated_demo_scoped_and_redacted(monkeypatch):

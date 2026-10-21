@@ -355,6 +355,7 @@ class DemoBrokerLifecycleCapture:
         parse_demo_allowlist(','.join(self.accounts))
         self._last_scan_us = {}
         self._gap_observed = {name: False for name in self.accounts}
+        self._gap_reason = {name: None for name in self.accounts}
         self.status = {name: {'code': 'NOT_STARTED', 'coverage': 'UNKNOWN', 'appended': 0,
                               'duplicates': 0, 'rejected': 0, 'storeLostCount': 0}
                        for name in self.accounts}
@@ -366,8 +367,10 @@ class DemoBrokerLifecycleCapture:
             except Exception:
                 # Keep the app available; details may contain terminal/provider data.
                 self._gap_observed[account] = True
+                self._gap_reason[account] = 'BROKER_READ_UNAVAILABLE'
                 self.status[account] = {'code': 'BROKER_READ_UNAVAILABLE', 'coverage': 'UNKNOWN',
-                                        'gapObserved': True, 'appended': 0, 'duplicates': 0,
+                                        'gapObserved': True, 'gapReason': self._gap_reason[account],
+                                        'appended': 0, 'duplicates': 0,
                                         'rejected': 0, 'storeLostCount': 0}
         return {name: dict(value) for name, value in self.status.items()}
 
@@ -406,6 +409,10 @@ class DemoBrokerLifecycleCapture:
                 aggregate['coverage'] = 'UNKNOWN'
                 aggregate['gapObserved'] = True
                 self._gap_observed[account] = True
+                reason = captured.get('code')
+                self._gap_reason[account] = (reason if isinstance(reason, str) and reason in {
+                    'STORE_UNAVAILABLE', 'CAPTURE_INCOMPLETE'} else 'UNKNOWN')
+                aggregate['gapReason'] = self._gap_reason[account]
                 return aggregate
             for deal_row in page['trades']:
                 if deal_row.get('entry') not in ('IN','OUT','OUT_BY'):
@@ -456,10 +463,14 @@ class DemoBrokerLifecycleCapture:
             if cursor is None:
                 self._last_scan_us[account] = stop
                 aggregate['gapObserved'] = self._gap_observed[account]
+                if aggregate['gapObserved']:
+                    aggregate['gapReason'] = self._gap_reason[account] or 'UNKNOWN'
                 return aggregate
         aggregate.update(code='PAGE_LIMIT', coverage='UNKNOWN')
         aggregate['gapObserved'] = True
         self._gap_observed[account] = True
+        self._gap_reason[account] = 'PAGE_LIMIT'
+        aggregate['gapReason'] = self._gap_reason[account]
         return aggregate
 
     def _decision_refs_for_deal(self, context, row, spec):
