@@ -50,7 +50,7 @@ def test_calendar_bridge_rejects_initialization_when_refresh_timer_cannot_start(
 def test_calendar_setup_ui_maps_goldm15_to_its_account_bound_preset():
     source = (ROOT / "static" / "chart-studio-market-structure.js").read_text(encoding="utf-8")
     assert 'goldm15:"goldm15.set"' in source
-    assert 'ChartStudioCalendarBridge_TimeFormatFix_20261021' in source
+    assert 'ChartStudioCalendarBridge_DynamicOffset_20261021' in source
     assert 'blueberry:"' not in source
 
 
