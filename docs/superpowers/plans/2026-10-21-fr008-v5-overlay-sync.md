@@ -52,6 +52,6 @@ Map the Beta defaults directly: Supertrend (`period`, `multiplier`), SAR (`step`
 - Modify: `docs/OPEN_TASKS.md`
 - Modify: `docs/superpowers/plans/2026-10-14-fr008-v5-data-window.md`
 
-- [ ] Record only the behavior and tests actually proven; retain production v5 cutover, target hardware, touch, and full end-user acceptance as open gates.
+- [x] Record only the behavior and tests actually proven; retain production v5 cutover, target hardware, touch, and full end-user acceptance as open gates.
 - [x] Confirm no tests or routes invoke a broker mutation and no production v4 mount was changed.
-- [ ] Run required GitHub CI before deployment; keep v5 opt-in and do not deploy a production cutover.
+- [x] Run required GitHub CI before deployment; keep v5 opt-in and do not deploy a production cutover.
