@@ -9,7 +9,7 @@ Ensure Titan recorder events dropped by the bounded in-memory queue become visib
 - Change only the opt-in evidence spool helper and its build-contract tests.
 - Never write files or perform disk I/O from `OnTick`, trade callbacks, or enqueue callbacks; apply gap accounting from the existing timer flush path.
 - Preserve strategy predicates, order calls, default EA behavior, account binding, bounded queue and existing spool format.
-- Do not read, change, or install files in the Blueberry terminal. Do not attach/reload any EA, send broker writes, or run a Strategy Tester/backtest.
+- Do not read, change, or install files in the Blueberry terminal. Do not attach/reload any EA, send broker writes, or run a Strategy Tester/backtest. After the user later explicitly authorized all other demo accounts, the two freshly compiled RecordOnly EX5/preset pairs were copied side-by-side into only the account-bound PU Prime demo terminals; existing files and running charts/EAs were left untouched.
 
 ## Implementation
 
@@ -22,7 +22,7 @@ Ensure Titan recorder events dropped by the bounded in-memory queue become visib
 
 - RED test fails against current helper.
 - GREEN: targeted tests pass and the isolated MQL5 builds compile with zero errors/warnings.
-- No live MT5 installation/attach, trade, Blueberry access, hardware interaction, or backtest.
+- No EA attach/reload, trade, Blueberry access, hardware interaction, or backtest. The later user-authorized side-by-side file copy is recorded separately below; it did not activate the EA.
 - Known durability limit: a process crash before the next timer queues and drains the marker can lose the still-in-memory overflow count. The change guarantees persisted gaps after a marker is durably applied, not crash-safe overflow accounting before then.
 - Main CI and deployment are performed only after the change is committed and CI succeeds; runtime chart identity and a future fresh imported event are still separate acceptance gates.
 
@@ -33,4 +33,6 @@ Ensure Titan recorder events dropped by the bounded in-memory queue become visib
 - [x] Focused regression suites: **108 passed** across Titan/GoldM15 builders, spool contracts/importer, and spool service. The shared helper pin in the isolated GoldM15 builder was updated to the reviewed helper digest after its existing build-package regression caught the mismatch.
 - [x] Fresh isolated MetaEditor builds: Titan RecordOnly `xau5m_m5` and `titan_m5`, plus GoldM15 normal and RecordOnly, all **0 errors / 0 warnings**. Manifests match the current helper/source and alias-bound presets. Artifacts remain under ignored `output/`; no MT5 installation was changed.
 - [x] Source review confirmed no terminal global-variable persistence remains in the helper and callback paths only enqueue/count in memory. The documented loss boundary is retained: a crash before the next timer persists the marker can lose that still-pending overflow delta.
-- [ ] Commit/push, Main CI, and release evidence. Keep live EA attach, imported DecisionEvent, hardware, order-write, and backtest gates separate.
+- [x] Commit/push `8702cc8`; Main CI passed: Chart Studio `39548013744`, Performance/UX `39548013771`. Local Main ports 8050/8056 and hTown `/stt` now report revision `3f933d7d9b40aad07e7b565abecef9e62439f4a6`, identical digest `c6dada20c5bd7f9068b9014148a691307fbb98a81a526b3181b3fa21643ef9a1`, `applicationCodeDirty=false`, and `restart_required=false`.
+- [x] Following the user's explicit non-Blueberry demo authorization, recompiled and hash-verified Titan RecordOnly EX5/set pairs and installed them under new side-by-side paths in `xau5m_m5` and `titan_m5`; no existing file, active EA, or chart was replaced/reloaded.
+- [ ] Live EA attach, imported DecisionEvent, hardware, order-write, and backtest gates remain separate. User forbids computer-use, so chart attachment and Experts-tab confirmation remain manual.
