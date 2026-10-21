@@ -273,6 +273,17 @@ UI labels correlations descriptive and does not apply hedge credit to its
 gross-additive What-if stop risk. All calls execute under the shared verified
 account lock and issue no broker writes.
 
+`GET /api/chart/v1/footprint?account=titan&symbol=XAUUSD&timeframe=M15` is a
+read-only, explicit demo allowlist route. It accepts M1/M5/M15/M30/H1/H4 and
+reads only the last completed broker candle. A level includes a tick only when
+its MT5 flags identify exactly one BUY or SELL execution, `last` and
+`volume_real` are positive, and its normalized timestamp is inside that candle.
+At most 100,000 ticks are examined per request. Missing execution-side evidence,
+invalid execution ticks, an unavailable history, or a larger tick window returns
+`UNAVAILABLE` with no levels; quote-side changes and tick counts are never
+substituted for executions. The UI checks the current account/symbol/timeframe
+scope before rendering, and all responses keep `canExecute: false`.
+
 After a successful same-account What-if preview, the beta also projects gross
 long, gross short and net lots for the proposed symbol using the broker-returned
 final size, including server-sized budget lots. It displays matching completed-H1
