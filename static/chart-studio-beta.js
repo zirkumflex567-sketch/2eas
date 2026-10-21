@@ -134,7 +134,7 @@ function cleanOptions(raw){const out=optsDefault();if(!raw||typeof raw!=="object
  if(Number.isInteger(raw.bbPeriod)&&raw.bbPeriod>=2&&raw.bbPeriod<=300)out.bbPeriod=raw.bbPeriod;
  if(typeof raw.bbStdDev==="number"&&Number.isFinite(raw.bbStdDev)&&raw.bbStdDev>=.1&&raw.bbStdDev<=10)out.bbStdDev=raw.bbStdDev;return out}
 const chartSymbol=()=>s?.symbol||"XAUUSD";
-const drawKey=()=>s.account+":draw:"+chartSymbol(),globalDrawKey=()=>"symbol-global:draw:"+chartSymbol(),optKey=()=>s.account+":opts:"+chartSymbol();
+const drawKey=()=>s.account+":draw:"+chartSymbol(),globalDrawKey=()=>s?.drawingOwnerScope==="local"?"symbol-global:draw:"+chartSymbol():"symbol-global:draw:"+s.drawingOwnerScope+":"+chartSymbol(),optKey=()=>s.account+":opts:"+chartSymbol();
 function loadDrawings(){
  const local=safeDraw(get(drawKey(),[])),global=safeDraw(get(globalDrawKey(),[])),globalIds=new Set(global.map(d=>d.id));
  const uniqueLocal=local.map(d=>{if(!globalIds.has(d.id))return d;const copy={...d};delete copy.id;return copy});
@@ -256,8 +256,52 @@ function exportWorkspaceDocument(){
   chartType:window.ChartStudioChartTypes?.current()||"candles",
   timeframe:s.tf||"M15"};
 }
+function exportGlobalDrawingsDocument(){
+ if(!s)return null;
+ return {schemaVersion:1,kind:"global-market-drawings",symbol:chartSymbol(),
+  drawings:json(s.draw.filter(d=>s.globalDrawingIds?.has(d.id)))};
+}
+function legacyGlobalDrawingsAvailable(){
+ if(!s||s.drawingOwnerScope==="local")return false;
+ return safeDraw(get("symbol-global:draw:"+chartSymbol(),[])).length>0;
+}
+function importLegacyGlobalDrawings(){
+ if(!legacyGlobalDrawingsAvailable())return false;
+ const legacy=safeDraw(get("symbol-global:draw:"+chartSymbol(),[]));
+ const local=localDrawings(),existing=s.draw.filter(d=>s.globalDrawingIds?.has(d.id));
+ const signature=d=>JSON.stringify({...d,id:undefined});
+ const existingGeometry=new Set(existing.map(signature)),used=new Set([...local,...existing].map(d=>d.id));
+ const pending=legacy.filter(d=>!existingGeometry.has(signature(d)));
+ if(local.length+existing.length+pending.length>MAX_VISIBLE_DRAWINGS)return false;
+ let serial=1;const imported=pending.map(d=>{let id;do{id="legacy_"+serial++}while(used.has(id));used.add(id);return {...d,id}});
+ if(!imported.length)return true;
+ snapshot();s.draw=safeDraw([...local,...existing,...imported],MAX_VISIBLE_DRAWINGS);
+ s.globalDrawingIds=new Set([...existing,...imported].map(d=>d.id));s.selected=null;persist();
+ updateMessage("Alte browserlokale Markierungen wurden in den Nutzer-Scope übernommen; die Quelle bleibt erhalten.");
+ return true;
+}
+function importGlobalDrawingsDocument(document){
+ if(!s||!document||document.kind!=="global-market-drawings"||document.schemaVersion!==1||
+  document.symbol!==chartSymbol()||!Array.isArray(document.drawings))return false;
+ try{window.ChartStudioDeviceSync?.validateDocument(document,{account:"global",symbol:chartSymbol()})}catch(_){return false}
+ const incoming=safeDraw(document.drawings);
+ if(incoming.length!==document.drawings.length)return false;
+ const local=localDrawings();
+ if(local.length+incoming.length>MAX_VISIBLE_DRAWINGS)return false;
+ const localIds=new Set(local.map(d=>d.id));
+ const shared=incoming.map(d=>{
+  if(!localIds.has(d.id))return d;
+  const copy={...d};delete copy.id;return copy;
+ });
+ const normalized=safeDraw(shared);
+ if(normalized.length!==incoming.length)return false;
+ snapshot();s.draw=safeDraw([...local,...normalized],MAX_VISIBLE_DRAWINGS);
+ s.globalDrawingIds=new Set(normalized.map(d=>d.id));s.selected=null;persist();
+ updateMessage("Symbolweite Markierungen geladen. Konto-Layout und Brokerdaten blieben unverändert.");
+ return true;
+}
 function importWorkspaceDocument(document){
- if(!s||!document||document.schemaVersion!==1||!Array.isArray(document.drawings))return false;
+ if(!s||!document||document.kind!==undefined||document.schemaVersion!==1||!Array.isArray(document.drawings))return false;
  if(document.symbol!==undefined?document.symbol!==chartSymbol():chartSymbol()!=="XAUUSD")return false;
  // Do not import scenarios, order tickets, account identity or executable text.
  const drawings=safeDraw(document.drawings);
@@ -1657,7 +1701,7 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  host.style.position="relative";host.appendChild(canvas);
  const coordinates=createChartCoordinates({apiVersion:4,chart,series:candleSeries,scope:{account:accountId,symbol:"XAUUSD",timeframe:tf}});
  s={chart,coordinates,host,canvas,series:candleSeries,emas:emaSeries,panel,toggle,status:panel.querySelector("#cs-beta-message"),
-  account:accountId,favorites:normalizeFavorites(get(accountId+":favorite-tools",[])),shortcuts:normalizeShortcuts(get(accountId+":tool-shortcuts",{})),symbol:"XAUUSD",tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,positionDraft:null,positionDraftDrag:null,verifiedPositions:[],positionContext:null,ticketDraft:window.ChartStudioTicketDraft?.create({account:accountId,symbol:"XAUUSD",timeframe:tf})||null,
+  account:accountId,drawingOwnerScope:/^u_[a-f0-9]{64}$/.test(window.CHART_STUDIO_USER_SCOPE||"")?window.CHART_STUDIO_USER_SCOPE:"local",favorites:normalizeFavorites(get(accountId+":favorite-tools",[])),shortcuts:normalizeShortcuts(get(accountId+":tool-shortcuts",{})),symbol:"XAUUSD",tf,tool:"cursor",begin:null,preview:null,pending:[],selected:null,magnet:false,drag:null,positionDraft:null,positionDraftDrag:null,verifiedPositions:[],positionContext:null,ticketDraft:window.ChartStudioTicketDraft?.create({account:accountId,symbol:"XAUUSD",timeframe:tf})||null,
   lastScenarioPreview:null,portfolio:null,portfolioCapturedAtUtc:null,portfolioLoading:false,portfolioError:"",dataWindow:{snapshot:null,pinned:false},marketQuote:null,
   draw:[],undo:[],redo:[],candles:[],candleSignature:null,positions:[],brokerMarkers:[],scenario:null,validatedScenario:null,planDrag:null,planOriginal:null,planTickSize:null,opts:optsDefault(),extras:{},extraPrefix:null,extraTime:null,extraOptions:null,fibLevels:[...ratios],evidence:{rows:[],cursor:null,query:null,meta:null,loading:false,error:"",selectedSnapshotIds:[],generation:0}};
  panel.querySelector("#cs-data-window-pin").addEventListener("click",()=>setDataWindowPin(!s.dataWindow.pinned));
@@ -1708,6 +1752,8 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  catch(err){console.warn("Read-only chart replay unavailable:",err)}
  try{window.ChartStudioServerSync?.mount({panel,account:accountId,getSymbol:()=>chartSymbol(),
    exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,
+   exportGlobalDrawings:exportGlobalDrawingsDocument,importGlobalDrawings:importGlobalDrawingsDocument,
+   hasLegacyGlobalDrawings:legacyGlobalDrawingsAvailable,importLegacyGlobalDrawings,
    getAccount:()=>s?.account})}catch(err){console.warn("Chart-Workspace-Sync nicht verfügbar:",err)}
  try{window.ChartStudioBrokerPanel?.mount({panel,account:accountId,timeframe:tf})}
  catch(err){console.warn("Broker-Readpanel nicht verfügbar:",err)}
@@ -1969,6 +2015,6 @@ function mount({chart,host,candleSeries,emaSeries,account:accountId="titan",time
  if(typeof ResizeObserver!=="undefined"){s.observer=new ResizeObserver(requestDraw);s.observer.observe(host)}
  setTool("cursor");showOpts();requestDraw();
 }
-window.ChartStudioBeta=Object.freeze({mount,account,symbol,timeframe,refreshMtfAt:refreshMtfAtSnapshot,updateCandles,updatePositions,updateVerifiedPositions,getVerifiedPositionPriceExtent:verifiedPositionPriceExtent,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,isEvidenceCaptureDemo,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,exportPortableLayout,importPortableLayout,coordinates:Object.freeze({create:createChartCoordinates}),preferences:Object.freeze({normalizeFavorites,normalizeShortcuts,resolveShortcut}),getLiveMAs,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,symbol:s.symbol,timeframe:s.tf,favorites:json(s.favorites),shortcuts:json(effectiveShortcuts(s.shortcuts)),coordinateApiVersion:s.coordinates.apiVersion,drawings:json(s.draw),options:json(s.opts),marketStructure:s.marketStructure?.getSummary?.()||null,brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),portfolio:s.portfolio?json(s.portfolio):null,positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,ticketDraft:s.ticketDraft?((draft)=>({account:draft.account,symbol:draft.symbol,timeframe:draft.timeframe,orderType:draft.orderType,volumeLots:draft.volumeLots,entryPrice:draft.entryPrice,slPrice:draft.slPrice,tpPrice:draft.tpPrice,preview:draft.preview?{status:draft.preview.status,canCommit:draft.preview.canCommit}:null}))(s.ticketDraft.read()):null,
+window.ChartStudioBeta=Object.freeze({mount,account,symbol,timeframe,refreshMtfAt:refreshMtfAtSnapshot,updateCandles,updatePositions,updateVerifiedPositions,getVerifiedPositionPriceExtent:verifiedPositionPriceExtent,updateBrokerDeals,updatePositionDraft,setPositionDraftTool,refreshDataWindowIndicators,isEvidenceCaptureDemo,exportDocument:exportWorkspaceDocument,importDocument:importWorkspaceDocument,exportGlobalDrawings:exportGlobalDrawingsDocument,importGlobalDrawings:importGlobalDrawingsDocument,legacyGlobalDrawingsAvailable,importLegacyGlobalDrawings,exportPortableLayout,importPortableLayout,coordinates:Object.freeze({create:createChartCoordinates}),preferences:Object.freeze({normalizeFavorites,normalizeShortcuts,resolveShortcut}),getLiveMAs,calculations:Object.freeze({sma,bollinger}),getState:()=>s?{account:s.account,symbol:s.symbol,timeframe:s.tf,favorites:json(s.favorites),shortcuts:json(effectiveShortcuts(s.shortcuts)),coordinateApiVersion:s.coordinates.apiVersion,drawings:json(s.draw),options:json(s.opts),marketStructure:s.marketStructure?.getSummary?.()||null,brokerMarkers:json(s.brokerMarkers),dataWindow:json(s.dataWindow),verifiedPositions:json(s.verifiedPositions),portfolio:s.portfolio?json(s.portfolio):null,positionContext:s.positionContext?json(s.positionContext):null,positionDraft:s.positionDraft?json(s.positionDraft):null,ticketDraft:s.ticketDraft?((draft)=>({account:draft.account,symbol:draft.symbol,timeframe:draft.timeframe,orderType:draft.orderType,volumeLots:draft.volumeLots,entryPrice:draft.entryPrice,slPrice:draft.slPrice,tpPrice:draft.tpPrice,preview:draft.preview?{status:draft.preview.status,canCommit:draft.preview.canCommit}:null}))(s.ticketDraft.read()):null,
  scenario:s.scenario?json(s.scenario):null,tool:s.tool,magnet:s.magnet,selected:s.selected}:null});
 })();

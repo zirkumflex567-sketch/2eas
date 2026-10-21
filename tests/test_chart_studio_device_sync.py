@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sqlite3
 import time
 from collections import deque
@@ -97,7 +98,7 @@ def test_sync_history_is_bounded_to_last_ten_immutable_revisions(sync_client):
             "account": "titan", "symbol": "XAUUSD", "expectedRevision": revision,
             **ENVELOPE,
         }, headers=proxy_headers())
-        assert saved.status_code == 200
+        assert saved.status_code == 200, saved.text
         assert saved.json()["revision"] == revision + 1
     history = client.get(url + "/history?account=titan&symbol=XAUUSD",
                          headers=proxy_headers())
@@ -223,5 +224,53 @@ def test_two_authenticated_devices_share_revisions_and_detect_concurrent_edits(s
         assert latest.status_code == 200
         assert latest.json()["revision"] == 2
         assert latest.json()["ciphertext"] == newer_ciphertext
+    finally:
+        second_device.close()
+
+
+def test_index_bootstraps_an_opaque_proxy_user_scope_for_global_drawings(sync_client):
+    _, client = sync_client
+    first = client.get("/", headers=proxy_headers("designer"))
+    second = client.get("/", headers=proxy_headers("operator"))
+    assert first.status_code == second.status_code == 200
+    pattern = r'window\.CHART_STUDIO_USER_SCOPE = "(u_[a-f0-9]{64})";'
+    first_scope = re.search(pattern, first.text)
+    second_scope = re.search(pattern, second.text)
+    assert first_scope and second_scope
+    assert first_scope.group(1) != second_scope.group(1)
+    assert "designer" not in first.text and "operator" not in second.text
+
+
+def test_global_drawing_bundle_has_reserved_user_and_symbol_scope(sync_client):
+    app, first_device = sync_client
+    second_device = TestClient(app.app, base_url="https://" + HOST,
+                               client=("127.0.0.1", 54324))
+    bundle_id = "global_1234567890123456"
+    url = f"/api/chart/v1/device-sync/{bundle_id}"
+    try:
+        saved = first_device.put(url, json={
+            "account": "global", "symbol": "XAUUSD", "expectedRevision": 0,
+            **ENVELOPE,
+        }, headers=proxy_headers("designer"))
+        assert saved.status_code == 200, saved.text
+        remote = second_device.get(url + "?account=global&symbol=XAUUSD",
+                                   headers=proxy_headers("designer"))
+        assert remote.status_code == 200
+        assert remote.json()["account"] == "global"
+        assert remote.json()["ciphertext"] == ENVELOPE["ciphertext"]
+        outside_sync = first_device.put("/api/chart/v1/workspace", json={"account": "global"},
+                                        headers=proxy_headers("designer"))
+        assert outside_sync.status_code == 403
+        assert outside_sync.json()["detail"]["code"] == "AUDIT_SCOPE_FORBIDDEN"
+        assert first_device.get(url + "?account=titan&symbol=XAUUSD",
+                                headers=proxy_headers("designer")).status_code == 404
+        assert first_device.get(url + "?account=global&symbol=EURUSD",
+                                headers=proxy_headers("designer")).status_code == 404
+        assert first_device.get(url + "?account=global&symbol=XAUUSD",
+                                headers=proxy_headers("operator")).status_code == 404
+        events = app.app.state.mutation_audit_store.recent(limit=10)
+        assert any(event["account"] == "global" and event["event"] == "REQUEST_STARTED"
+                   for event in events)
+        assert all(event["account"] != "blueberry" for event in events)
     finally:
         second_device.close()

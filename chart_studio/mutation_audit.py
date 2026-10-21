@@ -11,7 +11,9 @@ import threading
 import uuid
 
 
-_ACCOUNT_ALIASES = frozenset({'titan', 'xau5m_m5', 'titan_m5', 'xau5m_500', 'goldm15'})
+# `global` is a reserved, non-trading scope for encrypted symbol-wide chart
+# drawings. It is auditable like a demo target but never maps to an MT5 account.
+_ACCOUNT_ALIASES = frozenset({'global', 'titan', 'xau5m_m5', 'titan_m5', 'xau5m_500', 'goldm15'})
 _METHODS = frozenset({'POST', 'PUT', 'PATCH', 'DELETE'})
 _ROUTE = re.compile(r'^/api/[A-Za-z0-9_./{}:-]{1,196}$')
 _OUTCOMES = frozenset({'ok', 'rejected', 'unknown'})

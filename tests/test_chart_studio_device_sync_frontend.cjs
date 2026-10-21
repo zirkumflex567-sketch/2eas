@@ -393,6 +393,161 @@ async function main() {
     await migrationPage.waitForFunction(() => document.querySelector('[role="status"]').textContent.includes('Layout lokal geladen'));
     assert.equal((await migrationPage.evaluate(() => window.importedLayouts.at(-1))).timeframe, 'H1');
     await migrationPage.close();
+
+    // Global market drawings use a distinct reserved scope and can be decrypted
+    // on a second device/account without importing account-layout settings.
+    const sharedRemote = new Map();
+    const sharedDrawing = {schemaVersion: 1, kind: 'global-market-drawings', symbol: 'XAUUSD',
+      drawings: [{id: 'shared_draw_1', kind: 'horizontal', anchors: [{time: 1700000000, price: 2300}]}]};
+    const routeGlobalSync = async route => {
+      const request = route.request(), url = new URL(request.url());
+      if (request.method() === 'GET' && url.pathname.endsWith('/history')) {
+        const bundleId = url.pathname.split('/').at(-2), key = `${bundleId}|${url.searchParams.get('account')}|${url.searchParams.get('symbol')}`;
+        const saved = sharedRemote.get(key);
+        return route.fulfill({status: saved ? 200 : 404, contentType: 'application/json',
+          body: JSON.stringify(saved ? {bundleId, account: 'global', symbol: 'XAUUSD', items: [saved]} : {detail: 'not found'})});
+      }
+      const bundleId = url.pathname.split('/').at(-1), body = request.method() === 'PUT' ? request.postDataJSON() : null;
+      const key = `${bundleId}|${body?.account||url.searchParams.get('account')}|${body?.symbol||url.searchParams.get('symbol')}`;
+      const saved = sharedRemote.get(key);
+      if (request.method() === 'GET') return route.fulfill({status: saved ? 200 : 404, contentType: 'application/json',
+        body: JSON.stringify(saved || {detail: 'not found'})});
+      assert.equal(body.account, 'global');
+      assert.equal(body.symbol, 'XAUUSD');
+      if (saved && body.expectedRevision !== saved.revision) return route.fulfill({status: 409, contentType: 'application/json',
+        body: JSON.stringify({detail: {currentRevision: saved.revision}})});
+      const result = {bundleId, account: 'global', symbol: 'XAUUSD', ...body, revision: (saved?.revision||0)+1,
+        createdUtc: Math.floor(Date.now()/1000)};
+      sharedRemote.set(key, result);
+      return route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(result)});
+    };
+    const globalFirst = await browser.newPage();globalFirst.setDefaultTimeout(5000);
+    await globalFirst.goto(`http://127.0.0.1:${address.port}/`);
+    await globalFirst.evaluate(({doc,layout}) => {
+      window.globalDoc = doc;window.layoutDoc = layout;window.appliedGlobal = [];window.appliedLayouts = [];window.legacyImported = false;
+      window.ChartStudioServerSync.mount({panel: document.querySelector('#panel'), account: 'titan', getSymbol: () => 'XAUUSD',
+        exportDocument: () => window.layoutDoc, importDocument: value => (window.appliedLayouts.push(value), true),
+        exportGlobalDrawings: () => window.globalDoc,
+        importGlobalDrawings: value => (window.appliedGlobal.push(value), window.globalDoc = value, true),
+        hasLegacyGlobalDrawings: () => true,
+        importLegacyGlobalDrawings: () => (window.legacyImported = true, true)});
+    }, {doc: sharedDrawing, layout: DOC});
+    await globalFirst.waitForFunction(() => !document.querySelector('[aria-label="Sync-Modus"]').disabled);
+    await globalFirst.route('**/api/chart/v1/device-sync/**', routeGlobalSync);
+    await globalFirst.getByLabel('Sync-Modus').selectOption('global');
+    assert.equal(await globalFirst.getByRole('button', {name: 'Alte browserlokale Markierungen übernehmen'}).isVisible(), true,
+      'existing local marks have an explicit migration action');
+    globalFirst.once('dialog', dialog => dialog.accept());
+    await globalFirst.getByRole('button', {name: 'Alte browserlokale Markierungen übernehmen'}).click();
+    assert.equal(await globalFirst.evaluate(() => window.legacyImported), true);
+    await globalFirst.getByRole('button', {name: 'Neuen Sync-Schlüssel erstellen'}).click();
+    const globalRecovery = globalFirst.locator('[aria-label="Recovery-Paket"]');
+    await globalFirst.waitForFunction(() => document.querySelector('[aria-label="Recovery-Paket"]').value.startsWith('2eas-sync:v1:'));
+    const globalPackage = await globalRecovery.inputValue();
+    const firstPut = globalFirst.waitForResponse(response => response.request().method() === 'PUT' && response.url().includes('/device-sync/'));
+    await globalFirst.getByRole('button', {name: 'Symbolweite Markierungen verschlüsselt speichern'}).click();
+    await firstPut;
+    await globalFirst.waitForFunction(() => document.querySelector('[role="status"]').textContent.includes('Revision 1'));
+    assert.equal(JSON.stringify([...sharedRemote.values()]).includes('shared_draw_1'), false,
+      'remote storage receives only encrypted drawing payloads');
+    assert.equal(await globalFirst.locator('.cs-server-sync-row').nth(1).isHidden(), true,
+      'account-layout migration controls are hidden in global mode');
+    await globalFirst.evaluate(() => {
+      const original = crypto.subtle.encrypt.bind(crypto.subtle);let release;
+      window.rotationStarted = new Promise(resolve => { window.signalRotationStarted = resolve; });
+      window.rotationGate = new Promise(resolve => { release = resolve; });
+      window.releaseRotation = () => release();
+      Object.defineProperty(crypto.subtle, 'encrypt', {configurable: true, value: async (...args) => {
+        window.signalRotationStarted();await window.rotationGate;return original(...args);
+      }});
+    });
+    await globalFirst.getByRole('button', {name: 'Schlüssel rotieren'}).click();
+    await globalFirst.evaluate(() => window.rotationStarted);
+    await globalFirst.evaluate(() => window.ChartStudioServerSync.scope('titan', 'EURUSD'));
+    await globalFirst.evaluate(() => window.releaseRotation());
+    await globalFirst.waitForFunction(() => document.querySelector('[role="status"]').textContent.includes('Vorgang verworfen'));
+    assert.equal(sharedRemote.size, 1, 'rotation does not write a new key after a symbol-scope transition');
+
+    const globalSecond = await browser.newPage();globalSecond.setDefaultTimeout(5000);
+    await globalSecond.goto(`http://127.0.0.1:${address.port}/`);
+    await globalSecond.evaluate(({doc,layout}) => {
+      window.globalDoc = doc;window.layoutDoc = layout;window.appliedGlobal = [];window.appliedLayouts = [];
+      window.ChartStudioServerSync.mount({panel: document.querySelector('#panel'), account: 'xau5m_m5', getSymbol: () => 'XAUUSD',
+        exportDocument: () => window.layoutDoc, importDocument: value => (window.appliedLayouts.push(value), true),
+        exportGlobalDrawings: () => window.globalDoc,
+        importGlobalDrawings: value => (window.appliedGlobal.push(value), window.globalDoc = value, true)});
+    }, {doc: {...sharedDrawing, drawings: []}, layout: {...DOC, timeframe: 'H1'}});
+    await globalSecond.waitForFunction(() => !document.querySelector('[aria-label="Sync-Modus"]').disabled);
+    await globalSecond.route('**/api/chart/v1/device-sync/**', routeGlobalSync);
+    await globalSecond.getByLabel('Sync-Modus').selectOption('global');
+    await globalSecond.locator('[aria-label="Recovery-Paket"]').fill(globalPackage);
+    await globalSecond.getByRole('button', {name: 'Recovery-Paket importieren'}).click();
+    await globalSecond.waitForFunction(() => window.appliedGlobal.length === 1);
+    assert.equal(await globalSecond.evaluate(() => window.appliedGlobal[0].drawings[0].id), 'shared_draw_1');
+    assert.equal(await globalSecond.evaluate(() => window.appliedLayouts.length), 0,
+      'a global-drawing bundle never reaches the account-layout importer');
+    await globalSecond.evaluate(() => window.ChartStudioServerSync.account('titan_m5'));
+    assert.equal(await globalSecond.locator('[aria-label="Recovery-Paket"]').inputValue(), globalPackage,
+      'global sync remains available across account aliases for the same symbol');
+    await globalSecond.evaluate(() => window.ChartStudioServerSync.scope('titan_m5', 'EURUSD'));
+    assert.equal(await globalSecond.locator('[aria-label="Recovery-Paket"]').inputValue(), '',
+      'global bundles do not cross symbol scope');
+    await globalFirst.close();await globalSecond.close();
+
+    const transitionPage = await browser.newPage();transitionPage.setDefaultTimeout(5000);
+    await transitionPage.addInitScript(() => {
+      const original = crypto.subtle.importKey.bind(crypto.subtle);
+      let release;
+      window.keyImportStarted = new Promise(resolve => { window.signalKeyImportStarted = resolve; });
+      window.keyImportGate = new Promise(resolve => { release = resolve; });
+      window.releaseKeyImport = () => release();
+      Object.defineProperty(crypto.subtle, 'importKey', {configurable: true, value: async (...args) => {
+        window.signalKeyImportStarted();await window.keyImportGate;return original(...args);
+      }});
+    });
+    await transitionPage.goto(`http://127.0.0.1:${address.port}/`);
+    await transitionPage.evaluate(({doc,layout}) => window.ChartStudioServerSync.mount({
+      panel: document.querySelector('#panel'), account: 'titan', getSymbol: () => 'XAUUSD',
+      exportDocument: () => layout, importDocument: () => true,
+      exportGlobalDrawings: () => doc, importGlobalDrawings: () => true,
+    }), {doc: sharedDrawing, layout: DOC});
+    await transitionPage.waitForFunction(() => !document.querySelector('[aria-label="Sync-Modus"]').disabled);
+    await transitionPage.getByLabel('Sync-Modus').selectOption('global');
+    await transitionPage.getByRole('button', {name: 'Neuen Sync-Schlüssel erstellen'}).click();
+    await transitionPage.evaluate(() => window.keyImportStarted);
+    await transitionPage.getByLabel('Sync-Modus').selectOption('layout');
+    await transitionPage.evaluate(() => window.releaseKeyImport());
+    await transitionPage.waitForFunction(() => document.querySelector('[role="status"]').textContent.includes('Paket wurde verworfen'));
+    assert.equal(await transitionPage.locator('[aria-label="Recovery-Paket"]').inputValue(), '',
+      'a key created across a scope transition is discarded');
+    await transitionPage.close();
+
+    const accountTransitionPage = await browser.newPage();accountTransitionPage.setDefaultTimeout(5000);
+    await accountTransitionPage.addInitScript(() => {
+      const original = crypto.subtle.importKey.bind(crypto.subtle);let release;
+      window.keyImportStarted = new Promise(resolve => { window.signalKeyImportStarted = resolve; });
+      window.keyImportGate = new Promise(resolve => { release = resolve; });
+      window.releaseKeyImport = () => release();
+      Object.defineProperty(crypto.subtle, 'importKey', {configurable: true, value: async (...args) => {
+        window.signalKeyImportStarted();await window.keyImportGate;return original(...args);
+      }});
+    });
+    await accountTransitionPage.goto(`http://127.0.0.1:${address.port}/`);
+    await accountTransitionPage.evaluate(({doc,layout}) => window.ChartStudioServerSync.mount({
+      panel: document.querySelector('#panel'), account: 'titan', getSymbol: () => 'XAUUSD',
+      exportDocument: () => layout, importDocument: () => true,
+      exportGlobalDrawings: () => doc, importGlobalDrawings: () => true,
+    }), {doc: sharedDrawing, layout: DOC});
+    await accountTransitionPage.waitForFunction(() => !document.querySelector('[aria-label="Sync-Modus"]').disabled);
+    await accountTransitionPage.getByLabel('Sync-Modus').selectOption('global');
+    await accountTransitionPage.getByRole('button', {name: 'Neuen Sync-Schlüssel erstellen'}).click();
+    await accountTransitionPage.evaluate(() => window.keyImportStarted);
+    await accountTransitionPage.evaluate(() => window.ChartStudioServerSync.account('xau5m_m5'));
+    await accountTransitionPage.evaluate(() => window.releaseKeyImport());
+    await accountTransitionPage.waitForFunction(() => document.querySelector('[aria-label="Recovery-Paket"]').value.startsWith('2eas-sync:v1:'));
+    assert.match(await accountTransitionPage.locator('[aria-label="Recovery-Paket"]').inputValue(), /^2eas-sync:v1:/,
+      'same-symbol account changes keep a pending global key creation in scope');
+    await accountTransitionPage.close();
     console.log('Chart Studio device-sync browser contracts passed');
   } finally {
     if (browser) await browser.close();

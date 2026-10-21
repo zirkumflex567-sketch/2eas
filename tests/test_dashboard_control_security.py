@@ -42,7 +42,7 @@ class ControlSecurityTests(unittest.TestCase):
         assert production_audit_store.allowed_accounts == {
             name for name, spec in app.ACCOUNTS.items()
             if spec.get('is_demo') is True and spec.get('challenge_protection') is not True
-        }
+        } | {'global'}
         assert 'blueberry' not in production_audit_store.allowed_accounts
         response = client.post('/api/close_position', json={'ticket': 999})
         self.assertEqual(response.status_code, 403)

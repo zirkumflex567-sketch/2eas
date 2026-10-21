@@ -3,7 +3,7 @@ import app as dashboard
 
 def test_native_v5_preview_is_off_by_default_and_bundle_stays_lazy(monkeypatch):
     monkeypatch.delenv("CHART_STUDIO_V5_PREVIEW_ENABLED", raising=False)
-    html = dashboard.index().body.decode("utf-8")
+    html = dashboard.render_dashboard_index().body.decode("utf-8")
 
     assert "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;" in html
     assert 'id="chart-v5-preview-btn"' in html
@@ -17,10 +17,10 @@ def test_native_v5_preview_is_off_by_default_and_bundle_stays_lazy(monkeypatch):
 
 def test_native_v5_preview_requires_exact_private_opt_in(monkeypatch):
     monkeypatch.setenv("CHART_STUDIO_V5_PREVIEW_ENABLED", "1")
-    assert "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;" in dashboard.index().body.decode("utf-8")
+    assert "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;" in dashboard.render_dashboard_index().body.decode("utf-8")
 
     monkeypatch.setenv("CHART_STUDIO_V5_PREVIEW_ENABLED", "true")
-    assert "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;" in dashboard.index().body.decode("utf-8")
+    assert "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;" in dashboard.render_dashboard_index().body.decode("utf-8")
 
 
 def test_bundled_v5_asset_has_pinned_license_and_dependency_notices():

@@ -4,7 +4,7 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process");
 (async()=>{
  const server=spawn("python",["-m","http.server","8869","--bind","127.0.0.1"],
   {cwd:process.cwd(),windowsHide:true,stdio:"pipe"});
- let browser;
+ let browser,context;
  try{
   for(let i=0;i<80;i++){
    if(server.exitCode!==null)throw Error("Fixture server exited");
@@ -13,7 +13,9 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process");
    await new Promise(r=>setTimeout(r,250));
   }
   browser=await chromium.launch({headless:true});
-  const page=await browser.newPage({viewport:{width:1450,height:960}});
+  context=await browser.newContext({viewport:{width:1450,height:960}});
+  const page=await context.newPage();
+  await page.addInitScript(()=>{window.CHART_STUDIO_USER_SCOPE="u_"+"a".repeat(64)});
   const errors=[],requests=[];
   page.on("pageerror",e=>errors.push(e.message));
   page.on("request",r=>{if(r.method()!=="GET")requests.push(r.url())});
@@ -186,10 +188,42 @@ const {chromium}=require("playwright"),{spawn}=require("node:child_process");
   assert.equal(await serverBox.locator('[aria-label="Recovery-Paket"]').count(),1);
   assert.equal(await serverBox.getByRole("button",{name:"Aktuelles Layout verschlüsselt speichern"}).isDisabled(),true,
     "encrypted server sync remains unavailable unless the server explicitly enables it");
+  const scopedDrawing={schemaVersion:1,kind:"global-market-drawings",symbol:"XAUUSD",
+   drawings:[{id:"owner-a-mark",kind:"horizontal",anchors:[{time:1700000000,price:2300}]}]};
+  assert.equal(await page.evaluate(doc=>ChartStudioBeta.importGlobalDrawings(doc),scopedDrawing),true);
+  assert.equal((await page.evaluate(()=>ChartStudioBeta.exportGlobalDrawings())).drawings.length,1);
+  const legacyMark={id:"legacy-browser-mark",kind:"vertical",anchors:[{time:1700000060,price:2301}]};
+  await page.evaluate(mark=>localStorage.setItem("2eas:studio:beta:symbol-global:draw:XAUUSD",JSON.stringify([mark])),legacyMark);
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.legacyGlobalDrawingsAvailable()),true);
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.importLegacyGlobalDrawings()),true,
+   "legacy marks can be copied into the authenticated user's namespace");
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem("2eas:studio:beta:symbol-global:draw:XAUUSD"))[0].id),"legacy-browser-mark",
+   "explicit migration preserves the legacy source");
+  assert.equal((await page.evaluate(()=>ChartStudioBeta.exportGlobalDrawings())).drawings.some(d=>d.anchors[0].time===1700000060),true);
+  assert.equal(await page.evaluate(()=>ChartStudioBeta.importLegacyGlobalDrawings()),true,
+   "repeating migration is idempotent");
+  assert.equal((await page.evaluate(()=>ChartStudioBeta.exportGlobalDrawings())).drawings.length,2);
+  const otherUser=await context.newPage();
+  await otherUser.addInitScript(()=>{window.CHART_STUDIO_USER_SCOPE="u_"+"b".repeat(64)});
+  await otherUser.goto("http://127.0.0.1:8869/static/chart-studio-fixture.html",{waitUntil:"networkidle"});
+  await otherUser.waitForFunction(()=>window.__chartSmokeReady===true);
+  await otherUser.evaluate(()=>ChartStudioBeta.account("xau5m_m5"));
+  assert.equal((await otherUser.evaluate(()=>ChartStudioBeta.exportGlobalDrawings())).drawings.length,0,
+   "global drawings are isolated between authenticated users in one browser profile");
+  const scopedDrawingB={...scopedDrawing,drawings:[{...scopedDrawing.drawings[0],id:"owner-b-mark"}]};
+  assert.equal(await otherUser.evaluate(doc=>ChartStudioBeta.importGlobalDrawings(doc),scopedDrawingB),true);
+  assert.equal((await page.evaluate(()=>ChartStudioBeta.exportGlobalDrawings())).drawings[0].id,"owner-a-mark");
+  await page.evaluate(()=>ChartStudioBeta.timeframe("M5"));
+  assert.equal((await page.evaluate(()=>ChartStudioBeta.exportGlobalDrawings())).drawings[0].id,"owner-a-mark",
+   "symbol-wide drawings remain available after a timeframe change");
+  await page.evaluate(()=>ChartStudioBeta.account("xau5m_m5"));
+  assert.equal((await page.evaluate(()=>ChartStudioBeta.exportGlobalDrawings())).drawings[0].id,"owner-a-mark",
+   "same-user global drawings remain visible across account aliases");
+  await otherUser.close();
   assert.deepEqual(errors,[]);
   assert.deepEqual(requests,[],"no plaintext workspace writes are sent while encrypted sync is disabled");
   const dir=path.join("output","visual-smoke");fs.mkdirSync(dir,{recursive:true});
   await page.screenshot({path:path.join(dir,"chart-studio-object-manager.png"),fullPage:true});
   console.log("PASS Chromium Beta AT-025 combined capacity: 5,000 bars, 20 indicators, 1,000 drawings; object manager CRUD and fail-closed sync");
- }finally{if(browser)await browser.close();server.kill()}
+ }finally{if(browser)await browser.close();if(context)await context.close();server.kill()}
 })().catch(e=>{console.error(e);process.exitCode=1});

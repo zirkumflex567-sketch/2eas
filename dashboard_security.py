@@ -288,6 +288,9 @@ def install_control_security(app):
                     body_account = payload.get('account') if isinstance(payload, dict) else None
                     if not isinstance(body_account, str) or (account is not None and account != body_account):
                         raise AuditScopeRejected('Configured non-protected demo alias required')
+                    if body_account == 'global' and not (
+                            request.method == 'PUT' and route_path.startswith('/api/chart/v1/device-sync/')):
+                        raise AuditScopeRejected('Global scope is reserved for encrypted drawing sync')
                     account = body_account
                 request_id = store.begin_request(
                     method=request.method,

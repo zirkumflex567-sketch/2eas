@@ -17,7 +17,8 @@ function b64urlToBytes(value){
 function randomBundleId(){return "sync_"+bytesToB64url(crypto.getRandomValues(new Uint8Array(18)))}
 function scopeAad(bundle){
  if(!bundle||typeof bundle.bundleId!=="string"||typeof bundle.account!=="string"||typeof bundle.symbol!=="string")throw Error("Sync-Scope fehlt.");
- return textEncoder.encode(`2eas-sync\0v${FORMAT}\0${bundle.bundleId}\0${bundle.account}\0${bundle.symbol}`);
+ const base=`2eas-sync\0v${FORMAT}\0${bundle.bundleId}\0${bundle.account}\0${bundle.symbol}`;
+ return textEncoder.encode(bundle.account==="global"?`${base}\0global-market-drawings`:base);
 }
 async function generateKey(){
  const raw=crypto.getRandomValues(new Uint8Array(32));
@@ -33,6 +34,7 @@ async function createRecoveryPackage(account,symbol){
  const bundle={bundleId:randomBundleId(),account,symbol,key:generated.key,raw:generated.raw};
  return {...bundle,recoveryPackage:encodePackage(bundle)};
 }
+async function createGlobalDrawingRecoveryPackage(symbol){return createRecoveryPackage("global",symbol)}
 async function parseRecoveryPackage(value){
  if(typeof value!=="string"||!value.startsWith(KEY_PREFIX))throw Error("Recovery-Paket muss mit 2eas-sync:v1: beginnen.");
  const encoded=value.slice(KEY_PREFIX.length),decoded=b64urlToBytes(encoded);
@@ -47,7 +49,37 @@ async function parseRecoveryPackage(value){
  const key=await crypto.subtle.importKey("raw",raw,{name:"AES-GCM"},false,["encrypt","decrypt"]);
  return {bundleId:data.bundleId,account:data.account,symbol:data.symbol,key,raw,recoveryPackage:value};
 }
-function validateDocument(document){
+function validateGlobalDrawings(drawings){
+ const counts={horizontal:1,vertical:1,text:1,trend:2,rect:2,ellipse:2,fib:2,fibfan:2,fibtime:2,fibtrend:3,ray:2,ruler:2,channel:3};
+ const fields=new Set(["kind","anchors","id","label","visible","locked","levels"]),ids=new Set();
+ if(!Array.isArray(drawings)||drawings.length>1000)throw Error("Ungültige globale Zeichnungen.");
+ for(const drawing of drawings){
+  if(!drawing||typeof drawing!=="object"||Array.isArray(drawing)||Object.keys(drawing).some(key=>!fields.has(key))||
+   !Object.hasOwn(counts,drawing.kind)||!Array.isArray(drawing.anchors)||drawing.anchors.length!==counts[drawing.kind])throw Error("Ungültige globale Zeichnungsgeometrie.");
+  if(drawing.anchors.some(point=>!point||Object.keys(point).sort().join(",")!=="price,time"||
+   !Number.isInteger(point.time)||point.time<1||point.time>7258118400||
+   typeof point.price!=="number"||!Number.isFinite(point.price)||point.price<=0))throw Error("Ungültiger globaler Zeichenanker.");
+  if(drawing.id!==undefined&&(typeof drawing.id!=="string"||! /^[A-Za-z0-9_-]{1,32}$/.test(drawing.id)||ids.has(drawing.id)))throw Error("Ungültige globale Zeichnungs-ID.");
+  if(drawing.id)ids.add(drawing.id);
+  if(drawing.label!==undefined&&(typeof drawing.label!=="string"||drawing.label.length>40||/[\u0000-\u001f]/.test(drawing.label)))throw Error("Ungültige globale Beschriftung.");
+  if(drawing.kind==="text"&&(!drawing.label||!drawing.label.trim()))throw Error("Textmarkierungen brauchen eine Beschriftung.");
+  if(drawing.visible!==undefined&&typeof drawing.visible!=="boolean")throw Error("Ungültiger Sichtbarkeitswert.");
+  if(drawing.locked!==undefined&&typeof drawing.locked!=="boolean")throw Error("Ungültiger Sperrwert.");
+  if(drawing.levels!==undefined&&(drawing.kind!=="fib"||!Array.isArray(drawing.levels)||drawing.levels.length>32))throw Error("Ungültige globale Fibonacci-Level.");
+  if(window.ChartStudioDrawingGeometry?.validDrawing&&!window.ChartStudioDrawingGeometry.validDrawing(drawing))throw Error("Ungültige globale Zeichnungsgeometrie.");
+ }
+}
+function validateDocument(document,bundle){
+ const global=document?.kind==="global-market-drawings";
+ if(global){
+  if(Object.keys(document).sort().join(",")!=="drawings,kind,schemaVersion,symbol"||document.schemaVersion!==1||
+   typeof document.symbol!=="string"||!Array.isArray(document.drawings))throw Error("Ungültiges globales Zeichnungsbundle.");
+  validateGlobalDrawings(document.drawings);
+  if(bundle&&bundle.account!=="global")throw Error("Symbolweite Zeichnungen benötigen einen globalen Sync-Scope.");
+  const encoded=textEncoder.encode(JSON.stringify(document));if(encoded.byteLength>524288)throw Error("Chart-Layout ist zu groß.");
+  return encoded;
+ }
+ if(bundle&&bundle.account==="global")throw Error("Globaler Sync-Scope benötigt ein Symbol-Zeichnungsbundle.");
  const allowed=new Set(["schemaVersion","drawings","options","indicators","movingAverages","chartAppearance","oscillatorInstances","chartType","timeframe","symbol"]);
  const forbidden=new Set(["accountid","brokerpositions","openpositions","pendingorders","positiondraft","orderticket","tradeticket","dealmarkers","orderid","positionid","dealid","ticket"]);
  function walk(value){
@@ -70,7 +102,7 @@ function validateDocument(document){
  return encoded;
 }
 async function encryptDocument(document,bundle){
- const plaintext=validateDocument(document),nonce=crypto.getRandomValues(new Uint8Array(12));
+ const plaintext=validateDocument(document,bundle),nonce=crypto.getRandomValues(new Uint8Array(12));
  if(document.symbol!==undefined&&document.symbol!==bundle.symbol)throw Error("Layout gehört zu einem anderen Symbol.");
  const key=bundle.key||await crypto.subtle.importKey("raw",bundle.raw,{name:"AES-GCM"},false,["encrypt"]);
  const ciphertext=await crypto.subtle.encrypt({name:"AES-GCM",iv:nonce,additionalData:scopeAad(bundle),tagLength:128},key,plaintext);
@@ -80,7 +112,7 @@ async function decryptDocument(envelope,bundle){
  if(!envelope||envelope.formatVersion!==FORMAT)throw Error("Dieses verschlüsselte Format wird von dieser Version nicht unterstützt.");
  const key=bundle.key||await crypto.subtle.importKey("raw",bundle.raw,{name:"AES-GCM"},false,["decrypt"]);
  const plaintext=await crypto.subtle.decrypt({name:"AES-GCM",iv:b64urlToBytes(envelope.nonce),additionalData:scopeAad(bundle),tagLength:128},key,b64urlToBytes(envelope.ciphertext));
- const document=JSON.parse(new TextDecoder().decode(plaintext));validateDocument(document);
+ const document=JSON.parse(new TextDecoder().decode(plaintext));validateDocument(document,bundle);
  if(document.symbol!==undefined&&document.symbol!==bundle.symbol)throw Error("Layout gehört zu einem anderen Symbol.");
  return document;
 }
@@ -122,10 +154,25 @@ async function request(bundle,method,path,body){
   error.status=response.status;error.currentRevision=detail?.currentRevision;throw error;
  }return data;
 }
-function scopeMatches(bundle){return !!state&&!!bundle&&bundle.account===state.account&&bundle.symbol===state.symbol}
-function assertCurrentScope(bundle,generation){if(!state||state.scopeGeneration!==generation||!scopeMatches(bundle))throw Error("Scope wurde während des Syncs gewechselt; Vorgang verworfen.")}
+function activeScopeAccount(){return state?.mode==="global"?"global":state?.account}
+function scopeMatches(bundle){return !!state&&!!bundle&&bundle.account===activeScopeAccount()&&bundle.symbol===state.symbol}
+function assertCurrentScope(bundle,generation){if(!state||state.scopeGeneration!==generation||state.bundle!==bundle||!scopeMatches(bundle))throw Error("Scope wurde während des Syncs gewechselt; Vorgang verworfen.")}
 function scopeKey(account,symbol){return `${account}|${symbol}`}
 function rememberBundle(bundle){if(state&&bundle)state.bundleCache.set(scopeKey(bundle.account,bundle.symbol),bundle)}
+function refreshMode(){
+ if(!state)return;
+ const global=state.mode==="global";
+ state.scopeSelect.value=state.mode;
+ state.scopeGeneration++;state.bundle=state.bundleCache.get(scopeKey(activeScopeAccount(),state.symbol))||null;
+ state.revision=0;state.conflict=null;state.conflictBox.hidden=true;
+ state.recovery.value=state.bundle?.recoveryPackage||"";
+ state.save.textContent=global?"Symbolweite Markierungen verschlüsselt speichern":"Aktuelles Layout verschlüsselt speichern";
+ state.load.textContent=global?"Symbolweite Markierungen laden":"Serverstand laden";
+ state.migrationRow.hidden=global;
+ state.legacyImport.hidden=!global||typeof state.hasLegacyGlobalDrawings!=="function"||!state.hasLegacyGlobalDrawings();
+ show(global?"Sync-Modus: ausdrücklich geteilte Zeichnungen dieses Symbols über Geräte synchronisieren.":"Sync-Modus: Konto-Layout dieses Symbols synchronisieren.");
+}
+function setMode(mode){if(!state||!['layout','global'].includes(mode)||mode===state.mode)return;state.mode=mode;refreshMode()}
 async function getCurrent(bundle){return request(bundle,"GET",syncUrl(bundle)+`?account=${encodeURIComponent(bundle.account)}&symbol=${encodeURIComponent(bundle.symbol)}`)}
 function renderConflict(localEnvelope,document){
  if(!state||!state.bundle||!scopeMatches(state.bundle))return;state.conflict={localEnvelope,document,bundleKey:bundleKey(state.bundle),scopeGeneration:state.scopeGeneration};state.conflictBox.replaceChildren();
@@ -227,26 +274,32 @@ async function restoreHistory(){
 }
 async function rotateKey(){
  const oldBundle=state?.bundle;if(!oldBundle||!scopeMatches(oldBundle)){show("Recovery-Paket für aktuelles Konto/Symbol zuerst importieren.");return}
+ const generation=state.scopeGeneration;
  try{
   if(await outbox("get",bundleKey(oldBundle)))throw Error("Erst den vorgemerkten Offline-Stand synchronisieren oder verwerfen.");
+  assertCurrentScope(oldBundle,generation);
   const history=await request(oldBundle,"GET",syncUrl(oldBundle)+`/history?account=${encodeURIComponent(oldBundle.account)}&symbol=${encodeURIComponent(oldBundle.symbol)}`);
+  assertCurrentScope(oldBundle,generation);
   const documents=[];
   for(const item of [...(history.items||[])].reverse()){
    if(item.formatVersion!==FORMAT){downloadEnvelope({...item,bundleId:oldBundle.bundleId,account:oldBundle.account,symbol:oldBundle.symbol});throw Error("Unbekannte Revision archiviert; Rotation abgebrochen.")}
-   documents.push(await decryptDocument(item,oldBundle));
+   documents.push(await decryptDocument(item,oldBundle));assertCurrentScope(oldBundle,generation);
   }
   if(!documents.length)throw Error("Keine Revisionen zum Rotieren vorhanden.");
-  const fresh=await createRecoveryPackage(oldBundle.account,oldBundle.symbol);state.bundle=fresh;rememberBundle(fresh);state.recovery.value=fresh.recoveryPackage;state.revision=0;
+  const fresh=await createRecoveryPackage(oldBundle.account,oldBundle.symbol);assertCurrentScope(oldBundle,generation);
+  let revision=0;
   show("Schlüsselrotation läuft · alte Historie bleibt als verschlüsseltes Archiv erhalten.");
   for(const document of documents){
-   const envelope=await encryptDocument(document,fresh),result=await request(fresh,"PUT",syncUrl(fresh),{
-    account:fresh.account,symbol:fresh.symbol,expectedRevision:state.revision,...envelope});
-   await verifyRemote(result,fresh,document);state.revision=result.revision;
+   assertCurrentScope(oldBundle,generation);
+   const envelope=await encryptDocument(document,fresh);assertCurrentScope(oldBundle,generation);
+   const result=await request(fresh,"PUT",syncUrl(fresh),{
+    account:fresh.account,symbol:fresh.symbol,expectedRevision:revision,...envelope});
+   await verifyRemote(result,fresh,document);assertCurrentScope(oldBundle,generation);revision=result.revision;
   }
+  assertCurrentScope(oldBundle,generation);state.bundle=fresh;rememberBundle(fresh);state.recovery.value=fresh.recoveryPackage;state.revision=revision;
   show(`${documents.length} Revisionen mit neuem Schlüssel verifiziert. Recovery-Paket sichern; alte Schlüssel werden nicht widerrufen.`);
  }catch(error){show("Schlüsselrotation abgebrochen: "+error.message)}
-}
-async function retryPending(){
+}async function retryPending(){
  const bundle=state?.bundle;if(!bundle)return;
  const generation=state.scopeGeneration;
  try{const pending=await outbox("get",bundleKey(bundle));if(!pending)return;
@@ -260,33 +313,54 @@ async function retryPending(){
  }catch(error){if(!state||state.scopeGeneration!==generation||!scopeMatches(bundle))return;if(error.status===409){const pending=await outbox("get",bundleKey(bundle));if(!state||state.scopeGeneration!==generation||!scopeMatches(bundle))return;if(pending){const document=await decryptDocument(pending.envelope,bundle);assertCurrentScope(bundle,generation);renderConflict(pending.envelope,document)}show("Offline-Stand kollidiert mit einer neuen Revision. Konfliktlösung erforderlich.")}else show("Offline-Stand bleibt verschlüsselt vorgemerkt: "+error.message)}
 }
 function importKey(){
- const raw=state.recovery.value.trim();void (async()=>{
+ const raw=state.recovery.value.trim(),generation=state.scopeGeneration,mode=state.mode,symbol=state.symbol;void (async()=>{
   try{const bundle=await parseRecoveryPackage(raw);if(!scopeMatches(bundle))throw Error("Recovery-Paket gehört zu einem anderen Konto oder Symbol.");
+   if(!state||state.scopeGeneration!==generation||state.mode!==mode||state.symbol!==symbol)throw Error("Scope wechselte während des Imports; Vorgang verworfen.");
    state.bundle=bundle;rememberBundle(bundle);state.revision=0;show("Recovery-Paket importiert; Serverstand wird geprüft.");await loadRemote();await retryPending();
   }catch(error){show("Recovery-Paket ungültig: "+error.message)}
  })();
 }
-function mount({panel,account:accountId,exportDocument,importDocument,getAccount,getSymbol}){
+function mount({panel,account:accountId,exportDocument,importDocument,exportGlobalDrawings,importGlobalDrawings,hasLegacyGlobalDrawings,importLegacyGlobalDrawings,getAccount,getSymbol}){
  if(state||!panel||typeof exportDocument!=="function"||typeof importDocument!=="function")return;
  const section=el("section",{className:"cs-server-sync"}),title=el("div",{className:"cs-server-sync-head"},"VERSCHLÜSSELTER GERÄTE-SYNC · AES-GCM");
+ const scopeSelect=el("select",{"aria-label":"Sync-Modus"});
+ scopeSelect.append(el("option",{value:"layout"},"Konto-Layout"),el("option",{value:"global"},"Symbolweite Markierungen"));title.append(scopeSelect);
+ const legacyImport=el("button",{type:"button"},"Alte browserlokale Markierungen übernehmen");legacyImport.hidden=true;
  const create=el("button",{type:"button"},"Neuen Sync-Schlüssel erstellen"),recovery=el("textarea",{rows:"3",spellcheck:"false","aria-label":"Recovery-Paket","placeholder":"Recovery-Paket hier sichern oder auf diesem Gerät importieren"});
  const row=el("div",{className:"cs-server-sync-row"}),connect=el("button",{type:"button"},"Recovery-Paket importieren"),save=el("button",{type:"button"},"Aktuelles Layout verschlüsselt speichern"),load=el("button",{type:"button"},"Serverstand laden"),copy=el("button",{type:"button"},"Recovery-Paket kopieren");row.append(connect,save,load,copy);
  const migrationRow=el("div",{className:"cs-server-sync-row"}),exportLayout=el("button",{type:"button"},"Lokales Layout exportieren"),layoutFile=el("input",{type:"file",accept:"application/json,.json","aria-label":"Layoutdatei importieren"}),importLayout=el("button",{type:"button"},"Layoutdatei importieren");migrationRow.append(exportLayout,layoutFile,importLayout);
  const historyRow=el("div",{className:"cs-server-sync-row"}),history=el("button",{type:"button"},"Revisionen laden"),historySelect=el("select",{"aria-label":"Verschlüsselte Revision wählen"}),restore=el("button",{type:"button"},"Revision lokal öffnen"),rotate=el("button",{type:"button"},"Schlüssel rotieren");historyRow.append(history,historySelect,restore,rotate);
  const conflictBox=el("div",{className:"cs-sync-conflict"});conflictBox.hidden=true;
  const message=el("p",{role:"status","aria-live":"polite"},"Schlüssel wird nur auf diesem Gerät gehalten. Serverzugriff braucht angemeldeten Nutzer mit Layout- oder Trade-Recht.");
- section.append(title,create,recovery,row,migrationRow,historyRow,conflictBox,message);panel.append(section);
- state={account:accountId,symbol:getSymbol?.()||"XAUUSD",scopeGeneration:0,bundle:null,bundleCache:new Map(),revision:0,recovery,history:historySelect,conflictBox,message,exportDocument,importDocument,getAccount,getSymbol,conflict:null,enabled:false,controls:[create,recovery,connect,save,load,copy,history,historySelect,restore,rotate]};
- create.addEventListener("click",()=>void (async()=>{try{const bundle=await createRecoveryPackage(state.account,state.symbol);state.bundle=bundle;rememberBundle(bundle);state.revision=0;recovery.value=bundle.recoveryPackage;show("Recovery-Paket kopieren und sicher aufbewahren; ohne Schlüssel ist keine Wiederherstellung möglich.");await retryPending()}catch(error){show("Schlüssel konnte nicht erstellt werden: "+error.message)}})());
+ section.append(title,legacyImport,create,recovery,row,migrationRow,historyRow,conflictBox,message);panel.append(section);
+ state={account:accountId,symbol:getSymbol?.()||"XAUUSD",mode:"layout",scopeGeneration:0,bundle:null,bundleCache:new Map(),revision:0,recovery,history:historySelect,scopeSelect,save,load,migrationRow,legacyImport,hasLegacyGlobalDrawings,importLegacyGlobalDrawings,conflictBox,message,
+  exportDocument:()=>state.mode==="global"?exportGlobalDrawings?.():exportDocument(),
+  importDocument:document=>state.mode==="global"?(importGlobalDrawings?.(document)===true):importDocument(document),
+  getAccount,getSymbol,conflict:null,enabled:false,controls:[scopeSelect,create,recovery,connect,save,load,copy,history,historySelect,restore,rotate]};
+ scopeSelect.disabled=true;
+ scopeSelect.addEventListener("change",()=>setMode(scopeSelect.value));
+ legacyImport.addEventListener("click",()=>{
+  if(state.mode!=="global"||typeof state.importLegacyGlobalDrawings!=="function"||
+   !window.confirm("Vorhandene browserlokale Markierungen in den aktuell angemeldeten Nutzerscope übernehmen? Die alte Quelle bleibt erhalten."))return;
+  if(state.importLegacyGlobalDrawings()){legacyImport.hidden=true;show("Alte Markierungen lokal übernommen. Zum Gerätesync jetzt ein Recovery-Paket sichern und verschlüsselt speichern.")}
+  else show("Alte Markierungen konnten nicht sicher übernommen werden.");
+ });
+ create.addEventListener("click",()=>void (async()=>{const generation=state.scopeGeneration,mode=state.mode,symbol=state.symbol;try{
+  const bundle=state.mode==="global"?await createGlobalDrawingRecoveryPackage(state.symbol):await createRecoveryPackage(state.account,state.symbol);
+  if(!state||state.scopeGeneration!==generation||state.mode!==mode||state.symbol!==symbol){show("Scope wechselte während der Schlüsselerstellung; Paket wurde verworfen.");return}
+  state.bundle=bundle;rememberBundle(bundle);state.revision=0;recovery.value=bundle.recoveryPackage;
+  show("Recovery-Paket kopieren und sicher aufbewahren; ohne Schlüssel ist keine Wiederherstellung möglich.");await retryPending()
+ }catch(error){show("Schlüssel konnte nicht erstellt werden: "+error.message)}})());
  connect.addEventListener("click",importKey);save.addEventListener("click",()=>void saveLocal());load.addEventListener("click",()=>void loadRemote());history.addEventListener("click",()=>void loadHistory());restore.addEventListener("click",()=>void restoreHistory());rotate.addEventListener("click",()=>void rotateKey());
  exportLayout.addEventListener("click",exportLocalLayout);importLayout.addEventListener("click",()=>void importLocalLayout(layoutFile.files?.[0]));
  copy.addEventListener("click",()=>{if(!navigator.clipboard?.writeText){show("Kopieren blockiert; Recovery-Paket manuell markieren und kopieren.");return}void navigator.clipboard.writeText(recovery.value).then(()=>show("Recovery-Paket kopiert; jetzt sicher aufbewahren."),()=>show("Kopieren blockiert; Recovery-Paket manuell markieren und kopieren."))});
  void checkAvailability();
 }
 function scope(account,symbol){
- if(!state)return;if(state.account!==account||state.symbol!==symbol)state.scopeGeneration++;state.account=account;state.symbol=symbol;
- if(!scopeMatches(state.bundle)){state.bundle=state.bundleCache.get(scopeKey(account,symbol))||null;state.revision=0;state.conflict=null;state.conflictBox.hidden=true;state.recovery.value=state.bundle?.recoveryPackage||"";show(state.bundle?"Recovery-Schlüssel für diesen Konto-/Symbolscope auf diesem Gerät geladen.":"Konto oder Symbol gewechselt. Sync-Schlüssel für diesen Scope importieren.")}
+ if(!state)return;const previous=scopeKey(activeScopeAccount(),state.symbol),next=scopeKey(state.mode==="global"?"global":account,symbol);if(previous!==next)state.scopeGeneration++;state.account=account;state.symbol=symbol;
+ state.legacyImport.hidden=state.mode!=="global"||typeof state.hasLegacyGlobalDrawings!=="function"||!state.hasLegacyGlobalDrawings();
+ if(!scopeMatches(state.bundle)){state.bundle=state.bundleCache.get(scopeKey(activeScopeAccount(),symbol))||null;state.revision=0;state.conflict=null;state.conflictBox.hidden=true;state.recovery.value=state.bundle?.recoveryPackage||"";show(state.bundle?"Recovery-Schlüssel für diesen Konto-/Symbolscope auf diesem Gerät geladen.":"Konto oder Symbol gewechselt. Sync-Schlüssel für diesen Scope importieren.")}
 }
-window.ChartStudioDeviceSync=Object.freeze({createRecoveryPackage,parseRecoveryPackage,encryptDocument,decryptDocument,validateDocument});
+window.ChartStudioDeviceSync=Object.freeze({createRecoveryPackage,createGlobalDrawingRecoveryPackage,parseRecoveryPackage,encryptDocument,decryptDocument,validateDocument});
 window.ChartStudioServerSync=Object.freeze({mount,account(id){if(state)scope(id,state.getSymbol?.()||state.symbol)},scope});
 })();

@@ -37,6 +37,18 @@ async function main() {
   assert.throws(() => sync.validateDocument({
     ...source, drawings: [{kind: 'text', label: 'ticket:123', anchors: [{time: 1, price: 1}], orderId: 123}],
   }), /broker|position|order/i);
+
+  const globalBundle = await sync.createGlobalDrawingRecoveryPackage('XAUUSD');
+  assert.equal(globalBundle.account, 'global');
+  const globalKey = await sync.parseRecoveryPackage(globalBundle.recoveryPackage);
+  const shared = {schemaVersion: 1, kind: 'global-market-drawings', symbol: 'XAUUSD',
+    drawings: [{kind: 'horizontal', id: 'shared_1', anchors: [{time: 1, price: 2300}]}]};
+  const globalEnvelope = await sync.encryptDocument(shared, globalKey);
+  assert.deepEqual(await sync.decryptDocument(globalEnvelope, globalKey), shared);
+  assert.equal(JSON.stringify(globalEnvelope).includes('shared_1'), false);
+  assert.throws(() => sync.validateDocument({...shared, options: {account: 'titan'}}), /global|scope|layout/i);
+  await assert.rejects(sync.encryptDocument({...shared, symbol: 'EURUSD'}, globalKey), /symbol/i);
+  await assert.rejects(sync.decryptDocument(globalEnvelope, imported), /auth|decrypt|operation/i);
   console.log('Chart Studio device-sync crypto contracts passed');
 }
 

@@ -6,6 +6,7 @@ import threading
 import math
 import json
 import hmac
+import hashlib
 from collections import defaultdict, deque
 from urllib.parse import urlsplit
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
@@ -71,7 +72,9 @@ _audit_demo_accounts = {
 app.state.mutation_audit_store = MutationAuditStore(
     Path.home() / '.chartstudio' / 'mutation-audit.sqlite',
     checkout_root=BASE_DIR,
-    allowed_accounts=_audit_demo_accounts,
+    # `global` is reserved for encrypted symbol-wide drawings, never an MT5
+    # account. It is accepted only by the device-sync route's body scope.
+    allowed_accounts=_audit_demo_accounts | {'global'},
 )
 install_control_security(app)
 install_runtime(app, BASE_DIR)
@@ -1876,6 +1879,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <script src="static/chart-studio-snapshot-compare.js"></script>
   <script src="static/chart-studio-beta.js"></script>
   <script>window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;</script>
+  <script>window.CHART_STUDIO_USER_SCOPE = "local";</script>
   <script src="static/chart-studio-v5-feed.js"></script>
   <script src="static/chart-studio-v5-indicator-feed.js"></script>
   <script src="static/chart-studio-v5-oscillator-feed.js"></script>
@@ -5067,14 +5071,32 @@ HTML_CONTENT = """<!DOCTYPE html>
 </html>
 """
 
-@app.get("/", response_class=HTMLResponse)
-def index():
+def chart_studio_user_scope(identity) -> str:
+    if (not isinstance(identity, tuple) or len(identity) != 3 or identity[0] == "local" or
+            any(not isinstance(part, str) for part in identity[:2])):
+        return "local"
+    principal = (identity[0] + "\0" + identity[1]).encode("utf-8")
+    return "u_" + hashlib.sha256(b"chart-studio-user-scope-v1\0" + principal).hexdigest()
+
+
+def render_dashboard_index(user_scope: str = "local") -> HTMLResponse:
     enabled = os.getenv("CHART_STUDIO_V5_PREVIEW_ENABLED", "0") == "1"
     flag = "true" if enabled else "false"
-    return HTMLResponse(content=HTML_CONTENT.replace(
+    content = HTML_CONTENT.replace(
         "window.CHART_STUDIO_V5_PREVIEW_ENABLED = false;",
         f"window.CHART_STUDIO_V5_PREVIEW_ENABLED = {flag};",
-        1))
+        1)
+    content = content.replace(
+        'window.CHART_STUDIO_USER_SCOPE = "local";',
+        f'window.CHART_STUDIO_USER_SCOPE = "{user_scope}";',
+        1)
+    return HTMLResponse(content=content)
+
+
+@app.get("/", response_class=HTMLResponse)
+def index(request: Request):
+    scope = chart_studio_user_scope(getattr(request.state, "control_identity", None))
+    return render_dashboard_index(scope)
 
 @app.get("/mobile", response_class=HTMLResponse)
 @app.get("/light", response_class=HTMLResponse)
