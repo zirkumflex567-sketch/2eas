@@ -564,8 +564,9 @@ class SpoolFileConsumer:
             self._temporary_scan = scan
 
         candidate_limit=max(1,MAX_STABLE_TEMPORARY_CANDIDATES + MAX_TEMPORARY_RECORDS_PER_POLL)
+        processed_this_poll = 0
         try:
-            while scan['processed'] < MAX_SCAN_ENTRIES_PER_POLL:
+            while processed_this_poll < MAX_SCAN_ENTRIES_PER_POLL:
                 try:
                     entry = next(scan['entries'])
                 except StopIteration:
@@ -597,6 +598,7 @@ class SpoolFileConsumer:
                     self._temporary_scan_at = time.monotonic()
                     return
                 scan['processed'] += 1
+                processed_this_poll += 1
                 if scan['processed'] % MAX_SCAN_ENTRIES_WITHOUT_YIELD == 0:
                     time.sleep(0.001)
                 match = _TEMP_SEGMENT.fullmatch(entry.name)

@@ -344,6 +344,25 @@ def test_incremental_temp_scan_keeps_processing_previous_stable_candidates(priva
     service.close()
 
 
+def test_incremental_temp_scan_advances_across_poll_batches(private_root, spool_root, monkeypatch):
+    store = evidence_store(private_root)
+    for index in range(8):
+        write_private(spool_root / f'noise-{index}.dat', b'ignored')
+    monkeypatch.setattr(spool_service, 'MAX_SCAN_ENTRIES_PER_POLL', 2)
+    service = consumer(store, spool_root)
+
+    service._scan_temporary_segments()
+    assert service._temporary_scan is not None
+    first_processed = service._temporary_scan['processed']
+    assert first_processed == 2
+
+    service._scan_temporary_segments()
+
+    assert service._temporary_scan is not None
+    assert service._temporary_scan['processed'] == first_processed + 2
+    service.close()
+
+
 def test_archiving_temp_event_keeps_ready_segment_index_cached(private_root, spool_root, monkeypatch):
     store = evidence_store(private_root)
     path = spool_root / 'titan_demo.1.tmp.ndjson'
