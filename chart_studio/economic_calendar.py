@@ -2,10 +2,12 @@
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 
 
 MAX_AGE_SECONDS = 120
 MAX_OFFSET_SECONDS = 14 * 3600
+_BROKER_TIMESTAMP = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$')
 
 
 def _utc_epoch(value):
@@ -60,6 +62,8 @@ def load_snapshot(path, *, account, symbol, now, expected_server_utc_offset=None
                     not isinstance(event.get('timeServer'), str)):
                 return _unavailable('INVALID_EVENT', time_basis='BROKER_SERVER')
             try:
+                if not _BROKER_TIMESTAMP.fullmatch(event['timeServer']):
+                    raise ValueError('broker-local timestamp format required')
                 datetime.fromisoformat(event['timeServer'])
             except ValueError:
                 return _unavailable('INVALID_EVENT_TIME', time_basis='BROKER_SERVER')

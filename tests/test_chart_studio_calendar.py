@@ -86,6 +86,22 @@ def test_calendar_date_only_and_tentative_events_keep_time_precision(tmp_path):
     assert result['events'][0]['timeServer'] == '2026-10-16T00:00:00'
 
 
+def test_calendar_snapshot_rejects_broker_times_the_browser_cannot_render(tmp_path):
+    path = tmp_path / 'calendar.json'
+    for timestamp in ('2026-10-16 14:30:00', '2026-10-16T14:30:00Z',
+                      '2026-10-16T14:30:00+03:00'):
+        payload = snapshot_payload()
+        payload['events'][0]['timeServer'] = timestamp
+        path.write_text(json.dumps(payload), encoding='utf-8')
+
+        result = load_snapshot(path, account='titan', symbol='XAUUSD', now=1792144820,
+                               expected_server_utc_offset=10800)
+
+        assert result['status'] == 'UNAVAILABLE', timestamp
+        assert result['reason'] == 'INVALID_EVENT_TIME', timestamp
+        assert result['timeBasis'] == 'BROKER_SERVER', timestamp
+
+
 def test_calendar_api_reads_identity_bound_demo_snapshot_and_denies_blueberry(tmp_path, monkeypatch):
     gateway._attached_mt5 = gateway._attached_account = None
     monkeypatch.setattr(gateway, 'terminal_running', lambda path: True)
