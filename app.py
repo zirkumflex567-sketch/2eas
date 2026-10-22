@@ -1139,7 +1139,7 @@ def api_accounts():
 
 @app.get('/api/journal_summary')
 @scoped(mt5)
-def api_journal_summary(account: str = 'blueberry'):
+def api_journal_summary(account: str = Query(..., min_length=1)):
     sym_name = selected().get('symbol', 'XAUUSD')
     tick = require_mt5_data(mt5.symbol_info_tick(sym_name), 'journal_tick')
     server_time = datetime.fromtimestamp(broker_clock.to_utc_epoch(tick.time, selected()), timezone.utc)
@@ -1183,7 +1183,7 @@ def api_mt5_traces(request: Request, account: str, limit: int = 50):
 
 @app.get("/api/candles")
 @scoped(mt5)
-def api_candles(count: int = 150, account: str = 'blueberry', tf: Optional[str] = None,
+def api_candles(count: int = 150, account: str = Query(..., min_length=1), tf: Optional[str] = None,
                 symbol: Optional[Symbol] = None, before: Optional[int] = None):
     if before is not None and not 0 < before <= 4102444800:
         raise HTTPException(status_code=422, detail="Ungültiger historischer Kerzencursor.")

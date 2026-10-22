@@ -57,6 +57,19 @@ class MultiAccountTests(unittest.TestCase):
         self.assertEqual(fake.calls, [])
         read_status.assert_not_called()
 
+    def test_candle_and_journal_reads_require_explicit_account(self):
+        import app
+        from fastapi.testclient import TestClient
+
+        for path in ('/api/candles', '/api/journal_summary'):
+            with self.subTest(path=path):
+                fake = self.fake()
+                with patch.object(app, 'mt5', fake):
+                    response = TestClient(app.app, raise_server_exceptions=False).get(path)
+
+                self.assertEqual(response.status_code, 422)
+                self.assertEqual(fake.calls, [])
+
     def test_same_account_reuses_verified_terminal_and_switch_reconnects(self):
         fake = self.fake()
         with self.gateway.session(fake, 'titan'):
