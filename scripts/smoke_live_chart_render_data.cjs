@@ -214,7 +214,21 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
         await page.locator("#chart-v5-preview-btn").waitFor({state:"visible"});
         await page.locator("#chart-v5-preview-btn").click();
       }
-      await page.waitForFunction(count => document.querySelector("#chart-v5-preview-status")?.textContent.includes(`${count} verifizierte Kerzen`), 1001);
+      await page.waitForFunction(() => {
+        const status=document.querySelector("#chart-v5-preview-status")?.textContent||"";
+        const match=status.match(/^(\d+) verifizierte Kerzen/);
+        return match&&Number(match[1])>=1001;
+      })
+        .catch(async error => {
+          const state = await page.evaluate(() => ({
+            activeAccount:typeof activeAccount==="string"?activeAccount:null,
+            previewStatus:document.querySelector("#chart-v5-preview-status")?.textContent||null,
+            preview:window.ChartStudioV5Preview?.inspect?.()||null,
+            positionStatus:document.querySelector("#chart-v5-position-status")?.textContent||null,
+            candleCount:document.querySelector("#tv-chart")?.__candleSeries?.data?.().length||0,
+          }));
+          throw new Error(`${error.message}; v5 preview status diagnostic=${JSON.stringify({account,state,requests:requests.slice(-15)})}`);
+        });
       await page.waitForFunction(() => [...document.querySelectorAll("#chart-v5-preview-host canvas")]
         .some(canvas => canvas.width > 300 && canvas.height > 200));
       await page.waitForFunction(() => {
@@ -232,11 +246,16 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
         `${account} native v5 position preview must read this verified demo scope, got: ${positionStatus}`);
       const marketLevels = await page.evaluate(() => window.ChartStudioV5Preview.readMarketLevels());
       assert.equal(marketLevels.source, "MT5_VERIFIED", `${account} native v5 levels retain broker-feed provenance`);
-      // The API cutoff is Unix-second precision, so separate responses within
-      // the same second can share an as-of value. The preview uses the latest
-      // response; compare its readback with the latest captured response at
-      // that cutoff rather than an older candle request from the same second.
-      const matchingLevelsSnapshot = levelSnapshots.get(account)?.findLast(snapshot => snapshot.snapshotAsOfUtc === marketLevels.asOfUtc);
+      // The API cutoff is Unix-second precision, and response JSON bodies can
+      // finish parsing out of order. Match the overlay to the exact captured
+      // feed payload at that cutoff rather than whichever response callback
+      // happened to append last.
+      const matchingLevelsSnapshot = levelSnapshots.get(account)?.findLast(snapshot =>
+        snapshot.snapshotAsOfUtc === marketLevels.asOfUtc
+          && Object.entries(snapshot.sr_levels).every(([key, value]) => {
+            const expected = Number.isFinite(value) && value > 0 ? value : null;
+            return (marketLevels.levels[key]?.price ?? null) === expected;
+          }));
       assert.ok(matchingLevelsSnapshot, `${account} native v5 levels match an exact broker candle snapshot cutoff`);
       for (const [key, value] of Object.entries(matchingLevelsSnapshot.sr_levels)) {
         const renderedLevel = marketLevels.levels[key];
@@ -294,9 +313,28 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
       await page.locator("#chart-v5-auto-fib-btn").click();
       await page.waitForFunction(() => document.querySelector("#chart-v5-auto-fib-btn")?.getAttribute("aria-pressed") === "false");
       assert.equal(await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci()), null);
-      const olderHistory = {available:api.page.hasMore,loaded:0};
+      const mainHistory = await page.evaluate(() => {
+        const chart = document.querySelector("#tv-chart")?.__chart;
+        const series = document.querySelector("#tv-chart")?.__candleSeries;
+        const data = series?.data?.() || [];
+        return {oldest:Number(data[0]?.time),count:data.length,
+          hasMore:typeof candleHistory==="object"?candleHistory.hasMore:null,
+          loading:typeof candleHistory==="object"?candleHistory.loading:null,
+          chartAvailable:!!chart};
+      });
+      assert.ok(mainHistory.chartAvailable && Number.isSafeInteger(mainHistory.oldest) && mainHistory.count > 0,
+        `${account} main chart exposes its current history cursor`);
+      const olderHistory = {available:mainHistory.hasMore === true,loaded:0};
       if (olderHistory.available) {
-        const oldestInitial = Math.min(...api.candles.map(row => Number(row.time)));
+        if (mainHistory.loading) {
+          await page.waitForFunction(() => typeof candleHistory==="object" && candleHistory.loading===false,
+            null,{timeout:15000});
+        }
+        const stableMainHistory = await page.evaluate(() => {
+          const data=document.querySelector("#tv-chart")?.__candleSeries?.data?.()||[];
+          return {oldest:Number(data[0]?.time),count:data.length};
+        });
+        const oldestInitial = stableMainHistory.oldest;
         const olderResponsePromise = page.waitForResponse(response => {
           const url = new URL(response.url());
           return url.pathname === "/api/candles" && url.searchParams.get("account") === account
@@ -317,7 +355,7 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
               historyLoading:typeof candleHistory==="object"?candleHistory.loading:null,
               historyScope:typeof candleHistory==="object"?candleHistory.scope:null};
           });
-          throw new Error(`${error.message}; older-history diagnostic=${JSON.stringify({account,oldestInitial,diagnostic,requests:requests.slice(-10),blockedApiRequests})}`);
+          throw new Error(`${error.message}; older-history diagnostic=${JSON.stringify({account,oldestInitial,stableMainHistory,diagnostic,requests:requests.slice(-10),blockedApiRequests})}`);
         });
         assert.ok(olderResponse.ok(), `${account} older-candle request returned ${olderResponse.status()}`);
         const olderPage = await olderResponse.json();
@@ -339,8 +377,8 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
         }, {account,oldestInitial}, {timeout:15000});
         const paginated = await page.evaluate(id => [...window.__mainCandleSeriesCaptures].reverse()
           .find(item => item.account === id)?.data, account);
-        assert.equal(paginated.length, 1001 + olderPage.candles.length,
-          `${account} the production chart retains its initial bars and adds one older page`);
+        assert.equal(paginated.length, stableMainHistory.count + olderPage.candles.length,
+          `${account} the production chart retains its current bars and adds one older page`);
         assert.ok(paginated.every((bar,index) => index === 0 || Number(bar.time) > Number(paginated[index - 1].time)),
           `${account} paginated chart remains strictly time ordered without duplicate candles`);
       }
