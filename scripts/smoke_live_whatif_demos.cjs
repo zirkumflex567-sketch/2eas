@@ -73,21 +73,17 @@ async function get(path) {
       assert.equal(stress.account, account, `${account} ${geometry.side}: portfolio stress account mismatch`);
       assert.equal(stress.scenarioSymbol, symbol, `${account} ${geometry.side}: portfolio stress symbol mismatch`);
       assert.equal(stress.canExecute, false, `${account} ${geometry.side}: portfolio stress must remain read-only`);
-      assert.ok(["AVAILABLE", "UNAVAILABLE"].includes(stress.state), `${account} ${geometry.side}: portfolio stress has no explicit state`);
-      if (stress.state === "AVAILABLE") {
-        const parseUtc = value => typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value) && Number.isFinite(Date.parse(value)) ? Date.parse(value) : null;
-        const start = parseUtc(stress.sampleStartUtc);
-        const end = parseUtc(stress.sampleEndUtc);
-        const asOf = parseUtc(stress.asOfUtc);
-        assert.equal(stress.currency, preview.pnlAtSl.currency, `${account} ${geometry.side}: stress currency differs from broker preview`);
-        assert.ok(Number.isInteger(stress.sampleCount) && stress.sampleCount >= 60 && stress.sampleCount <= 256, `${account} ${geometry.side}: invalid aligned-shock sample count`);
-        assert.ok(start !== null && end !== null && asOf !== null && start <= end && end <= asOf, `${account} ${geometry.side}: invalid historical stress time scope`);
-        assert.ok([stress.pnl?.p05, stress.pnl?.p50, stress.pnl?.p95].every(Number.isFinite) && stress.pnl.p05 <= stress.pnl.p50 && stress.pnl.p50 <= stress.pnl.p95, `${account} ${geometry.side}: invalid portfolio P/L quantiles`);
-        assert.ok([stress.loss?.p50, stress.loss?.p95, stress.loss?.worst].every(Number.isFinite) && stress.loss.p50 >= 0 && stress.loss.p50 <= stress.loss.p95 && stress.loss.p95 <= stress.loss.worst, `${account} ${geometry.side}: invalid portfolio loss quantiles`);
-        assert.ok(Array.isArray(stress.portfolioSymbols) && stress.portfolioSymbols.length <= 12 && stress.portfolioSymbols.every(item => typeof item === "string"), `${account} ${geometry.side}: invalid portfolio symbol scope`);
-      } else {
-        assert.match(stress.reason || "", /^[A-Z][A-Z0-9_]{0,63}$/, `${account} ${geometry.side}: unavailable stress reason missing`);
-      }
+      assert.equal(stress.state, "AVAILABLE", `${account} ${geometry.side}: authorized demo lacks a usable historical portfolio stress`);
+      const parseUtc = value => typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value) && Number.isFinite(Date.parse(value)) ? Date.parse(value) : null;
+      const start = parseUtc(stress.sampleStartUtc);
+      const end = parseUtc(stress.sampleEndUtc);
+      const asOf = parseUtc(stress.asOfUtc);
+      assert.equal(stress.currency, preview.pnlAtSl.currency, `${account} ${geometry.side}: stress currency differs from broker preview`);
+      assert.ok(Number.isInteger(stress.sampleCount) && stress.sampleCount >= 60 && stress.sampleCount <= 256, `${account} ${geometry.side}: invalid aligned-shock sample count`);
+      assert.ok(start !== null && end !== null && asOf !== null && start <= end && end <= asOf, `${account} ${geometry.side}: invalid historical stress time scope`);
+      assert.ok([stress.pnl?.p05, stress.pnl?.p50, stress.pnl?.p95].every(Number.isFinite) && stress.pnl.p05 <= stress.pnl.p50 && stress.pnl.p50 <= stress.pnl.p95, `${account} ${geometry.side}: invalid portfolio P/L quantiles`);
+      assert.ok([stress.loss?.p50, stress.loss?.p95, stress.loss?.worst].every(Number.isFinite) && stress.loss.p50 >= 0 && stress.loss.p50 <= stress.loss.p95 && stress.loss.p95 <= stress.loss.worst, `${account} ${geometry.side}: invalid portfolio loss quantiles`);
+      assert.ok(Array.isArray(stress.portfolioSymbols) && stress.portfolioSymbols.length <= 12 && stress.portfolioSymbols.every(item => typeof item === "string"), `${account} ${geometry.side}: invalid portfolio symbol scope`);
       previews.push({
         side: preview.side,
         canExecute: preview.canExecute,
