@@ -153,6 +153,7 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
         `${account} broker candle response includes all ten daily/weekly price and volume-profile levels`);
       assert.ok(Number.isSafeInteger(api.snapshotAsOfUtc) && api.snapshotAsOfUtc > 0, `${account} candle response includes a verified snapshot as-of`);
       assert.equal(api.candles.length, 1001, `${account} chart history contains the requested 1001 candles`);
+      assert.equal(typeof api.page?.hasMore, "boolean", `${account} initial chart response declares whether older verified candles exist`);
       await page.waitForFunction(id => window.__mainCandleSeriesCaptures.some(item => item.account === id && item.data.length > 0), account).catch(async error => {
         const debug = await page.evaluate(() => ({
           lightweightCharts: typeof window.LightweightCharts,
@@ -293,10 +294,61 @@ const PREVIEW_FLAG_ON = "window.CHART_STUDIO_V5_PREVIEW_ENABLED = true;";
       await page.locator("#chart-v5-auto-fib-btn").click();
       await page.waitForFunction(() => document.querySelector("#chart-v5-auto-fib-btn")?.getAttribute("aria-pressed") === "false");
       assert.equal(await page.evaluate(() => window.ChartStudioV5Preview.readAutoFibonacci()), null);
+      const olderHistory = {available:api.page.hasMore,loaded:0};
+      if (olderHistory.available) {
+        const oldestInitial = Math.min(...api.candles.map(row => Number(row.time)));
+        const olderResponsePromise = page.waitForResponse(response => {
+          const url = new URL(response.url());
+          return url.pathname === "/api/candles" && url.searchParams.get("account") === account
+            && url.searchParams.get("count") === "150" && Number(url.searchParams.get("before")) === oldestInitial;
+        }, {timeout:30000});
+        await page.evaluate(() => {
+          const chart = document.querySelector("#tv-chart")?.__chart;
+          if (!chart) throw new Error("main chart instance unavailable for history pagination");
+          chart.timeScale().setVisibleLogicalRange({from:0,to:80});
+        });
+        const olderResponse = await olderResponsePromise.catch(async error => {
+          const diagnostic = await page.evaluate(() => {
+            const chart = document.querySelector("#tv-chart")?.__chart;
+            const series = document.querySelector("#tv-chart")?.__candleSeries;
+            return {visibleRange:chart?.timeScale?.().getVisibleLogicalRange?.()||null,
+              renderedCount:series?.data?.().length||0,
+              historyHasMore:typeof candleHistory==="object"?candleHistory.hasMore:null,
+              historyLoading:typeof candleHistory==="object"?candleHistory.loading:null,
+              historyScope:typeof candleHistory==="object"?candleHistory.scope:null};
+          });
+          throw new Error(`${error.message}; older-history diagnostic=${JSON.stringify({account,oldestInitial,diagnostic,requests:requests.slice(-10),blockedApiRequests})}`);
+        });
+        assert.ok(olderResponse.ok(), `${account} older-candle request returned ${olderResponse.status()}`);
+        const olderPage = await olderResponse.json();
+        assert.equal(olderPage.accountId, account, `${account} older candles retain the active account`);
+        assert.equal(olderPage.symbol, api.symbol, `${account} older candles retain the active symbol`);
+        assert.equal(olderPage.timeframe, api.timeframe, `${account} older candles retain the active timeframe`);
+        assert.equal(olderPage.source, "MT5_VERIFIED");
+        assert.equal(olderPage.canExecute, false);
+        assert.ok(olderPage.candles.length > 0 && olderPage.candles.length <= 150,
+          `${account} older-candle page is nonempty and bounded`);
+        assert.ok(olderPage.candles.every(row => Number(row.time) < oldestInitial),
+          `${account} historical page ends strictly before its exclusive cursor`);
+        olderHistory.loaded = olderPage.candles.length;
+        await page.waitForFunction(({account,oldestInitial}) => {
+          const rendered = [...(window.__mainCandleSeriesCaptures || [])].reverse()
+            .find(item => item.account === account)?.data;
+          return Array.isArray(rendered) && rendered.length > 1001
+            && Number(rendered[0]?.time) < oldestInitial;
+        }, {account,oldestInitial}, {timeout:15000});
+        const paginated = await page.evaluate(id => [...window.__mainCandleSeriesCaptures].reverse()
+          .find(item => item.account === id)?.data, account);
+        assert.equal(paginated.length, 1001 + olderPage.candles.length,
+          `${account} the production chart retains its initial bars and adds one older page`);
+        assert.ok(paginated.every((bar,index) => index === 0 || Number(bar.time) > Number(paginated[index - 1].time)),
+          `${account} paginated chart remains strictly time ordered without duplicate candles`);
+      }
       preview = "PASSED";
       results.push({ account, symbol: api.symbol, timeframe: api.timeframe, renderedBars: rendered.length,
         visibleCandlePixels, latestClose: rendered.at(-1).close, nativeV5MarketLevels: marketLevels.count, nativeV5AutoFibonacciPreview: preview,
-        autoFibDirection: fib.result.direction, autoFibLevels: fib.series.length, autoFibStatus:fibStatus, v5PositionStatus:positionStatus });
+        autoFibDirection: fib.result.direction, autoFibLevels: fib.series.length, autoFibStatus:fibStatus, v5PositionStatus:positionStatus,
+        olderHistoryAvailable:olderHistory.available,olderBarsLoaded:olderHistory.loaded });
     }
 
     assert.deepEqual(errors, []);
