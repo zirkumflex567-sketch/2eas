@@ -55,4 +55,12 @@ function createLoadPlan({ durationSeconds, intervalSeconds }) {
   };
 }
 
-module.exports = { parseOptions, createLoadPlan, demoAccounts };
+async function waitUntilWindowEnds(startedAt, durationSeconds, {
+  now = Date.now,
+  wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)),
+} = {}) {
+  const remainingMs = startedAt + durationSeconds * 1000 - now();
+  if (remainingMs > 0) await wait(remainingMs);
+}
+
+module.exports = { parseOptions, createLoadPlan, demoAccounts, waitUntilWindowEnds };

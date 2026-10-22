@@ -5,7 +5,7 @@ const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const { performance } = require("node:perf_hooks");
-const { parseOptions, createLoadPlan, demoAccounts } = require("./aud01_load_plan.cjs");
+const { parseOptions, createLoadPlan, demoAccounts, waitUntilWindowEnds } = require("./aud01_load_plan.cjs");
 const { rememberSnapshot, correlateSamples } = require("./aud01_trace_correlation.cjs");
 
 const options = parseOptions(process.argv.slice(2));
@@ -146,6 +146,7 @@ function percentile(values, fraction) {
       repeatedCycles += 1;
       lastCycleCompletedAt = Date.now();
     }
+    await waitUntilWindowEnds(startedAt, plan.durationSeconds);
   } else {
     for (const spec of accounts) {
       await readCandles(spec, "warm-1");
