@@ -100,6 +100,55 @@ def test_whatif_includes_read_only_daily_drawdown_projection(isolated, monkeypat
     isolated.send.assert_not_called()
 
 
+def test_whatif_includes_broker_priced_historical_portfolio_stress(isolated, monkeypatch):
+    isolated.sym.volume_min=.01; isolated.sym.volume_max=5.; isolated.sym.volume_step=.01
+    monkeypatch.setattr(app.mt5,'order_calc_profit',lambda action,symbol,volume,entry,close:(close-entry)*volume*100*(1 if action==app.mt5.ORDER_TYPE_BUY else -1))
+    monkeypatch.setattr(app.mt5,'order_calc_margin',lambda *args:123.4)
+    dtype=[('time','i8'),('open','f8'),('high','f8'),('low','f8'),('close','f8'),('tick_volume','i8')]
+    rates=np.zeros(62,dtype=dtype)
+    rates['time']=int(isolated.clock.now)-61*3600+np.arange(62)*3600
+    rates['close']=4000+np.arange(62)*2
+    monkeypatch.setattr(app.mt5,'copy_rates_from_pos',lambda *args:rates.copy())
+    monkeypatch.setattr(app,'current_daily_drawdown',lambda *args:(_ for _ in ()).throw(HTTPException(503,'fixture unavailable')))
+
+    response=isolated.client.post('/api/chart/v1/scenarios/preview?account=titan',json={
+        'account':'titan','symbol':'XAUUSD','side':'BUY','volumeLots':.1,
+        'entryPrice':4100,'slPrice':4090,'tpPrice':4120,
+    })
+
+    assert response.status_code==200,response.text
+    stress=response.json()['portfolioStress']
+    assert stress['state']=='AVAILABLE'
+    assert stress['source']=='HISTORICAL_ALIGNED_H1_SHOCKS'
+    assert stress['sampleCount']==61
+    assert stress['scenarioSymbol']=='XAUUSD'
+    assert stress['portfolioSymbols']==['XAUUSD']
+    assert stress['currency']=='USD'
+    assert stress['canExecute'] is False
+    assert response.json()['canExecute'] is False
+    isolated.send.assert_not_called()
+
+
+@pytest.mark.parametrize('policy', [
+    {'is_demo':False, 'challenge_protection':True},
+    {'is_demo':True, 'challenge_protection':True},
+    {'is_demo':True},
+    {'is_demo':True, 'challenge_protection':None},
+])
+def test_whatif_portfolio_stress_refuses_nonexplicit_demo_policy_before_extra_mt5_reads(monkeypatch, policy):
+    monkeypatch.setattr(app, 'ACCOUNTS', {'fixture':policy})
+    mt5_client = Mock()
+    result = app._whatif_portfolio_stress(
+        mt5_client, 'fixture', NS(currency='USD'),
+        {'symbol':'XAUUSD', 'side':'BUY', 'volume':.01, 'entry':4000.},
+    )
+
+    assert result['state'] == 'UNAVAILABLE'
+    assert result['reason'] == 'DEMO_ONLY'
+    assert result['canExecute'] is False
+    mt5_client.assert_not_called()
+
+
 def test_whatif_keeps_broker_preview_when_daily_drawdown_is_unavailable(isolated, monkeypatch):
     isolated.sym.volume_min=.01; isolated.sym.volume_max=5.; isolated.sym.volume_step=.01
     monkeypatch.setattr(app.mt5,'order_calc_profit',lambda action,symbol,volume,entry,close:(close-entry)*volume*100*(1 if action==app.mt5.ORDER_TYPE_BUY else -1))

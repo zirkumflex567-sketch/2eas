@@ -31,6 +31,7 @@ from pathlib import Path
 from account_gateway import ACCOUNTS, config_path, public_account, scoped, selected, verify_identity, writes_titan_reset
 from goldm15_dashboard import GUARD_FILE, metrics as gold_metrics, parameters as gold_parameters, read_guard, wilder_rsi
 from chart_studio.money import PreviewError, drawdown_projection, preview_scenario
+from chart_studio.portfolio_stress import historical_portfolio_stress
 from chart_studio.broker_reads import broker_symbol, legacy_quote, require_symbol
 from chart_studio.read_api import install_read_routes, Symbol
 from chart_studio.preview_api import install_preview_routes
@@ -1595,6 +1596,86 @@ def api_chart_quotes(account: str, symbol: str = SYMBOL):
     return legacy_quote(mt5, selected(), acc, symbol, now=time.time())
 
 
+def _whatif_portfolio_stress(mt5_client, account, account_info, scenario):
+    """Build a read-only joint historical-shock snapshot within the scoped MT5 session."""
+    spec = ACCOUNTS.get(account)
+    if spec is None or spec.get('is_demo') is not True or spec.get('challenge_protection') is not False:
+        return {'state':'UNAVAILABLE', 'reason':'DEMO_ONLY', 'source':'HISTORICAL_ALIGNED_H1_SHOCKS',
+                'account':account, 'scenarioSymbol':scenario['symbol'], 'currency':getattr(account_info, 'currency', None),
+                'canExecute':False}
+    currency = str(getattr(account_info, 'currency', '') or '').upper()
+    if not currency:
+        return {'state':'UNAVAILABLE', 'reason':'ACCOUNT_CURRENCY_UNKNOWN',
+                'source':'HISTORICAL_ALIGNED_H1_SHOCKS', 'account':account,
+                'scenarioSymbol':scenario['symbol'], 'currency':None, 'canExecute':False}
+    try:
+        raw_positions = mt5_client.positions_get()
+    except Exception:
+        raw_positions = None
+    if raw_positions is None:
+        return {'state':'UNAVAILABLE', 'reason':'POSITIONS_UNAVAILABLE',
+                'source':'HISTORICAL_ALIGNED_H1_SHOCKS', 'account':account,
+                'scenarioSymbol':scenario['symbol'], 'currency':currency, 'canExecute':False}
+    positions = []
+    symbols = {scenario['symbol']}
+    for row in raw_positions:
+        try:
+            symbol = broker_symbol(row.symbol)
+            side = ('BUY' if row.type == getattr(mt5_client, 'POSITION_TYPE_BUY', 0) else
+                    'SELL' if row.type == getattr(mt5_client, 'POSITION_TYPE_SELL', 1) else None)
+            volume = row.volume
+        except Exception:
+            return {'state':'UNAVAILABLE', 'reason':'POSITION_INVALID',
+                    'source':'HISTORICAL_ALIGNED_H1_SHOCKS', 'account':account,
+                    'scenarioSymbol':scenario['symbol'], 'currency':currency, 'canExecute':False}
+        if side is None:
+            return {'state':'UNAVAILABLE', 'reason':'POSITION_INVALID',
+                    'source':'HISTORICAL_ALIGNED_H1_SHOCKS', 'account':account,
+                    'scenarioSymbol':scenario['symbol'], 'currency':currency, 'canExecute':False}
+        positions.append({'account':account, 'symbol':symbol, 'side':side, 'volume':volume})
+        symbols.add(symbol)
+    if len(symbols) > 12:
+        return {'state':'UNAVAILABLE', 'reason':'SYMBOL_LIMIT_EXCEEDED',
+                'source':'HISTORICAL_ALIGNED_H1_SHOCKS', 'account':account,
+                'scenarioSymbol':scenario['symbol'], 'currency':currency, 'canExecute':False}
+
+    histories, quotes = {}, {}
+    timeframe = getattr(mt5_client, 'TIMEFRAME_H1', 16385)
+    for symbol in sorted(symbols):
+        try:
+            raw_rates = mt5_client.copy_rates_from_pos(symbol, timeframe, 1, 257)
+            if raw_rates is None:
+                raise ValueError('rates unavailable')
+            histories[symbol] = {
+                'source':'MT5_VERIFIED', 'account':account, 'symbol':symbol, 'timeframe':'H1',
+                'bars':[{'time':int(row['time']), 'close':float(row['close'])} for row in raw_rates],
+            }
+            tick = mt5_client.symbol_info_tick(symbol)
+            freshness = quote_metadata(tick, now=time.time())
+            quotes[symbol] = {
+                'source':'MT5_VERIFIED', 'account':account, 'symbol':symbol,
+                'bid':getattr(tick, 'bid', None), 'ask':getattr(tick, 'ask', None),
+                'fresh':freshness['source_fresh'],
+                'timeUtc':(datetime.fromtimestamp(freshness['quote_time_epoch'], timezone.utc)
+                           .isoformat().replace('+00:00','Z')) if freshness['quote_time_epoch'] else None,
+            }
+        except Exception:
+            return {'state':'UNAVAILABLE', 'reason':'HISTORY_OR_QUOTE_UNAVAILABLE',
+                    'source':'HISTORICAL_ALIGNED_H1_SHOCKS', 'account':account,
+                    'scenarioSymbol':scenario['symbol'], 'currency':currency, 'canExecute':False}
+
+    def broker_profit(side, symbol, volume, opened, closed):
+        action = getattr(mt5_client, 'ORDER_TYPE_BUY' if side == 'BUY' else 'ORDER_TYPE_SELL',
+                         0 if side == 'BUY' else 1)
+        return mt5_client.order_calc_profit(action, symbol, volume, opened, closed)
+
+    as_of = datetime.fromtimestamp(time.time(), timezone.utc).isoformat().replace('+00:00','Z')
+    return historical_portfolio_stress(
+        account=account, currency=currency, scenario=scenario, positions=positions,
+        histories=histories, quotes=quotes, order_calc_profit=broker_profit, as_of_utc=as_of,
+    )
+
+
 @app.post("/api/chart/v1/scenarios/preview")
 @scoped(mt5)
 def api_chart_preview(req: ChartScenarioPreviewRequest, account: str):
@@ -1639,6 +1720,10 @@ def api_chart_preview(req: ChartScenarioPreviewRequest, account: str):
     result["account"] = account
     result["marginAssessment"]["capturedAtUtc"] = margin_read_at_utc
     result["tickSize"] = float(sym.trade_tick_size)
+    result["portfolioStress"] = _whatif_portfolio_stress(
+        mt5, account, acc, {'symbol':req.symbol, 'side':req.side,
+                            'volume':result['volumeLots'], 'entry':req.entryPrice},
+    )
     return result
 
 

@@ -68,6 +68,16 @@ Current features:
   portfolio context omits broker login/server identity. Schema-v1 snapshots
   remain readable with their portfolio context marked unavailable. These are
   not executable orders and are not synced to the server.
+- A What-if response can include a read-only empirical portfolio stress using at
+  least 60 aligned, completed H1 return observations across every open-position
+  symbol and the proposed symbol. Each observed joint shock is applied to the
+  current scoped bid/ask and proposed entry, then repriced with MT5
+  `order_calc_profit` in account currency. Sample range, `asOfUtc`, P/L/loss
+  quantiles and worst observed loss are labeled as historical cases, never a
+  forecast or hedge credit. Missing/stale data or failed broker calculations
+  return `UNAVAILABLE`; the stress is available only for explicitly configured
+  non-challenge demos. It remains `canExecute=false` and does not affect stop
+  risk or order capability. Live acceptance of this new field is pending.
 
 Routes: `GET /api/chart/v1/capabilities`,
 `GET /api/chart/v1/quotes`,

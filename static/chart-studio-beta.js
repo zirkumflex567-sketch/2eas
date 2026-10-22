@@ -775,7 +775,7 @@ function renderScenarioSnapshots(){
     (assessment.state==="WITHIN_FREE_MARGIN"?" · geschätzter Puffer danach: "+String(Number(after.toPrecision(12)))+" "+marginCurrency:" · geschätzter Fehlbetrag: "+String(Number(Math.abs(after).toPrecision(12)))+" "+marginCurrency)+
     " · Snapshot-Schätzung, keine Ausführungszusage; order_calc_margin berücksichtigt bestehende Positionen und Pending Orders nicht.":
    "Marginvergleich UNAVAILABLE · freie Kontomargin oder passende Brokerwerte fehlen.";
-  detail.textContent="Lots "+(item.result.positionSizing?.volumeLots??"UNKNOWN")+" · GROSS SL/TP "+(item.result.pnlAtSl?.amount??"UNKNOWN")+" / "+(item.result.pnlAtTp?.amount??"UNKNOWN")+" · NETTO-Annahme SL/TP "+(net?.pnlAtSl?.amount??"UNKNOWN")+" / "+(net?.pnlAtTp?.amount??"UNKNOWN")+" · R:R "+(item.result.riskRewardRatio??"UNKNOWN")+" / Netto "+(net?.riskRewardRatio??"UNKNOWN")+" · Gebührannahme "+(costs?.feesPerLot??"UNKNOWN")+" "+currency+"/Lot; Slippage "+(costs?.slippageTicks??"UNKNOWN")+" Ticks · Margin "+(item.result.margin?.amount??"UNKNOWN")+" "+(item.result.margin?.currency||"")+" · "+marginSummary+ddText+" · "+savedPortfolioSummary(item)+" · Preview "+item.savedAtUtc;
+  detail.textContent="Lots "+(item.result.positionSizing?.volumeLots??"UNKNOWN")+" · GROSS SL/TP "+(item.result.pnlAtSl?.amount??"UNKNOWN")+" / "+(item.result.pnlAtTp?.amount??"UNKNOWN")+" · NETTO-Annahme SL/TP "+(net?.pnlAtSl?.amount??"UNKNOWN")+" / "+(net?.pnlAtTp?.amount??"UNKNOWN")+" · R:R "+(item.result.riskRewardRatio??"UNKNOWN")+" / Netto "+(net?.riskRewardRatio??"UNKNOWN")+" · Gebührannahme "+(costs?.feesPerLot??"UNKNOWN")+" "+currency+"/Lot; Slippage "+(costs?.slippageTicks??"UNKNOWN")+" Ticks · Margin "+(item.result.margin?.amount??"UNKNOWN")+" "+(item.result.margin?.currency||"")+" · "+marginSummary+ddText+" · "+portfolioStressSummary(item.result.portfolioStress,account,symbol,item.result.pnlAtSl?.currency)+" · "+savedPortfolioSummary(item)+" · Preview "+item.savedAtUtc;
   section.append(title,detail);host.append(section);
  }
  if(!count){const empty=document.createElement("p");empty.textContent="Keine A/B-Snapshots für "+label+" / "+symbol+". Erst eine erfolgreiche Broker-Vorschau speichern.";host.append(empty)}
@@ -865,6 +865,7 @@ function renderPortfolioImpact(preview){
     " · Snapshot-Schätzung, keine Ausführungszusage; order_calc_margin berücksichtigt bestehende Positionen und Pending Orders nicht.");
   }else summary.push("Marginvergleich UNAVAILABLE · Währung oder Brokerwerte stimmen nicht überein.");
  }else summary.push("Marginvergleich UNAVAILABLE · freie Kontomargin aus dem MT5-Read fehlt oder ist ungültig.");
+ summary.push(portfolioStressSummary(result?.portfolioStress,s.account,chartSymbol(),result?.pnlAtSl?.currency));
  if(!portfolio||!result||preview.account!==s.account||preview.symbol!==chartSymbol()||preview.request?.symbol!==chartSymbol()||result.symbol!==chartSymbol()||portfolio.account!==s.account||portfolio.correlation?.scenarioSymbol!==chartSymbol()){
   summary.push("Portfolio-Gesamtrisiko UNAVAILABLE · Portfolio und Vorschau für dasselbe Konto und Symbol erforderlich.");host.textContent=summary.join(" ");return;
  }
@@ -886,6 +887,28 @@ function renderPortfolioImpact(preview){
   }else summary.push("Korrelation deskriptiv UNAVAILABLE · "+(correlation?.reason||"kein passender Symbolkontext")+".");
  }else summary.push("Symbol-Exposure-Projektion UNAVAILABLE · Brokerpreview oder Positionsgröße fehlt.");
  host.textContent=summary.join(" ");
+}
+function portfolioStressSummary(stress,account,symbol,currency){
+ const unavailable="Historischer H1-Portfolio-Stress UNAVAILABLE";
+ if(!stress||stress.source!=="HISTORICAL_ALIGNED_H1_SHOCKS"||stress.account!==account||
+    stress.scenarioSymbol!==symbol||stress.canExecute!==false)return unavailable+" · Scope oder Daten ungültig; keine Werte übernommen.";
+ if(stress.state==="UNAVAILABLE")return unavailable+" · "+(typeof stress.reason==="string"&&/^[A-Z0-9_]{1,64}$/.test(stress.reason)?stress.reason:"INVALID_REASON");
+ const parseUtc=value=>typeof value==="string"&&value.endsWith("Z")&&Number.isFinite(Date.parse(value))?Date.parse(value):null;
+ const start=parseUtc(stress.sampleStartUtc),end=parseUtc(stress.sampleEndUtc),asOf=parseUtc(stress.asOfUtc);
+ const finite=value=>typeof value==="number"&&Number.isFinite(value),symbols=stress.portfolioSymbols;
+ const validSymbol=name=>typeof name==="string"&&/^[A-Za-z0-9](?:[A-Za-z0-9_.# /+:-]{0,62}[A-Za-z0-9_.#/+:-])?$/.test(name);
+ if(stress.state!=="AVAILABLE"||stress.currency!==currency||!Number.isInteger(stress.sampleCount)||
+    stress.sampleCount<60||stress.sampleCount>256||!Array.isArray(symbols)||symbols.length>12||
+    !symbols.every(validSymbol)||new Set(symbols).size!==symbols.length||start===null||end===null||asOf===null||
+    start>end||end>asOf||!stress.pnl||!stress.loss||
+    ![stress.pnl.p05,stress.pnl.p50,stress.pnl.p95,stress.loss.p50,stress.loss.p95,stress.loss.worst].every(finite)||
+    stress.loss.p50<0||stress.loss.p95<stress.loss.p50||stress.loss.worst<stress.loss.p95)return unavailable+" · Scope oder Daten ungültig; keine Werte übernommen.";
+ const format=value=>String(Number(value.toPrecision(8)));
+ return "Historischer H1-Portfolio-Stress · "+stress.sampleCount+" gemeinsame Schocks · P/L p05/p50/p95 "+
+  format(stress.pnl.p05)+" / "+format(stress.pnl.p50)+" / "+format(stress.pnl.p95)+" "+currency+
+  " · p95 Verlust "+format(stress.loss.p95)+" "+currency+" · schlechtester beobachteter Verlust "+
+  format(stress.loss.worst)+" "+currency+" · Zeitraum "+stress.sampleStartUtc+" bis "+stress.sampleEndUtc+
+  " · As-of "+stress.asOfUtc+" · historische Fälle, keine Prognose oder Hedge-Anrechnung.";
 }
 async function loadPortfolio(account,symbol=chartSymbol()){
  const nonce=++portfolioGeneration;s.portfolio=null;s.portfolioCapturedAtUtc=null;s.portfolioError="";s.portfolioLoading=true;renderPortfolio();

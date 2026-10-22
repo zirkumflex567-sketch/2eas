@@ -951,6 +951,56 @@ class DashboardFrontendTests(unittest.TestCase):
         self.page.locator('#cs-scenario-save-b').click()
         expect(self.page.locator('#cs-scenario-ab section')).to_contain_text('Marginvergleich UNAVAILABLE')
         self.assertEqual(self.mutations,[]); self.assertEqual(self.errors,[])
+
+    def test_scenario_renders_scoped_historical_portfolio_stress_and_saves_it(self):
+        self.scenario_preview_result=dict(account='titan',symbol='XAUUSD',canExecute=False,
+            positionSizing=dict(volumeLots=.1,mode='FIXED_LOTS'),pnlAtSl=dict(amount=-10,currency='USD'),
+            pnlAtTp=dict(amount=20,currency='USD'),riskRewardRatio=2,margin=dict(amount=123.4,currency='USD'),
+            marginAssessment=dict(state='UNAVAILABLE',required=123.4,free=None,estimatedFreeAfter=None,
+                currency='USD',source='NONE'),netEstimate=dict(pnlAtSl=dict(amount=-10),pnlAtTp=dict(amount=20)),
+            estimatedCosts=dict(currency='USD',feesPerLot=0,slippageTicks=0),
+            dailyDrawdownProjection=dict(state='UNAVAILABLE',reason='fixture'),
+            portfolioStress=dict(state='AVAILABLE',source='HISTORICAL_ALIGNED_H1_SHOCKS',account='titan',
+                scenarioSymbol='XAUUSD',portfolioSymbols=['XAUUSD'],currency='USD',sampleCount=61,
+                sampleStartUtc='2026-10-19T00:00:00Z',sampleEndUtc='2026-10-21T13:00:00Z',
+                asOfUtc='2026-10-22T00:00:00Z',pnl=dict(p05=-18,p50=3,p95=12),
+                loss=dict(p50=0,p95=18,worst=25),canExecute=False))
+        self.load(); self.page.locator('#cs-beta-toggle').click(); self.page.locator('.cs-scenario summary').click()
+        form=self.page.locator('#cs-scenario-form')
+        form.locator('[name="entryPrice"]').fill('4000'); form.locator('[name="slPrice"]').fill('3990')
+        form.locator('[name="tpPrice"]').fill('4020'); form.locator('button[type="submit"]').click()
+        impact=self.page.locator('#cs-scenario-portfolio-impact')
+        expect(impact).to_contain_text('Historischer H1-Portfolio-Stress')
+        expect(impact).to_contain_text('61 gemeinsame Schocks')
+        expect(impact).to_contain_text('p95 Verlust 18 USD')
+        expect(impact).to_contain_text('Zeitraum 2026-10-19T00:00:00Z bis 2026-10-21T13:00:00Z')
+        expect(impact).to_contain_text('keine Prognose')
+        self.page.locator('#cs-scenario-save-a').click()
+        expect(self.page.locator('#cs-scenario-ab section')).to_contain_text('Historischer H1-Portfolio-Stress')
+        expect(self.page.locator('#cs-scenario-ab section')).to_contain_text('61 gemeinsame Schocks')
+        self.assertEqual(self.mutations,[]); self.assertEqual(self.errors,[])
+
+    def test_scenario_hides_historical_stress_on_scope_mismatch(self):
+        self.scenario_preview_result=dict(account='titan',symbol='XAUUSD',canExecute=False,
+            positionSizing=dict(volumeLots=.1,mode='FIXED_LOTS'),pnlAtSl=dict(amount=-10,currency='USD'),
+            pnlAtTp=dict(amount=20,currency='USD'),riskRewardRatio=2,margin=dict(amount=123.4,currency='USD'),
+            marginAssessment=dict(state='UNAVAILABLE',required=123.4,free=None,estimatedFreeAfter=None,
+                currency='USD',source='NONE'),netEstimate=dict(pnlAtSl=dict(amount=-10),pnlAtTp=dict(amount=20)),
+            estimatedCosts=dict(currency='USD',feesPerLot=0,slippageTicks=0),
+            dailyDrawdownProjection=dict(state='UNAVAILABLE',reason='fixture'),
+            portfolioStress=dict(state='AVAILABLE',source='HISTORICAL_ALIGNED_H1_SHOCKS',account='titan_m5',
+                scenarioSymbol='XAUUSD',portfolioSymbols=['XAUUSD'],currency='USD',sampleCount=61,
+                sampleStartUtc='2026-10-19T00:00:00Z',sampleEndUtc='2026-10-21T13:00:00Z',
+                asOfUtc='2026-10-22T00:00:00Z',pnl=dict(p05=-18,p50=3,p95=12),
+                loss=dict(p50=0,p95=18,worst=25),canExecute=False))
+        self.load(); self.page.locator('#cs-beta-toggle').click(); self.page.locator('.cs-scenario summary').click()
+        form=self.page.locator('#cs-scenario-form')
+        form.locator('[name="entryPrice"]').fill('4000'); form.locator('[name="slPrice"]').fill('3990')
+        form.locator('[name="tpPrice"]').fill('4020'); form.locator('button[type="submit"]').click()
+        impact=self.page.locator('#cs-scenario-portfolio-impact')
+        expect(impact).to_contain_text('Historischer H1-Portfolio-Stress UNAVAILABLE')
+        expect(impact).not_to_contain_text('p95 Verlust 18')
+        self.assertEqual(self.mutations,[]); self.assertEqual(self.errors,[])
     def test_saved_scenario_margin_projection_keeps_estimated_shortfall(self):
         self.scenario_preview_result=dict(account='titan',symbol='XAUUSD',canExecute=False,
             positionSizing=dict(volumeLots=.1,mode='FIXED_LOTS'),pnlAtSl=dict(amount=-10,currency='USD'),
