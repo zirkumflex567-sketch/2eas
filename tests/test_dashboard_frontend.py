@@ -391,6 +391,7 @@ class DashboardFrontendTests(unittest.TestCase):
                 time.sleep(self.evidence_delay_seconds)
             capture_status=dict(code='IDLE',importedTotal=0,gapCount=0,storeLostCount=0,
                 gapObserved=False,recordingState='NOT_RECORDED',
+                temporaryEventReplayTotal=getattr(self,'capture_event_id_replay_total',0),
                 lastIssueCode=getattr(self,'capture_last_issue_code',None))
             if not getattr(self,'legacy_capture_status',False):
                 capture_status.update(temporaryFileCount=3,temporaryBytes=2097152,
@@ -495,6 +496,7 @@ class DashboardFrontendTests(unittest.TestCase):
         self.assertEqual(self.errors, [])
     def test_decision_capture_status_shows_last_spool_issue_code(self):
         self.capture_last_issue_code='STORE_UNAVAILABLE'
+        self.capture_event_id_replay_total=12
         self.page.goto(self.url+'?account=goldm15')
         expect(self.page.locator('#account-connection')).to_contain_text('LIVE', timeout=10000)
         self.page.locator('#cs-beta-toggle').click()
@@ -502,6 +504,8 @@ class DashboardFrontendTests(unittest.TestCase):
         self.page.locator('#cs-evidence-capture-status').click()
         expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text(
             'Letzter Spool-Fehler: STORE_UNAVAILABLE', timeout=5000)
+        expect(self.page.locator('#cs-evidence-capture-status-result')).to_contain_text(
+            '12 Event-ID-Wiederholungen über neue Sequenzen', timeout=5000)
         self.assertEqual(self.mutations, [])
         self.assertEqual(self.errors, [])
     def test_capture_status_accepts_legacy_schema_one_without_temp_metrics(self):

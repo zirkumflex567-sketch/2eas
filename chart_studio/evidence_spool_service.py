@@ -4,7 +4,7 @@ This module only reads local files and appends validated evidence. It never
 connects to MT5 and has no HTTP ingestion or broker mutation path.
 """
 import asyncio
-from collections import deque
+from collections import OrderedDict, deque
 from contextlib import contextmanager
 import hashlib
 import heapq
@@ -31,6 +31,7 @@ _READY = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)-([1-9][0-9]*)\.ready\
 _TEMP_SEGMENT = re.compile(r'([A-Za-z0-9_-]{1,64})\.([1-9][0-9]*)\.tmp\.ndjson\Z')
 _TEMP_SCAN_INTERVAL_SECONDS = 60.0
 _FILE_INDEX_REFRESH_SECONDS = 60.0
+_EVENT_ID_HISTORY_LIMIT = 512
 
 
 class FileIdentityChanged(Exception):
@@ -63,6 +64,8 @@ class SpoolFileConsumer:
         self._reported_store_loss = {}
         self._reported_gap = {}
         self._last_issue_code = {}
+        self._temporary_event_sequences = {}
+        self._temporary_event_replay_total = {}
         if type(records_per_poll) is not int or not 1 <= records_per_poll <= MAX_RECORDS_PER_POLL:
             raise ValueError('invalid record batch')
         self._verify_root()
@@ -93,6 +96,26 @@ class SpoolFileConsumer:
                 self._last_issue_code[producer_id] = None
                 self._temporary_signatures[producer_id] = {}
                 self._stable_temporary_files[producer_id] = deque()
+                self._temporary_event_sequences[producer_id] = OrderedDict()
+                self._temporary_event_replay_total[producer_id] = 0
+
+    def _observe_temporary_event(self, producer, row, outcome):
+        """Count duplicate event IDs that arrive under new spool sequences."""
+        envelope = row.get('envelope') if isinstance(row, dict) else None
+        event_id = envelope.get('id') if isinstance(envelope, dict) else None
+        sequence = row.get('sequence') if isinstance(row, dict) else None
+        if (not isinstance(event_id, str) or type(sequence) is not int or sequence < 1 or
+                not outcome.get('ok')):
+            return
+        seen = self._temporary_event_sequences[producer]
+        previous = seen.get(event_id)
+        if (outcome.get('code') in ('DUPLICATE', 'IDEMPOTENT') and
+                previous is not None and previous != sequence):
+            self._temporary_event_replay_total[producer] += 1
+        seen[event_id] = sequence
+        seen.move_to_end(event_id)
+        while len(seen) > _EVENT_ID_HISTORY_LIMIT:
+            seen.popitem(last=False)
 
     def _verify_root(self):
         try:
@@ -437,6 +460,7 @@ class SpoolFileConsumer:
     def _poll_stable_temporary(self, producer, importer, *, before_sequence=None):
         """Recover one-record temp files only after two unchanged metadata scans."""
         candidates=self._stable_temporary_files[producer]
+        replay_total_before=self._temporary_event_replay_total[producer]
         imported=duplicates=archived=archived_bytes=store_lost=stale_temporary=0
         gap_observed=importer.gap_count>0
         temporary_budget=min(self.records_per_poll,MAX_TEMPORARY_RECORDS_PER_POLL)
@@ -488,6 +512,7 @@ class SpoolFileConsumer:
                             'gapCount':importer.gap_count,'gapObserved':gap_observed,
                             'storeLostCount':store_lost}
                 outcome=importer.import_line(raw)
+                self._observe_temporary_event(producer, row, outcome)
                 store_lost=max(store_lost,outcome.get('storeLostCount',0))
                 gap_observed=gap_observed or bool(outcome.get('gapObserved'))
                 is_stale=not outcome.get('ok') and outcome.get('code')=='OUT_OF_ORDER'
@@ -544,6 +569,7 @@ class SpoolFileConsumer:
             return {'code':'ARCHIVED','imported':imported,'duplicates':duplicates,
                     'gapCount':importer.gap_count,'gapObserved':gap_observed,
                     'storeLostCount':store_lost,'staleTemporaryCount':stale_temporary,
+                    'replayedEventCount':self._temporary_event_replay_total[producer]-replay_total_before,
                     'morePending':bool(candidates)}
         return None
 
@@ -641,6 +667,7 @@ class SpoolFileConsumer:
                 'temporaryFileCount': 0, 'temporaryBytes': 0,
                 'temporaryOldestMtimeUtc': None, 'temporaryNewestMtimeUtc': None,
             }))
+            result['temporaryEventReplayTotal'] = self._temporary_event_replay_total[producer]
             self._reported_store_loss[producer]=max(self._reported_store_loss[producer],result.get('storeLostCount',0))
             self._reported_gap[producer]=self._reported_gap[producer] or bool(result.get('gapObserved'))
             code = result.get('code')

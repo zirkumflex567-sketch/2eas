@@ -56,7 +56,8 @@ def _merge_capture_producer_statuses(rows):
     merged = {'code': code}
     for key in ('imported', 'duplicates', 'importedTotal', 'duplicatesTotal',
                 'staleTemporaryCount', 'staleTemporaryTotal',
-                'temporaryFileCount', 'temporaryBytes', 'gapCount', 'storeLostCount'):
+                'temporaryFileCount', 'temporaryBytes', 'temporaryEventReplayTotal',
+                'gapCount', 'storeLostCount'):
         merged[key] = sum(row.get(key, 0) for row in rows
                           if isinstance(row, dict) and type(row.get(key, 0)) is int and row.get(key, 0) >= 0)
     merged['gapObserved'] = any(
@@ -392,7 +393,8 @@ def install_evidence_routes(app, *, store=None, clock=time.time, mt5=None):
             status = {'code': code}
             for key in ('imported', 'duplicates', 'importedTotal', 'duplicatesTotal',
                         'staleTemporaryCount', 'staleTemporaryTotal',
-                        'temporaryFileCount', 'temporaryBytes', 'gapCount', 'storeLostCount'):
+                        'temporaryFileCount', 'temporaryBytes', 'temporaryEventReplayTotal',
+                        'gapCount', 'storeLostCount'):
                 value = raw_status.get(key, 0)
                 status[key] = value if type(value) is int and value >= 0 else 0
             last_issue_code = raw_status.get('lastIssueCode')

@@ -150,6 +150,7 @@ def test_stable_temporary_idempotent_store_append_counts_as_duplicate(private_ro
     assert recovered['code'] == 'ARCHIVED'
     assert recovered['imported'] == 1
     assert recovered['duplicates'] == 1
+    assert recovered['replayedEventCount'] == 1
     assert len(store.read(context(), kind='DECISION')['records']) == 1
 
 
