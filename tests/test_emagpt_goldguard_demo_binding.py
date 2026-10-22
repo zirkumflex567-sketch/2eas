@@ -62,4 +62,3 @@ def test_goldguard_hud_marks_unavailable_profit_calculations_instead_of_assuming
     assert re.search(r"riskKnown\s*=\s*sl\s*>\s*0\s*&&\s*OrderCalcProfit", markers)
     assert re.search(r"rewardKnown\s*=\s*tp\s*>\s*0\s*&&\s*OrderCalcProfit", markers)
     assert "SL n/a" in markers and "TP n/a" in markers
-
