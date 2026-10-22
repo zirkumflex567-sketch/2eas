@@ -60,3 +60,17 @@ The saved ICMarkets profile `MQL5/Profiles/Charts/anti/chart01.chr` describes `X
 I copied the current Main source `XAU_Titan_Pro_BasketGuard.mq5` and shared include into an isolated `output/` directory and compiled them with MetaEditor 6230 using the ICMarkets terminal data folder's MQL5 include tree. Result: **0 errors, 0 warnings**. The isolated EX5 SHA-256 is `6d5eeee490e333fbc5f856939be50765265b7525211d7da66f8733e827d9fcfa`; the EX5 at the saved chart's default EA path is `133c9e7eba4f5a318d41553ff49872d8b143337bac3d8587b329cd362a4bb716`. They differ. The current source binds the challenge guard to both the configured Blueberry login and server and does not gate that guard on the saved input. The installed binary is not attested to that source by this compile.
 
 The machine-readable evidence is `output/ea-identity-compile-20261021/audit-manifest.json` (ignored build output). Exact in-memory EA/preset identity and the non-Blueberry runtime guard behavior remain unverified; no terminal was changed to obtain them.
+
+## RecordOnly state-isolation build (2026-10-22)
+
+Before a diagnostic attach, a source review found that the Titan RecordOnly candidate still used the live BasketGuard's terminal-global-variable keys, and GoldM15 reused the normal risk-state/common-file lock key. The RecordOnly builders now add isolated namespaces for those persistent states. Two new contract tests failed before this change and pass afterward; the focused Titan/GoldM15 recorder/build suite passes 93 tests.
+
+Three rebuilt RecordOnly variants compile with 0 errors and 0 warnings and are installed side-by-side, not attached:
+
+| Alias | Producer | EX5 SHA-256 | Preset SHA-256 |
+|---|---|---|---|
+| `xau5m_m5` | `titan_puprime250_recordonly` | `498a8db7bc9690990772d39e91442599f9de8e342db1dfe3415199f90c993fff` | `ff92ce8710e151cb73d304e411338c411db487bc3983f15eec541138a0aea286` |
+| `titan_m5` | `titan_puprime500_recordonly` | `47ac8026950a7d83b3d149f705681bfbd5155ebd958afb549b5b1102cea21f5e` | `feb3030fee155bb41e8604a67117519f97db00beac614e103180813faf697e69` |
+| `goldm15` | `goldm15_demo_recordonly` | `3fbfbf35822f464d67cc5cc42b9b3b17e30e1a2d8f06b38ce8f76829a73dcdb6` | `e6c517dd9e5fc26a4d257506a493163d43bbc52a3b1032479eb8aed89d6efa40` |
+
+The exact EX5s and presets are in each terminal's `MQL5/Experts/CodexRecordOnly_20261022/<alias>` and `MQL5/Presets/CodexRecordOnly_20261022/<alias>` directories. No active EA, preset, profile, or chart was replaced. The next proof still requires manually attaching the Titan RecordOnly candidate on a separate PU-Prime M15 chart and confirming a fresh imported event.

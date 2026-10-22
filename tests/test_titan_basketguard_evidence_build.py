@@ -102,6 +102,40 @@ def test_capture_variant_binds_demo_identity_and_full_effective_parameter_hash()
     assert generated.count("CSUtcFromBrokerMillis(cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS)") == 2
 
 
+def test_record_only_variant_uses_a_separate_terminal_global_state_namespace():
+    source = SOURCE.read_text(encoding="utf-8-sig")
+    inputs = {name: default.strip().strip('"') for _kind, name, default in _source_inputs(source)}
+    generated = BUILD._instrument_source(
+        source,
+        "titan_m5",
+        "titan_puprime500_recordonly",
+        "a" * 64,
+        "b" * 64,
+        BUILD._expected_parameter_hash(source, inputs, "titan_m5"),
+        700184986,
+        "PUPrime-Demo",
+        r"C:\demo\terminal",
+        10800,
+        record_only=True,
+    )
+    normal = BUILD._instrument_source(
+        source,
+        "titan_m5",
+        "titan_puprime500",
+        "a" * 64,
+        "b" * 64,
+        BUILD._expected_parameter_hash(source, inputs, "titan_m5"),
+        700184986,
+        "PUPrime-Demo",
+        r"C:\demo\terminal",
+        10800,
+    )
+
+    assert '"TBG_RECORDONLY_%I64d_%s_%I64u_%s"' in generated
+    assert '"TBG_%I64d_%s_%I64u_%s"' in normal
+    assert '"TBG_RECORDONLY_' not in normal
+
+
 def test_capture_variant_correlates_real_deal_adds_to_accepted_order_attempts():
     source = SOURCE.read_text(encoding="utf-8-sig")
     values = {name: default.strip().strip('"') for _kind, name, default in _source_inputs(source)}

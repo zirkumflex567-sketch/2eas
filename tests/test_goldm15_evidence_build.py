@@ -94,6 +94,16 @@ def test_goldm15_record_only_variant_suppresses_every_trade_write_but_keeps_capt
     assert 'RECORD_ONLY_SUPPRESSED' in generated + generated_risk
 
 
+def test_goldm15_record_only_risk_state_uses_a_separate_common_file_lock_and_namespace():
+    risk = (ROOT / "goldm15" / "GoldM15_Risk.mqh").read_text(encoding="utf-8-sig")
+
+    record_only = BUILD._instrument_risk_helper(risk, record_only=True)
+    normal = BUILD._instrument_risk_helper(risk, record_only=False)
+
+    assert 'key="GoldM15Risk_"+IntegerToString(hash)+"_RecordOnly";' in record_only
+    assert 'key="GoldM15Risk_"+IntegerToString(hash);' in normal
+
+
 def test_goldm15_deinit_flushes_before_timer_and_risk_guard_shutdown():
     source = (ROOT / "goldm15" / "GoldM15_Reconstruction.mq5").read_text(encoding="utf-8-sig")
     generated = BUILD._instrument_source(

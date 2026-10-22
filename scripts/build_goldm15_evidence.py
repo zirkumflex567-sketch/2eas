@@ -163,6 +163,11 @@ def _instrument_risk_helper(source_text: str, *, record_only: bool = False) -> s
         raise ValueError("expected unique GoldM15 risk close request")
     source_text = source_text.replace(close_anchor, close_capture, 1)
     if record_only:
+        risk_key = 'key="GoldM15Risk_"+IntegerToString(hash);'
+        isolated_risk_key = 'key="GoldM15Risk_"+IntegerToString(hash)+"_RecordOnly";'
+        if source_text.count(risk_key) != 1:
+            raise ValueError("expected unique GoldM15 risk-state key")
+        source_text = source_text.replace(risk_key, isolated_risk_key, 1)
         source_text = source_text.replace("uint cs_cancel_retcode=closer.ResultRetcode();", "uint cs_cancel_retcode=0;", 1)
         source_text = source_text.replace('CSFeature("broker_retcode",CSNumber((double)cs_cancel_retcode,0),"code","M15")+', "", 1)
         source_text = source_text.replace("cs_cancel_outcome,reason);", 'cs_cancel_outcome,"RECORD_ONLY_SUPPRESSED");', 1)

@@ -241,6 +241,11 @@ def _instrument_source(source_text: str, alias: str, producer: str,
     generated = source_text.replace(marker, "\n".join(definitions) + "\n" + marker, 1)
     if record_only:
         generated = _guard_broker_write_calls(generated)
+        shared_state_key = 'StringFormat("TBG_%I64d_%s_%I64u_%s",'
+        isolated_state_key = 'StringFormat("TBG_RECORDONLY_%I64d_%s_%I64u_%s",'
+        if generated.count(shared_state_key) != 1:
+            raise ValueError("expected unique Titan basket-guard state key")
+        generated = generated.replace(shared_state_key, isolated_state_key, 1)
     init_anchor = '''   else if(CSInitializeEvidenceProducer() && !EventSetTimer(1))'''
     guarded_init = '''   else if(CSParameterSetHash!=CS_EVIDENCE_EXPECTED_PARAMETER_SET_HASH)
      {
