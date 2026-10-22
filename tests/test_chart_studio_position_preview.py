@@ -98,6 +98,28 @@ def test_trade_preview_does_not_offer_commit_outside_strict_commit_quote_window(
     assert data['canExecute'] is False
     assert fake.writes == 0
 
+@pytest.mark.parametrize(('future_ms','expected_commit'),[(999,True),(1000,True),(1001,False)])
+def test_trade_preview_commit_future_quote_boundary(api,future_ms,expected_commit):
+    from chart_studio.demo_position_guard import DemoPositionGuard
+    from chart_studio.preview_api import install_preview_routes
+    client,fake,payload=api
+    app=FastAPI()
+    install_control_security(app)
+    install_preview_routes(app,fake,now=lambda:NOW,guard_provider=DemoPositionGuard())
+    client=TestClient(app)
+    raw=int((NOW+10800)*1000+future_ms)
+    fake.tick.time_msc=raw
+    fake.tick.time=raw//1000
+    response=client.post('/api/chart/v1/position/preview-stop',json=payload)
+    assert response.status_code==200,response.text
+    data=response.json()
+    assert data['valid'] is True
+    assert data['guard']['state']=='ALLOW'
+    assert data['quote']['ageMs']==-future_ms
+    assert data['canCommit'] is expected_commit
+    assert data['canExecute'] is False
+    assert fake.writes==0
+
 
 def test_process_commit_runtime_recovers_only_its_own_reservations(tmp_path):
     from chart_studio.position_commit_runtime import create_process_position_commit_runtime
