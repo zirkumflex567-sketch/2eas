@@ -333,6 +333,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/fixture/v5-preview-proof':
             self.wfile.write(json.dumps({'v5PreviewEnabled': os.environ.get('CHART_STUDIO_V5_PREVIEW_ENABLED') == '1'}).encode())
             return
+        if self.path == '/fixture/position-commit-proof':
+            self.wfile.write(json.dumps({'positionCommitEnabled': os.environ.get('CHART_STUDIO_POSITION_COMMIT_ENABLED') == '1'}).encode())
+            return
         if self.path == '/fixture/indicator-trust-proof':
             keys = json.loads(os.environ.get('CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON', '{}'))
             self.wfile.write(json.dumps({'indicatorTrustLoaded': list(keys) == ['fixture-key']}).encode())
@@ -412,6 +415,7 @@ def test_powershell_cross_shell_runtime_timestamp_and_private_environment(checko
                                     'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS': 'titan,xau5m_m5',
                                     'CHART_STUDIO_DEVICE_SYNC_ENABLED': '1',
                                     'CHART_STUDIO_V5_PREVIEW_ENABLED': '1',
+                                    'CHART_STUDIO_POSITION_COMMIT_ENABLED': '1',
                                     'CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON': indicator_trust}))
     results = []
     try:
@@ -423,6 +427,7 @@ def test_powershell_cross_shell_runtime_timestamp_and_private_environment(checko
         assert mock_endpoint(port, '/fixture/demo-allowlist-proof') == {'demoAllowlistMatches': True}
         assert mock_endpoint(port, '/fixture/device-sync-proof') == {'deviceSyncEnabled': True}
         assert mock_endpoint(port, '/fixture/v5-preview-proof') == {'v5PreviewEnabled': True}
+        assert mock_endpoint(port, '/fixture/position-commit-proof') == {'positionCommitEnabled': True}
         assert mock_endpoint(port, '/fixture/indicator-trust-proof') == {'indicatorTrustLoaded': True}
         status = run_control(checkout, port, 'Status', shell=PWSH)
         results.append(status)
@@ -441,6 +446,7 @@ def test_powershell_cross_shell_runtime_timestamp_and_private_environment(checko
         assert mock_endpoint(port, '/fixture/demo-allowlist-proof') == {'demoAllowlistMatches': True}
         assert mock_endpoint(port, '/fixture/device-sync-proof') == {'deviceSyncEnabled': True}
         assert mock_endpoint(port, '/fixture/v5-preview-proof') == {'v5PreviewEnabled': True}
+        assert mock_endpoint(port, '/fixture/position-commit-proof') == {'positionCommitEnabled': True}
         assert mock_endpoint(port, '/fixture/indicator-trust-proof') == {'indicatorTrustLoaded': True}
         for shell in ('powershell.exe', PWSH):
             status = run_control(checkout, port, 'Status', shell=shell)
