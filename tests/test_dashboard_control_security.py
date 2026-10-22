@@ -47,7 +47,7 @@ class ControlSecurityTests(unittest.TestCase):
         response = client.post('/api/close_position', json={'ticket': 999})
         self.assertEqual(response.status_code, 403)
         self.assertEqual(client.get('/api/control_session').status_code, 200)
-        self.assertTrue(app.app.state.position_commit_write_capable)
+        self.assertFalse(app.app.state.position_commit_write_capable)
         self.assertTrue(app.app.state.position_commit_dependencies_supplied)
         self.assertIs(app.app.state.position_commit_service.store, app.app.state.position_commit_store)
         self.assertIs(app.app.state.position_commit_service.previews, app.app.state.position_preview_registry)
@@ -69,6 +69,14 @@ class ControlSecurityTests(unittest.TestCase):
             response = client.post('/api/chart/v1/position/commit-stop', json=payload,
                                    headers={'Authorization': 'Bearer real-app-test-token'})
         self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()['detail']['code'], 'AUDIT_SCOPE_FORBIDDEN')
+        payload['account'] = 'titan'
+        payload['symbol'] = 'XAUUSD'
+        with patch.dict('os.environ', {'DASHBOARD_CONTROL_TOKEN': 'real-app-test-token'}):
+            disabled_response = client.post('/api/chart/v1/position/commit-stop', json=payload,
+                                            headers={'Authorization': 'Bearer real-app-test-token'})
+        self.assertEqual(disabled_response.status_code, 503)
+        self.assertEqual(disabled_response.json()['detail']['code'], 'COMMIT_DISABLED')
         self.assertFalse(app.app.state.trade_ticket_write_capable)
         ticket_payload = {
             'schemaVersion': 1, 'account': 'titan', 'symbol': 'XAUUSD',

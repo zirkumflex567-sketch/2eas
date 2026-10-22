@@ -85,7 +85,8 @@ class PreviewRoute(TelemetryAPIRoute):
 
 def utc(seconds): return datetime.fromtimestamp(seconds,timezone.utc).isoformat().replace('+00:00','Z')
 
-def install_preview_routes(app, mt5, *, now=None, monotonic=None, guard_provider=None):
+def install_preview_routes(app, mt5, *, now=None, monotonic=None, guard_provider=None,
+                           commit_enabled=False):
     clock = now or time.time
     mono = monotonic or time.monotonic
     registry, limiter = PreviewRegistry(monotonic=mono), PreviewLimiter(monotonic=mono)
@@ -205,7 +206,7 @@ def install_preview_routes(app, mt5, *, now=None, monotonic=None, guard_provider
                                     changes={'slPrice':final['sl'],'tpPrice':final['tp']})
                                 if isinstance(decision,dict) and decision.get('state') in ('ALLOW','BLOCK') and isinstance(decision.get('source'),str):
                                     guard={'state':decision['state'],'source':decision['source']}
-                                    can_commit=(changed and decision['state']=='ALLOW' and
+                                    can_commit=(commit_enabled is True and changed and decision['state']=='ALLOW' and
                                                 decision.get('hardLock') is False and
                                                 final_quote.get('ageMs', 0) >= -1000)
                             except Exception:

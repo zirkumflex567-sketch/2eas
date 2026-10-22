@@ -153,6 +153,19 @@ def test_private_environment_trade_ticket_flag_accepts_only_binary_values(checko
         private.unlink(missing_ok=True)
 
 
+def test_private_environment_position_commit_flag_accepts_only_binary_values(checkout, tmp_path):
+    private = tmp_path.parent / (tmp_path.name + '-position-commit.json')
+    try:
+        for value in ('0', '1'):
+            private.write_text(json.dumps({'CHART_STUDIO_POSITION_COMMIT_ENABLED': value}))
+            runtime_module().validate_environment_file(checkout, private)
+        private.write_text(json.dumps({'CHART_STUDIO_POSITION_COMMIT_ENABLED': 'true'}))
+        with pytest.raises(ValueError, match='Invalid private environment'):
+            runtime_module().validate_environment_file(checkout, private)
+    finally:
+        private.unlink(missing_ok=True)
+
+
 def test_private_environment_trusted_indicator_keys_require_bounded_canonical_ed25519_map(checkout, tmp_path):
     import base64
 
@@ -282,8 +295,12 @@ def test_route_is_installed_without_dependency_on_fastapi(checkout):
                 routes[path] = handler
                 return handler
             return decorate
-    module.install_runtime(App(), checkout)
+    app = App()
+    module.install_runtime(app, checkout)
     assert routes['/api/runtime']()['startupDigest']
+    assert routes['/api/runtime']()['positionCommitWriteCapable'] is False
+    app.state = type('State', (), {'position_commit_write_capable': True})()
+    assert routes['/api/runtime']()['positionCommitWriteCapable'] is True
 
 
 MOCK_APP = '''import hashlib, json, os, time

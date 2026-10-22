@@ -81,7 +81,9 @@ install_control_security(app)
 install_runtime(app, BASE_DIR)
 install_read_routes(app, mt5)
 _position_guard = DemoPositionGuard()
-install_preview_routes(app, mt5, guard_provider=_position_guard)
+_position_commit_enabled = os.getenv('CHART_STUDIO_POSITION_COMMIT_ENABLED', '0') == '1'
+install_preview_routes(app, mt5, guard_provider=_position_guard,
+                       commit_enabled=_position_commit_enabled)
 _position_commit_store, _position_commit_service = create_process_position_commit_runtime(
     mt5=mt5,
     previews=app.state.position_preview_registry,
@@ -92,7 +94,7 @@ _position_commit_store, _position_commit_service = create_process_position_commi
 app.state.position_commit_store = _position_commit_store
 app.state.position_commit_service = _position_commit_service
 install_position_commit_routes(
-    app, mt5, enabled=True, guard_provider=_position_guard,
+    app, mt5, enabled=_position_commit_enabled, guard_provider=_position_guard,
     audit_store=_position_commit_store, commit_service=_position_commit_service,
 )
 _trade_ticket_previews = TradeTicketPreviewRegistry()

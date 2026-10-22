@@ -90,14 +90,15 @@ def install_position_commit_routes(
     # Keep references explicit in app state for startup diagnostics without
     # inferring capability from environment variables or a lone Boolean flag.
     registry = getattr(app.state, 'position_preview_registry', None)
-    configured = bool(
-        enabled is True and guard_provider is not None and audit_store is not None
+    dependencies_supplied = bool(
+        guard_provider is not None and audit_store is not None
         and commit_service is not None and getattr(commit_service, 'mt5', None) is mt5
         and getattr(commit_service, 'guard', None) is guard_provider
         and getattr(commit_service, 'store', None) is audit_store
         and getattr(commit_service, 'previews', None) is registry and registry is not None
     )
-    app.state.position_commit_dependencies_supplied = configured
+    configured = enabled is True and dependencies_supplied
+    app.state.position_commit_dependencies_supplied = dependencies_supplied
     app.state.position_commit_write_capable = configured
     limiter = PreviewLimiter()
     app.state.position_commit_limiter = limiter

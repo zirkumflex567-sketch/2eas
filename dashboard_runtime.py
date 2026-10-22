@@ -33,7 +33,8 @@ _ENV_KEYS = {'DASHBOARD_ALLOWED_HOSTS', 'DASHBOARD_PROXY_SECRET', 'DASHBOARD_PRO
              'CHART_STUDIO_EVIDENCE_SPOOL_ROOT', 'CHART_STUDIO_EVIDENCE_DEAL_ACCOUNTS',
              'CHART_STUDIO_DEVICE_SYNC_ENABLED', 'CHART_STUDIO_V5_PREVIEW_ENABLED',
              'CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON',
-             'CHART_STUDIO_TRADE_TICKET_ENABLED'}
+             'CHART_STUDIO_TRADE_TICKET_ENABLED',
+             'CHART_STUDIO_POSITION_COMMIT_ENABLED'}
 
 
 def _path_is_within(path, root):
@@ -124,6 +125,9 @@ def validate_environment_file(root, private_path):
         trade_ticket_enabled = values.get('CHART_STUDIO_TRADE_TICKET_ENABLED', '0')
         if trade_ticket_enabled not in ('0', '1'):
             raise ValueError('invalid trade ticket gate')
+        position_commit_enabled = values.get('CHART_STUDIO_POSITION_COMMIT_ENABLED', '0')
+        if position_commit_enabled not in ('0', '1'):
+            raise ValueError('invalid position commit gate')
         if 'CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON' in values:
             raw_keys = values['CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON']
             if not raw_keys or len(raw_keys) > 16_384:
@@ -251,7 +255,9 @@ def install_runtime(app, root):
 
     @app.get('/api/runtime')
     def runtime_status():
-        return identity.payload()
+        return {**identity.payload(),
+                'positionCommitWriteCapable':
+                    getattr(getattr(app, 'state', None), 'position_commit_write_capable', False) is True}
 
     return identity
 

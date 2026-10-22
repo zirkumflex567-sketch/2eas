@@ -13,8 +13,8 @@
 ## Requirements and boundaries
 
 - Cover FR-007 and AT-013–017/030/032; keep FR-021's new-entry ticket as a separate follow-up.
-- Never add writes to `/api/chart/v1/position/preview-stop`; preview remains `canExecute=false` and `canCommit=false`.
-- Never expose a route that writes unless a trusted guard provider is injected, a private audit store is configured, a `trade` identity is present, and the explicit release gate is enabled. Main production installs no guard provider and keeps the flag off.
+- Never add writes to `/api/chart/v1/position/preview-stop`; preview remains `canExecute=false` and `canCommit=false` unless the separate private position-commit gate is explicitly enabled.
+- Never expose a route that writes unless a trusted guard provider is injected, a private audit store is configured, a `trade` identity is present, and the explicit release gate is enabled. Main production injects the guard and audit store but keeps the validated private gate off by default.
 - The request binds a server-issued preview ID, expected revision, explicit `userConfirmed=true`, and canonical idempotency UUID. The preview ID is scope-bound to the authenticated trade principal, raw peer, account/terminal/login/server, symbol, ticket and revision, and is atomically consumed once. It cannot supply guard state, candidate prices, or account identity claims.
 - SL-only edits preserve the freshly read TP; TP-only edits preserve the freshly read SL. Explicit level removal must be represented separately from omission; ambiguous/no-op payloads are rejected.
 - Re-read under `account_gateway.traced_session`; validate current revision, original SL/TP, quote age, trading mode, tick/stops/freeze geometry, and the guard again immediately before one `order_send`.
@@ -38,7 +38,7 @@
 
 - [x] Add tests proving disabled production wiring and attempted `enabled=True` without required dependencies reject before MT5 gateway access or `order_send`; malformed/unconfirmed request cases also reject.
 - [x] Run the deny/schema tests: RED before route implementation, GREEN afterward.
-- [x] Add a separate `POST /api/chart/v1/position/commit-stop` route and strict schema. Production app installs it with `enabled=False`, no guard provider and no write-capable service.
+- [x] Add a separate `POST /api/chart/v1/position/commit-stop` route and strict schema. Production app installs it disabled by default unless `CHART_STUDIO_POSITION_COMMIT_ENABLED=1` is supplied through the validated private runtime environment; preview commit eligibility follows the same gate.
 - [x] Add the path to exact control middleware so only the existing authenticated trade-session/CSRF/Origin policy can reach its handler.
 - [x] Run focused backend and proxy-security tests; confirm disabled deployment remains no-write. (`178 passed, 1 skipped`; the POSIX permission-mode test is skipped on Windows.)
 

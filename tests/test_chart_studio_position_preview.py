@@ -59,7 +59,7 @@ def test_trade_preview_can_commit_only_for_guarded_valid_demo(api, monkeypatch):
     app = FastAPI()
     install_control_security(app)
     install_preview_routes(app, fake, now=lambda: NOW,
-                           guard_provider=DemoPositionGuard())
+                           guard_provider=DemoPositionGuard(), commit_enabled=True)
     client = TestClient(app)
     response = client.post('/api/chart/v1/position/preview-stop', json=payload)
     assert response.status_code == 200, response.text
@@ -75,6 +75,23 @@ def test_trade_preview_can_commit_only_for_guarded_valid_demo(api, monkeypatch):
     assert data['canCommit'] is False
     assert data['guard']['state'] == 'BLOCK'
     assert fake.writes == 0
+
+
+def test_trade_preview_guard_allow_stays_noncommittable_before_release(api):
+    from chart_studio.demo_position_guard import DemoPositionGuard
+    from chart_studio.preview_api import install_preview_routes
+    client,fake,payload=api
+    app=FastAPI()
+    install_control_security(app)
+    install_preview_routes(app,fake,now=lambda:NOW,guard_provider=DemoPositionGuard())
+    response=TestClient(app).post('/api/chart/v1/position/preview-stop',json=payload)
+    assert response.status_code==200,response.text
+    data=response.json()
+    assert data['valid'] is True
+    assert data['guard']=={'state':'ALLOW','source':'NON_CHALLENGE_DEMO_POLICY'}
+    assert data['canCommit'] is False
+    assert data['canExecute'] is False
+    assert fake.writes==0
 
 
 def test_trade_preview_does_not_offer_commit_outside_strict_commit_quote_window(api):
@@ -105,7 +122,7 @@ def test_trade_preview_commit_future_quote_boundary(api,future_ms,expected_commi
     client,fake,payload=api
     app=FastAPI()
     install_control_security(app)
-    install_preview_routes(app,fake,now=lambda:NOW,guard_provider=DemoPositionGuard())
+    install_preview_routes(app,fake,now=lambda:NOW,guard_provider=DemoPositionGuard(),commit_enabled=True)
     client=TestClient(app)
     raw=int((NOW+10800)*1000+future_ms)
     fake.tick.time_msc=raw

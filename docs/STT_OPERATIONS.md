@@ -32,6 +32,7 @@ Configure these in the application's protected service environment:
 | `DASHBOARD_PROXY_PREFIX` | Exact deployment prefix; default `/stt`. Change nginx and this value together. No trailing slash. |
 | `DASHBOARD_CONTROL_TOKEN` | Existing optional explicit bearer capability. It is independent of nginx credentials and grants trade controls. |
 | `CHART_STUDIO_TRADE_TICKET_ENABLED` | Separate pending-entry commit gate; accepts only `0` or `1` and defaults to `0`. Leave disabled until the demo risk guard, exact order candidate, and recovery/readback acceptance are complete. |
+| `CHART_STUDIO_POSITION_COMMIT_ENABLED` | Separate position stop-change commit gate; accepts only `0` or `1` and defaults to `0`. Keep unset until its reviewed, private demo write-release gate is explicitly satisfied. |
 
 Malformed JSON, duplicate usernames, unknown roles, unmapped or empty usernames,
 a short/missing secret, a wrong secret, and a non-loopback proxy peer fail closed.
@@ -171,11 +172,14 @@ ACLs. It is a JSON object with unique keys and string values. Permitted keys are
 the five proxy/control variables documented above,
 `DASHBOARD_QUOTE_MAX_AGE_SECONDS`, chart storage/evidence settings,
 `CHART_STUDIO_DEVICE_SYNC_ENABLED`, `CHART_STUDIO_V5_PREVIEW_ENABLED`, and
-`CHART_STUDIO_TRADE_TICKET_ENABLED`, and `CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON`.
+`CHART_STUDIO_TRADE_TICKET_ENABLED`, `CHART_STUDIO_POSITION_COMMIT_ENABLED`, and
+`CHART_STUDIO_INDICATOR_TRUSTED_KEYS_JSON`.
 The new-entry gate accepts only `0` or `1` and is disabled unless explicitly set
 to `1`; enabling it installs a distinct guarded pending-order route, not an EA
 or automatic chart-click order. Keep it disabled until a reviewed demo order
-candidate and readback/rollback acceptance are ready. The indicator trust variable is a
+candidate and readback/rollback acceptance are ready. The position-commit gate
+also accepts only `0` or `1`; without `1`, stop previews remain noncommittable
+and the position mutation route returns `COMMIT_DISABLED`. The indicator trust variable is a
 JSON object mapping 1–16 key IDs to canonical Base64 Ed25519 public keys (32
 decoded bytes); private signing keys must never be placed in this file. The
 launcher rejects duplicate IDs, malformed/noncanonical keys, and oversized maps
