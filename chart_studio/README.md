@@ -77,7 +77,9 @@ Current features:
   forecast or hedge credit. Missing/stale data or failed broker calculations
   return `UNAVAILABLE`; the stress is available only for explicitly configured
   non-challenge demos. It remains `canExecute=false` and does not affect stop
-  risk or order capability. Live acceptance of this new field is pending.
+  risk or order capability. Read-only BUY/SELL acceptance passed on five USD
+  demos; those live books had only the scenario's Gold symbol (or no open
+  positions), so cross-symbol portfolio acceptance remains open.
 
 Routes: `GET /api/chart/v1/capabilities`,
 `GET /api/chart/v1/quotes`,

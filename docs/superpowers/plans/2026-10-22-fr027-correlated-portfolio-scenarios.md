@@ -48,11 +48,14 @@
 
 - [x] Add browser tests for available/unavailable stress status, exact account/symbol binding, quote/as-of/source labels, and isolation from single-trade R:R and stop risk.
 - [x] Render a concise stress range with `n` and historical-shock wording; do not label values as win probability or change order capability.
-- [ ] Run Chart Studio Chromium tests and the live read-only what-if smoke on all five explicitly authorized non-Blueberry demos; confirm `canExecute=false`, zero broker writes and no Blueberry request.
-- [ ] If a demo lacks multi-symbol holdings or aligned history, record `UNAVAILABLE` rather than creating synthetic exposure; document the unfulfilled live acceptance.
+- [x] Run Chart Studio Chromium tests and the live read-only what-if smoke on all five explicitly authorized non-Blueberry demos; confirm `canExecute=false`, zero broker writes and no Blueberry request.
+- [x] If a demo lacks multi-symbol holdings or aligned history, record `UNAVAILABLE` rather than creating synthetic exposure; document the unfulfilled live acceptance.
 
 ### Task 4: Review and ledger
 
-- [ ] Run the focused and complete non-backtest suites, both Main CI workflows, and an independent implementation review; resolve findings.
-- [ ] Update FR-027/AT-039/040 and task 3.4 with the exact tested model and limitations. Keep hardware, live non-USD, cross-symbol portfolio demo acceptance, and write-release gates open until independently satisfied.
-- [ ] Commit/push only to `main`; verify `/stt` code identity after deployment without changing its runtime if application source digest is unchanged.
+- [x] Run the focused and complete non-backtest suites, both Main CI workflows (Chart Studio Run `39720271845`, Performance/UX Run `39720271869`), and an independent implementation review; resolve findings.
+- [x] Update FR-027/AT-039/040 and task 3.4 with the exact tested model and limitations. Keep hardware, live non-USD, cross-symbol portfolio demo acceptance, and write-release gates open until independently satisfied.
+- [x] Commit/push only to `main`; verify `/stt` code identity after deployment without changing its runtime if application source digest is unchanged.
+
+
+**Live acceptance (2026-10-22, Main 737b6c0):** The five approved non-Blueberry aliases each returned 150 verified XAU M15 bars and a fresh quote. Fifteen calculation-only BUY/SELL What-if previews returned AVAILABLE, USD, 245 common completed H1 shocks, and `canExecute=false`. Observed open books were XAU-only on `titan` and `titan_m5`, empty on the other three; no cross-symbol portfolio was available to validate. No order/position mutation endpoint was called and Blueberry was not requested. The hTown /stt upstream and local ports 8050/8056 match the code-bearing revision/digest, with clean source and no restart required. Cross-symbol live portfolio, non-USD, hardware, cost verification and separate write release remain open.
