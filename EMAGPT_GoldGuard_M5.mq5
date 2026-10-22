@@ -326,8 +326,26 @@ void VisualSetupMarker(const int direction,const double atr);
 void VisualDelete();
 void VisualPositionZones();
 
+bool IsPermittedDemoAccount()
+{
+   if(AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO)
+      return false;
+   long login=AccountInfoInteger(ACCOUNT_LOGIN);
+   string server=AccountInfoString(ACCOUNT_SERVER);
+   return (login==53087839 && server=="ICMarketsEU-Demo") ||
+          (login==700194619 && server=="PUPrime-Demo") ||
+          (login==700184986 && server=="PUPrime-Demo") ||
+          (login==700194822 && server=="PUPrime-Demo") ||
+          (login==53090070 && server=="ICMarketsEU-Demo");
+}
+
 int OnInit()
 {
+   if(!IsPermittedDemoAccount())
+   {
+      Print("GoldGuard refused account: only the five configured non-Blueberry demo identities are allowed.");
+      return INIT_FAILED;
+   }
    if(_Period!=PERIOD_M5 || StringFind(_Symbol,"XAUUSD")!=0)
    {
       Print("Attach only to broker XAUUSD* symbol on M5.");
@@ -757,11 +775,12 @@ void VisualPositionZones()
    if(tp>0) RectangleAt("TRADE.REWARD",t1,t2,MathMin(tp,entry),MathMax(tp,entry),clrDarkGreen);
    double riskUSD=0,rewardUSD=0;
    ENUM_ORDER_TYPE typ=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY ? ORDER_TYPE_BUY : ORDER_TYPE_SELL);
-   if(sl>0) OrderCalcProfit(typ,_Symbol,lots,entry,sl,riskUSD);
-   if(tp>0) OrderCalcProfit(typ,_Symbol,lots,entry,tp,rewardUSD);
+   bool riskKnown=sl>0 && OrderCalcProfit(typ,_Symbol,lots,entry,sl,riskUSD);
+   bool rewardKnown=tp>0 && OrderCalcProfit(typ,_Symbol,lots,entry,tp,rewardUSD);
+   string riskText=riskKnown ? StringFormat("SL %.0f USD",MathAbs(riskUSD)) : "SL n/a";
+   string rewardText=rewardKnown ? StringFormat("TP +%.0f USD",rewardUSD) : "TP n/a";
    TextAt("TRADE.INFO",t2,entry,
-          StringFormat(" LOT %.2f | SL %.0f USD | TP +%.0f USD",
-                       lots,MathAbs(riskUSD),rewardUSD),clrWhite,9);
+          StringFormat(" LOT %.2f | %s | %s",lots,riskText,rewardText),clrWhite,9);
 }
 void VisualHUD()
 {
