@@ -16,6 +16,7 @@ from pathlib import Path
 
 
 ALLOWED_ACCOUNTS = frozenset({"xau5m_m5", "titan_m5"})
+EXPECTED_SYMBOLS = {"xau5m_m5": "XAUUSD.p", "titan_m5": "XAUUSD.p"}
 EXPECTED_PRESETS = {"xau5m_m5": "puprime250.set", "titan_m5": "puprime500.set"}
 EXPECTED_PRESET_SHA256 = {
     "xau5m_m5": "ff92ce8710e151cb73d304e411338c411db487bc3983f15eec541138a0aea286",
@@ -139,6 +140,8 @@ def _instrument_source(source_text: str, account_alias: str, producer: str,
                        server: str, terminal_path: str, broker_utc_offset_seconds: int) -> str:
     if type(broker_utc_offset_seconds) is not int or not -86400 <= broker_utc_offset_seconds <= 86400:
         raise ValueError("invalid configured broker UTC offset")
+    if account_alias not in EXPECTED_SYMBOLS:
+        raise ValueError("evidence build account is not allowlisted")
     source_text = _neutralize_account_risk_logs(source_text)
     trade_include = '#include <Trade\\PositionInfo.mqh>'
     definitions = [
@@ -150,6 +153,7 @@ def _instrument_source(source_text: str, account_alias: str, producer: str,
         f"#define CS_EVIDENCE_EXPECTED_PARAMETER_SET_HASH {_mql_string(expected_parameter_hash)}",
         f"#define CS_EVIDENCE_EXPECTED_LOGIN {int(login)}",
         f"#define CS_EVIDENCE_EXPECTED_SERVER {_mql_string(server)}",
+        f"#define CS_EVIDENCE_EXPECTED_SYMBOL {_mql_string(EXPECTED_SYMBOLS[account_alias])}",
         f"#define CS_EVIDENCE_EXPECTED_TERMINAL_PATH {_mql_string(terminal_path)}",
         "#define CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS CSBrokerUtcOffsetSeconds()",
         "string CSParameterSetCanonical();",
@@ -698,6 +702,8 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_pa
     spec = account_gateway.ACCOUNTS[alias]
     if spec.get("is_demo") is not True:
         raise ValueError(f"account {alias!r} is not configured as a demo account")
+    if spec.get("symbol") != EXPECTED_SYMBOLS[alias]:
+        raise ValueError(f"account {alias!r} symbol differs from the reviewed evidence contract")
     terminal = Path(spec["terminal"]).resolve()
     if not terminal.is_file():
         raise FileNotFoundError(f"configured terminal executable not found for {alias}")
@@ -780,6 +786,7 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_pa
     manifest = {
         "schemaVersion": 1,
         "accountAlias": alias,
+        "expectedSymbol": EXPECTED_SYMBOLS[alias],
         "producerId": producer,
         "terminalIdentityHash": ctx.terminal_identity_hash,
         "sourceAndIncludeSha256": source_hash,

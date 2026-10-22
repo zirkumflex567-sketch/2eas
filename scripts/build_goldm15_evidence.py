@@ -27,6 +27,7 @@ from build_titan_evidence import (
 
 
 ALLOWED_ACCOUNTS = frozenset({"goldm15"})
+EXPECTED_SYMBOLS = {"goldm15": "XAUUSD"}
 SOURCE = Path("goldm15/GoldM15_Reconstruction.mq5")
 HELPERS = (
     Path("goldm15/GoldM15_Core.mqh"),
@@ -41,7 +42,7 @@ EXPECTED_HASHES = {
     "goldm15/GoldM15_RiskCore.mqh": "096d2b4d98da67001b381028c615ad5612135482f7d58cb585574a293968335a",
     "goldm15/GoldM15_News.mqh": "54cf4dd2884d90fb2040b3e78ac246b22d1e8b5a168318ee75814431c2da70b6",
     "goldm15/GoldM15_Reconstruction.set": "e6c517dd9e5fc26a4d257506a493163d43bbc52a3b1032479eb8aed89d6efa40",
-    "ChartStudioEvidenceSpool.mqh": "00e919be24a32af81ed1e8700621ead62ba7cb2c714976e22cdc9e1d1a02e331",
+    "ChartStudioEvidenceSpool.mqh": "1fe92b2bc032505163e1e3badc36cc0743d321974e559a1e63b8625204ceba4f",
 }
 PRESET_NAME = "GoldM15_Reconstruction.set"
 PRODUCER = "goldm15_demo"
@@ -187,6 +188,7 @@ def _instrument_source(source_text: str, *, account_alias: str, producer: str,
                        broker_utc_offset_seconds: int, record_only: bool = False) -> str:
     if account_alias not in ALLOWED_ACCOUNTS:
         raise ValueError("account is not allowlisted")
+    expected_symbol = EXPECTED_SYMBOLS[account_alias]
     if type(broker_utc_offset_seconds) is not int or not -86400 <= broker_utc_offset_seconds <= 86400:
         raise ValueError("invalid configured broker UTC offset")
     source_text = source_text.replace("\r\n", "\n")
@@ -208,6 +210,7 @@ def _instrument_source(source_text: str, *, account_alias: str, producer: str,
         f"#define CS_EVIDENCE_EXPECTED_PARAMETER_SET_HASH {_mql_string(expected_parameter_hash)}",
         f"#define CS_EVIDENCE_EXPECTED_LOGIN {int(login)}",
         f"#define CS_EVIDENCE_EXPECTED_SERVER {_mql_string(server)}",
+        f"#define CS_EVIDENCE_EXPECTED_SYMBOL {_mql_string(expected_symbol)}",
         f"#define CS_EVIDENCE_EXPECTED_TERMINAL_PATH {_mql_string(terminal_path)}",
         "#define CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS CSBrokerUtcOffsetSeconds()",
         "string CSParameterSetCanonical();",
@@ -621,6 +624,8 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_pa
     spec = account_gateway.ACCOUNTS[alias]
     if spec.get("is_demo") is not True or spec.get("challenge_protection") is not False:
         raise ValueError("configured demo account required")
+    if spec.get("symbol") != EXPECTED_SYMBOLS[alias]:
+        raise ValueError("configured GoldM15 demo symbol differs from the evidence contract")
     if Path(preset_path).name.casefold() != PRESET_NAME.casefold():
         raise ValueError("preset filename is not bound to GoldM15")
     preset_raw, preset_values = _preset_input_names(Path(preset_path))
@@ -725,6 +730,7 @@ def prepare_variant(repo_root: Path, alias: str, output_root: Path, *, preset_pa
     manifest = {
         "schemaVersion": 1,
         "accountAlias": alias,
+        "expectedSymbol": EXPECTED_SYMBOLS[alias],
         "producerId": producer,
         "recordOnly": record_only,
         "terminalIdentityHash": context.terminal_identity_hash,

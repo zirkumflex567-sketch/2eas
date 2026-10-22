@@ -29,6 +29,7 @@ def test_goldm15_candidate_captures_computed_signal_values_without_changing_trad
 
     assert '#define CS_EVIDENCE_CAPTURE' in generated
     assert '#define CS_EVIDENCE_ACCOUNT_ID "goldm15"' in generated
+    assert '#define CS_EVIDENCE_EXPECTED_SYMBOL "XAUUSD"' in generated
     assert '#define CS_EVIDENCE_STRATEGY_ID "goldm15_reconstruction"' in generated
     assert '#define CS_EVIDENCE_STRATEGY_VERSION "1.22"' in generated
     assert "CS_EVIDENCE_EXPECTED_LOGIN 53090070" in generated

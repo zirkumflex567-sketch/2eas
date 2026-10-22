@@ -24,6 +24,9 @@
 #ifndef CS_EVIDENCE_EXPECTED_SERVER
 #define CS_EVIDENCE_EXPECTED_SERVER ""
 #endif
+#ifndef CS_EVIDENCE_EXPECTED_SYMBOL
+#define CS_EVIDENCE_EXPECTED_SYMBOL ""
+#endif
 #ifndef CS_EVIDENCE_EXPECTED_TERMINAL_PATH
 #define CS_EVIDENCE_EXPECTED_TERMINAL_PATH ""
 #endif
@@ -292,13 +295,19 @@ bool CSValidateRuntimeIdentity()
 #ifdef CS_EVIDENCE_CAPTURE_ENABLED
    if(CS_EVIDENCE_ACCOUNT_ID=="" || CS_EVIDENCE_PRODUCER_ID=="" ||
       CS_EVIDENCE_TERMINAL_HASH=="" || CS_EVIDENCE_SOURCE_HASH=="" ||
-      CS_EVIDENCE_EXPECTED_SERVER=="" ||
+      CS_EVIDENCE_EXPECTED_SERVER=="" || CS_EVIDENCE_EXPECTED_SYMBOL=="" ||
       CS_EVIDENCE_EXPECTED_TERMINAL_PATH=="" || CS_EVIDENCE_EXPECTED_LOGIN<=0)
       return false;
    if(AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO ||
       AccountInfoInteger(ACCOUNT_LOGIN)!=(long)CS_EVIDENCE_EXPECTED_LOGIN ||
       AccountInfoString(ACCOUNT_SERVER)!=CS_EVIDENCE_EXPECTED_SERVER)
       return false;
+   if(_Symbol!=CS_EVIDENCE_EXPECTED_SYMBOL)
+     {
+      PrintFormat("ChartStudio evidence recorder disabled: symbol mismatch expected=%s actual=%s",
+                  CS_EVIDENCE_EXPECTED_SYMBOL,_Symbol);
+      return false;
+     }
    string actual=TerminalInfoString(TERMINAL_PATH);
    string expected=CS_EVIDENCE_EXPECTED_TERMINAL_PATH;
    StringToLower(actual);

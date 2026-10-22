@@ -82,6 +82,7 @@ def test_capture_variant_binds_demo_identity_and_full_effective_parameter_hash()
     assert deinit.count("CSFlushEvidenceQueueOnShutdown();") == 1
     assert deinit.index("CSFlushEvidenceQueueOnShutdown();") < deinit.index("EventKillTimer();")
     assert '#define CS_EVIDENCE_ACCOUNT_ID "xau5m_m5"' in generated
+    assert '#define CS_EVIDENCE_EXPECTED_SYMBOL "XAUUSD.p"' in generated
     assert '#define CS_EVIDENCE_EXPECTED_PARAMETER_SET_HASH' in generated
     assert "CSParameterSetHash!=CS_EVIDENCE_EXPECTED_PARAMETER_SET_HASH" in generated
     assert "#define CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS CSBrokerUtcOffsetSeconds()" in generated

@@ -17,6 +17,7 @@ EXPECTED_PRESET_SHA256 = {
     "xau5m_m5": "ff92ce8710e151cb73d304e411338c411db487bc3983f15eec541138a0aea286",
     "titan_m5": "feb3030fee155bb41e8604a67117519f97db00beac614e103180813faf697e69",
 }
+EXPECTED_SYMBOLS = {"xau5m_m5": "XAUUSD.p", "titan_m5": "XAUUSD.p"}
 EXPECTED_INSTALLED_SOURCE_SHA256 = {
     "xau5m_m5": "1fb7858b6cc48e2274221e6dc2dfbf3790e6941989faf6411885e2fdcefc4e32",
     "titan_m5": "0400b695b428da64e4a57c48d8484c295724333049ab8b034a5d744a417b597a",
@@ -216,6 +217,7 @@ def _instrument_source(source_text: str, alias: str, producer: str,
                        record_only: bool = False) -> str:
     if alias not in ALLOWED_ACCOUNTS:
         raise ValueError(f"account {alias!r} is not allowlisted for BasketGuard evidence builds")
+    expected_symbol = EXPECTED_SYMBOLS[alias]
     if not re.fullmatch(r"[0-9a-f]{64}", terminal_hash) or not re.fullmatch(r"[0-9a-f]{64}", source_hash):
         raise ValueError("source and terminal identities must be SHA-256 digests")
     if not re.fullmatch(r"[0-9a-f]{64}", expected_parameter_hash):
@@ -235,6 +237,7 @@ def _instrument_source(source_text: str, alias: str, producer: str,
         f"#define CS_EVIDENCE_EXPECTED_PARAMETER_SET_HASH {COMMON._mql_string(expected_parameter_hash)}",
         f"#define CS_EVIDENCE_EXPECTED_LOGIN {int(login)}",
         f"#define CS_EVIDENCE_EXPECTED_SERVER {COMMON._mql_string(server)}",
+        f"#define CS_EVIDENCE_EXPECTED_SYMBOL {COMMON._mql_string(expected_symbol)}",
         f"#define CS_EVIDENCE_EXPECTED_TERMINAL_PATH {COMMON._mql_string(terminal_path)}",
         "#define CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS CSBrokerUtcOffsetSeconds()",
     ]
@@ -347,6 +350,7 @@ def _manifest(source_text: str, source_bytes: bytes, alias: str, preset_path: Pa
     return {
         "schemaVersion": 1,
         "accountAlias": alias,
+        "expectedSymbol": EXPECTED_SYMBOLS[alias],
         "producerId": _producer_for_build(alias, record_only=record_only),
         "sourceSha256": hashlib.sha256(source_bytes).hexdigest(),
         "sourceAndIncludeSha256": source_hash,
@@ -386,6 +390,8 @@ def prepare_variant(repo_root: Path, alias: str, preset_path: Path,
     spec = account_gateway.ACCOUNTS[alias]
     if spec.get("is_demo") is not True or spec.get("server") != "PUPrime-Demo":
         raise ValueError(f"account {alias!r} is not the expected PU Prime demo")
+    if spec.get("symbol") != EXPECTED_SYMBOLS[alias]:
+        raise ValueError(f"account {alias!r} symbol differs from the reviewed evidence contract")
     terminal = Path(spec["terminal"]).resolve()
     if not terminal.is_file():
         raise FileNotFoundError(f"configured terminal executable not found for {alias}")

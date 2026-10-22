@@ -51,6 +51,7 @@ def test_titan_candidate_resolves_broker_offset_dynamically_for_quote_utc_and_pr
         53090070, "ICMarketsEU-Demo", r"C:\demo\terminal64.exe", 10800,
     )
     assert "#define CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS CSBrokerUtcOffsetSeconds()" in generated
+    assert '#define CS_EVIDENCE_EXPECTED_SYMBOL "XAUUSD.p"' in generated
     assert "CSUtcFromBrokerMillis(cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS)" in generated
     assert "cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS" in generated
 

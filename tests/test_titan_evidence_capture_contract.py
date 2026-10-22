@@ -32,6 +32,8 @@ def test_spool_is_opt_in_for_normal_builds_and_demo_identity_is_checked():
     assert "#ifdef CS_EVIDENCE_CAPTURE\n#define CS_EVIDENCE_CAPTURE_ENABLED" in spool
     assert "#if CS_EVIDENCE_CAPTURE" not in spool
     assert "CSValidateRuntimeIdentity" in spool
+    assert "CS_EVIDENCE_EXPECTED_SYMBOL" in spool
+    assert "_Symbol!=CS_EVIDENCE_EXPECTED_SYMBOL" in _function(spool, "CSValidateRuntimeIdentity")
     assert "ACCOUNT_TRADE_MODE_DEMO" in spool
     assert "CS_EVIDENCE_TERMINAL_HASH" in spool
     assert "CS_EVIDENCE_SOURCE_HASH" in spool
