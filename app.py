@@ -1640,6 +1640,7 @@ def _whatif_portfolio_stress(mt5_client, account, account_info, scenario):
                 'scenarioSymbol':scenario['symbol'], 'currency':currency, 'canExecute':False}
 
     histories, quotes = {}, {}
+    as_of_epoch = time.time()
     timeframe = getattr(mt5_client, 'TIMEFRAME_H1', 16385)
     for symbol in sorted(symbols):
         try:
@@ -1648,10 +1649,14 @@ def _whatif_portfolio_stress(mt5_client, account, account_info, scenario):
                 raise ValueError('rates unavailable')
             histories[symbol] = {
                 'source':'MT5_VERIFIED', 'account':account, 'symbol':symbol, 'timeframe':'H1',
-                'bars':[{'time':int(row['time']), 'close':float(row['close'])} for row in raw_rates],
+                'bars':[{'time':broker_clock.rates_to_utc_epoch(int(row['time']), spec),
+                         'close':float(row['close'])} for row in raw_rates],
             }
             tick = mt5_client.symbol_info_tick(symbol)
             freshness = quote_metadata(tick, now=time.time())
+            quote_epoch = freshness['quote_time_epoch']
+            if isinstance(quote_epoch, (int, float)) and not isinstance(quote_epoch, bool) and math.isfinite(quote_epoch):
+                as_of_epoch = max(as_of_epoch, float(quote_epoch))
             quotes[symbol] = {
                 'source':'MT5_VERIFIED', 'account':account, 'symbol':symbol,
                 'bid':getattr(tick, 'bid', None), 'ask':getattr(tick, 'ask', None),
@@ -1669,7 +1674,7 @@ def _whatif_portfolio_stress(mt5_client, account, account_info, scenario):
                          0 if side == 'BUY' else 1)
         return mt5_client.order_calc_profit(action, symbol, volume, opened, closed)
 
-    as_of = datetime.fromtimestamp(time.time(), timezone.utc).isoformat().replace('+00:00','Z')
+    as_of = datetime.fromtimestamp(as_of_epoch, timezone.utc).isoformat().replace('+00:00','Z')
     return historical_portfolio_stress(
         account=account, currency=currency, scenario=scenario, positions=positions,
         histories=histories, quotes=quotes, order_calc_profit=broker_profit, as_of_utc=as_of,

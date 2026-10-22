@@ -20,7 +20,7 @@
 
 ## Contract and limits
 
-- Stress observations use only completed H1 bars with exact common hourly timestamps, with at least 60 adjacent aligned return observations across every open-position symbol and the proposed symbol.
+- Stress observations use only completed H1 bars with exact common hourly timestamps, with at least 60 adjacent aligned return observations across every open-position symbol and the proposed symbol. Normalize every MT5 rates timestamp through the account's explicit `broker_clock.rates_to_utc_epoch` policy before alignment; snapshot `asOfUtc` is at least the latest validated quote time.
 - Every series must be finite, positive, strictly unique and ordered; gaps are not interpolated. Missing or bad data invalidates the whole result.
 - Revalue each open position and the hypothetical position at observed joint returns applied to its current verified quote / proposed entry, using MT5 `order_calc_profit` in the verified account currency. Do not infer contract size, currency conversion, missing positions, or broker prices.
 - Include the hypothetical volume from the successful broker preview. Use one fresh bid/ask quote per open-position symbol; enforce account, symbol and terminal scope.

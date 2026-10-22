@@ -106,7 +106,8 @@ def test_whatif_includes_broker_priced_historical_portfolio_stress(isolated, mon
     monkeypatch.setattr(app.mt5,'order_calc_margin',lambda *args:123.4)
     dtype=[('time','i8'),('open','f8'),('high','f8'),('low','f8'),('close','f8'),('tick_volume','i8')]
     rates=np.zeros(62,dtype=dtype)
-    rates['time']=int(isolated.clock.now)-61*3600+np.arange(62)*3600
+    broker_offset=app.broker_clock.offset_seconds(gateway.ACCOUNTS['titan'],isolated.clock.now)
+    rates['time']=int(isolated.clock.now)+broker_offset-61*3600+np.arange(62)*3600
     rates['close']=4000+np.arange(62)*2
     monkeypatch.setattr(app.mt5,'copy_rates_from_pos',lambda *args:rates.copy())
     monkeypatch.setattr(app,'current_daily_drawdown',lambda *args:(_ for _ in ()).throw(HTTPException(503,'fixture unavailable')))
@@ -125,6 +126,8 @@ def test_whatif_includes_broker_priced_historical_portfolio_stress(isolated, mon
     assert stress['portfolioSymbols']==['XAUUSD']
     assert stress['currency']=='USD'
     assert stress['canExecute'] is False
+    assert stress['sampleEndUtc'] <= stress['asOfUtc']
+    assert stress['sampleEndUtc']==datetime.fromtimestamp(isolated.clock.now,timezone.utc).isoformat().replace('+00:00','Z')
     assert response.json()['canExecute'] is False
     isolated.send.assert_not_called()
 
