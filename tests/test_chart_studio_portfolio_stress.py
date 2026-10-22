@@ -185,5 +185,3 @@ def test_historical_joint_shocks_rejects_invalid_asof_timestamp():
 
     assert result["state"] == "UNAVAILABLE"
     assert result["reason"] == "AS_OF_INVALID"
-
-\n

@@ -56,5 +56,3 @@
 - [ ] Run the focused and complete non-backtest suites, both Main CI workflows, and an independent implementation review; resolve findings.
 - [ ] Update FR-027/AT-039/040 and task 3.4 with the exact tested model and limitations. Keep hardware, live non-USD, cross-symbol portfolio demo acceptance, and write-release gates open until independently satisfied.
 - [ ] Commit/push only to `main`; verify `/stt` code identity after deployment without changing its runtime if application source digest is unchanged.
-
-\n
