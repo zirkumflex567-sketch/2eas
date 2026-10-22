@@ -101,13 +101,12 @@ def install_preview_routes(app, mt5, *, now=None, monotonic=None, guard_provider
         observed=clock()
         model=reads.quote_model(mt5.symbol_info_tick(payload.symbol),spec,symbol=payload.symbol,now=observed)
         age=observed*1000-model['quoteTimeUtcMs']
-        # Match broker_reads.quote_model: ticks up to one second ahead of the
-        # local clock are still classified as FRESH by the read-only quote API.
-        if not -1000<=age<=5000: raise failure(503,'QUOTE_NOT_FRESH')
+        future_tolerance_ms = int(round(reads.QUOTE_FUTURE_TOLERANCE_SECONDS * 1000))
+        if not -future_tolerance_ms<=age<=5000: raise failure(503,'QUOTE_NOT_FRESH')
         actual_number(Decimal(model['bid']))
         actual_number(Decimal(model['ask']))
-        model.update(ageMs=age,minimumAgeMs=-1000,maximumAgeMs=5000,
-                     allowedFutureSkewMs=1000,observedServerUtc=utc(observed))
+        model.update(ageMs=age,minimumAgeMs=-future_tolerance_ms,maximumAgeMs=5000,
+                     allowedFutureSkewMs=future_tolerance_ms,observedServerUtc=utc(observed))
         return selected[0],model
 
     router = APIRouter(route_class=PreviewRoute)
@@ -206,7 +205,9 @@ def install_preview_routes(app, mt5, *, now=None, monotonic=None, guard_provider
                                     changes={'slPrice':final['sl'],'tpPrice':final['tp']})
                                 if isinstance(decision,dict) and decision.get('state') in ('ALLOW','BLOCK') and isinstance(decision.get('source'),str):
                                     guard={'state':decision['state'],'source':decision['source']}
-                                    can_commit=changed and decision['state']=='ALLOW' and decision.get('hardLock') is False
+                                    can_commit=(changed and decision['state']=='ALLOW' and
+                                                decision.get('hardLock') is False and
+                                                final_quote.get('ageMs', 0) >= -1000)
                             except Exception:
                                 pass
                         result={'schemaVersion':1,'clientRequestId':payload.clientRequestId,

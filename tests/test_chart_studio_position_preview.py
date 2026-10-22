@@ -77,6 +77,28 @@ def test_trade_preview_can_commit_only_for_guarded_valid_demo(api, monkeypatch):
     assert fake.writes == 0
 
 
+def test_trade_preview_does_not_offer_commit_outside_strict_commit_quote_window(api):
+    from chart_studio.demo_position_guard import DemoPositionGuard
+    from chart_studio.preview_api import install_preview_routes
+    client, fake, payload = api
+    app = FastAPI()
+    install_control_security(app)
+    install_preview_routes(app, fake, now=lambda: NOW,
+                           guard_provider=DemoPositionGuard())
+    client = TestClient(app)
+    raw = int((NOW + 10800) * 1000 + 1200)
+    fake.tick.time_msc = raw
+    fake.tick.time = raw // 1000
+    response = client.post('/api/chart/v1/position/preview-stop', json=payload)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data['valid'] is True
+    assert data['quote']['ageMs'] == -1200
+    assert data['canCommit'] is False
+    assert data['canExecute'] is False
+    assert fake.writes == 0
+
+
 def test_process_commit_runtime_recovers_only_its_own_reservations(tmp_path):
     from chart_studio.position_commit_runtime import create_process_position_commit_runtime
     from chart_studio.position_preview import PreviewRegistry
@@ -237,12 +259,13 @@ def test_registry_exact_expiry_and_independent_copies():
     with pytest.raises(HTTPException): registry.lookup(first['previewId'],'other')
     clock[0]=10
     with pytest.raises(HTTPException): registry.lookup(first['previewId'],'scope')
-@pytest.mark.parametrize('age,expected',[(-1001,503),(-1000,200),(-501,200),(-500,200),(5000,200),(5001,503)])
+@pytest.mark.parametrize('age,expected',[(-1501,503),(-1500,200),(-1001,200),(-1000,200),(-501,200),(-500,200),(5000,200),(5001,503)])
 def test_quote_signed_age_inclusive_bounds(api,age,expected):
     client,fake,payload=api
     raw=int((NOW+10800)*1000-age)
     fake.tick.time_msc=raw; fake.tick.time=raw//1000
-    assert client.post('/api/chart/v1/position/preview-stop',json=payload).status_code==expected
+    response = client.post('/api/chart/v1/position/preview-stop',json=payload)
+    assert response.status_code == expected, response.text
 
 @pytest.mark.parametrize('candidate,reason',[
     ({'slPrice':'3999.001'},'SL_OFF_GRID'),({'slPrice':'4001'},'SL_WRONG_SIDE'),
@@ -425,7 +448,7 @@ def test_volume_actual_step_rejected(api):
     assert response.status_code==503
     assert response.json()['detail']['code']=='NUMERIC_POLICY_UNSUPPORTED'
 
-@pytest.mark.parametrize('age,expected',[(-1001,503),(-1000,200),(-501,200),(-500,200),(5000,200),(5001,503)])
+@pytest.mark.parametrize('age,expected',[(-1501,503),(-1500,200),(-1001,200),(-1000,200),(-501,200),(-500,200),(5000,200),(5001,503)])
 def test_final_quote_signed_age_boundaries(api,age,expected):
     client,fake,payload=api
     def calculation(*args):
@@ -433,7 +456,8 @@ def test_final_quote_signed_age_boundaries(api,age,expected):
         fake.tick.time_msc=raw; fake.tick.time=raw//1000
         return -1.
     fake.order_calc_profit=calculation
-    assert client.post('/api/chart/v1/position/preview-stop',json=payload).status_code==expected
+    response = client.post('/api/chart/v1/position/preview-stop',json=payload)
+    assert response.status_code == expected, response.text
 def test_validation_and_gateway_errors_are_readonly_envelopes(api):
     client,fake,payload=api
     payload['schemaVersion']=True
@@ -1024,6 +1048,7 @@ def test_guard_unknown_or_incomplete_result_fails_closed(decision):
 
 @pytest.mark.parametrize(('mutation', 'expected_status', 'expected_code'), [
     ('stale_quote', 503, 'QUOTE_NOT_FRESH'),
+    ('future_quote', 503, 'QUOTE_NOT_FRESH'),
     ('symbol_rules', 409, 'SYMBOL_CHANGED'),
 ])
 def test_commit_rechecks_quote_and_symbol_rules_after_order_check(api, tmp_path, mutation, expected_status, expected_code):
@@ -1036,6 +1061,9 @@ def test_commit_rechecks_quote_and_symbol_rules_after_order_check(api, tmp_path,
     def order_check(_):
         if mutation == 'stale_quote':
             fake.tick.time_msc = int((NOW + 10800 - 10) * 1000)
+            fake.tick.time = fake.tick.time_msc // 1000
+        elif mutation == 'future_quote':
+            fake.tick.time_msc = int((NOW + 10800) * 1000 + 1001)
             fake.tick.time = fake.tick.time_msc // 1000
         else:
             fake.symbols[0].trade_tick_size *= 2
