@@ -435,7 +435,9 @@ bool CSInitializeEvidenceProducer()
       return false;
      }
    CSRecorderReady=true;
-   PrintFormat("ChartStudio evidence recorder ready (%s).",CS_EVIDENCE_PRODUCER_ID);
+   PrintFormat("ChartStudio evidence recorder ready: account=%s producer=%s terminal=%s source=%s parameters=%s.",
+               CS_EVIDENCE_ACCOUNT_ID,CS_EVIDENCE_PRODUCER_ID,CS_EVIDENCE_TERMINAL_HASH,
+               CS_EVIDENCE_SOURCE_HASH,CSParameterSetHash);
    return true;
 #else
    return false;

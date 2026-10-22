@@ -37,6 +37,18 @@ def test_spool_is_opt_in_for_normal_builds_and_demo_identity_is_checked():
     assert "CS_EVIDENCE_SOURCE_HASH" in spool
 
 
+def test_ready_log_identifies_account_producer_source_and_effective_parameters():
+    spool = SPOOL.read_text(encoding="utf-8-sig")
+    initialize = _function(spool, "CSInitializeEvidenceProducer")
+
+    assert 'ChartStudio evidence recorder ready' in initialize
+    assert 'CS_EVIDENCE_ACCOUNT_ID' in initialize
+    assert 'CS_EVIDENCE_PRODUCER_ID' in initialize
+    assert 'CS_EVIDENCE_TERMINAL_HASH' in initialize
+    assert 'CS_EVIDENCE_SOURCE_HASH' in initialize
+    assert 'CSParameterSetHash' in initialize
+
+
 def test_decision_capture_keeps_the_existing_signal_and_order_conditions():
     ea = EA.read_text(encoding="utf-8-sig")
     decision = _function(ea, "CheckSignalAndTrade")
