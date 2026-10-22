@@ -52,6 +52,8 @@ def test_titan_candidate_resolves_broker_offset_dynamically_for_quote_utc_and_pr
     )
     assert "#define CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS CSBrokerUtcOffsetSeconds()" in generated
     assert '#define CS_EVIDENCE_EXPECTED_SYMBOL "XAUUSD.p"' in generated
+    timer_failure = generated[generated.index("else if(CSInitializeEvidenceProducer() && !EventSetTimer(1))"):]
+    assert timer_failure.index("CSRecorderDisabled=true;") < timer_failure.index("CSReleaseProducerLock();")
     assert "CSUtcFromBrokerMillis(cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS)" in generated
     assert "cs_tick.time_msc,CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS" in generated
 

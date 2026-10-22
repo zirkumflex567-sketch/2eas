@@ -57,6 +57,7 @@ ulong CSQueueOverflowOrderAttemptCount=0;
 ulong CSQueueOverflowOtherCount=0;
 ulong CSQueueOverflowSequenceApplied=0;
 ulong CSQueueOverflowSequenceQueued=0;
+int CSProducerLockHandle=INVALID_HANDLE;
 ulong CSSequence=0;
 bool CSRecorderReady=false;
 bool CSRecorderDisabled=false;
@@ -323,6 +324,39 @@ string CSSeqPath()
    return CS_SEGMENT_FOLDER+"\\"+CS_EVIDENCE_PRODUCER_ID+".sequence.bin";
   }
 
+string CSProducerLockPath()
+  {
+   return CS_SEGMENT_FOLDER+"\\"+CS_EVIDENCE_PRODUCER_ID+".lock";
+  }
+
+bool CSAcquireProducerLock()
+  {
+#ifdef CS_EVIDENCE_CAPTURE_ENABLED
+   if(CSProducerLockHandle!=INVALID_HANDLE)
+      return true;
+   ResetLastError();
+   int handle=FileOpen(CSProducerLockPath(),FILE_READ|FILE_WRITE|FILE_BIN|FILE_COMMON);
+   if(handle==INVALID_HANDLE)
+     {
+      PrintFormat("ChartStudio evidence recorder disabled: producer is already active or lock unavailable error=%d.",
+                  GetLastError());
+      return false;
+     }
+   CSProducerLockHandle=handle;
+   return true;
+#else
+   return false;
+#endif
+  }
+
+void CSReleaseProducerLock()
+  {
+   if(CSProducerLockHandle==INVALID_HANDLE)
+      return;
+   FileClose(CSProducerLockHandle);
+   CSProducerLockHandle=INVALID_HANDLE;
+  }
+
 bool CSPersistSequence()
   {
    string target=CSSeqPath();
@@ -437,10 +471,16 @@ bool CSInitializeEvidenceProducer()
       CSRecorderDisabled=true;
       return false;
      }
+   if(!CSAcquireProducerLock())
+     {
+      CSRecorderDisabled=true;
+      return false;
+     }
    if(!CSRecoverSequence())
      {
       Print("ChartStudio evidence recorder disabled: private spool sequence unavailable.");
       CSRecorderDisabled=true;
+      CSReleaseProducerLock();
       return false;
      }
    CSRecorderReady=true;
@@ -635,12 +675,13 @@ void CSFlushEvidenceQueueOnShutdown()
    for(int pass=0;pass<CS_SHUTDOWN_FLUSH_PASSES;pass++)
      {
       if(CSQueueCount<=0 || CSRecorderDisabled)
-         return;
+         break;
       int before=CSQueueCount;
       CSFlushEvidenceQueue();
       if(CSQueueCount>=before)
-         return;
+         break;
      }
+   CSReleaseProducerLock();
 #endif
   }
 

@@ -87,6 +87,9 @@ def test_capture_variant_binds_demo_identity_and_full_effective_parameter_hash()
     assert "CSParameterSetHash!=CS_EVIDENCE_EXPECTED_PARAMETER_SET_HASH" in generated
     assert "#define CS_EVIDENCE_BROKER_UTC_OFFSET_SECONDS CSBrokerUtcOffsetSeconds()" in generated
     assert "CSInitializeEvidenceProducer()" in generated
+    init = _function_body(generated, "OnInit")
+    timer_failure = init[init.index("!EventSetTimer(1)"):]
+    assert timer_failure.index("CSRecorderDisabled=true;") < timer_failure.index("CSReleaseProducerLock();")
     deinit = _function_body(generated, "OnDeinit")
     assert deinit.index("CSFlushEvidenceQueueOnShutdown();") < deinit.index("EventKillTimer();")
     assert "IsBlueberryChallengeAccount()" in generated

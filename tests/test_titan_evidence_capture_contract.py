@@ -189,6 +189,28 @@ def test_failed_segment_write_retries_the_same_sequence_before_advancing_cursor(
     )
 
 
+def test_producer_lock_fails_closed_on_duplicate_attach_and_releases_after_shutdown():
+    spool = SPOOL.read_text(encoding="utf-8-sig")
+    initialize = _function(spool, "CSInitializeEvidenceProducer")
+    lock_path = _function(spool, "CSProducerLockPath")
+    acquire = _function(spool, "CSAcquireProducerLock")
+    release = _function(spool, "CSReleaseProducerLock")
+    shutdown = _function(spool, "CSFlushEvidenceQueueOnShutdown")
+    ea = EA.read_text(encoding="utf-8-sig")
+    deinit = _function(ea, "OnDeinit")
+
+    assert "int CSProducerLockHandle=INVALID_HANDLE;" in spool
+    assert "CS_EVIDENCE_PRODUCER_ID+\".lock\"" in lock_path
+    assert "FILE_READ|FILE_WRITE|FILE_BIN|FILE_COMMON" in acquire
+    assert "FILE_SHARE_READ" not in acquire and "FILE_SHARE_WRITE" not in acquire
+    assert initialize.index("CSAcquireProducerLock()") < initialize.index("CSRecoverSequence()")
+    recovery_failure = initialize[initialize.index("if(!CSRecoverSequence())"):]
+    assert "CSReleaseProducerLock();" in recovery_failure
+    assert "FileClose(CSProducerLockHandle);" in release
+    assert "CSReleaseProducerLock();" in shutdown
+    assert deinit.index("CSFlushEvidenceQueueOnShutdown()") < deinit.index("EventKillTimer()")
+
+
 def test_text_segment_write_validates_complete_utf8_payload_and_actual_file_size():
     spool = SPOOL.read_text(encoding="utf-8-sig")
     write = _function(spool, "CSWriteReadySegment")

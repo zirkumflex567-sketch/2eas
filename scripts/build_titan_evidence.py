@@ -186,6 +186,7 @@ def _instrument_source(source_text: str, account_alias: str, producer: str,
       Print("ChartStudio evidence recorder disabled: timer unavailable.");
       CSRecorderReady=false;
       CSRecorderDisabled=true;
+      CSReleaseProducerLock();
      }
    if(CSRecorderReady)
       CSSeedOpenPositionSnapshots();

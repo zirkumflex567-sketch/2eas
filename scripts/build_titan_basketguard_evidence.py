@@ -259,6 +259,19 @@ def _instrument_source(source_text: str, alias: str, producer: str,
     if generated.count(init_anchor) != 1:
         raise ValueError("expected unique BasketGuard recorder initialization anchor")
     generated = generated.replace(init_anchor, guarded_init, 1)
+    timer_failure = '''   else if(CSInitializeEvidenceProducer() && !EventSetTimer(1))
+     {
+      Print("ChartStudio evidence recorder disabled: timer unavailable.");
+      CSRecorderReady=false;
+      CSRecorderDisabled=true;
+     }'''
+    timer_failure_with_release = timer_failure.replace(
+        "      CSRecorderDisabled=true;",
+        "      CSRecorderDisabled=true;\n      CSReleaseProducerLock();",
+    )
+    if generated.count(timer_failure) != 1:
+        raise ValueError("expected unique BasketGuard timer-failure cleanup block")
+    generated = generated.replace(timer_failure, timer_failure_with_release, 1)
 
     deinit = _function_definition(generated, "OnDeinit")
     if (deinit.count("CSFlushEvidenceQueueOnShutdown();") != 1 or
