@@ -110,6 +110,24 @@ class MultiAccountTests(unittest.TestCase):
 
         self.assertEqual(calls, [])
 
+    def test_demo_alias_cannot_hide_challenge_path_by_reusing_protected_id(self):
+        fake = self.fake()
+        calls = []
+        original_initialize = fake.initialize
+        def initialize(path, **kwargs):
+            calls.append(path)
+            return original_initialize(path, **kwargs)
+        fake.initialize = initialize
+        protected = self.gateway.ACCOUNTS['blueberry']
+
+        with patch.dict(self.gateway.ACCOUNTS['xau5m_m5'],
+                        id=protected['id'], terminal=protected['terminal']):
+            with self.assertRaisesRegex(HTTPException, 'Challenge-Schutz'):
+                with self.gateway.session(fake, 'xau5m_m5'):
+                    self.fail('a reused account id cannot exempt a demo from protected-path checks')
+
+        self.assertEqual(calls, [])
+
     def test_parallel_sessions_cannot_cross_accounts(self):
         fake = self.fake()
         def read(account):

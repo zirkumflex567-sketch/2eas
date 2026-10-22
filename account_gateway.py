@@ -150,7 +150,7 @@ def _protected_terminal_path_conflicts(account_id, account):
         return account.get('challenge_protection') is True
     expected = ntpath.normcase(ntpath.normpath(terminal))
     for alias, other in ACCOUNTS.items():
-        if alias == account_id or other.get('id') == account.get('id'):
+        if alias == account_id or other is account:
             continue
         candidate = other.get('terminal')
         if (isinstance(candidate, str) and candidate.strip() and
