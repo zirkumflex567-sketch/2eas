@@ -79,6 +79,31 @@ def test_titan_deinit_flushes_bounded_recorder_queue_before_killing_timer():
     assert "CSRecorderDisabled" in drain.group(1)
 
 
+def test_shared_spool_treats_ambiguous_ready_segment_move_as_idempotent_success():
+    helper = (ROOT / "ChartStudioEvidenceSpool.mqh").read_text(encoding="utf-8-sig")
+    matcher = re.search(
+        r"bool CSReadySegmentMatches\([^)]*\)\s*\{(.*?)^  \}",
+        helper,
+        re.S | re.M,
+    )
+    writer = re.search(
+        r"bool CSWriteReadySegment\([^)]*\)\s*\{(.*?)^  \}",
+        helper,
+        re.S | re.M,
+    )
+
+    assert matcher, "shared spool must verify an already-published segment byte-for-byte"
+    assert writer, "shared spool must retain a single ready-segment writer"
+    body = writer.group(1)
+    assert "FileIsExist(ready,FILE_COMMON)" in body
+    assert "CSReadySegmentMatches(ready,line)" in body
+    assert body.index("if(FileIsExist(ready,FILE_COMMON))") < body.index("FileOpen(temp,")
+    move_failure = body[body.index("if(!FileMove(temp,FILE_COMMON,ready,FILE_COMMON))"):]
+    assert "FileIsExist(ready,FILE_COMMON) && CSReadySegmentMatches(ready,line)" in move_failure
+    assert "return true;" in move_failure
+    assert "CSDeleteFailedTemp(temp,sequence);" in move_failure
+
+
 def test_titan_candidate_correlates_real_deal_transactions_to_order_attempts():
     source = (ROOT / BUILD.SOURCE_NAME).read_text(encoding="utf-8-sig")
     generated = BUILD._instrument_source(

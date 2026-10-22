@@ -510,13 +510,51 @@ void CSDeleteFailedTemp(const string temp,const ulong sequence)
       CSLogWriteFailure("cleanup",sequence,GetLastError());
   }
 
+bool CSReadySegmentMatches(const string ready,const string line)
+  {
+   ResetLastError();
+   int handle=FileOpen(ready,FILE_READ|FILE_BIN|FILE_COMMON);
+   if(handle==INVALID_HANDLE)
+      return false;
+   ulong size=FileSize(handle);
+   string payload=line+"\r\n";
+   uchar expected_bytes[];
+   int expected_count=StringToCharArray(payload,expected_bytes,0,WHOLE_ARRAY,CP_UTF8);
+   if(expected_count<=1 || size!=(ulong)(expected_count-1) || size>CS_SEGMENT_MAX_BYTES)
+     {
+      FileClose(handle);
+      return false;
+     }
+   uchar actual_bytes[];
+   if(ArrayResize(actual_bytes,(int)size)!=(int)size)
+     {
+      FileClose(handle);
+      return false;
+     }
+   uint read_count=FileReadArray(handle,actual_bytes,0,(uint)size);
+   FileClose(handle);
+   if(read_count!=(uint)size)
+      return false;
+   for(int i=0;i<(int)size;i++)
+      if(actual_bytes[i]!=expected_bytes[i])
+         return false;
+   return true;
+  }
+
 bool CSWriteReadySegment(const string line,const ulong sequence)
   {
    string stem=CS_SEGMENT_FOLDER+"\\"+CS_EVIDENCE_PRODUCER_ID+"."+IntegerToString((long)sequence);
    string temp=stem+".tmp.ndjson";
    string ready=stem+"-"+IntegerToString((long)sequence)+".ready.ndjson";
-   if(StringLen(line)>CS_SEGMENT_MAX_BYTES || FileIsExist(ready,FILE_COMMON))
+   if(StringLen(line)>CS_SEGMENT_MAX_BYTES)
       return false;
+   if(FileIsExist(ready,FILE_COMMON))
+     {
+      if(CSReadySegmentMatches(ready,line))
+         return true;
+      CSLogWriteFailure("ready-conflict",sequence,GetLastError());
+      return false;
+     }
    ResetLastError();
    int handle=FileOpen(temp,FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON,0,CP_UTF8);
    if(handle==INVALID_HANDLE)
@@ -545,6 +583,8 @@ bool CSWriteReadySegment(const string line,const ulong sequence)
    if(!FileMove(temp,FILE_COMMON,ready,FILE_COMMON))
      {
       int error=GetLastError();
+      if(FileIsExist(ready,FILE_COMMON) && CSReadySegmentMatches(ready,line))
+         return true;
       CSLogWriteFailure("rename",sequence,error);
       CSDeleteFailedTemp(temp,sequence);
       return false;

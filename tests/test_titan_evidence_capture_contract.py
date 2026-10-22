@@ -171,7 +171,11 @@ def test_failed_segment_write_removes_its_unimportable_temporary_file():
     assert write.count("CSDeleteFailedTemp(temp,sequence);") == 2
     assert write.index("FileClose(handle);") < write.index("if(!complete)")
     assert "if(!complete)\n     {\n      CSLogWriteFailure(\"write\",sequence,write_error);\n      CSDeleteFailedTemp(temp,sequence);\n      return false;\n     }" in write
-    assert "if(!FileMove(temp,FILE_COMMON,ready,FILE_COMMON))\n     {\n      int error=GetLastError();\n      CSLogWriteFailure(\"rename\",sequence,error);\n      CSDeleteFailedTemp(temp,sequence);\n      return false;\n     }" in write
+    assert "if(!FileMove(temp,FILE_COMMON,ready,FILE_COMMON))" in write
+    move_failure = write[write.index("if(!FileMove(temp,FILE_COMMON,ready,FILE_COMMON))"):]
+    assert "if(FileIsExist(ready,FILE_COMMON) && CSReadySegmentMatches(ready,line))\n         return true;" in move_failure
+    assert "CSLogWriteFailure(\"rename\",sequence,error);" in move_failure
+    assert "CSDeleteFailedTemp(temp,sequence);" in move_failure
 
 
 def test_failed_segment_write_retries_the_same_sequence_before_advancing_cursor():
