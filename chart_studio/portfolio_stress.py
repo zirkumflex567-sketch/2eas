@@ -145,6 +145,11 @@ def historical_portfolio_stress(*, account, currency, scenario, positions, histo
             return _unavailable(account, scenario_symbol, "QUOTE_INVALID", currency)
         bases[symbol] = {"BUY": float(bid), "SELL": float(ask)}
 
+    # Keep invalid future-history requests away from the broker repricing loop.
+    # A bad as-of window should not trigger hundreds of unnecessary MT5 calls.
+    if shocks[-1][1] > as_of.timestamp():
+        return _unavailable(account, scenario_symbol, "HISTORY_AFTER_AS_OF", currency)
+
     pnls = []
     for _start, _end, returns in shocks:
         scenario_pnl = 0.0
@@ -169,8 +174,6 @@ def historical_portfolio_stress(*, account, currency, scenario, positions, histo
     losses = [max(0.0, -value) for value in pnls]
     start_time = datetime.fromtimestamp(shocks[0][0], timezone.utc).isoformat().replace("+00:00", "Z")
     end_time = datetime.fromtimestamp(shocks[-1][1], timezone.utc).isoformat().replace("+00:00", "Z")
-    if shocks[-1][1] > as_of.timestamp():
-        return _unavailable(account, scenario_symbol, "HISTORY_AFTER_AS_OF", currency)
     return {
         "state": "AVAILABLE",
         "source": SOURCE,

@@ -138,6 +138,26 @@ def test_historical_joint_shocks_require_fresh_quote_timestamp_within_asof():
     assert "loss" not in result
 
 
+def test_historical_joint_shocks_rejects_history_after_asof_before_repricing():
+    calls = []
+    result = historical_portfolio_stress(
+        account=ACCOUNT,
+        currency="USD",
+        scenario={"symbol": "XAUUSD", "side": "BUY", "volume": 0.1, "entry": 100},
+        positions=[],
+        histories={"XAUUSD": bars("XAUUSD", [100 + i for i in range(62)])},
+        quotes={"XAUUSD": quote("XAUUSD", 99.99, 100.01)
+                | {"timeUtc": "2026-10-20T00:00:00Z"}},
+        order_calc_profit=lambda *args: calls.append(args) or 0,
+        as_of_utc="2026-10-20T00:00:00Z",
+    )
+
+    assert result["state"] == "UNAVAILABLE"
+    assert result["reason"] == "HISTORY_AFTER_AS_OF"
+    assert result["canExecute"] is False
+    assert calls == []
+
+
 def test_historical_joint_shocks_rejects_missing_quote_timestamp():
     result = historical_portfolio_stress(
         account=ACCOUNT,
