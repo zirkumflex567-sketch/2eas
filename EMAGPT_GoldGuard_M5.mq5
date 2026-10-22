@@ -4,7 +4,7 @@
 //| No profitability guarantee. Test broker real ticks before use.  |
 //+------------------------------------------------------------------+
 #property strict
-#property version "1.10"
+#property version "1.11"
 #property description "XAUUSD M5 trend pullback EA with conservative challenge risk guard"
 #include <Trade/Trade.mqh>
 
