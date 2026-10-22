@@ -44,6 +44,19 @@ class MultiAccountTests(unittest.TestCase):
         self.assertTrue(all(path and 'login' not in kw and 'password' not in kw for path, kw in fake.calls))
         self.assertTrue(fake.calls[-1][1]['portable'])
 
+    def test_status_requires_explicit_account_instead_of_defaulting_to_blueberry(self):
+        import app
+        from fastapi.testclient import TestClient
+
+        fake = self.fake()
+        with patch.object(app, 'mt5', fake), \
+             patch.object(app, 'get_live_market_data', return_value={'status': 'ok'}) as read_status:
+            response = TestClient(app.app).get('/api/status')
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(fake.calls, [])
+        read_status.assert_not_called()
+
     def test_same_account_reuses_verified_terminal_and_switch_reconnects(self):
         fake = self.fake()
         with self.gateway.session(fake, 'titan'):

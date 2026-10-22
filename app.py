@@ -17,7 +17,7 @@ from typing import Optional, Literal, Annotated
 import pandas as pd
 import numpy as np
 import MetaTrader5 as mt5
-from fastapi import FastAPI, HTTPException, Header, Request
+from fastapi import FastAPI, HTTPException, Header, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, FiniteFloat, Field, StrictBool, field_validator, model_validator
@@ -1155,7 +1155,7 @@ def api_journal_summary(account: str = 'blueberry'):
 
 @app.get("/api/status")
 @scoped(mt5)
-def api_status(account: str = 'blueberry', include_journal: bool = True, light: bool = False):
+def api_status(account: str = Query(..., min_length=1), include_journal: bool = True, light: bool = False):
     data = get_live_market_data(include_journal=include_journal and not light)
     if data is None:
         raise HTTPException(status_code=500, detail="MT5 nicht verbunden")
