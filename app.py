@@ -2080,6 +2080,10 @@ HTML_CONTENT = """<!DOCTYPE html>
     .account-tab[aria-pressed="true"] { background:#172b45; border-color:#60a5fa; box-shadow:inset 0 0 0 1px #60a5fa; }
     .account-tab:hover { border-color:#94a3b8; }
     body.theme-light .account-tab[aria-pressed="true"] { background:#eff6ff; border-color:#2563eb; }
+    #ea-inventory-summary { display:flex; flex-wrap:wrap; align-items:center; gap:7px 12px; padding:9px 12px; border-top:1px solid rgba(148,163,184,.16); color:#cbd5e1; font-size:11px; }
+    #ea-inventory-summary strong { color:#f8fafc; }
+    #ea-inventory-summary .ea-family { padding:3px 8px; border:1px solid rgba(56,189,248,.3); border-radius:999px; color:#7dd3fc; font-weight:700; }
+    #ea-inventory-summary small { flex-basis:100%; color:#94a3b8; font-size:10px; }
     .account-tab strong { display:block; font-size:13px; }
     .account-tab small { display:block; font-size:10px; margin-top:3px; opacity:.65; }
     #account-content[data-connected="false"] { opacity:.4; pointer-events:none; }
@@ -2171,6 +2175,12 @@ HTML_CONTENT = """<!DOCTYPE html>
           <div id="account-detail" class="text-sub text-[10px] mt-1">Separate Konten · Live-Daten</div>
         </div>
       </div>
+    </div>
+    <div id="ea-inventory-summary" aria-label="Übersicht der offenen Expert Advisors">
+      <strong>Offene EA-Charts: 6</strong>
+      <span class="ea-family">XAU_Titan_Pro_BasketGuard</span>
+      <span class="ea-family">Marketplace XAUUSD 5 minute</span>
+      <small>Stand laut Nutzerangabe · individuelle MT5-Chart-Anhänge hier nicht live bestätigt</small>
     </div>
   </nav>
 
