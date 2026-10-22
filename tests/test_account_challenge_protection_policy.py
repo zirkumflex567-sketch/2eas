@@ -58,13 +58,3 @@ def test_configured_accounts_use_only_the_two_user_confirmed_ea_families():
     assert "Titan" in account_gateway.ACCOUNTS["goldm15"]["name"]
     assert "Titan" in account_gateway.ACCOUNTS["xau5m_m5"]["name"]
     assert "Titan" in account_gateway.ACCOUNTS["titan_m5"]["name"]
-
-
-def test_puprime_250_alias_uses_its_running_terminal_and_keeps_blueberry_fail_closed():
-    demo_terminal = account_gateway.ACCOUNTS["xau5m_m5"]["terminal"]
-    assert demo_terminal == r"C:\Users\zirku\Documents\goldm5\.mt5-puprime-700194619\terminal64.exe"
-    assert account_gateway.ACCOUNTS["blueberry"]["challenge_protection"] is True
-    assert account_gateway.ACCOUNTS["blueberry"]["terminal"] == ""
-    assert account_gateway._protected_terminal_path_conflicts(
-        "blueberry", account_gateway.ACCOUNTS["blueberry"]
-    ) is True

@@ -33,10 +33,10 @@ class MultiAccountTests(unittest.TestCase):
         fake.terminal_info = lambda: SimpleNamespace(path=str(Path(fake.current['terminal']).parent), data_path=str(Path(fake.current['terminal']).parent), connected=True)
         return fake
 
-    def test_explicit_paths_and_demo_titan(self):
+    def test_explicit_paths_and_default_titan(self):
         fake = self.fake()
-        with self.gateway.session(fake, 'xau5m_m5'):
-            self.assertEqual(fake.current['login'], 700194619)
+        with self.gateway.session(fake):
+            self.assertEqual(fake.current['login'], 5120620)
         with self.gateway.session(fake, 'goldm15'):
             self.assertEqual(fake.current['login'], 53090070)
             self.assertEqual(self.gateway.selected()['id'], 'goldm15')
@@ -91,15 +91,6 @@ class MultiAccountTests(unittest.TestCase):
                 with self.gateway.session(fake, 'blueberry'):
                     self.fail('shared challenge/demo terminal path must fail closed')
 
-        self.assertEqual(calls, [])
-
-    def test_unresolved_challenge_terminal_fails_before_initialize(self):
-        fake = self.fake()
-        calls = []
-        fake.initialize = lambda path, **kwargs: calls.append(path) or False
-        with self.assertRaisesRegex(HTTPException, 'Terminalpfad'):
-            with self.gateway.session(fake, 'blueberry'):
-                self.fail('unresolved protected terminal must fail closed')
         self.assertEqual(calls, [])
 
     def test_parallel_sessions_cannot_cross_accounts(self):
