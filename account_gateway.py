@@ -14,7 +14,7 @@ import broker_telemetry
 ACCOUNTS = {
     'blueberry': dict(id='blueberry', name='Blueberry Funded (Prop-Firma)', login=5120620,
                       server='BlueberryMarketsSVG-Live', company='Blueberry Markets (SVG) LLC',
-                      terminal=r'C:\Users\zirku\Documents\goldm5\.mt5-puprime-700194619\terminal64.exe',
+                      terminal='',
                       portable=True, version='Phase 1 LIVE PROP', capacity=3, broker_utc_offset_seconds=10800, broker_clock_policy='NEW_YORK_CLOSE',
                       ea_family='XAU_Titan_Pro_BasketGuard', symbol='XAUUSD.pi', timeframe='M15', initial_balance=10000.0, leverage='1:30',
                       account_type='PROPFIRMA', is_demo=False, badge='PROPFIRMA',
@@ -29,7 +29,7 @@ ACCOUNTS = {
                   challenge_protection=False),
     'xau5m_m5': dict(id='xau5m_m5', name='XAU Titan Pro (PU Prime $250)', login=700194619,
                      server='PUPrime-Demo', company='PU Prime Ltd',
-                     terminal=r'C:\Users\zirku\Downloads\mt5_strategy_research\rev\hermes_ea_work\portable\terminal64.exe',
+                     terminal=r'C:\Users\zirku\Documents\goldm5\.mt5-puprime-700194619\terminal64.exe',
                      portable=True, version='XAU_Titan_Pro_BasketGuard', capacity=3, broker_utc_offset_seconds=10800, broker_clock_policy='NEW_YORK_CLOSE', rates_time_basis='BROKER_SERVER',
                      ea_family='XAU_Titan_Pro_BasketGuard', symbol='XAUUSD.p', timeframe='M15', initial_balance=250.0, leverage='1:500',
                      account_type='DEMO', is_demo=True, badge='DEMO 250$',
