@@ -93,6 +93,23 @@ class MultiAccountTests(unittest.TestCase):
 
         self.assertEqual(calls, [])
 
+    def test_demo_alias_cannot_initialize_on_challenge_protected_terminal_path(self):
+        fake = self.fake()
+        calls = []
+        original_initialize = fake.initialize
+        def initialize(path, **kwargs):
+            calls.append(path)
+            return original_initialize(path, **kwargs)
+        fake.initialize = initialize
+        protected_path = self.gateway.ACCOUNTS['blueberry']['terminal']
+
+        with patch.dict(self.gateway.ACCOUNTS['xau5m_m5'], terminal=protected_path):
+            with self.assertRaisesRegex(HTTPException, 'Challenge-Schutz'):
+                with self.gateway.session(fake, 'xau5m_m5'):
+                    self.fail('a demo alias must never attach to the protected terminal')
+
+        self.assertEqual(calls, [])
+
     def test_parallel_sessions_cannot_cross_accounts(self):
         fake = self.fake()
         def read(account):

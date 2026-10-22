@@ -145,17 +145,18 @@ def verify_identity(mt5, account):
 
 
 def _protected_terminal_path_conflicts(account_id, account):
-    if account.get('challenge_protection') is not True:
-        return False
     terminal = account.get('terminal')
     if not isinstance(terminal, str) or not terminal.strip():
-        return True
+        return account.get('challenge_protection') is True
     expected = ntpath.normcase(ntpath.normpath(terminal))
     for alias, other in ACCOUNTS.items():
         if alias == account_id or other.get('id') == account.get('id'):
             continue
         candidate = other.get('terminal')
-        if isinstance(candidate, str) and candidate.strip() and ntpath.normcase(ntpath.normpath(candidate)) == expected:
+        if (isinstance(candidate, str) and candidate.strip() and
+                ntpath.normcase(ntpath.normpath(candidate)) == expected and
+                (account.get('challenge_protection') is True or
+                 other.get('challenge_protection') is True)):
             return True
     return False
 
@@ -172,7 +173,7 @@ def session(mt5, account='blueberry'):
         raise HTTPException(400, 'Unbekannter Account.')
     spec = ACCOUNTS[account]
     if _protected_terminal_path_conflicts(account, spec):
-        raise HTTPException(503, 'Challenge-Schutz: Terminalpfad ist mehrfach zugeordnet; Zugriff verweigert.')
+        raise HTTPException(503, 'Challenge-Schutz: Terminalpfad ist geschützt oder mehrfach zugeordnet; Zugriff verweigert.')
     with broker_telemetry.measured_lock(_lock):
         if not terminal_running(spec['terminal']):
             if _attached_mt5 is mt5:
