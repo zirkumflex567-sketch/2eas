@@ -12,7 +12,7 @@ def values(path):
         if not line or line.startswith(";"):continue
         if "||" in line:raise AssertionError(f"Optimization flags in {path.name}")
         k,sep,v=line.partition("=")
-        assert sep and k not in out and re.fullmatch(r"Inp\\w+",k),path.name
+        assert sep and k not in out and re.fullmatch(r"Inp\w+",k),path.name
         out[k]=v
     return out
 data={p.name:values(p) for p in profiles}
