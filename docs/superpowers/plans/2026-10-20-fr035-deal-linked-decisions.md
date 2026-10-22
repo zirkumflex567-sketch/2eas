@@ -25,7 +25,7 @@
 - [x] Build revisions from the prior stored snapshot so frozen bars, deal facts, and original `asOfUtc` never change; update only revision metadata, creation time, and exact decision references.
 - [x] Run focused lifecycle-capture and evidence-store tests; run the full non-backtest Python suite.
 - [x] Complete code-quality review, fix findings, and update `OPEN_TASKS.md` with the exact remaining FR-035 limits.
-- [ ] Commit only reviewed source/tests/docs on `main`, push, allow both CI workflows to finish, and fast-forward hTown without restarting for documentation-only or non-runtime digest changes.
+- [x] Commit only reviewed source/tests/docs on `main`, push, allow both CI workflows to finish, and fast-forward hTown without restarting for documentation-only or non-runtime digest changes. Verified on 22.10.2026: implementation commit `e4b92302f9413b583aefff2eb33a11920774847f` is on `main`; both associated GitHub workflows (`39501738543`, `39501738605`) completed successfully. The current hTown checkout is clean `main` at `0bb81966550a21d82f0b6ce95126117e1df6b633`; its deployed runtime reports matching startup/disk revision and digest, `restartRequired=false`. A fresh focused rerun passed 102 lifecycle/evidence-store tests. This closes code delivery only; the separate RecordOnly live-import, original-state, historical-recompute, and hardware gates below stay open.
 
 ## Gates and non-goals
 
