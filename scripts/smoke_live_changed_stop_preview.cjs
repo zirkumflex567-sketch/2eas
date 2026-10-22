@@ -78,7 +78,13 @@ async function preview(account, symbol, position, candidate) {
   assert.equal(body.canExecute, false);
   if (body.valid === true && body.guard?.state === "ALLOW") {
     assert.equal(body.guard.source, "NON_CHALLENGE_DEMO_POLICY");
-    assert.equal(body.canCommit, true);
+    const quoteAgeMs = Number(body.quote?.ageMs);
+    if (Number.isFinite(quoteAgeMs) && quoteAgeMs < -1000) {
+      assert.equal(body.canCommit, false, "quote more than one second in the future must fail closed");
+      body.previewBlockReason = "QUOTE_TOO_FAR_IN_FUTURE";
+    } else {
+      assert.equal(body.canCommit, true);
+    }
   } else {
     assert.equal(body.canCommit, false);
     assert.ok((body.guard?.state === "UNKNOWN" && body.guard?.source === "NONE") ||
@@ -91,6 +97,7 @@ async function preview(account, symbol, position, candidate) {
   const results = [];
   let validPreviews = 0;
   let rejectedGeometryPreviews = 0;
+  let futureQuoteBlockedPreviews = 0;
   for (const account of accounts) {
     const candles = await get(`/api/candles?account=${encodeURIComponent(account)}`);
     assert.equal(candles.accountId, account);
@@ -144,6 +151,7 @@ async function preview(account, symbol, position, candidate) {
       assert.equal(valid.geometry.state, "VALID");
       assert.equal(valid.brokerPreview.slPrice, candidatePrice);
       assert.equal(valid.pnlAtSl?.currency, position.currency);
+      if (valid.previewBlockReason === "QUOTE_TOO_FAR_IN_FUTURE") futureQuoteBlockedPreviews += 1;
       validPreviews += 1;
 
       const wrongSide = position.side === "BUY"
@@ -161,6 +169,8 @@ async function preview(account, symbol, position, candidate) {
         priorSL: String(position.sl),
         hypotheticalSL: candidatePrice,
         changedPreview: valid.geometry.state,
+        canCommit: valid.canCommit,
+        quoteAgeMs: valid.quote?.ageMs,
         wrongSidePreview: invalid.geometry.reasons,
       });
     }
@@ -183,6 +193,7 @@ async function preview(account, symbol, position, candidate) {
     results,
     validChangedStopPreviews: validPreviews,
     rejectedWrongSidePreviews: rejectedGeometryPreviews,
+    futureQuoteBlockedPreviews,
     positionMutations: 0,
     ordersSent: 0,
     protectedAccountQueried: false,
