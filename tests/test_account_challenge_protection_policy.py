@@ -40,3 +40,21 @@ def test_active_demo_feeds_and_goldm15_use_verified_broker_server_basis():
     assert configured == expected
     assert active_demo_feeds <= configured
     assert account_gateway.ACCOUNTS["blueberry"].get("rates_time_basis", "UTC") == "UTC"
+
+
+def test_configured_accounts_use_only_the_two_user_confirmed_ea_families():
+    expected = {
+        "blueberry": "XAU_Titan_Pro_BasketGuard",
+        "titan": "XAUUSD 5 minute",
+        "xau5m_m5": "XAU_Titan_Pro_BasketGuard",
+        "titan_m5": "XAU_Titan_Pro_BasketGuard",
+        "xau5m_500": "XAUUSD 5 minute",
+        "goldm15": "XAU_Titan_Pro_BasketGuard",
+    }
+
+    assert {alias: account_gateway.ACCOUNTS[alias]["ea_family"] for alias in expected} == expected
+    assert account_gateway.ACCOUNTS["titan"]["analysis_mode"] == "INDICATORS_ONLY"
+    assert account_gateway.ACCOUNTS["xau5m_500"]["analysis_mode"] == "INDICATORS_ONLY"
+    assert "Titan" in account_gateway.ACCOUNTS["goldm15"]["name"]
+    assert "Titan" in account_gateway.ACCOUNTS["xau5m_m5"]["name"]
+    assert "Titan" in account_gateway.ACCOUNTS["titan_m5"]["name"]
