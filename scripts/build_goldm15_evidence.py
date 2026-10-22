@@ -42,7 +42,7 @@ EXPECTED_HASHES = {
     "goldm15/GoldM15_RiskCore.mqh": "096d2b4d98da67001b381028c615ad5612135482f7d58cb585574a293968335a",
     "goldm15/GoldM15_News.mqh": "54cf4dd2884d90fb2040b3e78ac246b22d1e8b5a168318ee75814431c2da70b6",
     "goldm15/GoldM15_Reconstruction.set": "e6c517dd9e5fc26a4d257506a493163d43bbc52a3b1032479eb8aed89d6efa40",
-    "ChartStudioEvidenceSpool.mqh": "1fe92b2bc032505163e1e3badc36cc0743d321974e559a1e63b8625204ceba4f",
+    "ChartStudioEvidenceSpool.mqh": "407b9c6babec8567bfd786d45e92337ccdcd6545b902bdfc94032024c0444ed7",
 }
 PRESET_NAME = "GoldM15_Reconstruction.set"
 PRODUCER = "goldm15_demo"

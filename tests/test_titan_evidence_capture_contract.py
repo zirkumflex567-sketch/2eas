@@ -174,6 +174,21 @@ def test_failed_segment_write_removes_its_unimportable_temporary_file():
     assert "if(!FileMove(temp,FILE_COMMON,ready,FILE_COMMON))\n     {\n      int error=GetLastError();\n      CSLogWriteFailure(\"rename\",sequence,error);\n      CSDeleteFailedTemp(temp,sequence);\n      return false;\n     }" in write
 
 
+def test_failed_segment_write_retries_the_same_sequence_before_advancing_cursor():
+    spool = SPOOL.read_text(encoding="utf-8-sig")
+    flush = _function(spool, "CSFlushEvidenceQueue")
+
+    write_attempt = flush.index("if(!CSWriteReadySegment(line,next))")
+    cursor_advance = flush.index("CSSequence=next;", write_attempt)
+    cursor_persist = flush.index("if(!CSPersistSequence())", cursor_advance)
+
+    assert write_attempt < cursor_advance < cursor_persist
+    assert "CSSequence=next;" not in flush[:write_attempt]
+    assert "ulong latest=CSFindLatestReady(CS_SEGMENT_FOLDER+\"\\\\\");" in _function(
+        spool, "CSRecoverSequence"
+    )
+
+
 def test_text_segment_write_validates_complete_utf8_payload_and_actual_file_size():
     spool = SPOOL.read_text(encoding="utf-8-sig")
     write = _function(spool, "CSWriteReadySegment")

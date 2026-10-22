@@ -597,13 +597,6 @@ void CSFlushEvidenceQueue()
         }
       string envelope=CSQueue[CSQueueHead];
       ulong next=CSSequence+1;
-      CSSequence=next;
-      if(!CSPersistSequence())
-        {
-         CSRecorderDisabled=true;
-         Print("ChartStudio evidence recorder disabled: sequence persistence failed.");
-         return;
-        }
       string captured=CSUtc(TimeGMT());
       string line="{\"spoolVersion\":1,\"producerId\":"+CSJsonQuote(CS_EVIDENCE_PRODUCER_ID)+
                   ",\"sequence\":"+IntegerToString((long)next)+
@@ -613,9 +606,16 @@ void CSFlushEvidenceQueue()
                   ",\"envelope\":"+envelope+"}";
       if(!CSWriteReadySegment(line,next))
         {
-         // Keep this event queued. The next attempt advances sequence again,
-         // making a lost write visible as an importer gap.
+         // Keep this event queued and retry its sequence. Recovery also scans
+         // ready segments, covering a restart after rename but before cursor persistence.
          CSQueuePendingOverflowGapMarker();
+         return;
+        }
+      CSSequence=next;
+      if(!CSPersistSequence())
+        {
+         CSRecorderDisabled=true;
+         Print("ChartStudio evidence recorder disabled: sequence persistence failed.");
          return;
         }
       CSQueue[CSQueueHead]="";
