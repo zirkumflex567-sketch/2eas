@@ -1,0 +1,272 @@
+{
+  "schemaVersion": 1,
+  "measuredAtUtc": "2026-10-22T02:05:24.432Z",
+  "runtime": {
+    "startupRevision": "8f9ce3f3df593eb573fe6e6f00435908d69f34a9",
+    "diskRevision": "8f9ce3f3df593eb573fe6e6f00435908d69f34a9",
+    "restartRequired": false,
+    "applicationCodeDirty": false
+  },
+  "scope": [
+    "titan",
+    "xau5m_m5",
+    "titan_m5",
+    "xau5m_500",
+    "goldm15"
+  ],
+  "method": "GET",
+  "measurementPlan": {
+    "mode": "repeated",
+    "durationSeconds": 300,
+    "intervalSeconds": 60,
+    "cycles": 5,
+    "requestsPerCycle": 5,
+    "maxRequests": 25,
+    "completedCycles": 5
+  },
+  "candles": {
+    "timeframe": "M15",
+    "count": 150
+  },
+  "sampleCount": 25,
+  "diagnosticTraceReads": 35,
+  "totalHttpGets": 62,
+  "byAccount": [
+    {
+      "account": "titan",
+      "requests": 5,
+      "ratesRequests": 5,
+      "historyRequests": 0,
+      "traces": 5,
+      "backgroundTraces": 4,
+      "clientMs": {
+        "median": 170.176,
+        "p95": 239.799,
+        "max": 239.799
+      },
+      "spanMs": {
+        "mt5_lock_wait": {
+          "count": 5,
+          "median": 0.002,
+          "p95": 96.37,
+          "max": 96.37
+        },
+        "mt5_initialize": {
+          "count": 5,
+          "median": 0.963,
+          "p95": 1.005,
+          "max": 1.005
+        },
+        "mt5_identity_verify": {
+          "count": 5,
+          "median": 0.75,
+          "p95": 0.784,
+          "max": 0.784
+        },
+        "mt5_rates": {
+          "count": 5,
+          "median": 0.13,
+          "p95": 0.137,
+          "max": 0.137
+        },
+        "mt5_history": {
+          "count": 0,
+          "median": null,
+          "p95": null,
+          "max": null
+        }
+      }
+    },
+    {
+      "account": "xau5m_m5",
+      "requests": 5,
+      "ratesRequests": 5,
+      "historyRequests": 0,
+      "traces": 5,
+      "backgroundTraces": 4,
+      "clientMs": {
+        "median": 148.379,
+        "p95": 245.191,
+        "max": 245.191
+      },
+      "spanMs": {
+        "mt5_lock_wait": {
+          "count": 5,
+          "median": 0.001,
+          "p95": 95.681,
+          "max": 95.681
+        },
+        "mt5_initialize": {
+          "count": 5,
+          "median": 0.79,
+          "p95": 0.965,
+          "max": 0.965
+        },
+        "mt5_identity_verify": {
+          "count": 5,
+          "median": 0.759,
+          "p95": 0.904,
+          "max": 0.904
+        },
+        "mt5_rates": {
+          "count": 5,
+          "median": 0.098,
+          "p95": 0.126,
+          "max": 0.126
+        },
+        "mt5_history": {
+          "count": 0,
+          "median": null,
+          "p95": null,
+          "max": null
+        }
+      }
+    },
+    {
+      "account": "titan_m5",
+      "requests": 5,
+      "ratesRequests": 5,
+      "historyRequests": 0,
+      "traces": 5,
+      "backgroundTraces": 4,
+      "clientMs": {
+        "median": 147.16,
+        "p95": 241.067,
+        "max": 241.067
+      },
+      "spanMs": {
+        "mt5_lock_wait": {
+          "count": 5,
+          "median": 0.001,
+          "p95": 46.083,
+          "max": 46.083
+        },
+        "mt5_initialize": {
+          "count": 5,
+          "median": 0.739,
+          "p95": 0.933,
+          "max": 0.933
+        },
+        "mt5_identity_verify": {
+          "count": 5,
+          "median": 0.673,
+          "p95": 0.676,
+          "max": 0.676
+        },
+        "mt5_rates": {
+          "count": 5,
+          "median": 0.103,
+          "p95": 0.122,
+          "max": 0.122
+        },
+        "mt5_history": {
+          "count": 0,
+          "median": null,
+          "p95": null,
+          "max": null
+        }
+      }
+    },
+    {
+      "account": "xau5m_500",
+      "requests": 5,
+      "ratesRequests": 5,
+      "historyRequests": 0,
+      "traces": 5,
+      "backgroundTraces": 4,
+      "clientMs": {
+        "median": 133.096,
+        "p95": 189.374,
+        "max": 189.374
+      },
+      "spanMs": {
+        "mt5_lock_wait": {
+          "count": 5,
+          "median": 0.001,
+          "p95": 39.795,
+          "max": 39.795
+        },
+        "mt5_initialize": {
+          "count": 5,
+          "median": 0.744,
+          "p95": 0.963,
+          "max": 0.963
+        },
+        "mt5_identity_verify": {
+          "count": 5,
+          "median": 0.681,
+          "p95": 0.729,
+          "max": 0.729
+        },
+        "mt5_rates": {
+          "count": 5,
+          "median": 0.103,
+          "p95": 0.107,
+          "max": 0.107
+        },
+        "mt5_history": {
+          "count": 0,
+          "median": null,
+          "p95": null,
+          "max": null
+        }
+      }
+    },
+    {
+      "account": "goldm15",
+      "requests": 5,
+      "ratesRequests": 5,
+      "historyRequests": 0,
+      "traces": 5,
+      "backgroundTraces": 1,
+      "clientMs": {
+        "median": 200.998,
+        "p95": 277.631,
+        "max": 277.631
+      },
+      "spanMs": {
+        "mt5_lock_wait": {
+          "count": 5,
+          "median": 0.001,
+          "p95": 43.995,
+          "max": 43.995
+        },
+        "mt5_initialize": {
+          "count": 5,
+          "median": 0.79,
+          "p95": 0.94,
+          "max": 0.94
+        },
+        "mt5_identity_verify": {
+          "count": 5,
+          "median": 0.7,
+          "p95": 0.877,
+          "max": 0.877
+        },
+        "mt5_rates": {
+          "count": 5,
+          "median": 0.336,
+          "p95": 0.446,
+          "max": 0.446
+        },
+        "mt5_history": {
+          "count": 0,
+          "median": null,
+          "p95": null,
+          "max": null
+        }
+      }
+    }
+  ],
+  "process": {
+    "cpuSecondsBefore": 82.172,
+    "cpuSecondsAfter": 164.922,
+    "cpuSecondsDelta": 82.75,
+    "privateBytesBefore": 533102592,
+    "privateBytesAfter": 533118976,
+    "workingSetBytesBefore": 156393472,
+    "workingSetBytesAfter": 148389888
+  },
+  "mutations": 0,
+  "blueberryRequests": 0
+}
