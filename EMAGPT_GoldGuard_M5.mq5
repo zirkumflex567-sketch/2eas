@@ -4,7 +4,7 @@
 //| No profitability guarantee. Test broker real ticks before use.  |
 //+------------------------------------------------------------------+
 #property strict
-#property version "1.11"
+#property version "1.12"
 #property description "XAUUSD M5 trend pullback EA with conservative challenge risk guard"
 #include <Trade/Trade.mqh>
 
@@ -339,6 +339,18 @@ bool IsPermittedDemoAccount()
           (login==53090070 && server=="ICMarketsEU-Demo");
 }
 
+double ExpectedReferenceBalanceForAccount()
+{
+   long login=AccountInfoInteger(ACCOUNT_LOGIN);
+   string server=AccountInfoString(ACCOUNT_SERVER);
+   if(login==53087839 && server=="ICMarketsEU-Demo") return 10000.0;
+   if(login==700194619 && server=="PUPrime-Demo") return 250.0;
+   if(login==700184986 && server=="PUPrime-Demo") return 500.0;
+   if(login==700194822 && server=="PUPrime-Demo") return 500.0;
+   if(login==53090070 && server=="ICMarketsEU-Demo") return 10000.0;
+   return 0.0;
+}
+
 int OnInit()
 {
    if(!IsPermittedDemoAccount())
@@ -356,8 +368,17 @@ int OnInit()
       Print("USD account required for USD challenge floors and calculations.");
       return INIT_PARAMETERS_INCORRECT;
    }
+   double expectedReferenceBalance=ExpectedReferenceBalanceForAccount();
+   if(expectedReferenceBalance<=0 ||
+      MathAbs(InpReferenceBalance-expectedReferenceBalance)>0.01)
+   {
+      PrintFormat("GoldGuard refused mismatched reference balance: configured=%.2f expected=%.2f; load the account-matched preset.",
+                  InpReferenceBalance,expectedReferenceBalance);
+      return INIT_PARAMETERS_INCORRECT;
+   }
    if(InpReferenceBalance<=0 || InpDailyGuardPct<=0 || InpDailyGuardPct>=10 ||
       InpStaticGuardPct<=0 || InpStaticGuardPct>=10 ||
+      InpEmergencyBufferUSD<0 ||
       InpTradeRiskPct<=0 || InpTradeRiskPct>0.5 ||
       InpRewardRisk<=0 || InpStopATRMin<=0 || InpStopATRMax<InpStopATRMin ||
       InpStartHourServer<0 || InpEndHourServer>24 ||
@@ -365,6 +386,14 @@ int OnInit()
       InpVPBins<12 || InpVPBins>60 || InpVPBars<60 || InpVPBars>700 ||
       InpVPWidthBars<1 || InpVPWidthBars>30 || InpVPRebuildEveryBars<1)
       return INIT_PARAMETERS_INCORRECT;
+   if(InpEmergencyBufferUSD>=expectedReferenceBalance*
+      MathMin(InpDailyGuardPct,InpStaticGuardPct)/100.0)
+   {
+      PrintFormat("GoldGuard refused emergency buffer %.2f: it must be below the tightest loss allowance %.2f.",
+                  InpEmergencyBufferUSD,
+                  expectedReferenceBalance*MathMin(InpDailyGuardPct,InpStaticGuardPct)/100.0);
+      return INIT_PARAMETERS_INCORRECT;
+   }
    keyPrefix=StringFormat("EG.%I64d.%I64d",AccountInfoInteger(ACCOUNT_LOGIN),InpMagic);
    // Each tester pass must be isolated. Live global variables intentionally persist.
    if(MQLInfoInteger(MQL_TESTER))

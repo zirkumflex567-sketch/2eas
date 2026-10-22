@@ -64,6 +64,56 @@ def test_goldguard_hud_marks_unavailable_profit_calculations_instead_of_assuming
     assert "SL n/a" in markers and "TP n/a" in markers
 
 
+def test_goldguard_reference_balance_matches_each_allowlisted_demo():
+    source = SOURCE.read_text(encoding="utf-8-sig")
+    reference_balance = _function_body(source, "ExpectedReferenceBalanceForAccount")
+    demos = {key: value for key, value in account_gateway.ACCOUNTS.items()
+             if key != "blueberry" and value["id"] == key}
+
+    for account in demos.values():
+        expected = account["initial_balance"]
+        login = account["login"]
+        server = account["server"]
+        assert re.search(
+            rf"login\s*==\s*{login}\s*&&\s*server\s*==\s*\"{re.escape(server)}\"\s*\)\s*return\s+{expected:g}(?:\.0+)?\s*;",
+            reference_balance,
+        ), f"GoldGuard reference balance does not match {account['id']}"
+
+
+def test_goldguard_rejects_mismatched_reference_balance_before_state_changes():
+    source = SOURCE.read_text(encoding="utf-8-sig")
+    on_init = _function_body(source, "OnInit")
+    mismatch = re.search(
+        r"double\s+expectedReferenceBalance\s*=\s*ExpectedReferenceBalanceForAccount\(\)\s*;\s*if\s*\(\s*expectedReferenceBalance\s*<=\s*0\s*\|\|\s*MathAbs\(InpReferenceBalance\s*-\s*expectedReferenceBalance\)\s*>\s*0\.01\s*\).*?return\s+INIT_PARAMETERS_INCORRECT\s*;",
+        on_init,
+        re.S,
+    )
+
+    assert mismatch, "a wrong reference balance must fail closed rather than trip the static floor on a small demo"
+    first_side_effects = [index for token in (
+        "GlobalVariableDel(", "GlobalVariableSet(", "iMA(", "iATR(", "iADX(",
+        "iVolumes(", "VisualInit(", "EventSetTimer(", "trade.SetExpertMagicNumber(",
+    ) if (index := on_init.find(token)) >= 0]
+    assert first_side_effects and mismatch.start() < min(first_side_effects)
+
+
+def test_goldguard_rejects_emergency_buffer_that_exceeds_the_tightest_loss_allowance():
+    source = SOURCE.read_text(encoding="utf-8-sig")
+    on_init = _function_body(source, "OnInit")
+    buffer_guard = re.search(
+        r"if\s*\(\s*InpEmergencyBufferUSD\s*>=\s*expectedReferenceBalance\s*\*\s*MathMin\(InpDailyGuardPct\s*,\s*InpStaticGuardPct\)\s*/\s*100(?:\.0)?\s*\).*?return\s+INIT_PARAMETERS_INCORRECT\s*;",
+        on_init,
+        re.S,
+    )
+
+    assert buffer_guard, "the emergency reserve must fit below both the daily and static drawdown budgets"
+    first_side_effects = [index for token in (
+        "GlobalVariableDel(", "GlobalVariableSet(", "iMA(", "iATR(", "iADX(",
+        "iVolumes(", "VisualInit(", "EventSetTimer(", "trade.SetExpertMagicNumber(",
+    ) if (index := on_init.find(token)) >= 0]
+    assert first_side_effects and buffer_guard.start() < min(first_side_effects)
+
+
 def test_guarded_release_has_distinct_ea_version():
     source = SOURCE.read_text(encoding="utf-8-sig")
-    assert '#property version "1.11"' in source
+    assert '#property version "1.12"' in source
